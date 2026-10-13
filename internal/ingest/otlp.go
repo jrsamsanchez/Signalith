@@ -71,7 +71,7 @@ func (p *Pipeline) IngestOTLP(ctx context.Context, body []byte, isJSON bool) (*R
 	batch := make([]Event, 0, min(n, batchEvents))
 	size, done := 0, 0
 	flush := func() error {
-		res, err := p.write(ctx, batch)
+		res, err := p.write(ctx, batch, nil)
 		done += len(batch)
 		clear(batch)
 		batch, size = batch[:0], 0
