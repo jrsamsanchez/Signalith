@@ -228,7 +228,10 @@ The configuration already contains the server address and ingest token, and send
 HTTPS, checking the server's certificate with that CA. For firewalls, switches and other network
 devices, pick **Syslog** (see [Syslog](#syslog)). Hosts that run an OpenTelemetry Collector, and
 apps with an OpenTelemetry SDK, can send logs over OTLP instead: pick **OpenTelemetry** (see
-[docs/opentelemetry.md](docs/opentelemetry.md)).
+[docs/opentelemetry.md](docs/opentelemetry.md)). To watch files, take inventory and check
+configuration on Windows, Linux and macOS hosts, pick **osquery**: Signalith becomes
+osquery's management server and the hosts appear on the **Endpoints** page (see
+[docs/endpoints.md](docs/endpoints.md)).
 
 Agents on other machines must send to an address they can reach, such as
 `https://192.168.1.20:8080`, not `localhost`. Enter it under **Agents send to** on that page
@@ -250,6 +253,7 @@ Supported sources in Phase 1:
 | ClamAV (Linux agent: /var/log/clamav or the journal) | Malware |
 | Antivirus consoles via syslog (CEF, LEEF, Symantec, Trellix ePO): Trend Micro, Sophos, ESET, CrowdStrike, SentinelOne, Kaspersky, Bitdefender and others | Malware |
 | OpenTelemetry Collector or SDK logs over OTLP/HTTP ([docs/opentelemetry.md](docs/opentelemetry.md)) | the same models for Windows, Linux and syslog records; Other for app logs |
+| osquery ([docs/endpoints.md](docs/endpoints.md)): file changes, software, accounts, ports, services, startup items, configuration checks | Filesystem, Inventory, Configuration_Check |
 | Anything else | Other (searchable by text and fields) |
 
 Antivirus: see [docs/antivirus.md](docs/antivirus.md).

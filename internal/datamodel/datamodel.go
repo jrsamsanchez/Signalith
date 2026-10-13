@@ -274,6 +274,7 @@ var Models = []Model{
 			{Name: "rule_id", Type: "string", Description: "The SCAP Security Guide rule the check is based on, when there is one"},
 			{Name: "reference", Type: "string", Description: "Control references, such as NIST SP 800-53 IDs"},
 			{Name: "detail", Type: "string", Description: "What the host reported, when the check failed"},
+			{Name: "benchmark", Type: "string", Description: "The guide or policy the check comes from", Examples: []string{"SCAP Security Guide"}},
 			{Name: "os", Type: "string", Description: "Platform the check is for", Examples: []string{"linux", "windows", "darwin"}},
 		},
 	},

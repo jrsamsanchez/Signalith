@@ -2141,6 +2141,7 @@ try {
 document.querySelectorAll('input[name=os]').forEach((r) => r.addEventListener('change', () => loadDataSource()));
 $('linux-source').addEventListener('change', loadAgentConfig);
 $('otel-host').addEventListener('change', loadAgentConfig);
+$('osquery-platform').addEventListener('change', loadAgentConfig);
 $('sysmon').addEventListener('change', loadAgentConfig);
 agentServerEl.addEventListener('input', () => {
   clearTimeout(agentServerTimer);
@@ -2188,11 +2189,14 @@ async function agentSetupLoad() {
   // An OpenTelemetry Collector on Linux or Windows reads the same sources
   // as Fluent Bit there, so it shares their options.
   const otel = os === 'otel';
-  const host = otel ? $('otel-host').value : os;
+  const osq = os === 'osquery';
+  const host = otel ? $('otel-host').value : osq ? '' : os;
   $('otel-opts').classList.toggle('hidden', !otel);
+  $('osquery-opts').classList.toggle('hidden', !osq);
   $('linux-opts').classList.toggle('hidden', host !== 'linux');
   $('windows-opts').classList.toggle('hidden', host !== 'windows');
-  $('agent-title').textContent = otel ? 'Set up the OpenTelemetry Collector on ' + (host === 'windows' ? 'Windows' : 'Linux')
+  const osqName = { linux: 'Linux', windows: 'Windows', darwin: 'macOS' }[$('osquery-platform').value];
+  $('agent-title').textContent = osq ? 'Manage ' + osqName + ' hosts with osquery' : otel ? 'Set up the OpenTelemetry Collector on ' + (host === 'windows' ? 'Windows' : 'Linux')
     : 'Set up Fluent Bit on ' + (os === 'windows' ? 'Windows' : 'Linux');
   const steps = $('agent-steps');
   const seq = ++agentSetupSeq;
@@ -2200,6 +2204,7 @@ async function agentSetupLoad() {
   if (!agentSetupConfig) agentSetupSkeleton();
   const q = new URLSearchParams({ os, source: $('linux-source').value, sysmon: $('sysmon').checked });
   if (otel) q.set('collector', host);
+  if (osq) q.set('platform', $('osquery-platform').value);
   const server = agentServerValue();
   agentServerSent = server;
   if (server) q.set('server', server);
@@ -2286,7 +2291,7 @@ function agentSetupRender(a) {
   pathEl.textContent = path.split(/[\\/]/).pop();
   pathEl.title = path;
   agentSetupEditor(agentSetupConfig);
-  const names = [path, a.ca_path, 'signalith-ca.pem', 'fluent-bit.conf', 'config.yaml', 'server.tls_cert'];
+  const names = [path, a.ca_path, 'signalith-ca.pem', 'fluent-bit.conf', 'signalith-osquery-setup.sh', 'signalith-osquery-setup.ps1', 'config.yaml', 'server.tls_cert'];
   const items = (a.steps || []).map((s, i) => agentSetupStep(s, i + 1, names));
   $('agent-steps').replaceChildren(...items);
   const stepBody = (n) => (n > 0 && items[n - 1] ? items[n - 1].querySelector('.agent-step__body') : null);
@@ -2467,7 +2472,7 @@ $('agent-download').addEventListener('click', async () => {
   if (agentSetupStale() && !(await agentSetupFresh())) return;
   if (!agentSetupConfig || !(await agentEnsureName())) return;
   const url = URL.createObjectURL(new Blob([agentSetupConfig], { type: 'text/plain' }));
-  const a = el('a', { href: url, download: 'fluent-bit.conf', class: 'hidden' });
+  const a = el('a', { href: url, download: $('agent-path').textContent || 'fluent-bit.conf', class: 'hidden' });
   document.body.append(a);
   a.click();
   a.remove();

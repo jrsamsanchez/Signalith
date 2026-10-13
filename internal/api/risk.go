@@ -55,10 +55,15 @@ func (s *Server) handleGetLookup(w http.ResponseWriter, r *http.Request) {
 	resp := map[string]any{}
 	oa, oi := s.Assets.Overlay()
 	if kind == "assets" {
-		list := append(s.Assets.Assets(), oa...)
+		// Then the osquery hosts on the Endpoints page that the list does
+		// not have ("found" counts them), which also come and go on their
+		// own.
+		found := s.Assets.Found()
+		list := append(append(s.Assets.Assets(), oa...), found...)
 		resp["count"], resp["columns"] = len(list), assets.AssetColumns
 		resp["items"] = list[:min(len(list), 1000)]
 		resp["sample"] = len(oa)
+		resp["found"] = len(found)
 	} else {
 		list := append(s.Assets.Identities(), oi...)
 		resp["count"], resp["columns"] = len(list), assets.IdentityColumns
