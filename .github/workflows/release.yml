@@ -11,8 +11,10 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Version to build as a dry run (nothing is published)
-        default: 0.0.0-dryrun
+        description: Version to build as a dry run (nothing is published); empty builds one patch above the latest release, marked -ci
+        # Left empty, the packages test upgrades to a version above the
+        # latest release (a version below it would be a downgrade).
+        default: ''
 
 permissions:
   contents: read
