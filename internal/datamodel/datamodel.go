@@ -197,6 +197,7 @@ var Models = []Model{
 			{Name: "registry_path", Type: "string", Description: "Full path of the key or value"},
 			{Name: "registry_key_name", Type: "string", Description: "Name of the key"},
 			{Name: "registry_value_name", Type: "string", Description: "Name of the value"},
+			{Name: "registry_new_path", Type: "string", Description: "New full path of a renamed key or value (Sysmon 14 NewName)"},
 			{Name: "registry_value_data", Type: "string", Description: "Data written to the value"},
 			{Name: "process_name", Type: "string", Description: "Process that made the change"},
 			{Name: "process_path", Type: "string", Description: "Path of that process"},
