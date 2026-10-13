@@ -180,8 +180,8 @@ func writeFile(path string, data []byte, perm fs.FileMode) error {
 	return nil
 }
 
-// cmdInitialPassword prints the first admin password bootstrap-docker
-// made, until the admin changes it.
+// cmdInitialPassword prints the first admin password bootstrap-docker or
+// signalith init -save-password made, until the admin changes it.
 func cmdInitialPassword(args []string) error {
 	fs := flag.NewFlagSet("initial-password", flag.ExitOnError)
 	path := configFlag(fs)
@@ -192,8 +192,13 @@ func cmdInitialPassword(args []string) error {
 func printInitialPassword(out io.Writer, path string) error {
 	file := os.Getenv("SIGNALITH_ADMIN_PASSWORD_FILE")
 	if file == "" {
-		return errors.New("this server has no generated first password (SIGNALITH_ADMIN_PASSWORD_FILE is not set; the Docker quick start sets it). " +
-			"Other installs got theirs from signalith init or install.ps1. To set a new one, run: signalith passwd")
+		// The .deb, .rpm and .msi packages run signalith init
+		// -save-password, which keeps it next to the config file.
+		file = filepath.Join(filepath.Dir(path), initialPasswordFile)
+		if _, err := os.Stat(file); err != nil {
+			return errors.New("this server has no generated first password (the Docker quick start and the packages keep one; " +
+				"other installs got theirs from signalith init or install.ps1). To set a new one, run: signalith passwd")
+		}
 	}
 	if fi, err := os.Stat(config.AdminHashFileIn(config.StateDirFor(path))); err == nil {
 		return fmt.Errorf("the first admin password no longer works: it was changed with signalith passwd on %s. "+

@@ -27,7 +27,11 @@ param(
   [string]$SyslogTcp = "0.0.0.0:514",
   [string]$SyslogTls = "0.0.0.0:6514",
   [string]$InstallDir = "$env:ProgramFiles\Signalith",
-  [string]$ConfigDir = "$env:ProgramData\Signalith"
+  [string]$ConfigDir = "$env:ProgramData\Signalith",
+  # Keeps a new install's generated admin password in the config folder
+  # for "signalith initial-password" instead of printing it (the .msi
+  # package uses this, since nobody sees its output).
+  [switch]$SavePassword
 )
 $ErrorActionPreference = "Stop"
 
@@ -130,11 +134,15 @@ if (-not $InstallDir.StartsWith($env:ProgramFiles, [StringComparison]::OrdinalIg
     Invoke-Checked "Resetting the permissions inside $InstallDir" { icacls "$InstallDir\*" /reset /T /C /Q }
   }
 }
-Copy-Item -Force (Join-Path $PSScriptRoot "signalith.exe") $InstallDir
+# The .msi package has put the program in place already.
+$source = Join-Path $PSScriptRoot "signalith.exe"
+if ([IO.Path]::GetFullPath($source) -ne [IO.Path]::GetFullPath($exe)) { Copy-Item -Force $source $InstallDir }
 
 if (-not (Test-Path -LiteralPath $config)) {
   # -flag=value keeps an empty value, which PowerShell would otherwise drop.
-  Invoke-Checked "signalith init" { & $exe init -c $config -listen $Listen -opensearch $OpenSearchUrl "-syslog-udp=$SyslogUdp" "-syslog-tcp=$SyslogTcp" "-syslog-tls=$SyslogTls" }
+  $initArgs = @("init", "-c", $config, "-listen", $Listen, "-opensearch", $OpenSearchUrl, "-syslog-udp=$SyslogUdp", "-syslog-tcp=$SyslogTcp", "-syslog-tls=$SyslogTls")
+  if ($SavePassword) { $initArgs += "-save-password" }
+  Invoke-Checked "signalith init" { & $exe @initArgs }
 } else {
   # An upgrade: passwords and keys an older version kept as plain text are
   # encrypted, without changing anything else in the files.
