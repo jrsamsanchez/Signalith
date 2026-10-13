@@ -1,0 +1,28 @@
+name: Docs
+# Builds the documentation site (mkdocs.yml, docs/) with --strict, so a broken
+# link, a missing anchor or a page left out of the nav fails the check. The
+# Website workflow publishes it at https://signalith.io/docs/.
+on:
+  push:
+    branches: [main]
+    paths: ['docs/**', 'mkdocs.yml', 'README.md', '.github/workflows/docs.yml']
+  pull_request:
+    paths: ['docs/**', 'mkdocs.yml', 'README.md', '.github/workflows/docs.yml']
+
+# The job only reads the code; it may not push, comment or change settings.
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      # The runner's own Python, in a virtual environment (its system Python
+      # refuses pip installs), with the exact versions in docs/requirements.txt.
+      - name: Install MkDocs
+        run: |
+          python3 -m venv "$RUNNER_TEMP/mkdocs"
+          "$RUNNER_TEMP/mkdocs/bin/python" -m pip install --disable-pip-version-check -r docs/requirements.txt
+      - name: Build the site
+        run: '"$RUNNER_TEMP/mkdocs/bin/mkdocs" build --strict -d "$RUNNER_TEMP/docs-site"'

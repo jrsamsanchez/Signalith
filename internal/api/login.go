@@ -174,6 +174,9 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	token := s.sessions().Create(p.Username, req.Remember)
+	if p.Source == users.SourceLocal {
+		s.sessions().SetVersion(token, s.passwordStamp(p.Username))
+	}
 	c := &http.Cookie{Name: s.cookieName(r), Value: token, Path: "/", HttpOnly: true,
 		SameSite: http.SameSiteStrictMode, Secure: s.secureCookie(r)}
 	if req.Remember {

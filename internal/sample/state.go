@@ -211,7 +211,8 @@ func (l *Loader) read(ctx context.Context) (*stateDoc, store.Version, error) {
 	}
 	if d.State == nil {
 		// Never written so; treat it as a load that did not finish, which
-		// Remove clears.
+		// Remove clears. With no load ID to find sample data by, Remove
+		// deletes no events, findings or investigations (see Remove).
 		d.State = &State{Partial: true}
 	}
 	l.noteSet(d.State.ID)

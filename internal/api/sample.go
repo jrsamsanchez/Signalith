@@ -264,6 +264,8 @@ func sampleErrorText(op string, err error, st *sample.State) (string, string) {
 	var old *sample.OldJobsServerError
 	var msg string
 	switch {
+	case errors.Is(err, sample.ErrUnnamedLoad):
+		return "The record of the sample data did not say which load it was, so Signalith could not tell sample events, findings and investigations from yours and deleted none of them. It removed the sample threat intel and asset entries and cleared the record. Findings from an earlier load, and its investigation \"" + sample.CaseTitle + "\", may still be on the Findings and Cases pages: close them there by hand. Its sample events stay until retention deletes them; detections ignore them. You can load the sample data again.", ""
 	case errors.As(err, &old):
 		return sampleOldJobsServerText(old), err.Error()
 	case errors.Is(err, sample.ErrBusy):
@@ -350,7 +352,10 @@ func (s *Server) handleSampleRemove(w http.ResponseWriter, r *http.Request) {
 	user := userOf(r)
 	started := s.sampleJob.start(s.sampleBase(), "remove", func(ctx context.Context, prog sample.ProgressFn) error {
 		_, err := loader.Remove(ctx, prog)
-		if err != nil {
+		switch {
+		case errors.Is(err, sample.ErrUnnamedLoad):
+			s.Log.Warn("sample data record named no load: cleared it, deleted no events, findings or investigations", "audit", true, "by", user)
+		case err != nil:
 			s.Log.Warn("sample data remove failed", "audit", true, "by", user, "err", err)
 		}
 		return err

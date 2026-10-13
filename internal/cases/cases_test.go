@@ -3,6 +3,7 @@ package cases
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -176,5 +177,42 @@ func TestCreateNeverReplacesACase(t *testing.T) {
 	d.err = &store.Error{Status: 409, Body: `{"error":{"type":"version_conflict_engine_exception"}}`}
 	if err := os.Create(ctx, a); !errors.Is(err, ErrExists) {
 		t.Errorf("conflict: %v", err)
+	}
+}
+
+// TestSampleFilterNeverMeansAll: a search for sample cases with an empty
+// load ID finds none, in memory and in OpenSearch, so a caller that lost
+// the ID cannot reach (and delete) every case by mistake.
+func TestSampleFilterNeverMeansAll(t *testing.T) {
+	ctx := context.Background()
+	m := NewMemory()
+	t0 := time.Now().UTC()
+	for _, c := range []*Case{
+		{ID: "real", Title: "Real investigation", Status: findings.StatusNew, Updated: t0},
+		{ID: "sample", Title: "Sample case", Status: findings.StatusNew, Updated: t0, Sample: "sample-20261013-120000"},
+	} {
+		if err := m.Create(ctx, c); err != nil {
+			t.Fatal(err)
+		}
+	}
+	empty, id := "", "sample-20261013-120000"
+	for _, tc := range []struct {
+		flt  Filter
+		want int
+	}{
+		{Filter{}, 2},
+		{Filter{Sample: &empty}, 0},
+		{Filter{Sample: &id}, 1},
+	} {
+		got, total, err := m.Search(ctx, tc.flt)
+		if err != nil || len(got) != tc.want || total != tc.want {
+			t.Errorf("memory search %+v = %d (%d), %v; want %d", tc.flt, len(got), total, err, tc.want)
+		}
+	}
+	if q := filterQuery(Filter{Sample: &empty, Owner: "ana"}); q["match_none"] == nil {
+		t.Errorf("an empty sample ID searches with %v, want match_none", q)
+	}
+	if q := filterQuery(Filter{Sample: &id}); !strings.Contains(fmt.Sprint(q), "sample:"+id) {
+		t.Errorf("a sample ID searches with %v", q)
 	}
 }

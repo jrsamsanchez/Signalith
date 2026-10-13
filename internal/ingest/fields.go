@@ -59,6 +59,9 @@ var knownFields = func() map[string]string {
 
 		// Windows and Linux parsers.
 		"src_host": kw, "logon_type_name": kw, "member": kw,
+		// An sshd line whose client address cannot be told from text the
+		// client sent (see ambiguousSSH).
+		"src_ambiguous": kw,
 
 		// Syslog receiver, including the CIM names CEF keys map to.
 		"facility": kw, "severity": kw, "severity_id": long, "msgid": kw, "sequence": long,

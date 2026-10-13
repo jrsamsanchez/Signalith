@@ -260,6 +260,16 @@ func sampleRemoveCmd(ctx context.Context, loader *sample.Loader) error {
 	if errors.Is(err, sample.ErrBusy) {
 		return errSampleBusy
 	}
+	if errors.Is(err, sample.ErrUnnamedLoad) {
+		fmt.Println("\nThe record of the sample data did not say which load it was, so Signalith could not tell")
+		fmt.Println("sample events, findings and investigations from yours and deleted none of them.")
+		fmt.Println("It removed the sample threat intel and asset entries and cleared the record.")
+		fmt.Printf("Findings from an earlier load, and its investigation %q, may still be on the\n", sample.CaseTitle)
+		fmt.Println("Findings and Cases pages: close them there by hand. Its sample events stay until")
+		fmt.Println("retention deletes them; detections ignore them.")
+		fmt.Println("You can load the sample data again with \"signalith sample-data load\".")
+		return nil
+	}
 	if err != nil {
 		return err
 	}

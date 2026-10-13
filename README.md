@@ -11,7 +11,8 @@ events, a security posture dashboard plus dashboards you build from queries, and
 investigation cases that collect findings, notes, searches and evidence in one place.
 Response actions and playbooks come next.
 
-Website: **https://signalith.io** (its source is in [`site/`](site/)).
+Website: **https://signalith.io** (its source is in [`site/`](site/)). Documentation:
+**https://signalith.io/docs/** (built from [`docs/`](docs/)).
 
 The server is a single Go binary with the web UI embedded. It runs as a Windows
 service or a systemd unit.
@@ -215,6 +216,12 @@ Supported sources in Phase 1:
 | OpenTelemetry Collector or SDK logs over OTLP/HTTP ([docs/opentelemetry.md](docs/opentelemetry.md)) | the same models for Windows, Linux and syslog records; Other for app logs |
 | Anything else | Other (searchable by text and fields) |
 
+sshd prints the user name a client sends, and on a failed key sign-in the key ID of the
+certificate it offers, as they were sent. When either copies sshd's own "from <address>
+port <n>" so that the real address cannot be told, the event is stored without `src` and
+with `src_ambiguous=true`. Search `src_ambiguous=true` to find these sign-in attempts;
+`host` says which server they were made against.
+
 #### Ingest limits
 
 Agents send batches to `/api/ingest`, and OpenTelemetry Collectors to `/api/otlp/v1/logs`. One request can be up to 16 MB, with up to 200,000
@@ -246,6 +253,14 @@ produces are always kept, so an event is never lost to extra fields. Fields left
 counted in the event's `dropped_fields` (search `dropped_fields>0`), their values stay in
 `_raw`, and the Health page and `/api/health` show the totals under `ingest`
 (`retimed`, `fields_dropped`).
+
+A few field names belong to Signalith, which sets them itself: `@timestamp`, `datamodel`,
+`device_time`, `dropped_fields` and the sample-data marker `signalith_sample`. When a
+sender's event has one of them, it is left out and counted in `dropped_fields` the same
+way; the event is stored without it. The one exception is the time of a JSON record:
+its `date` (Fluent Bit sends one) is the event's time, or its `@timestamp` when it has
+no `date`. These two are read as the time, not stored as fields and not counted. When
+a record has both, its `@timestamp` is not used.
 
 #### Syslog
 
@@ -936,7 +951,9 @@ syslog devices ─UDP/TCP/TLS▶ query compiler,
 
 ## Building
 
-Requires Go 1.24 or newer.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for tests, code style and how to send changes.
+
+Requires the Go version in `go.mod` (1.26.9) or newer.
 
 ```sh
 go test ./...
@@ -960,6 +977,10 @@ share one OpenSearch, and stop them with kill -9 and SIGSTOP (Linux only). Witho
 2. **Detect and triage**: scheduled detections in Sigma or Signalith queries, throttling, a findings queue, ATT&CK coverage.
 3. **ES depth**: risk-based alerting, asset and identity context, threat intel feeds, posture dashboards, and plain-English to query.
 4. **Respond and scale**: investigation cases, response actions, playbooks, multi-node deployments.
+
+What is being built now and what comes next, from detection content and osquery endpoint
+visibility to alerts, response actions and signed packages, is on the
+[public roadmap](https://signalith.io/docs/roadmap/) ([source](docs/roadmap.md)).
 
 ## License
 

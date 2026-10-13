@@ -541,7 +541,7 @@ you upgrade:
   Signalith's own `https://` address.
 - **The Docker quick start** has HTTPS set in its own files now. Updating it also brings
   generated passwords and a secured OpenSearch; see
-  [Upgrading the Docker quick start](../README.md#upgrading-the-docker-quick-start).
+  [Upgrading the Docker quick start](https://github.com/jrsamsanchez/Signalith/blob/main/README.md#upgrading-the-docker-quick-start).
 
 While agents still send over plain HTTP, the **Health** page names them (by address, and
 by the host names in their events) and says how to move them over:

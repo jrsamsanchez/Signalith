@@ -1,0 +1,51 @@
+name: Feature request
+description: Suggest something Signalith should do, or do better.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the idea. The [roadmap](https://signalith.io/docs/roadmap/) shows what is
+        being built now and what comes next; it is worth a look first.
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do, and what gets in the way today?
+      placeholder: When I triage findings for one host, I have to...
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would like
+      description: How you imagine it working. A rough idea is fine.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives
+      description: Workarounds you use now, or other ways it could be done.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Data intake (agents, syslog, OpenTelemetry)
+        - Search and queries
+        - Detections and findings
+        - Risk, threat intel and context
+        - Investigations
+        - Dashboards
+        - Users, settings and administration
+        - Security and hardening
+        - Install, packages and upgrades
+        - Documentation
+        - Other
+  - type: checkboxes
+    id: help
+    attributes:
+      label: Contributing
+      options:
+        - label: I would like to help build this (see [CONTRIBUTING.md](https://github.com/jrsamsanchez/Signalith/blob/main/CONTRIBUTING.md)).
