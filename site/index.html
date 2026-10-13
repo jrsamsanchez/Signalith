@@ -1,0 +1,380 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Signalith: open-source SIEM for Windows and Linux</title>
+<meta name="description" content="Signalith is a free, open-source SIEM inspired by Splunk Enterprise Security. Search every event, ask questions in plain English, detect threats with ATT&amp;CK-mapped rules and triage findings together, on your own servers.">
+<meta name="theme-color" content="#070A12">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Signalith: find the signal in a monolith of logs">
+<meta property="og:description" content="A free, open-source SIEM for Windows and Linux, inspired by Splunk Enterprise Security.">
+<meta property="og:image" content="https://jrsamsanchez.github.io/signalith/assets/og.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="preload" href="assets/fonts/inter.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="assets/site.css">
+<script src="assets/theme.js"></script>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+<!-- Icons: Lucide (https://lucide.dev), ISC License. -->
+<symbol id="logo-lockup" viewBox="6 2 156.53 28"><path fill="currentColor" d="M6 4.5A2.5 2.5 0 0 1 8.5 2H22A4 4 0 0 1 26 6V6H16A6 6 0 0 0 10 12A6 6 0 0 0 16 18A2 2 0 0 1 18 20A2 2 0 0 1 16 22H6Z"/><path style="fill:var(--brand-signal)" d="M26 27.5A2.5 2.5 0 0 1 23.5 30H10A4 4 0 0 1 6 26V26H16A6 6 0 0 0 22 20A6 6 0 0 0 16 14A2 2 0 0 1 14 12A2 2 0 0 1 16 10H26Z"/><g transform="translate(42.196 23.594) scale(0.014493)"><path fill="currentColor" d="M673 23Q500 23 372 -31Q245 -85 173 -188Q101 -291 95 -438H358Q365 -360 407 -308Q449 -256 518 -231Q587 -205 671 -205Q759 -205 826 -232Q894 -259 932 -308Q970 -356 970 -420Q970 -478 937 -516Q903 -554 842 -581Q782 -607 701 -627L532 -671Q345 -719 241 -816Q136 -913 136 -1071Q136 -1203 207 -1302Q278 -1401 401 -1455Q524 -1510 680 -1510Q839 -1510 959 -1455Q1079 -1400 1146 -1303Q1214 -1206 1217 -1082H958Q948 -1178 872 -1230Q797 -1283 676 -1283Q592 -1283 532 -1258Q471 -1232 438 -1188Q406 -1144 406 -1087Q406 -1025 444 -985Q483 -945 541 -921Q600 -897 660 -882L799 -846Q882 -826 960 -793Q1038 -760 1101 -709Q1163 -659 1200 -587Q1237 -515 1237 -418Q1237 -287 1170 -188Q1103 -88 977 -32Q851 23 673 23Z M1429 0V-1118H1689V0Z M2406 442Q2272 442 2172 408Q2073 374 2010 315Q1946 257 1918 183L2139 104Q2156 135 2187 168Q2219 201 2272 223Q2324 244 2405 244Q2526 244 2599 188Q2672 131 2672 11V-200H2650Q2631 -160 2594 -117Q2557 -75 2494 -46Q2432 -17 2335 -17Q2207 -17 2102 -77Q1998 -138 1936 -259Q1875 -380 1875 -562Q1875 -746 1937 -873Q1999 -1000 2104 -1066Q2208 -1132 2337 -1132Q2436 -1132 2500 -1099Q2564 -1066 2602 -1019Q2640 -973 2660 -933H2674V-1118H2929V3Q2929 152 2861 250Q2793 347 2675 395Q2557 442 2406 442ZM2408 -222Q2493 -222 2552 -263Q2611 -303 2642 -380Q2673 -457 2673 -564Q2673 -670 2643 -750Q2612 -829 2553 -874Q2494 -918 2408 -918Q2320 -918 2261 -872Q2201 -825 2171 -746Q2141 -666 2141 -564Q2141 -461 2172 -384Q2202 -307 2261 -264Q2321 -222 2408 -222Z M3424 -655V0H3164V-1118H3410L3414 -842H3394Q3440 -987 3531 -1059Q3622 -1132 3759 -1132Q3874 -1132 3960 -1083Q4046 -1034 4094 -940Q4141 -846 4141 -711V0H3882V-671Q3882 -783 3823 -847Q3765 -911 3663 -911Q3594 -911 3540 -881Q3486 -851 3455 -794Q3424 -736 3424 -655Z M4689 23Q4582 23 4497 -15Q4412 -54 4363 -129Q4314 -204 4314 -314Q4314 -409 4349 -471Q4385 -533 4446 -570Q4506 -607 4582 -626Q4659 -645 4740 -653Q4838 -664 4898 -672Q4959 -680 4988 -698Q5016 -716 5016 -754V-759Q5016 -814 4994 -852Q4972 -891 4929 -911Q4885 -932 4821 -932Q4756 -932 4709 -912Q4661 -892 4631 -860Q4601 -828 4587 -791L4346 -840Q4379 -939 4448 -1004Q4517 -1068 4613 -1100Q4709 -1132 4820 -1132Q4899 -1132 4979 -1113Q5060 -1095 5127 -1051Q5194 -1007 5235 -933Q5276 -859 5276 -747V0H5028V-154H5017Q4993 -107 4949 -66Q4905 -26 4840 -1Q4776 23 4689 23ZM4755 -170Q4836 -170 4895 -202Q4953 -234 4986 -286Q5018 -339 5018 -401V-533Q5005 -523 4975 -514Q4945 -505 4907 -498Q4869 -491 4833 -486Q4797 -481 4771 -478Q4713 -470 4666 -452Q4619 -434 4592 -401Q4566 -369 4566 -317Q4566 -269 4590 -236Q4615 -204 4658 -187Q4700 -170 4755 -170Z M5771 -1490V0H5511V-1490Z M6006 0V-1118H6266V0Z M7018 -1118V-914H6383V-1118ZM6542 -1384H6802V-315Q6802 -254 6828 -226Q6854 -197 6914 -197Q6931 -197 6960 -202Q6990 -206 7008 -210L7049 -9Q7006 4 6961 10Q6917 15 6875 15Q6714 15 6628 -65Q6542 -145 6542 -293Z M7447 -655V0H7187V-1490H7443V-842H7417Q7463 -987 7554 -1059Q7646 -1132 7782 -1132Q7898 -1132 7984 -1083Q8070 -1034 8118 -940Q8165 -846 8165 -711V0H7905V-671Q7905 -783 7846 -847Q7788 -911 7686 -911Q7617 -911 7563 -881Q7509 -851 7478 -794Q7447 -736 7447 -655Z M1559 -1276Q1497 -1276 1452 -1318Q1408 -1360 1408 -1418Q1408 -1478 1452 -1520Q1497 -1561 1559 -1561Q1622 -1561 1666 -1520Q1711 -1478 1711 -1419Q1711 -1360 1666 -1318Q1622 -1276 1559 -1276Z"/><path style="fill:var(--brand-cyan)" d="M6136 -1276Q6074 -1276 6030 -1318Q5985 -1360 5985 -1418Q5985 -1478 6030 -1520Q6074 -1561 6136 -1561Q6199 -1561 6244 -1520Q6288 -1478 6288 -1419Q6288 -1360 6244 -1318Q6199 -1276 6136 -1276Z"/></g></symbol>
+<symbol id="i-arrow-right" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></symbol>
+<symbol id="i-github" viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.52-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.42-2.69 5.39-5.26 5.68.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5Z"/></symbol>
+<symbol id="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/></symbol>
+<symbol id="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></symbol>
+<symbol id="i-sparkles" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/></symbol>
+<symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+<symbol id="i-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></symbol>
+<symbol id="i-crosshair" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M22 12h-4"/><path d="M6 12H2"/><path d="M12 6V2"/><path d="M12 22v-4"/></symbol>
+<symbol id="i-gauge" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></symbol>
+<symbol id="i-radar" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M19.07 4.93A10 10 0 0 0 6.99 3.34"/><path d="M4 6h.01"/><path d="M2.29 9.62A10 10 0 1 0 21.31 8.35"/><path d="M16.24 7.76A6 6 0 1 0 8.23 16.67"/><path d="M12 18h.01"/><path d="M17.99 11.66A6 6 0 0 1 15.77 16.67"/><circle cx="12" cy="12" r="2"/><path d="m13.41 10.59 5.66-5.66"/></symbol>
+<symbol id="i-briefcase" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/><rect width="20" height="14" x="2" y="6" rx="2"/></symbol>
+<symbol id="i-layout" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></symbol>
+<symbol id="i-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
+<symbol id="i-database" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/></symbol>
+<symbol id="i-server" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="8" x="2" y="2" rx="2" ry="2"/><rect width="20" height="8" x="2" y="14" rx="2" ry="2"/><path d="M6 6h.01"/><path d="M6 18h.01"/></symbol>
+<symbol id="i-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></symbol>
+<symbol id="i-book" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></symbol>
+<symbol id="i-flask" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2v6a2 2 0 0 0 .245.96l5.51 10.08A2 2 0 0 1 18 22H6a2 2 0 0 1-1.755-2.96l5.51-10.08A2 2 0 0 0 10 8V2"/><path d="M6.453 15h11.094"/><path d="M8.5 2h7"/></symbol>
+<symbol id="i-menu" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/></symbol>
+</svg>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="nav" data-nav>
+  <div class="wrap nav__in">
+    <a class="nav__brand" href="./" aria-label="Signalith home"><svg viewBox="6 2 156.53 28" width="123" height="22" aria-hidden="true"><use href="#logo-lockup"/></svg></a>
+    <nav class="nav__links" aria-label="Main">
+      <a href="#features">Features</a>
+      <a href="#query">Queries</a>
+      <a href="#security">Security</a>
+      <a href="#start">Get started</a>
+      <a href="https://github.com/jrsamsanchez/signalith#readme">Docs</a>
+    </nav>
+    <div class="nav__end">
+      <button class="icon-btn" type="button" data-theme-toggle aria-label="Switch between light and dark theme" title="Switch theme"><svg class="icon when-light" aria-hidden="true"><use href="#i-moon"/></svg><svg class="icon when-dark" aria-hidden="true"><use href="#i-sun"/></svg></button>
+      <a class="btn btn--ghost btn--sm nav__gh" href="https://github.com/jrsamsanchez/signalith"><svg class="icon" aria-hidden="true"><use href="#i-github"/></svg>GitHub</a>
+      <button class="icon-btn nav__menu" type="button" data-menu aria-expanded="false" aria-controls="mobile-nav" aria-label="Menu"><svg class="icon" aria-hidden="true"><use href="#i-menu"/></svg></button>
+    </div>
+  </div>
+  <nav class="nav__mobile" id="mobile-nav" aria-label="Main" hidden>
+    <a href="#features">Features</a>
+    <a href="#query">Queries</a>
+    <a href="#security">Security</a>
+    <a href="#start">Get started</a>
+    <a href="https://github.com/jrsamsanchez/signalith#readme">Docs</a>
+    <a href="https://github.com/jrsamsanchez/signalith">GitHub</a>
+  </nav>
+</header>
+
+<main id="main">
+
+<!-- Hero: always midnight, like the app's sign-in page -->
+<section class="hero">
+  <div class="wrap hero__in">
+    <div class="hero__copy">
+      <p class="eyebrow"><span class="dot"></span>Free and open source · Apache 2.0</p>
+      <h1 class="hero__title">Find the <em>signal</em><br>in a monolith of logs.</h1>
+      <p class="hero__lede">Signalith is an open-source SIEM for Windows and Linux, inspired by Splunk Enterprise Security. Search every event, ask questions in plain English, detect threats with ATT&amp;CK-mapped rules and triage findings together, on your own servers.</p>
+      <div class="hero__cta">
+        <a class="btn btn--primary btn--lg" href="#start">Get started<svg class="icon" aria-hidden="true"><use href="#i-arrow-right"/></svg></a>
+        <a class="btn btn--glass btn--lg" href="https://github.com/jrsamsanchez/signalith"><svg class="icon" aria-hidden="true"><use href="#i-github"/></svg>View on GitHub</a>
+      </div>
+      <ul class="hero__facts">
+        <li>Windows and Linux</li>
+        <li>One Go binary, web UI built in</li>
+        <li>HTTPS by default</li>
+      </ul>
+    </div>
+
+    <div class="stage" aria-hidden="true">
+      <svg class="stage__rings" viewBox="0 0 620 620"><defs><radialGradient id="rf" cx="310" cy="310" r="310" gradientUnits="userSpaceOnUse"><stop offset=".2" stop-color="#9EA0FF" stop-opacity=".30"/><stop offset=".7" stop-color="#8E90FF" stop-opacity=".10"/><stop offset="1" stop-color="#8E90FF" stop-opacity="0"/></radialGradient><linearGradient id="sw" gradientUnits="userSpaceOnUse" x1="347.0" y1="0" x2="457.6" y2="0"><stop offset="0" stop-color="#3DD6F0" stop-opacity="0"/><stop offset="1" stop-color="#3DD6F0" stop-opacity=".7"/></linearGradient></defs><circle cx="310" cy="310" r="118" fill="none" stroke="url(#rf)"/><circle cx="310" cy="310" r="178" fill="none" stroke="url(#rf)"/><circle cx="310" cy="310" r="238" fill="none" stroke="url(#rf)"/><circle cx="310" cy="310" r="298" fill="none" stroke="url(#rf)"/><g class="stage__sweep"><path d="M347.0 135.9A178 178 0 0 1 457.6 210.5" fill="none" stroke="url(#sw)" stroke-width="1.5" stroke-linecap="round"/><circle cx="457.6" cy="210.5" r="9" fill="#3DD6F0" fill-opacity=".12"/><circle cx="457.6" cy="210.5" r="3" fill="#3DD6F0"/></g></svg>
+      <div class="stage__mark"><svg viewBox="0 -2 32 36">
+        <defs>
+          <linearGradient id="hm-cut" x1="16" y1="6" x2="16" y2="26" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#3DD6F0"/><stop offset=".55" stop-color="#8E90FF"/><stop offset="1" stop-color="#5457E6"/></linearGradient>
+          <linearGradient id="hm-ink" x1="0" y1="2" x2="0" y2="22" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#F4F5FA"/><stop offset="1" stop-color="#C9CDE0"/></linearGradient>
+          <linearGradient id="hm-sig" x1="0" y1="10" x2="0" y2="30" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#8E90FF"/><stop offset="1" stop-color="#5457E6"/></linearGradient>
+          <filter id="hm-glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="1.6"/></filter>
+          <filter id="hm-glow2" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="4"/></filter>
+        </defs>
+        <path d="M27 8H16A4 4 0 0 0 16 16A4 4 0 0 1 16 24H5" fill="none" stroke="url(#hm-cut)" stroke-width="5" stroke-linecap="round" filter="url(#hm-glow2)" opacity=".75"/>
+        <path d="M27 8H16A4 4 0 0 0 16 16A4 4 0 0 1 16 24H5" fill="none" stroke="url(#hm-cut)" stroke-width="4" filter="url(#hm-glow)"/>
+        <path fill="url(#hm-ink)" d="M6 4.5A2.5 2.5 0 0 1 8.5 2H22A4 4 0 0 1 26 6V6H16A6 6 0 0 0 10 12A6 6 0 0 0 16 18A2 2 0 0 1 18 20A2 2 0 0 1 16 22H6Z"/>
+        <path fill="url(#hm-sig)" d="M26 27.5A2.5 2.5 0 0 1 23.5 30H10A4 4 0 0 1 6 26V26H16A6 6 0 0 0 22 20A6 6 0 0 0 16 14A2 2 0 0 1 14 12A2 2 0 0 1 16 10H26Z"/>
+        <path d="M27 8H16A4 4 0 0 0 16 16A4 4 0 0 1 16 24H5" fill="none" stroke="url(#hm-cut)" stroke-width="1.1" opacity=".9"/>
+      </svg></div>
+      <div class="stage__beam"></div>
+      <div class="stage__floor" data-floor></div>
+      <div class="stage__tether"></div>
+      <div class="stage__card">
+        <div class="row"><span class="sev">Critical</span><span class="status">New</span><span class="spacer"></span><span>just now</span></div>
+        <b>Shadow copies deleted on FS02</b>
+        <div class="chips"><span class="chip">FS02</span><span class="chip">vssadmin.exe</span><span class="chip">svc_backup</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Product tour -->
+  <div class="wrap tour" id="tour">
+    <div class="tour__tabs" role="tablist" aria-label="Signalith pages">
+      <button role="tab" id="t-findings" aria-controls="p-tour" aria-selected="true" data-shot="findings" data-cap="A triage queue for findings, ranked by urgency, with triage guidance, evidence and ATT&amp;CK techniques next to each one.">Findings</button>
+      <button role="tab" id="t-search" aria-controls="p-tour" aria-selected="false" tabindex="-1" data-shot="search" data-cap="Ask a question in plain English or write a pipe query. Results come back as tables, charts and events you can click to dig further.">Search</button>
+      <button role="tab" id="t-dashboard" aria-controls="p-tour" aria-selected="false" tabindex="-1" data-shot="dashboard" data-cap="A security posture dashboard out of the box: open findings, triage speed, top risk and data health, compared with the previous period.">Dashboards</button>
+      <button role="tab" id="t-investigation" aria-controls="p-tour" aria-selected="false" tabindex="-1" data-shot="investigation" data-cap="Investigation cases gather findings, notes, saved searches and pinned events on one timeline, with the users, hosts and IPs involved.">Investigations</button>
+      <button role="tab" id="t-intel" aria-controls="p-tour" aria-selected="false" tabindex="-1" data-shot="intel" data-cap="Add free threat intel feeds from a catalog, any list or STIX file, or a TAXII 2.1 server, and match every event against them.">Threat intel</button>
+      <button role="tab" id="t-security" aria-controls="p-tour" aria-selected="false" tabindex="-1" data-shot="security" data-cap="The Security page checks how your server is set up, what is encrypted and what to fix first, in plain words.">Security</button>
+    </div>
+    <figure class="frame" id="p-tour" role="tabpanel" aria-labelledby="t-findings">
+      <div class="frame__bar" aria-hidden="true"><i></i><i></i><i></i><span>https://signalith.corp.example:8080</span></div>
+      <img class="frame__img" src="assets/shots/findings.webp" srcset="assets/shots/findings-720.webp 720w, assets/shots/findings.webp 1440w" sizes="(max-width: 1200px) 100vw, 1140px" width="1440" height="900" alt="The Signalith Findings page: a queue of findings with severity, status and owner, and an inspector panel for the selected finding." data-tour-img>
+      <figcaption data-tour-cap>A triage queue for findings, ranked by urgency, with triage guidance, evidence and ATT&amp;CK techniques next to each one.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<!-- Strip of facts -->
+<section class="facts" aria-label="At a glance">
+  <div class="wrap facts__in">
+    <div><b>21</b><span>ATT&amp;CK-mapped detections built in</span></div>
+    <div><b>Sigma</b><span>rules import with one click</span></div>
+    <div><b>2</b><span>platforms: Windows service or systemd</span></div>
+    <div><b>$0</b><span>license cost, Apache 2.0</span></div>
+  </div>
+</section>
+
+<!-- Features -->
+<section class="section" id="features">
+  <div class="wrap">
+    <div class="section__head">
+      <p class="kicker">What it does</p>
+      <h2>Everything a security team expects from a SIEM.</h2>
+      <p class="section__lede">Signalith follows the shape of Splunk Enterprise Security, the way analysts already work, and puts it on free, open parts you can run anywhere.</p>
+    </div>
+    <div class="grid">
+      <article class="card">
+        <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg></span>
+        <h3>Search that reads like SPL</h3>
+        <p>A pipe-based query language with <code>stats</code>, <code>timechart</code>, <code>where</code> and friends, CIM-style data models, autocomplete, and a visual builder that writes the query as you click.</p>
+      </article>
+      <article class="card">
+        <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-sparkles"/></svg></span>
+        <h3>Ask in plain English</h3>
+        <p>Type <i>top 10 users with failed logins today</i> and get the query, with how each phrase was read. Works offline; an AI model is optional, and only your question is ever sent.</p>
+      </article>
+      <article class="card">
+        <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-crosshair"/></svg></span>
+        <h3>Detections and a findings queue</h3>
+        <p>Scheduled detections mapped to MITRE ATT&amp;CK, Sigma import, an ATT&amp;CK coverage matrix, and a triage queue with owners, statuses, dispositions and bulk actions.</p>
+      </article>
+      <article class="card">
+        <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-gauge"/></svg></span>
+        <h3>Risk-based alerting</h3>
+        <p>Weak signals add risk to users and hosts instead of flooding the queue. One finding fires when an object crosses a threshold, weighted by your asset and identity lists.</p>
+      </article>
+      <article class="card">
+        <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-radar"/></svg></span>
+        <h3>Threat intel</h3>
+        <p>Pick free feeds from a catalog, paste any list or STIX file, or connect a TAXII 2.1 server such as MISP or OpenCTI. Every event is matched, and <code>| threatmatch</code> works in search.</p>
+      </article>
+      <article class="card">
+        <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-briefcase"/></svg></span>
+        <h3>Investigation cases</h3>
+        <p>Group the findings of one incident with notes, searches and pinned evidence on a single timeline. Close the case and its findings close with it.</p>
+      </article>
+      <article class="card">
+        <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-layout"/></svg></span>
+        <h3>Dashboards</h3>
+        <p>A security posture dashboard out of the box, plus your own: ask a question, pick a chart, done. Dashboards are YAML files, so they can live in Git.</p>
+      </article>
+      <article class="card">
+        <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-database"/></svg></span>
+        <h3>Easy data collection</h3>
+        <p>The Add data page writes a ready Fluent Bit setup for Windows or Linux, with the address, token and certificate filled in. Syslog and CEF from network devices too.</p>
+      </article>
+      <article class="card">
+        <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-flask"/></svg></span>
+        <h3>Sample data in one click</h3>
+        <p>No logs to hand? Load a week of activity for a fictional company with attacks hidden in it, watch detections fire, then remove it all with one click.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- Query demo -->
+<section class="section section--alt" id="query">
+  <div class="wrap split">
+    <div class="split__copy">
+      <p class="kicker">Easy queries</p>
+      <h2>Ask a question. Get a query you can read.</h2>
+      <p class="section__lede">Writing queries is the hardest part of most SIEMs. In Signalith you can start in plain English, see exactly how your words became a query, and keep editing from there.</p>
+      <ul class="ticks">
+        <li><svg class="icon" aria-hidden="true"><use href="#i-check"/></svg><span><b>Explain</b> turns any query into plain-English steps.</span></li>
+        <li><svg class="icon" aria-hidden="true"><use href="#i-check"/></svg><span>Click any value to filter, exclude, count or chart it.</span></li>
+        <li><svg class="icon" aria-hidden="true"><use href="#i-check"/></svg><span>Turn any search into a detection or dashboard panel.</span></li>
+        <li><svg class="icon" aria-hidden="true"><use href="#i-check"/></svg><span>Bring your own model, or keep it all on site with Ollama.</span></li>
+      </ul>
+    </div>
+    <div class="demo" aria-label="Example: a question turned into a query">
+      <div class="demo__ask"><svg class="icon" aria-hidden="true"><use href="#i-sparkles"/></svg><span data-typed>top 10 users with failed logins today</span><span class="caret" aria-hidden="true"></span></div>
+      <pre class="demo__code"><code><span class="k">datamodel</span>=<span class="v">Authentication</span> <span class="k">action</span>=<span class="v">failure</span> <span class="k">earliest</span>=<span class="v">@d</span>
+<span class="p">|</span> <span class="c">top</span> <span class="k">limit</span>=<span class="v">10</span> user</code></pre>
+      <ol class="demo__read">
+        <li><span class="tok">top 10</span><span>the top 10</span></li>
+        <li><span class="tok">users</span><span>one row per user</span></li>
+        <li><span class="tok">failed</span><span>only failures</span></li>
+        <li><span class="tok">logins</span><span>logon data (Authentication)</span></li>
+        <li><span class="tok">today</span><span>time range: since midnight</span></li>
+      </ol>
+      <p class="demo__note">Real output of <code>signalith ask</code>, the built-in offline translator.</p>
+    </div>
+  </div>
+</section>
+
+<!-- How it works -->
+<section class="section" id="how">
+  <div class="wrap">
+    <div class="section__head">
+      <p class="kicker">How it works</p>
+      <h2>Built on open parts you already trust.</h2>
+      <p class="section__lede">Signalith is a single Go program with the web UI built in. It adds the security layer on top of proven open-source pieces, so there is nothing proprietary to license.</p>
+    </div>
+    <div class="flow">
+      <div class="flow__col">
+        <div class="node"><b>Fluent Bit agents</b><span>Windows event logs, Sysmon, Linux auth and audit</span></div>
+        <div class="node"><b>Syslog devices</b><span>Firewalls, switches, OT gear: UDP, TCP or TLS, CEF</span></div>
+      </div>
+      <div class="flow__arrow" aria-hidden="true"><span>HTTPS</span></div>
+      <div class="node node--core">
+        <svg class="node__mark" viewBox="6 2 20 28" aria-hidden="true"><path fill="currentColor" d="M6 4.5A2.5 2.5 0 0 1 8.5 2H22A4 4 0 0 1 26 6V6H16A6 6 0 0 0 10 12A6 6 0 0 0 16 18A2 2 0 0 1 18 20A2 2 0 0 1 16 22H6Z"/><path style="fill:var(--brand-signal)" d="M26 27.5A2.5 2.5 0 0 1 23.5 30H10A4 4 0 0 1 6 26V26H16A6 6 0 0 0 22 20A6 6 0 0 0 16 14A2 2 0 0 1 14 12A2 2 0 0 1 16 10H26Z"/></svg>
+        <b>Signalith</b>
+        <span>Parsing and data models · query language · detections and risk · threat intel · cases · web UI and API</span>
+      </div>
+      <div class="flow__arrow" aria-hidden="true"><span>TLS</span></div>
+      <div class="flow__col">
+        <div class="node"><b>OpenSearch</b><span>Stores and searches every event, finding and case</span></div>
+        <div class="node"><b>Analysts</b><span>Any browser, with roles and AD or LDAP sign-in</span></div>
+      </div>
+    </div>
+    <ul class="built">
+      <li><b>OpenSearch</b><span>storage and search</span></li>
+      <li><b>Fluent Bit</b><span>log collection</span></li>
+      <li><b>Sigma</b><span>detection rules</span></li>
+      <li><b>MITRE ATT&amp;CK</b><span>technique mapping</span></li>
+    </ul>
+  </div>
+</section>
+
+<!-- Security -->
+<section class="section section--alt" id="security">
+  <div class="wrap split split--rev">
+    <div class="split__copy">
+      <p class="kicker">Secure by default</p>
+      <h2>Locked down before you change a setting.</h2>
+      <p class="section__lede">A security tool should not be the weak spot. Signalith ships safe and tells you, in plain words, anything left to tighten.</p>
+      <ul class="ticks">
+        <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>HTTPS everywhere</b> with a certificate it makes and renews itself; agents check it.</span></li>
+        <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>Secrets encrypted at rest</b> with a master key, DPAPI on Windows.</span></li>
+        <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>No default passwords.</b> The Docker setup makes its own, and OpenSearch runs with security on.</span></li>
+        <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>Roles and directory sign-in:</b> viewer, analyst and admin, from your AD or LDAP groups.</span></li>
+        <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>Hardened service:</b> its own account on Windows, systemd sandboxing on Linux.</span></li>
+      </ul>
+    </div>
+    <figure class="frame frame--tilt">
+      <div class="frame__bar" aria-hidden="true"><i></i><i></i><i></i><span>Configure / Security</span></div>
+      <img class="frame__img" src="assets/shots/security-720.webp" srcset="assets/shots/security-720.webp 720w, assets/shots/security.webp 1440w" sizes="(max-width: 900px) 100vw, 600px" width="1440" height="900" loading="lazy" alt="The Signalith Security page listing what to fix first and whether data is encrypted in transit.">
+    </figure>
+  </div>
+</section>
+
+<!-- Get started -->
+<section class="section" id="start">
+  <div class="wrap">
+    <div class="section__head">
+      <p class="kicker">Get started</p>
+      <h2>Running in a few minutes.</h2>
+      <p class="section__lede">Try it on your own computer with Docker, or install it as a service on Linux or Windows next to OpenSearch.</p>
+    </div>
+    <div class="start">
+      <div class="start__tabs" role="tablist" aria-label="Install options">
+        <button role="tab" id="s-docker" aria-controls="sp-docker" aria-selected="true">Docker</button>
+        <button role="tab" id="s-linux" aria-controls="sp-linux" aria-selected="false" tabindex="-1">Linux</button>
+        <button role="tab" id="s-windows" aria-controls="sp-windows" aria-selected="false" tabindex="-1">Windows</button>
+      </div>
+
+      <div class="start__panel" role="tabpanel" id="sp-docker" aria-labelledby="s-docker">
+        <ol class="steps">
+          <li><p>Install <a href="https://www.docker.com/products/docker-desktop/">Docker Desktop</a> (Windows or Mac) or Docker Engine (Linux), then get the code:</p>
+<div class="code"><pre><code>git clone https://github.com/jrsamsanchez/signalith
+cd signalith</code></pre><button class="copy" type="button" aria-label="Copy"><svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg></button></div></li>
+          <li><p>Start OpenSearch and Signalith. The first start makes the passwords and certificates, so it takes a minute or two.</p>
+<div class="code"><pre><code>docker compose -f deploy/docker/docker-compose.yml up -d</code></pre><button class="copy" type="button" aria-label="Copy"><svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg></button></div></li>
+          <li><p>Show the admin password:</p>
+<div class="code"><pre><code>docker compose -f deploy/docker/docker-compose.yml exec signalith signalith initial-password</code></pre><button class="copy" type="button" aria-label="Copy"><svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg></button></div></li>
+          <li><p>Open <code>https://localhost:8080</code> and sign in as <code>admin</code>. Then go to <b>Add data</b> and choose <b>Load sample data</b> to see it in action.</p></li>
+        </ol>
+      </div>
+
+      <div class="start__panel" role="tabpanel" id="sp-linux" aria-labelledby="s-linux" hidden>
+        <ol class="steps">
+          <li><p>Install <a href="https://opensearch.org/docs/latest/install-and-configure/install-opensearch/index/">OpenSearch 2.x</a>, and build Signalith with Go (<code>go build ./cmd/signalith</code>).</p></li>
+          <li><p>Install it as a systemd service:</p>
+<div class="code"><pre><code>sudo install -m 0755 signalith /usr/local/bin/signalith
+sudo useradd --system --no-create-home signalith
+sudo signalith init -c /etc/signalith/signalith.yaml -opensearch http://127.0.0.1:9200
+sudo chown -R signalith /etc/signalith /var/lib/signalith
+sudo cp deploy/systemd/signalith.service /etc/systemd/system/
+sudo systemctl enable --now signalith</code></pre><button class="copy" type="button" aria-label="Copy"><svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg></button></div></li>
+          <li><p><code>init</code> prints the admin password once. Open <code>https://&lt;server&gt;:8080</code> and sign in as <code>admin</code>.</p></li>
+        </ol>
+      </div>
+
+      <div class="start__panel" role="tabpanel" id="sp-windows" aria-labelledby="s-windows" hidden>
+        <ol class="steps">
+          <li><p>Install <a href="https://opensearch.org/docs/latest/install-and-configure/install-opensearch/windows/">OpenSearch 2.x for Windows</a>, and build <code>signalith.exe</code> with Go.</p></li>
+          <li><p>In PowerShell as Administrator, from the folder with <code>signalith.exe</code> and <code>deploy\windows\install.ps1</code>:</p>
+<div class="code"><pre><code>.\install.ps1 -OpenSearchUrl http://127.0.0.1:9200</code></pre><button class="copy" type="button" aria-label="Copy"><svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg></button></div></li>
+          <li><p>This installs and starts the <b>Signalith</b> service under its own account. Open <code>https://localhost:8080</code> and sign in as <code>admin</code>.</p></li>
+        </ol>
+      </div>
+      <p class="start__more"><svg class="icon" aria-hidden="true"><use href="#i-book"/></svg>Full instructions, upgrades and every setting are in the <a href="https://github.com/jrsamsanchez/signalith#readme">documentation on GitHub</a>.</p>
+    </div>
+  </div>
+</section>
+
+<!-- Closing call to action -->
+<section class="cta">
+  <div class="wrap cta__in">
+    <svg class="cta__mark" viewBox="6 2 20 28" aria-hidden="true"><path fill="currentColor" d="M6 4.5A2.5 2.5 0 0 1 8.5 2H22A4 4 0 0 1 26 6V6H16A6 6 0 0 0 10 12A6 6 0 0 0 16 18A2 2 0 0 1 18 20A2 2 0 0 1 16 22H6Z"/><path fill="#8E90FF" d="M26 27.5A2.5 2.5 0 0 1 23.5 30H10A4 4 0 0 1 6 26V26H16A6 6 0 0 0 22 20A6 6 0 0 0 16 14A2 2 0 0 1 14 12A2 2 0 0 1 16 10H26Z"/></svg>
+    <h2>Your logs, your servers, your SIEM.</h2>
+    <p>Signalith is free to use, change and share under the Apache License 2.0. Star it, try it, and open an issue with what you would like next.</p>
+    <div class="hero__cta">
+      <a class="btn btn--primary btn--lg" href="https://github.com/jrsamsanchez/signalith"><svg class="icon" aria-hidden="true"><use href="#i-github"/></svg>Star on GitHub</a>
+      <a class="btn btn--glass btn--lg" href="https://github.com/jrsamsanchez/signalith/issues">Open an issue</a>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="foot">
+  <div class="wrap foot__in">
+    <div class="foot__brand">
+      <svg viewBox="6 2 156.53 28" width="112" height="20" aria-hidden="true"><use href="#logo-lockup"/></svg>
+      <p>An open-source personal project by Samuel Sanchez Jr.</p>
+    </div>
+    <nav class="foot__links" aria-label="Footer">
+      <a href="https://github.com/jrsamsanchez/signalith">GitHub</a>
+      <a href="https://github.com/jrsamsanchez/signalith#readme">Documentation</a>
+      <a href="https://github.com/jrsamsanchez/signalith/blob/main/docs/query-language.md">Query language</a>
+      <a href="https://github.com/jrsamsanchez/signalith/blob/main/LICENSE">Apache License 2.0</a>
+    </nav>
+    <p class="foot__legal">Signalith is an independent project. It is not affiliated with, endorsed by or sponsored by Splunk or Cisco, and contains no Splunk code. Splunk, Splunk Enterprise Security and SPL are trademarks of Splunk LLC, named here only to describe what Signalith works like. OpenSearch, Fluent Bit, Sigma and MITRE ATT&amp;CK are trademarks of their respective owners. Fonts: Inter and JetBrains Mono (SIL Open Font License). Icons: Lucide (ISC).</p>
+  </div>
+</footer>
+
+<script src="assets/site.js" defer></script>
+</body>
+</html>

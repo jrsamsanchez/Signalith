@@ -11,6 +11,8 @@ events, a security posture dashboard plus dashboards you build from queries, and
 investigation cases that collect findings, notes, searches and evidence in one place.
 Response actions and playbooks come next.
 
+Website: **https://jrsamsanchez.github.io/signalith/** (its source is in [`site/`](site/)).
+
 The server is a single Go binary with the web UI embedded. It runs as a Windows
 service or a systemd unit.
 
