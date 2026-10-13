@@ -509,6 +509,8 @@ function renderList() {
   else parts.push(`${total.toLocaleString()} ${total === 1 ? info.noun : info.nouns}`);
   // Rows the sample data adds while it is loaded: not part of the list.
   if (!q && res.sample) parts.push(`${res.sample.toLocaleString()} from the sample data, which go when it is removed`);
+  // osquery hosts the list does not have yet.
+  if (!q && res.found) parts.push(`${res.found.toLocaleString()} found on the Endpoints page`);
   if (shown.length < matches.length) parts.push(`showing the first ${shown.length}`);
   if (!q && items.length < total) parts.push(`the server returns the first ${items.length.toLocaleString()}`);
   fill(foot, el('span', {}, parts.join(' · ')), el('span', { class: 'spacer' }),

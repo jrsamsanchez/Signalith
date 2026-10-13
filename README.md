@@ -213,7 +213,10 @@ The configuration already contains the server address and ingest token, and send
 HTTPS, checking the server's certificate with that CA. For firewalls, switches and other network
 devices, pick **Syslog** (see [Syslog](#syslog)). Hosts that run an OpenTelemetry Collector, and
 apps with an OpenTelemetry SDK, can send logs over OTLP instead: pick **OpenTelemetry** (see
-[docs/opentelemetry.md](docs/opentelemetry.md)).
+[docs/opentelemetry.md](docs/opentelemetry.md)). To watch files, take inventory and check
+configuration on Windows, Linux and macOS hosts, pick **osquery**: Signalith becomes
+osquery's management server and the hosts appear on the **Endpoints** page (see
+[docs/endpoints.md](docs/endpoints.md)).
 
 Agents on other machines must send to an address they can reach, such as
 `https://192.168.1.20:8080`, not `localhost`. Enter it under **Agents send to** on that page
@@ -232,6 +235,7 @@ Supported sources in Phase 1:
 | Linux useradd, userdel, usermod, gpasswd | Change |
 | Syslog from any device (see below), including CEF | Authentication, Change, Network_Traffic or Other |
 | OpenTelemetry Collector or SDK logs over OTLP/HTTP ([docs/opentelemetry.md](docs/opentelemetry.md)) | the same models for Windows, Linux and syslog records; Other for app logs |
+| osquery ([docs/endpoints.md](docs/endpoints.md)): file changes, software, accounts, ports, services, startup items, configuration checks | Filesystem, Inventory, Configuration_Check |
 | Anything else | Other (searchable by text and fields) |
 
 sshd prints the user name a client sends, and on a failed key sign-in the key ID of the
