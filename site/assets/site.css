@@ -283,6 +283,9 @@ h2 { margin-top: 12px; font-size: clamp(30px, 4vw, 44px); font-weight: 650; line
 .foot__in { display: grid; grid-template-columns: 1fr auto; gap: 24px 48px; }
 .foot__brand { color: var(--text); }
 .foot__brand p { margin-top: 10px; font-size: 14px; color: var(--text-2); }
+.foot__me { display: inline-flex; align-items: center; gap: 6px; color: var(--text); font-weight: 500; }
+.foot__me .icon { width: 14px; height: 14px; color: #0A66C2; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .foot__links { display: flex; flex-wrap: wrap; gap: 8px 24px; align-items: flex-start; font-size: 14px; }
 .foot__links a { color: var(--text-2); }
 .foot__links a:hover { color: var(--text); }
