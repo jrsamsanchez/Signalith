@@ -90,7 +90,7 @@ Every record also gets `host`, `service`, `trace_id` and `span_id` when it has t
 
 The event's time is the record's own time, else the time in its log line, else when the
 Collector saw it. As for every source, a time older than `ingest.max_event_age` or more
-than an hour ahead is filed under the time it arrived (see the README's Ingest limits).
+than an hour ahead is filed under the time it arrived (see [Ingest limits](sending-data.md#ingest-limits)).
 
 ## Limits and errors
 
