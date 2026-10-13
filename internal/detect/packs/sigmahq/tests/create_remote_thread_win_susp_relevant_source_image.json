@@ -1,0 +1,10 @@
+{"rule": "02d1d718-dd13-41af-989d-ea85c7fab93f", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"8","data":{"SourceImage":"\\wscript.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"8","data":{"SourceImage":"C:\\Windows\\System32\\makecab.exe","TargetImage":"C:\\Windows\\System32\\conhost.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"8","data":{"SourceImage":"C:\\Program Files\\Microsoft Office\\ \\wscript.exe","TargetImage":"System"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"8","data":{"SourceImage":"C:\\Windows\\System32\\provtool.exe","TargetImage":"C:\\Windows\\System32\\svchost.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"8","data":{"SourceImage":"C:\\Windows\\System32\\provtool.exe","TargetImage":"System"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"8","data":{"SourceImage":"C:\\Windows\\System32\\userinit.exe","TargetImage":"C:\\Windows\\explorer.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"8","data":{"SourceImage":"\\SysWOW64\\explorer.exe","TargetImage":"C:\\Program Files (x86)\\VMware\\VMware Tools\\vmtoolsd.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"8","data":{}}
+]}

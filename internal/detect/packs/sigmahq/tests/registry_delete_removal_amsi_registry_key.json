@@ -1,0 +1,6 @@
+{"rule": "41d1058a-aea7-4952-9293-29eaaf516465", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"12","data":{"TargetObject":"{A7C452EF-8E9F-42EB-9F2B-245613CA0DC9}"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"12","data":{"Image":"C:\\Program Files\\Windows Defender\\ \\MsMpEng.exe","TargetObject":"{A7C452EF-8E9F-42EB-9F2B-245613CA0DC9}"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"12","data":{}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"12","data":{"EventType":"DeleteKey","Image":"C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe","ProcessGuid":"5AA13A44-6720-68FD-3E3F-000000004002","ProcessId":"6016","RuleName":"-","TargetObject":"HKLM\\SOFTWARE\\Microsoft\\AMSI\\Providers\\{2781761E-28E0-4109-99FE-B9D127C57AFE}","User":"ATTACKRANGE\\Administrator","UtcTime":"2025-10-26 00:11:12.865"}}
+]}

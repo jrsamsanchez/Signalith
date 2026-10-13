@@ -1,0 +1,5 @@
+{"rule": "75e508f7-932d-4ebc-af77-269237a84ce1", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"\\cmstp.exe","ImageLoaded":"\\ProgramData\\ .ocx"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"\\ProgramData\\ .ocx"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"\\cmstp.exe"}}
+]}

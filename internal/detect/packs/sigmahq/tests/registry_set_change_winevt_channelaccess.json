@@ -1,0 +1,7 @@
+{"rule": "7d9263bd-dc47-4a58-bc92-5474abab390c", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"(A;;0x5;;;BA)","TargetObject":"\\Microsoft\\Windows\\CurrentVersion\\WINEVT\\Channels\\\\ChannelAccess"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"(A;;0x5;;;BA)","Image":"C:\\Windows\\WinSxS\\\\TiWorker.exe","TargetObject":"\\Microsoft\\Windows\\CurrentVersion\\WINEVT\\Channels\\ \\ChannelAccess"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"(A;;0x5;;;BA)","Image":"C:\\Windows\\servicing\\TrustedInstaller.exe","TargetObject":"\\Microsoft\\Windows\\CurrentVersion\\WINEVT\\Channels\\\\ChannelAccess"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Microsoft\\Windows\\CurrentVersion\\WINEVT\\Channels\\\\ChannelAccess"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"(A;;0x5;;;BA)"}}
+]}

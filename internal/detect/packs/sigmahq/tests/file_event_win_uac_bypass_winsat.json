@@ -1,0 +1,4 @@
+{"rule": "155dbf56-e0a4-4dd0-8905-8a98705045e8", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"C:\\Users\\\\AppData\\Local\\Temp\\system32\\winsat.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{}}
+]}

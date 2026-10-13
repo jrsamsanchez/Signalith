@@ -1,0 +1,5 @@
+{"rule": "c0aac16a-b1e7-4330-bab0-3c27bb4987c7", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"8","data":{"SourceImage":":\\Users\\Public\\","TargetImage":"\\mstsc.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"8","data":{"TargetImage":"\\mstsc.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"8","data":{"SourceImage":":\\Users\\Public\\"}}
+]}

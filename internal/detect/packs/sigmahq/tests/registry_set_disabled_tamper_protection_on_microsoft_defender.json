@@ -1,0 +1,7 @@
+{"rule": "93d298a1-d28f-47f1-a468-d971e7796679", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)","TargetObject":"\\Microsoft\\Windows Defender\\Features\\TamperProtection"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)","Image":"C:\\ProgramData\\Microsoft\\Windows Defender\\Platform\\\\MsMpEng.exe","TargetObject":"\\Microsoft\\Windows Defender\\Features\\TamperProtection"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)","Image":"C:\\Program Files\\Windows Defender\\MsMpEng.exe","TargetObject":"\\Microsoft\\Windows Defender\\Features\\TamperProtection"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Microsoft\\Windows Defender\\Features\\TamperProtection"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)"}}
+]}

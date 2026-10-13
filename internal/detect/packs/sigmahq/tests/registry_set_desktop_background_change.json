@@ -1,0 +1,17 @@
+{"rule": "85b88e05-dadc-430b-8a9e-53ff1cd30aae", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)","TargetObject":"CurrentVersion\\Policies\\ActiveDesktopNoChangingWallpaper"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"Control Panel\\Desktop \\Wallpaper"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"2","TargetObject":"CurrentVersion\\Policies\\ActiveDesktop \\WallpaperStyle"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"(Empty)","TargetObject":"CurrentVersion\\Policies\\ActiveDesktop\\Control Panel\\Desktop\\Wallpaper"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)","Image":"C:\\Windows\\Explorer.EXE","TargetObject":"CurrentVersion\\Policies\\ActiveDesktop NoChangingWallpaper"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)","Image":"\\svchost.exe","TargetObject":"CurrentVersion\\Policies\\ActiveDesktop NoChangingWallpaper"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)","Image":"C:\\Program Files\\Amazon\\EC2Launch\\EC2Launch.exe","TargetObject":"CurrentVersion\\Policies\\ActiveDesktop \\Control Panel\\Desktop\\Wallpaper"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"CurrentVersion\\Policies\\ActiveDesktopNoChangingWallpaper"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"(Empty)","TargetObject":"Control Panel\\Desktop\\Control Panel\\Desktop\\Wallpaper"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Image":"C:\\Windows\\Explorer.EXE","TargetObject":"Control Panel\\Desktop\\Wallpaper"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Image":"\\svchost.exe","TargetObject":"Control Panel\\Desktop \\Wallpaper"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Image":"C:\\Program Files (x86)\\Amazon\\EC2Launch\\EC2Launch.exe","TargetObject":"Control Panel\\Desktop\\Control Panel\\Desktop\\Wallpaper"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"2","Image":"C:\\Windows\\Explorer.EXE","TargetObject":"CurrentVersion\\Policies\\ActiveDesktop \\WallpaperStyle"}}
+]}

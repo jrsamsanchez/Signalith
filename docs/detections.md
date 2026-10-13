@@ -139,9 +139,26 @@ Content packs are rule sets from other open source projects, shipped unchanged
 inside Signalith and converted when it starts. Every pack detection is **off** until
 an admin turns it on.
 
-**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 1,055 Windows
-process creation and network connection rules from [SigmaHQ](https://github.com/SigmaHQ/sigma),
-pinned to one commit. A rule is only shipped when:
+**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 1,552 Windows
+rules from [SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit, for
+these Sysmon and Security log sources:
+
+| Sigma log source | Windows events | Data model |
+| --- | --- | --- |
+| `process_creation` | Sysmon 1, Security 4688 | Endpoint |
+| `network_connection` | Sysmon 3 | Network_Traffic |
+| `process_access`, `create_remote_thread` | Sysmon 10, 8 | Endpoint |
+| `image_load`, `driver_load` | Sysmon 7, 6 | Image_Load |
+| `file_event`, `file_delete` | Sysmon 11; 23 and 26 | Filesystem |
+| `registry_add`, `registry_delete`, `registry_set`, `registry_event` | Sysmon 12; 12; 13; 12, 13 and 14 | Registry |
+| `dns_query` | Sysmon 22 | Network_Resolution |
+
+Each pack rule only searches its own log source's event IDs, since several kinds of
+event share a data model (a process creation and a process access are both Endpoint).
+Sysmon only records the events its configuration asks for, so a rule fires only when
+your Sysmon configuration logs that kind of event.
+
+A rule is only shipped when:
 
 - its status is `stable` or `test` (not `experimental` or `deprecated`), and its
   level is not `informational`;
@@ -197,8 +214,18 @@ converts a rule and shows the result for review. Supported:
 - Log sources `process_creation` (Endpoint), `network_connection` and `firewall`
   (Network_Traffic), `authentication` and Linux `auth` (Authentication), and
   `antivirus` (Malware, where `Signature` maps to `signature` and `Filename` to
-  `file_path`). Other log sources search all data and say so. `product: windows`
-  limits the search to Windows event logs, and `linux` or `macos` leave them out.
+  `file_path`), plus the Sysmon log sources in the table above. Other log sources
+  search all data and say so. `product: windows` limits the search to Windows event
+  logs (and, for the log sources in the table, to their event IDs), and `linux` or
+  `macos` leave them out.
+- For the Sysmon log sources other than process creation, fields map by log source:
+  `TargetFilename` to `file_path`; `TargetObject` to `registry_path` and `Details` to
+  `registry_value_data`; `QueryName` to `query` and `QueryResults` to `answer`;
+  `ImageLoaded` to `loaded_file_path` with `Signed`, `Signature` and
+  `SignatureStatus`; `SourceImage`, `TargetImage`, `GrantedAccess`, `CallTrace`,
+  `StartAddress`, `StartModule` and `StartFunction` for process access and remote
+  threads. A field not listed for its log source (such as `Description` in
+  `image_load`, which describes the DLL there, not the process) has no mapping.
 - Sysmon and Windows Security field names, mapped to Signalith fields (`Image` to
   `process_path`, or `process_name` for `endswith` a file name; `CommandLine` to
   `process`; `OriginalFileName` to `original_file_name`; `ParentUser`,

@@ -1,0 +1,5 @@
+{"rule": "e1aa95de-610a-427d-b9e7-9b46cfafbe6a", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000004)","TargetObject":"\\Services\\WinDefend\\Start"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Services\\WinDefend\\Start"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000004)"}}
+]}

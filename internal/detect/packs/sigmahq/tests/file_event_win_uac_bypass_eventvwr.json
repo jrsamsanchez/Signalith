@@ -1,0 +1,5 @@
+{"rule": "63e4f530-65dc-49cc-8f80-ccfa95c69d43", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"\\Microsoft\\EventV~1\\RecentViews"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"C:\\Windows\\SysWOW64\\","TargetFilename":"\\Microsoft\\EventV~1\\RecentViews"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{}}
+]}

@@ -1,0 +1,6 @@
+{"rule": "c90362e0-2df3-4e61-94fe-b37615814cb1", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":".dll","TargetObject":"\\SOFTWARE\\Microsoft\\NetSh"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"ipmontr.dll","Image":"C:\\Windows\\System32\\poqexec.exe","TargetObject":"\\SOFTWARE\\Microsoft\\NetSh"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\SOFTWARE\\Microsoft\\NetSh"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":".dll"}}
+]}

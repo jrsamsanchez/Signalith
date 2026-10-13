@@ -1,0 +1,6 @@
+{"rule": "f0540f7e-2db3-4432-b9e0-3965486744bc", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\AcroRd32.exe","TargetFilename":".dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":".dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\AcroRd32.exe"}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"CreationUtcTime":"2026-05-11 02:44:02.371","Image":"C:\\WINDOWS\\system32\\esentutl.exe","ProcessGuid":"0197231E-4272-6A01-3415-000000000D00","ProcessId":"21748","RuleName":"EXE","TargetFilename":"C:\\Users\\xodih\\AppData\\Local\\Temp\\sigma_regression_1816958539\\esentutl_drop.exe","User":"swachchhanda\\xodih","UtcTime":"2026-05-11 02:44:02.371"}}
+]}

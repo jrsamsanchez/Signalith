@@ -1,0 +1,6 @@
+{"rule": "418dc89a-9808-4b87-b1d7-e5ae0cb6effc", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"\\NisSrv.exe","ImageLoaded":"\\mpclient.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"C:\\ProgramData\\Microsoft\\Windows Defender\\Platform\\\\NisSrv.exe","ImageLoaded":"\\mpclient.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"\\mpclient.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"\\NisSrv.exe"}}
+]}

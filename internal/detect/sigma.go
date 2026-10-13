@@ -83,6 +83,66 @@ var sigmaFields = map[string]string{
 	"filename":       "file_path",
 }
 
+// sigmaEventFields maps the fields of Sysmon and PowerShell log sources
+// whose events land in other data models. In these log sources only the
+// listed fields are mapped: a name such as Description means the loaded
+// DLL's description in image_load, not the process's, so the process
+// creation mapping would be wrong.
+var sigmaEventFields = func() map[string]map[string]string {
+	common := map[string]string{
+		"image": "process_path", "user": "user", "processid": "process_id", "processguid": "process_guid",
+		"computer": "host", "computername": "host", "eventid": "signature_id",
+	}
+	with := func(m map[string]string) map[string]string {
+		for k, v := range common {
+			if _, ok := m[k]; !ok {
+				m[k] = v
+			}
+		}
+		return m
+	}
+	file := with(map[string]string{"targetfilename": "file_path"})
+	registry := with(map[string]string{"targetobject": "registry_path", "details": "registry_value_data", "newname": "registry_new_path"})
+	access := with(map[string]string{
+		"sourceimage": "process_path", "sourceprocessid": "process_id", "sourceprocessguid": "process_guid",
+		"sourceuser": "user", "targetimage": "target_process_path", "targetprocessid": "target_process_id",
+		"targetprocessguid": "target_process_guid", "grantedaccess": "granted_access", "calltrace": "call_trace",
+		"startaddress": "start_address", "startmodule": "start_module", "startfunction": "start_function",
+		"image": "", "processid": "", "processguid": "", "user": "",
+	})
+	load := with(map[string]string{
+		"imageloaded": "loaded_file_path", "signed": "signed", "signature": "signature", "signaturestatus": "signature_status",
+	})
+	return map[string]map[string]string{
+		"file_event": file, "file_delete": file,
+		"registry_add": registry, "registry_delete": registry, "registry_set": registry, "registry_event": registry,
+		"dns_query":            with(map[string]string{"queryname": "query", "queryresults": "answer"}),
+		"image_load":           load,
+		"driver_load":          with(map[string]string{"imageloaded": "loaded_file_path", "signed": "signed", "signature": "signature", "signaturestatus": "signature_status", "image": "", "user": "", "processid": "", "processguid": ""}),
+		"process_access":       access,
+		"create_remote_thread": access,
+	}
+}()
+
+// sigmaWindowsEvents are the Windows event IDs each log source is, so a
+// Windows rule only sees its own kind of event: process creation and
+// process access both land in Endpoint, for example.
+var sigmaWindowsEvents = map[string][]string{
+	"process_creation":     {"1", "4688"},
+	"network_connection":   {"3"},
+	"file_event":           {"11"},
+	"file_delete":          {"23", "26"},
+	"registry_add":         {"12"},
+	"registry_delete":      {"12"},
+	"registry_set":         {"13"},
+	"registry_event":       {"12", "13", "14"},
+	"dns_query":            {"22"},
+	"image_load":           {"7"},
+	"driver_load":          {"6"},
+	"process_access":       {"10"},
+	"create_remote_thread": {"8"},
+}
+
 // sigmaLevels maps Sigma levels to severities.
 var sigmaLevels = map[string]string{
 	"informational": "informational", "low": "low", "medium": "medium", "high": "high", "critical": "critical",
@@ -116,7 +176,8 @@ func ConvertSigmaWith(src []byte, opt SigmaOptions) (*SigmaResult, error) {
 	if r.Title == "" || r.Detection == nil {
 		return nil, errors.New("not a Sigma rule: title and detection are required")
 	}
-	c := &sigmaConv{strict: opt.Strict}
+	category, _ := r.Logsource["category"].(string)
+	c := &sigmaConv{strict: opt.Strict, category: strings.ToLower(category)}
 	dm := c.datamodel(r.Logsource)
 	if dm == "" && opt.Strict {
 		return nil, fmt.Errorf("log source %v has no Signalith data model", r.Logsource)
@@ -144,7 +205,7 @@ func ConvertSigmaWith(src []byte, opt SigmaOptions) (*SigmaResult, error) {
 	if c.err != nil {
 		return nil, c.err
 	}
-	if scope := productScope(r.Logsource); scope != nil {
+	if scope := productScope(r.Logsource, c.category); scope != nil {
 		expr = and([]query.Expr{scope, expr})
 	}
 	q := &query.Query{Datamodel: dm, Search: expr}
@@ -217,6 +278,7 @@ func sigmaID(r sigmaRule) string {
 
 type sigmaConv struct {
 	strict   bool
+	category string // the log source category, lower case
 	warnings []string
 	err      error // the first approximation, in strict mode
 }
@@ -238,13 +300,18 @@ func (c *sigmaConv) approx(format string, args ...any) {
 const windowsSourcetypes = "WinEventLog:*"
 
 // productScope limits a rule to its operating system's events: a Windows
-// rule to Windows events, and a Linux or macOS rule away from them, since
-// data models such as Endpoint hold events from every system.
-func productScope(ls map[string]any) query.Expr {
+// rule to Windows events of its log source's event IDs, and a Linux or
+// macOS rule away from Windows events, since data models such as Endpoint
+// hold events from every system and several kinds of event.
+func productScope(ls map[string]any, category string) query.Expr {
 	p, _ := ls["product"].(string)
 	switch strings.ToLower(p) {
 	case "windows":
-		return &query.Compare{Field: "sourcetype", Op: "=", Value: windowsSourcetypes}
+		st := &query.Compare{Field: "sourcetype", Op: "=", Value: windowsSourcetypes}
+		if ids := sigmaWindowsEvents[category]; len(ids) > 0 {
+			return and([]query.Expr{st, &query.In{Field: "signature_id", Values: ids}})
+		}
+		return st
 	case "linux", "macos":
 		return &query.Not{Child: &query.Compare{Field: "sourcetype", Op: "=", Value: windowsSourcetypes}}
 	}
@@ -262,6 +329,16 @@ func (c *sigmaConv) datamodel(ls map[string]any) string {
 		return "Authentication"
 	case "antivirus":
 		return "Malware"
+	case "file_event", "file_delete":
+		return "Filesystem"
+	case "registry_add", "registry_delete", "registry_set", "registry_event":
+		return "Registry"
+	case "dns_query":
+		return "Network_Resolution"
+	case "image_load", "driver_load":
+		return "Image_Load"
+	case "process_access", "create_remote_thread":
+		return "Endpoint"
 	}
 	if get("product") == "linux" && get("service") == "auth" {
 		return "Authentication"
@@ -270,6 +347,13 @@ func (c *sigmaConv) datamodel(ls map[string]any) string {
 }
 
 func (c *sigmaConv) field(name string) string {
+	if m, ok := sigmaEventFields[c.category]; ok {
+		if f := m[strings.ToLower(name)]; f != "" {
+			return f
+		}
+		c.approx("field %s has no Signalith mapping in %s and is searched as-is", name, c.category)
+		return name
+	}
 	if f, ok := sigmaFields[strings.ToLower(name)]; ok {
 		return f
 	}
@@ -625,13 +709,19 @@ func (c *sigmaConv) fieldCond(key string, v any) (query.Expr, error) {
 	return or(kids), nil
 }
 
+// pathNames are the path fields whose file name every parser that sets
+// them also stores.
+var pathNames = map[string]string{
+	"process_path": "process_name", "parent_process_path": "parent_process_name",
+	"target_process_path": "target_process_name", "loaded_file_path": "loaded_file_name",
+}
+
 // compare builds field=value, preferring process_name over a path
 // suffix match since it is cheaper and exact.
 func (c *sigmaConv) compare(field, sigField, how, s string) query.Expr {
-	if how == "endswith" && (field == "process_path" || field == "parent_process_path") {
+	if name, ok := pathNames[field]; ok && how == "endswith" {
 		rest := strings.TrimPrefix(s, "*")
 		if i := strings.LastIndexAny(rest, `\/`); i == 0 && !strings.ContainsAny(rest[1:], `*?\/`) {
-			name := strings.TrimSuffix(field, "_path") + "_name"
 			return &query.Compare{Field: name, Op: "=", Value: rest[1:]}
 		}
 	}

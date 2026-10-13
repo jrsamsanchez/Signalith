@@ -1,0 +1,4 @@
+{"rule": "b5b78988-486d-4a80-b991-930eff3ff8bf", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"\\Windows\\System32\\WindowsPowerShell\\v1.0\\profile.ps1"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{}}
+]}

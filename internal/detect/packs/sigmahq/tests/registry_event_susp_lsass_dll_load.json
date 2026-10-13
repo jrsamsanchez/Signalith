@@ -1,0 +1,5 @@
+{"rule": "b3503044-60ce-4bf4-bbcb-e3db98788823", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\CurrentControlSet\\Services\\NTDS\\LsaDbExtPt"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"%%systemroot%%\\system32\\lsadb.dll","Image":"C:\\Windows\\system32\\lsass.exe","TargetObject":"\\CurrentControlSet\\Services\\NTDS\\LsaDbExtPt"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}}
+]}

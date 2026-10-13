@@ -1,0 +1,5 @@
+{"rule": "9e9a9002-56c4-40fd-9eff-e4b09bfa5f6c", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"C:\\Windows\\","ImageLoaded":"C:\\Users\\Public\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"C:\\Users\\Public\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"C:\\Windows\\"}}
+]}

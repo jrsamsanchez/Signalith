@@ -1,0 +1,15 @@
+{"rule": "ec82e2a5-81ea-4211-a1f8-37a0286df2c2", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"QueryName":"l2.io"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"Image":"\\brave.exe","QueryName":"l2.io"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"Image":"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe","QueryName":"l2.io"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"Image":"\\WindowsApps\\MicrosoftEdge.exe","QueryName":"l2.io"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"Image":"C:\\Program Files\\Microsoft\\EdgeCore\\ \\msedge.exe","QueryName":"l2.io"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"Image":"C:\\Program Files\\Mozilla Firefox\\firefox.exe","QueryName":"l2.io"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"Image":"C:\\Program Files (x86)\\Internet Explorer\\iexplore.exe","QueryName":"l2.io"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"Image":"\\maxthon.exe","QueryName":"l2.io"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"Image":"\\opera.exe","QueryName":"l2.io"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"Image":"\\safari.exe","QueryName":"l2.io"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"Image":"\\seamonkey.exe","QueryName":"l2.io"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"Image":"\\vivaldi.exe","QueryName":"l2.io"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"Image":"\\whale.exe","QueryName":"l2.io"}}
+]}

@@ -1,0 +1,5 @@
+{"rule": "059c5af9-5131-4d8d-92b2-de4ad6146712", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"C:\\Windows\\System32\\drivers\\LiveKdD.SYS"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\livek64.exe","TargetFilename":"C:\\Windows\\System32\\drivers\\LiveKdD.SYS"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{}}
+]}

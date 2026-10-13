@@ -1,0 +1,4 @@
+{"rule": "e8a52bbd-bced-459f-bd93-64db45ce7657", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"\\WindowsPowerShell\\Modules\\\\.ps"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{}}
+]}

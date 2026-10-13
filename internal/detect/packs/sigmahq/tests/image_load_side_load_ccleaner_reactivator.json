@@ -1,0 +1,5 @@
+{"rule": "3735d5ac-d770-4da0-99ff-156b180bc600", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"\\CCleanerReactivator.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"C:\\Program Files (x86)\\CCleaner\\\\CCleanerReactivator.exe","ImageLoaded":"\\CCleanerReactivator.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{}}
+]}

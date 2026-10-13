@@ -1,0 +1,4 @@
+{"rule": "6902955a-01b7-432c-b32a-6f5f81d8f625", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"C:\\Windows\\System32\\config\\systemprofile\\AppData\\Local\\CrashDumps\\ lsass.exe. .dmp"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{}}
+]}

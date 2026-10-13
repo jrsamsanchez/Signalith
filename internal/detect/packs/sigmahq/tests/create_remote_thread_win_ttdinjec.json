@@ -1,0 +1,4 @@
+{"rule": "c15e99a3-c474-48ab-b9a7-84549a7a9d16", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"8","data":{"SourceImage":"\\ttdinject.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"8","data":{}}
+]}

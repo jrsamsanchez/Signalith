@@ -580,3 +580,48 @@ func mustParse(t *testing.T, s string) *query.Query {
 	}
 	return q
 }
+
+// Sysmon log sources other than process creation map onto their own data
+// models, only see their own event IDs, and map fields by log source.
+func TestConvertSigmaSysmonLogSources(t *testing.T) {
+	r, err := ConvertSigmaWith([]byte(`title: Run key
+logsource: {product: windows, category: registry_set}
+detection:
+  sel:
+    TargetObject|contains: '\CurrentVersion\Run\'
+    Image|endswith: '\powershell.exe'
+    Details|startswith: 'C:\Users\'
+  condition: sel
+`), SigmaOptions{Strict: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `datamodel=Registry (sourcetype=WinEventLog:* AND signature_id IN (13)) (registry_value_data=C:\Users\* AND process_name=powershell.exe AND registry_path=*\CurrentVersion\Run\*)`
+	if r.Detection.Query != want {
+		t.Errorf("query = %s\nwant    %s", r.Detection.Query, want)
+	}
+	r, err = ConvertSigmaWith([]byte(`title: LSASS access
+logsource: {product: windows, category: process_access}
+detection:
+  sel:
+    TargetImage|endswith: '\lsass.exe'
+    GrantedAccess: '0x1410'
+  condition: sel
+`), SigmaOptions{Strict: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if q := r.Detection.Query; !strings.Contains(q, "datamodel=Endpoint") || !strings.Contains(q, "signature_id IN (10)") || !strings.Contains(q, "target_process_name=lsass.exe") {
+		t.Errorf("query = %s", q)
+	}
+	// In image_load, Description is the DLL's, not the process's: no mapping.
+	if _, err := ConvertSigmaWith([]byte(`title: x
+logsource: {product: windows, category: image_load}
+detection:
+  sel:
+    Description: 'x'
+  condition: sel
+`), SigmaOptions{Strict: true}); err == nil || !strings.Contains(err.Error(), "Description has no Signalith mapping in image_load") {
+		t.Errorf("err = %v", err)
+	}
+}

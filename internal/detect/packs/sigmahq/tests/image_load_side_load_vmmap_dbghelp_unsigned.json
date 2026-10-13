@@ -1,0 +1,6 @@
+{"rule": "273a8dd8-3742-4302-bcc7-7df5a80fe425", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"\\vmmap64.exe","ImageLoaded":"C:\\Debuggers\\dbghelp.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"\\vmmap64.exe","ImageLoaded":"C:\\Debuggers\\dbghelp.dll","Signed":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"C:\\Debuggers\\dbghelp.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"\\vmmap64.exe"}}
+]}

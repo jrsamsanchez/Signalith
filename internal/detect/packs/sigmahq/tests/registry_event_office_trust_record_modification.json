@@ -1,0 +1,4 @@
+{"rule": "295a59c1-7b79-4b47-a930-df12c15fc9c2", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Security\\Trusted Documents\\TrustRecords"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}}
+]}

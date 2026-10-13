@@ -1,0 +1,17 @@
+{"rule": "4d07b1f4-cb00-4470-b9f8-b0191d48ff52", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"QueryName":"relay.kaseya.net"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"QueryName":"rs- .rustdesk.com"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"Image":"C:\\Program Files (x86)\\Avant Browser\\\\avant.exe","QueryName":"relay.kaseya.net"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"Image":"C:\\Program Files\\BraveSoftware\\\\brave.exe","QueryName":"relay.kaseya.net"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"Image":"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe","QueryName":"relay.kaseya.net"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"Image":"\\MsMpEng.exe","QueryName":"relay.kaseya.net"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"Image":"C:\\Program Files (x86)\\Microsoft\\EdgeWebView\\Application\\","QueryName":"relay.kaseya.net"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"Image":"C:\\Program Files\\Microsoft\\EdgeCore\\\\msedge.exe","QueryName":"relay.kaseya.net"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"Image":"C:\\Program Files\\Falkon\\ \\falkon.exe","QueryName":"relay.kaseya.net"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"Image":"C:\\Program Files (x86)\\Mozilla Firefox\\firefox.exe","QueryName":"relay.kaseya.net"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"Image":"\\AppData\\Local\\Flock\\ \\Flock.exe","QueryName":"relay.kaseya.net"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"Image":"C:\\Program Files (x86)\\Internet Explorer\\iexplore.exe","QueryName":"relay.kaseya.net"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"Image":"\\AppData\\Local\\Maxthon\\\\maxthon.exe","QueryName":"relay.kaseya.net"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"Image":"\\AppData\\Local\\Programs\\midori-ng\\ \\Midori Next Generation.exe","QueryName":"relay.kaseya.net"}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"Image":"C:\\Users\\frack113\\Desktop\\AnyDesk.exe","ProcessGuid":"570E49AA-DE48-6A7A-9E15-000000001400","ProcessId":"12152","QueryName":"boot.net.anydesk.com","QueryResults":"type: 5 boot-relays.net.anydesk.com;::ffff:57.129.19.230;::ffff:92.223.88.41;::ffff:57.129.37.28;::ffff:185.229.191.44;::ffff:185.229.190.236;::ffff:92.223.88.7;::ffff:57.129.37.75;::ffff:92.223.88.232;::ffff:185.229.191.39;::ffff:195.181.174.167;","QueryStatus":"0","RuleName":"-","User":"SigmaCatchVm\\frack113","UtcTime":"2026-08-08 08:33:15.100"}}
+]}

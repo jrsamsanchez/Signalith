@@ -1,0 +1,5 @@
+{"rule": "046218bd-e0d8-4113-a3c3-895a12b2b298", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\AppCertDlls\\System\\CurrentControlSet\\Control\\Session Manager"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"(Empty)","TargetObject":"\\AppCertDlls \\System\\CurrentControlSet\\Control\\Session Manager"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}}
+]}

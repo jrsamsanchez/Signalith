@@ -1,0 +1,5 @@
+{"rule": "75180c5f-4ea1-461a-a4f6-6e4700c065d4", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)","TargetObject":"\\Software\\Policies\\Microsoft\\Windows\\WindowsAI\\DisableAIDataAnalysis"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Software\\Policies\\Microsoft\\Windows\\WindowsAI\\DisableAIDataAnalysis"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)"}}
+]}

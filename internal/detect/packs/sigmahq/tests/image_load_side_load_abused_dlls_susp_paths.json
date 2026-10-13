@@ -1,0 +1,5 @@
+{"rule": "799a5f48-0ac1-4e0f-9152-71d137d48c2a", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":":\\Users\\Public\\\\facesdk.dll"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"\\Favorites\\ :\\Users\\ \\HPCustPartUI.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{}}
+]}

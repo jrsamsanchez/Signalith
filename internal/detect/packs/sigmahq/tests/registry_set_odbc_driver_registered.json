@@ -1,0 +1,7 @@
+{"rule": "3390fbef-c98d-4bdd-a863-d65ed7c610dd", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\SOFTWARE\\ODBC\\ODBCINST.INI\\\\Driver"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"%WINDIR%\\System32\\SQLSRV32.dll","TargetObject":"\\SOFTWARE\\ODBC\\ODBCINST.INI\\\\SQL Server\\\\Driver"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"C:\\Progra\\ACEODBC.DLL","TargetObject":"\\Microsoft Access \\SOFTWARE\\ODBC\\ODBCINST.INI\\\\Driver"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"C:\\Progra\\ACEODBC.DLL","TargetObject":"\\SOFTWARE\\ODBC\\ODBCINST.INI\\ \\Microsoft Excel Driver \\Driver"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}}
+]}

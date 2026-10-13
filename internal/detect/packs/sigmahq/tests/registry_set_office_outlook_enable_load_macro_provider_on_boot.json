@@ -1,0 +1,5 @@
+{"rule": "396ae3eb-4174-4b9b-880e-dc0364d78a19", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"0x00000001","TargetObject":"\\Outlook\\LoadMacroProviderOnBoot"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Outlook\\LoadMacroProviderOnBoot"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"0x00000001"}}
+]}

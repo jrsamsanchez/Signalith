@@ -1,0 +1,6 @@
+{"rule": "5a2b21ee-6aaa-4234-ac9d-59a59edf90a1", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Dll\\SOFTWARE\\WOW6432Node\\Microsoft\\Cryptography\\Providers\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"mso.dll","TargetObject":"\\Dll\\SOFTWARE\\WOW6432Node\\Microsoft\\Cryptography\\Providers\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"C:\\Windows\\System32\\PsfSip.dll","Image":"C:\\Windows\\System32\\poqexec.exe","TargetObject":"\\CryptSIPDll\\SOFTWARE\\WOW6432Node\\Microsoft\\Cryptography\\Providers\\\\Dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}}
+]}

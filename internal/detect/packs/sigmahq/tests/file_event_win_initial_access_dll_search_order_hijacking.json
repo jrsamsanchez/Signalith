@@ -1,0 +1,5 @@
+{"rule": "dbbd9f66-2ed3-4ca2-98a4-6ea985dd1a1c", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\powershell.exe","TargetFilename":"\\Users\\ \\Microsoft OneDrive\\ \\AppData\\ .dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"\\Users\\ \\Microsoft OneDrive\\ \\AppData\\ .dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\powershell.exe"}}
+]}

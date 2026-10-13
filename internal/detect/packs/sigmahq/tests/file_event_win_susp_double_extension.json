@@ -1,0 +1,9 @@
+{"rule": "b4926b47-a9d7-434c-b3a0-adc3fa0bd13e", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":".zip.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":".rtf..rar"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"/usr/share/icons/ .zip.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":".rtf..svg.svg"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"/usr/share/icons/ .rtf. .rar"}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"CreationUtcTime":"2026-08-08 07:35:54.947","Image":"C:\\WINDOWS\\system32\\cmd.exe","ProcessGuid":"570E49AA-DC5A-6A76-D809-000000001400","ProcessId":"8752","RuleName":"-","TargetFilename":"C:\\Users\\frack113\\AppData\\Local\\Temp\\T1036.007_masquerading.docx.exe","User":"SigmaCatchVm\\frack113","UtcTime":"2026-08-08 07:35:54.947"}}
+]}

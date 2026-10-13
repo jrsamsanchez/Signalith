@@ -1,0 +1,6 @@
+{"rule": "e5b33f7d-eb93-48b6-9851-09e1e610b6d7", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"GrantedAccess":"0x1FFFFF","SourceImage":"\\WerFault.exe","TargetImage":"\\lsass.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"SourceImage":"\\WerFault.exe","TargetImage":"\\lsass.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"GrantedAccess":"0x1FFFFF","TargetImage":"\\lsass.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"GrantedAccess":"0x1FFFFF","SourceImage":"\\WerFault.exe"}}
+]}

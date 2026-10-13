@@ -1,0 +1,4 @@
+{"rule": "7892ec59-c5bb-496d-8968-e5d210ca3ac4", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"ntds_unknown_.pvk"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{}}
+]}

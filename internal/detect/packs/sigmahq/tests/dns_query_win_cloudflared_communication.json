@@ -1,0 +1,4 @@
+{"rule": "a1d9eec5-33b2-4177-8d24-27fe754d0812", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"QueryName":"update.argotunnel.com"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{}}
+]}

@@ -1,0 +1,11 @@
+{"rule": "9d15044a-7cfe-4d23-8085-6ebc11df7685", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Software\\Microsoft\\Office\\Powerpoint\\Addins\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Image":"C:\\Program Files\\Microsoft Office\\root\\integration\\integrator.exe","TargetObject":"\\Software\\Microsoft\\Office\\Powerpoint\\Addins\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Image":"C:\\Program Files (x86)\\Microsoft Office\\OFFICE \\Integrator.exe","TargetObject":"\\Software\\Microsoft\\Office\\Powerpoint\\Addins\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Image":"C:\\Program Files\\Common Files\\Microsoft Shared\\ClickToRun\\\\OfficeClickToRun.exe","TargetObject":"\\Software\\Microsoft\\Office\\Powerpoint\\Addins\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Image":"C:\\Windows\\SysWOW64\\regsvr32.exe","TargetObject":"\\Software\\Microsoft\\Office\\Powerpoint\\Addins\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Image":"C:\\Program Files\\Common Files\\Microsoft Shared\\VSTO\\\\VSTOInstaller.exe","TargetObject":"\\Software\\Microsoft\\Office\\Powerpoint\\Addins\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Image":"C:\\Program Files\\Avast Software\\Avast\\RegSvr.exe","TargetObject":"\\Microsoft\\Office\\Outlook\\Addins\\Avast.AsOutExt\\\\Software\\Microsoft\\Office\\Powerpoint\\Addins\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Image":"C:\\Program Files\\AVG\\Antivirus\\RegSvr.exe","TargetObject":"\\Software\\Microsoft\\Office\\Powerpoint\\Addins\\ \\Microsoft\\Office\\Outlook\\Addins\\Antivirus.AsOutExt\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}}
+]}

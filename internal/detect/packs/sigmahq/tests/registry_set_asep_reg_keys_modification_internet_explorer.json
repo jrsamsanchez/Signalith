@@ -1,0 +1,7 @@
+{"rule": "a80f662f-022f-4429-9b8c-b1a41aaa6688", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Extensions \\Software\\Wow6432Node\\Microsoft\\Internet Explorer"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"(Empty)","TargetObject":"\\Extensions \\Software\\Wow6432Node\\Microsoft\\Internet Explorer"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Extensions\\Extensions\\{2670000A-7350-4f3c-8081-5663EE0C6C49}\\Software\\Wow6432Node\\Microsoft\\Internet Explorer"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Software\\Wow6432Node\\Microsoft\\Internet Explorer \\Extensions \\Toolbar\\ShowDiscussionButton"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}}
+]}

@@ -1,0 +1,5 @@
+{"rule": "8f0b1fb1-9bd4-4e74-8cdf-a8de4d2adfd0", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"26","data":{"Image":"\\dns.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"26","data":{"Image":"\\dns.exe","TargetFilename":"\\dns.log"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"26","data":{}}
+]}

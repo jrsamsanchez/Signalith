@@ -1,0 +1,8 @@
+{"rule": "576426ad-0131-4001-ae01-be175da0c108", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\powershell.exe","TargetFilename":".ps1"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\powershell.exe","TargetFilename":"C:\\Users\\ \\AppData\\Local\\Temp\\ .ps1"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\powershell.exe","TargetFilename":"__PSScriptPolicyTest_.ps1"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\powershell.exe","TargetFilename":"C:\\Windows\\Temp\\ .ps1"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":".ps1"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\powershell.exe"}}
+]}

@@ -1,0 +1,6 @@
+{"rule": "f50f3c09-557d-492d-81db-9064a8d4e211", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\ProcDump\\EulaAccepted"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Image":"\\handle.exe","TargetObject":"\\ProcDump \\EulaAccepted"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)","EventType":"SetValue","Image":"C:\\Users\\Administrator\\Downloads\\FakeSysinternals.exe","ProcessGuid":"5AA13A44-64B2-68FD-FB3E-000000004002","ProcessId":"4776","RuleName":"-","TargetObject":"HKU\\S-1-5-21-3960063115-309473240-3247002503-500\\Software\\Sysinternals\\PsService\\EulaAccepted","User":"ATTACKRANGE\\Administrator","UtcTime":"2025-10-26 00:00:51.957"}}
+]}

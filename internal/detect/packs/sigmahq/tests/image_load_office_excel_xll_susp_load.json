@@ -1,0 +1,5 @@
+{"rule": "af4c4609-5755-42fe-8075-4effb49f5d44", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"\\excel.exe","ImageLoaded":"\\Temp\\.xll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"\\Temp\\.xll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"\\excel.exe"}}
+]}

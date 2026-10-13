@@ -1,0 +1,7 @@
+{"rule": "c7dcacd0-cc59-4004-b0a4-1d6cdebe6f3e", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)","TargetObject":"\\Services\\LanmanServer\\Parameters\\ \\AutoShareServer"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Services\\LanmanServer\\Parameters\\ \\AutoShareServer"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)"}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)","EventType":"SetValue","Image":"C:\\Windows\\system32\\reg.exe","ProcessGuid":"5AA13A44-688C-68FE-D556-000000004002","ProcessId":"2712","RuleName":"-","TargetObject":"HKLM\\System\\CurrentControlSet\\Services\\LanmanServer\\Parameters\\AutoShareServer","User":"ATTACKRANGE\\Administrator","UtcTime":"2025-10-26 18:29:32.271"}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)","EventType":"SetValue","Image":"C:\\Windows\\system32\\reg.exe","ProcessGuid":"5AA13A44-688C-68FE-D656-000000004002","ProcessId":"368","RuleName":"-","TargetObject":"HKLM\\System\\CurrentControlSet\\Services\\LanmanServer\\Parameters\\AutoShareWks","User":"ATTACKRANGE\\Administrator","UtcTime":"2025-10-26 18:29:32.287"}}
+]}

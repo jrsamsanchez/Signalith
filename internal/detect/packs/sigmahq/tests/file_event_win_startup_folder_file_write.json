@@ -1,0 +1,6 @@
+{"rule": "2aa0a6b4-a865-495b-ab51-c28249537b75", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"\\Microsoft\\Windows\\Start Menu\\Programs\\StartUp"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"C:\\$WinREAgent\\Scratch\\Mount\\\\Microsoft\\Windows\\Start Menu\\Programs\\StartUp"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\ONENOTE.EXE","TargetFilename":"\\Microsoft\\Windows\\Start Menu\\Programs\\StartUp \\Send to OneNote.lnk"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{}}
+]}

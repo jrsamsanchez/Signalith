@@ -1,0 +1,4 @@
+{"rule": "270185ff-5f50-4d6d-a27f-24c3b8c9fef8", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"26","data":{"TargetFilename":"_access_log. \\logs\\ \\Tomcat"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"26","data":{}}
+]}

@@ -1,0 +1,7 @@
+{"rule": "54127bd4-f541-4ac3-afdb-ea073f63f692", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"\\Notepad++\\plugins\\.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\Notepad++\\updater\\gup.exe","TargetFilename":"\\Notepad++\\plugins\\.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"C:\\Users\\\\AppData\\Local\\Temp\\Installer.x64.exe","TargetFilename":"\\Notepad++\\plugins\\ .dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\npp. .exe","TargetFilename":"C:\\Program Files\\Notepad++\\plugins\\mimeTools\\mimeTools.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{}}
+]}

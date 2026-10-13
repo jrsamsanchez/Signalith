@@ -1,0 +1,7 @@
+{"rule": "4eec988f-7bf0-49f1-8675-1e6a510b3a2a", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Image":"\\reg.exe","TargetObject":"\\CurrentControlSet\\Control\\Session Manager\\PendingFileRenameOperations"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Image":"\\Users\\Public\\","TargetObject":"\\CurrentControlSet\\Control\\Session Manager\\PendingFileRenameOperations"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\CurrentControlSet\\Control\\Session Manager\\PendingFileRenameOperations"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Image":"\\reg.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Image":"\\Users\\Public\\"}}
+]}

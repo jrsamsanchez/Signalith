@@ -1,0 +1,6 @@
+{"rule": "5aad0995-46ab-41bd-a9ff-724f41114971", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Image":"esentutl.exe","TargetObject":"System\\CurrentControlSet\\Services\\VSS"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Image":"esentutl.exe","TargetObject":"System\\CurrentControlSet\\Services\\VSS\\StartSystem\\CurrentControlSet\\Services\\VSS"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"System\\CurrentControlSet\\Services\\VSS"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Image":"esentutl.exe"}}
+]}

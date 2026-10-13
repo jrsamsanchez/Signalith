@@ -1,0 +1,7 @@
+{"rule": "7047d730-036f-4f40-b9d8-1c63e36d5e62", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\powershell_ise.exe","TargetFilename":".scr"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\powershell_ise.exe","TargetFilename":"C:\\Program Files\\PackageManagement\\ProviderAssemblies\\nuget\\ \\Microsoft.PackageManagement.NuGetProvider.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":".scr"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\powershell_ise.exe"}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"CreationUtcTime":"2026-08-08 06:14:26.978","Image":"C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe","ProcessGuid":"570E49AA-C942-6A76-D604-000000001400","ProcessId":"5660","RuleName":"-","TargetFilename":"C:\\ProgramData\\cmd.exe","User":"SigmaCatchVm\\frack113","UtcTime":"2026-08-08 06:14:26.978"}}
+]}

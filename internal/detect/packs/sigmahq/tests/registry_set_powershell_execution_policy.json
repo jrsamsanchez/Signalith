@@ -1,0 +1,6 @@
+{"rule": "fad91067-08c5-4d1a-8d8c-d96a21b37814", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"Unrestricted","TargetObject":"\\Policies\\Microsoft\\Windows\\PowerShell\\ExecutionPolicy"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"Unrestricted","Image":":\\Windows\\System32\\","TargetObject":"\\Policies\\Microsoft\\Windows\\PowerShell\\ExecutionPolicy"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Policies\\Microsoft\\Windows\\PowerShell\\ExecutionPolicy"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"Unrestricted"}}
+]}

@@ -1,0 +1,6 @@
+{"rule": "46dd5308-4572-4d12-aa43-8938f0184d4f", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"(Empty)","TargetObject":"\\open\\command\\DelegateExecute"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\open\\command\\DelegateExecute"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"(Empty)"}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"(Empty)","EventType":"SetValue","Image":"C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe","ProcessGuid":"5AA13A44-5D5B-68FE-7B55-000000004002","ProcessId":"420","RuleName":"-","TargetObject":"HKU\\S-1-5-21-3960063115-309473240-3247002503-500_Classes\\Folder\\shell\\open\\command\\DelegateExecute","User":"ATTACKRANGE\\Administrator","UtcTime":"2025-10-26 17:41:48.898"}}
+]}

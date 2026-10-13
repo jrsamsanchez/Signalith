@@ -1,0 +1,6 @@
+{"rule": "4f6c43e2-f989-4ea5-bcd8-843b49a0317c", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"CallTrace":"UNKNOWN(0000000000000000)|UNKNOWN(0000000000000000)|","GrantedAccess":"0x1fffff","SourceImage":":\\Windows\\SysWOW64\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"GrantedAccess":"0x1fffff","SourceImage":":\\Windows\\SysWOW64\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"CallTrace":"UNKNOWN(0000000000000000)|UNKNOWN(0000000000000000)|","SourceImage":":\\Windows\\SysWOW64\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"CallTrace":"UNKNOWN(0000000000000000)|UNKNOWN(0000000000000000)|","GrantedAccess":"0x1fffff"}}
+]}

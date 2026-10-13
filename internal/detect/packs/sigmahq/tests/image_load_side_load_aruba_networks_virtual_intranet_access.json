@@ -1,0 +1,6 @@
+{"rule": "90ae0469-0cee-4509-b67f-e5efcef040f7", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"\\arubanetsvc.exe","ImageLoaded":"\\sspicli.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"\\arubanetsvc.exe","ImageLoaded":"C:\\Windows\\System32\\ \\sspicli.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"\\sspicli.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"\\arubanetsvc.exe"}}
+]}

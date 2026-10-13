@@ -1,0 +1,5 @@
+{"rule": "8023f872-3f1d-4301-a384-801889917ab4", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)","EventType":"SetValue","Image":"D:\\apps\\launcher\\launcher.exe","ProcessId":"4242","TargetObject":"\\PsExec\\EulaAccepted","User":"CORP\\tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)","EventType":"SetValue","Image":"\\psloglist.exe","ProcessId":"4242","TargetObject":"\\PsExec\\EulaAccepted","User":"CORP\\tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)","EventType":"SetValue","Image":"D:\\apps\\launcher\\launcher.exe","ProcessId":"4242","User":"CORP\\tester"}}
+]}

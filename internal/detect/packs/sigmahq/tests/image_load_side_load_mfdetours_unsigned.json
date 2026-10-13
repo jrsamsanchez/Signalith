@@ -1,0 +1,5 @@
+{"rule": "948a0953-f287-4806-bbcb-3b2e396df89f", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"\\mfdetours.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":":\\Program Files (x86)\\Windows Kits\\10\\bin\\\\mfdetours.dll","SignatureStatus":"Valid"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{}}
+]}

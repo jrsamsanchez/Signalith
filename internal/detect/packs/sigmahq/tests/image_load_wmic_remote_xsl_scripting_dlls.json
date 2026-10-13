@@ -1,0 +1,5 @@
+{"rule": "06ce37c2-61ab-4f05-9ff5-b1a96d18ae32", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"\\wmic.exe","ImageLoaded":"\\vbscript.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"\\vbscript.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"\\wmic.exe"}}
+]}

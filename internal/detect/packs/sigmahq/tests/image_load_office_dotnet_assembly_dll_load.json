@@ -1,0 +1,5 @@
+{"rule": "ff0f2b05-09db-4095-b96d-1b75ca24894a", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"\\winword.exe","ImageLoaded":"C:\\Windows\\assembly\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"C:\\Windows\\assembly\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"\\winword.exe"}}
+]}

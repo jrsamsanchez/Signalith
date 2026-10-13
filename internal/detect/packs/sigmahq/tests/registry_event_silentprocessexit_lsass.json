@@ -1,0 +1,4 @@
+{"rule": "55e29995-75e7-451a-bef0-6225e2f13597", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"Microsoft\\Windows NT\\CurrentVersion\\SilentProcessExit\\lsass.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}}
+]}

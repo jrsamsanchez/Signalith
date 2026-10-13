@@ -1,0 +1,7 @@
+{"rule": "e7b18879-676e-4a0e-ae18-27039185a8e7", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"\\AppData\\Local\\Temp\\","TargetObject":"\\SOFTWARE\\Microsoft\\NetSh"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"\\Favorites\\ :\\Users\\","TargetObject":"\\SOFTWARE\\Microsoft\\NetSh"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\SOFTWARE\\Microsoft\\NetSh"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"\\AppData\\Local\\Temp\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"\\Favorites\\ :\\Users\\"}}
+]}

@@ -1,0 +1,5 @@
+{"rule": "f2485272-a156-4773-82d7-1d178bc4905b", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"HKLM\\System\\CurrentControlSet\\Services\\PROCEXP152\\ImagePath"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"\\WINDOWS\\system32\\Drivers\\PROCEXP152.SYS","Image":"\\procexp.exe","TargetObject":"HKLM\\System\\CurrentControlSet\\Services\\PROCEXP152\\ImagePath"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}}
+]}

@@ -1,0 +1,9 @@
+{"rule": "e2482f8d-3443-4237-b906-cc145d87a076", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)","TargetObject":"Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\InactivityTimeoutSecs"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)","TargetObject":"SOFTWARE\\Policies\\Microsoft\\Windows\\Explorer\\DisableNotificationCenter"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\InactivityTimeoutSecs"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"SOFTWARE\\Policies\\Microsoft\\Windows\\Explorer\\DisableNotificationCenter"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)"}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)","EventType":"SetValue","Image":"C:\\WINDOWS\\system32\\reg.exe","ProcessGuid":"570E49AA-3BBA-6A78-300C-000000001400","ProcessId":"33668","RuleName":"technique_id=T1548.002,technique_name=Bypass User Access Control","TargetObject":"HKU\\S-1-5-21-4246997345-1000708036-2014123355-1001\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\DisableRegistryTools","User":"SigmaCatchVm\\frack113","UtcTime":"2026-08-09 08:35:06.670"}}
+]}

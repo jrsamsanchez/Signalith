@@ -1,0 +1,5 @@
+{"rule": "91174a41-dc8f-401b-be89-7bfc140612a0", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":".docm"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"C:\\Program Files\\Microsoft Office\\ \\POWERPNT.EXE","TargetFilename":"\\~$.docm"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{}}
+]}

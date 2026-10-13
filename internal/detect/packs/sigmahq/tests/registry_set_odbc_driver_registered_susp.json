@@ -1,0 +1,5 @@
+{"rule": "e4d22291-f3d5-4b78-9a0c-a1fbaf32a6a4", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":":\\Windows\\System32\\FxsTmp\\","TargetObject":"\\SOFTWARE\\ODBC\\ODBCINST.INI\\ \\Setup"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\SOFTWARE\\ODBC\\ODBCINST.INI\\ \\Setup"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":":\\Windows\\System32\\FxsTmp\\"}}
+]}

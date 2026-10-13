@@ -1,0 +1,5 @@
+{"rule": "275641a5-a492-45e2-a817-7c81e9d9d3e9", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)","TargetObject":"Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer\\DisallowRun"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer\\DisallowRun"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)"}}
+]}

@@ -1,0 +1,4 @@
+{"rule": "fb3722e4-1a06-46b6-b772-253e2e7db933", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"CallTrace":"editionupgrademanagerobj.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{}}
+]}

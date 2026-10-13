@@ -1,0 +1,7 @@
+{"rule": "65236ec7-ace0-4f0c-82fd-737b04fd4dcb", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":".evtx"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"C:\\ProgramData\\Microsoft\\Windows\\Containers\\BaseImages\\ \\Windows\\System32\\winevt\\Logs\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"C:\\Windows\\System32\\winevt\\Logs\\ .evtx"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"CreationUtcTime":"2025-10-24 23:36:52.320","Image":"C:\\Windows\\System32\\svchost.exe","ProcessGuid":"5AA13A44-523E-68FB-1700-000000004002","ProcessId":"1276","RuleName":"-","TargetFilename":"C:\\Users\\Administrator\\Documents\\fed85bf9-e075-4280-9159-fbe8a023d6fa.evtx","User":"NT AUTHORITY\\LOCAL SERVICE","UtcTime":"2025-10-24 23:36:53.977"}}
+]}

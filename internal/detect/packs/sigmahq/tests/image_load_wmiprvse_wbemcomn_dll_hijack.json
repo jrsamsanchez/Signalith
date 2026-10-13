@@ -1,0 +1,5 @@
+{"rule": "7707a579-e0d8-4886-a853-ce47e4575aaa", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"\\wmiprvse.exe","ImageLoaded":"\\wbem\\wbemcomn.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"\\wbem\\wbemcomn.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"\\wmiprvse.exe"}}
+]}

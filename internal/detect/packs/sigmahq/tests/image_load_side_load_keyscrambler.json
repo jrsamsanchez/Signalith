@@ -1,0 +1,7 @@
+{"rule": "d2451be2-b582-4e15-8701-4196ac180260", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"\\KeyScrambler.exe","ImageLoaded":"\\KeyScramblerIE.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"C:\\Program Files\\KeyScrambler\\ \\KeyScrambler.exe","ImageLoaded":"C:\\Program Files\\KeyScrambler\\ \\KeyScramblerIE.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"\\KeyScrambler.exe","ImageLoaded":"\\KeyScramblerIE.dll","Signature":"QFX Software Corporation","SignatureStatus":"Valid"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"\\KeyScramblerIE.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"\\KeyScrambler.exe"}}
+]}

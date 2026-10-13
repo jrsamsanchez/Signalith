@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 	"time"
 
@@ -14,8 +16,9 @@ import (
 
 // Windows channels the test events come from.
 const (
-	SysmonChannel   = "Microsoft-Windows-Sysmon/Operational"
-	SecurityChannel = "Security"
+	SysmonChannel     = "Microsoft-Windows-Sysmon/Operational"
+	SecurityChannel   = "Security"
+	PowerShellChannel = ingest.PowerShellChannel
 )
 
 // TestFile holds a shipped rule's test events.
@@ -48,10 +51,14 @@ var security4688 = map[string]string{
 // the event's channel has no Sigma view here.
 func (c Case) SigmaView() (map[string]string, bool) {
 	switch {
-	case strings.EqualFold(c.Channel, SysmonChannel):
-		return c.Data, true
+	case strings.EqualFold(c.Channel, SysmonChannel), strings.EqualFold(c.Channel, PowerShellChannel) && c.EventID == "4104":
+		out := map[string]string{"EventID": c.EventID}
+		for k, v := range c.Data {
+			out[k] = v
+		}
+		return out, true
 	case c.Channel == SecurityChannel && c.EventID == "4688":
-		out := map[string]string{}
+		out := map[string]string{"EventID": c.EventID}
 		for raw, sig := range security4688 {
 			if v, ok := c.Data[raw]; ok {
 				out[sig] = v
@@ -64,8 +71,29 @@ func (c Case) SigmaView() (map[string]string, bool) {
 
 // Logsource event IDs: the Sysmon event a Sigma log source category is.
 var sysmonEvents = map[string]string{
-	"process_creation":   "1",
-	"network_connection": "3",
+	"process_creation":     "1",
+	"network_connection":   "3",
+	"driver_load":          "6",
+	"image_load":           "7",
+	"create_remote_thread": "8",
+	"process_access":       "10",
+	"file_event":           "11",
+	"registry_add":         "12",
+	"registry_delete":      "12",
+	"registry_event":       "13",
+	"registry_set":         "13",
+	"dns_query":            "22",
+	"file_delete":          "26",
+	"ps_script":            "4104",
+}
+
+// Channel returns the Windows channel a log source category's events come
+// from.
+func Channel(category string) string {
+	if category == "ps_script" {
+		return PowerShellChannel
+	}
+	return SysmonChannel
 }
 
 // Bases are the fields a typical event of each log source has, for
@@ -90,6 +118,112 @@ var Bases = map[string]map[string]string{
 		"DestinationIp":   "198.51.100.20",
 		"DestinationPort": "8443",
 	},
+	"driver_load": {
+		"ImageLoaded":     `D:\drivers\vendor\device.sys`,
+		"Hashes":          "SHA256=" + strings.Repeat("ab", 32),
+		"Signed":          "true",
+		"Signature":       "Example Hardware Vendor",
+		"SignatureStatus": "Valid",
+	},
+	"image_load": {
+		"Image":           `D:\apps\launcher\launcher.exe`,
+		"ProcessId":       "4242",
+		"User":            `CORP\tester`,
+		"ImageLoaded":     `D:\apps\launcher\plugin.dll`,
+		"Signed":          "true",
+		"Signature":       "Example Software Vendor",
+		"SignatureStatus": "Valid",
+	},
+	"create_remote_thread": {
+		"SourceImage":     `D:\apps\launcher\launcher.exe`,
+		"SourceProcessId": "4242",
+		"SourceUser":      `CORP\tester`,
+		"TargetImage":     `D:\apps\worker\worker.exe`,
+		"TargetProcessId": "4300",
+		"StartAddress":    "0x00007FF6A1B21000",
+		"StartModule":     `D:\apps\worker\worker.exe`,
+		"StartFunction":   "-",
+	},
+	"process_access": {
+		"SourceImage":     `D:\apps\launcher\launcher.exe`,
+		"SourceProcessId": "4242",
+		"SourceUser":      `CORP\tester`,
+		"TargetImage":     `D:\apps\worker\worker.exe`,
+		"TargetProcessId": "4300",
+		"GrantedAccess":   "0x1000",
+		"CallTrace":       `D:\apps\launcher\launcher.exe+1a2b|D:\apps\launcher\core.dll+3c4d`,
+	},
+	"file_event": {
+		"Image":          `D:\apps\launcher\launcher.exe`,
+		"ProcessId":      "4242",
+		"User":           `CORP\tester`,
+		"TargetFilename": `D:\apps\work\output.txt`,
+	},
+	"file_delete": {
+		"Image":          `D:\apps\launcher\launcher.exe`,
+		"ProcessId":      "4242",
+		"User":           `CORP\tester`,
+		"TargetFilename": `D:\apps\work\old-output.txt`,
+	},
+	"registry_add": {
+		"EventType":    "CreateKey",
+		"Image":        `D:\apps\launcher\launcher.exe`,
+		"ProcessId":    "4242",
+		"User":         `CORP\tester`,
+		"TargetObject": `HKU\S-1-5-21-1000\SOFTWARE\ExampleVendor\Launcher`,
+	},
+	"registry_delete": {
+		"EventType":    "DeleteKey",
+		"Image":        `D:\apps\launcher\launcher.exe`,
+		"ProcessId":    "4242",
+		"User":         `CORP\tester`,
+		"TargetObject": `HKU\S-1-5-21-1000\SOFTWARE\ExampleVendor\Launcher`,
+	},
+	"registry_set": {
+		"EventType":    "SetValue",
+		"Image":        `D:\apps\launcher\launcher.exe`,
+		"ProcessId":    "4242",
+		"User":         `CORP\tester`,
+		"TargetObject": `HKU\S-1-5-21-1000\SOFTWARE\ExampleVendor\Launcher\LastRun`,
+		"Details":      "DWORD (0x00000001)",
+	},
+	"ps_script": {
+		"MessageNumber":   "1",
+		"MessageTotal":    "1",
+		"ScriptBlockText": "Get-ChildItem -Path D:\\apps\\work | Select-Object Name",
+		"ScriptBlockId":   "6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10",
+		"Path":            `D:\apps\scripts\report.ps1`,
+	},
+	"dns_query": {
+		"Image":        `D:\apps\launcher\launcher.exe`,
+		"ProcessId":    "4242",
+		"User":         `CORP\tester`,
+		"QueryName":    "updates.example.com",
+		"QueryStatus":  "0",
+		"QueryResults": "::ffff:192.0.2.30;",
+	},
+}
+
+func init() {
+	// registry_event covers keys and values; a set value is the typical
+	// event.
+	Bases["registry_event"] = Bases["registry_set"]
+}
+
+// sysmonAlso are the other Sysmon events a log source category covers.
+var sysmonAlso = map[string][]string{
+	"registry_event": {"12", "14"},
+	"file_delete":    {"23"},
+}
+
+// SysmonEventIDs returns every Sysmon event ID a log source category
+// covers, the one test events are made as first.
+func SysmonEventIDs(category string) []string {
+	id, ok := sysmonEvents[category]
+	if !ok {
+		return nil
+	}
+	return append([]string{id}, sysmonAlso[category]...)
 }
 
 // SysmonEventID returns the Sysmon event ID of a log source category.
@@ -120,7 +254,19 @@ func Cases(category string, syn *Synthesis, fields []string) []Case {
 	}
 	var out []Case
 	add := func(expect bool, ev map[string]string) {
-		out = append(out, Case{Expect: expect, Source: "synthesized", Channel: SysmonChannel, EventID: id, Data: ev})
+		eid := id
+		if _, ok := ev["EventID"]; !ok && !expect && slices.Contains(fields, "EventID") {
+			// A near miss without the event ID: every event has one.
+			return
+		}
+		if v, ok := ev["EventID"]; ok {
+			// A rule that names event IDs: the event is one of them, or
+			// another event of the channel.
+			eid = v
+			ev = maps.Clone(ev)
+			delete(ev, "EventID")
+		}
+		out = append(out, Case{Expect: expect, Source: "synthesized", Channel: Channel(category), EventID: eid, Data: ev})
 		if also4688 {
 			data := map[string]string{"SubjectUserName": "tester", "SubjectDomainName": "CORP"}
 			for raw, sig := range security4688 {
@@ -164,7 +310,11 @@ func Verify(rule *Rule, datamodel string, filter query.Expr, tf *TestFile) []err
 		rec := ingest.WinEventRecord(c.Channel, c.EventID, "test-host", now, c.Data)
 		ev := ingest.Normalize("win.events", rec, now)
 		if datamodel != "" && !strings.EqualFold(ev.Model, datamodel) {
-			errs = append(errs, fmt.Errorf("%s: the parser put the event in %s, not %s", where, ev.Model, datamodel))
+			// An event of another data model never reaches the detection:
+			// right for an event it must not match.
+			if c.Expect {
+				errs = append(errs, fmt.Errorf("%s: the parser put the event in %s, not %s", where, ev.Model, datamodel))
+			}
 			continue
 		}
 		m, err := search.MatchDoc(filter, ev.Document())

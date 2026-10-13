@@ -1,0 +1,4 @@
+{"rule": "63c779ba-f638-40a0-a593-ddd45e8b1ddc", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"26","data":{"TargetFilename":"C:\\Windows\\System32\\winevt\\Logs\\.evtx"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"26","data":{}}
+]}

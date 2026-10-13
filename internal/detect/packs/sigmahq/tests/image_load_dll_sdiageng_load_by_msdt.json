@@ -1,0 +1,5 @@
+{"rule": "ec8c4047-fad9-416a-8c81-0f479353d7f6", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"\\msdt.exe","ImageLoaded":"\\sdiageng.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"\\sdiageng.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"\\msdt.exe"}}
+]}

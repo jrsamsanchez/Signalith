@@ -362,7 +362,7 @@ func otlpWindows(b map[string]any) Event {
 		}
 	}
 	if ordered == nil {
-		if schema, ok := windowsSchema[eventID]; ok && channel == "Security" {
+		if schema, ok := windowsSchemaFor(channel, eventID); ok {
 			for _, name := range schema {
 				ordered = append(ordered, values[name])
 			}
@@ -389,6 +389,23 @@ func otlpWindows(b map[string]any) Event {
 	}
 	return ev
 }
+
+// windowsSchemaFor returns the schema order of a channel's event, for the
+// events the Windows parser reads by position.
+func windowsSchemaFor(channel, eventID string) ([]string, bool) {
+	switch {
+	case channel == "Security":
+		s, ok := windowsSchema[eventID]
+		return s, ok
+	case strings.EqualFold(channel, PowerShellChannel) && eventID == "4104":
+		return scriptBlockSchema, true
+	}
+	return nil, false
+}
+
+// scriptBlockSchema is the order of PowerShell's script block event
+// (4104): one part of a script that may be split over several events.
+var scriptBlockSchema = []string{"MessageNumber", "MessageTotal", "ScriptBlockText", "ScriptBlockId", "Path"}
 
 // windowsSchema lists, for the Security events the Windows parser reads,
 // the names of the event's data values in schema order, up to the last

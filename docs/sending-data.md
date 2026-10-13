@@ -33,7 +33,7 @@ or detection covers every source of the same kind.
 | Windows Security log: 4624, 4625 logons | Authentication |
 | Windows Security log: 4688 process creation | Endpoint |
 | Windows Security log: 4720, 4726 accounts; 4728, 4732, 4756 group changes | Change |
-| Sysmon: event 1 process create, event 3 network connection | Endpoint, Network_Traffic |
+| Sysmon: 1 process create, 8 remote thread, 10 process access; 3 network connection; 6 driver and 7 DLL load; 11 file create, 23 and 26 file delete; 12, 13, 14 registry; 22 DNS query | Endpoint, Network_Traffic, Image_Load, Filesystem, Registry, Network_Resolution |
 | Linux sshd, sudo, su (auth.log, secure, or journald) | Authentication |
 | Linux useradd, userdel, usermod, gpasswd | Change |
 | Syslog from any device (see below), including CEF | Authentication, Change, Network_Traffic or Other |

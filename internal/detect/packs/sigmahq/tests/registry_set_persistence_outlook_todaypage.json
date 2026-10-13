@@ -1,0 +1,9 @@
+{"rule": "487bb375-12ef-41f6-baae-c6a1572b4dd1", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)","TargetObject":"Software\\Microsoft\\Office\\\\Outlook\\Today\\\\Stamp"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Outlook\\Today\\Software\\Microsoft\\Office\\\\UserDefinedUrl"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)","Image":"C:\\Program Files\\Common Files\\Microsoft Shared\\ClickToRun\\\\OfficeClickToRun.exe","TargetObject":"Software\\Microsoft\\Office\\ \\Outlook\\Today\\ \\Stamp"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"Software\\Microsoft\\Office\\\\Outlook\\Today\\\\Stamp"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Image":"C:\\Program Files\\Common Files\\Microsoft Shared\\ClickToRun\\ \\OfficeClickToRun.exe","TargetObject":"\\Outlook\\Today\\Software\\Microsoft\\Office\\\\UserDefinedUrl"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}}
+]}

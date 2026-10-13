@@ -1,0 +1,5 @@
+{"rule": "02773bed-83bf-469f-b7ff-e676e7d78bab", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"_ous.json"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\svchost.exe","TargetFilename":"C:\\Program Files\\WindowsApps\\Microsoft.\\pocket_containers.json"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{}}
+]}

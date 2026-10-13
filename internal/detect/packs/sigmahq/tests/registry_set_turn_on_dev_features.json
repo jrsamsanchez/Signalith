@@ -1,0 +1,5 @@
+{"rule": "b110ebaf-697f-4da1-afd5-b536fa27a2c1", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)","TargetObject":"\\Policies\\Microsoft\\Windows\\Appx\\ \\AllowAllTrustedApps"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Policies\\Microsoft\\Windows\\Appx\\ \\AllowAllTrustedApps"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)"}}
+]}

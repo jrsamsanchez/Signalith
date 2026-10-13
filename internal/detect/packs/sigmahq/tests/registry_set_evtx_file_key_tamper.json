@@ -1,0 +1,5 @@
+{"rule": "0cb8d736-995d-4ce7-a31e-1e8d452a1459", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\SYSTEM\\CurrentControlSet\\Services\\EventLog\\\\File"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"\\System32\\Winevt\\Logs\\","TargetObject":"\\SYSTEM\\CurrentControlSet\\Services\\EventLog\\ \\File"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}}
+]}

@@ -1,0 +1,5 @@
+{"rule": "9e3357ba-09d4-4fbd-a7c5-ad6386314513", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\ImageName \\Software\\Microsoft\\Fax\\Device Providers\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"%systemroot%\\system32\\fxst30.dll","TargetObject":"\\Software\\Microsoft\\Fax\\Device Providers\\ \\ImageName"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}}
+]}

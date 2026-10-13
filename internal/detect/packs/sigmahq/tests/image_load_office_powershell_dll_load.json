@@ -1,0 +1,5 @@
+{"rule": "bb2ba6fb-95d4-4a25-89fc-30bb736c021a", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"\\outlook.exe","ImageLoaded":"\\System.Management.Automation.ni.Dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"\\System.Management.Automation.ni.Dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"\\outlook.exe"}}
+]}

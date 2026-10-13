@@ -1,0 +1,4 @@
+{"rule": "f7f9ab88-7557-4a69-b30e-0a8f91b3a0e7", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"SYSTEM\\ \\services\\localNETService"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}}
+]}

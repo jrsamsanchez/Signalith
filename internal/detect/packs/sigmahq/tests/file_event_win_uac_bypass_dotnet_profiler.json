@@ -1,0 +1,4 @@
+{"rule": "93a19907-d4f9-4deb-9f91-aac4692776a6", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"C:\\Users\\\\AppData\\Local\\Temp\\pe386.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{}}
+]}

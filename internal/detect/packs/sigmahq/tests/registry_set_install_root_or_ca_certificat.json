@@ -1,0 +1,6 @@
+{"rule": "d223b46b-5621-4037-88fe-fda32eead684", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"Binary Data","TargetObject":"\\SOFTWARE\\Policies\\Microsoft\\SystemCertificates\\AuthRoot\\Certificates\\\\Blob"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\SOFTWARE\\Policies\\Microsoft\\SystemCertificates\\AuthRoot\\Certificates\\\\Blob"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"Binary Data"}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"Binary Data","EventType":"SetValue","Image":"C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe","ProcessGuid":"570E49AA-DA47-6A7A-6212-000000001400","ProcessId":"10096","RuleName":"technique_id=T1553.004,technique_name=Install Root Certificate","TargetObject":"HKU\\S-1-5-21-4246997345-1000708036-2014123355-1001\\Software\\Microsoft\\SystemCertificates\\CA\\Certificates\\67CB47F0FE1CE30BE53C368173B985747E9762D0\\Blob","User":"SigmaCatchVm\\frack113","UtcTime":"2026-08-11 08:16:08.543"}}
+]}

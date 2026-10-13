@@ -1,0 +1,6 @@
+{"rule": "966315ef-c5e1-4767-ba25-fce9c8de3660", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"Y21k","TargetObject":"\\Environment\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Environment\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"Y21k"}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"C:\\Users\\frack113\\AppData\\Local\\Temp\\art.bat","EventType":"SetValue","Image":"C:\\WINDOWS\\system32\\reg.exe","ProcessGuid":"570E49AA-B04C-6A7C-8705-000000001400","ProcessId":"2236","RuleName":"technique_id=T1546.008,technique_name=Accessibility Features","TargetObject":"HKU\\S-1-5-21-4246997345-1000708036-2014123355-1001\\Environment\\UserInitMprLogonScript","User":"SigmaCatchVm\\frack113","UtcTime":"2026-08-12 17:41:32.568"}}
+]}

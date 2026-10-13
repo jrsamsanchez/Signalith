@@ -1,0 +1,4 @@
+{"rule": "b55ca2a3-7cff-4dda-8bdd-c7bfa63bf544", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"QueryName":".onion.link"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{}}
+]}

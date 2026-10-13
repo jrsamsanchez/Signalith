@@ -1,0 +1,4 @@
+{"rule": "3ab79e90-9fab-4cdf-a7b2-6522bc742adb", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":":\\windows\\temp\\sam.tmp"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{}}
+]}

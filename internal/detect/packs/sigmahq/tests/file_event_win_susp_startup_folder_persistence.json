@@ -1,0 +1,4 @@
+{"rule": "28208707-fe31-437f-9a7f-4b1108b94d2e", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"\\Windows\\Start Menu\\Programs\\Startup\\ .dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{}}
+]}

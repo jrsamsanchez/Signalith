@@ -1,0 +1,7 @@
+{"rule": "a7df0e9e-91a5-459a-a003-4cde67c2ff5d", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"Invoke-powershell","TargetObject":"\\Microsoft\\Windows\\CurrentVersion\\Explorer\\RunMRU"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"wmic process call create","TargetObject":"\\Microsoft\\Windows\\CurrentVersion\\Explorer\\RunMRU"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Microsoft\\Windows\\CurrentVersion\\Explorer\\RunMRU"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"Invoke-powershell"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"wmic process call create"}}
+]}

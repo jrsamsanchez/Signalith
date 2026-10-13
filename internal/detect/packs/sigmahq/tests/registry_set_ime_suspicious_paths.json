@@ -1,0 +1,8 @@
+{"rule": "9d8f9bb8-01af-4e15-a3a2-349071530530", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"\\Temporary Internet","TargetObject":"Ime File \\Control\\Keyboard Layouts\\"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"\\Favorites\\:\\Users\\","TargetObject":"Ime File\\Control\\Keyboard Layouts\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"Ime File \\Control\\Keyboard Layouts\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"\\Temporary Internet"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"Ime File\\Control\\Keyboard Layouts\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"\\Favorites\\:\\Users\\"}}
+]}

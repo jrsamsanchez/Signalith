@@ -1,0 +1,4 @@
+{"rule": "bb09dd3e-2b78-4819-8e35-a7c1b874e449", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"\\Inveigh-Relay.ps1"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{}}
+]}

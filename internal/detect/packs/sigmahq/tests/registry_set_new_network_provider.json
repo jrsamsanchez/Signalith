@@ -1,0 +1,6 @@
+{"rule": "0442defa-b4a2-41c9-ae2c-ea7042fc4701", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\NetworkProvider \\System\\CurrentControlSet\\Services\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\System\\CurrentControlSet\\Services\\ \\NetworkProvider \\System\\CurrentControlSet\\Services\\LanmanWorkstation\\NetworkProvider"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Image":"C:\\Windows\\System32\\poqexec.exe","TargetObject":"\\System\\CurrentControlSet\\Services\\ \\NetworkProvider"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}}
+]}

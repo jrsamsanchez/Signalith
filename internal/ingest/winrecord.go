@@ -8,7 +8,7 @@ import (
 
 // WinEventRecord builds the record Fluent Bit's winevtlog input sends for
 // a Windows event with the given named data values: StringInserts in
-// schema order for the Security events the parser reads, and for Sysmon
+// schema order for the Security and PowerShell events the parser reads, and for Sysmon
 // a rendered message of "Name: Value" lines. Tests, sample data and the
 // detection content checks use it to put events through the real parser.
 func WinEventRecord(channel, eventID, computer string, t time.Time, data map[string]string) map[string]any {
@@ -18,7 +18,7 @@ func WinEventRecord(channel, eventID, computer string, t time.Time, data map[str
 	}
 	sort.Strings(names)
 	var inserts []any
-	if schema, ok := windowsSchema[eventID]; ok && channel == "Security" {
+	if schema, ok := windowsSchemaFor(channel, eventID); ok {
 		for _, n := range schema {
 			inserts = append(inserts, data[n])
 		}

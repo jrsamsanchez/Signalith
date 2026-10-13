@@ -1,0 +1,5 @@
+{"rule": "b439f47d-ef52-4b29-9a2f-57d8a96cb6b8", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"\\scrcons.exe","ImageLoaded":"\\wbemdisp.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"\\wbemdisp.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"\\scrcons.exe"}}
+]}

@@ -64,6 +64,13 @@ var knownFields = func() map[string]string {
 		"process_company": kw, "process_file_version": kw, "process_integrity_level": kw,
 		"process_current_directory": kw, "process_guid": kw, "parent_process_guid": kw,
 		"parent_process_id": long, "parent_user": kw, "logon_id": kw,
+		// Sysmon fields not yet in a data model: the call stack of a process
+		// access, where a remote thread starts, and a registry rename's new
+		// name.
+		"call_trace": kw, "start_address": kw, "start_module": kw, "start_function": kw,
+		"registry_new_path": kw,
+		// PowerShell script blocks: which part of a long script an event is.
+		"script_part": long, "script_parts": long,
 		// An sshd line whose client address cannot be told from text the
 		// client sent (see ambiguousSSH).
 		"src_ambiguous": kw,

@@ -1,0 +1,6 @@
+{"rule": "aa35a627-33fb-4d04-a165-d33b4afca3e8", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"SourceImage":":\\Windows\\system32\\wsmprovhost.exe","TargetImage":"\\lsass.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"GrantedAccess":"0x80000000","SourceImage":":\\Windows\\system32\\wsmprovhost.exe","TargetImage":"\\lsass.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"TargetImage":"\\lsass.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"SourceImage":":\\Windows\\system32\\wsmprovhost.exe"}}
+]}

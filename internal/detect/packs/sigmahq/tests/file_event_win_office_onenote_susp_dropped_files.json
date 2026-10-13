@@ -1,0 +1,5 @@
+{"rule": "fcc6d700-68d9-4241-9a1a-06874d621b06", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\onenotem.exe","TargetFilename":"\\AppData\\Local\\Temp\\OneNote\\.bat"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"\\AppData\\Local\\Temp\\OneNote\\.bat"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\onenotem.exe"}}
+]}

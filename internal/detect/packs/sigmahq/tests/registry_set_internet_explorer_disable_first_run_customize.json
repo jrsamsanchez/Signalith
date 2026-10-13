@@ -1,0 +1,8 @@
+{"rule": "ab567429-1dfb-4674-b6d2-979fd2f9d125", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)","TargetObject":"\\Microsoft\\Internet Explorer\\Main\\DisableFirstRunCustomize"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)","Image":"C:\\Windows\\System32\\ie4uinit.exe","TargetObject":"\\Microsoft\\Internet Explorer\\Main\\DisableFirstRunCustomize"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)","Image":"\\Temp\\\\.cr\\avira_","TargetObject":"\\Microsoft\\Internet Explorer\\Main\\DisableFirstRunCustomize"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)","Image":"C:\\Program Files (x86)\\Foxit Software\\Foxit PDF Reader\\FoxitPDFReader.exe","TargetObject":"\\Microsoft\\Internet Explorer\\Main\\DisableFirstRunCustomize"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Microsoft\\Internet Explorer\\Main\\DisableFirstRunCustomize"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)"}}
+]}

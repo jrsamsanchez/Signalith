@@ -1,0 +1,8 @@
+{"rule": "e0813366-0407-449a-9869-a2db1119dc41", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"(Empty)","TargetObject":"\\Control\\Print\\Environments\\Windows x64\\Drivers \\Manufacturer"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"(Empty)","TargetObject":"\\CutePDF Writer v4.0\\ \\Manufacturer \\Control\\Print\\Environments\\Windows x64\\Drivers"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"(Empty)","TargetObject":"\\Manufacturer \\Version-3\\PDF24\\ \\Control\\Print\\Environments\\Windows x64\\Drivers"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"(Empty)","TargetObject":"\\Control\\Print\\Environments\\Windows x64\\Drivers\\Manufacturer\\VNC Printer (PS)\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Control\\Print\\Environments\\Windows x64\\Drivers \\Manufacturer"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"(Empty)"}}
+]}

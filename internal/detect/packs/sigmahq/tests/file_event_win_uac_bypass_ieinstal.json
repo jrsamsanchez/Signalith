@@ -1,0 +1,5 @@
+{"rule": "bdd8157d-8e85-4397-bb82-f06cc9c71dbb", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"C:\\Program Files\\Internet Explorer\\IEInstal.exe","TargetFilename":"C:\\Users\\\\AppData\\Local\\Temp\\consent.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"C:\\Users\\\\AppData\\Local\\Temp\\consent.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"C:\\Program Files\\Internet Explorer\\IEInstal.exe"}}
+]}

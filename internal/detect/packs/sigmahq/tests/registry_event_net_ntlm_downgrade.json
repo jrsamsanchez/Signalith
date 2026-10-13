@@ -1,0 +1,10 @@
+{"rule": "d67572a0-e2ec-45d6-b8db-c100d14b8ef2", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)","TargetObject":"ControlSet SYSTEM\\ \\Control\\Lsa \\lmcompatibilitylevel"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000030)","TargetObject":"SYSTEM\\ \\Control\\Lsa ControlSet \\NtlmMinClientSec"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"SYSTEM\\ \\Control\\Lsa ControlSet \\RestrictSendingNTLMTraffic"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"ControlSet SYSTEM\\ \\Control\\Lsa \\lmcompatibilitylevel"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"SYSTEM\\ \\Control\\Lsa ControlSet \\NtlmMinClientSec"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000030)"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}}
+]}

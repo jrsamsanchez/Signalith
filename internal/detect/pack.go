@@ -133,9 +133,34 @@ func loadPacks(fsys fs.FS) ([]*Pack, []*Detection, error) {
 // findings and add risk.
 var sigmaRisk = map[string]int{"informational": 5, "low": 10, "medium": 25, "high": 50, "critical": 80}
 
+// packThrottle is what makes two findings of a pack rule different: the
+// host, the program and what it acted on.
+func packThrottle(category, datamodel string) []string {
+	switch category {
+	case "process_access", "create_remote_thread":
+		return []string{"host", "process_path", "target_process_path"}
+	}
+	switch strings.ToLower(datamodel) {
+	case "network_traffic":
+		return []string{"host", "process_path", "dest", "dest_port"}
+	case "filesystem":
+		return []string{"host", "process_path", "file_path"}
+	case "registry":
+		return []string{"host", "process_path", "registry_path"}
+	case "network_resolution":
+		return []string{"host", "process_path", "query"}
+	case "image_load":
+		return []string{"host", "process_path", "loaded_file_path"}
+	case "script":
+		return []string{"host", "script_block_id", "script_part"}
+	}
+	return []string{"host", "user", "process"}
+}
+
 // PackDetection converts one pack rule, strictly, into an off detection
-// with the pack's defaults: a title naming the host, one finding per
-// host, user and command line a day, and risk on the user and the host.
+// with the pack's defaults: a title naming the host, one finding a day per
+// host, program and what it acted on (packThrottle), and risk on the user
+// and the host.
 func PackDetection(p *Pack, r PackRule, src []byte) (*Detection, error) {
 	res, err := ConvertSigmaWith(src, SigmaOptions{Strict: true})
 	if err != nil {
@@ -164,10 +189,7 @@ func PackDetection(p *Pack, r PackRule, src []byte) (*Detection, error) {
 	if err != nil {
 		return nil, err
 	}
-	d.Throttle = Throttle{Window: "24h", Fields: []string{"host", "user", "process"}}
-	if strings.EqualFold(q.Datamodel, "Network_Traffic") {
-		d.Throttle.Fields = []string{"host", "process_path", "dest", "dest_port"}
-	}
+	d.Throttle = Throttle{Window: "24h", Fields: packThrottle(strings.ToLower(meta.Logsource.Category), q.Datamodel)}
 	score := sigmaRisk[strings.ToLower(meta.Level)]
 	if score == 0 {
 		score = 25

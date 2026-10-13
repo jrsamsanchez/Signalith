@@ -1,0 +1,5 @@
+{"rule": "9ace0707-b560-49b8-b6ca-5148b42f39fb", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"UserInitMprLogonScript"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"C:\\Users\\ADMINI~1\\AppData\\Local\\Temp\\art.bat","EventType":"SetValue","Image":"C:\\Windows\\system32\\reg.exe","ProcessGuid":"5AA13A44-63B1-68FD-D93E-000000004002","ProcessId":"9452","RuleName":"-","TargetObject":"HKU\\S-1-5-21-3960063115-309473240-3247002503-500\\Environment\\UserInitMprLogonScript","User":"ATTACKRANGE\\Administrator","UtcTime":"2025-10-25 23:56:33.705"}}
+]}

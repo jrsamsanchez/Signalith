@@ -1,0 +1,4 @@
+{"rule": "1cb0c6ce-3d00-44fc-ab9c-6d6d577bf20b", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"QueryName":".devtunnels.ms"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{}}
+]}

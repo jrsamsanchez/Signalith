@@ -1,0 +1,5 @@
+{"rule": "7530b96f-ad8e-431d-a04d-ac85cc461fdc", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"powershell -command","TargetObject":"shell\\open\\command\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"shell\\open\\command\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"powershell -command"}}
+]}

@@ -1,0 +1,5 @@
+{"rule": "34746e8c-5fb8-415a-b135-0abc167e912a", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"C:\\Windows\\WinSxS\\ .exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"C:\\Windows\\WinSxS\\","TargetFilename":"C:\\Windows\\WinSxS\\.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{}}
+]}

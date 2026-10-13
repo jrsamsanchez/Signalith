@@ -1,0 +1,5 @@
+{"rule": "086ae989-9ca6-4fe7-895a-759c5544f247", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\TypedPaths\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Image":"C:\\Windows\\SysWOW64\\explorer.exe","TargetObject":"\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\TypedPaths\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}}
+]}

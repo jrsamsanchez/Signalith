@@ -1,0 +1,5 @@
+{"rule": "2092cacb-d77b-4f98-ab0d-32b32f99a054", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"\\vivaldi_elf.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"\\Vivaldi\\Application\\vivaldi.exe","ImageLoaded":"\\Vivaldi\\Application\\ \\vivaldi_elf.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{}}
+]}

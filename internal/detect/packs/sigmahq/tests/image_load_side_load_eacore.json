@@ -1,0 +1,5 @@
+{"rule": "edd3ddc3-386f-4ba5-9ada-4376b2cfa7b5", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"\\EACore.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"\\EACoreServer.exe C:\\Program Files\\Electronic Arts\\EA Desktop\\","ImageLoaded":"C:\\Program Files\\Electronic Arts\\EA Desktop\\\\EACore.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{}}
+]}
