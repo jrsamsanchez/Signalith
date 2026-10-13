@@ -84,7 +84,9 @@ func settled(rs *running, most int) int {
 	rs.client.CloseIdleConnections()
 	noFollow.CloseIdleConnections()
 	n := runtime.NumGoroutine()
-	for deadline := time.Now().Add(5 * time.Second); n > most && time.Now().Before(deadline); n = runtime.NumGoroutine() {
+	// Under -race on a busy CI runner, closed connections and stopped
+	// listeners can take several seconds to finish their goroutines.
+	for deadline := time.Now().Add(20 * time.Second); n > most && time.Now().Before(deadline); n = runtime.NumGoroutine() {
 		time.Sleep(50 * time.Millisecond)
 	}
 	return n
@@ -161,7 +163,8 @@ func TestRestartWithHTTPS(t *testing.T) {
 		}
 	}
 	if n := settled(rs, base+2); n > base+2 {
-		t.Errorf("goroutines: %d before the restarts, %d after", base, n)
+		buf := make([]byte, 1<<20)
+		t.Errorf("goroutines: %d before the restarts, %d after\n%s", base, n, buf[:runtime.Stack(buf, true)])
 	}
 
 	// Starting fails after the switch: the previous settings start

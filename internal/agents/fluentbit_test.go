@@ -2,6 +2,7 @@ package agents
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -255,6 +256,62 @@ func TestGenerateWithoutCA(t *testing.T) {
 		t.Errorf("unknown CA: %q\n%s", a.Steps, a.Config)
 	}
 }
+
+func TestAntivirusCollection(t *testing.T) {
+	for _, sysmon := range []bool{false, true} {
+		a, err := Generate(Options{OS: "windows", ServerURL: "http://192.168.1.20:8080", Token: "tok-0123456789abcdef", Sysmon: sysmon})
+		if err != nil {
+			t.Fatal(err)
+		}
+		channels := "Security,Microsoft-Windows-Windows Defender/Operational"
+		if sysmon {
+			channels += ",Microsoft-Windows-Sysmon/Operational"
+		}
+		if !strings.Contains(a.Config, line("Channels", channels)) || !strings.Contains(a.Config, line("Ignore_Missing_Channels", "On")) {
+			t.Errorf("sysmon %v: config lacks Defender or Ignore_Missing_Channels:\n%s", sysmon, a.Config)
+		}
+		if !strings.Contains(strings.Join(a.Steps, "\n"), "Restart-Service fluent-bit") {
+			t.Error("no step says how to restart an installed agent")
+		}
+	}
+
+	a, err := Generate(Options{OS: "linux", ServerURL: "http://192.168.1.20:8080", Token: "tok-0123456789abcdef"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"[INPUT]\n" + line("Name", "tail") + line("Tag", "linux.clamav") + line("Path", "/var/log/clamav/*.log") + line("Path_Key", "file") +
+			line("DB", "/var/lib/fluent-bit/signalith-clamav.db") + line("storage.type", "filesystem"),
+		"[FILTER]\n" + line("Name", "sysinfo") + line("Match", "linux.clamav") + line("hostname_key", "hostname"),
+		"[FILTER]\n" + line("Name", "grep") + line("Match", "linux.clamav") + line("Exclude", "log SelfCheck"),
+	} {
+		if !strings.Contains(a.Config, want) {
+			t.Errorf("file mode lacks\n%s\nin\n%s", want, a.Config)
+		}
+	}
+	if strings.Contains(a.Config, "SYSLOG_IDENTIFIER=clamd") {
+		t.Error("file mode reads the journal")
+	}
+
+	a, err = Generate(Options{OS: "linux", LinuxSource: "journal", ServerURL: "http://192.168.1.20:8080", Token: "tok-0123456789abcdef"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"SYSLOG_IDENTIFIER=clamd\n", "SYSLOG_IDENTIFIER=clamonacc\n", "SYSLOG_IDENTIFIER=freshclam\n",
+		"[FILTER]\n" + line("Name", "grep") + line("Match", "linux.journal") + line("Exclude", "MESSAGE ^SelfCheck"),
+	} {
+		if !strings.Contains(a.Config, want) {
+			t.Errorf("journal mode lacks %q", want)
+		}
+	}
+	if strings.Contains(a.Config, "linux.clamav") {
+		t.Error("journal mode tails ClamAV files")
+	}
+}
+
+// line is one setting as section writes it.
+func line(k, v string) string { return fmt.Sprintf("    %-20s %s\n", k, v) }
 
 // TestGenerateTiesAnIPAddressToTheServer checks agents that reach the
 // server by IP address with a CA that vouches for other computers too: a

@@ -120,8 +120,13 @@ const (
 	// changing.
 	StateOffline = "offline"
 	// StateUnreachable is never written either: it is this server, on its
-	// own page, while it cannot use OpenSearch.
+	// own page, while it cannot reach OpenSearch, or OpenSearch doesn't
+	// answer it in time (OSInfo.Problem is then store.ProblemTimeout).
 	StateUnreachable = "unreachable"
+	// StateRefused is never written either: it is this server, on its own
+	// page, while OpenSearch answers but turns it away (OSInfo.Problem
+	// says how).
+	StateRefused = "refused"
 )
 
 // Heartbeat is a server's document in the runtime index, node:<node_id>,
@@ -198,6 +203,10 @@ type OSInfo struct {
 	OK        bool   `json:"ok"`
 	Endpoint  string `json:"endpoint,omitempty"`
 	LatencyMS int64  `json:"latency_ms"`
+	// Problem is how OpenSearch turned the server's last heartbeat away
+	// (a store.Refusal, such as not_initialized or busy), or "timeout"
+	// when it took the heartbeat but didn't answer in time (store.Problem).
+	Problem string `json:"problem,omitempty"`
 }
 
 // LeaseDoc is lease:jobs, which names the server that runs the
@@ -232,6 +241,9 @@ type Fingerprints struct {
 	Retention  string `json:"retention,omitempty"`
 	Feeds      string `json:"feeds,omitempty"`
 	Detections string `json:"detections,omitempty"`
+	// Notify is the notification channels and rules; "" when a server
+	// has none.
+	Notify string `json:"notify,omitempty"`
 	// Archives names the archive folder (its id file), only while some
 	// retention policy archives: servers that share one folder share it.
 	Archives string `json:"archives,omitempty"`
@@ -247,11 +259,18 @@ func (f Fingerprints) Combined() string {
 		h.Write([]byte(p))
 		h.Write([]byte{0})
 	}
+	// Only when set, so servers without notifications hash as servers of
+	// versions before them do.
+	if f.Notify != "" {
+		h.Write([]byte("notify:" + f.Notify))
+		h.Write([]byte{0})
+	}
 	return "sha256:" + hex.EncodeToString(h.Sum(nil))
 }
 
 // Differ lists the parts that differ between f and o, in words: "retention
-// policies", "threat intel feeds", "detections folder", "archive folder".
+// policies", "threat intel feeds", "detections folder", "notification
+// channels", "archive folder".
 func (f Fingerprints) Differ(o Fingerprints) []string {
 	var out []string
 	if f.Retention != o.Retention {
@@ -262,6 +281,9 @@ func (f Fingerprints) Differ(o Fingerprints) []string {
 	}
 	if f.Detections != o.Detections {
 		out = append(out, "detections folder")
+	}
+	if f.Notify != o.Notify {
+		out = append(out, "notification channels")
 	}
 	if f.Archives != o.Archives {
 		out = append(out, "archive folder")

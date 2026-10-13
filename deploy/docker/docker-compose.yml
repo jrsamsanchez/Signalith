@@ -1,6 +1,7 @@
 # Signalith on one machine (Linux, or Windows with Docker Desktop), with
-# HTTPS, a secured OpenSearch and no default passwords. From the folder you
-# cloned Signalith into:
+# HTTPS, a secured OpenSearch and no default passwords. It needs Docker
+# Compose 2.20 or newer (check with: docker compose version). From the
+# folder you cloned Signalith into:
 #
 #   1. Start it:
 #        docker compose -f deploy/docker/docker-compose.yml up -d
@@ -14,11 +15,21 @@
 #   docker compose -f deploy/docker/docker-compose.yml exec signalith signalith passwd
 #   docker compose -f deploy/docker/docker-compose.yml restart signalith
 #
+# If step 1 ends with 'service "opensearch-security" didn't complete
+# successfully', OpenSearch has not loaded its security settings. This shows
+# why and what to do, and docs/opensearch-security.md ("If OpenSearch's
+# security settings aren't loaded") has more:
+#   docker compose -f deploy/docker/docker-compose.yml logs opensearch-security
+#
 # To update: git pull, then step 1 again; it rebuilds Signalith. Coming from
 # a version without these steps? See "Upgrading the Docker quick start" in
 # README.md.
 # Everything starts again by itself after a reboot once Docker is running
 # (Docker Desktop: Settings > General > Start Docker Desktop when you sign in).
+# The two steps that run once per "up", setup and opensearch-security, are
+# not needed then: what they made and loaded is kept. But if the computer
+# restarted while "up" was still waiting for opensearch-security, Signalith
+# had not started yet and does not start by itself: run step 1 again.
 services:
   # Runs before the others on every "up", then stops. It makes the
   # certificates OpenSearch and Signalith use with each other, the first
@@ -73,11 +84,73 @@ services:
       - ./opensearch/security/internal_users.yml:/usr/share/opensearch/config/opensearch-security/internal_users.yml:ro
       - ./opensearch/security/roles.yml:/usr/share/opensearch/config/opensearch-security/roles.yml:ro
       - ./opensearch/security/roles_mapping.yml:/usr/share/opensearch/config/opensearch-security/roles_mapping.yml:ro
+    # Healthy once the cluster answers (asked with the admin certificate,
+    # which works before the security settings are loaded) and its security
+    # settings are loaded (_plugins/_security/health, which needs no
+    # sign-in). opensearch-security loads them, which on a slow computer can
+    # take up to about 10 minutes: until then it shows as starting, not
+    # unhealthy (start_period).
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf --cacert /usr/share/opensearch/config/certs/root-ca.pem --cert /usr/share/opensearch/config/certs/admin.pem --key /usr/share/opensearch/config/certs/admin-key.pem https://localhost:9200/_cluster/health || exit 1"]
+      test: ["CMD-SHELL", "curl -sf -o /dev/null --cacert /usr/share/opensearch/config/certs/root-ca.pem --cert /usr/share/opensearch/config/certs/admin.pem --key /usr/share/opensearch/config/certs/admin-key.pem https://localhost:9200/_cluster/health && curl -sf -o /dev/null --cacert /usr/share/opensearch/config/certs/root-ca.pem https://localhost:9200/_plugins/_security/health || exit 1"]
       interval: 10s
+      start_period: 10m
       retries: 30
     # Keep at most 5 log files of 10 MB, so the container log cannot fill the disk.
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+
+  # Runs on every "up" once OpenSearch has started, then stops. It makes
+  # sure OpenSearch has loaded its security settings: who may sign in, and
+  # what each may do (the files in opensearch/security/). OpenSearch loads
+  # them by itself only as it starts with none stored yet, and tries just
+  # once, which can fail on a slow computer; it then refuses every request
+  # with "Security not initialized". This loads them with securityadmin.sh and
+  # the admin certificate, trying again while OpenSearch is slow, for about
+  # 10 minutes. It loads them when OpenSearch has none loaded, or when the
+  # files are not the ones it loaded last (the first time it runs, after an
+  # update of Signalith that changes roles.yml, or after an edit), but not
+  # on every "up": loading them is slow and can fail on a slow computer,
+  # which would hold up Signalith for nothing.
+  # Signalith starts only once this succeeds. Its log shows each step:
+  #   docker compose -f deploy/docker/docker-compose.yml logs opensearch-security
+  opensearch-security:
+    image: opensearchproject/opensearch:2.17.1
+    depends_on:
+      setup: { condition: service_completed_successfully }
+      # Started, not healthy: OpenSearch turns healthy only once its
+      # security settings are loaded, which is this service's job. It waits
+      # for OpenSearch to answer itself.
+      opensearch: { condition: service_started }
+    # OpenSearch's own user, the one that may read the admin certificate.
+    user: "1000:1000"
+    # Runs a copy of the script without Windows line endings (CRLF), which
+    # a checkout on Windows can give it and which sh cannot run.
+    entrypoint: ["sh", "-c", "tr -d '\\r' < /usr/share/opensearch/load-security.sh > /tmp/load-security.sh && exec sh /tmp/load-security.sh"]
+    environment:
+      # securityadmin.sh is a small Java program; keep its memory small.
+      - JAVA_OPTS=-Xms32m -Xmx256m
+    volumes:
+      - opensearch-certs:/usr/share/opensearch/config/certs:ro
+      - ./opensearch/load-security.sh:/usr/share/opensearch/load-security.sh:ro
+      # The same files as OpenSearch's; the image has the other files there.
+      - ./opensearch/security/config.yml:/usr/share/opensearch/config/opensearch-security/config.yml:ro
+      - ./opensearch/security/internal_users.yml:/usr/share/opensearch/config/opensearch-security/internal_users.yml:ro
+      - ./opensearch/security/roles.yml:/usr/share/opensearch/config/opensearch-security/roles.yml:ro
+      - ./opensearch/security/roles_mapping.yml:/usr/share/opensearch/config/opensearch-security/roles_mapping.yml:ro
+      # Which files it loaded last. Docker gives a new volume the owner of
+      # the folder it is put on, here uid 1000.
+      - opensearch-security-loaded:/usr/share/opensearch/data
+    # Hardening, as for Signalith: only the volume above and /tmp can be
+    # written, and no extra privileges.
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: "no"
     logging:
       driver: json-file
       options: { max-size: "10m", max-file: "5" }
@@ -97,7 +170,13 @@ services:
     restart: unless-stopped
     depends_on:
       setup: { condition: service_completed_successfully }
-      opensearch: { condition: service_healthy }
+      # opensearch-security has made sure OpenSearch answers and has its
+      # security settings loaded.
+      opensearch-security: { condition: service_completed_successfully }
+      # Then OpenSearch turns healthy within 10 seconds. If Docker had
+      # marked it unhealthy before (when an earlier try gave up), that is
+      # no reason to stop now (required: false, which needs Compose 2.20).
+      opensearch: { condition: service_healthy, required: false }
     # A stop gives the background jobs up to a minute to finish before
     # another server takes them over.
     stop_grace_period: 90s
@@ -152,6 +231,9 @@ volumes:
   opensearch-data:
   # OpenSearch's certificates, made by the setup service.
   opensearch-certs:
+  # A fingerprint of the security settings files opensearch-security loaded
+  # last, so it loads them again only when they change.
+  opensearch-security-loaded:
   # Detections, lists, dashboards, users, archived days, and the state
   # folder (SIGNALITH_STATE_DIR, /var/lib/signalith): Signalith's master key,
   # its own HTTPS certificate and this server's identity. Kept from earlier

@@ -13,7 +13,7 @@ func TestDashboardsAPI(t *testing.T) {
 
 	code, out := do(t, ts, "GET", "/api/dashboards", "", true)
 	list := out["dashboards"].([]any)
-	if code != 200 || len(list) != 1 || list[0].(map[string]any)["id"] != "posture" {
+	if code != 200 || len(list) != 2 || list[0].(map[string]any)["id"] != "posture" || list[1].(map[string]any)["id"] != "malware" {
 		t.Fatalf("empty list = %d %v", code, out)
 	}
 
@@ -107,7 +107,7 @@ func TestDashboardsAPI(t *testing.T) {
 	}
 
 	code, out = do(t, ts, "GET", "/api/dashboards", "", true)
-	if code != 200 || len(out["dashboards"].([]any)) != 2 {
+	if code != 200 || len(out["dashboards"].([]any)) != 3 {
 		t.Errorf("list = %v", out)
 	}
 	if code, _ := do(t, ts, "DELETE", "/api/dashboards/posture", "", true); code != 400 {
@@ -124,7 +124,7 @@ func TestDashboardsAPI(t *testing.T) {
 func TestDashboardsOff(t *testing.T) {
 	ts, _ := newTestServerWith(t, func(s *Server) { s.Dashboards = nil })
 	code, out := do(t, ts, "GET", "/api/dashboards", "", true)
-	if code != 200 || len(out["dashboards"].([]any)) != 1 || out["error"] == nil {
+	if code != 200 || len(out["dashboards"].([]any)) != 2 || out["error"] == nil {
 		t.Errorf("list = %d %v", code, out)
 	}
 	if code, _ := do(t, ts, "POST", "/api/dashboards", `{"title":"x"}`, true); code != 503 {
@@ -162,5 +162,96 @@ func TestPostureAPI(t *testing.T) {
 		if code, _ := do(t, ts, "GET", "/api/posture?range="+bad, "", true); code != 400 {
 			t.Errorf("range %s = %d", bad, code)
 		}
+	}
+}
+
+// The built-in Malware dashboard is listed, read and run without the
+// custom dashboards store, and can never be changed.
+func TestBuiltinMalwareDashboardAPI(t *testing.T) {
+	for _, storeOn := range []bool{true, false} {
+		ts, _ := newTestServerWith(t, func(s *Server) {
+			if !storeOn {
+				s.Dashboards = nil
+			}
+		})
+		code, out := do(t, ts, "GET", "/api/dashboards", "", true)
+		list, _ := out["dashboards"].([]any)
+		if code != 200 || len(list) < 2 {
+			t.Fatalf("store %v: list = %d %v", storeOn, code, out)
+		}
+		p, m := list[0].(map[string]any), list[1].(map[string]any)
+		if p["id"] != "posture" || p["builtin"] != true || m["id"] != "malware" || m["title"] != "Malware" || m["builtin"] != true || m["panels"] != float64(11) {
+			t.Errorf("store %v: list = %v", storeOn, list)
+		}
+
+		code, out = do(t, ts, "GET", "/api/dashboards/malware", "", true)
+		if code != 200 || out["title"] != "Malware" || out["builtin"] != true || out["time_range"] != "7d" || len(out["panels"].([]any)) != 11 {
+			t.Errorf("store %v: get = %d %v", storeOn, code, out)
+		}
+
+		req, _ := http.NewRequest("GET", ts.URL+"/api/dashboards/malware/yaml", nil)
+		req.SetBasicAuth("admin", "s3cret-pass")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != 200 || !strings.HasPrefix(string(b), "id: malware\ntitle: Malware\n") || strings.Contains(string(b), "builtin") {
+			t.Errorf("store %v: yaml = %d %s", storeOn, resp.StatusCode, b)
+		}
+
+		code, out = do(t, ts, "POST", "/api/dashboards/malware/run", `{"range":"24h"}`, true)
+		if code != 200 || out["range"] != "24h" || len(out["panels"].([]any)) != 11 {
+			t.Errorf("store %v: run = %d %v", storeOn, code, out)
+		}
+		for i, pr := range out["panels"].([]any) {
+			if e := pr.(map[string]any)["error"]; e != nil {
+				t.Errorf("store %v: panel %d error %v", storeOn, i, e)
+			}
+		}
+
+		const readOnly = "The Malware dashboard is built in and can\u2019t be changed. Make a copy to change it."
+		for _, c := range []struct{ method, path, body string }{
+			{"PUT", "/api/dashboards/malware", `{"title":"Mine","panels":[]}`},
+			{"DELETE", "/api/dashboards/malware", ""},
+			{"POST", "/api/dashboards/malware/panels", `{"title":"x","query":"datamodel=Malware | stats count"}`},
+		} {
+			code, out := do(t, ts, c.method, c.path, c.body, true)
+			if code != 400 || out["error"] != readOnly {
+				t.Errorf("store %v: %s %s = %d %v", storeOn, c.method, c.path, code, out)
+			}
+		}
+		if storeOn {
+			for _, id := range []string{"malware", "posture"} {
+				code, out := do(t, ts, "POST", "/api/dashboards", `{"id":"`+id+`","title":"Mine"}`, true)
+				if code != 409 || out["error"] != "That id belongs to a built-in dashboard. Choose another." {
+					t.Errorf("create %s = %d %v", id, code, out)
+				}
+			}
+			// A copy of the built-in is an ordinary dashboard with a new id.
+			code, out := do(t, ts, "POST", "/api/dashboards", `{"title":"Malware","panels":[{"title":"n","query":"datamodel=Malware | stats count"}]}`, true)
+			if code != 201 || out["id"] != "malware-2" || out["builtin"] != nil {
+				t.Errorf("copy = %d %v", code, out)
+			}
+		}
+	}
+}
+
+// A viewer can open and run the built-in dashboard; changing it still
+// needs the analyst role, which is checked before the built-in refusal.
+func TestBuiltinDashboardRoles(t *testing.T) {
+	ts, _ := newRoleServer(t)
+	if code, out := doAs(t, ts, "vera", "role-password", "GET", "/api/dashboards/malware", ""); code != 200 || out["builtin"] != true {
+		t.Errorf("viewer get = %d %v", code, out)
+	}
+	if code, _ := doAs(t, ts, "vera", "role-password", "POST", "/api/dashboards/malware/run", ""); code != 200 {
+		t.Errorf("viewer run = %d", code)
+	}
+	if code, _ := doAs(t, ts, "vera", "role-password", "DELETE", "/api/dashboards/malware", ""); code != 403 {
+		t.Errorf("viewer delete = %d", code)
+	}
+	if code, _ := doAs(t, ts, "andy", "role-password", "DELETE", "/api/dashboards/malware", ""); code != 400 {
+		t.Errorf("analyst delete = %d", code)
 	}
 }

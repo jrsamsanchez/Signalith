@@ -80,6 +80,11 @@ the job if not.
   sign-ins, process starts, network connections, firewall traffic and DNS
   lookups: ordinary noise for the attacks to hide in, plus a benign look-alike
   to practise closing as a false positive.
+- **Antivirus events:** Microsoft Defender on the Windows hosts and ClamAV on
+  the Linux servers, with a daily definitions update on every host, detections
+  inside the attack stories, a trojan outbreak, failing updates and an EICAR
+  test, plus one Trend Micro Apex One detection sent over syslog (standard size
+  only). They fill the Malware dashboard; see [antivirus.md](antivirus.md).
 - **An OT flavour:** an engineering workstation, two HMIs and three PLCs, with
   the HMIs polling the PLCs over Modbus (TCP 502) and writing to a historian.
   It is all normal; no detection targets OT, it just shows the plant floor in
@@ -98,9 +103,9 @@ days of light background, a few hundred events in all.
 
 ## A guided tour of the attacks
 
-Five stories are woven into the week. Four are intrusions designed so that
-every built-in detection that is on fires; the fifth is benign activity that
-trips a detection as a false positive.
+Seven stories are woven into the week. Five are intrusions designed so that
+every built-in detection that is on fires; the other two are benign activity
+that trips detections you can close as benign.
 
 Some detections raise a **finding** on the Findings page. Others only add
 **risk** to the users and hosts involved, which shows on the Risk page and
@@ -108,10 +113,12 @@ counts toward the risk findings below. The table keeps them apart.
 
 | Story | What happens | Raises findings | Adds risk only |
 | --- | --- | --- | --- |
-| **SSH brute force from the internet** | An external host (`203.0.113.45`) password-sprays SSH on the database server `db-01`, breaks the account `bob.okafor`, logs in as root and reads `/etc/shadow`. | auth-brute-force, auth-password-spray, auth-brute-force-success, auth-shadow-file-access, threat-activity | auth-ssh-root-login, auth-sudo-failures |
-| **Phishing to credential theft and C2** | A finance workstation (`ws-fin-07`, Alice Nguyen) looks up a look-alike sign-in site, opens a malicious invoice that launches encoded PowerShell, downloads a tool with `certutil`, dumps credentials with Mimikatz, runs discovery, installs persistence and beacons to a C2 that is in the sample intel. | endpoint-office-child-shell, endpoint-encoded-powershell, endpoint-credential-dumping, threat-activity | endpoint-lolbin-download, endpoint-discovery-burst, endpoint-scheduled-task, endpoint-service-created, network-shell-port |
+| **SSH brute force from the internet** | An external host (`203.0.113.45`) password-sprays SSH on the database server `db-01`, breaks the account `bob.okafor`, logs in as root and reads `/etc/shadow`, then drops a miner that ClamAV quarantines. | auth-brute-force, auth-password-spray, auth-brute-force-success, auth-shadow-file-access, threat-activity, malware-detected | auth-ssh-root-login, auth-sudo-failures |
+| **Phishing to credential theft and C2** | A finance workstation (`ws-fin-07`, Alice Nguyen) looks up a look-alike sign-in site, opens a malicious invoice that launches encoded PowerShell, downloads a tool with `certutil`, dumps credentials with Mimikatz, turns off Defender’s real-time protection, runs discovery, installs persistence and beacons to a C2 that is in the sample intel. | endpoint-office-child-shell, endpoint-encoded-powershell, endpoint-credential-dumping, threat-activity, malware-detected and malware-not-removed (Defender finds Mimikatz but can’t remove it), av-protection-disabled, av-rule-block (on `ws-fin-02`, where the same invoice is opened, attack surface reduction stops Word starting PowerShell) | endpoint-lolbin-download, endpoint-discovery-burst, endpoint-scheduled-task, endpoint-service-created, network-shell-port |
 | **Hidden admin account on the domain controller** | On `dc-01` the attacker creates `svc-helpdesk` and adds it to Domain Admins, then deletes a stale contractor account. | change-admin-group-add | change-account-created |
-| **Ransomware preparation on the file server** | Using the stolen domain-admin account, the attacker reaches `file-01` over SMB and deletes the volume shadow copies and recovery configuration. | endpoint-shadow-copy-delete | |
+| **Ransomware preparation on the file server** | Using the stolen domain-admin account, the attacker reaches `file-01` over SMB, tries to turn off Defender’s real-time protection (tamper protection blocks it), adds an antivirus exclusion for `C:\ProgramData\SyncSvc`, and deletes the volume shadow copies and recovery configuration. Defender quarantines the first copy of the ransomware; the exclusion lets the second copy run, and controlled folder access stops it changing the finance share. | endpoint-shadow-copy-delete, av-tamper-blocked, av-exclusion-added, malware-ransomware, av-rule-block | |
+| **Trojan spreads from a file share** | A fake “payroll update” (`Trojan:Win32/Fakepay.A`) on `\\file-01\public` is opened on four operations workstations within a quarter of an hour. Defender quarantines it on `ws-ops-01`, `ws-ops-03` and `ws-ops-04`, but fails to on `ws-ops-05`. | malware-detected, malware-outbreak, malware-not-removed | |
+| **Antivirus upkeep** | Definitions updates fail twice on `web-01` (ClamAV) and on `ws-ops-02` (Defender). ClamAV’s nightly scan on `app-01` finds a web shell in an upload folder but only reports it, so the file stays. IT tests Defender on `ws-it-02` with the EICAR test file. | av-definitions-failing; malware-left-clamav and malware-detected for the web shell; malware-detected for the EICAR test, a finding to close as benign | |
 | **Benign activity that looks malicious** | A backup job on `file-01` runs encoded PowerShell, and IT fetches a tool with `certutil`. | endpoint-encoded-powershell on `file-01`: one finding to close as benign | endpoint-lolbin-download on `ws-it-02` |
 
 The risk that builds up then raises two more findings on its own:
@@ -119,7 +126,7 @@ The risk that builds up then raises two more findings on its own:
 - **risk-threshold-exceeded**: a user or host passed the risk threshold;
 - **risk-multiple-tactics**: risk from several ATT&CK tactics on one entity.
 
-So 20 of the 22 built-in detections fire from the sample, all of them on.
+So 30 of the 32 built-in detections fire from the sample, all of them on.
 Each detection adds its risk once per thing it found, so the totals on the
 Risk page and the dashboards are the same every time you load.
 

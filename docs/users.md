@@ -621,7 +621,9 @@ page itself.
 `POST /api/cases/{id}/entries`, `DELETE /api/cases/{id}/entries/{entry}`,
 `POST /api/cases/{id}/entities`, `POST /api/dashboards`, `PUT /api/dashboards/{id}`,
 `DELETE /api/dashboards/{id}`, `POST /api/dashboards/{id}/panels`,
-`POST /api/intel/indicators`, `DELETE /api/intel/indicators/{id}`.
+`POST /api/intel/indicators`, `DELETE /api/intel/indicators/{id}`,
+`GET /api/respond/actions`, `GET /api/respond/runs`, `POST /api/respond/run` (running
+[response actions](response-actions.md)).
 
 **Admin:** `GET /api/agents/config`, `POST /api/tls/names`, `GET /api/security`,
 `POST /api/security/ca`, `POST /api/detections`,
@@ -631,9 +633,12 @@ page itself.
 `POST /api/intel/feeds`, `PUT /api/intel/feeds/{name}`, `DELETE /api/intel/feeds/{name}`,
 `POST /api/intel/feeds/test`, `POST /api/intel/feeds/{name}/refresh`, `POST /api/intel/catalog`,
 `POST /api/intel/taxii/collections`, `POST /api/intel/upload`,
+`GET /api/respond/config`, `PUT /api/respond/config`, `POST /api/respond/test`
+(setting up [response actions](response-actions.md)),
 `GET /api/sample`, `POST /api/sample/load`, `POST /api/sample/remove`
 (the one-click [sample data](sample-data.md)),
 `GET /api/cluster` (the Servers page; see [servers.md](servers.md)), every
+`/api/notify` route (the Notifications page; see [notifications.md](notifications.md)), every
 `/api/retention` route (see [retention.md](retention.md)), every
 `/api/users` and `/api/auth/directory` route below, and every `/api/settings` route
 (`GET` and `PUT /api/settings`, `POST /api/settings/test/opensearch`,

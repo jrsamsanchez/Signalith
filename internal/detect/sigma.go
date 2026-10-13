@@ -35,7 +35,7 @@ type sigmaRule struct {
 	FalsePos    []string       `yaml:"falsepositives"`
 }
 
-// sigmaFields maps Sigma (Sysmon and Windows Security) field names to
+// sigmaFields maps Sigma (Sysmon, Windows Security and antivirus) field names to
 // Signalith data model fields.
 var sigmaFields = map[string]string{
 	"image":               "process_path",
@@ -79,6 +79,8 @@ var sigmaFields = map[string]string{
 	// Sysmon network fields (event 3); Initiated becomes direction.
 	"sourcehostname": "src_host",
 	"initiated":      "direction",
+	"signature":      "signature",
+	"filename":       "file_path",
 }
 
 // sigmaLevels maps Sigma levels to severities.
@@ -258,6 +260,8 @@ func (c *sigmaConv) datamodel(ls map[string]any) string {
 		return "Network_Traffic"
 	case "authentication":
 		return "Authentication"
+	case "antivirus":
+		return "Malware"
 	}
 	if get("product") == "linux" && get("service") == "auth" {
 		return "Authentication"

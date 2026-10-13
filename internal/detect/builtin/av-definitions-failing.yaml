@@ -1,0 +1,18 @@
+id: av-definitions-failing
+title: Antivirus definitions not updating on $dest$
+description: The antivirus failed to update its definitions at least twice in a day, or reports definitions a week or more old, so new malware goes unnoticed.
+query: |
+  datamodel=Malware type=health action IN (update_failed, outdated)
+  | stats count as problems by dest, vendor_product, action
+  | where action="outdated" OR problems >= 2
+  | sort -problems
+schedule: 1h
+lookback: 24h
+severity: low
+mitre: [T1685]
+throttle:
+  fields: [dest, vendor_product]
+  window: 24h
+enabled: true
+tags: [malware, defense-impairment]
+guidance: Check that the host can reach its update source (proxy, firewall, disk space). Several hosts at once usually means the update server or mirror is down.

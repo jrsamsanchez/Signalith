@@ -151,13 +151,49 @@ func TestDockerCompose(t *testing.T) {
 			t.Errorf("health check does not use %s: %s", f, health)
 		}
 	}
-	if !strings.Contains(health, "https://localhost:9200/") {
+	// Healthy only once its security settings are loaded.
+	if !strings.Contains(health, "https://localhost:9200/") || !strings.Contains(health, "/_plugins/_security/health") {
 		t.Errorf("health check: %s", health)
 	}
 
-	// Signalith: secrets only as files from setup, and hardened.
+	// The step that loads OpenSearch's security settings: the same files
+	// as OpenSearch's, the certificates and its script read-only, and
+	// hardened. It waits for OpenSearch to start, not to be healthy, since
+	// OpenSearch turns healthy only once it has done its job.
+	l := svc["opensearch-security"]
+	if l.DependsOn["setup"].Condition != "service_completed_successfully" || l.DependsOn["opensearch"].Condition != "service_started" {
+		t.Errorf("opensearch-security depends on %v", l.DependsOn)
+	}
+	if _, ok := vols["opensearch-security-loaded"]; !ok {
+		t.Error("volume opensearch-security-loaded is not declared")
+	}
+	want = []string{
+		"opensearch-certs:/usr/share/opensearch/config/certs:ro",
+		"./opensearch/load-security.sh:/usr/share/opensearch/load-security.sh:ro",
+		"opensearch-security-loaded:/usr/share/opensearch/data",
+	}
+	for name := range ospki.SecurityFiles() {
+		want = append(want, "./opensearch/security/"+name+":/usr/share/opensearch/config/opensearch-security/"+name+":ro")
+	}
+	for _, v := range want {
+		if !slices.Contains(l.Volumes, v) {
+			t.Errorf("opensearch-security lacks volume %s", v)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dockerDir, "opensearch", "load-security.sh")); err != nil {
+		t.Error(err)
+	}
+	if l.User != "1000:1000" || l.Restart != "no" || !l.ReadOnly || !slices.Contains(l.Tmpfs, "/tmp") || !slices.Equal(l.CapDrop, []string{"ALL"}) ||
+		len(l.CapAdd) != 0 || !slices.Contains(l.SecurityOpt, "no-new-privileges:true") || len(l.Ports) != 0 {
+		t.Errorf("opensearch-security: user %q restart %q read_only %v tmpfs %v cap_drop %v cap_add %v security_opt %v ports %v",
+			l.User, l.Restart, l.ReadOnly, l.Tmpfs, l.CapDrop, l.CapAdd, l.SecurityOpt, l.Ports)
+	}
+
+	// Signalith: secrets only as files from setup, and hardened. It starts
+	// once OpenSearch's security settings are loaded.
 	s := svc["signalith"]
-	if s.DependsOn["setup"].Condition != "service_completed_successfully" || s.DependsOn["opensearch"].Condition != "service_healthy" {
+	if s.DependsOn["setup"].Condition != "service_completed_successfully" || s.DependsOn["opensearch"].Condition != "service_healthy" ||
+		s.DependsOn["opensearch-security"].Condition != "service_completed_successfully" {
 		t.Errorf("signalith depends on %v", s.DependsOn)
 	}
 	secretsAt := ""

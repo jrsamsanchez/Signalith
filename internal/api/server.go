@@ -35,6 +35,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/intel"
 	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/redact"
+	"github.com/jrsamsanchez/signalith/internal/respond"
 	"github.com/jrsamsanchez/signalith/internal/retention"
 	"github.com/jrsamsanchez/signalith/internal/sample"
 	"github.com/jrsamsanchez/signalith/internal/search"
@@ -66,11 +67,15 @@ type Server struct {
 	// Intel disables the threat intel endpoints.
 	Intel *intel.Store
 	Feeds *intel.Feeds
+	// Notify backs the Notifications page; nil disables it.
+	Notify *Notify
 	// Dashboards holds custom dashboards; nil disables them (the built-in
 	// posture dashboard still works).
 	Dashboards *dashboards.Store
 	// Cases holds investigations; nil disables them.
 	Cases cases.Store
+	// Respond runs response actions; nil disables them.
+	Respond *respond.Runner
 	// Retention enforces data retention policies; nil disables the Data
 	// retention page.
 	Retention *retention.Manager
@@ -213,8 +218,10 @@ func (s *Server) Handler() http.Handler {
 	s.routeRisk(api)
 	s.routeAsk(api)
 	s.routeIntel(api)
+	s.routeNotify(api)
 	s.routeDashboards(api)
 	s.routeCases(api)
+	s.routeRespond(api)
 	s.routeUsers(api)
 	s.routeRetention(api)
 	s.routeSample(api)
@@ -932,8 +939,9 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	out := map[string]any{"version": s.Version, "ingest": s.Pipeline.Stats(), "syslog": s.Syslog.Stats()}
 	status, err := s.Backend.Health(ctx)
+	var problem, advice string
 	if err != nil {
-		status = "unreachable"
+		status, problem, advice = osTrouble(err)
 	}
 	// No server running detections, a full disk: everyone sees those, on
 	// every page.
@@ -946,7 +954,11 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	// paths, addresses, the OpenSearch URL and its errors) and the setup
 	// advice is for admins, who are the ones able to change it.
 	if p := principalOf(r); p == nil || !p.Role.AtLeast(users.Admin) {
-		out["opensearch"] = map[string]any{"status": status}
+		brief := map[string]any{"status": status}
+		if problem != "" {
+			brief["problem"] = problem
+		}
+		out["opensearch"] = brief
 		writeJSON(w, http.StatusOK, out)
 		return
 	}
@@ -958,12 +970,17 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	if sec := s.securityHealth(); sec != nil {
 		out["security"] = sec
 	}
-	osURL := redact.URL(s.conf().OpenSearch.URL)
+	osOut := map[string]any{"status": status, "url": redact.URL(s.conf().OpenSearch.URL)}
 	if err != nil {
-		out["opensearch"] = map[string]any{"status": status, "error": err.Error(), "url": osURL}
-	} else {
-		out["opensearch"] = map[string]any{"status": status, "url": osURL}
+		osOut["error"] = err.Error()
 	}
+	if problem != "" {
+		osOut["problem"] = problem
+	}
+	if advice != "" {
+		osOut["advice"] = advice
+	}
+	out["opensearch"] = osOut
 	warnings := s.conf().Warnings()
 	if len(s.conf().Ingest.Tokens) == 0 {
 		warnings = append(warnings, "No ingest tokens are configured, so agents cannot send data. Add one under ingest.tokens.")
@@ -992,6 +1009,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	if w := s.behindWarning(time.Now()); w != "" {
 		warnings = append(warnings, w)
 	}
+	warnings = append(warnings, s.notifyWarnings(ctx)...)
 	if len(warnings) > 0 {
 		out["warnings"] = warnings
 	}

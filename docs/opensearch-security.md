@@ -20,8 +20,8 @@ OpenSearch, so anyone can use them.
 
 ## Docker quick start
 
-Nothing to do. Each `docker compose ... up` first runs a short setup step,
-`signalith bootstrap-docker`, which:
+Nothing to set up by hand. Each `docker compose ... up` runs two short steps around
+OpenSearch. First the setup step, `signalith bootstrap-docker`, which:
 
 - makes the CA and three certificates the first time (RSA 3072, valid 10 years): one for
   OpenSearch, one for Signalith (`CN=signalith,O=Signalith`) and an admin certificate
@@ -32,6 +32,16 @@ Nothing to do. Each `docker compose ... up` first runs a short setup step,
   `docker compose -f deploy/docker/docker-compose.yml restart opensearch signalith`;
 - makes the first admin password and the agents' ingest token the same way.
 
+Then, once OpenSearch has started, the step that loads OpenSearch's security settings
+(the `opensearch-security` service, `deploy/docker/opensearch/load-security.sh`).
+OpenSearch loads them by itself only as it starts with none stored yet, and tries just
+once, which can fail on a slow computer. So this step checks that OpenSearch has them,
+and loads them with `securityadmin.sh` and the admin certificate when it has none, or
+when the files changed since the step last loaded them (after an update of Signalith, or
+your own edit). When OpenSearch is too slow to take a file, it tries that file again, for
+about 10 minutes in all. Signalith starts only after this step succeeds. When there is
+nothing to do, it takes a second or two.
+
 OpenSearch runs with its security plugin on and the demo setup skipped. Its settings are
 in `deploy/docker/opensearch/opensearch.yml`, and the users and roles in
 `deploy/docker/opensearch/security/`: `config.yml` (certificate sign-in only),
@@ -39,25 +49,98 @@ in `deploy/docker/opensearch/opensearch.yml`, and the users and roles in
 `roles_mapping.yml` (Signalith's certificate gets that role). OpenSearch publishes no
 port; only Signalith reaches it, on the Docker network.
 
-To look at OpenSearch yourself, use the admin certificate from inside its container:
+To look at OpenSearch yourself, use the admin certificate from inside its container. From
+the folder you cloned Signalith into (one line, in PowerShell too):
 
 ```sh
-docker compose -f deploy/docker/docker-compose.yml exec opensearch \
-  curl -s --cacert config/certs/root-ca.pem --cert config/certs/admin.pem \
-  --key config/certs/admin-key.pem "https://localhost:9200/_cat/indices?v"
+docker compose -f deploy/docker/docker-compose.yml exec opensearch curl -s --cacert config/certs/root-ca.pem --cert config/certs/admin.pem --key config/certs/admin-key.pem "https://localhost:9200/_cat/indices?v"
 ```
 
-OpenSearch reads the files in `security/` only when it first starts with its security
-plugin on (that includes the first start after upgrading from an earlier quick start;
-existing indices stay). If you change them later, for example to give `roles.yml`
-another `index_prefix`, load them again:
+If you change the files in `security/`, for example to give `roles.yml` another
+`index_prefix`, run `docker compose -f deploy/docker/docker-compose.yml up -d` again: the
+step sees the change and loads them.
 
-```sh
-docker compose -f deploy/docker/docker-compose.yml exec opensearch \
-  bash plugins/opensearch-security/tools/securityadmin.sh -cd config/opensearch-security/ \
-  -cacert config/certs/root-ca.pem -cert config/certs/admin.pem \
-  -key config/certs/admin-key.pem -h localhost
-```
+### If OpenSearch's security settings aren't loaded
+
+You see one of these:
+
+- `docker compose -f deploy/docker/docker-compose.yml up -d` ends with
+  `service "opensearch-security" didn't complete successfully: exit 1`, and Signalith does
+  not start;
+- the **Servers** page shows a red alert that OpenSearch's security settings aren't
+  loaded, and OpenSearch answers every request with `503` and
+  `OpenSearch Security not initialized.`
+
+OpenSearch refuses everyone until its security settings are loaded. From the folder you
+cloned Signalith into:
+
+1. Run the usual command again. It runs the step that loads OpenSearch's security
+   settings again, which keeps trying for about 10 minutes, and then starts Signalith:
+   ```sh
+   docker compose -f deploy/docker/docker-compose.yml up -d
+   ```
+2. If it fails again, the step's log says why:
+   ```sh
+   docker compose -f deploy/docker/docker-compose.yml logs opensearch-security
+   ```
+   - `OpenSearch did not answer`: OpenSearch did not start, or keeps stopping.
+     `docker compose -f deploy/docker/docker-compose.yml ps -a opensearch` shows whether it
+     runs (`Up`; `Exited` or `Restarting` when it stopped), and the end of
+     `docker compose -f deploy/docker/docker-compose.yml logs opensearch` says why. Fix
+     what it says, then do step 1 again.
+   - `... has a mistake, so OpenSearch can't read it`: a file in
+     `deploy/docker/opensearch/security/` that you changed. Correct it, or undo your
+     changes with `git checkout deploy/docker/opensearch/security`, then do step 1 again.
+   - `OpenSearch's disk is nearly full` (`flood-stage watermark`): free some disk space,
+     then do step 1 again. OpenSearch lifts its block by itself once there is room.
+   - `OpenSearch didn't answer within 30 seconds` (`SocketTimeoutException`) on every
+     try: OpenSearch is too slow on this computer right now. Close other programs, or give
+     Docker more memory and CPU (below), then do step 1 again.
+   - OpenSearch's own log may say more:
+     `docker compose -f deploy/docker/docker-compose.yml logs opensearch`
+3. To load them by hand instead (step 1 does the same by itself, so try it first), run
+   this one line:
+   ```sh
+   docker compose -f deploy/docker/docker-compose.yml exec opensearch plugins/opensearch-security/tools/securityadmin.sh -cd config/opensearch-security -icl -nhnv -cacert config/certs/root-ca.pem -cert config/certs/admin.pem -key config/certs/admin-key.pem -h localhost
+   ```
+   It ends with `Done with success`. On a slow computer it can end with
+   `ERR: cannot upload configuration, see errors above` instead, after a
+   `SocketTimeoutException` for one of the files; on such a computer a whole run seldom gets
+   every file in. Run it again: each run prints
+   `SUCC: Configuration for '...' created or updated` for each kind it stored (`config`,
+   `roles`, `tenants` and so on). Once every kind has printed that in at least one run,
+   ask OpenSearch to use what is stored (the same command with `-rl` in place of
+   `-cd config/opensearch-security`, one line):
+   ```sh
+   docker compose -f deploy/docker/docker-compose.yml exec opensearch plugins/opensearch-security/tools/securityadmin.sh -rl -icl -nhnv -cacert config/certs/root-ca.pem -cert config/certs/admin.pem -key config/certs/admin-key.pem -h localhost
+   ```
+   It ends with `Reload config on all nodes`. To check that OpenSearch now uses them (one
+   line; it shows `"status":"UP"` once they are loaded, and `"status":"DOWN"` while they
+   aren't):
+   ```sh
+   docker compose -f deploy/docker/docker-compose.yml exec opensearch curl -s --cacert config/certs/root-ca.pem https://localhost:9200/_plugins/_security/health
+   ```
+   Then start Signalith without the step:
+   ```sh
+   docker compose -f deploy/docker/docker-compose.yml up -d --no-deps signalith
+   ```
+   The next `up -d` (after an update, say) runs the step again, and it loads the files
+   once more, since it did not load them itself.
+
+To give Docker more memory and CPU: OpenSearch here needs about 2 GB of memory, so give
+Docker at least 4 GB and 2 processors, more if the computer has them to spare.
+
+- **Docker Desktop on Windows** (with WSL 2, the default): Windows sets the limits. Open
+  (or create) the file `.wslconfig` in your user folder (`C:\Users\<you>\.wslconfig`) and
+  put in it, with the numbers you want:
+  ```ini
+  [wsl2]
+  memory=6GB
+  processors=4
+  ```
+  Then quit Docker Desktop, run `wsl --shutdown` in PowerShell, and start Docker Desktop
+  again.
+- **Docker Desktop on Mac or Linux**: Settings > Resources.
 
 ## OpenSearch on Linux or Windows
 

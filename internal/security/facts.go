@@ -10,6 +10,7 @@ import (
 
 	"github.com/jrsamsanchez/signalith/internal/config"
 	"github.com/jrsamsanchez/signalith/internal/secrets"
+	"github.com/jrsamsanchez/signalith/internal/store"
 	"github.com/jrsamsanchez/signalith/internal/tlsauto"
 	"github.com/jrsamsanchez/signalith/internal/users"
 )
@@ -273,6 +274,12 @@ type OpenSearchFacts struct {
 	AuthErr      string
 	AuthNoPlugin bool // the security plugin is not installed
 	AuthProbed   bool
+	// AuthRefusal is how OpenSearch refused that question, when it
+	// answered it with an error.
+	AuthRefusal store.Refusal
+	// SecurityNotLoaded is OpenSearch's security plugin answering that its
+	// security settings aren't loaded, so it turns every request away.
+	SecurityNotLoaded bool
 	// DataPaths are where OpenSearch keeps events, with their disks,
 	// when it runs on this computer; DataErr says why they are unknown.
 	DataPaths []Disk

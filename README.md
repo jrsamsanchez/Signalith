@@ -8,8 +8,9 @@ visual query builder, CIM-style data models, scheduled detections with a finding
 queue for triage, Sigma rule import, a MITRE ATT&CK coverage map, risk-based
 alerting with asset and identity context, threat intel feeds matched against your
 events, a security posture dashboard plus dashboards you build from queries, and
-investigation cases that collect findings, notes, searches and evidence in one place.
-Response actions and playbooks come next.
+investigation cases that collect findings, notes, searches and evidence in one place,
+and response actions (block an IP, disable an account, isolate a host) run from a
+finding or a case. Playbooks come next.
 
 Website: **https://signalith.io** (its source is in [`site/`](site/)).
 
@@ -22,7 +23,9 @@ service or a systemd unit.
 
 ### Docker (evaluation)
 
-From the folder you cloned Signalith into:
+It needs Docker Compose 2.20 or newer (Docker Desktop has it). Check with
+`docker compose version`; on Linux, update the `docker-compose-plugin` package if it is
+older. Then, from the folder you cloned Signalith into:
 
 ```sh
 docker compose -f deploy/docker/docker-compose.yml up -d
@@ -32,7 +35,11 @@ docker compose -f deploy/docker/docker-compose.yml exec signalith signalith init
 The first command starts OpenSearch and Signalith. On first start a setup step makes the
 admin password, the agents' ingest token and the certificates OpenSearch and Signalith use
 with each other, and keeps them in Docker volumes; no password is written in the compose
-files. The second command shows the admin password. Open https://localhost:8080 and sign
+files. Once OpenSearch is up, a second step loads OpenSearch's security settings (who may
+sign in, and what each may do), and Signalith starts after it. If the first command ends
+with `service "opensearch-security" didn't complete successfully`, see
+[If OpenSearch's security settings aren't loaded](docs/opensearch-security.md#if-opensearchs-security-settings-arent-loaded).
+The second command shows the admin password. Open https://localhost:8080 and sign
 in as `admin` with it. Signalith serves HTTPS with a certificate it makes for itself, so
 the browser warns until you trust it; the sign-in page has a **Download the server
 certificate** link, and [docs/https.md](docs/https.md) says how to trust it.
@@ -71,7 +78,10 @@ If the change you had made there was `plaintext_ingest: deny`, add that line bac
 `mode: auto`, indented the same, before you run the first command; otherwise agents on
 plain `http://` and the old example token may be accepted again. After a reboot
 everything starts again by itself once Docker is running; in Docker Desktop turn on
-Settings > General > "Start Docker Desktop when you sign in".
+Settings > General > "Start Docker Desktop when you sign in". If the computer restarted
+while the first command was still waiting for the step that loads OpenSearch's security
+settings, Signalith had not started yet and does not start by itself: https://localhost:8080
+doesn't answer. Run `docker compose -f deploy/docker/docker-compose.yml up -d` again then.
 
 #### Upgrading the Docker quick start
 
@@ -92,10 +102,15 @@ same):
    ```sh
    docker compose -f deploy/docker/docker-compose.yml up -d
    ```
-   This rebuilds Signalith, runs the setup step once and restarts OpenSearch with its
-   security plugin on; the first start takes a minute or two longer. Events, findings,
-   investigations, users, detections and dashboards are kept: they are in the
-   `opensearch-data` and `signalith-data` volumes, which stay.
+   This rebuilds Signalith, runs the setup step once, restarts OpenSearch with its
+   security plugin on, and then runs the step that loads OpenSearch's security settings;
+   Signalith starts after that. The first start takes a minute or two longer, and up to
+   about 10 minutes on a slow computer, where that step keeps trying while OpenSearch is
+   slow. Events, findings, investigations, users, detections and dashboards are kept: they
+   are in the `opensearch-data` and `signalith-data` volumes, which stay. If the command
+   ends with `service "opensearch-security" didn't complete successfully`, or the
+   **Servers** page later says OpenSearch's security settings aren't loaded, follow
+   [If OpenSearch's security settings aren't loaded](docs/opensearch-security.md#if-opensearchs-security-settings-arent-loaded).
 3. Show the new admin password:
    ```sh
    docker compose -f deploy/docker/docker-compose.yml exec signalith signalith initial-password
@@ -230,9 +245,14 @@ Supported sources in Phase 1:
 | Sysmon: event 1 process create, event 3 network connection | Endpoint, Network_Traffic |
 | Linux sshd, sudo, su (auth.log, secure, or journald) | Authentication |
 | Linux useradd, userdel, usermod, gpasswd | Change |
-| Syslog from any device (see below), including CEF | Authentication, Change, Network_Traffic or Other |
+| Syslog from any device (see below), including CEF and LEEF | Authentication, Change, Network_Traffic or Other |
+| Microsoft Defender Antivirus (Windows agent, collected automatically) | Malware |
+| ClamAV (Linux agent: /var/log/clamav or the journal) | Malware |
+| Antivirus consoles via syslog (CEF, LEEF, Symantec, Trellix ePO): Trend Micro, Sophos, ESET, CrowdStrike, SentinelOne, Kaspersky, Bitdefender and others | Malware |
 | OpenTelemetry Collector or SDK logs over OTLP/HTTP ([docs/opentelemetry.md](docs/opentelemetry.md)) | the same models for Windows, Linux and syslog records; Other for app logs |
 | Anything else | Other (searchable by text and fields) |
+
+Antivirus: see [docs/antivirus.md](docs/antivirus.md).
 
 sshd prints the user name a client sends, and on a failed key sign-in the key ID of the
 certificate it offers, as they were sent. When either copies sshd's own "from <address>
@@ -496,7 +516,7 @@ are counted for each person's own address, not the proxy's. See
 | `syslog.allow` | any sender | Sender IPs or CIDRs allowed to send syslog; others are dropped and counted |
 | `syslog.public_port` | the listen port | Port devices send UDP and TCP syslog to, when it is forwarded to the listen port; shown on Add data |
 | `detections.dir` | `detections` | Folder for custom and edited detections, relative to the config file |
-| `detections.scheduler` | `true` | Lets this server run detections, threat intel downloads and retention. Servers that share one OpenSearch take turns automatically; turn it off only on a server that should never run them. See [More than one server](#more-than-one-server) |
+| `detections.scheduler` | `true` | Lets this server run detections, threat intel downloads, notifications and retention. Servers that share one OpenSearch take turns automatically; turn it off only on a server that should never run them. See [More than one server](#more-than-one-server) |
 | `detections.max_findings_per_run` | `100` | Cap on findings one run can raise |
 | `lookups.dir` | `lookups` | Folder for `assets.csv` and `identities.csv`, relative to the config file |
 | `intel.feeds` | none | Threat intel feeds kept in this file (read-only on the page); most people add feeds on the **Threat intel** page instead. See [Threat intel](#threat-intel). Nothing is fetched until a feed is added |
@@ -509,6 +529,7 @@ are counted for each person's own address, not the proxy's. See
 | `intel.feeds[].headers`, `.username`, `.password` | none | Request headers and HTTP basic sign-in for feeds that need a key; values may use `${ENV_VAR}` |
 | `intel.feeds[].tags`, `.description`, `.enabled` | none, `true` | Labels added to every indicator, and on/off |
 | `intel.feeds_file` | `<lookups.dir>/intel_feeds.yaml` | Where feeds added on the page are saved, with their API keys encrypted (file mode 0600) |
+| `notify.file` | `<lookups.dir>/notifications.yaml` | Where notification channels and rules set on the **Notifications** page are saved, with their webhook URLs, header values and passwords encrypted (file mode 0600). See [docs/notifications.md](docs/notifications.md) |
 | `intel.allow_loopback_feeds` | `false` | Allow feed downloads from this machine (`127.0.0.1`, `::1`), for a feed server on the same host |
 | `cluster.node_name` | the name kept in the state folder, else this computer's name | This server's name in the list of servers and on every log line (`node=`). 1 to 63 letters, digits, dots, dashes or underscores. In Docker, set it (or `SIGNALITH_NODE_NAME`), since a container's name is random. Set in signalith.yaml or the environment only |
 | `dashboards.dir` | `dashboards` | Folder for custom dashboards, one YAML file each, relative to the config file |
@@ -521,7 +542,7 @@ Secrets can come from the environment instead: `SIGNALITH_OPENSEARCH_PASSWORD`,
 `auth.ldap` in this file only; directory sign-in set up on the Users page keeps its own) (also
 `SIGNALITH_OPENSEARCH_URL`, `SIGNALITH_OPENSEARCH_USERNAME`, `SIGNALITH_OPENSEARCH_PROXY`, `SIGNALITH_LISTEN`,
 `SIGNALITH_PUBLIC_URL`, `SIGNALITH_DETECTIONS_DIR`, `SIGNALITH_LOOKUPS_DIR`, `SIGNALITH_DASHBOARDS_DIR`,
-`SIGNALITH_USERS_FILE`, `SIGNALITH_INTEL_FEEDS_FILE`, `SIGNALITH_ARCHIVE_DIR`, `SIGNALITH_ASSISTANT_API_KEY`, and
+`SIGNALITH_USERS_FILE`, `SIGNALITH_INTEL_FEEDS_FILE`, `SIGNALITH_NOTIFY_FILE`, `SIGNALITH_ARCHIVE_DIR`, `SIGNALITH_ASSISTANT_API_KEY`, and
 `SIGNALITH_SYSLOG_UDP` and `SIGNALITH_SYSLOG_TCP`, where `off` turns the listener off, `SIGNALITH_NODE_NAME` and
 `SIGNALITH_NODE_URL`). Secrets can also be read
 from a file, as Docker and Kubernetes secrets are: set `SIGNALITH_OPENSEARCH_PASSWORD_FILE`,
@@ -604,8 +625,9 @@ adding a server by hand, and load balancer examples.
 Passwords and API keys are encrypted in the files where Signalith keeps its settings: in `signalith.yaml`
 (`opensearch.password`, `assistant.api_key`, `auth.ldap.bind_password`, `ingest.tokens`, feed
 passwords and headers), in `settings.yaml` (the OpenSearch password and the AI model's API key
-saved on the **Settings** page), in `directory.json` (the directory service account password) and
-in `intel_feeds.yaml` (keys of feeds added on the page). They look like `enc:v1:9096cd23:...`. A
+saved on the **Settings** page), in `directory.json` (the directory service account password),
+in `intel_feeds.yaml` (keys of feeds added on the page) and in `notifications.yaml` (webhook URLs,
+headers, signing secrets and mail passwords of notification channels). They look like `enc:v1:9096cd23:...`. A
 plain value pasted into `signalith.yaml` still works, and `signalith validate` and the **Health**
 page say to encrypt it; the server encrypts plain values in the files it writes itself
 (`settings.yaml`, `directory.json`, `intel_feeds.yaml`) when it starts. The master key is made by
@@ -678,6 +700,23 @@ like an investigation in Splunk ES. Open the **Investigations** tab to see open 
 
 Cases are stored in OpenSearch in the `<prefix>_cases` index, and every change is
 recorded with who made it.
+
+## Notifications
+
+Signalith can tell you about new findings in Slack, Microsoft Teams, email or a webhook (a
+SOAR, ticketing system or your own script). On the **Notifications** page (admins), add a
+**channel** for each place messages go and test it with **Send test**. Then add a **rule**
+that says which findings go there, such as "High and critical findings from any detection go
+to Slack #soc and Email SOC team". Rules can also pick detections and a least risk score.
+Sample-data findings are skipped unless a rule includes them.
+
+Each finding goes to each channel once. Failed sends are retried for about 80 minutes,
+and the Health page warns about a failing channel. Only the server running the background jobs
+sends, so a cluster sends each message once. Webhook bodies are versioned JSON and can be
+signed with HMAC-SHA256.
+
+See [docs/notifications.md](docs/notifications.md) for setting up each kind of channel
+(Teams uses a Workflows webhook), the webhook body, checking its signature, and the API.
 
 ## Risk and context
 
@@ -780,6 +819,24 @@ intel:
 
 See [docs/threat-intel.md](docs/threat-intel.md) for the catalog, formats, TAXII,
 download safety rules, matching details and the API.
+
+## Response actions
+
+Analysts can act on what they find without leaving Signalith: **Respond** on a
+finding or a case runs a **response action** on one of its users, hosts or IPs, such
+as blocking an IP on the firewall, disabling the user in Active Directory, isolating
+the host with a script, or starting a Shuffle workflow. The target is checked strictly
+for its kind, a disruptive action needs a reason, and a confirm step says exactly
+what will happen before anything runs. Every run is kept in the `<prefix>_actions`
+index with who ran it, why and what came back, and noted on the case or finding.
+
+Admins set actions up on the **Response actions** page from templates (OPNsense or
+pfSense alias, generic webhook, Shuffle, isolate-host script, disable or enable an AD
+user), with **Test** to check one without changing anything. Scripts run only from
+the server's scripts folder (`response.scripts_dir`), which no page can change.
+
+See [docs/response-actions.md](docs/response-actions.md) for each kind of action,
+the AD delegation, example isolate scripts and the API.
 
 ## Dashboards
 
@@ -945,7 +1002,7 @@ syslog devices ─UDP/TCP/TLS▶ query compiler,
 | `internal/search` | Compiles queries to OpenSearch DSL and runs remaining commands in memory |
 | `internal/ingest` | Fluent Bit and OTLP record parsing for Windows and Linux, index template |
 | `internal/syslog` | Syslog receiver (UDP, TCP, TLS), RFC 5424, RFC 3164 and CEF parsing |
-| `internal/datamodel` | Authentication, Endpoint, Network_Traffic, Change, Filesystem, Registry, Network_Resolution, Image_Load, Script, Inventory, Configuration_Check, Alerts, Risk, Other |
+| `internal/datamodel` | Authentication, Endpoint, Network_Traffic, Change, Malware, Filesystem, Registry, Network_Resolution, Image_Load, Script, Inventory, Configuration_Check, Alerts, Risk, Other |
 | `internal/agents` | Fluent Bit and OpenTelemetry Collector configuration generator |
 | `internal/detect` | Detection format, built-in content, scheduler, Sigma converter, ATT&CK catalog |
 | `internal/findings` | Findings model and its OpenSearch store |

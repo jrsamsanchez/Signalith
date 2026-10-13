@@ -12,7 +12,7 @@ from indicators you add by hand, and from uploaded lists.
 | `cidr` | `198.51.100.0/24` | The same fields, for any address in the network |
 | `domain` | `evil.example` | `dest`, `dest_host`, `domain`, `query`, `url_domain`, and the host of `url` (with `| intel`) |
 | `url` | `http://evil.example/a.exe` | `url` |
-| `md5`, `sha1`, `sha256` | `d41d8cd9...` | `process_md5`, `process_sha1`, `process_sha256`, `process_hash`, `file_hash`, `hash`, `md5`, `sha1`, `sha256` |
+| `md5`, `sha1`, `sha256` | `d41d8cd9...` | `process_md5`, `process_sha1`, `process_sha256`, `process_hash`, `file_hash`, `file_md5`, `file_sha1`, `file_sha256`, `hash`, `md5`, `sha1`, `sha256` |
 | `email` | `ceo@spoofed.example` | `sender`, `recipient`, `src_user`, `user` |
 
 Each indicator has a source (the feed name, or `manual`), description, weight,

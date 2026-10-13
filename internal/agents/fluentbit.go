@@ -222,8 +222,19 @@ func Generate(o Options) (*Agent, error) {
 				{"Systemd_Filter", "SYSLOG_IDENTIFIER=userdel"},
 				{"Systemd_Filter", "SYSLOG_IDENTIFIER=usermod"},
 				{"Systemd_Filter", "SYSLOG_IDENTIFIER=gpasswd"},
+				// ClamAV: on-access and on-demand scans, and definition
+				// updates. Red Hat-family systems log them here only.
+				{"Systemd_Filter", "SYSLOG_IDENTIFIER=clamd"},
+				{"Systemd_Filter", "SYSLOG_IDENTIFIER=clamonacc"},
+				{"Systemd_Filter", "SYSLOG_IDENTIFIER=freshclam"},
 				{"Read_From_Tail", "On"},
 				{"storage.type", "filesystem"},
+			}))
+			// clamd checks its database every few minutes; those lines
+			// say nothing and would be most of the volume.
+			b.WriteString(section("FILTER", [][2]string{
+				{"Name", "grep"}, {"Match", "linux.journal"},
+				{"Exclude", "MESSAGE ^SelfCheck"},
 			}))
 		} else {
 			b.WriteString(section("INPUT", [][2]string{
@@ -231,6 +242,25 @@ func Generate(o Options) (*Agent, error) {
 				{"Path", "/var/log/auth.log,/var/log/secure"},
 				{"DB", "/var/lib/fluent-bit/signalith-auth.db"},
 				{"storage.type", "filesystem"},
+			}))
+			// ClamAV's own log files (clamd, clamonacc, freshclam). Path_Key
+			// says which file a line came from, and the host name is added
+			// because the lines carry none. A host without ClamAV has no
+			// such files, which the tail input ignores.
+			b.WriteString(section("INPUT", [][2]string{
+				{"Name", "tail"}, {"Tag", "linux.clamav"},
+				{"Path", "/var/log/clamav/*.log"},
+				{"Path_Key", "file"},
+				{"DB", "/var/lib/fluent-bit/signalith-clamav.db"},
+				{"storage.type", "filesystem"},
+			}))
+			b.WriteString(section("FILTER", [][2]string{
+				{"Name", "sysinfo"}, {"Match", "linux.clamav"},
+				{"hostname_key", "hostname"},
+			}))
+			b.WriteString(section("FILTER", [][2]string{
+				{"Name", "grep"}, {"Match", "linux.clamav"},
+				{"Exclude", "log SelfCheck"},
 			}))
 		}
 		// Only root may read the config: it holds the ingest token.
@@ -253,7 +283,9 @@ func Generate(o Options) (*Agent, error) {
 			"Events appear in Search within a minute; check the Health page if they do not.")
 	case "windows":
 		a.ConfigPath = `C:\Program Files\fluent-bit\conf\fluent-bit.conf`
-		channels := "Security"
+		// Microsoft Defender is always collected: it is part of every
+		// supported Windows version, needs no install and logs little.
+		channels := "Security,Microsoft-Windows-Windows Defender/Operational"
 		if o.Sysmon {
 			channels += ",Microsoft-Windows-Sysmon/Operational"
 		}
@@ -265,6 +297,9 @@ func Generate(o Options) (*Agent, error) {
 		b.WriteString(section("INPUT", [][2]string{
 			{"Name", "winevtlog"}, {"Tag", "win.events"},
 			{"Channels", channels},
+			// Without this, a host with no Defender (Server Core with the
+			// feature removed) or no Sysmon stops the input from starting.
+			{"Ignore_Missing_Channels", "On"},
 			{"Interval_Sec", "1"},
 			{"String_Inserts", "On"},
 			{"DB", `C:\ProgramData\fluent-bit\signalith-winevtlog.sqlite`},
@@ -296,7 +331,7 @@ func Generate(o Options) (*Agent, error) {
 				`icacls '`+a.ConfigPath+`' /inheritance:r /grant:r '*S-1-5-18:F' '*S-1-5-32-544:F'`+"\n"+
 				`New-Item -ItemType Directory -Force 'C:\ProgramData\fluent-bit' | Out-Null`+"\n"+
 				`icacls 'C:\ProgramData\fluent-bit' /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F'`,
-			`Register and start the service in an elevated PowerShell: New-Service fluent-bit -BinaryPathName '"C:\Program Files\fluent-bit\bin\fluent-bit.exe" -c "C:\Program Files\fluent-bit\conf\fluent-bit.conf"' -StartupType Automatic; Start-Service fluent-bit`,
+			`Register and start the service in an elevated PowerShell (if the agent is already installed, run Restart-Service fluent-bit instead): New-Service fluent-bit -BinaryPathName '"C:\Program Files\fluent-bit\bin\fluent-bit.exe" -c "C:\Program Files\fluent-bit\conf\fluent-bit.conf"' -StartupType Automatic; Start-Service fluent-bit`,
 			"Events appear in Search within a minute; check the Health page if they do not.")
 	default:
 		return nil, fmt.Errorf("unknown os %q; use linux or windows", o.OS)

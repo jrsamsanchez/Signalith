@@ -336,7 +336,11 @@ to the browser; the page only says whether one is set.
 
 **Test connection** checks OpenSearch with the values on the form, saved or not,
 and says plainly what is wrong: nothing answers, wrong password, a certificate that
-is not trusted, HTTP on an HTTPS port, or not an OpenSearch at all. **Test** for the
+is not trusted, HTTP on an HTTPS port, or not an OpenSearch at all. It also says when
+the problem is OpenSearch itself, so that no setting here would fix it: its security
+settings aren't loaded, it is too busy, or it took the request but didn't answer in time.
+[When this server can't use OpenSearch](servers.md#when-this-server-cant-use-opensearch)
+says what to do about each. **Test** for the
 AI assistant asks the model one fixed question ("failed logins in the last 24
 hours") and shows the query it wrote. A result is marked out of date as soon as
 one of the settings it used changes.
@@ -360,7 +364,7 @@ change off the page.
 | `retention.days` | The data retention page. |
 | `auth.admin_user`, `auth.admin_password_hash` | `signalith.yaml` and `signalith passwd` only: the built-in admin is the break-glass account, so no page can lock everyone out. |
 | `auth.ldap` | The Users page sets up directory sign-in. |
-| `auth.users_file`, `intel.feeds_file`, `detections.dir`, `dashboards.dir`, `lookups.dir` | `signalith.yaml`: pages save into these files and folders, and the lookups folder holds the Settings page's own file. The page shows where they are. |
+| `auth.users_file`, `intel.feeds_file`, `notify.file`, `detections.dir`, `dashboards.dir`, `lookups.dir` | `signalith.yaml`: pages save into these files and folders, and the lookups folder holds the Settings page's own file. The page shows where they are. |
 | `ingest.tokens` | `signalith.yaml` (`ingest.tokens`) or `SIGNALITH_INGEST_TOKEN`; **Add data** shows the agent setup that uses them. The page shows how many there are. |
 | `intel.feeds` | The Threat intel page. |
 

@@ -261,6 +261,7 @@ Data models and their fields (every event also has: `)
 	}
 	b.WriteString(`
 Notes: Windows process names include .exe (powershell.exe). In Authentication, src is where the logon came from and dest is the system logged on to. Risk events are only searched with datamodel=Risk.
+In Malware, type is threat, rule or health; malware not removed is action IN (allowed, failed, restored).
 
 Examples:
 Q: top 10 sources of failed logins this week

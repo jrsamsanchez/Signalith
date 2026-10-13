@@ -275,8 +275,9 @@ function showPage(name, opts = {}) {
   setNavOpen(false);
   if (fromDrawer) $('crumb-page').focus({ preventScroll: true });
   if (location.hash !== '#' + name) {
-    try { history[opts.replace ? 'replaceState' : 'pushState'](null, '', '#' + name); } catch (_) { /* sandboxed */ }
+    try { history[opts.replace || hashSource ? 'replaceState' : 'pushState'](null, '', '#' + name); } catch (_) { /* sandboxed */ }
   }
+  hashSource = false;
   if (switching) window.scrollTo(0, 0);
   if (name === 'data') { loadDataSource(); if (typeof loadSampleCard === 'function') loadSampleCard(); }
   if (name === 'health') loadHealth();
@@ -284,13 +285,23 @@ function showPage(name, opts = {}) {
   try { localStorage.setItem('signalith.page', name); } catch (_) { /* storage may be blocked */ }
 }
 
+// pageFromHash reads the page from the address. Add data takes the source
+// to show, as in #data?source=antivirus; it is selected here and the
+// address goes back to #data once the page opens.
+let hashSource = false;
 function pageFromHash() {
-  const name = decodeURIComponent(location.hash.slice(1));
-  return name && $('page-' + name) ? name : null;
+  let name = location.hash.slice(1);
+  let query = '';
+  const q = name.indexOf('?');
+  if (q >= 0) [name, query] = [name.slice(0, q), name.slice(q + 1)];
+  try { name = decodeURIComponent(name); } catch (_) { return null; }
+  if (!name || !$('page-' + name)) return null;
+  hashSource = name === 'data' && pickDataSource(new URLSearchParams(query).get('source') || '');
+  return name;
 }
 const followHash = () => {
   const name = pageFromHash();
-  if (name && name !== currentPage) showPage(name, { replace: true });
+  if (name && (name !== currentPage || hashSource)) showPage(name, { replace: true });
 };
 window.addEventListener('hashchange', followHash);
 window.addEventListener('popstate', followHash);
@@ -372,6 +383,8 @@ const JUMP_WORDS = {
   health: 'status opensearch ingest', help: 'help syntax language commands',
   servers: 'cluster nodes servers background jobs leader failover standby readyz',
   users: 'accounts people roles permissions ldap active directory sign-in passwords',
+  notify: 'notifications alerts email slack teams webhook smtp channels rules paging',
+  respond: 'response actions respond block ip firewall opnsense pfsense webhook shuffle script isolate disable account soar playbook',
   security: 'hardening encryption certificate authority ca tls https keys permissions bitlocker luks',
   settings: 'configuration config server opensearch syslog listen address port tls certificate ai assistant model api key restart yaml',
 };
@@ -555,6 +568,53 @@ async function refreshHealthCard() {
   try { h = await api('api/health'); } catch (_) { return; }
   renderHealthCard(h);
 }
+// OS_TROUBLE words what is wrong with OpenSearch, from the problem
+// api/health and api/cluster give: how it turned Signalith away (status
+// "refused"), or timeout (status "unreachable", but it was reached: it
+// took the request and didn't answer in time). Each is [title for the
+// Health card and the Servers page, short status, what it means].
+const OS_TROUBLE = {
+  timeout: ['OpenSearch didn’t answer in time', 'No answer in time', 'OpenSearch didn’t answer Signalith in time.'],
+  // Not "not ready": it stays so until someone loads them.
+  not_initialized: ['OpenSearch security not loaded', 'Security not loaded', 'OpenSearch is running, but its security settings aren’t loaded, so it refuses Signalith.'],
+  busy: ['OpenSearch too busy', 'Too busy', 'OpenSearch is too busy to answer in time.'],
+  auth: ['OpenSearch refuses the sign-in', 'Sign-in refused', 'OpenSearch refuses Signalith’s sign-in.'],
+  forbidden: ['OpenSearch refuses Signalith', 'Not allowed', 'OpenSearch refuses Signalith’s requests.'],
+  blocked: ['OpenSearch refuses writes', 'Refuses writes', 'OpenSearch refuses writes.'],
+  unavailable: ['OpenSearch not ready', 'Not ready', 'OpenSearch isn’t ready.'],
+};
+// osProblem words a problem; any other refusal is an error answer.
+const osProblem = (problem) => OS_TROUBLE[problem] || ['OpenSearch answers with an error', 'Answers with an error', 'OpenSearch answers Signalith with an error.'];
+// osTitle is OpenSearch's state in a few words: "OpenSearch green",
+// "OpenSearch unreachable", "OpenSearch too busy".
+const osTitle = (os) => (os.status === 'refused' || os.problem === 'timeout' ? osProblem(os.problem)[0] : 'OpenSearch ' + (os.status || 'unknown'));
+// osDetail is what a problem means, then what to do (for admins) or the
+// error.
+const osDetail = (os) => withCode([osProblem(os.problem)[2], os.advice || (os.error ? 'The error was: ' + os.error : '')].filter(Boolean).join(' '));
+
+// docsRef is the version of the docs links go to: this release's tag,
+// else main (renderHealthCard sets it).
+let docsRef = 'main';
+// withCode sets the commands and file names in a message from the server
+// as code, so it is plain what to type, and links the docs it names: a
+// list of text, <code> and <a> parts.
+const CODE_IN_TEXT = /docker compose -f deploy\/docker\/docker-compose\.yml (?:up -d|logs opensearch(?:-security)?)|securityadmin\.sh|\/var\/log\/opensearch|cluster\.blocks\.read_only|docs\/[a-z-]+\.md(?:#[a-z0-9-]+)?/g;
+function withCode(text) {
+  text = String(text);
+  const parts = [];
+  let last = 0;
+  for (const m of text.matchAll(CODE_IN_TEXT)) {
+    if (m.index > last) parts.push(text.slice(last, m.index));
+    const code = el('code', {}, m[0]);
+    parts.push(m[0].startsWith('docs/')
+      ? el('a', { href: 'https://github.com/jrsamsanchez/signalith/blob/' + docsRef + '/' + m[0], target: '_blank', rel: 'noopener noreferrer' }, code)
+      : code);
+    last = m.index + m[0].length;
+  }
+  parts.push(text.slice(last));
+  return parts;
+}
+
 // renderHealthCard draws the card from an api/health reply. The Health page
 // passes its own replies here too, so the card and the page never disagree.
 function renderHealthCard(h) {
@@ -567,9 +627,11 @@ function renderHealthCard(h) {
   // events, the servers' red problems or config warnings change the card.
   let state = '';
   let title = 'Healthy';
-  if (!os.status || os.status === 'red' || os.status === 'unreachable') {
-    state = 'down';
-    title = 'OpenSearch ' + (os.status || 'unknown');
+  if (/^v\d+\.\d+\.\d+$/.test(h.version || '')) docsRef = h.version;
+  if (!os.status || os.status === 'red' || os.status === 'unreachable' || os.status === 'refused') {
+    // Too busy is amber, as on the Health page, unless something is down.
+    state = os.status === 'refused' && os.problem === 'busy' && !banners.length ? 'warn' : 'down';
+    title = osTitle(os);
   } else if (banners.length) {
     state = 'down';
     title = 'Needs attention';
@@ -584,8 +646,8 @@ function renderHealthCard(h) {
   if (failed) meta.push(failed.toLocaleString() + ' failed');
   $('health-meta').textContent = meta.join(' · ');
   const card = $('health-card');
-  card.title = visibleText(['OpenSearch ' + (os.status || 'unknown'), os.error, ...banners, ...warnings].filter(Boolean).join('\n'));
-  card.setAttribute('aria-label', `Health: ${title}, OpenSearch ${os.status || 'unknown'}, ${meta.join(', ')}`);
+  card.title = visibleText([osTitle(os), os.error, ...banners, ...warnings].filter(Boolean).join('\n'));
+  card.setAttribute('aria-label', `Health: ${title}, ${osTitle(os)}, ${meta.join(', ')}`);
   card.classList.remove('hidden');
   if (h.version) {
     $('user-menu-version').textContent = h.version;
@@ -923,7 +985,7 @@ function updateSuggestions() {
     items = fields.map((f) => ({ text: f.name + (inSearch ? '=' : ''), kind: f.type }));
     if (inSearch) items.push({ text: 'datamodel=', kind: 'source' }, { text: 'earliest=', kind: 'time' });
   } else if (/datamodel=$/i.test(before)) {
-    items = ['Authentication', 'Endpoint', 'Network_Traffic', 'Change', 'Filesystem', 'Registry', 'Network_Resolution', 'Image_Load', 'Script', 'Inventory', 'Configuration_Check', 'Alerts', 'Other'].map((m) => ({ text: m + ' ', kind: 'model' }));
+    items = ['Authentication', 'Endpoint', 'Network_Traffic', 'Change', 'Malware', 'Filesystem', 'Registry', 'Network_Resolution', 'Image_Load', 'Script', 'Inventory', 'Configuration_Check', 'Alerts', 'Other'].map((m) => ({ text: m + ' ', kind: 'model' }));
   }
   const w = word.toLowerCase();
   suggestions = items.filter((i) => i.text.toLowerCase().startsWith(w) && i.text.toLowerCase() !== w).slice(0, 8);
@@ -1936,6 +1998,7 @@ const starters = [
   ['Rare processes across hosts', 'datamodel=Endpoint\n| stats dc(host) as hosts, count by process_name\n| where hosts < 2\n| sort count'],
   ['sudo to root by user', 'datamodel=Authentication app=sudo action=success\n| top limit=20 src_user'],
   ['Connections to uncommon ports', 'datamodel=Network_Traffic dest_port>1024\n| stats count by dest, dest_port, process_name\n| sort -count'],
+  ['Hosts with malware not removed', 'datamodel=Malware type=threat action IN (allowed, failed, restored)\n| stats count by dest, signature'],
   ['Authentication activity over time', 'datamodel=Authentication\n| timechart count by action'],
   ['Events matching threat intel', '* | threatmatch\n| table _time, threat_match_field, threat_match_value, threat_source, threat_target, user, sourcetype'],
 ];
@@ -2431,12 +2494,30 @@ const syslogState = {
 };
 try { syslogState.vendor = localStorage.getItem(syslogVendorKey) || 'rsyslog'; } catch (_) { /* storage may be blocked */ }
 
-// loadDataSource shows the setup for the chosen source.
+// loadDataSource shows the setup for the chosen source. The Antivirus
+// setup lives in antivirus.js.
 function loadDataSource() {
-  const syslog = document.querySelector('input[name=os]:checked').value === 'syslog';
-  $('agent-setup').classList.toggle('hidden', syslog);
-  $('syslog-setup').classList.toggle('hidden', !syslog);
-  return syslog ? syslogOpen() : loadAgentConfig();
+  const src = document.querySelector('input[name=os]:checked').value;
+  $('agent-setup').classList.toggle('hidden', src === 'syslog' || src === 'antivirus');
+  $('syslog-setup').classList.toggle('hidden', src !== 'syslog');
+  $('antivirus-setup').classList.toggle('hidden', src !== 'antivirus');
+  if (src === 'antivirus') return typeof antivirusOpen === 'function' ? antivirusOpen() : null;
+  return src === 'syslog' ? syslogOpen() : loadAgentConfig();
+}
+
+// pickDataSource selects a source card on the Add data page: linux,
+// windows, syslog, antivirus or otel. It is false for anything else.
+function pickDataSource(src) {
+  const r = document.querySelector(`input[name=os][value="${CSS.escape(String(src))}"]`);
+  if (r) r.checked = true;
+  return !!r;
+}
+
+// openAntivirusSetup is the way to the Antivirus option from other pages,
+// such as the Malware dashboard when it has no events yet.
+function openAntivirusSetup() {
+  pickDataSource('antivirus');
+  showPage('data');
 }
 
 // openSyslogSetup is the way to the Syslog option from other pages.
@@ -3210,7 +3291,11 @@ function healthPageRender(h) {
   const status = os.status || 'unknown';
   const alerts = [];
   // The alert says what it means for you; the OpenSearch row gives the cause.
-  if (status === 'unreachable') alerts.push(healthPageAlert('danger', 'circle-alert', 'Signalith can’t reach OpenSearch.', 'Searches and new events fail until it is back.'));
+  const noAnswer = status === 'unreachable' && os.problem === 'timeout';
+  if (noAnswer) alerts.push(healthPageAlert('danger', 'circle-alert', osProblem(os.problem)[2], 'Searches and new events may fail until it answers again.'));
+  else if (status === 'unreachable') alerts.push(healthPageAlert('danger', 'circle-alert', 'Signalith can’t reach OpenSearch.', 'Searches and new events fail until it is back.'));
+  else if (status === 'refused' && os.problem === 'busy') alerts.push(healthPageAlert('warning', 'triangle-alert', osProblem(os.problem)[2], 'Searches and new events may fail until it catches up.'));
+  else if (status === 'refused') alerts.push(healthPageAlert('danger', 'circle-alert', osProblem(os.problem)[2], 'Searches and new events fail until this is fixed.'));
   else if (status === 'red') alerts.push(healthPageAlert('danger', 'circle-alert', 'OpenSearch is red.', 'Some data cannot be searched or stored until it recovers.'));
   if (failed) alerts.push(healthPageAlert('warning', 'triangle-alert', `${healthPageNum(failed)} ${failed === 1 ? 'event' : 'events'} could not be stored.`, 'Counted since the server started. OpenSearch rejected them or did not answer.'));
   if (sl.dropped) alerts.push(healthPageAlert('warning', 'triangle-alert', `${healthPageNum(sl.dropped)} syslog ${sl.dropped === 1 ? 'message was' : 'messages were'} dropped.`, 'Counted since the server started. They arrived faster than OpenSearch could store them.'));
@@ -3239,7 +3324,9 @@ function healthPageRender(h) {
     green: ['', 'Healthy', 'Cluster status green.'],
     yellow: ['', 'Healthy', 'Cluster status yellow, which is normal on a single node: replicas have nowhere to go.'],
     red: ['down', 'Red', 'Some primary shards are not assigned.'],
-    unreachable: ['down', 'Unreachable', os.error || 'No answer.'],
+    unreachable: noAnswer ? ['down', osProblem(os.problem)[1], osDetail(os)] : ['down', 'Unreachable', os.error || 'No answer.'],
+    // What it means, and for admins what to do, or the error.
+    refused: [os.problem === 'busy' ? 'warn' : 'down', osProblem(os.problem)[1], osDetail(os)],
   }[status] || ['down', cap(status), os.error || 'Unexpected cluster status.'];
   // "Receiving" while an event arrived in the last 15 minutes; older is
   // shown as quiet (grey), not as a fault, since some sites are quiet.

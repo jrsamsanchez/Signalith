@@ -56,6 +56,7 @@ func parseWindowsWith(r map[string]any, named map[string]string) Event {
 	channel := str(r, "Channel")
 	eventID := str(r, "EventID")
 	computer := str(r, "Computer", "ComputerName")
+	computer = truncateUTF8(computer, maxHostLen)
 	f := map[string]any{
 		"host":           computer,
 		"dest":           computer,
@@ -82,6 +83,8 @@ func parseWindowsWith(r map[string]any, named map[string]string) Event {
 			kv[k] = v
 		}
 		parseSysmon(eventID, kv, &ev)
+	case strings.EqualFold(channel, DefenderChannel):
+		parseDefender(eventID, str(r, "Message"), in, &ev)
 	}
 	return ev
 }

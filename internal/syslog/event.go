@@ -10,7 +10,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/ingest"
 )
 
-// maxExtraFields caps the vendor-specific fields (cef_* and sd_*) one
+// maxExtraFields caps the vendor-specific fields (cef_*, leef_* and sd_*) one
 // message can add, so one sender cannot explode the index mapping.
 const maxExtraFields = 64
 
@@ -51,24 +51,51 @@ func (m *Message) Event(sender netip.Addr, received time.Time, maxAge time.Durat
 	extra := 0
 	var ev ingest.Event
 	t := m.Time
-	if m.CEF != nil {
-		f := map[string]any{"app": app}
-		// The CEF time (rt, end or start) is more precise than the syslog
-		// header, but an implausible one does not replace a good header.
-		if ct := cefFieldsFor(m.CEF, f, &extra, received); !ct.IsZero() && (plausible(ct, received, maxAge) || !plausible(t, received, maxAge)) {
+	// structured is a CEF or LEEF record, mapped by its own keys.
+	structured := func(f map[string]any, ct time.Time, rec avRecord) {
+		// The record's own time (CEF rt, end or start, LEEF devTime) is
+		// more precise than the syslog header, but an implausible one does
+		// not replace a good header.
+		if !ct.IsZero() && (plausible(ct, received, maxAge) || !plausible(t, received, maxAge)) {
 			t = ct
 		}
 		if host == "" {
 			host, _ = f["dvc_host"].(string)
 		}
 		model := "Other"
-		if f["src"] != nil && f["dest"] != nil {
+		switch {
+		case classifyAV(rec, f):
+			model = ingest.MalwareModel
+		case f["src"] != nil && f["dest"] != nil:
 			model = "Network_Traffic"
 		}
 		ev = ingest.Event{Model: model, Fields: f}
-	} else {
+	}
+	switch {
+	case m.CEF != nil:
+		f := map[string]any{"app": app}
+		structured(f, cefFieldsFor(m.CEF, f, &extra, received), avFromCEF(m.CEF))
+	case m.LEEF != nil:
+		f := map[string]any{"app": app}
+		structured(f, leefFieldsFor(m.LEEF, f, &extra, received), avFromLEEF(m.LEEF))
+	case isEPO(app, m.Text):
 		if host == "" {
 			host = senderIP
+		}
+		model, f := parseEPO(m.Text)
+		if model != ingest.MalwareModel {
+			f["app"] = app
+		}
+		ev = ingest.Event{Model: model, Fields: f}
+	default:
+		if host == "" {
+			host = senderIP
+		}
+		if isSEP(app, m.Text) {
+			if f, ok := parseSEP(m.Text); ok {
+				ev = ingest.Event{Model: ingest.MalwareModel, Fields: f}
+				break
+			}
 		}
 		ev = ingest.ParseProgram(host, app, m.ProcID, m.Text, "syslog")
 	}
@@ -81,7 +108,10 @@ func (m *Message) Event(sender netip.Addr, received time.Time, maxAge time.Durat
 	if m.Priority >= 0 {
 		f["facility"] = facilityNames[m.Priority/8]
 	}
-	if m.CEF == nil {
+	// CEF and LEEF carry their own severity, and an antivirus event's
+	// severity is the product's rating of the threat, never the syslog
+	// priority.
+	if m.CEF == nil && m.LEEF == nil && ev.Model != ingest.MalwareModel {
 		switch {
 		case m.Priority >= 0:
 			f["severity"] = severityNames[m.Priority%8]
@@ -158,8 +188,9 @@ func truncate(s string, n int) string {
 	return s[:n]
 }
 
-// isExtra reports whether a field is vendor-specific (cef_* or sd_*), the
-// kind the receiver limits per day so the index mapping stays small.
+// isExtra reports whether a field is vendor-specific (cef_*, leef_* or
+// sd_*), the kind the receiver limits per day so the index mapping stays
+// small.
 func isExtra(name string) bool {
-	return strings.HasPrefix(name, "cef_") || strings.HasPrefix(name, "sd_")
+	return strings.HasPrefix(name, "cef_") || strings.HasPrefix(name, "leef_") || strings.HasPrefix(name, "sd_")
 }

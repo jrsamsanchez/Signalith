@@ -98,6 +98,58 @@ func (b *builder) cef(device string, t time.Time, name, sigID, severity string, 
 	b.emit(ev)
 }
 
+// defender adds a Microsoft Defender Antivirus event from the Defender
+// channel, the way the Windows agent collects it. msg is the rendered
+// message the parser reads ("Label: value" lines); inserts are the event
+// data values, which the parser reads only when the message names nothing.
+func (b *builder) defender(h Host, eventID string, t time.Time, msg string, inserts ...string) {
+	rec := map[string]any{
+		"Channel":     ingest.DefenderChannel,
+		"Computer":    h.Name,
+		"EventID":     json.Number(eventID),
+		"TimeCreated": t.Format(winTimeLayout),
+		"Message":     msg,
+	}
+	if len(inserts) > 0 {
+		rec["StringInserts"] = toAny(inserts)
+	}
+	b.emit(ingest.Normalize("win.events", rec, t))
+}
+
+// clamav adds a ClamAV log line the way the Linux agent tails it from
+// /var/log/clamav: file is the log file (clamav.log or freshclam.log),
+// line is the text as ClamAV writes it, with its local-time prefix.
+func (b *builder) clamav(h Host, file, line string, t time.Time) {
+	rec := map[string]any{
+		"log":      line,
+		"file":     file,
+		"hostname": h.Name,
+		"date":     float64(t.Unix()),
+	}
+	b.emit(ingest.Normalize("linux.clamav", rec, t))
+}
+
+// cefAV adds a CEF event from an antivirus console through the syslog
+// receiver, like cef but with any vendor and product in the header.
+// Extension values are escaped as CEF requires (backslash and equals).
+func (b *builder) cefAV(device string, t time.Time, vendor, product, version, sigID, name, severity string, ext map[string]string) {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "rt=%d", t.UnixMilli())
+	keys := make([]string, 0, len(ext))
+	for k := range ext {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	esc := strings.NewReplacer(`\`, `\\`, "=", `\=`)
+	for _, k := range keys {
+		fmt.Fprintf(&sb, " %s=%s", k, esc.Replace(ext[k]))
+	}
+	header := fmt.Sprintf("CEF:0|%s|%s|%s|%s|%s|%s|", vendor, product, version, sigID, name, severity)
+	line := fmt.Sprintf("<134>%s %s SampleAV: %s%s", t.UTC().Format(time.RFC3339), device, header, sb.String())
+	m := syslog.Parse([]byte(line), t)
+	b.emit(m.Event(mustAddr(device), t, 0))
+}
+
 // generic adds an event that no agent parser maps (DNS lookups, and the
 // like); it lands in Other, searchable by its fields. tag is a Fluent Bit
 // tag the generic parser falls through on.

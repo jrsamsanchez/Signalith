@@ -10,6 +10,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
@@ -38,14 +39,17 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"github.com/jrsamsanchez/signalith/internal/intel"
 	"github.com/jrsamsanchez/signalith/internal/nlq"
+	"github.com/jrsamsanchez/signalith/internal/notify"
 	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/redact"
+	"github.com/jrsamsanchez/signalith/internal/respond"
 	"github.com/jrsamsanchez/signalith/internal/retention"
 	"github.com/jrsamsanchez/signalith/internal/risk"
 	"github.com/jrsamsanchez/signalith/internal/safelog"
 	"github.com/jrsamsanchez/signalith/internal/sample"
 	"github.com/jrsamsanchez/signalith/internal/search"
 	"github.com/jrsamsanchez/signalith/internal/secrets"
+	"github.com/jrsamsanchez/signalith/internal/securefile"
 	"github.com/jrsamsanchez/signalith/internal/store"
 	"github.com/jrsamsanchez/signalith/internal/syslog"
 	"github.com/jrsamsanchez/signalith/internal/tlsauto"
@@ -422,6 +426,18 @@ func cmdValidate(args []string) error {
 		}
 		fmt.Printf("%d threat intel feeds (%d in signalith.yaml, %d added on the Threat intel page), %d enabled.\n", len(list), len(list)-page, page, on)
 	}
+	notes := &notify.Manager{File: c.NotifyFile(), Log: slog.New(slog.DiscardHandler)}
+	if s, err := notes.Settings(); err != nil {
+		fmt.Println("Warning:", err)
+	} else if len(s.Channels) > 0 {
+		on := 0
+		for _, r := range s.Rules {
+			if r.Enabled {
+				on++
+			}
+		}
+		fmt.Printf("%d notification channels and %d rules (%d on), set on the Notifications page.\n", len(s.Channels), len(s.Rules), on)
+	}
 	if s := syslogSummary(c); s != "" {
 		allow := "any sender"
 		if len(c.Syslog.Allow) > 0 {
@@ -451,8 +467,10 @@ func cmdValidate(args []string) error {
 	cl := newStore(c)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if status, err := cl.Health(ctx); err != nil {
+	if status, err := cl.Health(ctx); err != nil && store.Problem(err) == "" {
 		fmt.Printf("Warning: OpenSearch is not reachable yet: %v\n", err)
+	} else if err != nil {
+		fmt.Println("Warning:", store.Unusable(err))
 	} else {
 		fmt.Printf("OpenSearch at %s is %s.\n", redact.URL(c.OpenSearch.URL), status)
 	}
@@ -1019,6 +1037,12 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	}
 	fstore := findings.NewOpenSearch(cl, c.OpenSearch.IndexPrefix)
 	cstore := cases.NewOpenSearch(cl, c.OpenSearch.IndexPrefix)
+	// Notifications: the channels and rules set on the Notifications
+	// page, and the deliveries index that makes each message go out once.
+	notes, deliveries, senders := newNotify(c, cl, log)
+	if err := notes.Load(); err != nil {
+		log.Error("notifications are not sent until the notifications file is fixed", "err", err)
+	}
 	sched := &detect.Scheduler{
 		Library: lib, Engine: eng, Findings: fstore, Log: log,
 		Risk: &risk.Store{Client: cl, Prefix: c.OpenSearch.IndexPrefix}, Assets: lists,
@@ -1060,10 +1084,30 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		NodeID:   sampleNode,
 		Log:      log,
 	}
+	dispatcher := &notify.Dispatcher{
+		Settings: notes, Findings: fstore, Deliveries: deliveries, Sender: senders, Server: sampleServer, Log: log,
+		PublicURL: func() string { return c.Server.PublicURL },
+	}
 	// Each server keeps the sample's asset and identity context in its own
 	// lookups folder, and its threat intel in memory: follow a load or
 	// removal made on another server.
 	in.jobs.Go(func() { sampleLoader.WatchLists(ctx, time.Minute) })
+	// Response actions: analysts run them by hand from a finding or a
+	// case, on whichever server they use, so every server can; each run
+	// is recorded in the <prefix>_actions index.
+	astore := respond.NewOpenSearch(cl, c.OpenSearch.IndexPrefix)
+	responder := &respond.Runner{
+		Actions:    &respond.Actions{File: c.ResponseFile(), Log: log},
+		Directory:  dir.Settings,
+		ScriptsDir: c.ResponseScriptsDir(),
+		Store:      astore,
+		Server:     sampleServer,
+		Log:        log,
+	}
+	if p := intel.ProtectedAddr(c.OpenSearch.URL); p != "" {
+		responder.Protected = []string{p}
+	}
+	ensureScriptsDir(c.ResponseScriptsDir(), log)
 	// Sessions and the failed sign-in limits carry over a restart.
 	r.sessions.SetIdle(c.SessionIdle())
 	srv := &api.Server{
@@ -1078,8 +1122,10 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		Assets:     lists,
 		Intel:      indicators,
 		Feeds:      feeds,
+		Notify:     &api.Notify{Settings: notes, Deliveries: deliveries, Sender: senders, Server: sampleServer},
 		Dashboards: boards,
 		Cases:      cstore,
+		Respond:    responder,
 		Retention:  ret,
 		Sample:     sampleLoader,
 		Background: r.backgroundContext(parent),
@@ -1102,7 +1148,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	// which ones are there. Changes to existing indices and the background
 	// jobs are for the one server that runs those.
 	indicesReady := make(chan struct{})
-	var intelOK, casesOK, findingsOK bool
+	var intelOK, casesOK, findingsOK, notifyOK bool
 	in.jobs.Go(func() {
 		if !ensureTemplate(ctx, cl, c, log) {
 			return
@@ -1123,6 +1169,14 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			log.Error("could not create the findings index; detections will not run", "index", fstore.Index, "err", err)
 		} else {
 			findingsOK = true
+		}
+		if err := deliveries.EnsureIndex(ctx); err != nil {
+			log.Error("could not create the notifications index; notifications will not be sent", "index", deliveries.Index, "err", err)
+		} else {
+			notifyOK = true
+		}
+		if err := astore.EnsureIndex(ctx); err != nil {
+			log.Error("could not create the response actions index; response actions will not run", "index", astore.Index, "err", err)
 		}
 		close(indicesReady)
 	})
@@ -1162,6 +1216,15 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			log.Info("threat intel feeds will download on their schedules", "feeds", feeds.Len(), "file", c.IntelFeedsFile())
 			feeds.Start(ctx)
 		}},
+		{Name: "notifications", Run: func(ctx context.Context) {
+			if !ready(ctx) || !notifyOK || !findingsOK {
+				return
+			}
+			// Channels and rules can be added on the page at any time, so
+			// the dispatcher runs even with none yet.
+			log.Info("notifications will be sent for new findings that match a rule", "file", c.NotifyFile())
+			dispatcher.Run(ctx)
+		}},
 		// Retention keeps running while OpenSearch refuses writes (its
 		// disk is full): its disk guard is what frees space.
 		{Name: "retention", Emergency: true, Run: func(ctx context.Context) {
@@ -1174,16 +1237,16 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		in.jobsList = watchJobs(in.jobsList, c, hook)
 	}
 	if !c.Detections.Scheduler {
-		log.Warn("detections.scheduler is off, so this server never runs detections, threat intel downloads or retention; " +
+		log.Warn("detections.scheduler is off, so this server never runs detections, threat intel downloads, notifications or retention; " +
 			"another server that shares its OpenSearch does. The Data retention and feed settings are read-only here")
 	}
 	if r.node != nil {
 		ret.Leader = func() (bool, string) { return r.node.RunsJobs(), r.node.JobHolder() }
 		ret.Fence = r.node.Check
-		// The scheduler and the feeds ask before each run or download, so a
-		// server that lost the job lease stops at once, even before its
-		// jobs' context ends.
-		sched.Allowed, feeds.Allowed = r.node.RunsJobs, r.node.RunsJobs
+		// The scheduler, the feeds and the notifications ask before each
+		// run, download or message, so a server that lost the job lease
+		// stops at once, even before its jobs' context ends.
+		sched.Allowed, feeds.Allowed, dispatcher.Allowed = r.node.RunsJobs, r.node.RunsJobs, r.node.RunsJobs
 		srv.Cluster = r.node
 		in.node = r.node
 	}
@@ -1205,7 +1268,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		r.node.Use(cl, c.OpenSearch.IndexPrefix, cluster.Settings{
 			Eligible: c.Detections.Scheduler, NodeURL: nodeURL(c), Listen: c.Server.Listen,
 			Syslog:       cluster.Syslog{UDP: c.Syslog.UDP, TCP: c.Syslog.TCP, TLS: c.Syslog.TLS},
-			Fingerprints: func() cluster.Fingerprints { return filesFingerprints(c, ret, feeds) },
+			Fingerprints: func() cluster.Fingerprints { return filesFingerprints(c, ret, feeds, notes) },
 		})
 		// A server with detections.scheduler off never runs the jobs. It
 		// may still hold the lease from before a restart in place, which
@@ -1261,11 +1324,12 @@ func upgradeIndices(ctx context.Context, log *slog.Logger, allowed func() bool, 
 }
 
 // filesFingerprints hashes this server's own files that the background
-// jobs use: retention policies, feeds, custom detections and, while a
-// policy archives, the archives. A server whose files differ from those of
-// the server that runs the jobs does not take them over by itself.
-func filesFingerprints(c *config.Config, ret *retention.Manager, feeds *intel.Feeds) cluster.Fingerprints {
-	fp := cluster.Fingerprints{Feeds: feeds.Fingerprint(), Detections: detectionsFingerprint(c.DetectionsDir())}
+// jobs use: retention policies, feeds, custom detections, notification
+// channels and rules and, while a policy archives, the archives. A server
+// whose files differ from those of the server that runs the jobs does not
+// take them over by itself.
+func filesFingerprints(c *config.Config, ret *retention.Manager, feeds *intel.Feeds, notes *notify.Manager) cluster.Fingerprints {
+	fp := cluster.Fingerprints{Feeds: feeds.Fingerprint(), Detections: detectionsFingerprint(c.DetectionsDir()), Notify: notes.Fingerprint()}
 	fp.Retention, fp.Archives = ret.Fingerprint()
 	return fp
 }
@@ -1526,6 +1590,30 @@ func newFeeds(c *config.Config, indicators *intel.Store, log *slog.Logger) *inte
 	return f
 }
 
+// newNotify returns the notification settings, the deliveries index and
+// what sends the messages. Channels may never reach Signalith's own
+// OpenSearch.
+func newNotify(c *config.Config, cl *store.Client, log *slog.Logger) (*notify.Manager, *notify.OpenSearch, *notify.Senders) {
+	senders := &notify.Senders{}
+	if p := intel.ProtectedAddr(c.OpenSearch.URL); p != "" {
+		senders.Protected = notify.Protected{p}
+	}
+	senders.Hostname, _ = os.Hostname()
+	return &notify.Manager{File: c.NotifyFile(), Log: log}, notify.NewOpenSearch(cl, c.OpenSearch.IndexPrefix), senders
+}
+
+// ensureScriptsDir makes the response scripts folder, private to the
+// server's account, when it does not exist yet, so admins know where
+// scripts go. A folder that exists is left as it is.
+func ensureScriptsDir(dir string, log *slog.Logger) {
+	if _, err := os.Lstat(dir); !errors.Is(err, fs.ErrNotExist) {
+		return
+	}
+	if err := securefile.MkdirPrivate(dir); err != nil {
+		log.Warn("could not make the response scripts folder; script actions cannot run until it exists", "dir", dir, "err", err)
+	}
+}
+
 // reloadLookups picks up edits to the CSV files made outside the UI.
 func reloadLookups(ctx context.Context, lists *assets.Store, log *slog.Logger) {
 	t := time.NewTicker(time.Minute)
@@ -1554,7 +1642,11 @@ func ensureTemplate(ctx context.Context, cl *store.Client, c *config.Config, log
 			log.Info("opensearch index template ready", "url", redact.URL(c.OpenSearch.URL))
 			return true
 		}
-		log.Warn("waiting for opensearch", "url", redact.URL(c.OpenSearch.URL), "err", err)
+		if hint := store.Hint(err); hint != "" {
+			log.Warn("waiting for opensearch", "url", redact.URL(c.OpenSearch.URL), "err", err, "fix", hint)
+		} else {
+			log.Warn("waiting for opensearch", "url", redact.URL(c.OpenSearch.URL), "err", err)
+		}
 		select {
 		case <-ctx.Done():
 			return false
