@@ -1,0 +1,9 @@
+# Tools that build the documentation site (mkdocs.yml). Exact versions, so
+# every build looks the same:
+#   python3 -m pip install -r docs/requirements.txt
+mkdocs==1.6.1
+mkdocs-material==9.6.23
+mkdocs-material-extensions==1.3.1
+pymdown-extensions==10.21.3
+Markdown==3.11
+Pygments==2.21.0

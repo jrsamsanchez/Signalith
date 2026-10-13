@@ -266,3 +266,9 @@ jobs:
         with:
           name: signalith-binaries
           path: dist/
+
+  # Builds the .deb, .rpm and .msi packages and tests installing,
+  # upgrading from the latest release and removing each one.
+  packages:
+    needs: test
+    uses: ./.github/workflows/packages.yml

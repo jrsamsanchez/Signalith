@@ -1,0 +1,59 @@
+# Linux packages (.deb and .rpm) for Signalith, built with nFPM
+# (https://nfpm.goreleaser.com, MIT licence) by build.sh, which sets the
+# variables below, from a folder where it has put the program, the unit
+# and these scripts. See docs/install-packages.md.
+name: signalith
+arch: ${NFPM_ARCH}
+platform: linux
+version: ${SIGNALITH_VERSION}
+release: 1
+section: admin
+priority: optional
+maintainer: Samuel Sanchez Jr. <noreply@signalith.io>
+vendor: Signalith
+homepage: https://signalith.io
+license: Apache-2.0
+description: |-
+  Open-source SIEM inspired by Splunk Enterprise Security.
+  Signalith stores events in OpenSearch, collects them with Fluent Bit,
+  and adds a pipe-based query language, detections with a findings queue,
+  Sigma import, risk-based alerting, threat intel and investigation cases.
+  The server is one program with the web UI built in, run by systemd.
+
+contents:
+  - src: ./signalith
+    dst: /usr/bin/signalith
+    file_info:
+      mode: 0755
+  # deploy/systemd/signalith.service with the program in /usr/bin.
+  - src: ./signalith.service
+    dst: /usr/lib/systemd/system/signalith.service
+    file_info:
+      mode: 0644
+  - src: ./LICENSE
+    dst: /usr/share/doc/signalith/LICENSE
+  - src: ./NOTICE
+    dst: /usr/share/doc/signalith/NOTICE
+  - src: ./README.md
+    dst: /usr/share/doc/signalith/README.md
+
+scripts:
+  preinstall: preinstall.sh
+  postinstall: postinstall.sh
+  preremove: preremove.sh
+  postremove: postremove.sh
+
+rpm:
+  group: Applications/System
+  compression: xz
+  signature:
+    # Set by build.sh when a signing key is given; empty means unsigned.
+    key_file: ${NFPM_SIGNING_KEY_FILE}
+    key_id: ${NFPM_SIGNING_KEY_ID}
+
+deb:
+  compression: xz
+  signature:
+    method: debsign
+    key_file: ${NFPM_SIGNING_KEY_FILE}
+    key_id: ${NFPM_SIGNING_KEY_ID}

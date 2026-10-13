@@ -1,12 +1,13 @@
 name: Website
-# Publishes site/ (the project website) to GitHub Pages at https://signalith.io.
+# Publishes site/ (the project website) to GitHub Pages at https://signalith.io,
+# with the documentation (mkdocs.yml, docs/) built into it at /docs/.
 # Pages must be set to deploy from GitHub Actions (Settings > Pages > Build and
 # deployment > Source), with signalith.io as its custom domain there; with
 # Actions deployments the custom domain is that setting, not a CNAME file.
 on:
   push:
     branches: [main]
-    paths: ['site/**', '.github/workflows/pages.yml']
+    paths: ['site/**', 'docs/**', 'mkdocs.yml', '.github/workflows/pages.yml']
   workflow_dispatch:
 
 permissions:
@@ -26,8 +27,16 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      # The docs are built as the Docs workflow checks them (--strict, the
+      # exact versions in docs/requirements.txt), into a copy of site/.
+      - name: Build the docs into the website
+        run: |
+          python3 -m venv "$RUNNER_TEMP/mkdocs"
+          "$RUNNER_TEMP/mkdocs/bin/python" -m pip install --disable-pip-version-check -r docs/requirements.txt
+          cp -R site "$RUNNER_TEMP/pages"
+          "$RUNNER_TEMP/mkdocs/bin/mkdocs" build --strict -d "$RUNNER_TEMP/pages/docs"
       - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
         with:
-          path: site
+          path: ${{ runner.temp }}/pages
       - id: deployment
         uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4

@@ -12,7 +12,8 @@ investigation cases that collect findings, notes, searches and evidence in one p
 and response actions (block an IP, disable an account, isolate a host) run from a
 finding or a case. Playbooks come next.
 
-Website: **https://signalith.io** (its source is in [`site/`](site/)).
+Website: **https://signalith.io** (its source is in [`site/`](site/)). Documentation:
+**https://signalith.io/docs/** (built from [`docs/`](docs/)).
 
 The server is a single Go binary with the web UI embedded. It runs as a Windows
 service or a systemd unit.
@@ -157,6 +158,21 @@ fictional and kept apart from your own data, and one click removes all of it. Se
 ```sh
 docker compose -f deploy/docker/docker-compose.yml exec signalith signalith sample-data load
 ```
+
+### Packages (.deb, .rpm, .msi)
+
+Each [release](https://github.com/jrsamsanchez/Signalith/releases) has signed packages
+that install Signalith as a service in one step, and a container image on GHCR:
+
+```sh
+sudo apt install ./signalith_0.1.0-1_amd64.deb      # Debian, Ubuntu
+sudo dnf install ./signalith-0.1.0-1.x86_64.rpm     # Red Hat, Rocky, Alma, Fedora
+sudo signalith initial-password                     # the first admin password
+```
+
+On Windows, double-click `signalith-0.1.0-x64.msi`. See
+[docs/install-packages.md](docs/install-packages.md) for what they set up, upgrades, and
+how to check a download's signature and SBOM. The steps below install by hand.
 
 ### Linux
 
@@ -1037,7 +1053,9 @@ syslog devices ─UDP/TCP/TLS▶ query compiler,
 
 ## Building
 
-Requires Go 1.24 or newer.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for tests, code style and how to send changes.
+
+Requires the Go version in `go.mod` (1.26.9) or newer.
 
 ```sh
 go test ./...
@@ -1061,6 +1079,10 @@ share one OpenSearch, and stop them with kill -9 and SIGSTOP (Linux only). Witho
 2. **Detect and triage**: scheduled detections in Sigma or Signalith queries, throttling, a findings queue, ATT&CK coverage.
 3. **ES depth**: risk-based alerting, asset and identity context, threat intel feeds, posture dashboards, and plain-English to query.
 4. **Respond and scale**: investigation cases, response actions, playbooks, multi-node deployments.
+
+What is being built now and what comes next, from detection content and osquery endpoint
+visibility to alerts, response actions and signed packages, is on the
+[public roadmap](https://signalith.io/docs/roadmap/) ([source](docs/roadmap.md)).
 
 ## License
 

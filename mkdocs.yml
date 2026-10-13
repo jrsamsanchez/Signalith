@@ -1,0 +1,146 @@
+# Signalith documentation, built with MkDocs and Material for MkDocs.
+#   python3 -m pip install -r docs/requirements.txt
+#   mkdocs serve            # preview at http://127.0.0.1:8000/docs/
+#   mkdocs build --strict   # what CI runs
+# Published at https://signalith.io/docs/ next to the website in site/.
+site_name: Signalith
+site_description: Documentation for Signalith, the open-source SIEM for Windows and Linux.
+site_author: Samuel Sanchez Jr.
+site_url: https://signalith.io/docs/
+repo_url: https://github.com/jrsamsanchez/Signalith
+repo_name: jrsamsanchez/Signalith
+edit_uri: edit/main/docs/
+copyright: Signalith is open source under the Apache License 2.0.
+
+docs_dir: docs
+exclude_docs: |
+  requirements.txt
+  overrides/
+
+theme:
+  name: material
+  custom_dir: docs/overrides
+  # Inter and JetBrains Mono are served from docs/assets/fonts (see
+  # stylesheets/extra.css), so pages load nothing from Google.
+  font: false
+  logo: assets/logo-mark.svg
+  favicon: assets/favicon.svg
+  icon:
+    repo: fontawesome/brands/github
+  palette:
+    - media: "(prefers-color-scheme)"
+      toggle:
+        icon: material/brightness-auto
+        name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-night
+        name: Switch to system preference
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.indexes
+    - navigation.footer
+    - navigation.tracking
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - search.share
+    - content.code.copy
+    - content.action.edit
+
+extra_css:
+  - stylesheets/extra.css
+
+extra:
+  generator: false
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/jrsamsanchez/Signalith
+      name: Signalith on GitHub
+    - icon: material/web
+      link: https://signalith.io/
+      name: signalith.io
+
+validation:
+  nav:
+    # A page not yet in the nav below is still built and searchable;
+    # add it to the nav when you add the page.
+    omitted_files: info
+    not_found: warn
+    absolute_links: info
+  links:
+    not_found: warn
+    anchors: warn
+    absolute_links: info
+    unrecognized_links: warn
+
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+nav:
+  - Home: index.md
+  - Getting started:
+      - Overview: getting-started.md
+      - Install from packages: install-packages.md
+  - Data intake:
+      - Agents and syslog: sending-data.md
+      - OpenTelemetry: opentelemetry.md
+      - Endpoints (osquery): endpoints.md
+      - Wazuh alerts: wazuh.md
+      - Antivirus: antivirus.md
+      - Sample data: sample-data.md
+  - Using Signalith:
+      - Query language: query-language.md
+      - Detections: detections.md
+      - Threat intel: threat-intel.md
+      - Dashboards: dashboards.md
+      - Response actions: response-actions.md
+      - Notifications: notifications.md
+  - Administration:
+      - Server settings: settings.md
+      - Users and sign-in: users.md
+      - Servers: servers.md
+      - Data retention: retention.md
+  - Security:
+      - Security checks: security.md
+      - HTTPS: https.md
+      - Encryption: encryption.md
+      - Securing OpenSearch: opensearch-security.md
+  - Roadmap: roadmap.md
+  - Project:
+      - Releasing: releasing.md

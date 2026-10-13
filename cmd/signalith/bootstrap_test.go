@@ -404,3 +404,42 @@ func mapsEqual(a, b map[string]string) bool {
 	}
 	return true
 }
+
+// The packages run init -save-password: the generated password is not
+// printed but kept privately next to the config file, where
+// initial-password finds it.
+func TestInitSavePassword(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("SIGNALITH_STATE_DIR", filepath.Join(root, "state"))
+	t.Setenv("SIGNALITH_ADMIN_PASSWORD_FILE", "")
+	path := filepath.Join(root, "etc", "signalith.yaml")
+	os.MkdirAll(filepath.Dir(path), 0o700)
+	var out bytes.Buffer
+	if err := printInitialPassword(&out, path); err == nil || !strings.Contains(err.Error(), "no generated first password") {
+		t.Fatalf("before init: %q %v", out.String(), err)
+	}
+	printed := captureStdout(t, func() {
+		if err := cmdInit([]string{"-c", path, "-save-password"}); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if !strings.Contains(printed, "signalith initial-password") {
+		t.Errorf("init said:\n%s", printed)
+	}
+	saved := filepath.Join(filepath.Dir(path), initialPasswordFile)
+	checkModes(t, saved, os.Getuid(), 0o600)
+	if err := printInitialPassword(&out, path); err != nil {
+		t.Fatal(err)
+	}
+	pw := strings.TrimSpace(out.String())
+	if pw == "" || strings.Contains(printed, pw) {
+		t.Fatalf("password %q, printed by init:\n%s", pw, printed)
+	}
+	c, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.CheckPassword("admin", pw) {
+		t.Error("the saved password does not sign in")
+	}
+}

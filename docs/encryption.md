@@ -313,7 +313,7 @@ terminal).
 A password not pasted yet needs none of this: enter the OpenSearch password and the AI
 model's API key on the **Settings** page, which keeps them encrypted in the volume, or
 give a secret to the container in a file with a `SIGNALITH_*_FILE` variable (see
-[Configuration](../README.md#configuration)).
+[Configuration](https://github.com/jrsamsanchez/Signalith/blob/main/README.md#configuration)).
 
 ### Backing up the key
 

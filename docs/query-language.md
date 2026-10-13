@@ -85,7 +85,8 @@ query. It understands:
 | show user, src and dest | `table _time, user, src, dest` |
 
 Names from the asset and identity lists are recognized as users or hosts. When an AI
-model is configured, questions with unknown words go to it; see the README.
+model is configured, questions with unknown words go to it; see
+[Writing queries](https://github.com/jrsamsanchez/Signalith/blob/main/README.md#writing-queries) in the README.
 
 ## How queries run
 

@@ -1,0 +1,168 @@
+name: Release
+# Builds a release: .deb, .rpm and .msi packages (tested by installing,
+# upgrading and removing each), the programs, an SBOM, checksums signed
+# with GPG (when the key is set up) and with Sigstore, build provenance,
+# and a container image on GHCR. Pushing a tag such as v0.1.0 publishes it
+# on the Releases page; running it by hand (Actions > Release > Run
+# workflow) is a dry run that publishes nothing. See docs/releasing.md.
+on:
+  push:
+    tags: ['v[0-9]*.[0-9]*.[0-9]*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to build as a dry run (nothing is published)
+        default: 0.0.0-dryrun
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  packages:
+    uses: ./.github/workflows/packages.yml
+    with:
+      version: ${{ github.event_name == 'push' && github.ref_name || inputs.version }}
+    secrets:
+      SIGNALITH_GPG_PRIVATE_KEY: ${{ secrets.SIGNALITH_GPG_PRIVATE_KEY }}
+      SIGNALITH_GPG_PASSPHRASE: ${{ secrets.SIGNALITH_GPG_PASSPHRASE }}
+
+  image:
+    needs: packages
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/signalith
+      VERSION: ${{ needs.packages.outputs.version }}
+      PUBLISH: ${{ github.event_name == 'push' }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3.6.0
+      - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+      - if: env.PUBLISH == 'true'
+        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 # v3.5.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Image tags
+        id: tags
+        run: |
+          image=$(echo "$IMAGE" | tr '[:upper:]' '[:lower:]')
+          tags="$image:$VERSION"
+          # A final release is also :latest; a release candidate is not.
+          case "$VERSION" in *-*) ;; *) tags="$tags,$image:latest" ;; esac
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          echo "tags=$tags" >> "$GITHUB_OUTPUT"
+      - id: build
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          file: deploy/docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          build-args: VERSION=${{ env.VERSION }}
+          tags: ${{ steps.tags.outputs.tags }}
+          push: ${{ env.PUBLISH == 'true' }}
+          sbom: true
+          provenance: mode=max
+          labels: |
+            org.opencontainers.image.title=Signalith
+            org.opencontainers.image.description=Open-source SIEM
+            org.opencontainers.image.version=${{ env.VERSION }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.licenses=Apache-2.0
+      - if: env.PUBLISH == 'true'
+        uses: sigstore/cosign-installer@d58896d6a1865668819e1d91763c7751a165e159 # v3.9.2
+      - name: Sign the image with Sigstore
+        if: env.PUBLISH == 'true'
+        run: cosign sign --yes "${{ steps.tags.outputs.image }}@${{ steps.build.outputs.digest }}"
+      - if: env.PUBLISH == 'true'
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with:
+          subject-name: ${{ steps.tags.outputs.image }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+  publish:
+    needs: [packages, image]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      VERSION: ${{ needs.packages.outputs.version }}
+      PUBLISH: ${{ github.event_name == 'push' }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: '{binaries,linux-packages,windows-packages}'
+          path: release
+          merge-multiple: true
+      - uses: anchore/sbom-action/download-syft@7b36ad622f042cab6f59a75c2ac24ccb256e9b45 # v0.20.4
+        id: syft
+        with:
+          syft-version: v1.33.0
+      - name: SBOM
+        run: |
+          # What the program is built from: its Go modules and the Go
+          # standard library, read from the program itself, in SPDX and
+          # CycloneDX. The web UI's fonts and icons are listed in NOTICE.
+          cd release
+          "${{ steps.syft.outputs.cmd }}" scan file:signalith-linux-amd64 \
+            --source-name signalith --source-version "$VERSION" \
+            -o "spdx-json=signalith-$VERSION.spdx.json" -o "cyclonedx-json=signalith-$VERSION.cdx.json"
+      - name: Checksums
+        run: |
+          cd release
+          sha256sum -- * > SHA256SUMS
+          cat SHA256SUMS
+      - name: Sign the checksums with GPG
+        env:
+          GPG_KEY: ${{ secrets.SIGNALITH_GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.SIGNALITH_GPG_PASSPHRASE }}
+        run: |
+          if [ -z "$GPG_KEY" ]; then
+            echo "::warning::No SIGNALITH_GPG_PRIVATE_KEY secret, so the checksums and Linux packages are not GPG-signed (Sigstore signatures are made anyway). docs/releasing.md says how to add the key."
+            exit 0
+          fi
+          export GNUPGHOME="$RUNNER_TEMP/gnupg"; mkdir -m 700 "$GNUPGHOME"
+          printf '%s\n' "$GPG_KEY" | gpg --batch --import
+          gpg --batch --yes --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" --armor --detach-sign -o release/SHA256SUMS.asc release/SHA256SUMS
+          gpg --armor --export > release/signalith-release-key.asc
+          gpg --verify release/SHA256SUMS.asc release/SHA256SUMS
+          rm -rf "$GNUPGHOME"
+      - uses: sigstore/cosign-installer@d58896d6a1865668819e1d91763c7751a165e159 # v3.9.2
+      - name: Sign the checksums with Sigstore
+        run: |
+          cosign sign-blob --yes --bundle release/SHA256SUMS.sigstore.json release/SHA256SUMS
+          cosign verify-blob --bundle release/SHA256SUMS.sigstore.json \
+            --certificate-identity-regexp "^https://github.com/${GITHUB_REPOSITORY}/" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com release/SHA256SUMS
+      - uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with:
+          subject-checksums: release/SHA256SUMS
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release
+          path: release/
+      - name: Publish the release
+        if: env.PUBLISH == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          pre=""
+          case "$VERSION" in *-*) pre=--prerelease ;; esac
+          # How to install and check this release, then the changes.
+          sed "s/{VERSION}/$VERSION/g" .github/release-notes.md > "$RUNNER_TEMP/notes.md"
+          gh release create "$TAG" release/* --repo "$GITHUB_REPOSITORY" --verify-tag $pre \
+            --title "Signalith $VERSION" --notes-file "$RUNNER_TEMP/notes.md" --generate-notes

@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Signalith's Windows installer (.msi), built with the WiX Toolset v5
+  (https://wixtoolset.org, MS-RL licence) by build.ps1:
+    .\deploy\windows\msi\build.ps1 -Version 0.1.0 -Exe dist\signalith-windows-amd64.exe -Out dist
+
+  It puts signalith.exe and install.ps1 in C:\Program Files\Signalith and
+  runs install.ps1, which writes the config in C:\ProgramData\Signalith on a
+  new install, protects that folder, installs the Signalith service to run
+  as NT SERVICE\Signalith, starts it and opens its firewall ports: the same
+  steps as installing by hand (docs/install-packages.md). Silent install:
+    msiexec /i signalith-0.1.0-x64.msi /qn OPENSEARCHURL=https://opensearch.example.com:9200
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+  <Package Name="Signalith" Manufacturer="Signalith" Version="$(var.Version)"
+           UpgradeCode="6B2F3C1E-8E0A-4C7B-9A57-3D2E5B1F0C42" Scope="perMachine"
+           InstallerVersion="500" Compressed="yes">
+    <SummaryInformation Description="Signalith $(var.Version), an open-source SIEM" />
+    <MajorUpgrade AllowSameVersionUpgrades="yes" DowngradeErrorMessage="A newer version of Signalith is already installed. To go back to an older one, uninstall this one first; your configuration and data in C:\ProgramData\Signalith are kept." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Icon Id="signalith.ico" SourceFile="signalith.ico" />
+    <Property Id="ARPPRODUCTICON" Value="signalith.ico" />
+    <Property Id="ARPHELPLINK" Value="https://signalith.io/docs/" />
+    <Property Id="ARPURLINFOABOUT" Value="https://signalith.io" />
+
+    <!-- The OpenSearch address for a new install (msiexec ... OPENSEARCHURL=...).
+         An earlier install's answer is used again; an existing config is
+         always kept, and the address can be changed on the Settings page. -->
+    <Property Id="OPENSEARCHURL" Value="http://127.0.0.1:9200" Secure="yes">
+      <RegistrySearch Id="PreviousOpenSearchUrl" Root="HKLM" Key="Software\Signalith" Name="OpenSearchUrl" Type="raw" />
+    </Property>
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="Signalith" />
+    </StandardDirectory>
+
+    <ComponentGroup Id="Program" Directory="INSTALLFOLDER">
+      <Component Id="SignalithExe" Bitness="always64">
+        <File Id="signalith.exe" Source="$(var.Exe)" Name="signalith.exe" KeyPath="yes" />
+        <!-- Stopped before the program is replaced, and removed on
+             uninstall; install.ps1 installs it (signalith service install). -->
+        <ServiceControl Id="SignalithService" Name="Signalith" Stop="both" Remove="uninstall" Wait="yes" />
+        <!-- signalith commands work in any elevated PowerShell. -->
+        <Environment Id="Path" Name="PATH" Value="[INSTALLFOLDER]" Part="last" Action="set" System="yes" Permanent="no" />
+      </Component>
+      <!-- One file per component, so each gets a generated GUID. -->
+      <Component Bitness="always64">
+        <File Id="install.ps1" Source="..\install.ps1" KeyPath="yes" />
+      </Component>
+      <Component Bitness="always64">
+        <File Id="msi_setup.ps1" Source="msi-setup.ps1" KeyPath="yes" />
+      </Component>
+      <Component Bitness="always64">
+        <File Id="LICENSE.txt" Source="..\..\..\LICENSE" Name="LICENSE.txt" KeyPath="yes" />
+      </Component>
+      <Component Bitness="always64">
+        <File Id="NOTICE.txt" Source="..\..\..\NOTICE" Name="NOTICE.txt" KeyPath="yes" />
+      </Component>
+      <Component Id="Settings" Bitness="always64">
+        <RegistryValue Root="HKLM" Key="Software\Signalith" Name="OpenSearchUrl" Type="string" Value="[OPENSEARCHURL]" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Component Id="StartMenu" Guid="7C1D9E52-3F4B-4E8A-B1C6-0A9F2D7E5B13">
+        <util:InternetShortcut Id="OpenSignalith" Name="Signalith" Target="https://localhost:8080/" Type="url" />
+        <RegistryValue Root="HKLM" Key="Software\Signalith" Name="StartMenu" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </StandardDirectory>
+
+    <Feature Id="Main" Title="Signalith" Level="1">
+      <ComponentGroupRef Id="Program" />
+      <ComponentRef Id="StartMenu" />
+    </Feature>
+
+    <!-- install.ps1 runs as SYSTEM after the files are in place, on install,
+         upgrade and repair. Its output goes to C:\Windows\Temp\signalith-install.log. -->
+    <CustomAction Id="SetUpSignalith" Directory="INSTALLFOLDER" Execute="deferred" Impersonate="no" Return="check"
+                  ExeCommand="&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;[INSTALLFOLDER]msi-setup.ps1&quot; -OpenSearchUrl &quot;[OPENSEARCHURL]&quot;" />
+    <!-- On uninstall (not an upgrade), the firewall rules install.ps1 made. -->
+    <CustomAction Id="RemoveFirewallRules" Directory="INSTALLFOLDER" Execute="deferred" Impersonate="no" Return="ignore"
+                  ExeCommand="&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -Command &quot;Remove-NetFirewallRule -DisplayName 'Signalith','Signalith syslog *' -ErrorAction SilentlyContinue&quot;" />
+    <InstallExecuteSequence>
+      <Custom Action="SetUpSignalith" Before="InstallFinalize" Condition="NOT REMOVE" />
+      <Custom Action="RemoveFirewallRules" Before="RemoveFiles" Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+    </InstallExecuteSequence>
+
+    <!-- Welcome with the licence, install, finish. OpenSearch's address is
+         OPENSEARCHURL for a silent install, else changed on the Settings page. -->
+    <WixVariable Id="WixUILicenseRtf" Value="$(var.LicenseRtf)" />
+    <WixVariable Id="WixUIBannerBmp" Value="banner.bmp" />
+    <WixVariable Id="WixUIDialogBmp" Value="dialog.bmp" />
+    <Property Id="WIXUI_EXITDIALOGOPTIONALTEXT" Value="Signalith is running. Open https://localhost:8080 (Start menu: Signalith) and sign in as admin. To see the first admin password, run this in PowerShell as Administrator:  signalith initial-password" />
+    <ui:WixUI Id="WixUI_Minimal" />
+  </Package>
+</Wix>

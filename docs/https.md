@@ -565,7 +565,7 @@ you upgrade:
   Signalith's own `https://` address.
 - **The Docker quick start** has HTTPS set in its own files now. Updating it also brings
   generated passwords and a secured OpenSearch; see
-  [Upgrading the Docker quick start](../README.md#upgrading-the-docker-quick-start).
+  [Upgrading the Docker quick start](https://github.com/jrsamsanchez/Signalith/blob/main/README.md#upgrading-the-docker-quick-start).
   Its agents keep sending over `http://`, with the example token
   `change-this-ingest-token` they were given, until you refuse agents on plain HTTP,
   which ends that token for good. A new install refuses both; see

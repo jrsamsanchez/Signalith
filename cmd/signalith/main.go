@@ -70,7 +70,7 @@ Usage:
   signalith validate  [-c file]           check the config file
   signalith passwd    [-c file]           set the admin password
   signalith settings  list|reset [-c file] [-file f] [key...]   show or undo changes made on the Settings page
-  signalith initial-password [-c file]    print the first admin password the Docker quick start made
+  signalith initial-password [-c file]    print the first admin password the Docker quick start or a package made
   signalith query     [-c file] [-explain] "<query>"   run a query from the shell
   signalith ask       [-c file] [-ai] "<question>"     turn a question into a query
   signalith archive   list|verify|restore [-c file] ...  list, check or restore archived days
@@ -106,6 +106,7 @@ func defaultConfigPath() string {
 }
 
 func main() {
+	runService()
 	if len(os.Args) < 2 {
 		fmt.Fprintf(os.Stderr, usage, defaultConfigPath())
 		os.Exit(2)
@@ -174,6 +175,7 @@ func cmdInit(args []string) error {
 	syslogTCP := fs.String("syslog-tcp", "0.0.0.0:514", "address to receive syslog on over TCP (empty: off)")
 	syslogTLS := fs.String("syslog-tls", "0.0.0.0:6514", "address to receive syslog on over TLS (empty: off)")
 	force := fs.Bool("force", false, "overwrite an existing config file")
+	savePassword := fs.Bool("save-password", false, "keep a generated admin password in "+initialPasswordFile+" next to the config file, for signalith initial-password, instead of printing it (for installers)")
 	fs.Parse(args)
 
 	if _, err := os.Stat(*path); err == nil && !*force {
@@ -213,12 +215,24 @@ func cmdInit(args []string) error {
 	if err := c.Save(*path); err != nil {
 		return err
 	}
+	// An installer shows no output to whoever runs it, so the generated
+	// password is kept where only administrators can read it until
+	// signalith initial-password shows it.
+	saved := generated && *savePassword
+	if saved {
+		if err := securefile.Replace(filepath.Join(filepath.Dir(*path), initialPasswordFile), []byte(pw+"\n")); err != nil {
+			return fmt.Errorf("cannot keep the admin password: %w", err)
+		}
+	}
 	fmt.Printf("Wrote %s\n\n", *path)
 	fmt.Printf("  Web UI:      %s\n", c.Server.PublicURL)
 	fmt.Printf("  HTTPS:       the server makes its own certificate when it starts; browsers warn\n")
 	fmt.Printf("               until you trust it (see docs/https.md)\n")
 	fmt.Printf("  User:        %s\n", c.Auth.AdminUser)
-	if generated {
+	switch {
+	case saved:
+		fmt.Printf("  Password:    show it with: signalith initial-password   (change it with: signalith passwd)\n")
+	case generated:
 		fmt.Printf("  Password:    %s   (shown once; change it with: signalith passwd)\n", pw)
 	}
 	if s := syslogSummary(c); s != "" {

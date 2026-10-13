@@ -576,8 +576,8 @@ service account.
 - Can't tell: on Windows, the service runs as an account Windows couldn't say is an
   administrator or not, such as a domain account while the domain can't be reached.
 
-**To fix:** on Linux, install the systemd unit from [Linux](../README.md#linux); on
-Windows, run `install.ps1` from this version again ([Windows](../README.md#windows)). In
+**To fix:** on Linux, install the systemd unit from [Linux](getting-started.md#linux); on
+Windows, run `install.ps1` from this version again ([Windows](getting-started.md#windows)). In
 Docker, remove a `user:` line that overrides the image's account.
 
 **How to check by hand:**
@@ -600,7 +600,7 @@ container: no new privileges, no capabilities, a read-only system and no core du
   isn't counted as missing.
 - Needs attention: some are missing, or Signalith doesn't run as a systemd service.
 
-**To fix:** install the current unit and restart, as in [Linux](../README.md#linux). If
+**To fix:** install the current unit and restart, as in [Linux](getting-started.md#linux). If
 you changed the unit on purpose, compare it with `systemctl cat signalith`. In Docker,
 keep `read_only: true`, `cap_drop: [ALL]`, `security_opt: [no-new-privileges:true]` and
 `ulimits: core: 0` in `docker-compose.yml`.

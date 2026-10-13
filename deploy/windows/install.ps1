@@ -27,7 +27,11 @@ param(
   [string]$SyslogTcp = "0.0.0.0:514",
   [string]$SyslogTls = "0.0.0.0:6514",
   [string]$InstallDir = "$env:ProgramFiles\Signalith",
-  [string]$ConfigDir = "$env:ProgramData\Signalith"
+  [string]$ConfigDir = "$env:ProgramData\Signalith",
+  # Keeps a new install's generated admin password in the config folder
+  # for "signalith initial-password" instead of printing it (the .msi
+  # package uses this, since nobody sees its output).
+  [switch]$SavePassword
 )
 $ErrorActionPreference = "Stop"
 
@@ -40,6 +44,27 @@ $users = "S-1-5-32-545"
 $hash = [Security.Cryptography.SHA1]::Create().ComputeHash([Text.Encoding]::Unicode.GetBytes("SIGNALITH"))
 $serviceSid = "S-1-5-80-" + ((0..4 | ForEach-Object { [BitConverter]::ToUInt32($hash, $_ * 4) }) -join "-")
 $me = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+
+# Grant-ServiceAccess gives NT SERVICE\Signalith access to a folder and
+# everything in it. icacls cannot do this before the service exists (it
+# looks the SID up by name, which fails with error 1332 on a new install),
+# so the entry is added by SID directly.
+function Grant-ServiceAccess {
+  param([string]$Path, [Security.AccessControl.FileSystemRights]$Rights)
+  $dir = Get-Item -LiteralPath $Path -Force
+  if ($PSVersionTable.PSEdition -eq "Core") {
+    $acl = [IO.FileSystemAclExtensions]::GetAccessControl($dir, [Security.AccessControl.AccessControlSections]::Access)
+  } else {
+    $acl = $dir.GetAccessControl([Security.AccessControl.AccessControlSections]::Access)
+  }
+  $rule = New-Object Security.AccessControl.FileSystemAccessRule(([Security.Principal.SecurityIdentifier]$serviceSid), $Rights, "ContainerInherit,ObjectInherit", "None", "Allow")
+  $acl.AddAccessRule($rule)
+  if ($PSVersionTable.PSEdition -eq "Core") {
+    [IO.FileSystemAclExtensions]::SetAccessControl($dir, $acl)
+  } else {
+    $dir.SetAccessControl($acl)
+  }
+}
 
 # Invoke-Checked runs a program and stops the script if it fails.
 function Invoke-Checked {
@@ -125,16 +150,21 @@ Protect-ConfigFolder
 # the service runs whatever signalith.exe is there.
 if (-not $InstallDir.StartsWith($env:ProgramFiles, [StringComparison]::OrdinalIgnoreCase)) {
   Invoke-Checked "Taking ownership of $InstallDir" { icacls $InstallDir /setowner "*$admins" /T /C /Q }
-  Invoke-Checked "Protecting $InstallDir" { icacls $InstallDir /inheritance:r /grant:r "*${system}:(OI)(CI)F" "*${admins}:(OI)(CI)F" "*${users}:(OI)(CI)RX" "*${serviceSid}:(OI)(CI)RX" /Q }
+  Invoke-Checked "Protecting $InstallDir" { icacls $InstallDir /inheritance:r /grant:r "*${system}:(OI)(CI)F" "*${admins}:(OI)(CI)F" "*${users}:(OI)(CI)RX" /Q }
+  Grant-ServiceAccess $InstallDir "ReadAndExecute"
   if (@(Get-ChildItem -LiteralPath $InstallDir -Force).Count -gt 0) {
     Invoke-Checked "Resetting the permissions inside $InstallDir" { icacls "$InstallDir\*" /reset /T /C /Q }
   }
 }
-Copy-Item -Force (Join-Path $PSScriptRoot "signalith.exe") $InstallDir
+# The .msi package has put the program in place already.
+$source = Join-Path $PSScriptRoot "signalith.exe"
+if ([IO.Path]::GetFullPath($source) -ne [IO.Path]::GetFullPath($exe)) { Copy-Item -Force $source $InstallDir }
 
 if (-not (Test-Path -LiteralPath $config)) {
   # -flag=value keeps an empty value, which PowerShell would otherwise drop.
-  Invoke-Checked "signalith init" { & $exe init -c $config -listen $Listen -opensearch $OpenSearchUrl "-syslog-udp=$SyslogUdp" "-syslog-tcp=$SyslogTcp" "-syslog-tls=$SyslogTls" }
+  $initArgs = @("init", "-c", $config, "-listen", $Listen, "-opensearch", $OpenSearchUrl, "-syslog-udp=$SyslogUdp", "-syslog-tcp=$SyslogTcp", "-syslog-tls=$SyslogTls")
+  if ($SavePassword) { $initArgs += "-save-password" }
+  Invoke-Checked "signalith init" { & $exe @initArgs }
 } else {
   # An upgrade: passwords and keys an older version kept as plain text are
   # encrypted, without changing anything else in the files.
@@ -145,7 +175,7 @@ if (-not (Test-Path -LiteralPath $config)) {
 # Again for what init or the upgrade wrote, and then the service may
 # change what is in the folder.
 Protect-ConfigFolder
-Invoke-Checked "Giving NT SERVICE\Signalith access to $ConfigDir" { icacls $ConfigDir /grant "*${serviceSid}:(OI)(CI)M" /Q }
+Grant-ServiceAccess $ConfigDir "Modify"
 
 Invoke-Checked "signalith validate" { & $exe validate -c $config }
 # Creates the service, or updates one installed before (older versions ran
