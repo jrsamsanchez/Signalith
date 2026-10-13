@@ -84,7 +84,8 @@ var (
 
 // ParseProgram maps one syslog program's message onto a data model: sshd
 // (including OpenSSH 9.8+ sshd-session), sudo and su logons become Authentication events; useradd, userdel,
-// usermod and gpasswd become Change events; anything else is Other. Agent
+// usermod and gpasswd become Change events; ClamAV's threats, definition
+// updates and problems become Malware events; anything else is Other. Agent
 // logs and the syslog receiver both use it, so the built-in detections fire
 // whichever way Linux auth logs arrive.
 func ParseProgram(host, program, pid, msg, sourcetype string) Event {
@@ -175,6 +176,15 @@ func ParseProgram(host, program, pid, msg, sourcetype string) Event {
 			f["object"] = m[1]
 			f["object_category"] = "user"
 			f["signature"] = "User account deleted"
+		}
+	case "clamd", "clamonacc", "freshclam", "clamscan", "clamdscan":
+		f["vendor_product"] = ClamAVProduct
+		if parseClamAVLine(program, msg, f) {
+			// The program and its process ID are ClamAV's own, not the
+			// process the threat was found in.
+			ev.Model = MalwareModel
+			delete(f, "app")
+			delete(f, "process_id")
 		}
 	case "usermod", "gpasswd":
 		if m := groupAdd.FindStringSubmatch(msg); m != nil {

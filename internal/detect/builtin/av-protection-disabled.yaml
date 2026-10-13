@@ -1,0 +1,20 @@
+id: av-protection-disabled
+title: Antivirus protection turned off on $dest$
+description: Real-time protection, scanning or tamper protection was turned off. Attackers do this before running their tools.
+query: |
+  datamodel=Malware type=health action=disabled
+schedule: 5m
+lookback: 10m
+severity: high
+mitre: [T1685]
+throttle:
+  fields: [dest, signature]
+  window: 24h
+risk:
+  score: 60
+  objects:
+    - {field: dest, type: system}
+    - {field: user, type: user}
+enabled: true
+tags: [malware, defense-impairment]
+guidance: Ask who changed it. If another antivirus product was just installed, Defender turning itself off is expected; close this as benign. Otherwise turn protection back on and look at what ran on the host just before.

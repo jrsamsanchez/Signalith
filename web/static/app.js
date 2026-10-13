@@ -275,8 +275,9 @@ function showPage(name, opts = {}) {
   setNavOpen(false);
   if (fromDrawer) $('crumb-page').focus({ preventScroll: true });
   if (location.hash !== '#' + name) {
-    try { history[opts.replace ? 'replaceState' : 'pushState'](null, '', '#' + name); } catch (_) { /* sandboxed */ }
+    try { history[opts.replace || hashSource ? 'replaceState' : 'pushState'](null, '', '#' + name); } catch (_) { /* sandboxed */ }
   }
+  hashSource = false;
   if (switching) window.scrollTo(0, 0);
   if (name === 'data') { loadDataSource(); if (typeof loadSampleCard === 'function') loadSampleCard(); }
   if (name === 'health') loadHealth();
@@ -284,13 +285,23 @@ function showPage(name, opts = {}) {
   try { localStorage.setItem('signalith.page', name); } catch (_) { /* storage may be blocked */ }
 }
 
+// pageFromHash reads the page from the address. Add data takes the source
+// to show, as in #data?source=antivirus; it is selected here and the
+// address goes back to #data once the page opens.
+let hashSource = false;
 function pageFromHash() {
-  const name = decodeURIComponent(location.hash.slice(1));
-  return name && $('page-' + name) ? name : null;
+  let name = location.hash.slice(1);
+  let query = '';
+  const q = name.indexOf('?');
+  if (q >= 0) [name, query] = [name.slice(0, q), name.slice(q + 1)];
+  try { name = decodeURIComponent(name); } catch (_) { return null; }
+  if (!name || !$('page-' + name)) return null;
+  hashSource = name === 'data' && pickDataSource(new URLSearchParams(query).get('source') || '');
+  return name;
 }
 const followHash = () => {
   const name = pageFromHash();
-  if (name && name !== currentPage) showPage(name, { replace: true });
+  if (name && (name !== currentPage || hashSource)) showPage(name, { replace: true });
 };
 window.addEventListener('hashchange', followHash);
 window.addEventListener('popstate', followHash);
@@ -974,7 +985,7 @@ function updateSuggestions() {
     items = fields.map((f) => ({ text: f.name + (inSearch ? '=' : ''), kind: f.type }));
     if (inSearch) items.push({ text: 'datamodel=', kind: 'source' }, { text: 'earliest=', kind: 'time' });
   } else if (/datamodel=$/i.test(before)) {
-    items = ['Authentication', 'Endpoint', 'Network_Traffic', 'Change', 'Filesystem', 'Registry', 'Network_Resolution', 'Image_Load', 'Script', 'Inventory', 'Configuration_Check', 'Alerts', 'Other'].map((m) => ({ text: m + ' ', kind: 'model' }));
+    items = ['Authentication', 'Endpoint', 'Network_Traffic', 'Change', 'Malware', 'Filesystem', 'Registry', 'Network_Resolution', 'Image_Load', 'Script', 'Inventory', 'Configuration_Check', 'Alerts', 'Other'].map((m) => ({ text: m + ' ', kind: 'model' }));
   }
   const w = word.toLowerCase();
   suggestions = items.filter((i) => i.text.toLowerCase().startsWith(w) && i.text.toLowerCase() !== w).slice(0, 8);
@@ -1987,6 +1998,7 @@ const starters = [
   ['Rare processes across hosts', 'datamodel=Endpoint\n| stats dc(host) as hosts, count by process_name\n| where hosts < 2\n| sort count'],
   ['sudo to root by user', 'datamodel=Authentication app=sudo action=success\n| top limit=20 src_user'],
   ['Connections to uncommon ports', 'datamodel=Network_Traffic dest_port>1024\n| stats count by dest, dest_port, process_name\n| sort -count'],
+  ['Hosts with malware not removed', 'datamodel=Malware type=threat action IN (allowed, failed, restored)\n| stats count by dest, signature'],
   ['Authentication activity over time', 'datamodel=Authentication\n| timechart count by action'],
   ['Events matching threat intel', '* | threatmatch\n| table _time, threat_match_field, threat_match_value, threat_source, threat_target, user, sourcetype'],
 ];
@@ -2482,12 +2494,30 @@ const syslogState = {
 };
 try { syslogState.vendor = localStorage.getItem(syslogVendorKey) || 'rsyslog'; } catch (_) { /* storage may be blocked */ }
 
-// loadDataSource shows the setup for the chosen source.
+// loadDataSource shows the setup for the chosen source. The Antivirus
+// setup lives in antivirus.js.
 function loadDataSource() {
-  const syslog = document.querySelector('input[name=os]:checked').value === 'syslog';
-  $('agent-setup').classList.toggle('hidden', syslog);
-  $('syslog-setup').classList.toggle('hidden', !syslog);
-  return syslog ? syslogOpen() : loadAgentConfig();
+  const src = document.querySelector('input[name=os]:checked').value;
+  $('agent-setup').classList.toggle('hidden', src === 'syslog' || src === 'antivirus');
+  $('syslog-setup').classList.toggle('hidden', src !== 'syslog');
+  $('antivirus-setup').classList.toggle('hidden', src !== 'antivirus');
+  if (src === 'antivirus') return typeof antivirusOpen === 'function' ? antivirusOpen() : null;
+  return src === 'syslog' ? syslogOpen() : loadAgentConfig();
+}
+
+// pickDataSource selects a source card on the Add data page: linux,
+// windows, syslog, antivirus or otel. It is false for anything else.
+function pickDataSource(src) {
+  const r = document.querySelector(`input[name=os][value="${CSS.escape(String(src))}"]`);
+  if (r) r.checked = true;
+  return !!r;
+}
+
+// openAntivirusSetup is the way to the Antivirus option from other pages,
+// such as the Malware dashboard when it has no events yet.
+function openAntivirusSetup() {
+  pickDataSource('antivirus');
+  showPage('data');
 }
 
 // openSyslogSetup is the way to the Syslog option from other pages.

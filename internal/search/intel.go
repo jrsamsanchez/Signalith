@@ -27,6 +27,9 @@ var IntelFields = map[string][]string{
 	"process_sha1":   {"hash"},
 	"process_sha256": {"hash"},
 	"file_hash":      {"hash"},
+	"file_md5":       {"hash"},
+	"file_sha1":      {"hash"},
+	"file_sha256":    {"hash"},
 	"hash":           {"hash"},
 	"md5":            {"hash"},
 	"sha1":           {"hash"},
@@ -41,7 +44,8 @@ var IntelFields = map[string][]string{
 // fields, in the order a match is reported.
 var DefaultIntelFields = []string{
 	"src", "dest", "src_ip", "dest_ip", "dest_host", "domain", "query", "url_domain", "url",
-	"process_sha256", "process_sha1", "process_md5", "process_hash", "file_hash", "hash", "md5", "sha1", "sha256",
+	"process_sha256", "process_sha1", "process_md5", "process_hash",
+	"file_sha256", "file_sha1", "file_md5", "file_hash", "hash", "md5", "sha1", "sha256",
 	"sender", "recipient", "src_user", "user",
 }
 
@@ -61,6 +65,11 @@ func intelClasses(field string) []string {
 var threatTargetFields = map[string][]string{
 	"src":    {"dest", "dest_host", "host"},
 	"src_ip": {"dest", "dest_host", "host"},
+	// A file an antivirus found is on the host the event is about.
+	"file_sha256": {"dest", "host"},
+	"file_sha1":   {"dest", "host"},
+	"file_md5":    {"dest", "host"},
+	"file_hash":   {"dest", "host"},
 }
 
 var defaultTargetFields = []string{"src", "src_host", "dest", "host"}

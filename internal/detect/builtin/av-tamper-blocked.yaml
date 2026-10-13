@@ -1,0 +1,20 @@
+id: av-tamper-blocked
+title: Tamper protection stopped a change on $dest$
+description: Tamper protection blocked an attempt to change the antivirus, such as turning off real-time protection. The antivirus stayed on, but someone or something tried to weaken it.
+query: |
+  datamodel=Malware type=health action=tamper_blocked
+schedule: 5m
+lookback: 10m
+severity: medium
+mitre: [T1685]
+throttle:
+  fields: [dest]
+  window: 24h
+risk:
+  score: 30
+  objects:
+    - {field: dest, type: system}
+    - {field: user, type: user}
+enabled: true
+tags: [malware, defense-impairment]
+guidance: Look at setting to see what was blocked. If it fires on many hosts after a Group Policy, Intune or SCCM change, the policy is fighting tamper protection; fix the policy and close these as benign. On a single host with no policy change, check what ran there just before.

@@ -1,0 +1,20 @@
+id: av-exclusion-added
+title: Antivirus exclusion added on $dest$ ($exclusion$)
+description: A folder, file type, process or address was excluded from antivirus scanning. Attackers add exclusions so their tools are not scanned.
+query: |
+  datamodel=Malware type=health action=exclusion_added
+schedule: 5m
+lookback: 10m
+severity: medium
+mitre: [T1685]
+throttle:
+  fields: [dest, exclusion]
+  window: 24h
+risk:
+  score: 50
+  objects:
+    - {field: dest, type: system}
+    - {field: user, type: user}
+enabled: true
+tags: [malware, defense-impairment]
+guidance: Check the exclusion against your approved list. Exclusions for temporary, download or ProgramData folders, or for script hosts such as powershell.exe, are rarely legitimate.

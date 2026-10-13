@@ -1474,6 +1474,14 @@ body:has(.page.active .inspector:not([hidden], .hidden)) #toast { bottom: 88px; 
 #page-dashboards .alert p + p, #page-dashboards .alert b + p { margin-top: 2px; }
 #page-dashboards .alert code { font-size: var(--fs-sm); color: var(--text); }
 
+/* a built-in dashboard with no data yet: one card above the empty panels
+   says what to collect, the icon in the accent */
+#page-dashboards .db-empty-slot:empty { display: none; }
+#page-dashboards .db-empty-slot { margin-bottom: var(--sp-4); }
+#page-dashboards .db-nodata .empty { padding: 28px 24px; }
+#page-dashboards .db-nodata .empty__icon { color: var(--accent); background: var(--accent-soft-2); }
+#page-dashboards .db-nodata .empty__text { max-width: 520px; }
+
 /* Body: refreshing dims the old numbers; loading keeps the layout */
 #page-dashboards #db-body { transition: opacity var(--t); }
 #page-dashboards #db-body[data-stale] { opacity: .55; }
@@ -1577,6 +1585,7 @@ body:has(.page.active .inspector:not([hidden], .hidden)) #toast { bottom: 88px; 
 #page-dashboards .db-table .table :is(th, td) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #page-dashboards .db-table .table th:first-child, #page-dashboards .db-table .table th:last-child { border-radius: 0; }
 #page-dashboards .db-table .table th[data-col="_time"] { width: 136px; }
+#page-dashboards .db-table .table th.num { width: 84px; }
 /* columns that do not fit the panel are hidden; Open in Search shows them all */
 @container (max-width: 640px) { #page-dashboards .db-table .table :is(th, td):nth-child(n+6) { display: none; } }
 @container (max-width: 420px) { #page-dashboards .db-table .table :is(th, td):nth-child(n+4) { display: none; } }
@@ -2382,9 +2391,9 @@ body:has(.page.active .inspector:not([hidden], .hidden)) #toast { bottom: 88px; 
    kind of device and a live "did it arrive" line. */
 #page-data .agent { display: grid; gap: var(--sp-4); max-width: 960px; }
 
-/* source: three selectable cards, the real radio drawn at the right. Top
-   aligned, so the titles line up when one description wraps. */
-#page-data .agent-os { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--sp-3); min-width: 0; margin: 0; padding: 0; border: 0; }
+/* source: five selectable cards (three a row), the real radio drawn at the
+   right. Top aligned, so the titles line up when one description wraps. */
+#page-data .agent-os { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-3); min-width: 0; margin: 0; padding: 0; border: 0; }
 #page-data .agent-os__card { display: flex; align-items: flex-start; gap: 12px; padding: 14px 16px; cursor: pointer; transition: box-shadow var(--t-fast); }
 #page-data .agent-os__card:hover { box-shadow: 0 0 0 1px var(--line-strong), var(--shadow-sm); }
 #page-data .agent-os__card:has(input:checked) { box-shadow: 0 0 0 1.5px var(--accent), var(--shadow-sm); }
@@ -2580,6 +2589,49 @@ body:has(.page.active .inspector:not([hidden], .hidden)) #toast { bottom: 88px; 
   #page-data .sample-load__size .select { min-width: 0; }
 }
 /* ==== end page:data ==== */
+
+/* ==== page:antivirus (styles for this page only) ==== */
+/* The Antivirus option on Add data (antivirus.js): a tab per product over
+   numbered steps, then a "Check it works" row. Syslog products first say
+   where the console sends. Tabs, steps and commands share page:data's
+   styles. */
+#antivirus-setup .card__body { gap: 0; padding-top: 12px; }
+#antivirus-setup .sl-tabbar { margin-top: 0; }
+#antivirus-setup .av-panel { gap: 20px; padding-top: 20px; }
+#antivirus-setup .av-panel:focus-visible { outline-offset: 4px; }
+#antivirus-setup .agent-step__text a { display: inline-flex; align-items: center; gap: 2px; }
+#antivirus-setup .agent-step__text a .icon { margin-left: 0; }
+#antivirus-setup .agent-step__text b { font-weight: 500; }
+#antivirus-setup .agent-step__body > div:has(> .btn) { display: flex; }
+
+/* where a console sends: label, host:port and protocol, a quiet link */
+#antivirus-setup .av-dest-wrap { display: grid; gap: 8px; }
+#antivirus-setup .av-dest { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 8px 12px; border-radius: var(--r-md); background: var(--sunken); box-shadow: inset 0 0 0 1px var(--line-subtle); }
+#antivirus-setup .av-dest__label { font-size: var(--fs-sm); color: var(--text-2); }
+#antivirus-setup .av-dest .badge--mono { color: var(--text); background: var(--raised); box-shadow: inset 0 0 0 1px var(--line); overflow-wrap: anywhere; }
+#antivirus-setup .av-dest__change { margin-left: auto; font-size: var(--fs-sm); }
+
+/* the last row of every product: what to look for, and the search */
+#antivirus-setup .av-check { display: flex; align-items: center; gap: 12px; padding: 12px 12px 12px 14px; border-radius: var(--r-md); box-shadow: inset 0 0 0 1px var(--line); }
+#antivirus-setup .av-check__icon { width: 32px; height: 32px; flex: none; display: grid; place-items: center; border-radius: var(--r-md); color: var(--success); background: var(--success-soft); }
+#antivirus-setup .av-check__text { display: grid; gap: 1px; flex: 1; min-width: 0; line-height: 20px; }
+#antivirus-setup .av-check__text b { font-weight: 600; color: var(--text); }
+#antivirus-setup .av-check__text span { font-size: var(--fs-sm); color: var(--text-2); line-height: 18px; }
+#antivirus-setup .av-check .btn { flex: none; }
+
+/* syslog off: the warning, then the steps that turn it on */
+#antivirus-setup .av-off { display: grid; gap: 20px; }
+#antivirus-setup .av-off > .alert p { margin-top: 2px; }
+
+#antivirus-setup .av-sk { padding-bottom: 20px; }
+#antivirus-setup .av-sk-tabs { display: block; height: 32px; border-radius: var(--r-md); }
+
+@media (max-width: 600px) {
+  #antivirus-setup .av-check { flex-wrap: wrap; }
+  #antivirus-setup .av-check .btn { width: 100%; justify-content: center; }
+  #antivirus-setup .av-dest__change { margin-left: 0; }
+}
+/* ==== end page:antivirus ==== */
 
 /* ==== page:health (styles for this page only) ==== */
 /* Alerts (only when something needs a look), four KPI tiles of real

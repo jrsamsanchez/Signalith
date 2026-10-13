@@ -49,6 +49,7 @@ func Translate(question string, hints Hints) (*Result, error) {
 		return nil, fmt.Errorf("ask a question, for example: failed logins in the last 24 hours")
 	}
 	t.used = make([]bool, len(t.toks))
+	t.malware = mentionsMalware(t.toks)
 	for t.i < len(t.toks) {
 		if n := t.step(); n > 0 {
 			for k := t.i; k < t.i+n && k < len(t.toks); k++ {
@@ -235,12 +236,16 @@ var modelWords = map[string]string{
 	"traffic": "Network_Traffic", "network": "Network_Traffic", "flow": "Network_Traffic", "flows": "Network_Traffic",
 	"firewall": "Network_Traffic", "outbound": "Network_Traffic", "inbound": "Network_Traffic",
 	"change": "Change", "changes": "Change", "risk": "Risk", "risky": "Risk",
+	"malware": "Malware", "virus": "Malware", "viruses": "Malware", "infection": "Malware", "infections": "Malware",
+	"infected": "Malware", "trojan": "Malware", "trojans": "Malware", "ransomware": "Malware", "quarantined": "Malware",
+	"antivirus": "Malware", "anti-virus": "Malware", "av": "Malware", "defender": "Malware", "clamav": "Malware",
+	"threat": "Malware", "threats": "Malware",
 }
 
 var modelNames = map[string]string{
 	"Authentication": "logon data (Authentication)", "Endpoint": "process data (Endpoint)",
 	"Network_Traffic": "network data (Network_Traffic)", "Change": "account and group changes (Change)",
-	"Risk": "risk events (Risk)",
+	"Risk": "risk events (Risk)", "Malware": "antivirus data (Malware)",
 }
 
 var actionWords = map[string]string{
@@ -324,6 +329,16 @@ type translator struct {
 	negNext   bool
 	lastNoun  *noun
 	lastNounI int
+
+	// Antivirus questions. malware is true when the question names
+	// malware or antivirus anywhere, so words such as "disabled", "blocks"
+	// and "rule" take their antivirus meaning.
+	malware    bool
+	mwType     string   // threat, rule or health
+	mwStrong   bool     // mwType came from a rule or health phrase, which a threat word does not override
+	mwCategory string   // category=
+	mwActions  []string // action=, or action IN (...) when more than one
+	mwVendor   string   // vendor_product=
 }
 
 func (t *translator) low(k int) string {
@@ -363,7 +378,7 @@ func (t *translator) setModel(m string) {
 // the matching rule consumed.
 func (t *translator) step() int {
 	for _, rule := range []func() int{
-		t.ruleQuoted, t.ruleTime, t.ruleThreshold, t.ruleNegation, t.ruleTop, t.ruleAgg, t.ruleGroup,
+		t.ruleQuoted, t.ruleTime, t.ruleThreshold, t.ruleMalware, t.ruleNegation, t.ruleTop, t.ruleAgg, t.ruleGroup,
 		t.ruleShowFields, t.ruleContains, t.rulePreposition, t.ruleNoun, t.ruleWords, t.ruleValue,
 	} {
 		if n := rule(); n > 0 {
@@ -966,10 +981,23 @@ func (t *translator) nounAt(k int) (noun, int) {
 	if n, ok := twoWordNouns[t.low(k)+" "+t.low(k+1)]; ok && t.low(k+1) != "" {
 		return n, 2
 	}
+	if t.malware {
+		if n, ok := malwareNouns[t.low(k)]; ok {
+			return n, 1
+		}
+	}
 	if n, ok := nouns[t.low(k)]; ok {
 		return n, 1
 	}
 	return noun{}, 0
+}
+
+// malwareNouns are field nouns that only apply to antivirus questions.
+var malwareNouns = map[string]noun{
+	"threat": {field: "signature", name: "threat", model: "Malware"}, "threats": {field: "signature", name: "threat", model: "Malware"},
+	"file": {field: "file_name", name: "file", model: "Malware"}, "files": {field: "file_name", name: "file", model: "Malware"},
+	"rule": {field: "rule", name: "protection rule", model: "Malware"}, "rules": {field: "rule", name: "protection rule", model: "Malware"},
+	"category": {field: "category", name: "category", model: "Malware"}, "categories": {field: "category", name: "category", model: "Malware"},
 }
 
 func (t *translator) hintModel(nn noun) {
@@ -1088,7 +1116,7 @@ func hasExt(w string) bool {
 // names no field.
 var defaultEntity = map[string]string{
 	"Authentication": "user", "Endpoint": "process_name", "Network_Traffic": "dest",
-	"Change": "object", "Risk": "risk_object", "": "host",
+	"Change": "object", "Risk": "risk_object", "Malware": "signature", "": "host",
 }
 
 func (t *translator) finish() *query.Query {
@@ -1136,6 +1164,9 @@ func (t *translator) finish() *query.Query {
 		return f
 	}
 
+	if model == "Malware" {
+		terms = append(terms, t.malwareTerms()...)
+	}
 	if a := t.action; a != "" {
 		switch model {
 		case "Authentication":
@@ -1148,6 +1179,11 @@ func (t *translator) finish() *query.Query {
 			}
 		case "Endpoint", "Risk":
 			a = ""
+		case "Malware":
+			a = map[string]string{"failure": "failed", "blocked": "blocked", "allowed": "allowed", "deleted": "deleted"}[a]
+			if len(t.mwActions) > 0 {
+				a = ""
+			}
 		}
 		if a != "" {
 			terms = append(terms, &query.Compare{Field: "action", Op: "=", Value: a})
@@ -1229,6 +1265,13 @@ func (t *translator) finish() *query.Query {
 	if t.threshold != nil && mode == "" {
 		mode = "stats"
 	}
+	// "quarantined files on web1", "hosts where antivirus was turned off":
+	// for antivirus data a field noun with nothing else to do lists its
+	// values, most common first.
+	if model == "Malware" && mode == "" && len(by) == 0 && len(t.fields) == 0 && len(t.pending) > 0 {
+		mode, by = "stats", []string{resolve(t.pending[0])}
+		t.steps[t.pendStep[0]].Meaning = "one row per " + fieldName(t.pending[0])
+	}
 	if t.threshold != nil && mode == "timechart" {
 		// A chart cannot filter rows by count; count over the whole range.
 		mode = "stats"
@@ -1298,6 +1341,173 @@ func dedupe(in []string) []string {
 			seen[s] = true
 			out = append(out, s)
 		}
+	}
+	return out
+}
+
+// ---------- antivirus ----------
+
+// mentionsMalware reports whether a question is about antivirus data.
+func mentionsMalware(toks []token) bool {
+	for i, tk := range toks {
+		if tk.quoted {
+			continue
+		}
+		switch tk.low {
+		case "asr", "tamper", "tampering", "tampered", "exclusion", "exclusions":
+			return true
+		}
+		if modelWords[tk.low] == "Malware" {
+			return true
+		}
+		if tk.low == "attack" && i+1 < len(toks) && toks[i+1].low == "surface" {
+			return true
+		}
+	}
+	return false
+}
+
+// anyWord reports whether the question has one of words anywhere.
+func (t *translator) anyWord(words ...string) bool {
+	for _, tk := range t.toks {
+		if !tk.quoted && slices.Contains(words, tk.low) {
+			return true
+		}
+	}
+	return false
+}
+
+func (t *translator) setMalwareType(typ string, strong bool) {
+	if strong || !t.mwStrong {
+		t.mwType = typ
+	}
+	t.mwStrong = t.mwStrong || strong
+}
+
+// ruleMalware handles the antivirus words, only in antivirus questions.
+func (t *translator) ruleMalware() int {
+	if !t.malware {
+		return 0
+	}
+	w := t.low(0)
+	switch w + " " + t.low(1) {
+	case "not removed", "not deleted", "not cleaned", "not quarantined":
+		t.setModel("Malware")
+		t.setMalwareType("threat", false)
+		t.mwActions = []string{"allowed", "failed", "restored"}
+		return t.note(2, "malware the antivirus did not remove (allowed, failed or restored)")
+	case "turned off", "switched off":
+		t.setModel("Malware")
+		t.setMalwareType("health", true)
+		t.mwActions = []string{"disabled"}
+		return t.note(2, "antivirus protection turned off")
+	case "turned on", "switched on":
+		t.setModel("Malware")
+		t.setMalwareType("health", true)
+		t.mwActions = []string{"enabled"}
+		return t.note(2, "antivirus protection turned on")
+	case "attack surface":
+		t.setModel("Malware")
+		t.setMalwareType("rule", true)
+		k := 2
+		if t.low(2) == "reduction" {
+			k = 3
+		}
+		return t.note(k, "protection rule events (attack surface reduction)")
+	}
+	switch w {
+	case "malware", "virus", "viruses", "infection", "infections", "infected", "trojan", "trojans":
+		t.setModel("Malware")
+		t.setMalwareType("threat", false)
+		return t.note(1, "malware found (antivirus data, type threat)")
+	case "threat", "threats":
+		t.setModel("Malware")
+		t.setMalwareType("threat", false)
+		return t.ruleNoun()
+	case "ransomware":
+		t.setModel("Malware")
+		t.setMalwareType("threat", false)
+		t.mwCategory = "ransomware"
+		return t.note(1, "ransomware found by antivirus")
+	case "quarantined":
+		t.setModel("Malware")
+		t.setMalwareType("threat", false)
+		t.mwActions = []string{"quarantined"}
+		return t.note(1, "malware the antivirus quarantined")
+	case "antivirus", "anti-virus", "av":
+		t.setModel("Malware")
+		return t.note(1, "%s", modelNames["Malware"])
+	case "defender":
+		t.setModel("Malware")
+		t.mwVendor = "Microsoft Defender Antivirus"
+		return t.note(1, "events from Microsoft Defender Antivirus")
+	case "clamav":
+		t.setModel("Malware")
+		t.mwVendor = "ClamAV"
+		return t.note(1, "events from ClamAV")
+	case "asr":
+		t.setModel("Malware")
+		t.setMalwareType("rule", true)
+		return t.note(1, "protection rule events (attack surface reduction)")
+	case "disabled":
+		t.setModel("Malware")
+		t.setMalwareType("health", true)
+		t.mwActions = []string{"disabled"}
+		return t.note(1, "antivirus protection turned off")
+	case "exclusion", "exclusions":
+		t.setModel("Malware")
+		t.setMalwareType("health", true)
+		if t.anyWord("removed", "deleted") {
+			t.mwActions = []string{"exclusion_removed"}
+			return t.note(1, "antivirus exclusions removed")
+		}
+		t.mwActions = []string{"exclusion_added"}
+		return t.note(1, "antivirus exclusions added")
+	case "definition", "definitions", "update", "updates":
+		if !t.anyWord("fail", "failed", "failing", "fails", "failure", "failures") {
+			return 0
+		}
+		t.setModel("Malware")
+		t.setMalwareType("health", true)
+		t.mwActions = []string{"update_failed"}
+		return t.note(1, "antivirus definition updates that failed")
+	case "tamper", "tampering", "tampered":
+		t.setModel("Malware")
+		t.setMalwareType("health", true)
+		t.mwActions = []string{"tamper_blocked"}
+		return t.note(1, "tamper protection blocking a change")
+	case "block", "blocks", "blocked":
+		t.mwActions = []string{"blocked"}
+		return t.note(1, "only what the antivirus blocked")
+	case "detection", "detections":
+		return t.note(1, "antivirus detections")
+	case "protection":
+		t.setModel("Malware")
+		return t.note(1, "%s", modelNames["Malware"])
+	}
+	return 0
+}
+
+// malwareTerms returns the antivirus filters, in a fixed order: type,
+// category, action, product. Several actions use IN, the same form as the
+// built-in detections and the Malware dashboard.
+func (t *translator) malwareTerms() []query.Expr {
+	var out []query.Expr
+	if t.mwType != "" {
+		out = append(out, &query.Compare{Field: "type", Op: "=", Value: t.mwType})
+	}
+	if t.mwCategory != "" {
+		out = append(out, &query.Compare{Field: "category", Op: "=", Value: t.mwCategory})
+	}
+	switch len(t.mwActions) {
+	case 0:
+	case 1:
+		out = append(out, &query.Compare{Field: "action", Op: "=", Value: t.mwActions[0]})
+	default:
+		out = append(out, &query.In{Field: "action", Values: t.mwActions})
+	}
+	if t.mwVendor != "" {
+		out = append(out, &query.Compare{Field: "vendor_product", Op: "=", Value: t.mwVendor})
 	}
 	return out
 }

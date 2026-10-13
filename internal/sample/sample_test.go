@@ -412,12 +412,16 @@ func globFold(pattern, s string) bool {
 	return true
 }
 
-// TestStories: the four intrusion stories and one benign story are
-// present, and the sample investigation has the phishing story's host and
+// TestStories: the four intrusion stories, the benign story and the two
+// antivirus stories are present, and the sample investigation has the phishing story's host and
 // user to gather its findings by.
 func TestStories(t *testing.T) {
 	d := genData(t, SizeSmall)
-	want := []string{"linux-ssh-intrusion", "phishing-to-c2", "ransomware-prep", "domain-persistence", "benign-lookalikes"}
+	want := []string{"linux-ssh-intrusion", "phishing-to-c2", "ransomware-prep", "domain-persistence", "benign-lookalikes",
+		"malware-outbreak", "antivirus-housekeeping"}
+	if len(d.Stories) != len(want) {
+		t.Errorf("%d stories, want %d", len(d.Stories), len(want))
+	}
 	have := map[string]bool{}
 	for _, s := range d.Stories {
 		have[s.ID] = true
@@ -438,6 +442,95 @@ func TestStories(t *testing.T) {
 	for _, v := range d.CaseFocus {
 		if v == "" || v == "file-01" || strings.Contains(v, "svc-backup") {
 			t.Errorf("case focus has %q, which is not the phishing story", v)
+		}
+	}
+}
+
+// TestAntivirusStories: every antivirus event the stories add lands in the
+// Malware data model with the expected type and action and names its
+// product, and the daily definition updates are there too.
+func TestAntivirusStories(t *testing.T) {
+	type want struct {
+		host, sig, typ, action, field, value string
+	}
+	common := []want{
+		// phishing-to-c2
+		{"ws-fin-07", "HackTool:Win32/Mimikatz.D", "threat", "detected", "category", "hacktool"},
+		{"ws-fin-07", "HackTool:Win32/Mimikatz.D", "threat", "failed", "user", `CORP\alice.nguyen`},
+		{"ws-fin-02", "Office app started a child process", "rule", "blocked", "rule_id", "d4f940ab-401b-4efc-aadc-ad5f3c50688a"},
+		// ransomware-prep
+		{"file-01", "Tamper protection blocked a change", "health", "tamper_blocked", "", ""},
+		{"file-01", "Antivirus exclusion added", "health", "exclusion_added", "exclusion", `C:\ProgramData\SyncSvc`},
+		{"file-01", "Ransom:Win32/Samplecrypt.A", "threat", "detected", "category", "ransomware"},
+		{"file-01", "Ransom:Win32/Samplecrypt.A", "threat", "quarantined", "category", "ransomware"},
+		{"file-01", "Controlled folder access", "rule", "blocked", "file_path", `D:\Shares\Finance\Q3-forecast.xlsx`},
+		// linux-ssh-intrusion
+		{"db-01", "Unix.Trojan.Sampleminer-1", "threat", "detected", "file_path", "/tmp/.x/kworkerd"},
+		{"db-01", "Unknown threat", "threat", "quarantined", "vendor_product", "ClamAV"},
+		// malware-outbreak
+		{"ws-ops-01", "Trojan:Win32/Fakepay.A", "threat", "quarantined", "category", "trojan"},
+		{"ws-ops-03", "Trojan:Win32/Fakepay.A", "threat", "quarantined", "", ""},
+		{"ws-ops-04", "Trojan:Win32/Fakepay.A", "threat", "quarantined", "", ""},
+		{"ws-ops-05", "Trojan:Win32/Fakepay.A", "threat", "detected", "", ""},
+		{"ws-ops-05", "Trojan:Win32/Fakepay.A", "threat", "failed", "reason", "Access is denied."},
+		// antivirus-housekeeping
+		{"web-01", "Definitions update failed", "health", "update_failed", "vendor_product", "ClamAV"},
+		{"ws-ops-02", "Definitions update failed", "health", "update_failed", "vendor_product", "Microsoft Defender Antivirus"},
+		{"ws-it-02", "Virus:DOS/EICAR_Test_File", "threat", "deleted", "category", "test"},
+		// background
+		{"dc-01", "Antivirus definitions updated", "health", "updated", "", ""},
+		{"web-01", "Antivirus definitions updated", "health", "updated", "signature_version", ""},
+	}
+	for _, size := range Sizes {
+		d := genData(t, size)
+		wants := common
+		if size == SizeStandard {
+			wants = append(append([]want{}, common...),
+				want{"ws-it-04", "PUA_SampleToolbar", "threat", "quarantined", "vendor_product", "Trend Micro Apex One"})
+		}
+		var malware []ingest.Event
+		for _, e := range d.Events {
+			st, _ := e.Fields["sourcetype"].(string)
+			if e.Model != "Malware" {
+				if st == ingest.DefenderChannel || strings.HasSuffix(st, ingest.DefenderChannel) || st == "linux:clamav" {
+					if e.Fields["signature_id"] != "1150" {
+						t.Errorf("%s: antivirus event outside Malware: %v", size, e.Fields)
+					}
+				}
+				continue
+			}
+			malware = append(malware, e)
+			for _, f := range []string{"type", "action", "vendor_product", "signature", "dest"} {
+				if v, _ := e.Fields[f].(string); v == "" {
+					t.Errorf("%s: Malware event without %s: %v", size, f, e.Fields)
+				}
+			}
+		}
+		for _, w := range wants {
+			found := false
+			for _, e := range malware {
+				if e.Fields["dest"] != w.host || e.Fields["signature"] != w.sig || e.Fields["type"] != w.typ || e.Fields["action"] != w.action {
+					continue
+				}
+				if w.field != "" {
+					v := fmt.Sprint(e.Fields[w.field])
+					if w.value == "" && (v == "" || e.Fields[w.field] == nil) || w.value != "" && v != w.value {
+						continue
+					}
+				}
+				found = true
+				break
+			}
+			if !found {
+				t.Errorf("%s: no Malware event %+v", size, w)
+			}
+		}
+		// Only ws-fin-07's findings name alice, so the sample case keeps
+		// to the phishing story.
+		for _, e := range malware {
+			if e.Fields["user"] == `CORP\alice.nguyen` && e.Fields["dest"] != "ws-fin-07" {
+				t.Errorf("%s: alice named on %v", size, e.Fields["dest"])
+			}
 		}
 	}
 }

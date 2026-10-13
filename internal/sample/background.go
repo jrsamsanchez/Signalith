@@ -61,7 +61,8 @@ var benignDomains = []string{
 }
 
 // background fills the six-day window with normal sign-ins, process starts,
-// network connections, firewall traffic, DNS and a little OT traffic, with
+// network connections, firewall traffic, DNS, antivirus definition updates
+// and a little OT traffic, with
 // a working-hours and weekday rhythm. Nothing here fires a detection.
 func (g *gen) background() {
 	it := g.intensity()
@@ -145,6 +146,7 @@ func (g *gen) background() {
 			_ = who
 		}
 	}
+	g.antivirusBackground(days)
 }
 
 // otTraffic adds a little industrial-protocol flavour: the HMIs poll the

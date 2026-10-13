@@ -72,6 +72,7 @@ var knownFields = func() map[string]string {
 		"url": kw, "http_method": kw, "http_user_agent": kw, "file_name": kw, "file_path": kw,
 		"file_hash": kw, "file_size": long, "category": kw,
 		"cef_version": kw, "cef_vendor": kw, "cef_product": kw, "cef_device_version": kw,
+		"leef_version": kw, "leef_vendor": kw, "leef_product": kw, "leef_device_version": kw,
 
 		// OpenTelemetry log records (OTLP).
 		"service": kw, "trace_id": kw, "span_id": kw, "otel_scope": kw,

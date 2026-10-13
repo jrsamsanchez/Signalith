@@ -16,7 +16,7 @@ datamodel=Authentication action=failure earliest=-24h
 
 | Syntax | Meaning |
 | --- | --- |
-| `datamodel=Authentication` | Events of one data model: Authentication, Endpoint, Network_Traffic, Change, Filesystem, Registry, Network_Resolution, Image_Load, Script, Inventory, Configuration_Check, Alerts, Other. `datamodel=Risk` searches risk events, which are left out otherwise |
+| `datamodel=Authentication` | Events of one data model: Authentication, Endpoint, Network_Traffic, Change, Malware (antivirus; see [antivirus.md](antivirus.md)), Filesystem, Registry, Network_Resolution, Image_Load, Script, Inventory, Configuration_Check, Alerts, Other. `datamodel=Risk` searches risk events, which are left out otherwise |
 | `index=signalith-authentication-2026.10.*` | One pattern of Signalith's daily indices, `<prefix>-<datamodel>-YYYY.MM.DD`. It must start with the configured `opensearch.index_prefix` and `-`; `index=*` means all events, as when `index=` is left out. Lists (`a,b`), exclusions (`-x`), other indices and system indices, other clusters (`remote:x`) and date math are refused |
 | `field=value` | Exact match, case-insensitive |
 | `field=val*` | Wildcard match with `*` and `?` |
@@ -55,8 +55,8 @@ kept as typed, so Windows paths work without doubling.
 
 With no fields, `threatmatch` and `intel` check `src`, `dest`, `src_ip`, `dest_ip`,
 `dest_host`, `domain`, `query`, `url_domain`, `url`, the hash fields
-(`process_sha256`, `process_sha1`, `process_md5`, `process_hash`, `file_hash`, `hash`,
-`md5`, `sha1`, `sha256`) and the email fields (`sender`, `recipient`, `src_user`,
+(`process_sha256`, `process_sha1`, `process_md5`, `process_hash`, `file_hash`,
+`file_sha256`, `file_sha1`, `file_md5`, `hash`, `md5`, `sha1`, `sha256`) and the email fields (`sender`, `recipient`, `src_user`,
 `user`). The `threat_*` columns are added after OpenSearch returns events, so
 aggregate on event fields and add intel afterwards:
 `* | threatmatch src | stats count by src, dest | intel src`.

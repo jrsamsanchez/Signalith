@@ -366,7 +366,7 @@
     <div class="page-head">
       <div class="db-head">
         <details class="menu db-switch" id="db-switch">
-          <summary class="dash-switch" title="Switch dashboard"><span class="dash-switch__icon"><svg class="icon" aria-hidden="true"><use href="#i-layout-dashboard"/></svg></span><b id="db-name">Security posture</b><span class="badge" id="db-builtin">Built-in</span><svg class="icon" aria-hidden="true"><use href="#i-chevrons-up-down"/></svg><span class="sr-only">Switch dashboard</span></summary>
+          <summary class="dash-switch" title="Switch dashboard"><span class="dash-switch__icon" id="db-switch-icon"><svg class="icon" aria-hidden="true"><use href="#i-layout-dashboard"/></svg></span><b id="db-name">Security posture</b><span class="badge" id="db-builtin">Built-in</span><svg class="icon" aria-hidden="true"><use href="#i-chevrons-up-down"/></svg><span class="sr-only">Switch dashboard</span></summary>
           <div class="menu__panel" id="db-menu"></div>
         </details>
         <p id="db-desc" class="page-head__desc"></p>
@@ -383,6 +383,7 @@
         <div class="db-tools hidden" id="db-tools">
           <button class="btn btn--ghost" type="button" id="db-edit" data-min-role="analyst" title="Title, time range, refresh, delete"><svg class="icon" aria-hidden="true"><use href="#i-settings-2"/></svg>Settings</button>
           <a class="btn btn--ghost btn--icon" id="db-yaml" href="#" download title="Download YAML" aria-label="Download YAML"><svg class="icon" aria-hidden="true"><use href="#i-download"/></svg></a>
+          <button class="btn btn--secondary hidden" type="button" id="db-copy" data-min-role="analyst" title="Save a copy you can change"><svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg>Make a copy</button>
           <button class="btn btn--secondary" type="button" id="db-add" data-min-role="analyst"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>Add panel</button>
         </div>
         <button class="btn btn--secondary" type="button" id="db-new" data-min-role="analyst"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>New dashboard</button>
@@ -835,18 +836,23 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
         <legend class="sr-only">Source</legend>
         <label class="card agent-os__card">
           <span class="agent-os__icon"><svg class="icon" aria-hidden="true"><use href="#i-square-terminal"/></svg></span>
-          <span class="agent-os__text"><b>Linux</b><span>SSH, sudo and account changes</span></span>
+          <span class="agent-os__text"><b>Linux</b><span>SSH, sudo, account changes and ClamAV</span></span>
           <input type="radio" name="os" value="linux" checked>
         </label>
         <label class="card agent-os__card">
           <span class="agent-os__icon"><svg class="icon" aria-hidden="true"><use href="#i-monitor"/></svg></span>
-          <span class="agent-os__text"><b>Windows</b><span>Security event log and Sysmon</span></span>
+          <span class="agent-os__text"><b>Windows</b><span>Security log, Microsoft Defender and Sysmon</span></span>
           <input type="radio" name="os" value="windows">
         </label>
         <label class="card agent-os__card">
           <span class="agent-os__icon"><svg class="icon" aria-hidden="true"><use href="#i-router"/></svg></span>
           <span class="agent-os__text"><b>Syslog</b><span>Firewalls, switches, routers and appliances</span></span>
           <input type="radio" name="os" value="syslog">
+        </label>
+        <label class="card agent-os__card">
+          <span class="agent-os__icon"><svg class="icon" aria-hidden="true"><use href="#i-shield-check"/></svg></span>
+          <span class="agent-os__text"><b>Antivirus</b><span>Microsoft Defender, ClamAV and antivirus consoles</span></span>
+          <input type="radio" name="os" value="antivirus">
         </label>
         <label class="card agent-os__card">
           <span class="agent-os__icon"><svg class="icon" aria-hidden="true"><use href="#i-network"/></svg></span>
@@ -919,6 +925,16 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
           </div>
           <div id="syslog-main"></div>
         </div>
+      </div>
+
+      <div class="card agent-setup hidden" id="antivirus-setup">
+        <div class="card__head">
+          <div>
+            <h3 class="card__title">Collect antivirus logs</h3>
+            <p class="card__sub">Pick your product. Microsoft Defender and ClamAV come in through the agent; the others send syslog from their management console.</p>
+          </div>
+        </div>
+        <div class="card__body" id="antivirus-body" aria-busy="true"></div>
       </div>
     </div>
     <p class="sr-only" id="agent-status" role="status"></p>
@@ -1264,7 +1280,7 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
 
       <h2>Search</h2>
       <dl class="guide__ref">
-        <div><dt data-query="datamodel=Authentication"></dt><dd>Only events of one data model: Authentication, Endpoint, Network_Traffic, Change, Other or Risk.</dd></div>
+        <div><dt data-query="datamodel=Authentication"></dt><dd>Only events of one data model: Authentication, Endpoint, Network_Traffic, Change, Malware, Other or Risk.</dd></div>
         <div><dt data-query="user=admin"></dt><dd>A field equals a value. Matching ignores case.</dd></div>
         <div><dt data-query="user=adm*"></dt><dd>Wildcards with <code>*</code>.</dd></div>
         <div><dt data-query="dest_port&gt;=1024"></dt><dd>Comparisons: <code>= != &lt; &lt;= &gt; &gt;=</code>.</dd></div>
@@ -1317,6 +1333,7 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
 </dialog>
 <div id="toast" class="toast hidden" role="status"></div>
 <script src="app.js"></script>
+<script src="antivirus.js"></script>
 <script src="detections.js"></script>
 <script src="risk.js"></script>
 <script src="intel.js"></script>

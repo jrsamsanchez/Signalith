@@ -180,6 +180,15 @@ func TestCreateNeverReplacesACase(t *testing.T) {
 	}
 }
 
+func TestFileHashIsAnEntity(t *testing.T) {
+	c := &Case{}
+	h := strings.Repeat("ab", 32)
+	c.AddEntities(map[string]any{"file_sha256": h, "file_path": `C:\x.exe`, "dest": "ws-fin-07"})
+	if got := c.EntityValues(); strings.Join(got, ",") != h+",ws-fin-07" {
+		t.Errorf("entities = %v", got)
+	}
+}
+
 // TestSampleFilterNeverMeansAll: a search for sample cases with an empty
 // load ID finds none, in memory and in OpenSearch, so a caller that lost
 // the ID cannot reach (and delete) every case by mistake.

@@ -246,7 +246,7 @@ func (c *Case) RemoveFinding(id, author string, now time.Time) bool {
 // EntityFields are the event and finding fields collected as case
 // entities.
 var EntityFields = []string{"user", "src_user", "src", "src_host", "dest", "dest_host", "host",
-	"process_name", "process_sha256", "process_md5", "object", "member", "query", "url", "risk_object"}
+	"process_name", "process_sha256", "process_md5", "file_sha256", "object", "member", "query", "url", "risk_object"}
 
 // AddEntities merges entity values, skipping ones already present and
 // risk_object_type, which describes rather than names an entity.

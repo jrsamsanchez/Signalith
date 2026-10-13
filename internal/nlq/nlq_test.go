@@ -50,6 +50,24 @@ func TestTranslate(t *testing.T) {
 		"traffic to or from 10.1.2.3":                           `datamodel=Network_Traffic src=10.1.2.3 OR dest=10.1.2.3`,
 		"events on web1 in the last 15 minutes":                 `host=web1 earliest=-15m`,
 		"failed sudo":                                           `datamodel=Authentication action=failure app=sudo`,
+		"risk by detection":                                     `datamodel=Risk | stats sum(risk_score) as risk_score by detection_id | sort -risk_score`,
+		// Antivirus data.
+		"malware on web1":                        `datamodel=Malware type=threat dest=web1`,
+		"malware on servers last week":           `datamodel=Malware type=threat earliest=-1w | stats count by dest | sort -count`,
+		"hosts where antivirus was turned off":   `datamodel=Malware type=health action=disabled | stats count by dest | sort -count`,
+		"malware not removed in the last 7 days": `datamodel=Malware type=threat action IN (allowed, failed, restored) earliest=-7d`,
+		"ransomware detections this week":        `datamodel=Malware type=threat category=ransomware earliest=@w`,
+		"top threats":                            `datamodel=Malware type=threat | top limit=10 signature`,
+		"antivirus exclusions added this month":  `datamodel=Malware type=health action=exclusion_added earliest=@mon`,
+		"quarantined files on web1":              `datamodel=Malware type=threat action=quarantined dest=web1 | stats count by file_name | sort -count`,
+		"asr blocks by rule":                     `datamodel=Malware type=rule action=blocked | stats count by rule | sort -count`,
+		"defender events on dc01 today":          `datamodel=Malware vendor_product="Microsoft Defender Antivirus" dest=dc01 earliest=@d`,
+		"antivirus exclusions removed":           `datamodel=Malware type=health action=exclusion_removed`,
+		"clamav definitions failing":             `datamodel=Malware type=health action=update_failed vendor_product=ClamAV`,
+		"tamper attempts on dc01":                `datamodel=Malware type=health action=tamper_blocked dest=dc01`,
+		"attack surface reduction blocks":        `datamodel=Malware type=rule action=blocked`,
+		"malware protection turned off on web1":  `datamodel=Malware type=health action=disabled dest=web1`,
+		"disabled accounts":                      `action=modified`,
 	}
 	for in, want := range cases {
 		r, err := Translate(in, hints{})

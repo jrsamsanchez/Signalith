@@ -137,3 +137,22 @@ func TestIntelCommandAddsColumns(t *testing.T) {
 		t.Error("intel without a store should fail")
 	}
 }
+
+func TestThreatMatchFileHash(t *testing.T) {
+	fs := &fakeStore{responses: []string{`{"hits":{"total":{"value":1},"hits":[
+		{"_source":{"@timestamp":"2026-10-11T10:00:00Z","datamodel":"Malware","src":"10.0.0.9","dest":"ws-fin-07","host":"ws-fin-07","file_sha256":"` + strings.Repeat("c", 64) + `"}}]}}`}}
+	e := &Engine{Store: fs, Intel: intelStore(t)}
+	res, err := e.Run(context.Background(), `datamodel=Malware | threatmatch`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Rows) != 1 {
+		t.Fatalf("rows = %v", res.Rows)
+	}
+	if r := res.Rows[0]; r["threat_match_field"] != "file_sha256" || r["threat_type"] != "sha256" || r["threat_target"] != "ws-fin-07" {
+		t.Errorf("row = %v", r)
+	}
+	if body := asJSON(fs.bodies[0]); !strings.Contains(body, `{"terms":{"file_sha256":["`+strings.Repeat("c", 64)) {
+		t.Errorf("no file_sha256 filter in %s", body)
+	}
+}

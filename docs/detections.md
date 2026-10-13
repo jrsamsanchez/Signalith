@@ -95,6 +95,25 @@ to `threat_target` and `user`. See [threat-intel.md](threat-intel.md).
 Write your own the same way, for example
 `datamodel=Risk risk_object_type=user | stats sum(risk_score) as risk_score by risk_object | where risk_score >= 200`.
 
+## Antivirus detections
+
+Eight built-in detections read the Malware data model (see
+[antivirus.md](antivirus.md#detections) for what each means and what to do). All
+are on by default and raise findings:
+
+| ID | Severity | Fires when |
+| --- | --- | --- |
+| `malware-not-removed` | high | A threat was allowed, failed to clean or was restored from quarantine |
+| `malware-left-clamav` | high | ClamAV found malware and only reported it, so the file is still there |
+| `malware-detected` | low | A named threat was found (ransomware has its own finding) |
+| `malware-outbreak` | high | The same threat was found on three or more hosts in a day (not test files, adware or unwanted apps) |
+| `malware-ransomware` | critical | A threat in the ransomware category was found |
+| `av-protection-disabled` | high | Protection or tamper protection was turned off |
+| `av-tamper-blocked` | medium | Tamper protection blocked a change to the antivirus |
+| `av-exclusion-added` | medium | An antivirus exclusion was added |
+| `av-definitions-failing` | low | Definitions failed to update twice in a day, or are a week old |
+| `av-rule-block` | medium | An attack surface reduction or controlled folder access rule blocked something unusual |
+
 ## What a finding contains
 
 The result row, the entities found in it (`user`, `src_user`, `src`, `src_host`,
@@ -115,8 +134,9 @@ OpenSearch index `<index_prefix>_findings`, which event searches never include.
 converts a rule and shows the result for review. Supported:
 
 - Log sources `process_creation` (Endpoint), `network_connection` and `firewall`
-  (Network_Traffic), `authentication` and Linux `auth` (Authentication). Other log
-  sources search all data and say so.
+  (Network_Traffic), `authentication` and Linux `auth` (Authentication), and
+  `antivirus` (Malware, where `Signature` maps to `signature` and `Filename` to
+  `file_path`). Other log sources search all data and say so.
 - Sysmon and Windows Security field names, mapped to Signalith fields (`Image` to
   `process_path`, or `process_name` for `endswith` a file name; `CommandLine` to
   `process`; `TargetUserName` to `user`; `IpAddress` to `src`; and so on). Unmapped

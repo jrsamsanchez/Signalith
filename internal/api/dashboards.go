@@ -27,6 +27,43 @@ func (s *Server) routeDashboards(api *router) {
 
 var errDashboardsOff = errors.New("custom dashboards are not configured on this server; set dashboards.dir")
 
+// errBuiltinIDTaken answers a create that names a built-in dashboard's id.
+var errBuiltinIDTaken = errors.New("That id belongs to a built-in dashboard. Choose another.")
+
+// refuseBuiltin answers a change to a built-in panel dashboard, such as
+// Malware, and reports whether it did.
+func refuseBuiltin(w http.ResponseWriter, id string) bool {
+	d, ok := dashboards.GetBuiltin(id)
+	if !ok {
+		return false
+	}
+	writeError(w, http.StatusBadRequest, errors.New("The "+d.Title+" dashboard is built in and can’t be changed. Make a copy to change it."))
+	return true
+}
+
+// builtinDashboard is a built-in panel dashboard as the API returns it.
+type builtinDashboard struct {
+	*dashboards.Dashboard
+	Builtin bool `json:"builtin"`
+}
+
+// getDashboard returns a built-in panel dashboard, or a custom one from
+// the store. Built-ins work without the store.
+func (s *Server) getDashboard(w http.ResponseWriter, id string) (*dashboards.Dashboard, bool) {
+	if d, ok := dashboards.GetBuiltin(id); ok {
+		return d, true
+	}
+	if !s.dashboardsReady(w) {
+		return nil, false
+	}
+	d, err := s.Dashboards.Get(id)
+	if err != nil {
+		writeDashboardError(w, err)
+		return nil, false
+	}
+	return d, true
+}
+
 func (s *Server) dashboardsReady(w http.ResponseWriter) bool {
 	if s.Dashboards == nil {
 		writeError(w, http.StatusServiceUnavailable, errDashboardsOff)
@@ -110,6 +147,11 @@ type dashboardSummary struct {
 func (s *Server) handleListDashboards(w http.ResponseWriter, r *http.Request) {
 	out := []dashboardSummary{{ID: dashboards.PostureID, Title: "Security posture", Builtin: true,
 		Description: "Findings, triage times, what is firing, risk, ATT&CK tactics, data volume and detection health"}}
+	// Built-in panel dashboards are listed even when custom dashboards
+	// are off.
+	for _, d := range dashboards.Builtin() {
+		out = append(out, dashboardSummary{ID: d.ID, Title: d.Title, Description: d.Description, TimeRange: d.TimeRange, Refresh: d.Refresh, Panels: len(d.Panels), Builtin: true})
+	}
 	resp := map[string]any{"dashboards": out}
 	if s.Dashboards == nil {
 		resp["error"] = errDashboardsOff.Error()
@@ -129,24 +171,20 @@ func (s *Server) handleListDashboards(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetDashboard(w http.ResponseWriter, r *http.Request) {
-	if !s.dashboardsReady(w) {
+	if d, ok := dashboards.GetBuiltin(r.PathValue("id")); ok {
+		writeJSON(w, http.StatusOK, builtinDashboard{Dashboard: d, Builtin: true})
 		return
 	}
-	d, err := s.Dashboards.Get(r.PathValue("id"))
-	if err != nil {
-		writeDashboardError(w, err)
+	d, ok := s.getDashboard(w, r.PathValue("id"))
+	if !ok {
 		return
 	}
 	writeJSON(w, http.StatusOK, d)
 }
 
 func (s *Server) handleDashboardYAML(w http.ResponseWriter, r *http.Request) {
-	if !s.dashboardsReady(w) {
-		return
-	}
-	d, err := s.Dashboards.Get(r.PathValue("id"))
-	if err != nil {
-		writeDashboardError(w, err)
+	d, ok := s.getDashboard(w, r.PathValue("id"))
+	if !ok {
 		return
 	}
 	data, err := dashboards.Encode(d)
@@ -170,8 +208,11 @@ func (s *Server) handleCreateDashboard(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	if strings.TrimSpace(d.ID) == "" {
+	if id := strings.TrimSpace(d.ID); id == "" {
 		d.ID = s.Dashboards.NewID(d.Title)
+	} else if id == dashboards.PostureID || dashboards.IsBuiltin(id) {
+		writeError(w, http.StatusConflict, errBuiltinIDTaken)
+		return
 	} else if s.Dashboards.Exists(d.ID) {
 		writeError(w, http.StatusConflict, errors.New("a dashboard with id "+d.ID+" already exists"))
 		return
@@ -185,7 +226,7 @@ func (s *Server) handleCreateDashboard(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handlePutDashboard(w http.ResponseWriter, r *http.Request) {
-	if !s.dashboardsReady(w) {
+	if refuseBuiltin(w, r.PathValue("id")) || !s.dashboardsReady(w) {
 		return
 	}
 	var d dashboards.Dashboard
@@ -209,7 +250,7 @@ func (s *Server) handlePutDashboard(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeleteDashboard(w http.ResponseWriter, r *http.Request) {
-	if !s.dashboardsReady(w) {
+	if refuseBuiltin(w, r.PathValue("id")) || !s.dashboardsReady(w) {
 		return
 	}
 	if r.PathValue("id") == dashboards.PostureID {
@@ -227,7 +268,7 @@ func (s *Server) handleDeleteDashboard(w http.ResponseWriter, r *http.Request) {
 // handleAddPanel appends one panel, for "Add to dashboard" on the Search
 // page.
 func (s *Server) handleAddPanel(w http.ResponseWriter, r *http.Request) {
-	if !s.dashboardsReady(w) {
+	if refuseBuiltin(w, r.PathValue("id")) || !s.dashboardsReady(w) {
 		return
 	}
 	var p dashboards.Panel
@@ -261,19 +302,16 @@ func readRunRequest(r *http.Request) (runRequest, error) {
 	return req, readJSON(r, &req)
 }
 
-// handleRunDashboard runs every panel of a saved dashboard in parallel.
+// handleRunDashboard runs every panel of a saved or built-in dashboard in
+// parallel. Built-in dashboards need only the search engine.
 func (s *Server) handleRunDashboard(w http.ResponseWriter, r *http.Request) {
-	if !s.dashboardsReady(w) {
-		return
-	}
 	req, err := readRunRequest(r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	d, err := s.Dashboards.Get(r.PathValue("id"))
-	if err != nil {
-		writeDashboardError(w, err)
+	d, ok := s.getDashboard(w, r.PathValue("id"))
+	if !ok {
 		return
 	}
 	rng, _, err := parseRange(req.Range, d.TimeRange, true)
