@@ -103,6 +103,9 @@ services:
     stop_grace_period: 90s
     ports:
       # Web UI, API and agents, over HTTPS (http:// is sent to https://).
+      # Open on every network this computer is on. To take them from one
+      # network only, put this computer's address there in front, e.g.
+      # "192.168.1.20:8080:8080", and run docker compose up -d again.
       - "8080:8080"
       # Syslog: devices send to this machine on port 514, which reaches the
       # container's 5514 (it cannot open ports below 1024). If another syslog

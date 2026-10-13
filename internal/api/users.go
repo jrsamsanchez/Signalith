@@ -2,6 +2,8 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
@@ -33,7 +35,7 @@ func (s *Server) routeUsers(api *router) {
 // audit logs a change someone made, with who and from where. Passwords
 // are never passed here.
 func (s *Server) audit(r *http.Request, msg string, args ...any) {
-	s.Log.Info(msg, append([]any{"audit", true, "by", userOf(r), "client", clientIP(r)}, args...)...)
+	s.Log.Info(msg, slices.Concat([]any{"audit", true, "by", userOf(r)}, s.client(r).logAttrs(), args)...)
 }
 
 // ---- the signed-in user ----
@@ -93,15 +95,24 @@ func (s *Server) handleChangeOwnPassword(w http.ResponseWriter, r *http.Request)
 			"error": "Your password belongs to your directory (Active Directory or LDAP). Change it there."})
 		return
 	}
-	client := clientIP(r)
-	attempt, err := s.beginAttempt(r, p.Username)
+	from := s.client(r)
+	// A signed-in session counts as a browser of its own: the account's
+	// slow-down for strangers does not apply to it.
+	browser := ""
+	if p.token != "" {
+		sum := sha256.Sum256([]byte(p.token))
+		browser = "session:" + hex.EncodeToString(sum[:12])
+	}
+	attempt, err := s.beginAttempt(r, from, p.Username, browser)
 	if err != nil {
 		writeSignInError(w, err)
 		return
 	}
 	if !s.userStore().CheckPassword(p.Username, req.Current) {
-		attempt.Fail()
-		s.Log.Warn("password change refused", "audit", true, "user", p.Username, "client", client, "reason", "wrong current password")
+		f := attempt.Fail()
+		s.Log.Warn("password change refused", slices.Concat([]any{"audit", true, "user", p.Username}, from.logAttrs(),
+			[]any{"reason", "wrong current password", "locked_out", f.LockedOut()})...)
+		s.noteFailure(from, f)
 		writeJSON(w, http.StatusBadRequest, map[string]any{"code": "wrong_password", "field": "current_password",
 			"error": "Your current password is not right."})
 		return
@@ -113,12 +124,23 @@ func (s *Server) handleChangeOwnPassword(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	u, err := s.userStore().SetPassword(p.Username, req.New, false)
+	if errors.Is(err, users.ErrBusy) {
+		writeUserError(w, err)
+		return
+	}
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"code": "invalid_password", "field": "new_password", "error": err.Error()})
 		return
 	}
-	// Other browsers signed in as this user are signed out.
+	// Other browsers signed in as this user are signed out (on servers
+	// that share the users file, when they next make a request), and are
+	// strangers to the account until they sign in with the new password;
+	// this one stays known.
 	ended := s.sessions().EndUser(p.Username, p.token)
+	s.sessions().SetVersion(p.token, s.passwordStamp(p.Username))
+	if p.Method == "session" {
+		s.rememberBrowser(w, r, p.Username)
+	}
 	s.audit(r, "password changed", "user", p.Username, "other_sessions_ended", ended)
 	np := principalFromUser(u)
 	np.Method = p.Method
@@ -206,6 +228,8 @@ func writeUserError(w http.ResponseWriter, err error) {
 		status = http.StatusNotFound
 	case errors.Is(err, users.ErrExists), errors.Is(err, users.ErrLastAdmin), errors.Is(err, users.ErrManaged), errors.Is(err, users.ErrReserved):
 		status = http.StatusConflict
+	case errors.Is(err, users.ErrBusy):
+		status = http.StatusServiceUnavailable
 	}
 	body := map[string]any{"error": err.Error()}
 	var fe *users.FieldError
@@ -642,7 +666,7 @@ func (s *Server) handleTestDirectoryUser(w http.ResponseWriter, r *http.Request)
 	if req.Password != "" {
 		// Testing passwords counts toward the limits, like signing in.
 		var err error
-		if attempt, err = s.beginAttempt(r, req.Username); err != nil {
+		if attempt, err = s.beginAttempt(r, s.client(r), req.Username, ""); err != nil {
 			writeSignInError(w, err)
 			return
 		}

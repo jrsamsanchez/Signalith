@@ -735,3 +735,115 @@ func TestJobTakenOver(t *testing.T) {
 		t.Errorf("the job that was taken over wrote its record after all: %+v", rec)
 	}
 }
+
+// TestRemoveUnnamedRecordDeletesNothing: a record that names no load (one
+// with no state, or a state with no ID: a write gone wrong, or one made by
+// hand) gives Remove nothing to find the sample by. Remove then deletes no
+// events, findings or investigations, where an empty marker used to reach
+// every one of them; it removes only what is the sample's whatever the
+// load (its threat intel and asset and identity entries) and the record,
+// so a load can start again.
+func TestRemoveUnnamedRecordDeletesNothing(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		body any
+	}{
+		{"no state", map[string]any{"kind": stateKind, "body": map[string]any{}}},
+		{"empty ID, loaded", stateDoc{Kind: stateKind, State: &State{Size: SizeSmall, LoadedAt: fixedNow}}},
+		{"empty ID, unfinished", stateDoc{Kind: stateKind, State: &State{Partial: true}}},
+		{"empty ID, removal unfinished", stateDoc{Kind: stateKind, State: &State{Partial: true, Removing: true}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			dir := t.TempDir()
+			l, _, fos, fi, _ := newTestLoader(t, dir)
+			at := fixedNow.Add(-time.Hour)
+			for _, f := range []*findings.Finding{
+				{ID: "R1", DetectionID: "auth-brute-force", Status: findings.StatusNew, Created: at, Updated: at},
+				{ID: "R2", DetectionID: "auth-password-spray", Status: findings.StatusNew, Created: at, Updated: at},
+				{ID: "R3", DetectionID: "risk-threshold-exceeded", Status: findings.StatusNew, Created: at, Updated: at},
+			} {
+				if err := l.Findings.Create(ctx, f); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := l.Cases.Create(ctx, &cases.Case{ID: "C1", Title: "Real investigation", Status: findings.StatusInProgress,
+				Findings: []string{"R1"}, Created: at, Updated: at}); err != nil {
+				t.Fatal(err)
+			}
+			_ = fi.Add(ctx, []intel.Indicator{
+				{ID: "i1", Source: SampleIntelSource, Type: intel.TypeIP, Value: "203.0.113.45"},
+				{ID: "i2", Source: intel.ManualSource, Type: intel.TypeIP, Value: "203.0.113.9"},
+			})
+			d := Generate(Options{Now: fixedNow, Size: SizeSmall})
+			if err := l.Assets.SetOverlay(d.Assets, d.Identities); err != nil {
+				t.Fatal(err)
+			}
+			l.Docs.(*memDocs).set(t, stateID, tc.body)
+
+			st, err := l.Status(ctx)
+			if err != nil || st == nil {
+				t.Fatalf("status = %+v, %v; want the record shown, to be removed", st, err)
+			}
+			if _, err := l.Remove(ctx, nil); !errors.Is(err, ErrUnnamedLoad) {
+				t.Fatalf("Remove = %v, want ErrUnnamedLoad", err)
+			}
+
+			if all, total, _ := l.Findings.Search(ctx, findings.Filter{Limit: 100}); total != 3 || len(all) != 3 {
+				t.Errorf("%d findings left, want all 3 of the user's", total)
+			}
+			if c, err := l.Cases.Get(ctx, "C1"); err != nil || strings.Join(c.Findings, ",") != "R1" {
+				t.Errorf("the user's case = %+v, %v; want it kept as it was", c, err)
+			}
+			for _, op := range fos.log {
+				if op == "search" || op == "count" || strings.HasPrefix(op, "delete:") {
+					t.Errorf("OpenSearch was asked to %s events by an empty marker", op)
+				}
+			}
+			if len(fi.inds) != 1 || fi.inds[0].Source != intel.ManualSource {
+				t.Errorf("intel left = %+v, want only the user's own", fi.inds)
+			}
+			if a, i := l.Assets.Overlay(); len(a)+len(i) != 0 {
+				t.Errorf("overlay still holds %d assets and %d identities", len(a), len(i))
+			}
+			if rec := l.Docs.(*memDocs).record(t); rec != nil {
+				t.Errorf("record left: %+v", rec)
+			}
+			// A load can start again.
+			if st, err := l.Status(ctx); st != nil || err != nil {
+				t.Errorf("status after = %+v, %v; want nothing loaded", st, err)
+			}
+		})
+	}
+}
+
+// TestMarkerHelpersRefuseEmptyID: the loader's own searches and deletes by
+// marker refuse an empty load ID rather than reach more than the sample.
+func TestMarkerHelpersRefuseEmptyID(t *testing.T) {
+	ctx := context.Background()
+	l, _, fos, _, _ := newTestLoader(t, t.TempDir())
+	r := &reporter{}
+	if _, err := l.sampleFindingIDs(ctx, ""); !errors.Is(err, errNoLoadID) {
+		t.Errorf("sampleFindingIDs = %v", err)
+	}
+	if err := l.removeCases(ctx, "", nil); !errors.Is(err, errNoLoadID) {
+		t.Errorf("removeCases = %v", err)
+	}
+	if err := l.removeFindings(ctx, "", nil); !errors.Is(err, errNoLoadID) {
+		t.Errorf("removeFindings = %v", err)
+	}
+	if err := l.deleteBySample(ctx, "", r); !errors.Is(err, errNoLoadID) {
+		t.Errorf("deleteBySample = %v", err)
+	}
+	if err := l.deleteIn(ctx, "signalith-other-2026.10.13", ""); !errors.Is(err, errNoLoadID) {
+		t.Errorf("deleteIn = %v", err)
+	}
+	if err := l.sweep(ctx, "", r); !errors.Is(err, errNoLoadID) {
+		t.Errorf("sweep = %v", err)
+	}
+	for _, op := range fos.log {
+		if op != "refresh" {
+			t.Errorf("OpenSearch was asked to %s with an empty load ID", op)
+		}
+	}
+}

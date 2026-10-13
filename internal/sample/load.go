@@ -29,6 +29,15 @@ var (
 	ErrPartial = errors.New("the last sample-data load or removal did not finish; remove what is left before loading again")
 	// ErrNothingWritten means OpenSearch accepted none of the sample events.
 	ErrNothingWritten = errors.New("OpenSearch did not accept any of the sample events")
+	// ErrUnnamedLoad means Remove found a record of the sample data that
+	// names no load. Every sample document is found by its load's ID, so
+	// nothing could be told apart from the user's own data: Remove deleted
+	// no events, findings or investigations, only the sample's threat
+	// intel, its asset and identity entries and the record itself.
+	ErrUnnamedLoad = errors.New("the record of the sample data did not say which load it was, so no events, findings or investigations were deleted; the record was cleared")
+	// errNoLoadID stops a search or delete by the sample marker with no
+	// load ID, which would otherwise reach far more than the sample.
+	errNoLoadID = errors.New("sample data: no load ID to find the sample data by")
 )
 
 // OSClient is the bit of the OpenSearch client the loader needs beyond the
@@ -231,7 +240,9 @@ func (l *Loader) Load(ctx context.Context, size Size, prog ProgressFn) (res *Sta
 
 	// Events, through a pipeline of the loader's own: the sample reaches
 	// back six days, and the server's maximum event age may be shorter.
-	pipe := &ingest.Pipeline{Store: l.Bulk, Prefix: l.Prefix, MaxEventAge: MaxEventAge, Now: l.now, Log: l.Log}
+	// It is also the only pipeline that marks events as sample data:
+	// every other one removes the marker from what senders send.
+	pipe := &ingest.Pipeline{Store: l.Bulk, Prefix: l.Prefix, MaxEventAge: MaxEventAge, Now: l.now, Log: l.Log, SampleMark: d.ID}
 	const chunk = 2000
 	total := len(d.Events)
 	var firstErr string
@@ -431,7 +442,7 @@ func (l *Loader) buildCase(ctx context.Context, d *Data) []string {
 	if l.Cases == nil || l.Findings == nil || len(d.CaseFocus) == 0 {
 		return nil
 	}
-	fs, _, err := l.Findings.Search(ctx, findings.Filter{Sample: d.ID, EntityValues: d.CaseFocus, Limit: 100})
+	fs, _, err := l.Findings.Search(ctx, findings.Filter{Sample: &d.ID, EntityValues: d.CaseFocus, Limit: 100})
 	if err != nil || len(fs) == 0 {
 		return nil
 	}
@@ -493,6 +504,26 @@ func (l *Loader) Remove(ctx context.Context, prog ProgressFn) (res *State, err e
 	}()
 	r := &reporter{op: "remove", fn: prog, job: j}
 
+	if st.ID == "" {
+		// The record names no load: a write that went wrong, or one made
+		// by hand. Every sample document is found by its load's ID, and
+		// nothing can be found by an empty one without reaching your own
+		// data, so nothing is deleted by marker. The sample's threat intel
+		// and asset and identity entries are its own, whatever the load,
+		// so they go; then the record, so a load can start again.
+		l.log().Warn("sample data: the record of the sample data names no load; deleting no events, findings or investigations, only the sample's threat intel, its asset and identity entries and the record",
+			"index", l.index(), "audit", true)
+		if err := l.removeOwn(ctx, r); err != nil {
+			return nil, err
+		}
+		removed = true
+		if err := j.end(nil); err != nil {
+			return nil, fmt.Errorf("could not clear the record of the sample data: %w", err)
+		}
+		r.step("Done", 100)
+		return st, ErrUnnamedLoad
+	}
+
 	r.step("Deleting events and risk", 0)
 	// Events and risk events become searchable only at the next refresh
 	// (every few seconds): without one, those written just before, by a
@@ -518,24 +549,8 @@ func (l *Loader) Remove(ctx context.Context, prog ProgressFn) (res *State, err e
 		return nil, err
 	}
 
-	r.step("Removing threat intel", 88)
-	if l.Intel != nil {
-		if s, ok := l.Intel.(intelSyncer); ok {
-			// A load from another process added them; see them first.
-			if _, err := s.Sync(ctx); err != nil {
-				return nil, fmt.Errorf("reading threat intel: %w", err)
-			}
-		}
-		if _, err := l.Intel.DeleteSource(ctx, SampleIntelSource); err != nil {
-			return nil, fmt.Errorf("removing sample threat intel: %w", err)
-		}
-	}
-
-	r.step("Removing asset and identity context", 95)
-	if l.Assets != nil {
-		if err := l.Assets.SetOverlay(nil, nil); err != nil {
-			return nil, fmt.Errorf("removing sample asset and identity context: %w", err)
-		}
+	if err := l.removeOwn(ctx, r); err != nil {
+		return nil, err
 	}
 
 	// A last look, after a refresh, for marked events written while the
@@ -554,6 +569,32 @@ func (l *Loader) Remove(ctx context.Context, prog ProgressFn) (res *State, err e
 	r.step("Done", 100)
 	l.log().Info("sample data removed", "id", st.ID, "audit", true)
 	return st, nil
+}
+
+// removeOwn removes what belongs to the sample whatever the load: the
+// threat intel with the sample's own source, and the asset and identity
+// entries in the sample's own files.
+func (l *Loader) removeOwn(ctx context.Context, r *reporter) error {
+	r.step("Removing threat intel", 88)
+	if l.Intel != nil {
+		if s, ok := l.Intel.(intelSyncer); ok {
+			// A load from another process added them; see them first.
+			if _, err := s.Sync(ctx); err != nil {
+				return fmt.Errorf("reading threat intel: %w", err)
+			}
+		}
+		if _, err := l.Intel.DeleteSource(ctx, SampleIntelSource); err != nil {
+			return fmt.Errorf("removing sample threat intel: %w", err)
+		}
+	}
+
+	r.step("Removing asset and identity context", 95)
+	if l.Assets != nil {
+		if err := l.Assets.SetOverlay(nil, nil); err != nil {
+			return fmt.Errorf("removing sample asset and identity context: %w", err)
+		}
+	}
+	return nil
 }
 
 // Lists returns the sample's asset and identity entries, the same for
@@ -659,11 +700,14 @@ func (l *Loader) WatchLists(ctx context.Context, every time.Duration) {
 // these are exactly the findings the sample raised; the live scheduler
 // never raises any from sample data.
 func (l *Loader) sampleFindingIDs(ctx context.Context, id string) (map[string]bool, error) {
+	if id == "" {
+		return nil, errNoLoadID
+	}
 	ids := map[string]bool{}
 	if l.Findings == nil {
 		return ids, nil
 	}
-	marked, _, err := l.Findings.Search(ctx, findings.Filter{Sample: id, Limit: 10000})
+	marked, _, err := l.Findings.Search(ctx, findings.Filter{Sample: &id, Limit: 10000})
 	if err != nil {
 		return nil, err
 	}
@@ -727,10 +771,13 @@ func (l *Loader) deleteFindings(ctx context.Context, ids map[string]bool) error 
 // findings from the user's own cases. A user's case is never deleted, even
 // when it held only sample findings: its notes and timeline are theirs.
 func (l *Loader) removeCases(ctx context.Context, id string, sampleFindings map[string]bool) error {
+	if id == "" {
+		return errNoLoadID
+	}
 	if l.Cases == nil {
 		return nil
 	}
-	own, _, err := l.Cases.Search(ctx, cases.Filter{Sample: id, Limit: 1000})
+	own, _, err := l.Cases.Search(ctx, cases.Filter{Sample: &id, Limit: 1000})
 	if err != nil {
 		return err
 	}
@@ -795,6 +842,9 @@ func (l *Loader) sweep(ctx context.Context, id string, r *reporter) error {
 
 // countMarked counts the events and risk events with the marker.
 func (l *Loader) countMarked(ctx context.Context, id string) (int, error) {
+	if id == "" {
+		return 0, errNoLoadID
+	}
 	var out struct {
 		Count int `json:"count"`
 	}
@@ -809,6 +859,9 @@ func (l *Loader) countMarked(ctx context.Context, id string) (int, error) {
 // compaction makes past days read-only; such an index is made writable
 // for the delete and read-only again after, so removal still works.
 func (l *Loader) deleteBySample(ctx context.Context, id string, r *reporter) error {
+	if id == "" {
+		return errNoLoadID
+	}
 	indices, err := l.sampleIndices(ctx, id)
 	if err != nil {
 		return err
@@ -866,6 +919,9 @@ func (l *Loader) sampleIndices(ctx context.Context, id string) ([]string, error)
 }
 
 func (l *Loader) deleteIn(ctx context.Context, index, id string) error {
+	if id == "" {
+		return errNoLoadID
+	}
 	path := "/" + url.PathEscape(index) + "/_delete_by_query?conflicts=proceed&refresh=true&wait_for_completion=true"
 	body := map[string]any{"query": sampleQuery(id)}
 	err := l.OS.Do(ctx, "POST", path, body, nil)

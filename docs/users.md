@@ -108,8 +108,9 @@ Passwords are stored as bcrypt hashes and never shown again.
 
 Local users change their password from the user menu (**Change password**): enter
 the current password and the new one (at least 8 characters, at most 72 bytes).
-Every other browser signed in as you is signed out. Scripts using your old password
-with HTTP Basic auth stop working at once.
+Every other browser signed in as you is signed out, on every server that shares the
+users file too. Scripts using your old password with HTTP Basic auth stop working at
+once.
 
 Directory users change their password in the directory (for example with
 Ctrl+Alt+Del on Windows). The built-in admin's password is changed with
@@ -137,29 +138,78 @@ they do not reveal which usernames exist. Other answers are:
 | `directory_unavailable` (503) | The directory server could not be reached, or too many directory sign-ins are being checked at once |
 | `locked_out` (429) | Too many wrong passwords; see below |
 
-**Failed sign-in limits.** Wrong passwords are counted three ways, each over 15
-minutes, and a count that reaches its limit refuses further sign-ins for 15
-minutes, even with the right password:
+**Failed sign-in limits.** Wrong passwords are counted so that guessing stays slow,
+but someone guessing your password cannot keep you out:
 
-| Counted | Limit | Locks |
+| Counted | Limit | Then |
 | --- | --- | --- |
-| One address, one account | 10 | That account, from that address |
-| One address, any accounts | 30 | That address |
-| One account, any addresses | 30 | That account, from everywhere |
+| One address, one account | 10 in 15 minutes | That account is refused from that address for 15 minutes, even with the right password |
+| One address, any accounts | 30 in 15 minutes | That address is refused for 15 minutes |
+| One account, from browsers and addresses that never signed in to it | 30 in an hour | Their next tries at that account wait: 1 second, then twice as long after each wrong password, up to 15 minutes. The account itself is never locked |
 
 A successful sign-in clears only the count for its own address and account, so
 signing in to one account never helps someone guess another's password. Sign-ins
 still being checked count too, so a burst of parallel guesses cannot get past the
 limit. Wrong directory passwords count; an unreachable directory does not. Basic
 auth, **Test a user** with a password, and **Change password** share these limits.
-Because one address alone stops at 10 tries per account, it cannot lock someone
-else out; guessing from many addresses can lock an account (the built-in admin
-included) for 15 minutes at a time.
+An IPv6 address is counted with the rest of its /64 network, since one computer can
+usually use any address in it.
+
+**Browsers you signed in with keep working.** When you sign in, Signalith gives your
+browser a cookie that says it has signed in to that account before. The cookie is
+sent only over HTTPS, cannot be read by scripts on the page, and lasts a year from
+your last sign-in. While someone elsewhere guesses your password, that browser is
+not slowed down, and it keeps working even when its address is paused for wrong
+passwords to other accounts. An address you signed in from in the last 30 days is not
+slowed down either, which keeps scripts using HTTP Basic auth working (they keep no
+cookies). Your own wrong passwords count against that browser or address only: 10 in
+15 minutes pause it for 15 minutes. Browsers that signed in before share 30 wrong
+passwords an hour per account, and addresses that did share another 30; past that
+they wait like everyone else, so the guesses an account can take stay limited.
+Someone else at an address you once used, such as an office or hotel network, can use
+up the addresses' share, but not your browser's. Changing or resetting the password of
+a local user or the built-in admin makes every browser and address sign in once more
+before it is recognized again (the browser you change your own password in stays
+recognized). A built-in admin password from `SIGNALITH_ADMIN_PASSWORD` or
+`SIGNALITH_ADMIN_PASSWORD_FILE` keeps its browsers recognized across restarts while it
+stays the same.
+**Change password** counts against your signed-in browser, so it works while someone
+else is guessing your password. The cookie needs HTTPS: over plain HTTP no browser
+is remembered. Each server keeps its own key for these cookies, `signin.key` in its
+state folder; deleting it only means every browser signs in once more before it is
+recognized.
+
+**Many people behind one address.** When people reach Signalith through one address,
+such as a reverse proxy, a load balancer, a NAT gateway or Docker Desktop's port
+forwarding, Signalith sees that address for all of them, and 30 wrong passwords
+from anyone behind it would pause sign-ins for everyone. To avoid that, list the
+address on the **Settings** page:
+
+- **A reverse proxy** (nginx, Caddy, IIS, most load balancers): add it under
+  **Trusted reverse proxies** (`server.trusted_proxies`). If the proxy sets
+  `X-Forwarded-For` itself, also choose **X-Forwarded-For** under **Client address
+  header** (`server.client_header`); for nginx that takes
+  `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;` (see
+  [Behind a reverse proxy](https.md#behind-a-reverse-proxy)). Signalith then counts and
+  logs each person by the address the proxy got the request from: the right-most
+  address in the header that is not a trusted proxy, since the addresses further left
+  come from the sender. It reads the header only from the addresses listed there, since
+  anyone else could send a made-up one. Without **Client address header**, or for a
+  request that comes from the proxy without the header, the proxy counts like an
+  address under **Proxies and gateways**.
+- **Anything else** (a NAT gateway, a proxy that cannot send the header): add it
+  under **Proxies and gateways** (`server.shared_addresses`). Wrong passwords from
+  that address are counted for each account only, so it is never refused as a whole,
+  and one person's wrong passwords never affect another account.
+
+When an address is refused as a whole, the server log says so and names these
+settings.
 
 The web UI keeps you signed in with a session cookie. Sessions end after
 `auth.session_timeout` without activity (12 hours by default), after 7 days with
-**Keep me signed in**, when you sign out, or when an admin disables, deletes or
-resets your account.
+**Keep me signed in**, when you sign out, when your password is changed, or when an
+admin disables, deletes or resets your account. Servers that share the users file end
+them too, within a second or so.
 
 Scripts and API clients can use HTTP Basic auth with the same username and password.
 Signalith remembers a correct username and password briefly so it does not check
@@ -434,10 +484,18 @@ search the whole domain. For OpenLDAP, map each group directly.
 the failover server, the bind DN or a TLS setting. The saved password is only sent
 to the saved servers, so type it again.
 
-**"Too many failed sign-ins."** See [failed sign-in limits](#signing-in). Wait 15
-minutes, or sign in as another admin, from another address, or as the built-in
+**"Too many failed sign-ins."** See [failed sign-in limits](#signing-in). Wait the
+time shown, or sign in as another admin, from another address, or as the built-in
 admin if it is not the account being guessed. The log shows which address and
-account failed.
+account failed. If everyone behind one proxy or NAT gets this message, list that
+address as described under **Many people behind one address** in
+[Signing in](#signing-in).
+
+**"Many wrong passwords were tried for this account, so sign-ins to it from new
+browsers are slowed down."** Someone is guessing that account's password. Sign in
+from a browser you have signed in to the account with before, which is not slowed
+down, or wait the time shown. The log's `sign-in failed` lines show where the guesses
+come from.
 
 **"Your directory password has expired or must be changed."** Active Directory
 accepted the password but requires a new one first. The user changes it (for example
@@ -475,10 +533,21 @@ The lookups folder is:
 
 Both files are written with permissions `0600` (readable only by the account
 Signalith runs as), by writing a new file and renaming it so a crash never leaves
-half a file. Back them up with the rest of the lookups folder. Signalith reads them
-at start-up and rewrites them on every change, so edit them only while it is
-stopped. If `users.json` is damaged, Signalith refuses to start and says so; move it
-away to start again with only the built-in admin.
+half a file. Back them up with the rest of the lookups folder. Edit them only while
+Signalith is stopped.
+
+Signalith reads `directory.json` at start-up. It also looks at `users.json` while it
+runs, because servers that share a lookups folder share that file (see
+[servers.md](servers.md)): before every change it reads the file as it is now, and
+otherwise it checks for changes about once a second. While a server changes
+`users.json` it keeps a small `users.json.lock` file next to it; leave that file
+alone, it goes away by itself.
+
+If `users.json` is damaged, Signalith refuses to start and says so. If it becomes
+damaged while Signalith runs, everyone signed in keeps working, but every change on
+the **Users** page fails with a message that says so. Either way, fix the file, or
+stop Signalith, move the file away and start Signalith again with only the
+built-in admin.
 
 ## Audit log
 
@@ -491,7 +560,8 @@ the Settings page and restarts are logged the same way; see
 | Message | Fields |
 | --- | --- |
 | `signed in` | `user`, `role`, `source`, `client`, `method` (session or basic) |
-| `sign-in failed` | `user`, `client`, `method`, `reason` (for example `wrong password`, `account disabled`, `directory: in no group mapped to a role`), `locked_out` |
+| `sign-in failed` | `user`, `client`, `method`, `reason` (for example `wrong password`, `account disabled`, `directory: in no group mapped to a role`), `locked_out` (further tries are refused or slowed down for a while) |
+| `sign-ins from this address are paused …` | `client`, `minutes` |
 | `signed out` | `user`, `client` |
 | `user created` | `by`, `user`, `role`, `must_change_password` |
 | `user changed` | `by`, `user`, `fields` |
@@ -500,18 +570,25 @@ the Settings page and restarts are logged the same way; see
 | `user deleted` | `by`, `user`, `source`, `role`, `sessions_ended` |
 | `password reset` | `by`, `user`, `sessions_ended` |
 | `password changed` | `by`, `user`, `other_sessions_ended` |
-| `password change refused` | `user`, `client`, `reason` |
+| `password change refused` | `user`, `client`, `reason`, `locked_out` |
 | `directory settings changed` | `by`, `enabled`, `servers`, `fields` (names only) |
 | `directory connection tested` | `by`, `servers`, `bind_dn`, `ok` |
 | `directory user looked up` | `by`, `user`, `servers`, `ok`, `code`, `password_checked` |
 | `directory user lost access` | `by=directory`, `user`, `reason`, `sessions_ended` |
 | `directory user's role changed` | `by=directory`, `user`, `from`, `to` |
 
+`client` is the address the request came from. Behind a reverse proxy listed under
+**Trusted reverse proxies**, with **Client address header** chosen, it is the address
+the proxy forwarded the request for, and `peer` names the proxy. When that header held
+no usable address, such as `unknown`, `forwarded` shows what it held, and the request
+counts under the proxy's own address.
+
 For example:
 
 ```
 level=INFO msg="user role changed" audit=true by=ann client=10.0.0.12 user=sam from=analyst to=admin
 level=WARN msg="sign-in failed" audit=true user=dave client=10.0.0.40 method=session reason="directory: in no group mapped to a role" locked_out=false
+level=WARN msg="sign-in failed" audit=true user=admin client=203.0.113.9 peer=10.0.0.5 method=session reason="wrong password" locked_out=false
 ```
 
 ## API

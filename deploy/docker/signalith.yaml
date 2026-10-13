@@ -10,14 +10,14 @@ server:
     # HTTPS with a certificate Signalith makes for itself and keeps in the
     # signalith-data volume. See docs/https.md to stop browser warnings.
     mode: auto
-    # allow: agents set up before HTTPS was the default may still send over
-    # plain http://, including with the old example token
-    # change-this-ingest-token, and the Health page lists them. Once every
-    # agent has its configuration from the Add data page, set Agents on
-    # plain HTTP to Refuse them on the Settings page (HTTPS), or change this
-    # to deny and run docker compose up -d again; that also ends the old
-    # token.
-    plaintext_ingest: allow
+    # Agents on plain http:// (plaintext_ingest) are refused on a new
+    # install. An install upgraded from an older quick start, whose agents
+    # send over plain http:// with the example token change-this-ingest-token,
+    # accepts them until you refuse them: Signalith works out which on its
+    # first start and keeps the answer. The Health page lists those agents.
+    # Once each has its configuration from the Add data page, set Agents on
+    # plain HTTP to Refuse them on the Settings page (HTTPS); that also ends
+    # the old token for good.
 opensearch:
   # HTTPS, checked with OpenSearch's CA; Signalith signs in with its own
   # client certificate (no password).

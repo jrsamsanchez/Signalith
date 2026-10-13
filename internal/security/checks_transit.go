@@ -586,12 +586,22 @@ func checkProxies(f *Facts) *Check {
 		return &Check{State: Attention, Line: "Signalith believes the reverse proxy at " + shorten(legacy, 3) +
 			" only because signalith.yaml was written before HTTPS was the default.", Fix: fix}
 	}
+	header := f.Config.Server.ClientAddressHeader()
 	for _, p := range list {
 		if p.Addr().Is4() && p.Bits() < 16 || !p.Addr().Is4() && p.Bits() < 48 {
 			fix.Steps = []string{"List only the proxies' own addresses."}
-			return &Check{State: Attention, Line: "Trusted reverse proxies includes " + p.String() +
-				", so any computer in it can claim a browser used HTTPS.", Fix: fix}
+			line := "Trusted reverse proxies includes " + p.String() + ", so any computer in it can claim a browser used HTTPS"
+			if header != "" {
+				line += ", and choose the address its sign-ins are counted under"
+			}
+			return &Check{State: Attention, Line: line + ".", Fix: fix}
 		}
 	}
-	return &Check{State: Good, Line: "Signalith believes forwarded HTTPS only from " + shorten(prefixList(list), 3) + "."}
+	if header == "" {
+		return &Check{State: Good, Line: "Signalith believes forwarded HTTPS only from " + shorten(prefixList(list), 3) + ".",
+			Tip: &Fix{Setting: "server.client_header", Docs: doc(docHTTPSProxy), Steps: []string{
+				"Everyone reaching Signalith through these proxies counts as one shared address for the sign-in limits and the log.",
+				"If the proxy sets X-Forwarded-For itself, choose it under Client address header, so each person is counted and logged by their own address."}}}
+	}
+	return &Check{State: Good, Line: "Signalith believes forwarded HTTPS and client addresses (" + header + ") only from " + shorten(prefixList(list), 3) + "."}
 }

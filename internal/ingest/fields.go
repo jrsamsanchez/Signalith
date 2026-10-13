@@ -64,6 +64,9 @@ var knownFields = func() map[string]string {
 		"process_company": kw, "process_file_version": kw, "process_integrity_level": kw,
 		"process_current_directory": kw, "process_guid": kw, "parent_process_guid": kw,
 		"parent_process_id": long, "parent_user": kw, "logon_id": kw,
+		// An sshd line whose client address cannot be told from text the
+		// client sent (see ambiguousSSH).
+		"src_ambiguous": kw,
 
 		// Syslog receiver, including the CIM names CEF keys map to.
 		"facility": kw, "severity": kw, "severity_id": long, "msgid": kw, "sequence": long,

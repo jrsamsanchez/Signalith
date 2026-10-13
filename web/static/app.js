@@ -923,7 +923,7 @@ function updateSuggestions() {
     items = fields.map((f) => ({ text: f.name + (inSearch ? '=' : ''), kind: f.type }));
     if (inSearch) items.push({ text: 'datamodel=', kind: 'source' }, { text: 'earliest=', kind: 'time' });
   } else if (/datamodel=$/i.test(before)) {
-    items = ['Authentication', 'Endpoint', 'Network_Traffic', 'Change', 'Other'].map((m) => ({ text: m + ' ', kind: 'model' }));
+    items = ['Authentication', 'Endpoint', 'Network_Traffic', 'Change', 'Filesystem', 'Registry', 'Network_Resolution', 'Image_Load', 'Script', 'Inventory', 'Configuration_Check', 'Alerts', 'Other'].map((m) => ({ text: m + ' ', kind: 'model' }));
   }
   const w = word.toLowerCase();
   suggestions = items.filter((i) => i.text.toLowerCase().startsWith(w) && i.text.toLowerCase() !== w).slice(0, 8);

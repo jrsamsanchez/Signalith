@@ -1,6 +1,7 @@
 package ingest
 
 import (
+	"net/netip"
 	"regexp"
 	"strconv"
 	"strings"
@@ -55,9 +56,23 @@ func parseJournal(r map[string]any) Event {
 	return ev
 }
 
+// sshd prints the user name a client sent as it was sent, spaces and all,
+// and the client's address after it. A name can itself hold
+// " from <addr> port <n>", so the address is the one in the last such
+// clause of the line (the user name, greedy, takes the rest), and it is
+// kept as src only when it is an IP address.
+//
+// After its clause sshd writes " ssh2", and for a key ": " and the key.
+// For a certificate that includes its key ID, which a client can choose
+// freely on a failed attempt, so it too can hold such a clause. So when
+// the line has more than one clause and text follows the last one, the
+// source cannot be told: src is left out and src_ambiguous is set (see
+// ambiguousSSH). The sender can then hide its address, but never choose
+// another.
 var (
-	sshdAuth      = regexp.MustCompile(`^(Accepted|Failed) (\S+) for (?:invalid user )?(\S+) from (\S+) port (\d+)`)
-	sshdInvalid   = regexp.MustCompile(`^Invalid user (\S*) from (\S+)(?: port (\d+))?`)
+	sshdAuth      = regexp.MustCompile(`^(Accepted|Failed) (\S+) for (invalid user )?(.*) from (\S+) port (\d+)((?:[\s:].*)?)$`)
+	sshdClause    = regexp.MustCompile(` from \S+ port \d+`)
+	sshdInvalid   = regexp.MustCompile(`^Invalid user (.*) from (\S+?)(?: port (\d+))?(?:\s.*)?$`)
 	sudoCommand   = regexp.MustCompile(`^\s*(\S+) : (?:(\d+) incorrect password attempts? ; )?TTY=\S+ ; PWD=\S+ ; USER=(\S+) ; COMMAND=(.*)$`)
 	sudoAuthFail  = regexp.MustCompile(`pam_unix\(sudo:auth\): authentication failure;.*\bruser=(\S*).*\buser=(\S+)`)
 	suSession     = regexp.MustCompile(`pam_unix\(su(?:-l)?:session\): session opened for user (\S+?)(?:\(uid=\d+\))? by (\S+?)(?:\(uid=\d+\))?$`)
@@ -90,11 +105,14 @@ func ParseProgram(host, program, pid, msg, sourcetype string) Event {
 			ev.Model = "Authentication"
 			f["action"] = map[string]string{"Accepted": "success", "Failed": "failure"}[m[1]]
 			f["authentication_method"] = m[2]
-			f["user"] = m[3]
-			f["src"] = m[4]
-			f["src_port"] = atoi(m[5])
+			f["user"] = m[4]
+			if ambiguousSSH(msg, m[7]) {
+				f["src_ambiguous"] = true
+			} else {
+				setSSHSource(f, m[5], m[6])
+			}
 			f["signature"] = "SSH " + strings.ToLower(m[1]) + " " + m[2]
-			if strings.Contains(msg, "invalid user") {
+			if m[3] != "" {
 				f["reason"] = "unknown user"
 			} else if m[1] == "Failed" && m[2] == "password" {
 				f["reason"] = "bad password"
@@ -103,8 +121,7 @@ func ParseProgram(host, program, pid, msg, sourcetype string) Event {
 			ev.Model = "Authentication"
 			f["action"] = "failure"
 			f["user"] = m[1]
-			f["src"] = m[2]
-			f["src_port"] = atoi(m[3])
+			setSSHSource(f, m[2], m[3])
 			f["reason"] = "unknown user"
 			f["signature"] = "SSH invalid user"
 		}
@@ -173,4 +190,27 @@ func ParseProgram(host, program, pid, msg, sourcetype string) Event {
 		f["vendor_product"] = "Linux"
 	}
 	return ev
+}
+
+// ambiguousSSH reports whether an Accepted or Failed line's source cannot
+// be told: more than one " from <addr> port <n>" clause, and text after
+// the last one other than sshd's own " ssh2". With nothing after it, the
+// last clause is sshd's, because only key details (which may hold a
+// client's text) follow sshd's clause.
+func ambiguousSSH(msg, tail string) bool {
+	if tail == "" || tail == " ssh2" {
+		return false
+	}
+	return len(sshdClause.FindAllStringIndex(msg, 3)) > 1
+}
+
+// setSSHSource sets src and src_port from the address and port sshd
+// printed, when the address is an IP address: sshd prints the client's
+// address, never a name, so anything else did not come from sshd.
+func setSSHSource(f map[string]any, addr, port string) {
+	if _, err := netip.ParseAddr(addr); err != nil {
+		return
+	}
+	f["src"] = addr
+	f["src_port"] = atoi(port)
 }

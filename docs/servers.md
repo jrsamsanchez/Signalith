@@ -142,7 +142,9 @@ docker compose -f deploy/docker/docker-compose.yml up -d
 **The state folder.** Signalith keeps the files it makes for itself in one folder:
 its master key (`keys`), its HTTPS certificate and certificate authority (`tls`),
 `admin-password-hash` when the admin password was changed with `signalith passwd`,
-and this server's identity (`node.id`, and `cluster/lock` while it runs). The
+the key for the cookie that recognizes browsers that signed in before
+(`signin.key`, see [failed sign-in limits](users.md#signing-in)), and this server's
+identity (`node.id`, and `cluster/lock` while it runs). The
 server and every command (`signalith secrets`, `signalith initial-password`,
 `signalith settings` and the others) pick the same folder:
 
@@ -199,8 +201,18 @@ Until servers can be added from the Servers page:
    jobs over. Copy only those files: never `node.id` or the `cluster` folder. In
    Docker they are in the data volume; copy them into the new server's volume
    rather than copying the whole volume.
-5. Set up the same users on its Users page: users and sign-in settings are still
-   kept on each server.
+5. Set up its users. Each server keeps users in `users.json` in its lookups folder.
+   - **Separate lookups folders** (the usual case): add the same users on its
+     **Users** page, and set up directory sign-in there again.
+   - **One lookups folder shared by the servers**: skip adding users, because they
+     already share `users.json`. A user added, changed, disabled or deleted on one
+     server is the same on the others within a second or so, and a changed password
+     signs that user out on every server. For directory sign-in, put the settings
+     under `auth.ldap` in each server's `signalith.yaml` (see
+     [Setting it in signalith.yaml](users.md#setting-it-in-signalithyaml)) instead of
+     using the Users page: the Users page saves them in `directory.json` in the same
+     folder, with the service account password encrypted by that one server's master
+     key, so the other servers could not use it.
 6. Give it its own name with `cluster.node_name`. In Docker, set
    `SIGNALITH_NODE_NAME` in the compose file (it is `signalith-1` there), and set
    its address with `SIGNALITH_NODE_URL`, since a container cannot know it. Two

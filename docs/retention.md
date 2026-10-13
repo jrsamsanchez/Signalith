@@ -28,6 +28,14 @@ the run in progress already skips anything the new settings keep. The same setti
 | Endpoint | `endpoint` | `<prefix>-endpoint-YYYY.MM.DD` | Event policy |
 | Network traffic | `network_traffic` | `<prefix>-network_traffic-YYYY.MM.DD` | Event policy |
 | Change | `change` | `<prefix>-change-YYYY.MM.DD` | Event policy |
+| Filesystem | `filesystem` | `<prefix>-filesystem-YYYY.MM.DD` | Event policy |
+| Registry | `registry` | `<prefix>-registry-YYYY.MM.DD` | Event policy |
+| Network resolution | `network_resolution` | `<prefix>-network_resolution-YYYY.MM.DD` | Event policy |
+| Image load | `image_load` | `<prefix>-image_load-YYYY.MM.DD` | Event policy |
+| Script | `script` | `<prefix>-script-YYYY.MM.DD` | Event policy |
+| Inventory | `inventory` | `<prefix>-inventory-YYYY.MM.DD` | Event policy |
+| Configuration check | `configuration_check` | `<prefix>-configuration_check-YYYY.MM.DD` | Event policy |
+| Alerts | `alerts` | `<prefix>-alerts-YYYY.MM.DD` | Event policy |
 | Other events | `other` | `<prefix>-other-YYYY.MM.DD` | Event policy; listed once it has data or a policy |
 | Risk events | `risk` | `<prefix>-risk-YYYY.MM.DD` | Event policy |
 | Findings | `findings` | `<prefix>_findings` | Delete closed findings after N days |
