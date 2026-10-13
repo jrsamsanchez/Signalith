@@ -828,7 +828,7 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
     <header class="page-head">
       <div>
         <h2 class="page-head__title">Add data</h2>
-        <p class="page-head__desc">Collect logs from your hosts with the Fluent Bit agent or an OpenTelemetry Collector, manage hosts with osquery, or receive syslog from network devices.</p>
+        <p class="page-head__desc">Collect logs from your hosts with the Fluent Bit agent or an OpenTelemetry Collector, manage hosts with osquery, receive syslog from network devices, or bring in Wazuh alerts.</p>
       </div>
     </header>
     <div class="card sample-card" id="sample-card" hidden></div>
@@ -865,13 +865,18 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
           <span class="agent-os__text"><b>osquery</b><span>Inventory, file changes and configuration checks</span></span>
           <input type="radio" name="os" value="osquery">
         </label>
+        <label class="card agent-os__card">
+          <span class="agent-os__icon"><svg class="icon" aria-hidden="true"><use href="#i-shield-alert"/></svg></span>
+          <span class="agent-os__text"><b>Wazuh</b><span>Alerts from your Wazuh manager</span></span>
+          <input type="radio" name="os" value="wazuh">
+        </label>
       </fieldset>
 
       <div class="card agent-setup" id="agent-setup">
         <div class="card__head">
           <div>
             <h3 class="card__title" id="agent-title">Set up the agent</h3>
-            <p class="card__sub">Do this on each host you want to collect from.</p>
+            <p class="card__sub" id="agent-sub">Do this on each host you want to collect from.</p>
           </div>
           <div class="card__actions">
             <label id="otel-opts" class="agent-opt hidden"><span>Runs on</span>
@@ -906,6 +911,7 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
             <div id="agent-server-warn" class="alert hidden" data-tone="warning" role="status"></div>
           </div>
           <ol id="agent-steps" class="agent-steps" role="list" aria-busy="true"></ol>
+          <p id="wazuh-note" class="hint hidden"><svg class="icon" aria-hidden="true"><use href="#i-info"/></svg><span>Rather not install anything on the manager? It can send alerts itself: add a <code>&lt;syslog_output&gt;</code> block with <code>&lt;format&gt;json&lt;/format&gt;</code> to its <code>ossec.conf</code>, pointed at this server’s <a href="#data" id="wazuh-syslog">syslog address</a>.</span></p>
           <div id="agent-file" class="agent-file hidden">
             <div class="agent-file__bar">
               <svg class="icon" aria-hidden="true"><use href="#i-file-code"/></svg>

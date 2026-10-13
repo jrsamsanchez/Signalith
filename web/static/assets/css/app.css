@@ -2393,7 +2393,7 @@ body:has(.page.active .inspector:not([hidden], .hidden)) #toast { bottom: 88px; 
 
 /* source: selectable cards (three a row), the real radio drawn at the
    right. Top aligned, so the titles line up when one description wraps. */
-#page-data .agent-os { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-3); min-width: 0; margin: 0; padding: 0; border: 0; }
+#page-data .agent-os { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--sp-3); min-width: 0; margin: 0; padding: 0; border: 0; }
 #page-data .agent-os__card { display: flex; align-items: flex-start; gap: 12px; padding: 14px 16px; cursor: pointer; transition: box-shadow var(--t-fast); }
 #page-data .agent-os__card:hover { box-shadow: 0 0 0 1px var(--line-strong), var(--shadow-sm); }
 #page-data .agent-os__card:has(input:checked) { box-shadow: 0 0 0 1.5px var(--accent), var(--shadow-sm); }
@@ -2530,6 +2530,9 @@ body:has(.page.active .inspector:not([hidden], .hidden)) #toast { bottom: 88px; 
 #page-data #syslog-main > .alert { margin-bottom: 20px; }
 #page-data #syslog-main > .alert p { margin-top: 2px; }
 
+@media (max-width: 1180px) {
+  #page-data .agent-os { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
 @media (max-width: 760px) {
   #page-data .agent-os { grid-template-columns: minmax(0, 1fr); }
 }

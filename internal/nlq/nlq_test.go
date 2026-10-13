@@ -60,6 +60,8 @@ func TestTranslate(t *testing.T) {
 		"top threats":                            `datamodel=Malware type=threat | top limit=10 signature`,
 		"antivirus exclusions added this month":  `datamodel=Malware type=health action=exclusion_added earliest=@mon`,
 		"quarantined files on web1":              `datamodel=Malware type=threat action=quarantined dest=web1 | stats count by file_name | sort -count`,
+		"files changed on web1":                  `datamodel=Filesystem action=modified dest=web1`,
+		"top files on web1":                      `datamodel=Filesystem dest=web1 | top limit=10 file_name`,
 		"asr blocks by rule":                     `datamodel=Malware type=rule action=blocked | stats count by rule | sort -count`,
 		"defender events on dc01 today":          `datamodel=Malware vendor_product="Microsoft Defender Antivirus" dest=dc01 earliest=@d`,
 		"antivirus exclusions removed":           `datamodel=Malware type=health action=exclusion_removed`,

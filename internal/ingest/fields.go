@@ -80,6 +80,11 @@ var knownFields = func() map[string]string {
 		// osquery (internal/endpoint).
 		"endpoint_id": kw, "file_old_path": kw, "user_id": kw, "inventory_type": kw,
 
+		// Wazuh alerts (wazuh.go).
+		"benchmark": kw, "wazuh_rule_level": long, "wazuh_rule_groups": kw, "wazuh_agent_id": kw,
+		"wazuh_agent_name": kw, "wazuh_agent_ip": kw, "wazuh_manager": kw, "wazuh_decoder": kw,
+		"wazuh_location": kw, "wazuh_win_event_id": kw,
+
 		// Risk events.
 		"group_key": kw, "risk_score": double, "risk_base_score": double,
 	}

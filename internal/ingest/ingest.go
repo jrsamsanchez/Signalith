@@ -565,6 +565,8 @@ func (e Event) Document() map[string]any {
 func Normalize(tag string, r map[string]any, now time.Time) Event {
 	var ev Event
 	switch {
+	case isWazuhTag(tag) || IsWazuhAlert(r):
+		ev = parseWazuhRecord(r)
 	case isWindowsRecord(tag, r):
 		ev = parseWindows(r)
 	case strings.HasPrefix(tag, "linux.clamav"):

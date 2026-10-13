@@ -38,6 +38,7 @@ var fuzzSeeds = []string{
 	"CEF:0|Trend Micro|Apex Central|2019|AV:X|X|3|act=File deleted cs3Label=Virus_Malware_Name cs3=X dhost=ws filePath=C:\\a\\ fname=b.exe",
 	"CEF:0|sophos|sophos central|1.0|Event::Endpoint::Threat::Detected|Malware detected: 'M' at 'C:\\a'|9|dhost=ws",
 	"CEF:0|Bitdefender|GravityZone|6|av|Malware found|9|BitdefenderGZModule=av BitdefenderGZMalwareName=T dvc=192.0.2.1",
+	`<132>Oct 12 13:59:00 wazuh-manager ossec: {"timestamp":"2026-10-12T13:58:59.000+0000","rule":{"level":10,"id":"5763","groups":["authentication_failures"]},"agent":{"id":"001","name":"web-01"},"data":{"srcip":"192.0.2.4"}}`,
 	"hello world\x00\r\n",
 	"\xff\xfe\x00<13>",
 }
