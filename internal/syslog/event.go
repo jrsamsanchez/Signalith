@@ -49,6 +49,7 @@ func (m *Message) Event(sender netip.Addr, received time.Time, maxAge time.Durat
 		app = m.Cisco.Facility
 	}
 	extra := 0
+	wazuh := false
 	var ev ingest.Event
 	t := m.Time
 	// structured is a CEF or LEEF record, mapped by its own keys.
@@ -78,6 +79,15 @@ func (m *Message) Event(sender netip.Addr, received time.Time, maxAge time.Durat
 	case m.LEEF != nil:
 		f := map[string]any{"app": app}
 		structured(f, leefFieldsFor(m.LEEF, f, &extra, received), avFromLEEF(m.LEEF))
+	case isWazuh(m.Text, &wazuh, &ev):
+		// A Wazuh manager's syslog output (format json): the alert names
+		// the host it is about, and has its own time and severity.
+		if !ev.Time.IsZero() && (plausible(ev.Time, received, maxAge) || !plausible(t, received, maxAge)) {
+			t = ev.Time
+		}
+		if agent, _ := ev.Fields["host"].(string); agent != "" {
+			host = truncate(agent, maxHostLen)
+		}
 	case isEPO(app, m.Text):
 		if host == "" {
 			host = senderIP
@@ -111,7 +121,7 @@ func (m *Message) Event(sender netip.Addr, received time.Time, maxAge time.Durat
 	// CEF and LEEF carry their own severity, and an antivirus event's
 	// severity is the product's rating of the threat, never the syslog
 	// priority.
-	if m.CEF == nil && m.LEEF == nil && ev.Model != ingest.MalwareModel {
+	if m.CEF == nil && m.LEEF == nil && !wazuh && ev.Model != ingest.MalwareModel {
 		switch {
 		case m.Priority >= 0:
 			f["severity"] = severityNames[m.Priority%8]
@@ -146,7 +156,9 @@ func (m *Message) Event(sender netip.Addr, received time.Time, maxAge time.Durat
 			}
 		}
 	}
-	f["message"] = m.Raw
+	if !wazuh {
+		f["message"] = m.Raw // a Wazuh alert keeps its own JSON
+	}
 	ev.Time = received.UTC()
 	if plausible(t, received, maxAge) {
 		ev.Time = t.UTC()
@@ -193,4 +205,13 @@ func truncate(s string, n int) string {
 // small.
 func isExtra(name string) bool {
 	return strings.HasPrefix(name, "cef_") || strings.HasPrefix(name, "leef_") || strings.HasPrefix(name, "sd_")
+}
+
+// isWazuh reports whether text is a Wazuh JSON alert, and parses it into ev.
+func isWazuh(text string, wazuh *bool, ev *ingest.Event) bool {
+	w, ok := ingest.ParseWazuhText(text)
+	if ok {
+		*wazuh, *ev = true, w
+	}
+	return ok
 }

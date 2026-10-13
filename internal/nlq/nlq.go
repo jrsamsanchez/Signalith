@@ -195,6 +195,9 @@ func init() {
 	addNoun(noun{field: "authentication_method", name: "method", model: "Authentication"}, "method", "methods")
 	addNoun(noun{field: "user_domain", name: "domain", model: "Authentication"}, "domain", "domains")
 	addNoun(noun{field: "object", name: "changed object", model: "Change"}, "object", "objects")
+	// Files outside an antivirus question are file changes (Filesystem);
+	// in one they are the threat's file (malwareNouns).
+	addNoun(noun{field: "file_name", name: "file", model: "Filesystem"}, "file", "files", "filename", "filenames")
 	addNoun(noun{field: "detection_id", name: "detection", model: "Risk"}, "detection", "detections", "rule", "rules")
 	addNoun(noun{field: "mitre_tactic", name: "ATT&CK tactic", model: "Risk"}, "tactic", "tactics")
 	addNoun(noun{field: "mitre", name: "ATT&CK technique", model: "Risk"}, "technique", "techniques")
@@ -236,7 +239,8 @@ var modelWords = map[string]string{
 	"traffic": "Network_Traffic", "network": "Network_Traffic", "flow": "Network_Traffic", "flows": "Network_Traffic",
 	"firewall": "Network_Traffic", "outbound": "Network_Traffic", "inbound": "Network_Traffic",
 	"change": "Change", "changes": "Change", "risk": "Risk", "risky": "Risk",
-	"malware": "Malware", "virus": "Malware", "viruses": "Malware", "infection": "Malware", "infections": "Malware",
+	"filesystem": "Filesystem",
+	"malware":    "Malware", "virus": "Malware", "viruses": "Malware", "infection": "Malware", "infections": "Malware",
 	"infected": "Malware", "trojan": "Malware", "trojans": "Malware", "ransomware": "Malware", "quarantined": "Malware",
 	"antivirus": "Malware", "anti-virus": "Malware", "av": "Malware", "defender": "Malware", "clamav": "Malware",
 	"threat": "Malware", "threats": "Malware",
@@ -245,7 +249,7 @@ var modelWords = map[string]string{
 var modelNames = map[string]string{
 	"Authentication": "logon data (Authentication)", "Endpoint": "process data (Endpoint)",
 	"Network_Traffic": "network data (Network_Traffic)", "Change": "account and group changes (Change)",
-	"Risk": "risk events (Risk)", "Malware": "antivirus data (Malware)",
+	"Risk": "risk events (Risk)", "Malware": "antivirus data (Malware)", "Filesystem": "file changes (Filesystem)",
 }
 
 var actionWords = map[string]string{
