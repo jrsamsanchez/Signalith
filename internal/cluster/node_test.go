@@ -846,6 +846,24 @@ func redWarning(t *testing.T, n *Node) (Status, Warning) {
 	return st, st.Warnings[0]
 }
 
+// settledWarning waits for the red warning about OpenSearch and for this
+// server's own entry to agree with it: the warning can show before the
+// failed heartbeat has recorded how OpenSearch failed, or why this server
+// doesn't run the jobs.
+func settledWarning(t *testing.T, n *Node, agrees func(self ServerStatus) bool) (Status, Warning) {
+	t.Helper()
+	var st Status
+	var w Warning
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		st, w = redWarning(t, n)
+		if self := selfOf(st); self.Detail != nil && agrees(self) || time.Now().After(deadline) {
+			return st, w
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 // Each way OpenSearch turns a server away is told as what it is: only a
 // refusal of Signalith's own user gets the advice to give that user more
 // rights, a server that reached OpenSearch is never said not to reach it,
@@ -937,16 +955,8 @@ func TestRefusalsAreWordedByKind(t *testing.T) {
 			fos := ostest.New(t)
 			fos.SetFault(c.fault)
 			n := testNode(t, t.TempDir(), store.New(store.Config{URL: fos.URL}), true)
-			redWarning(t, n)
-			// The warning can show before the heartbeat records how
-			// OpenSearch turned it away; wait for that too.
-			var st Status
-			var w Warning
-			until(t, 5*time.Second, "the heartbeat to say how OpenSearch refused it", func() bool {
-				st, w = redWarning(t, n)
-				self := selfOf(st)
-				return self.Detail != nil && self.Detail.OpenSearch.Problem == c.problem &&
-					(c.why == "" || self.Detail.NotEligible == c.why)
+			st, w := settledWarning(t, n, func(self ServerStatus) bool {
+				return self.Detail.OpenSearch.Problem == c.problem && (c.why == "" || self.Detail.NotEligible == c.why)
 			})
 			for _, want := range c.text {
 				if !strings.Contains(w.Text, want) {
@@ -988,7 +998,7 @@ func TestUnreachableIsWordedAsSuch(t *testing.T) {
 	closed := ln.Addr().String()
 	ln.Close()
 	n := testNode(t, t.TempDir(), store.New(store.Config{URL: "http://" + closed, Timeout: time.Second}), true)
-	st, w := redWarning(t, n)
+	st, w := settledWarning(t, n, func(self ServerStatus) bool { return self.Detail.NotEligible == "it cannot reach OpenSearch" })
 	if !strings.HasPrefix(w.Text, "This server can't reach OpenSearch, so it can't see the other servers and runs no background jobs. The error was: opensearch unreachable at") ||
 		strings.Contains(w.Text, "..") || !strings.HasSuffix(w.Text, ".") || strings.Contains(w.Text, "right to") {
 		t.Errorf("%q", w.Text)
@@ -1007,7 +1017,9 @@ func TestNoAnswerIsWordedAsSuch(t *testing.T) {
 	fos := ostest.New(t)
 	fos.SetFault(func(m, p string) *ostest.Fault { return &ostest.Fault{Stall: true} })
 	n := testNode(t, t.TempDir(), store.New(store.Config{URL: fos.URL, Timeout: 200 * time.Millisecond}), true)
-	st, w := redWarning(t, n)
+	st, w := settledWarning(t, n, func(self ServerStatus) bool {
+		return self.Detail.OpenSearch.Problem == "timeout" && self.Detail.NotEligible == "OpenSearch doesn't answer it in time"
+	})
 	if !strings.HasPrefix(w.Text, "OpenSearch didn't answer this server in time, so this server can't see the other servers and runs no background jobs. "+
 		"Signalith keeps trying, and goes on by itself once OpenSearch answers. If this lasts more than a few minutes,") ||
 		!strings.Contains(w.Text, "The error was: opensearch at "+fos.URL+" did not answer in time: ") ||
@@ -1041,7 +1053,9 @@ func TestRefusedAfterRunning(t *testing.T) {
 	n := testNode(t, t.TempDir(), store.New(store.Config{URL: fos.URL}), true)
 	waitReady(t, n, 5*time.Second)
 	fos.SetFault(func(m, p string) *ostest.Fault { f := ostest.NotInitialized; return &f })
-	st, w := redWarning(t, n)
+	st, w := settledWarning(t, n, func(self ServerStatus) bool {
+		return self.State == StateRefused && self.Detail.OpenSearch.Problem == "not_initialized"
+	})
 	if !strings.HasPrefix(w.Text, "OpenSearch is running, but its security settings aren't loaded") ||
 		!strings.HasSuffix(w.Text, "This server tries again by itself, so it needs no restart. The servers below are as it last saw them.") {
 		t.Errorf("%q", w.Text)
