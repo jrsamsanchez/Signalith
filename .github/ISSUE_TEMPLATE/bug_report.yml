@@ -1,0 +1,80 @@
+name: Bug report
+description: Something in Signalith does not work as it should.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this.
+
+        **Found a security weakness?** Do not open a public issue: report it privately as
+        [SECURITY.md](https://github.com/jrsamsanchez/Signalith/blob/main/SECURITY.md) says.
+
+        **Never paste passwords, tokens, API keys or private keys** in
+        this form, and remove them from logs and config files first. Signalith hides most
+        of them (`***`), but please check.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The output of `signalith version` (in Docker, `docker compose -f deploy/docker/docker-compose.yml exec signalith signalith version`), or the commit you built.
+      placeholder: signalith 3f53de4
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: Install type
+      options:
+        - Docker quick start
+        - Linux package (.deb or .rpm)
+        - Windows installer (.msi)
+        - Built from source
+        - Other (say below)
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      description: Where Signalith runs, and the OpenSearch version if you know it.
+      placeholder: Ubuntu 24.04, OpenSearch 2.19
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you saw, and what you expected to happen instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The smallest set of steps that shows the problem.
+      placeholder: |
+        1. Open Search
+        2. Run `datamodel=Authentication | stats count by user`
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        Relevant lines from the server log (`journalctl -u signalith`, `C:\ProgramData\Signalith\signalith.log`, or `docker compose -f deploy/docker/docker-compose.yml logs signalith`), or the error the browser showed. Remove passwords, tokens and keys first.
+      render: shell
+  - type: textarea
+    id: more
+    attributes:
+      label: Anything else
+      description: Screenshots, config snippets (without secrets), or what you already tried.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before you send
+      options:
+        - label: I removed passwords, tokens, API keys and private keys from everything above.
+          required: true
