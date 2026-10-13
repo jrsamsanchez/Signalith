@@ -107,7 +107,7 @@ sudo install -m 600 -o root -g root fluent-bit.conf /etc/fluent-bit/fluent-bit.c
 
 Most endpoint protection products send events from their management console
 rather than from each computer. Point the console at Signalith's syslog
-receiver (see [Syslog](../README.md#syslog) for turning it on). **Add data ›
+receiver (see [Syslog](sending-data.md#syslog) for turning it on). **Add data ›
 Antivirus** has the steps for each product with your address and port filled
 in; consoles send over TCP when it is on, otherwise UDP.
 
