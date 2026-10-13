@@ -127,6 +127,7 @@ nav:
       - Threat intel: threat-intel.md
       - Dashboards: dashboards.md
       - Response actions: response-actions.md
+      - Notifications: notifications.md
   - Administration:
       - Server settings: settings.md
       - Users and sign-in: users.md
