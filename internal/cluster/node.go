@@ -253,12 +253,18 @@ func (n *Node) Use(c *store.Client, prefix string, s Settings) {
 		n.poke()
 		return
 	}
+	if had {
+		// Until the switch below, a lease step still reaches the old
+		// OpenSearch: it must not take back the lease just given up there.
+		n.paused = "it is moving to another OpenSearch or index prefix"
+	}
 	n.mu.Unlock()
 	if had {
 		n.lease.Release("this server moved to another OpenSearch or index prefix")
 	}
 	n.hbMu.Lock()
 	n.mu.Lock()
+	n.paused = ""
 	n.client, n.prefix, n.endpoint = c, prefix, c.Endpoint()
 	n.hb, n.members, n.fpNext, n.offsetNext = heartbeatState{}, map[string]*member{}, 0, 0
 	n.contacted, n.writesRefused, n.offset, n.lastErr, n.lastErrRaw = false, false, nil, "", nil
