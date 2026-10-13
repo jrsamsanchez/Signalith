@@ -50,6 +50,7 @@ type Config struct {
 	Dashboards Dashboards `yaml:"dashboards"`
 	Assistant  Assistant  `yaml:"assistant"`
 	Intel      Intel      `yaml:"intel"`
+	Notify     Notify     `yaml:"notify,omitempty"`
 	Response   Response   `yaml:"response,omitempty"`
 	Cluster    Cluster    `yaml:"cluster,omitempty"`
 
@@ -924,6 +925,25 @@ func (c *Config) IntelFeedsFile() string {
 	return filepath.Join(c.LookupsDir(), "intel_feeds.yaml")
 }
 
+// Notify configures notifications. The channels and rules are set on the
+// Notifications page, which keeps them in File.
+type Notify struct {
+	// File keeps the channels and rules set on the Notifications page,
+	// with their webhook addresses, keys and passwords encrypted. Default:
+	// notifications.yaml in lookups.dir. A relative path is relative to
+	// the folder this config file is in.
+	File string `yaml:"file,omitempty"`
+}
+
+// NotifyFile returns the file that keeps the notification channels and
+// rules set on the Notifications page.
+func (c *Config) NotifyFile() string {
+	if c.Notify.File != "" {
+		return c.resolve(c.Notify.File)
+	}
+	return filepath.Join(c.LookupsDir(), "notifications.yaml")
+}
+
 // Response sets where response actions are kept and which programs they
 // may run (see docs/response-actions.md).
 type Response struct {
@@ -1490,6 +1510,10 @@ func (c *Config) applyEnv() error {
 		c.Intel.FeedsFile = v
 		c.fromEnv("intel.feeds_file", "SIGNALITH_INTEL_FEEDS_FILE")
 	}
+	if v := os.Getenv("SIGNALITH_NOTIFY_FILE"); v != "" {
+		c.Notify.File = v
+		c.fromEnv("notify.file", "SIGNALITH_NOTIFY_FILE")
+	}
 	if v := os.Getenv("SIGNALITH_RESPONSE_FILE"); v != "" {
 		c.Response.File = v
 		c.fromEnv("response.file", "SIGNALITH_RESPONSE_FILE")
@@ -2025,6 +2049,8 @@ const header = `# Signalith configuration.
 #                      - name: feodo-tracker
 #                        url: https://feodotracker.abuse.ch/downloads/ipblocklist.txt
 #                    format: lines, csv (with column:), stix or auto; see docs/threat-intel.md
+# notify.file        where the Notifications page keeps its channels and rules
+#                    (default notifications.yaml in lookups.dir); see docs/notifications.md
 # response.file      where the Response actions page keeps its actions (default
 #                    lookups.dir/response.yaml; SIGNALITH_RESPONSE_FILE overrides it)
 # response.scripts_dir  the only folder script actions may run programs from

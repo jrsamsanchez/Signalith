@@ -372,6 +372,7 @@ const JUMP_WORDS = {
   health: 'status opensearch ingest', help: 'help syntax language commands',
   servers: 'cluster nodes servers background jobs leader failover standby readyz',
   users: 'accounts people roles permissions ldap active directory sign-in passwords',
+  notify: 'notifications alerts email slack teams webhook smtp channels rules paging',
   respond: 'response actions respond block ip firewall opnsense pfsense webhook shuffle script isolate disable account soar playbook',
   security: 'hardening encryption certificate authority ca tls https keys permissions bitlocker luks',
   settings: 'configuration config server opensearch syslog listen address port tls certificate ai assistant model api key restart yaml',

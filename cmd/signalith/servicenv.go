@@ -15,7 +15,7 @@ import (
 // service is given: the Environment= and EnvironmentFile= lines of its
 // systemd unit on Linux, or the Environment value of the Signalith service
 // in the Windows registry. Those put the server's own files
-// (directory.json, intel_feeds.yaml, a master key it made, its HTTPS
+// (directory.json, intel_feeds.yaml, notifications.yaml, a master key it made, its HTTPS
 // certificate and identity) in its state folder, and may name its master
 // key (SIGNALITH_MASTER_KEY_FILE). So when
 // the service runs with the same config file, "signalith secrets",
@@ -34,7 +34,7 @@ import (
 var serviceVars = map[string]bool{
 	"SIGNALITH_STATE_DIR": true, "SIGNALITH_LOOKUPS_DIR": true, "SIGNALITH_DETECTIONS_DIR": true,
 	"SIGNALITH_DASHBOARDS_DIR": true, "SIGNALITH_ARCHIVE_DIR": true,
-	"SIGNALITH_USERS_FILE": true, "SIGNALITH_INTEL_FEEDS_FILE": true, "SIGNALITH_SETTINGS_FILE": true,
+	"SIGNALITH_USERS_FILE": true, "SIGNALITH_INTEL_FEEDS_FILE": true, "SIGNALITH_NOTIFY_FILE": true, "SIGNALITH_SETTINGS_FILE": true,
 	"SIGNALITH_RESPONSE_FILE": true, "SIGNALITH_RESPONSE_SCRIPTS_DIR": true,
 	"SIGNALITH_MASTER_KEY_FILE": true, "SIGNALITH_MASTER_KEY": true,
 	"SIGNALITH_NODE_NAME": true, "SIGNALITH_NODE_URL": true,

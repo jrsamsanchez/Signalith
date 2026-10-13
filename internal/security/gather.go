@@ -247,7 +247,7 @@ func fileFacts(h Host) (FileFacts, bool) {
 			items = append(items, item{p, "key"})
 		}
 	}
-	for _, p := range []string{c.AdminHashFile(), c.UsersFile(), c.DirectoryFile(), c.SettingsFile(), c.IntelFeedsFile(), c.ResponseFile(), SavedDisksFile(state)} {
+	for _, p := range []string{c.AdminHashFile(), c.UsersFile(), c.DirectoryFile(), c.SettingsFile(), c.IntelFeedsFile(), c.NotifyFile(), c.ResponseFile(), SavedDisksFile(state)} {
 		items = append(items, item{p, "private"})
 	}
 	// Whoever can put a program in the scripts folder decides what

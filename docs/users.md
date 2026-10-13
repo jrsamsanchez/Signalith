@@ -643,6 +643,7 @@ page itself.
 `DELETE /api/endpoints/{id}`, `GET /api/endpoints/blocked`, `DELETE /api/endpoints/blocked/{host}`,
 `POST /api/endpoints/queries`, `GET /api/endpoints/queries/{id}` (the [Endpoints page](endpoints.md)),
 `GET /api/cluster` (the Servers page; see [servers.md](servers.md)), every
+`/api/notify` route (the Notifications page; see [notifications.md](notifications.md)), every
 `/api/retention` route (see [retention.md](retention.md)), every
 `/api/users` and `/api/auth/directory` route below, and every `/api/settings` route
 (`GET` and `PUT /api/settings`, `POST /api/settings/test/opensearch`,

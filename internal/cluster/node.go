@@ -1219,6 +1219,8 @@ func fixFiles(parts []string, server, holder string) string {
 			what = append(what, "retention policies (retention.yaml in the lookups folder, and retention in signalith.yaml)")
 		case "threat intel feeds":
 			what = append(what, "threat intel feeds (intel_feeds.yaml in the lookups folder, and intel in signalith.yaml)")
+		case "notification channels":
+			what = append(what, "notification channels and rules (notifications.yaml in the lookups folder)")
 		case "archive folder":
 			shared = true
 		default:
