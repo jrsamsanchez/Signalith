@@ -54,7 +54,9 @@ docker compose -f deploy/docker/docker-compose.yml restart signalith
 
 Settings changed on the **Settings** page are kept in the `signalith-data` volume, so
 they survive updates. To update, run `git pull` and then the `up` command again; it
-rebuilds Signalith from the new code. After a reboot everything starts again by itself
+downloads the Signalith image built from the newest code. To run a release instead, or to
+build the image from your own checkout, see
+[Running a release, or building the image yourself](https://github.com/jrsamsanchez/Signalith/blob/main/README.md#running-a-release-or-building-the-image-yourself). After a reboot everything starts again by itself
 once Docker is running (in Docker Desktop, turn on *Start Docker Desktop when you sign
 in*).
 

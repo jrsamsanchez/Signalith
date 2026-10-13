@@ -21,9 +21,16 @@
 # security settings aren't loaded") has more:
 #   docker compose -f deploy/docker/docker-compose.yml logs opensearch-security
 #
-# To update: git pull, then step 1 again; it rebuilds Signalith. Coming from
-# a version without these steps? See "Upgrading the Docker quick start" in
-# README.md.
+# To update: git pull, then step 1 again; it downloads the new Signalith
+# image. Coming from a version without these steps? See "Upgrading the Docker
+# quick start" in README.md.
+#
+# Signalith's image comes ready-made from GitHub (ghcr.io): the one built from
+# main, or a release's with SIGNALITH_VERSION, for example in PowerShell
+# $env:SIGNALITH_VERSION="0.1.0" or in a shell SIGNALITH_VERSION=0.1.0 before
+# step 1 (use the same version as the code you checked out: git checkout
+# v0.1.0). To build it from the code you checked out instead, add
+# -f deploy/docker/docker-compose.build.yml to every command.
 # Everything starts again by itself after a reboot once Docker is running
 # (Docker Desktop: Settings > General > Start Docker Desktop when you sign in).
 # The two steps that run once per "up", setup and opensearch-security, are
@@ -35,10 +42,8 @@ services:
   # certificates OpenSearch and Signalith use with each other, the first
   # admin password and the agents' ingest token, and keeps them after that.
   setup:
-    build:
-      context: ../..
-      dockerfile: deploy/docker/Dockerfile
-    pull_policy: build
+    image: ghcr.io/jrsamsanchez/signalith:${SIGNALITH_VERSION:-main}
+    pull_policy: always
     # Root, to give each file to the user that reads it: OpenSearch (1000)
     # or Signalith (65532), and allowed nothing else. It needs no network.
     user: "0:0"
@@ -156,12 +161,13 @@ services:
       options: { max-size: "10m", max-file: "5" }
 
   signalith:
-    build:
-      context: ../..
-      dockerfile: deploy/docker/Dockerfile
-    # Rebuild from the checked-out code on every `up`, so after `git pull` the
-    # same command runs the new version instead of the last image built.
-    pull_policy: build
+    # The image GitHub builds from this branch (main), or a release when
+    # SIGNALITH_VERSION is set (for example 0.1.0). It is downloaded again on
+    # every `up`, so after `git pull` the same command runs the new version.
+    # To build it from the checked-out code instead, add
+    # -f deploy/docker/docker-compose.build.yml (see that file).
+    image: ghcr.io/jrsamsanchez/signalith:${SIGNALITH_VERSION:-main}
+    pull_policy: always
     # A fixed name, which goes into Signalith's own HTTPS certificate and the
     # name of its certificate authority ("Signalith Local CA (signalith)").
     # Without it the name would be the container's random ID, new each time.

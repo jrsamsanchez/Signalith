@@ -33,7 +33,8 @@ docker compose -f deploy/docker/docker-compose.yml up -d
 docker compose -f deploy/docker/docker-compose.yml exec signalith signalith initial-password
 ```
 
-The first command starts OpenSearch and Signalith. On first start a setup step makes the
+The first command downloads Signalith's ready-made image from GitHub
+(`ghcr.io/jrsamsanchez/signalith`) and starts OpenSearch and Signalith. On first start a setup step makes the
 admin password, a shared agent token and the certificates OpenSearch and Signalith use
 with each other, and keeps them in Docker volumes; no password is written in the compose
 files. Once OpenSearch is up, a second step loads OpenSearch's security settings (who may
@@ -82,8 +83,8 @@ Settings changed on the **Settings** page are kept in the `signalith-data` volum
 certificate authority, so they survive updates; settings given in `docker-compose.yml`'s
 `environment:` show there locked.
 
-To update, run `git pull` and then the first command again. It rebuilds Signalith from the
-new code each time. If `git pull` says your local changes to
+To update, run `git pull` and then the first command again. It downloads the Signalith
+image built from the newest code each time. If `git pull` says your local changes to
 `deploy/docker/signalith.yaml` would be overwritten, run `git stash` and `git pull` again.
 If the change you had made there was `plaintext_ingest: deny`, add that line back under
 `mode: auto`, indented the same, before you run the first command; otherwise agents on
@@ -93,6 +94,26 @@ Settings > General > "Start Docker Desktop when you sign in". If the computer re
 while the first command was still waiting for the step that loads OpenSearch's security
 settings, Signalith had not started yet and does not start by itself: https://localhost:8080
 doesn't answer. Run `docker compose -f deploy/docker/docker-compose.yml up -d` again then.
+
+#### Running a release, or building the image yourself
+
+The quick start runs the image GitHub builds from `main`, which matches the code `git pull`
+gives you. To run a release instead, check out its tag and set `SIGNALITH_VERSION` to the
+same version before the first command, for example in PowerShell:
+
+```powershell
+git checkout v0.1.0
+$env:SIGNALITH_VERSION = "0.1.0"
+docker compose -f deploy/docker/docker-compose.yml up -d
+```
+
+(in a Linux or macOS terminal: `export SIGNALITH_VERSION=0.1.0`). To build the image
+from the code you checked out, for example to try a change of your own, add
+`-f deploy/docker/docker-compose.build.yml` after the first `-f` in every command:
+
+```sh
+docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.build.yml up -d
+```
 
 #### Upgrading the Docker quick start
 
@@ -113,7 +134,7 @@ same):
    ```sh
    docker compose -f deploy/docker/docker-compose.yml up -d
    ```
-   This rebuilds Signalith, runs the setup step once, restarts OpenSearch with its
+   This downloads the new Signalith image, runs the setup step once, restarts OpenSearch with its
    security plugin on, and then runs the step that loads OpenSearch's security settings;
    Signalith starts after that. The first start takes a minute or two longer, and up to
    about 10 minutes on a slow computer, where that step keeps trying while OpenSearch is

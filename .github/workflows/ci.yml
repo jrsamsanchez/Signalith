@@ -59,12 +59,13 @@ jobs:
   integration:
     runs-on: ubuntu-latest
     env:
-      # The Docker quick start as users run it, plus an override that also
+      # The Docker quick start as users run it, built from this code
+      # (docker-compose.build.yml), plus an override that also
       # publishes OpenSearch on this machine for the Go tests, and one that
       # turns off OpenSearch's own loading of its security settings on first
       # start, as when that fails on a slow computer: then the
       # opensearch-security step has to load them.
-      COMPOSE: docker compose -f deploy/docker/docker-compose.yml -f ${{ github.workspace }}/ci-opensearch-port.yml -f ${{ github.workspace }}/ci-no-default-init.yml
+      COMPOSE: docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.build.yml -f ${{ github.workspace }}/ci-opensearch-port.yml -f ${{ github.workspace }}/ci-no-default-init.yml
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
@@ -172,6 +173,9 @@ jobs:
           if curl -s -o /dev/null http://localhost:9200/; then echo "OpenSearch answers plain HTTP"; exit 1; fi
       - name: Encrypt a pasted API key the way docs/encryption.md shows
         working-directory: deploy/docker
+        env:
+          # The image built from this code, as in the steps above.
+          COMPOSE_FILE: docker-compose.yml:docker-compose.build.yml
         run: |
           printf 'assistant:\n  provider: anthropic\n  api_key: sk-ant-ci-pasted-0123456789\n' >> signalith.yaml
           owner=$(stat -c %u:%a signalith.yaml)
@@ -211,7 +215,7 @@ jobs:
       # The secured OpenSearch of the Docker quick start, published on this
       # machine for the tests: servers that share one OpenSearch need its
       # security on.
-      COMPOSE: docker compose -f deploy/docker/docker-compose.yml -f ${{ github.workspace }}/ci-opensearch-port.yml
+      COMPOSE: docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.build.yml -f ${{ github.workspace }}/ci-opensearch-port.yml
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
