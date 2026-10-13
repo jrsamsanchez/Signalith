@@ -31,6 +31,10 @@ const (
 	KindSearch  = "search"
 	KindEvent   = "event"
 	KindFinding = "finding"
+	// KindAction is a response action run on the case: Text says what
+	// ran, on what, by whom and how it went; RunID names its record in
+	// the audit log.
+	KindAction = "action"
 )
 
 // Limits keep one case document a reasonable size.
@@ -71,7 +75,8 @@ type Entity struct {
 }
 
 // Entry is one item on the case timeline: a note, a saved search with a
-// snapshot of its results, a pinned event, or a finding that was added.
+// snapshot of its results, a pinned event, a finding that was added, or a
+// response action that was run.
 type Entry struct {
 	ID     string    `json:"id"`
 	Kind   string    `json:"kind"`
@@ -90,6 +95,9 @@ type Entry struct {
 
 	Event     map[string]any `json:"event,omitempty"`
 	FindingID string         `json:"finding_id,omitempty"`
+
+	RunID  string `json:"run_id,omitempty"`
+	Status string `json:"status,omitempty"` // of the run: succeeded or failed
 }
 
 // Filter selects cases.

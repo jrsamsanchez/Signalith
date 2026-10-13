@@ -35,6 +35,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/intel"
 	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/redact"
+	"github.com/jrsamsanchez/signalith/internal/respond"
 	"github.com/jrsamsanchez/signalith/internal/retention"
 	"github.com/jrsamsanchez/signalith/internal/sample"
 	"github.com/jrsamsanchez/signalith/internal/search"
@@ -71,6 +72,8 @@ type Server struct {
 	Dashboards *dashboards.Store
 	// Cases holds investigations; nil disables them.
 	Cases cases.Store
+	// Respond runs response actions; nil disables them.
+	Respond *respond.Runner
 	// Retention enforces data retention policies; nil disables the Data
 	// retention page.
 	Retention *retention.Manager
@@ -211,6 +214,7 @@ func (s *Server) Handler() http.Handler {
 	s.routeIntel(api)
 	s.routeDashboards(api)
 	s.routeCases(api)
+	s.routeRespond(api)
 	s.routeUsers(api)
 	s.routeRetention(api)
 	s.routeSample(api)

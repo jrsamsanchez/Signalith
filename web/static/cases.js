@@ -473,7 +473,17 @@ function caseHead(c, linked) {
         el('span', { title: fullTime(c.created) }, `Opened ${ago(c.created)}` + (c.created_by ? ` by ${c.created_by}` : '')),
         dotsep(),
         el('span', { title: fullTime(c.updated) }, `Updated ${ago(c.updated)}`))),
-    editable ? el('div', { class: 'c-head__actions' }, action) : null);
+    editable ? el('div', { class: 'c-head__actions' },
+      el('button', { type: 'button', class: 'btn btn--secondary', title: 'Run a response action, such as blocking an IP or disabling an account', onclick: () => caseRespond(c) }, icon('zap'), 'Respond'),
+      action) : null);
+}
+
+// caseRespond opens the Respond dialog (respond.js) with the case's
+// entities as targets; the run lands on the timeline.
+function caseRespond(c) {
+  openRespond({ caseId: c.id, title: c.title, entities: (c.entities || []).map((e) => ({ field: e.field, value: e.value })), onDone: () => {
+    if (caseState.open === c.id && $('page-cases').classList.contains('active')) showCase(c.id);
+  } });
 }
 
 // ----- details: status, severity, owner, description -----
@@ -789,6 +799,13 @@ function entryNode(c, e, linked) {
             el('button', { type: 'button', class: 'link-btn', onclick: () => openSearch(e.query, e.earliest, e.latest) }, 'Run again in Search', icon('arrow-up-right', 'icon--xs'))),
           snapshotTable(e)],
         remove: removeEntryButton(c, e, 'search') });
+    case 'action':
+      // A response action run from this case: the record of what was
+      // done, so it cannot be removed. Details come from the audit log.
+      return tlItem({ kind: 'action', icon: 'zap', time: e.time, text: [who, ' ran a response action ', e.status ? rpStatusBadge(e.status) : null],
+        body: [el('p', { class: 'c-note' }, e.text),
+          e.run_id ? el('div', { class: 'c-search-meta' }, el('span', { class: 'mono' }, e.run_id),
+            el('button', { type: 'button', class: 'link-btn', onclick: () => rpShowRun(e.run_id, { caseId: c.id }) }, 'Details and output', icon('arrow-up-right', 'icon--xs'))) : null] });
     default:
       return tlItem({ kind: e.kind, icon: 'circle-dot', time: e.time, text: [who, ' added ' + e.kind] });
   }

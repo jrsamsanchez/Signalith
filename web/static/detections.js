@@ -914,6 +914,7 @@ function renderFindingDetail(box, data, opts = {}) {
     { icon: 'search', label: 'Open events in Search', run: () => openSearch(f.query, f.earliest, f.latest) },
     d ? { icon: 'crosshair', label: 'Open the detection', run: () => focusDetection(f.detection_id) } : null,
     d ? { icon: 'list-filter', label: 'Findings from this detection', run: () => { fnd.detection = f.detection_id; fnd.urgency.clear(); loadFindings(); } } : null,
+    can('analyst') ? { icon: 'zap', label: 'Respond…', run: () => { const b = box.querySelector('[data-action="respond"]'); if (b) b.click(); } } : null,
   ]);
 
   const sev = sevBadge(u);
@@ -967,7 +968,8 @@ function renderFindingDetail(box, data, opts = {}) {
             ['Severity', SEVERITY_FULL[f.severity] || f.severity], ['Disposition', DISPOSITION_LABEL[f.disposition || ''] || f.disposition]])),
         ents.length ? el('section', { class: 'section' },
           el('h3', { class: 'section-title' }, 'Entities', el('span', { class: 'count' }, String(ents.length))),
-          ...ents.map(([k, v]) => findingEntity(k, v, f))) : null),
+          ...ents.map(([k, v]) => findingEntity(k, v, f))) : null,
+        can('analyst') ? findingRespond(f) : null),
       dxPanel(prefix, 'evidence', fnd.tab,
         el('section', { class: 'section' },
           el('div', { class: 'dx-sec-head' }, el('h3', { class: 'section-title' }, 'Query'),
@@ -981,6 +983,25 @@ function renderFindingDetail(box, data, opts = {}) {
       dxPanel(prefix, 'activity', fnd.tab,
         activity.length ? el('ol', { class: 'timeline' }, ...activity) : el('p', { class: 'muted' }, 'No activity yet. Notes and changes appear here.'))),
     el('div', { class: 'inspector__foot' }, ...(can('analyst') ? [save, mine, caseBtn] : [f.case_id ? caseBtn : null]), el('span', { class: 'spacer' }), more));
+}
+
+// findingRespond is the Response section: Respond runs an action (block
+// an IP, disable an account) on one of the finding's entities; past runs
+// list below it (respond.js).
+function findingRespond(f) {
+  const ents = f.entities || {};
+  const entities = Object.entries(ents).filter(([k, v]) => k !== 'risk_object_type' && v != null && String(v) !== '')
+    .flatMap(([k, v]) => [].concat(v).map((x) => ({ field: k, value: String(x),
+      kind: k === 'risk_object' ? (ents.risk_object_type === 'user' ? 'user' : 'host') : undefined })));
+  const go = () => openRespond({ findingId: f.id, title: f.title, entities, onDone: () => {
+    if (openFinding !== f.id) return;
+    const note = $('fd-comment');
+    showFinding(f.id, { focus: false, keepNote: note ? note.value : '' });
+  } });
+  return el('section', { class: 'section' },
+    el('div', { class: 'dx-sec-head' }, el('h3', { class: 'section-title' }, 'Response'),
+      dxBtn('secondary', 'Respond', go, { sm: true, icon: 'zap', action: 'respond', title: 'Run a response action, such as blocking an IP or disabling an account' })),
+    rpRunsSection({ findingId: f.id }));
 }
 
 async function undoFinding(id, prev) {

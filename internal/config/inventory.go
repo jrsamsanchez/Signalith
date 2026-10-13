@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/jrsamsanchez/signalith/internal/intel"
+	"github.com/jrsamsanchez/signalith/internal/respond"
 	"github.com/jrsamsanchez/signalith/internal/secrets"
 	"github.com/jrsamsanchez/signalith/internal/users"
 )
@@ -32,6 +33,7 @@ func (c *Config) SecretFiles() []SecretFile {
 		{Path: c.Path(), Reseal: ResealFile},
 		{Path: c.DirectoryFile(), Reseal: users.ResealDirectoryFile, Server: true},
 		{Path: c.IntelFeedsFile(), Reseal: intel.ResealFeedsFile, Server: true},
+		{Path: c.ResponseFile(), Reseal: respond.ResealFile, Server: true},
 		{Path: c.SettingsFile(), Reseal: ResealSettingsFile, Server: true, Replace: true},
 	}
 }

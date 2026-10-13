@@ -133,7 +133,7 @@ func TestSecretInventory(t *testing.T) {
 	for _, f := range c.SecretFiles() {
 		paths = append(paths, f.Path)
 	}
-	if !slices.Equal(paths, []string{path, c.DirectoryFile(), c.IntelFeedsFile(), c.SettingsFile()}) {
+	if !slices.Equal(paths, []string{path, c.DirectoryFile(), c.IntelFeedsFile(), c.ResponseFile(), c.SettingsFile()}) {
 		t.Errorf("files %v", paths)
 	}
 }
