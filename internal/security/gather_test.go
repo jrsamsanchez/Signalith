@@ -6,27 +6,44 @@ import (
 	"net/netip"
 	"path/filepath"
 	"testing"
+
+	"github.com/jrsamsanchez/signalith/internal/config"
 )
 
-// The old example token is still accepted over plain HTTP only in a
+// The old example token is still accepted over plain HTTP only on a
+// Docker quick start upgraded from a version whose agents send it, in a
 // container, with HTTPS on and agents on plain HTTP allowed (see
-// api.retiredTokenAccepted).
+// config.Config.OldToken and api.retiredTokenAccepted).
 func TestPublicTokenAccepted(t *testing.T) {
+	https := "server:\n  listen: 0.0.0.0:8080\n  tls:\n    mode: auto\n"
 	allow := "server:\n  listen: 0.0.0.0:8080\n  tls:\n    mode: auto\n    plaintext_ingest: allow\n"
 	off := "server:\n  listen: 0.0.0.0:8080\n  tls:\n    mode: off\n"
+	upgraded := &config.DockerUpgrade{Upgraded: true, Decided: now}
+	ended := &config.DockerUpgrade{Upgraded: true, Decided: now, Ended: now}
+	started := &config.DockerUpgrade{Decided: now}
 	for _, tc := range []struct {
 		name      string
 		config    string
+		decision  *config.DockerUpgrade
+		decided   bool
 		container bool
 		want      bool
 	}{
-		{"container, plain allowed", allow, true, true},
-		{"container, plain refused", httpsAuto, true, false},
-		{"container, HTTPS off", off, true, false},
-		{"no container", allow, false, false},
+		{"upgraded quick start", https, upgraded, true, true, true},
+		{"upgraded, plain allowed", allow, upgraded, true, true, true},
+		{"upgraded, plain refused", httpsAuto, upgraded, true, true, false},
+		{"upgraded, ended", allow, ended, true, true, false},
+		{"upgraded, HTTPS off", off, upgraded, true, true, false},
+		{"quick start installed new, plain allowed", allow, started, true, true, false},
+		{"quick start not decided yet", allow, nil, true, true, false},
+		{"other container, plain allowed", allow, nil, false, true, false},
+		{"upgraded, no container", allow, upgraded, true, false, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c := loadConfig(t, tc.config)
+			if tc.decided {
+				c = c.WithDockerUpgrade(tc.decision)
+			}
 			f := NewFacts(Host{Config: c, GOOS: "linux", InContainer: tc.container, Docker: tc.container}, now, ServerInfo{})
 			if f.PublicTokenAccepted != tc.want || f.Docker != tc.container {
 				t.Errorf("%+v", f)

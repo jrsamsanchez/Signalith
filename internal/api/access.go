@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"math"
@@ -177,11 +178,13 @@ func (s *Server) authenticate(r *http.Request) (*principal, error) {
 			lookup = s.sessions().Peek
 		}
 		if ss, ok := lookup(c.Value); ok {
-			if p := s.principalFor(ss.User); p != nil {
+			// A password changed since signing in (perhaps on another
+			// server sharing the users file) ends the session too.
+			if p := s.principalFor(ss.User); p != nil && (ss.Version == "" || ss.Version == s.passwordStamp(ss.User)) {
 				p.Method, p.token = "session", c.Value
 				return p, nil
 			}
-			// Deleted or disabled since signing in.
+			// Deleted, disabled or given a new password since signing in.
 			s.sessions().Delete(c.Value)
 		}
 	}
@@ -217,6 +220,18 @@ func (s *Server) principalFor(name string) *principal {
 		s.recheckDirectoryUser(u.Username)
 	}
 	return principalFromUser(u)
+}
+
+// passwordStamp identifies a local user's current password without
+// holding its hash, or is "" for users without one here (the built-in
+// admin and directory users).
+func (s *Server) passwordStamp(name string) string {
+	v := s.userStore().PasswordVersion(name)
+	if v == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(v))
+	return hex.EncodeToString(sum[:16])
 }
 
 func (s *Server) builtinPrincipal() *principal {

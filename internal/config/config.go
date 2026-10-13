@@ -97,6 +97,11 @@ type Config struct {
 	// publicURLDerived is true when server.public_url was empty and
 	// Validate worked it out from the listen address.
 	publicURLDerived bool
+	// quickStart is true in the Docker quick start's container, and
+	// dockerUpgrade is whether it was upgraded from a version whose agents
+	// send the example ingest token (see OldToken), nil until decided.
+	quickStart    bool
+	dockerUpgrade *DockerUpgrade
 }
 
 // PublicURLDerived reports whether server.public_url was worked out from
@@ -176,6 +181,10 @@ type Server struct {
 	// effect, because the Settings page changed one (see materializeTLS):
 	// what LegacyProxy allows still holds.
 	legacyFile bool
+	// oldAgents is set on a Docker quick start upgraded from a version
+	// whose agents send over plain HTTP with the example token, until
+	// agents on plain HTTP are refused (see Config.OldToken).
+	oldAgents bool
 }
 
 // materializeTLS fills in the server.tls section with the HTTPS settings
@@ -277,14 +286,16 @@ func (s Server) TLSMode() string {
 func (s Server) HTTPS() bool { return s.TLSMode() != TLSOff }
 
 // PlaintextIngest reports whether agents may send events over plain HTTP
-// to the HTTPS port: server.tls.plaintext_ingest, else allowed only for a
-// config written before HTTPS was the default (no server.tls section and
-// no tls_cert), whose agents were set up for http://.
+// to the HTTPS port: server.tls.plaintext_ingest, else allowed only where
+// agents were set up for http://: for a config written before HTTPS was
+// the default (no server.tls section and no tls_cert), and on a Docker
+// quick start upgraded from one that served plain HTTP, until agents on
+// plain HTTP are first refused (see Config.OldToken).
 func (s Server) PlaintextIngest() bool {
 	if s.TLS != nil && s.TLS.PlaintextIngest != "" {
 		return strings.EqualFold(strings.TrimSpace(s.TLS.PlaintextIngest), "allow")
 	}
-	return s.legacyHTTP()
+	return s.legacyHTTP() || s.oldAgents
 }
 
 // legacyHTTP reports whether the config was written when Signalith served
@@ -1189,6 +1200,7 @@ func readAndEnv(path string) (*Config, error) {
 	if err := c.applyAdminHashFile(); err != nil {
 		return nil, err
 	}
+	c.readDockerUpgrade()
 	c.layers.pageFileEnv = strings.TrimSpace(os.Getenv("SIGNALITH_SETTINGS_FILE")) != ""
 	c.layers.pageFile = c.SettingsFile()
 	return c, nil

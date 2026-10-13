@@ -1053,6 +1053,9 @@ func (s *Server) applyLive(old, saved *config.Config) []string {
 	if changed("server.public_url") {
 		s.coverPublicURL(&next)
 	}
+	if changed("server.tls.plaintext_ingest") {
+		s.endOldTokenLocked()
+	}
 	return applied
 }
 

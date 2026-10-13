@@ -108,8 +108,9 @@ Passwords are stored as bcrypt hashes and never shown again.
 
 Local users change their password from the user menu (**Change password**): enter
 the current password and the new one (at least 8 characters, at most 72 bytes).
-Every other browser signed in as you is signed out. Scripts using your old password
-with HTTP Basic auth stop working at once.
+Every other browser signed in as you is signed out, on every server that shares the
+users file too. Scripts using your old password with HTTP Basic auth stop working at
+once.
 
 Directory users change their password in the directory (for example with
 Ctrl+Alt+Del on Windows). The built-in admin's password is changed with
@@ -158,8 +159,9 @@ included) for 15 minutes at a time.
 
 The web UI keeps you signed in with a session cookie. Sessions end after
 `auth.session_timeout` without activity (12 hours by default), after 7 days with
-**Keep me signed in**, when you sign out, or when an admin disables, deletes or
-resets your account.
+**Keep me signed in**, when you sign out, when your password is changed, or when an
+admin disables, deletes or resets your account. Servers that share the users file end
+them too, within a second or so.
 
 Scripts and API clients can use HTTP Basic auth with the same username and password.
 Signalith remembers a correct username and password briefly so it does not check
@@ -475,10 +477,21 @@ The lookups folder is:
 
 Both files are written with permissions `0600` (readable only by the account
 Signalith runs as), by writing a new file and renaming it so a crash never leaves
-half a file. Back them up with the rest of the lookups folder. Signalith reads them
-at start-up and rewrites them on every change, so edit them only while it is
-stopped. If `users.json` is damaged, Signalith refuses to start and says so; move it
-away to start again with only the built-in admin.
+half a file. Back them up with the rest of the lookups folder. Edit them only while
+Signalith is stopped.
+
+Signalith reads `directory.json` at start-up. It also looks at `users.json` while it
+runs, because servers that share a lookups folder share that file (see
+[servers.md](servers.md)): before every change it reads the file as it is now, and
+otherwise it checks for changes about once a second. While a server changes
+`users.json` it keeps a small `users.json.lock` file next to it; leave that file
+alone, it goes away by itself.
+
+If `users.json` is damaged, Signalith refuses to start and says so. If it becomes
+damaged while Signalith runs, everyone signed in keeps working, but every change on
+the **Users** page fails with a message that says so. Either way, fix the file, or
+stop Signalith, move the file away and start Signalith again with only the
+built-in admin.
 
 ## Audit log
 

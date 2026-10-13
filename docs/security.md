@@ -517,11 +517,16 @@ replaced.
 
 - Good: every token has 24 characters or more. Tokens Signalith makes have 48.
 - Needs attention: a token is shorter than 24 characters.
-- At risk: the example token `change-this-ingest-token`, which anyone can look up. In a
-  container, an older Docker quick start's agents may still send it over plain HTTP,
-  and Signalith accepts it that way while **Agents on plain HTTP** accepts them, even
+- At risk: the example token `change-this-ingest-token`, which anyone can look up. On a
+  Docker quick start upgraded from an older version, whose agents all have it, Signalith
+  accepts it from them over plain HTTP while **Agents on plain HTTP** accepts them, even
   when it isn't in `ingest.tokens`. Choose **Refuse them** once every agent has its
-  configuration from **Add data**.
+  configuration from **Add data**; that ends it for good.
+
+On the Docker quick start the check also says why the old example token is refused: the
+install started new, it was upgraded and agents on plain HTTP were refused since a date,
+or Signalith couldn't yet ask OpenSearch which it is. See
+[The Docker quick start's old example token](https.md#the-docker-quick-starts-old-example-token).
 
 **To fix:** add a new token with `sudo signalith secrets set ingest.tokens` (press Enter
 to have one made), give each agent a new configuration from **Add data**, then remove the

@@ -212,7 +212,7 @@ func TestSampleDataEndToEnd(t *testing.T) {
 	}
 
 	// Every enabled detection that raises findings raised at least one.
-	sampleFindings, _, err := fstore.Search(ctx, findings.Filter{Sample: st.ID, Limit: 10000})
+	sampleFindings, _, err := fstore.Search(ctx, findings.Filter{Sample: &st.ID, Limit: 10000})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -342,7 +342,7 @@ func TestSampleDataEndToEnd(t *testing.T) {
 	}
 	_ = cl.Do(ctx, http.MethodPut, "/"+blocked+"/_settings", map[string]any{"index.blocks.write": nil}, nil)
 
-	if left, _, _ := fstore.Search(ctx, findings.Filter{Sample: st.ID, Limit: 100}); len(left) != 0 {
+	if left, _, _ := fstore.Search(ctx, findings.Filter{Sample: &st.ID, Limit: 100}); len(left) != 0 {
 		t.Errorf("%d sample findings remain", len(left))
 	}
 	if f, err := fstore.Get(ctx, realDC.ID); err != nil || f.Owner != "analyst1" {
@@ -413,7 +413,7 @@ func TestSampleDataEndToEnd(t *testing.T) {
 	if n := count(datamodel.SampleField + "=* earliest=-8d latest=+8d | stats count"); n != 0 {
 		t.Errorf("%d marked docs remain after removing the partial load", n)
 	}
-	if left, _, _ := fstore.Search(ctx, findings.Filter{Sample: cur.ID, Limit: 100}); len(left) != 0 {
+	if left, _, _ := fstore.Search(ctx, findings.Filter{Sample: &cur.ID, Limit: 100}); len(left) != 0 {
 		t.Errorf("%d findings of the partial load remain", len(left))
 	}
 }

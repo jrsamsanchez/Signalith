@@ -198,19 +198,64 @@ func TestPlainIngest(t *testing.T) {
 	if warn, _ := json.Marshal(h["warnings"]); !strings.Contains(string(warn), "turned away for sending over plain HTTP (server.tls.plaintext_ingest is deny): 127.0.0.1") {
 		t.Errorf("health after a refusal: %s", warn)
 	}
+	// Without a token of this server's, it is refused as over HTTPS (401,
+	// not told to try again) and not counted as an agent on plain HTTP.
+	ts, s = newPlainSide(t, func(s *Server) {
+		s.Config.Server.TLS = &config.ServerTLS{Mode: "auto", PlaintextIngest: "deny"}
+	})
+	for _, hdr := range []map[string]string{{"Authorization": "Bearer wrong-token-0123456"}, nil} {
+		resp, body = plainSend(t, "POST", ts.URL+"/api/ingest", batch, hdr)
+		if resp.StatusCode != http.StatusUnauthorized || resp.Header.Get("Retry-After") != "" || !strings.Contains(body, "missing or invalid ingest token") {
+			t.Errorf("plain ingest denied, token %v: %d %s", hdr, resp.StatusCode, body)
+		}
+	}
+	if r := s.Pipeline.RefusedSenders(time.Time{}); len(r) != 1 || r[0].Reason != ingest.RefusedToken {
+		t.Errorf("refused = %+v", r)
+	}
 }
 
 // TestOldDockerToken checks agents set up by the older Docker quick
 // start, which all sent the example token change-this-ingest-token over
-// plain HTTP. In a container they keep sending over plain HTTP while it is
-// allowed, and are listed to update. Over HTTPS the token is refused with
-// 503, which Fluent Bit keeps and sends again. Anywhere else it is just a
-// wrong token.
+// plain HTTP. On a quick start upgraded from it they keep sending over
+// plain HTTP while that is allowed (by default there), and are listed to
+// update. Over HTTPS, and before Signalith knows whether the quick start
+// was upgraded, the token is refused with 503, which Fluent Bit keeps and
+// sends again. On a quick start installed new, and anywhere else, it is
+// just a wrong token, since anyone can look it up: 401, even over plain
+// HTTP.
 func TestOldDockerToken(t *testing.T) {
 	batch := `[{"Computer":"WIN-01","EventID":4624,"Channel":"Security"}]`
 	old := map[string]string{"Authorization": "Bearer change-this-ingest-token"}
-	docker := func(s *Server) { s.Runtime = &Runtime{OS: "linux", Container: true, Addresses: []string{}} }
-	ts, s := newPlainSide(t, docker)
+	// The Docker quick start's own config: HTTPS, plaintext_ingest not set.
+	quickStart := func(u *config.DockerUpgrade, change ...func(*Server)) func(*Server) {
+		return func(s *Server) {
+			s.Runtime = &Runtime{OS: "linux", Container: true, Addresses: []string{}}
+			s.Config.Server.TLS = &config.ServerTLS{Mode: "auto"}
+			s.Config = s.Config.WithDockerUpgrade(u)
+			for _, f := range change {
+				f(s)
+			}
+		}
+	}
+	overHTTPS := func(s *Server, token string) int {
+		t.Helper()
+		ts := httptest.NewTLSServer(s.Handler())
+		defer ts.Close()
+		req, _ := http.NewRequest("POST", ts.URL+"/api/ingest", strings.NewReader(batch))
+		req.Header.Set("Authorization", "Bearer "+token)
+		resp, err := ts.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	upgraded := &config.DockerUpgrade{Upgraded: true, Decided: time.Now()}
+
+	ts, s := newPlainSide(t, quickStart(upgraded))
+	if !s.Config.Server.PlaintextIngest() {
+		t.Error("an upgraded quick start refuses agents on plain HTTP")
+	}
 	if resp, body := plainSend(t, "POST", ts.URL+"/api/ingest", batch, old); resp.StatusCode != http.StatusOK {
 		t.Fatalf("old agent over plain HTTP: %d %s", resp.StatusCode, body)
 	}
@@ -218,37 +263,136 @@ func TestOldDockerToken(t *testing.T) {
 		t.Errorf("plain senders %+v", p)
 	}
 	_, h := do(t, mustServe(t, s), "GET", "/api/health", "", true)
-	if warn, _ := json.Marshal(h["warnings"]); !strings.Contains(string(warn), "127.0.0.1 (WIN-01)") || !strings.Contains(string(warn), "Docker's port forwarding") {
+	if warn, _ := json.Marshal(h["warnings"]); !strings.Contains(string(warn), "127.0.0.1 (WIN-01)") || !strings.Contains(string(warn), "Docker's port forwarding") ||
+		!strings.Contains(string(warn), "That also ends for good the example token change-this-ingest-token") {
 		t.Errorf("health: %s", warn)
 	}
 	// Over HTTPS: refused, but kept by the agent.
-	tls := httptest.NewTLSServer(s.Handler())
-	defer tls.Close()
-	req, _ := http.NewRequest("POST", tls.URL+"/api/ingest", strings.NewReader(batch))
-	req.Header.Set("Authorization", old["Authorization"])
-	resp, err := tls.Client().Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusServiceUnavailable {
-		t.Errorf("old token over HTTPS: %d", resp.StatusCode)
+	if code := overHTTPS(s, "change-this-ingest-token"); code != http.StatusServiceUnavailable {
+		t.Errorf("old token over HTTPS: %d", code)
 	}
 	if r := s.Pipeline.RefusedSenders(time.Time{}); len(r) != 1 || r[0].Reason != ingest.RefusedOldToken {
 		t.Errorf("refused %+v", r)
 	}
-	// Plain-text ingest denied: refused like every plain-HTTP agent.
-	ts, _ = newPlainSide(t, func(s *Server) {
-		docker(s)
-		s.Config.Server.TLS = &config.ServerTLS{Mode: "auto", PlaintextIngest: "deny"}
-	})
-	if resp, _ := plainSend(t, "POST", ts.URL+"/api/ingest", batch, old); resp.StatusCode != http.StatusServiceUnavailable {
-		t.Errorf("old token with deny: %d", resp.StatusCode)
+	// Plain-text ingest denied: refused like every plain-HTTP agent, and
+	// so once the token has ended.
+	for name, u := range map[string]*config.DockerUpgrade{"denied": upgraded, "ended": {Upgraded: true, Decided: time.Now(), Ended: time.Now()}} {
+		ts, s = newPlainSide(t, quickStart(u, func(s *Server) { s.Config.Server.TLS.PlaintextIngest = "deny" }))
+		if resp, _ := plainSend(t, "POST", ts.URL+"/api/ingest", batch, old); resp.StatusCode != http.StatusServiceUnavailable {
+			t.Errorf("%s: old token over plain HTTP: %d", name, resp.StatusCode)
+		}
+		if r := s.Pipeline.RefusedSenders(time.Time{}); len(r) != 1 || r[0].Reason != ingest.RefusedPlaintext {
+			t.Errorf("%s: refused %+v", name, r)
+		}
+	}
+	// Ended, with agents on plain HTTP accepted again: still refused, as a
+	// batch the agent keeps.
+	ts, s = newPlainSide(t, quickStart(&config.DockerUpgrade{Upgraded: true, Decided: time.Now(), Ended: time.Now()},
+		func(s *Server) { s.Config.Server.TLS.PlaintextIngest = "allow" }))
+	if resp, _ := plainSend(t, "POST", ts.URL+"/api/ingest", batch, old); resp.StatusCode != http.StatusServiceUnavailable || s.Pipeline.Stats().Received != 0 {
+		t.Errorf("ended, plain allowed again: %d", resp.StatusCode)
+	}
+	// Not decided yet: refused, as a batch the agent keeps.
+	ts, s = newPlainSide(t, quickStart(nil, func(s *Server) { s.Config.Server.TLS.PlaintextIngest = "allow" }))
+	if resp, _ := plainSend(t, "POST", ts.URL+"/api/ingest", batch, old); resp.StatusCode != http.StatusServiceUnavailable || s.Pipeline.Stats().Received != 0 {
+		t.Errorf("not decided: %d", resp.StatusCode)
+	}
+
+	// A quick start installed new: a wrong token, over plain HTTP too,
+	// and nothing is stored.
+	fresh := &config.DockerUpgrade{Decided: time.Now()}
+	ts, s = newPlainSide(t, quickStart(fresh))
+	if s.Config.Server.PlaintextIngest() {
+		t.Error("a new quick start accepts agents on plain HTTP")
+	}
+	if resp, body := plainSend(t, "POST", ts.URL+"/api/ingest", batch, old); resp.StatusCode != http.StatusUnauthorized || s.Pipeline.Stats().Received != 0 ||
+		resp.Header.Get("Retry-After") != "" || !strings.Contains(body, "missing or invalid ingest token") {
+		t.Errorf("new quick start, plain HTTP: %d %s", resp.StatusCode, body)
+	}
+	if code := overHTTPS(s, "change-this-ingest-token"); code != http.StatusUnauthorized {
+		t.Errorf("new quick start, HTTPS: %d", code)
+	}
+	if r := s.Pipeline.RefusedSenders(time.Time{}); len(r) != 1 || r[0].Reason != ingest.RefusedToken {
+		t.Errorf("refused %+v", r)
+	}
+	// Its own agents' token is refused over plain HTTP as a batch they
+	// keep, and works over HTTPS.
+	if resp, _ := plainSend(t, "POST", ts.URL+"/api/ingest", batch, map[string]string{"Authorization": "Bearer tok-0123456789abcdef"}); resp.StatusCode != http.StatusServiceUnavailable {
+		t.Errorf("new quick start, own token over plain HTTP: %d", resp.StatusCode)
+	}
+	if code := overHTTPS(s, "tok-0123456789abcdef"); code != http.StatusOK {
+		t.Errorf("new quick start, own token over HTTPS: %d", code)
+	}
+	// Agents on plain HTTP accepted there by choice: still a wrong token.
+	ts, s = newPlainSide(t, quickStart(fresh, func(s *Server) { s.Config.Server.TLS.PlaintextIngest = "allow" }))
+	if resp, _ := plainSend(t, "POST", ts.URL+"/api/ingest", batch, old); resp.StatusCode != http.StatusUnauthorized || s.Pipeline.Stats().Received != 0 {
+		t.Errorf("new quick start, plain HTTP accepted: %d", resp.StatusCode)
 	}
 	// Not in a container: that token was never this server's.
-	ts, s = newPlainSide(t, func(s *Server) { s.Runtime = &Runtime{OS: "linux", Addresses: []string{}} })
+	ts, s = newPlainSide(t, func(s *Server) {
+		s.Runtime = &Runtime{OS: "linux", Addresses: []string{}}
+		s.Config = s.Config.WithDockerUpgrade(upgraded)
+	})
 	if resp, _ := plainSend(t, "POST", ts.URL+"/api/ingest", batch, old); resp.StatusCode != http.StatusUnauthorized || s.Pipeline.Stats().Received != 0 {
 		t.Errorf("old token outside a container: %d", resp.StatusCode)
+	}
+}
+
+// TestOldDockerTokenEnds checks that refusing agents on plain HTTP on an
+// upgraded Docker quick start ends the example token for good: it is
+// noted in the state folder, and accepting them again does not bring the
+// token back.
+func TestOldDockerTokenEnds(t *testing.T) {
+	state := t.TempDir()
+	t.Setenv("SIGNALITH_STATE_DIR", state)
+	if err := config.WriteDockerUpgrade(state, &config.DockerUpgrade{Upgraded: true, Decided: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	ts, srv, _ := newSettingsServer(t, "server:\n  listen: 0.0.0.0:18749\n  tls:\n    mode: auto\n", func(s *Server) {
+		s.Runtime = &Runtime{OS: "linux", Container: true, Addresses: []string{}}
+	})
+	if srv.Config.OldToken() != config.OldTokenAccepted || !srv.Config.Server.PlaintextIngest() {
+		t.Fatalf("loaded: %v %v", srv.Config.OldToken(), srv.Config.Server.PlaintextIngest())
+	}
+	plain := httptest.NewServer(srv.PlainHandler(srv.Handler()))
+	defer plain.Close()
+	send := func(token string) int {
+		t.Helper()
+		resp, _ := plainSend(t, "POST", plain.URL+"/api/ingest", `[{"log":"hello"}]`, map[string]string{"Authorization": "Bearer " + token})
+		return resp.StatusCode
+	}
+	if code := send("change-this-ingest-token"); code != http.StatusOK {
+		t.Fatalf("old token before: %d", code)
+	}
+	// Starting with agents on plain HTTP accepted changes nothing.
+	srv.EndOldTokenIfRefused()
+	if u, _ := config.ReadDockerUpgrade(state); u == nil || !u.Ended.IsZero() {
+		t.Fatalf("ended while accepted: %+v", u)
+	}
+	if code, out := do(t, ts, "PUT", "/api/settings", `{"values":{"server.tls.plaintext_ingest":"deny"}}`, true); code != 200 {
+		t.Fatalf("deny %d %v", code, out)
+	}
+	u, err := config.ReadDockerUpgrade(state)
+	if err != nil || u == nil || !u.Upgraded || u.Ended.IsZero() {
+		t.Fatalf("after deny: %+v %v", u, err)
+	}
+	if srv.Running().OldToken() != config.OldTokenEnded {
+		t.Errorf("running: %v", srv.Running().OldToken())
+	}
+	do(t, ts, "PUT", "/api/settings", `{"values":{"server.tls.plaintext_ingest":"allow"}}`, true)
+	if code := send("change-this-ingest-token"); code != http.StatusServiceUnavailable {
+		t.Errorf("old token after it ended, plain HTTP accepted again: %d", code)
+	}
+	if code := send("tok-0123456789abcdef"); code != http.StatusOK {
+		t.Errorf("own token, plain HTTP accepted again: %d", code)
+	}
+	// A restart reads it from the state folder.
+	c, err := config.Load(srv.Config.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.OldToken() != config.OldTokenEnded {
+		t.Errorf("after a restart: %v", c.OldToken())
 	}
 }
 
@@ -513,7 +657,7 @@ func TestHealthShowsTLS(t *testing.T) {
 }
 
 func TestPlaintextWarning(t *testing.T) {
-	one := plaintextWarning([]ingest.Sender{{Address: "192.0.2.4"}}, false)
+	one := plaintextWarning([]ingest.Sender{{Address: "192.0.2.4"}}, false, false)
 	if !strings.HasPrefix(one, "An agent still sends") || !strings.Contains(one, ": 192.0.2.4.") || !strings.Contains(one, "plaintext_ingest: deny in signalith.yaml.") {
 		t.Errorf("one: %s", one)
 	}
@@ -521,15 +665,22 @@ func TestPlaintextWarning(t *testing.T) {
 	for _, a := range []string{"192.0.2.1", "192.0.2.2", "192.0.2.3", "192.0.2.4", "192.0.2.5", "192.0.2.6", "192.0.2.7"} {
 		many = append(many, ingest.Sender{Address: a})
 	}
-	if got := plaintextWarning(many, false); !strings.HasPrefix(got, "7 agents still send") ||
+	if got := plaintextWarning(many, false, false); !strings.HasPrefix(got, "7 agents still send") ||
 		!strings.Contains(got, "192.0.2.1, 192.0.2.2, 192.0.2.3, 192.0.2.4, 192.0.2.5 and 2 more.") || strings.Contains(got, "Docker") {
 		t.Errorf("many: %s", got)
 	}
 	// Behind Docker Desktop every agent has the gateway's address: the
 	// host names in their events count and name them.
-	got := plaintextWarning([]ingest.Sender{{Address: "192.168.65.1", Hosts: []string{"WIN-01", "web-02", "web-03"}}}, true)
+	got := plaintextWarning([]ingest.Sender{{Address: "192.168.65.1", Hosts: []string{"WIN-01", "web-02", "web-03"}}}, true, false)
 	if !strings.HasPrefix(got, "3 agents still send") || !strings.Contains(got, "192.168.65.1 (WIN-01, web-02, web-03)") ||
-		!strings.Contains(got, "deploy/docker/signalith.yaml") || !strings.Contains(got, "names in brackets come from their events") {
+		!strings.Contains(got, "deploy/docker/signalith.yaml") || !strings.Contains(got, "names in brackets come from their events") ||
+		strings.Contains(got, "change-this-ingest-token") {
 		t.Errorf("docker: %s", got)
+	}
+	// On a quick start upgraded from one whose agents send the example
+	// token, refusing them ends it.
+	got = plaintextWarning([]ingest.Sender{{Address: "192.168.65.1", Hosts: []string{"WIN-01"}}}, true, true)
+	if !strings.Contains(got, "That also ends for good the example token change-this-ingest-token") {
+		t.Errorf("old token: %s", got)
 	}
 }

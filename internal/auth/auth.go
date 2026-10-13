@@ -22,6 +22,10 @@ type Session struct {
 	// Remember keeps the session through idle periods up to MaxAge, for a
 	// "keep me signed in" sign-in.
 	Remember bool
+	// Version identifies the password the user signed in with ("" when
+	// there is none to follow), so a session can end when the password
+	// changes on another server that shares the users file.
+	Version string
 }
 
 // Sessions stores sessions by a hash of their token, so the tokens
@@ -108,6 +112,19 @@ func (s *Sessions) SetIdle(idle time.Duration) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.Idle = idle
+}
+
+// SetVersion records which password a session's user has now (see
+// Session.Version).
+func (s *Sessions) SetVersion(token, version string) {
+	if token == "" {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if ss, ok := s.byID[hash(token)]; ok {
+		ss.Version = version
+	}
 }
 
 // Delete ends a session.

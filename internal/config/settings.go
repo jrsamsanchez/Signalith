@@ -220,7 +220,8 @@ var Registry = []Setting{
 		Placeholder: "/etc/signalith/tls/key.pem", problem: tlsFileProblem("server.tls_key")},
 	{Key: "server.tls.plaintext_ingest", Scope: ScopeCluster, Section: "https", Label: "Agents on plain HTTP", Type: TypeChoice,
 		Help: "Agents set up before HTTPS was the default still send to an http:// address. Accept them while you give each one a new configuration from Add data " +
-			"(the Health page lists those still on plain HTTP, whose events anyone on the network can read), then refuse them. A refused agent keeps its events and sends them again once it is updated.",
+			"(the Health page lists those still on plain HTTP, whose events anyone on the network can read), then refuse them. A refused agent keeps its events and sends them again once it is updated. " +
+			"On a Docker quick start upgraded from an older version, refusing them also ends the old example token change-this-ingest-token for good.",
 		Choices: []Choice{{"deny", "Refuse them"}, {"allow", "Accept them for now"}}},
 	{Key: "server.trusted_proxies", Scope: ScopeCluster, Section: "https", Label: "Trusted reverse proxies", Type: TypeList,
 		Help:        "IP addresses or ranges of reverse proxies in front of Signalith. Only from them is X-Forwarded-Proto believed, so a browser that reached the proxy over HTTPS gets the HTTPS-only sign-in cookie and is not sent to https:// again.",

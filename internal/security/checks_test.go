@@ -1072,18 +1072,51 @@ func TestAgentTokens(t *testing.T) {
 					t.Errorf("%q", c.Fix.Commands)
 				}
 			}},
-		// The Docker quick start still accepts the old example token over
-		// plain HTTP while agents on plain HTTP are (see
-		// api.retiredTokenAccepted), whatever tokens are set.
+		// A Docker quick start upgraded from a version whose agents send
+		// the old example token accepts it over plain HTTP while agents on
+		// plain HTTP are (see api.retiredTokenAccepted), whatever tokens
+		// are set.
 		{name: "public token accepted", extra: "ingest:\n  tokens: [" + sentinelToken + "]\n", set: func(f *Facts) {
+			f.Config = f.Config.WithDockerUpgrade(&config.DockerUpgrade{Upgraded: true, Index: "signalith-authentication-2026.09.30",
+				IndexMade: time.Date(2026, 9, 30, 0, 4, 0, 0, time.UTC), Decided: now})
 			f.InContainer, f.Docker, f.PublicTokenAccepted = true, true, true
 		}, state: Risk, line: "Agents can still send events over plain HTTP with change-this-ingest-token, an example token anyone can look up.",
 			fix: func(t *testing.T, c *Check) {
 				if c.Fix.Setting != "server.tls.plaintext_ingest" || c.Fix.Page == nil || c.Fix.Page.ID != "data" {
 					t.Errorf("%+v", c.Fix)
 				}
+				if len(c.Details) != 2 || !strings.Contains(c.Details[0], "upgraded from an older version") || !strings.Contains(c.Details[0], "the oldest from 30 Sep 2026") ||
+					!strings.Contains(c.Details[1], "ends it for good") {
+					t.Errorf("%q", c.Details)
+				}
 			}},
 		{name: "public token accepted, no tokens", set: func(f *Facts) { f.PublicTokenAccepted = true }, state: Risk},
+		// Elsewhere on the Docker quick start, the check says why the old
+		// token is refused.
+		{name: "quick start installed new", extra: "ingest:\n  tokens: [" + sentinelToken + "]\n", set: func(f *Facts) {
+			f.Config = f.Config.WithDockerUpgrade(&config.DockerUpgrade{Decided: now})
+			f.InContainer, f.Docker = true, true
+		}, state: Good, fix: func(t *testing.T, c *Check) {
+			if len(c.Details) != 2 || !strings.Contains(c.Details[1], "change-this-ingest-token, is refused: this install started new") {
+				t.Errorf("%q", c.Details)
+			}
+		}},
+		{name: "quick start not decided yet", extra: "ingest:\n  tokens: [" + sentinelToken + "]\n", set: func(f *Facts) {
+			f.Config = f.Config.WithDockerUpgrade(nil)
+			f.InContainer, f.Docker = true, true
+		}, state: Good, fix: func(t *testing.T, c *Check) {
+			if len(c.Details) != 2 || !strings.Contains(c.Details[1], "is refused for now") || !strings.Contains(c.Details[1], "keep their events") {
+				t.Errorf("%q", c.Details)
+			}
+		}},
+		{name: "upgraded quick start, ended", extra: "ingest:\n  tokens: [" + sentinelToken + "]\n", set: func(f *Facts) {
+			f.Config = f.Config.WithDockerUpgrade(&config.DockerUpgrade{Upgraded: true, Decided: now, Ended: time.Date(2026, 10, 2, 9, 0, 0, 0, time.UTC)})
+			f.InContainer, f.Docker = true, true
+		}, state: Good, fix: func(t *testing.T, c *Check) {
+			if len(c.Details) != 2 || !strings.Contains(c.Details[1], "is refused for good") || !strings.Contains(c.Details[1], "since 2 Oct 2026") {
+				t.Errorf("%q", c.Details)
+			}
+		}},
 		{name: "short", extra: "ingest:\n  tokens: [SENTINEL-short-tok20]\n", state: Attention,
 			line: "An agent token is only 20 characters long, so it's easier to guess. Tokens Signalith makes have 48."},
 	})

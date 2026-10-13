@@ -98,8 +98,10 @@ type Filter struct {
 	Owner     string
 	Text      string // title, description, ID or an entity value
 	FindingID string
-	// Sample keeps only cases with this sample-load marker.
-	Sample string
+	// Sample, when set, keeps only cases with this sample-load marker. A
+	// marker is never empty, so a set but empty one matches no case: it
+	// never means "every case".
+	Sample *string
 	Limit  int
 }
 

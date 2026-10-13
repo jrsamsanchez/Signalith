@@ -48,7 +48,7 @@ func (h Host) getenv(name string) string {
 // NewFacts starts the facts with what the configuration says.
 func NewFacts(h Host, now time.Time, server ServerInfo) *Facts {
 	f := &Facts{Now: now, Server: server, Config: h.Config, InContainer: h.InContainer, Docker: h.Docker, SettingEnv: map[string]string{}}
-	f.PublicTokenAccepted = h.InContainer && h.Config.Server.HTTPS() && h.Config.Server.PlaintextIngest()
+	f.PublicTokenAccepted = h.InContainer && h.Config.OldTokenAccepted()
 	if f.Server.OS == "" {
 		f.Server.OS = h.GOOS
 	}
@@ -375,14 +375,7 @@ func FeedsFrom(views []intel.FeedView) []Feed {
 // DockerQuickStart reports whether the environment is that of the
 // Docker quick start's container, which reads its first secrets from
 // /run/signalith-secrets.
-func DockerQuickStart(getenv func(string) string) bool {
-	for _, k := range []string{"SIGNALITH_ADMIN_PASSWORD_FILE", "SIGNALITH_INGEST_TOKEN_FILE"} {
-		if strings.HasPrefix(getenv(k), "/run/signalith-secrets/") {
-			return true
-		}
-	}
-	return false
-}
+func DockerQuickStart(getenv func(string) string) bool { return config.DockerQuickStart(getenv) }
 
 // ServerHost describes this process, for the server's own checks.
 func ServerHost(c *config.Config, inContainer bool) Host {

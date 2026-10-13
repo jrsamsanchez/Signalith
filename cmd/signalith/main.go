@@ -807,6 +807,19 @@ func serve(ctx context.Context, path string, log *slog.Logger) error {
 	}
 	defer node.Close()
 	defer node.Stop()
+	// The first start of the Docker quick start with this version decides
+	// whether it was upgraded from one whose agents send the example
+	// ingest token (see config.Config.OldToken).
+	if c.OldToken() == config.OldTokenUndecided {
+		cl := newStore(c)
+		decided := decideDockerUpgradeAtStart(ctx, c, cl, log)
+		cl.CloseIdleConnections()
+		if decided {
+			if c, err = loadConfig(path, log); err != nil {
+				return err
+			}
+		}
+	}
 	r := newRunner(path, log)
 	r.node = node
 	// The node outlives ctx: stopping gives the job lease up first, which
@@ -1172,6 +1185,10 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		in.node = r.node
 	}
 	in.srv, in.handler = srv, srv.Handler()
+	// The example ingest token of an older Docker quick start: decide
+	// whether this one was upgraded if that is still open, and end it for
+	// good once agents on plain HTTP are refused.
+	in.jobs.Go(func() { settleDockerUpgrade(ctx, c, cl, srv, log) })
 	// The security checks: 30 seconds after the process started, a moment
 	// after a restart in place, then hourly.
 	in.jobs.Go(func() { srv.RunSecurityChecks(ctx, api.SecurityDelay(r.started)) })

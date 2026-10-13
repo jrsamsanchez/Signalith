@@ -75,7 +75,9 @@ over TLS private (see [HTTPS](https.md)):
 - **Certificate file** and **Key file**: used only with your own certificate files. The
   page checks that they load before saving.
 - **Agents on plain HTTP**: whether agents set up for `http://` may still send while you
-  update them from **Add data**. Applies at once.
+  update them from **Add data**. Applies at once. On a Docker quick start upgraded from an
+  older version, choosing **Refuse them** also ends the old example token
+  `change-this-ingest-token` for good.
 - **Trusted reverse proxies**: the proxies whose `X-Forwarded-Proto` header is believed.
   Applies at once. With this empty, a `signalith.yaml` from before HTTPS was the default
   believes a proxy on this computer or a private network, and the field says so; listing

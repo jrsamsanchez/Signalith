@@ -164,8 +164,13 @@ func filterQuery(flt Filter) map[string]any {
 	if flt.DetectionID != "" {
 		fs = append(fs, map[string]any{"term": map[string]any{"detection_id": flt.DetectionID}})
 	}
-	if flt.Sample != "" {
-		fs = append(fs, map[string]any{"term": map[string]any{"sample": flt.Sample}})
+	if flt.Sample != nil {
+		if *flt.Sample == "" {
+			// No marker is empty: a search for the empty one finds
+			// nothing, never everything.
+			return map[string]any{"match_none": map[string]any{}}
+		}
+		fs = append(fs, map[string]any{"term": map[string]any{"sample": *flt.Sample}})
 	}
 	if len(flt.EntityValues) > 0 {
 		fs = append(fs, map[string]any{"terms": map[string]any{"entity_values": flt.EntityValues}})
