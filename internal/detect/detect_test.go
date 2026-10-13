@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jrsamsanchez/signalith/internal/datamodel"
 	"github.com/jrsamsanchez/signalith/internal/findings"
 	"github.com/jrsamsanchez/signalith/internal/intel"
 	"github.com/jrsamsanchez/signalith/internal/query"
@@ -22,8 +23,8 @@ func TestBuiltinsCompile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(ds) < 15 {
-		t.Fatalf("only %d built-in detections", len(ds))
+	if len(ds) != 32 {
+		t.Fatalf("%d built-in detections, want 32", len(ds))
 	}
 	eng := &search.Engine{Intel: intel.NewStore(intel.NewMemory())}
 	for _, d := range ds {
@@ -429,4 +430,130 @@ func TestSchedulerAsksAllowed(t *testing.T) {
 	if res, err := s.Run(context.Background(), d); err != nil || len(res.Findings) != 1 {
 		t.Fatalf("a run by hand: %+v %v", res, err)
 	}
+}
+
+// Every ATT&CK ID a built-in detection names is in the bundled matrix.
+func TestBuiltinTechniquesKnown(t *testing.T) {
+	ds, err := Builtin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cov := ComputeCoverage(ds); len(cov.Unknown) > 0 {
+		t.Errorf("unknown ATT&CK IDs (technique -> detection): %v", cov.Unknown)
+	}
+}
+
+// Every field a built-in detection filters or groups on exists in its data
+// model, or is a common field, so a typo cannot leave a detection that
+// never fires.
+func TestBuiltinFieldsExist(t *testing.T) {
+	ds, err := Builtin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range ds {
+		q, err := query.Parse(d.Query)
+		if err != nil {
+			t.Errorf("%s: %v", d.ID, err)
+			continue
+		}
+		if q.Datamodel == "" {
+			continue
+		}
+		if _, ok := datamodel.Get(q.Datamodel); !ok {
+			t.Errorf("%s: unknown data model %s", d.ID, q.Datamodel)
+			continue
+		}
+		known := map[string]bool{}
+		for _, f := range datamodel.FieldsFor(q.Datamodel) {
+			known[f.Name] = true
+		}
+		for _, f := range leadingFields(q) {
+			if !known[f] {
+				t.Errorf("%s: field %s is not in data model %s", d.ID, f, q.Datamodel)
+			}
+		}
+	}
+}
+
+// leadingFields returns the fields a query's search and its first
+// aggregating command read.
+func leadingFields(q *query.Query) []string {
+	var out []string
+	var walk func(e query.Expr)
+	walk = func(e query.Expr) {
+		switch x := e.(type) {
+		case *query.And:
+			for _, c := range x.Children {
+				walk(c)
+			}
+		case *query.Or:
+			for _, c := range x.Children {
+				walk(c)
+			}
+		case *query.Not:
+			walk(x.Child)
+		case *query.Compare:
+			out = append(out, x.Field)
+		case *query.In:
+			out = append(out, x.Field)
+		}
+	}
+	if q.Search != nil {
+		walk(q.Search)
+	}
+	if len(q.Commands) > 0 {
+		switch c := q.Commands[0].(type) {
+		case *query.Stats:
+			for _, a := range c.Aggs {
+				if a.Field != "" {
+					out = append(out, a.Field)
+				}
+			}
+			out = append(out, c.By...)
+		case *query.Timechart:
+			for _, a := range c.Aggs {
+				if a.Field != "" {
+					out = append(out, a.Field)
+				}
+			}
+			if c.By != "" {
+				out = append(out, c.By)
+			}
+		case *query.Top:
+			out = append(out, c.Fields...)
+			out = append(out, c.By...)
+		}
+	}
+	return out
+}
+
+func TestConvertSigmaAntivirus(t *testing.T) {
+	res, err := ConvertSigma([]byte("title: Mimikatz found by antivirus\nlogsource:\n  category: antivirus\ndetection:\n  sel:\n    Signature|contains: Mimikatz\n    Filename|endswith: '.exe'\n  condition: sel\nlevel: high\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := res.Detection.Query
+	for _, want := range []string{"datamodel=Malware", "signature=*Mimikatz*", "file_path=*.exe"} {
+		if !strings.Contains(q, want) {
+			t.Errorf("query missing %s: %s", want, q)
+		}
+	}
+	for _, w := range res.Warnings {
+		if strings.Contains(w, "no Signalith mapping") || strings.Contains(w, "no Signalith data model") {
+			t.Errorf("unexpected warning: %s", w)
+		}
+	}
+	if _, err := (&search.Engine{}).Compile(mustParse(t, q)); err != nil {
+		t.Errorf("compile: %v", err)
+	}
+}
+
+func mustParse(t *testing.T, s string) *query.Query {
+	t.Helper()
+	q, err := query.Parse(s)
+	if err != nil {
+		t.Fatalf("%s: %v", s, err)
+	}
+	return q
 }

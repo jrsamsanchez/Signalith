@@ -1,5 +1,6 @@
-// Dashboards: the built-in security posture summary and custom dashboards
-// of query panels. Charts here are drawn with the shared .chart, .rank,
+// Dashboards: the built-in security posture summary, built-in panel
+// dashboards such as Malware (read-only; they can be copied), and custom
+// dashboards of query panels. Charts here are drawn with the shared .chart, .rank,
 // .tip and .legend components; app.js keeps the Search page's charts.
 // Everything lives in one function scope so these helpers never collide
 // with the other page scripts, which share the global scope.
@@ -36,6 +37,16 @@
     sevs: null, // detection id -> severity, for the glyphs in Top detections
     sevsAt: 0,
   };
+
+  // The three kinds of dashboard: posture (computed), built-in panel
+  // dashboards and custom ones.
+  const BUILTIN_ICON = { posture: 'shield', malware: 'bug' };
+  const kindOf = (id) => {
+    if (id === 'posture') return 'posture';
+    const meta = dash.list.find((d) => d.id === id);
+    return (meta && meta.builtin) || (dash.def && dash.def.id === id && dash.def.builtin) ? 'builtin' : 'custom';
+  };
+  const isBuiltinPanels = () => kindOf(dash.current) === 'builtin';
 
   // ---------- small helpers ----------
   const put = (n, ...kids) => n.replaceChildren(...kids.filter((k) => k != null));
@@ -430,7 +441,7 @@
     const items = dash.list.map((d) => {
       const cur = d.id === dash.current;
       return el('button', attrs({ class: 'menu__item', type: 'button', 'data-id': d.id, onclick: () => { close(); showDashboard(d.id); } }, { 'aria-current': cur ? 'true' : null }),
-        icon(d.builtin ? 'shield' : 'layout-dashboard'), el('span', {}, d.title),
+        icon(d.builtin ? BUILTIN_ICON[d.id] || 'shield' : 'layout-dashboard'), el('span', {}, d.title),
         d.builtin ? el('span', { class: 'badge' }, 'Built-in') : null,
         cur ? icon('check', 'db-check') : null);
     });
@@ -441,12 +452,19 @@
 
   function setHeader(id) {
     const meta = dash.list.find((d) => d.id === id) || {};
-    const custom = id !== 'posture';
+    const kind = kindOf(id);
+    const custom = id !== 'posture'; // has panels
     const title = (custom && dash.def && dash.def.id === id ? dash.def.title : meta.title) || (custom ? id : 'Security posture');
     $('db-name').textContent = title;
-    $('db-builtin').classList.toggle('hidden', custom);
+    $('db-switch-icon').replaceChildren(icon(kind === 'custom' ? 'layout-dashboard' : BUILTIN_ICON[id] || 'shield'));
+    $('db-builtin').classList.toggle('hidden', kind === 'custom');
     $('db-tools').classList.toggle('hidden', !custom);
     $('db-new').classList.toggle('hidden', custom);
+    // Built-in panel dashboards can't be changed, only copied (when this
+    // server keeps custom dashboards) and downloaded.
+    $('db-edit').classList.toggle('hidden', kind !== 'custom');
+    $('db-add').classList.toggle('hidden', kind !== 'custom');
+    $('db-copy').classList.toggle('hidden', kind !== 'builtin' || !!dash.off);
     if (custom) $('db-desc').textContent = (dash.def && dash.def.id === id ? dash.def.description : meta.description) || '';
     else $('db-desc').textContent = `Findings, triage speed, risk and data health, each compared with the previous ${rangeWords(dash.range)}.`;
     $('db-desc').classList.toggle('hidden', !$('db-desc').textContent);
@@ -840,7 +858,7 @@
   }
 
   // panelCard is one panel: title, time range, legend and an actions menu.
-  function panelCard(p, i, n, preview) {
+  function panelCard(p, i, n, preview, readOnly) {
     const body = el('div', { class: 'db-panel__body' }, panelSkeleton(p.viz));
     const item = (ic, text, onclick, extra) => el('button', attrs({
       class: 'menu__item', type: 'button',
@@ -851,12 +869,12 @@
       el('summary', { class: 'btn btn--ghost btn--icon btn--sm', title: 'Panel actions', 'aria-label': 'Actions for ' + p.title }, icon('ellipsis')),
       el('div', { class: 'menu__panel' },
         item('search', 'Open in Search', () => openSearch(...panelQuery(p, body._result))),
-        item('pencil', 'Edit panel', () => openPanelEditor({ index: i, panel: p }), edit),
+        ...(readOnly ? [] : [item('pencil', 'Edit panel', () => openPanelEditor({ index: i, panel: p }), edit),
         el('div', attrs({ class: 'menu__sep' }, edit)),
         item('arrow-up', 'Move earlier', () => movePanel(i, -1), { ...edit, disabled: i === 0 }),
         item('arrow-down', 'Move later', () => movePanel(i, 1), { ...edit, disabled: i === n - 1 }),
         el('div', attrs({ class: 'menu__sep' }, edit)),
-        item('trash-2', 'Remove panel', () => removePanel(i), { ...edit, class: 'menu__item menu__item--danger' })));
+        item('trash-2', 'Remove panel', () => removePanel(i), { ...edit, class: 'menu__item menu__item--danger' })])));
     const c = card({ title: p.title || 'Preview', sub: lastRange(dash.range), actions: menu ? [menu] : [], cls: 'db-panel db-w-' + (p.width || 'half') }, body);
     body._sub = c._sub;
     body._legend = c._legend;
@@ -870,6 +888,7 @@
     forget(body);
     body.dataset.view = dash.current;
     const d = dash.def;
+    body._empty = null;
     if (!d.panels.length) {
       put(body, el('div', { class: 'card' }, can('analyst')
         ? emptyState('layout-dashboard', 'No panels yet',
@@ -879,8 +898,11 @@
       body._boxes = [];
       return [];
     }
-    const cards = d.panels.map((p, i) => panelCard(p, i, d.panels.length));
-    put(body, el('div', { class: 'db-grid' }, ...cards));
+    const readOnly = isBuiltinPanels();
+    const cards = d.panels.map((p, i) => panelCard(p, i, d.panels.length, false, readOnly));
+    // A built-in dashboard says how to get data when every panel is empty.
+    body._empty = readOnly ? el('div', { class: 'db-empty-slot' }) : null;
+    put(body, readOnly ? body._empty : null, el('div', { class: 'db-grid' }, ...cards));
     body._boxes = cards.map((c) => c._body);
     return body._boxes;
   }
@@ -919,7 +941,47 @@
         renderPanelBody(boxes[i], d.panels[i], pr, res.range);
       }
     });
+    if (body._empty) renderNoData(body._empty, d, res.panels);
     markUpdated();
+  }
+
+  // panelEmpty: the panel ran and found nothing (a single value of 0
+  // counts as nothing).
+  const panelEmpty = (p, pr) => !pr.error && (p.viz === 'single' ? !num(pr.value) : !((pr.result || {}).rows || []).length);
+
+  // renderNoData fills the slot above a built-in dashboard's panels when
+  // none of them found anything: what data it needs and where to set it up.
+  function renderNoData(slot, d, results) {
+    const none = results.length && results.every((pr, i) => d.panels[i] && panelEmpty(d.panels[i], pr));
+    if (!none || d.id !== 'malware') { put(slot); return; }
+    const admin = typeof can === 'function' && can('admin');
+    put(slot, el('div', { class: 'card db-nodata' }, emptyState('shield-check', 'No antivirus events yet',
+      'Collect Microsoft Defender events with the Windows agent, ClamAV with the Linux agent, or send your antivirus console’s syslog to Signalith.',
+      admin ? el('button', { class: 'btn btn--primary btn--sm', type: 'button', onclick: () => openAntivirusSetup() }, icon('shield-check'), 'Set up antivirus logs') : null,
+      null, admin ? null : 'An admin can set this up on the Add data page.')));
+  }
+
+  // copyDashboard saves a built-in dashboard as a new custom one, titled
+  // "<title> (copy)", and opens it.
+  async function copyDashboard() {
+    const d = dash.def;
+    if (!d || !isBuiltinPanels()) return;
+    if (dash.off) { offNotice(); return; }
+    const btn = $('db-copy');
+    btn.disabled = true;
+    const copy = { title: d.title + ' (copy)', description: d.description || '', time_range: d.time_range || '', refresh: d.refresh || '', panels: structuredClone(d.panels || []) };
+    let saved;
+    try {
+      saved = await api('api/dashboards', copy);
+    } catch (e) {
+      sayError('Couldn’t make a copy: ' + e.message);
+      return;
+    } finally {
+      btn.disabled = false;
+    }
+    await loadDashboardList();
+    await showDashboard(saved.id);
+    say(`Made “${saved.title}”. Change it as you like; ${d.title} stays as it is.`);
   }
 
   // columnsOf splits a result's columns into labels and numbers using the
@@ -1122,7 +1184,7 @@
 
   function openDashboardEditor(isNew) {
     if (dash.off) { offNotice(); return; }
-    if (!isNew && !dash.def) return;
+    if (!isNew && (!dash.def || isBuiltinPanels())) return;
     const d = isNew ? { title: '', description: '', time_range: dash.range, refresh: '', panels: [] } : dash.def;
     const title = el('input', { class: 'input', type: 'text', value: d.title || '', placeholder: 'For example: Authentication overview', maxlength: '200', autocomplete: 'off' });
     const titleErr = el('p', { class: 'field-error', hidden: '' }, icon('circle-alert'), 'Give the dashboard a title.');
@@ -1225,6 +1287,8 @@
   // to (from the Search page).
   function openPanelEditor({ index, panel, pickTarget }) {
     if (dash.off) { offNotice(); return; }
+    // A built-in dashboard takes no panels: add to a custom one instead.
+    if (!pickTarget && isBuiltinPanels()) pickTarget = true;
     const p = { title: '', query: '', viz: '', width: '', field: '', compare: false, ...(panel || {}) };
     const isNew = index == null;
     let vizTouched = !!p.viz;
@@ -1423,6 +1487,7 @@
   $('db-new').addEventListener('click', () => openDashboardEditor(true));
   $('db-add').addEventListener('click', () => openPanelEditor({}));
   $('db-edit').addEventListener('click', () => openDashboardEditor(false));
+  $('db-copy').addEventListener('click', copyDashboard);
 
   // The switcher: arrow keys move between items; opening it focuses the
   // current dashboard.

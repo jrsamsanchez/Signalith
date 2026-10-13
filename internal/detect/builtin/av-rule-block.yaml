@@ -1,0 +1,21 @@
+id: av-rule-block
+title: Protection rule blocked on $dest$ ($rule$)
+description: A Windows protection rule (attack surface reduction or controlled folder access) blocked something that rarely happens in normal work, such as an Office document starting PowerShell.
+query: |
+  datamodel=Malware type=rule action=blocked
+  rule IN ("Vulnerable signed driver", "Persistence through WMI event subscription", "Adobe Reader started a child process", "Office app started a child process", "Executable content from email", "Obfuscated script", "Script launched downloaded executable content", "Office app created executable content", "Office app injected code into another process", "Office communication app started a child process", "Process creation from PsExec or WMI", "Reboot into Safe Mode", "Copied or impersonated system tool", "Webshell creation on a server", "Office macro called Win32 APIs", "Ransomware protection", "Controlled folder access")
+schedule: 5m
+lookback: 10m
+severity: medium
+mitre: [T1204.002, T1566.001, T1027, T1047, T1486, T1505.003, T1055, T1546.003, T1068, T1036, T1688, T1106]
+throttle:
+  fields: [dest, rule]
+  window: 4h
+risk:
+  score: 40
+  objects:
+    - {field: dest, type: system}
+    - {field: user, type: user}
+enabled: true
+tags: [malware, execution]
+guidance: The block worked, but whatever tried it is still on the host. Look at process_name (what tried) and file_path (what it tried to start or change). Credential theft from LSASS, rare or untrusted executables and untrusted USB programs are left out because they block routine software.

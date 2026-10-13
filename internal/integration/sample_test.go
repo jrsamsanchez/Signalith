@@ -17,6 +17,7 @@ import (
 
 	"github.com/jrsamsanchez/signalith/internal/assets"
 	"github.com/jrsamsanchez/signalith/internal/cases"
+	"github.com/jrsamsanchez/signalith/internal/dashboards"
 	"github.com/jrsamsanchez/signalith/internal/datamodel"
 	"github.com/jrsamsanchez/signalith/internal/detect"
 	"github.com/jrsamsanchez/signalith/internal/findings"
@@ -229,6 +230,24 @@ func TestSampleDataEndToEnd(t *testing.T) {
 			t.Errorf("detection %s raised no finding", d.ID)
 		}
 	}
+	// Antivirus findings: only real outbreaks, one finding per ransomware
+	// event, and ClamAV's report-only find on app-01 but not its quarantined
+	// cryptominer on db-01.
+	for _, f := range sampleFindings {
+		title := f.Title
+		switch {
+		case f.DetectionID == "malware-outbreak" && !strings.Contains(title, "Fakepay"):
+			t.Errorf("unexpected outbreak finding %q", title)
+		case f.DetectionID == "malware-detected" && strings.Contains(title, "Ransom:"):
+			t.Errorf("ransomware also raised %q", title)
+		case f.DetectionID == "malware-left-clamav" && !strings.Contains(title, "app-01"):
+			t.Errorf("unexpected ClamAV finding %q", title)
+		}
+	}
+	if fired["malware-left-clamav"] != 1 {
+		t.Errorf("malware-left-clamav raised %d findings, want 1", fired["malware-left-clamav"])
+	}
+
 	if fired["threat-activity"] == 0 || fired["risk-threshold-exceeded"]+fired["risk-multiple-tactics"] == 0 {
 		t.Errorf("threat intel or risk incidents did not fire: %v", fired)
 	}
@@ -247,6 +266,23 @@ func TestSampleDataEndToEnd(t *testing.T) {
 	for _, r := range res.Rows {
 		if n, _ := strconv.ParseFloat(fmt.Sprint(r["count"]), 64); n > 1 {
 			t.Errorf("risk written %v times for %v / %v on %v", n, r["detection_id"], r["group_key"], r["risk_object"])
+		}
+	}
+
+	// The built-in Malware dashboard shows the antivirus stories.
+	mw, _ := dashboards.GetBuiltin(dashboards.MalwareID)
+	for i, pr := range (&dashboards.Runner{Engine: eng}).Run(ctx, mw.Panels, "7d") {
+		p := mw.Panels[i]
+		if pr.Error != "" {
+			t.Errorf("Malware panel %q: %s", p.Title, pr.Error)
+			continue
+		}
+		min := map[string]float64{"Hosts with malware": 6, "Hosts with malware not removed": 2, "Hosts with protection off or tampered with": 1}[p.Title]
+		if n, _ := strconv.ParseFloat(fmt.Sprint(pr.Value), 64); min > 0 && n < min {
+			t.Errorf("Malware panel %q = %v, want at least %v", p.Title, pr.Value, min)
+		}
+		if p.Viz != dashboards.VizSingle && (pr.Result == nil || len(pr.Result.Rows) == 0) {
+			t.Errorf("Malware panel %q has no rows", p.Title)
 		}
 	}
 

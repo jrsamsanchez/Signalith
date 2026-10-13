@@ -101,7 +101,7 @@ func expiredBefore(indices []string, days int, now time.Time) []string {
 func TestKeepDaysMatchesRetentionDays(t *testing.T) {
 	var ixs []IndexInfo
 	var names []string
-	for _, cat := range []string{"authentication", "endpoint", "network_traffic", "change", "risk", "other"} {
+	for _, cat := range []string{"authentication", "endpoint", "network_traffic", "change", "malware", "risk", "other"} {
 		for ago := -2; ago < 200; ago += 3 {
 			i := ix(cat, ago, 100)
 			ixs = append(ixs, i)
@@ -497,10 +497,10 @@ func TestCategories(t *testing.T) {
 		ids = append(ids, c.ID)
 		names = append(names, c.Name)
 	}
-	if !slices.Equal(ids, []string{"authentication", "endpoint", "network_traffic", "change", "filesystem", "registry", "network_resolution", "image_load", "script", "inventory", "configuration_check", "alerts", "other", "risk", Findings, Cases, Intel}) {
+	if !slices.Equal(ids, []string{"authentication", "endpoint", "network_traffic", "change", "malware", "filesystem", "registry", "network_resolution", "image_load", "script", "inventory", "configuration_check", "alerts", "other", "risk", Findings, Cases, Intel}) {
 		t.Errorf("ids = %v", ids)
 	}
-	if n := len(names); names[2] != "Network traffic" || names[n-5] != "Other events" || names[n-4] != "Risk events" || names[n-2] != "Investigations" {
+	if n := len(names); names[2] != "Network traffic" || names[4] != "Malware" || names[n-5] != "Other events" || names[n-4] != "Risk events" || names[n-2] != "Investigations" {
 		t.Errorf("names = %v", names)
 	}
 }

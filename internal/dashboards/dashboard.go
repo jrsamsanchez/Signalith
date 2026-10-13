@@ -116,14 +116,35 @@ func (e *ValidationError) Error() string {
 	return "invalid dashboard:\n  - " + strings.Join(e.Problems, "\n  - ")
 }
 
-// Validate checks every field and returns all problems at once.
+// Validate checks every field and returns all problems at once. The IDs
+// of the built-in dashboards are refused, so a custom dashboard can never
+// replace one.
 func (d *Dashboard) Validate() error {
-	var p []string
+	var reserved string
 	switch {
-	case !idPattern.MatchString(d.ID):
-		p = append(p, fmt.Sprintf("id %q must be 3-64 lowercase letters, digits, - or _", d.ID))
 	case d.ID == PostureID:
-		p = append(p, `id "posture" is the built-in dashboard; choose another`)
+		reserved = `id "posture" is the built-in dashboard; choose another`
+	case IsBuiltin(d.ID):
+		reserved = fmt.Sprintf("id %q is a built-in dashboard; choose another", d.ID)
+	}
+	err := d.check()
+	if reserved == "" {
+		return err
+	}
+	var ve *ValidationError
+	if errors.As(err, &ve) {
+		ve.Problems = append([]string{reserved}, ve.Problems...)
+		return ve
+	}
+	return &ValidationError{Problems: []string{reserved}}
+}
+
+// check validates everything except the reserved IDs; the built-in
+// dashboards themselves pass it.
+func (d *Dashboard) check() error {
+	var p []string
+	if !idPattern.MatchString(d.ID) {
+		p = append(p, fmt.Sprintf("id %q must be 3-64 lowercase letters, digits, - or _", d.ID))
 	}
 	if d.Title == "" {
 		p = append(p, "title is required")
@@ -291,6 +312,11 @@ func (s *Store) List() ([]*Dashboard, []Problem, error) {
 	out := []*Dashboard{}
 	var problems []Problem
 	for _, f := range files {
+		if id := strings.TrimSuffix(filepath.Base(f), ".yaml"); IsBuiltin(id) {
+			problems = append(problems, Problem{File: filepath.Base(f), Error: fmt.Sprintf(
+				"%s.yaml uses the id of the built-in %s dashboard and is ignored. Rename the file and change its id to keep it.", id, builtinTitle(id))})
+			continue
+		}
 		d, err := s.load(f)
 		if err != nil {
 			problems = append(problems, Problem{File: filepath.Base(f), Error: err.Error()})
@@ -408,7 +434,7 @@ func (s *Store) NewID(title string) string {
 		base = "my-posture"
 	}
 	id := base
-	for n := 2; s.Exists(id); n++ {
+	for n := 2; s.Exists(id) || IsBuiltin(id); n++ {
 		id = fmt.Sprintf("%s-%d", base, n)
 	}
 	return id

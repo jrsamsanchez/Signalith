@@ -17,7 +17,7 @@ const rtState = {
 
 // ---------- formatting ----------
 const RT_ICON = {
-  authentication: 'key-round', endpoint: 'monitor', network_traffic: 'network', change: 'square-pen',
+  authentication: 'key-round', endpoint: 'monitor', network_traffic: 'network', change: 'square-pen', malware: 'bug',
   filesystem: 'folder', registry: 'layers', network_resolution: 'globe', image_load: 'cpu', script: 'square-terminal',
   inventory: 'list', configuration_check: 'list-checks', alerts: 'bell',
   other: 'box', risk: 'gauge', findings: 'shield-alert', cases: 'briefcase', intel: 'radar',

@@ -335,19 +335,49 @@ func TestEmittedFieldsAreKnown(t *testing.T) {
 			t.Errorf("CEF key %s maps to %s, which is not an ingest known field", key, cf.name)
 		}
 	}
+	for key, cf := range leefFields {
+		if !ingest.KnownField(cf.name) {
+			t.Errorf("LEEF key %s maps to %s, which is not an ingest known field", key, cf.name)
+		}
+	}
+	var lines []string
 	for _, line := range []string{
 		`<134>Oct 12 13:59:00 fw1 CEF:0|Palo Alto Networks|PAN-OS|10.1|end|TRAFFIC|3|rt=Oct 12 2026 13:58:59 UTC src=10.0.0.5 dst=203.0.113.9 spt=50000 dpt=443 proto=6 act=allow deviceDirection=1 in=100 out=200 suser=alice duser=bob smac=00:11:22:33:44:55 dmac=66:77:88:99:aa:bb sntdom=CORP dntdom=EXT sourceTranslatedAddress=198.51.100.1 destinationTranslatedAddress=198.51.100.2 sourceTranslatedPort=1 destinationTranslatedPort=2 deviceInboundInterface=eth0 deviceOutboundInterface=eth1 request=http://x/ requestMethod=GET requestClientApplication=curl fname=a.exe filePath=C:\\a.exe fileHash=abc fsize=10 dproc=a.exe dpid=4 cat=net reason=ok dvchost=fw1 shost=ws1 dhost=web cs1=custom cs1Label=Rule`,
 		`<165>1 2026-10-12T13:59:00.000Z host1 app 123 ID47 [exampleSDID@32473 iut="3" eventSource="App"] hello`,
 		`<187>12345: *Oct 12 13:59:00.123: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to down`,
 		`<38>Oct 12 13:59:00 web1 sshd[811]: Failed password for invalid user oracle from 192.0.2.4 port 40122 ssh2`,
 		`<86>Oct 12 13:59:00 web1 sudo:    alice : TTY=pts/0 ; PWD=/home/alice ; USER=root ; COMMAND=/usr/bin/id`,
+		"<134>Oct 12 13:59:00 q LEEF:1.0|V|P|1|E|src=10.0.0.1\tdst=10.0.0.2\tsrcPort=1\tdstPort=2\tproto=6\tusrName=a\taccountName=b\tsrcMAC=m\tdstMAC=n\tsrcBytes=1\tdstBytes=2\tsrcPostNAT=x\tdstPostNAT=y\tsrcPostNATPort=3\tdstPostNATPort=4\turl=u\tcat=c\tidentHostName=h\tsev=5\tdevTime=1\tother=1",
+		`<11>Oct 12 13:59:00 db-01 clamd[11]: /tmp/a: Win.Test.EICAR_HDB-1(44d88612fea8a8f36de82e1278abb02f:68) FOUND`,
+		`<11>Oct 12 13:59:00 db-01 freshclam[11]: daily.cld updated (version: 27421, sigs: 2070130, f-level: 90, builder: raynman)`,
 	} {
+		lines = append(lines, line)
+	}
+	for _, c := range avExamples {
+		lines = append(lines, c.line)
+	}
+	for _, line := range lines {
 		m := Parse([]byte(line), now)
 		ev := m.Event(sender, now, 0)
 		for k := range ev.Document() {
 			if !ingest.KnownField(k) && !isExtra(k) {
 				t.Errorf("%.30s...: field %q is neither a known field nor a vendor extra", line, k)
 			}
+		}
+	}
+}
+
+// TestRecordRightAfterTimestamp: "CEF:" and "LEEF:" after an RFC 3164
+// timestamp start the record; they are not a time zone, host name or
+// program tag.
+func TestRecordRightAfterTimestamp(t *testing.T) {
+	for _, line := range []string{
+		"<134>Oct 12 13:59:00 CEF:0|V|P|1|9|N|5|src=192.0.2.1 dst=192.0.2.2",
+		"<134>Oct 12 13:59:00 LEEF:1.0|V|P|1|9|src=192.0.2.1\tdst=192.0.2.2",
+	} {
+		m := Parse([]byte(line), now)
+		if (m.CEF == nil && m.LEEF == nil) || m.Hostname != "" || m.AppName != "" || !m.Time.Equal(time.Date(2026, 10, 12, 13, 59, 0, 0, time.UTC)) {
+			t.Errorf("%q: CEF %v LEEF %v host %q app %q time %v", line, m.CEF != nil, m.LEEF != nil, m.Hostname, m.AppName, m.Time)
 		}
 	}
 }

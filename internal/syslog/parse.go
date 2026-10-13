@@ -1,7 +1,7 @@
 // Package syslog receives syslog over UDP, TCP and TLS from systems that
 // cannot run an agent (firewalls, switches, routers, appliances and
 // servers), reads RFC 5424, RFC 3164 with its common real-world variants,
-// and CEF, and hands the events to the ingest pipeline in batches.
+// CEF and LEEF, and hands the events to the ingest pipeline in batches.
 package syslog
 
 import (
@@ -39,6 +39,8 @@ type Message struct {
 	Cisco *CiscoTag
 	// CEF is set when the text is a Common Event Format record.
 	CEF *CEF
+	// LEEF is set when the text is a Log Event Extended Format record.
+	LEEF *LEEF
 	// Raw is the message as received, without trailing NUL, CR or LF.
 	Raw string
 }
@@ -81,6 +83,8 @@ func Parse(b []byte, now time.Time) Message {
 	m.Text = strings.TrimPrefix(m.Text, "\ufeff")
 	if c, ok := parseCEF(m.Text); ok {
 		m.CEF = c
+	} else if l, ok := parseLEEF(m.Text); ok {
+		m.LEEF = l
 	}
 	return m
 }
@@ -277,7 +281,7 @@ func parse3164(m *Message, s string, now time.Time) {
 	// the program tag. Without a timestamp, only "host prog[pid]: ..." and
 	// Cisco ASA's "host %ASA-..." or "host : %ASA-..." (logging device-id
 	// without logging timestamp) are clear enough to read a host name from.
-	if m.Hostname == "" && s != "" && s[0] != '%' && !strings.HasPrefix(s, "CEF:") && !programTag.MatchString(head(s)) {
+	if m.Hostname == "" && s != "" && s[0] != '%' && !strings.HasPrefix(s, "CEF:") && !strings.HasPrefix(s, "LEEF:") && !programTag.MatchString(head(s)) {
 		tok, rest := token(s)
 		if hasTime || pidTag.MatchString(head(rest)) || ciscoTag.MatchString(head(strings.TrimPrefix(rest, ": "))) {
 			m.Hostname = tok
@@ -304,7 +308,7 @@ func parse3164(m *Message, s string, now time.Time) {
 	if g := unifiTag.FindString(head(s)); g != "" && programTag.MatchString(head(s[len(g):])) {
 		s = s[len(g):]
 	}
-	if !strings.HasPrefix(s, "%") && !strings.HasPrefix(s, "CEF:") {
+	if !strings.HasPrefix(s, "%") && !strings.HasPrefix(s, "CEF:") && !strings.HasPrefix(s, "LEEF:") {
 		if g := programTag.FindStringSubmatch(head(s)); g != nil {
 			m.AppName = g[1]
 			m.ProcID = g[2]
@@ -460,10 +464,11 @@ func parseBSD(s string, now time.Time) (time.Time, int, bool) {
 		case z[1] == "UTC" || z[1] == "GMT":
 			loc = time.UTC
 			n += 1 + len(z[1])
-		case z[2] == ":":
+		case z[2] == ":" && z[1] != "CEF" && z[1] != "LEEF":
 			// Other zone names are ambiguous (CST is three different
 			// zones), so skip the name and use local time. Only "ZONE:" is
-			// read as a zone; "Oct 11 09:15:02 MAIL" is a host named MAIL.
+			// read as a zone; "Oct 11 09:15:02 MAIL" is a host named MAIL,
+			// and "CEF:" and "LEEF:" start a record.
 			n += 1 + len(z[1])
 		}
 	}

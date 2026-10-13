@@ -262,7 +262,7 @@ func TestIndexTemplate(t *testing.T) {
 // template and exempt from the budget.
 func TestParsersEmitKnownFields(t *testing.T) {
 	fset := token.NewFileSet()
-	for _, file := range []string{"windows.go", "linux.go", "ingest.go"} {
+	for _, file := range []string{"windows.go", "linux.go", "ingest.go", "defender.go", "clamav.go", "malware.go"} {
 		f, err := parser.ParseFile(fset, file, nil, 0)
 		if err != nil {
 			t.Fatal(err)

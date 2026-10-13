@@ -7,7 +7,7 @@ import (
 
 // attacks weaves the attack stories into the background. Each is designed
 // from a built-in detection's recipe so that every detection that can fire
-// from the six data models fires at least once, and a few benign
+// from the seven data models fires at least once, and a few benign
 // look-alikes fire as false positives for triage practice. Every attack
 // uses only the fictional company's hosts and users and the documentation
 // IP ranges, so it is safe.
@@ -17,6 +17,8 @@ func (g *gen) attacks() {
 	g.ransomwarePrep()
 	g.domainPersistence()
 	g.benignLookalikes()
+	g.malwareOutbreak()
+	g.antivirusHousekeeping()
 }
 
 // day returns a working-hour time n days before the end of the range.
@@ -64,12 +66,18 @@ func (g *gen) linuxBruteForce() {
 	}
 	g.sudoRun(db, "bob.okafor", "root", "/usr/bin/cat /etc/shadow", bust.Add(3*time.Minute))
 
+	// The attacker drops a cryptominer in /tmp; ClamAV's on-access scan
+	// finds it and moves it to quarantine.
+	tm := t0.Add(7*time.Minute + 40*time.Second)
+	g.clamLine(db, clamdLog, "/tmp/.x/kworkerd: Unix.Trojan.Sampleminer-1 FOUND", tm)
+	g.clamLine(db, clamdLog, "/tmp/.x/kworkerd: moved to '/var/lib/clamav/quarantine/kworkerd'", tm.Add(time.Second))
+
 	g.story(Story{
 		ID:      "linux-ssh-intrusion",
 		Title:   "SSH brute force from the internet",
-		Summary: fmt.Sprintf("An external host (%s) password-sprays SSH on the database server db-01, breaks the account bob.okafor, logs in as root and reads /etc/shadow. A clear credential-access chain to triage.", ipC2),
+		Summary: fmt.Sprintf("An external host (%s) password-sprays SSH on the database server db-01, breaks the account bob.okafor, logs in as root and reads /etc/shadow. ClamAV then finds and quarantines a cryptominer the attacker dropped in /tmp. A clear credential-access chain to triage.", ipC2),
 		Detections: []string{"auth-brute-force", "auth-password-spray", "auth-brute-force-success",
-			"auth-ssh-root-login", "auth-sudo-failures", "auth-shadow-file-access", "threat-activity"},
+			"auth-ssh-root-login", "auth-sudo-failures", "auth-shadow-file-access", "threat-activity", "malware-detected"},
 	}, bust.Add(4*time.Minute), ipC2, "db-01", "bob.okafor")
 }
 
@@ -108,6 +116,20 @@ func (g *gen) phishingIntrusion() {
 	g.sysmonProc(ws, alice, `C:\Users\alice.nguyen\Downloads\mimikatz.exe`,
 		`mimikatz.exe "sekurlsa::logonpasswords" exit`,
 		ps, "powershell.exe", "SHA256="+hashMimikatz, t0.Add(4*time.Minute))
+	// Defender finds a second copy of Mimikatz in Temp but cannot remove
+	// it while PowerShell holds it open.
+	mimi := threat{
+		name: "HackTool:Win32/Mimikatz.D", id: "2147729891", severity: "High", category: "Tool",
+		path: `file:_C:\Users\alice.nguyen\AppData\Local\Temp\m.exe`, user: alice, process: ps,
+	}
+	g.defThreatFound(ws, mimi, t0.Add(4*time.Minute))
+	g.defThreatFailed(ws, mimi, "Remove", "The process cannot access the file because it is being used by another process.",
+		t0.Add(4*time.Minute+30*time.Second))
+	// The attacker then turns off Defender's real-time protection
+	// (Set-MpPreference -DisableRealtimeMonitoring $true; tamper
+	// protection is off on this workstation).
+	const rtp = `HKLM\SOFTWARE\Microsoft\Windows Defender\Real-Time Protection\DisableRealtimeMonitoring`
+	g.defConfigChange(ws, rtp+" = 0x0", rtp+" = 0x1", t0.Add(5*time.Minute))
 
 	// Discovery burst: five distinct tools in a few minutes.
 	disco := [][2]string{
@@ -142,14 +164,21 @@ func (g *gen) phishingIntrusion() {
 		"act": "allow", "src": ws.IP, "dst": ipExfil, "spt": "51010", "dpt": "443", "proto": "6",
 		"in": "2000", "out": "4500000",
 	})
+	// The same invoice reaches a colleague; there an attack surface
+	// reduction rule stops Word from starting PowerShell.
+	fin2 := g.org.host("ws-fin-02")
+	g.defASRBlock(fin2, "d4f940ab-401b-4efc-aadc-ad5f3c50688a", g.winUserOn(fin2), ps,
+		`C:\Program Files\Microsoft Office\root\Office16\WINWORD.EXE`,
+		`powershell.exe -nop -w hidden -enc SQBFAFgA`, t0.Add(20*time.Minute))
 
 	g.story(Story{
 		ID:      "phishing-to-c2",
 		Title:   "Phishing to credential theft and C2",
-		Summary: "A finance workstation (ws-fin-07, Alice Nguyen) follows a phishing link to a look-alike sign-in site, opens a malicious invoice that launches encoded PowerShell, downloads a tool with certutil, dumps credentials with Mimikatz, runs discovery, installs persistence and beacons to a command-and-control address. The domain, the tools and the C2 are all in the sample threat intel. The whole kill chain on one host.",
+		Summary: "A finance workstation (ws-fin-07, Alice Nguyen) follows a phishing link to a look-alike sign-in site, opens a malicious invoice that launches encoded PowerShell, downloads a tool with certutil, dumps credentials with Mimikatz, turns off Defender's real-time protection, runs discovery, installs persistence and beacons to a command-and-control address. Microsoft Defender finds Mimikatz but cannot remove it. The domain, the tools and the C2 are all in the sample threat intel. The whole kill chain on one host, while on ws-fin-02 a protection rule stops the same invoice from starting PowerShell.",
 		Detections: []string{"endpoint-office-child-shell", "endpoint-encoded-powershell", "endpoint-lolbin-download",
 			"endpoint-credential-dumping", "endpoint-discovery-burst", "endpoint-scheduled-task",
-			"endpoint-service-created", "network-shell-port", "threat-activity"},
+			"endpoint-service-created", "network-shell-port", "threat-activity",
+			"malware-detected", "malware-not-removed", "av-protection-disabled", "av-rule-block"},
 	}, t0.Add(21*time.Minute), "ws-fin-07", alice, ipC2, ipC2Beacon, ipExfil)
 }
 
@@ -159,6 +188,22 @@ func (g *gen) ransomwarePrep() {
 	file := g.org.host("file-01")
 	dan := g.org.userByLogin("dan.sato").Winuser() // CORP\dan.sato
 	t0 := g.day(1, 2, 30)
+
+	// First the attacker goes after the antivirus: tamper protection stops
+	// real-time protection being turned off, but an exclusion for the
+	// staging folder goes through.
+	g.defTamper(file, `HKLM\SOFTWARE\Microsoft\Windows Defender\Real-Time Protection\DisableRealtimeMonitoring = 0x1`, t0.Add(-12*time.Minute))
+	g.defConfigChange(file, "", `HKLM\SOFTWARE\Microsoft\Windows Defender\Exclusions\Paths\C:\ProgramData\SyncSvc = 0x0`, t0.Add(-10*time.Minute))
+	// A first copy of the ransomware, run from Downloads, is caught.
+	crypt := threat{
+		name: "Ransom:Win32/Samplecrypt.A", id: "2147854321", severity: "Severe", category: "Ransomware",
+		path: `file:_C:\Users\dan.sato\Downloads\sync.exe`, user: dan, process: `C:\Windows\explorer.exe`,
+	}
+	g.defThreatFound(file, crypt, t0.Add(-6*time.Minute))
+	g.defThreatAction(file, crypt, "Quarantine", t0.Add(-6*time.Minute+20*time.Second))
+	// The second copy runs from the excluded folder; controlled folder
+	// access stops it changing the finance share.
+	g.defCFABlock(file, dan, `D:\Shares\Finance\Q3-forecast.xlsx`, `C:\ProgramData\SyncSvc\sync.exe`, t0.Add(-4*time.Minute))
 
 	// Lateral move: an SMB connection to the file server, then a network
 	// logon from the workstation. The SMB connection on port 445 by net.exe
@@ -180,8 +225,8 @@ func (g *gen) ransomwarePrep() {
 	g.story(Story{
 		ID:         "ransomware-prep",
 		Title:      "Ransomware preparation on the file server",
-		Summary:    "Using the stolen domain-admin account, the attacker reaches the file server file-01 and deletes the volume shadow copies and recovery configuration — the classic last step before encryption. A critical finding.",
-		Detections: []string{"endpoint-shadow-copy-delete"},
+		Summary:    "Using the stolen domain-admin account, the attacker goes after the antivirus on the file server file-01: tamper protection stops real-time protection being turned off, but an exclusion for C:\\ProgramData\\SyncSvc goes through. Defender quarantines a first copy of the ransomware from Downloads. The exclusion let the second copy run; controlled folder access stopped it changing the finance share. The attacker then deletes the volume shadow copies and recovery configuration, the classic last step before encryption. A critical finding.",
+		Detections: []string{"endpoint-shadow-copy-delete", "av-tamper-blocked", "av-exclusion-added", "malware-ransomware", "av-rule-block"},
 	}, t0.Add(4*time.Minute), "file-01", dan)
 }
 
