@@ -84,13 +84,13 @@ them as a signed bundle on the `content` release, which servers check for (see
 nothing. Servers only take bundles signed by a key listed in
 `internal/content/trusted.keys`, so a new key reaches them with the next release.
 
-To make the key, with the Docker quick start running:
+To make the key (with Docker, on any computer; the same line works in PowerShell):
 
 ```sh
-docker compose -f deploy/docker/docker-compose.yml exec signalith signalith content keygen
+docker run --rm alpine:3.20 sh -c 'apk add -q openssl && openssl genpkey -algorithm ed25519 -outform DER -out /k && echo private: $(tail -c 32 /k | base64) && echo public: $(openssl pkey -inform DER -in /k -pubout -outform DER | tail -c 32 | base64)'
 ```
 
-Then on GitHub: the repository's **Settings** > **Secrets and variables** > **Actions** >
+(`signalith content keygen` prints the same pair.) Then on GitHub: the repository's **Settings** > **Secrets and variables** > **Actions** >
 **New repository secret**, name `SIGNALITH_CONTENT_KEY`, and paste the private key line.
 Add the public key line to `internal/content/trusted.keys` (the workflow log also prints
 it, and warns while it is missing). Keep a copy of the private key somewhere safe and
