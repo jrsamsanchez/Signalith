@@ -24,9 +24,11 @@ import (
 
 const serviceName = "Signalith"
 
-func init() {
-	// When Windows starts us as a service, run the service handler instead
-	// of the CLI.
+// runService runs the service handler instead of the CLI when Windows
+// starts us as a service, and exits when the service stops. It must be
+// called from main, not init: Windows calls the service handler on a
+// thread of its own, and Go holds such calls until package init is done.
+func runService() {
 	if isSvc, err := svc.IsWindowsService(); err == nil && isSvc {
 		asService = true
 		path := defaultConfigPath()

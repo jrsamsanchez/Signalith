@@ -104,6 +104,7 @@ func defaultConfigPath() string {
 }
 
 func main() {
+	runService()
 	if len(os.Args) < 2 {
 		fmt.Fprintf(os.Stderr, usage, defaultConfigPath())
 		os.Exit(2)
