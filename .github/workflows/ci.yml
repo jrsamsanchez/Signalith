@@ -60,14 +60,17 @@ jobs:
     runs-on: ubuntu-latest
     env:
       # The Docker quick start as users run it, plus an override that also
-      # publishes OpenSearch on this machine for the Go tests.
-      COMPOSE: docker compose -f deploy/docker/docker-compose.yml -f ${{ github.workspace }}/ci-opensearch-port.yml
+      # publishes OpenSearch on this machine for the Go tests, and one that
+      # turns off OpenSearch's own loading of its security settings on first
+      # start, as when that fails on a slow computer: then the
+      # opensearch-security step has to load them.
+      COMPOSE: docker compose -f deploy/docker/docker-compose.yml -f ${{ github.workspace }}/ci-opensearch-port.yml -f ${{ github.workspace }}/ci-no-default-init.yml
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: go.mod
-      - name: Start the Docker quick start
+      - name: Start OpenSearch without its security settings loaded
         run: |
           cat > ci-opensearch-port.yml <<'EOF'
           services:
@@ -75,7 +78,46 @@ jobs:
               ports:
                 - "127.0.0.1:9200:9200"
           EOF
+          cat > ci-no-default-init.yml <<'EOF'
+          services:
+            opensearch:
+              environment:
+                - plugins.security.allow_default_init_securityindex=false
+          EOF
+          $COMPOSE up -d --build opensearch
+          # Signalith's OpenSearch certificate, from the setup step's volume.
+          certs="$RUNNER_TEMP/stuck"
+          mkdir -p "$certs"
+          $COMPOSE cp setup:/signalith-secrets/. "$certs/"
+          # Once OpenSearch answers, it refuses Signalith with 503 "OpenSearch
+          # Security not initialized.", as on the slow computer.
+          for i in $(seq 1 60); do
+            code=$(curl -s -o "$certs/answer.txt" -w '%{http_code}' --cacert "$certs/opensearch-ca.pem" \
+              --cert "$certs/opensearch-client.pem" --key "$certs/opensearch-client-key.pem" https://localhost:9200/_cluster/health) && break
+            sleep 3
+          done
+          cat "$certs/answer.txt"; echo
+          test "$code" = 503
+          grep -q 'Security not initialized' "$certs/answer.txt"
+      - name: Start the Docker quick start
+        run: |
           $COMPOSE up -d --build
+          # The step that loads OpenSearch's security settings loaded them,
+          # and Signalith started after it.
+          certs="$RUNNER_TEMP/stuck"
+          $COMPOSE logs --no-color --no-log-prefix opensearch-security > "$certs/step.log"
+          cat "$certs/step.log"
+          test "$(docker inspect -f '{{.State.ExitCode}}' "$($COMPOSE ps -aq opensearch-security)")" = 0
+          grep -q "^Done: OpenSearch's security settings are loaded." "$certs/step.log"
+          # Signalith's certificate now gets its role.
+          curl -sf -o "$certs/authinfo.json" --cacert "$certs/opensearch-ca.pem" --cert "$certs/opensearch-client.pem" \
+            --key "$certs/opensearch-client-key.pem" https://localhost:9200/_plugins/_security/authinfo
+          jq -e '.roles | index("signalith_server")' "$certs/authinfo.json"
+          # Another `up` runs the step again, which finds nothing to do.
+          $COMPOSE up -d
+          $COMPOSE logs --no-color --no-log-prefix opensearch-security > "$certs/step.log"
+          tail -n 1 "$certs/step.log"
+          tail -n 1 "$certs/step.log" | grep -q '^Nothing to do'
       - name: Sign in to Signalith with the generated password
         run: |
           secrets="$RUNNER_TEMP/signalith-secrets"

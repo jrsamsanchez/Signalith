@@ -3,7 +3,8 @@
 // directory sign-in uses (and, or, not, equality, presence, substrings,
 // and Active Directory's in-chain and bitwise matching rules), and speaks
 // LDAPS and StartTLS with a certificate from its own test CA. It is not a
-// real directory: there are no schemas, writes or access controls.
+// real directory: there are no schemas, and the only write is a modify by
+// an account AllowWrite names (see Modifies).
 package ldaptest
 
 import (
@@ -14,6 +15,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"fmt"
 	"math/big"
 	"net"
 	"slices"
@@ -60,8 +62,10 @@ type Server struct {
 	entries   map[string]*entry // by normalized DN
 	passwords map[string]string // by normalized DN
 	mustReset map[string]bool   // by normalized DN
+	writers   map[string]bool   // by normalized DN
 	filters   []string
 	binds     []string
+	modifies  []string
 	conns     int
 	open      map[net.Conn]bool
 }
@@ -140,6 +144,37 @@ func (s *Server) MustChangePassword(dn string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.mustReset[norm(dn)] = true
+}
+
+// AllowWrite lets the account dn change entries with modify requests.
+// Others are refused with insufficientAccessRights, as a directory
+// refuses an account without delegated write rights.
+func (s *Server) AllowWrite(dn string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.writers == nil {
+		s.writers = map[string]bool{}
+	}
+	s.writers[norm(dn)] = true
+}
+
+// Attr returns an entry's values of an attribute, or nil.
+func (s *Server) Attr(dn, attr string) []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	e, ok := s.entries[norm(dn)]
+	if !ok {
+		return nil
+	}
+	return slices.Clone(e.attrs[strings.ToLower(attr)])
+}
+
+// Modifies returns every modify request received, as "dn: op attr=values"
+// lines, accepted or not.
+func (s *Server) Modifies() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.modifies)
 }
 
 // Filters returns every search filter received, as text.
@@ -238,6 +273,8 @@ func (s *Server) serve(c net.Conn) {
 			return
 		case ldap.ApplicationSearchRequest:
 			ss.search(id, op)
+		case ldap.ApplicationModifyRequest:
+			ss.modify(id, op)
 		case ldap.ApplicationExtendedRequest:
 			if !ss.extended(id, op) {
 				return
@@ -369,6 +406,91 @@ func (ss *session) search(id int64, op *ber.Packet) {
 		sent++
 	}
 	ss.send(result(id, done, ldap.LDAPResultSuccess, ""))
+}
+
+// modify applies a modify request (RFC 4511 section 4.6): add, delete or
+// replace attribute values, all or nothing.
+func (ss *session) modify(id int64, op *ber.Packet) {
+	const tag = ldap.ApplicationModifyResponse
+	if len(op.Children) < 2 {
+		ss.send(result(id, tag, ldap.LDAPResultProtocolError, "bad modify request"))
+		return
+	}
+	s := ss.s
+	dn := op.Children[0].Data.String()
+	type change struct {
+		op   int64
+		attr string
+		vals []string
+	}
+	var changes []change
+	for _, c := range op.Children[1].Children {
+		if len(c.Children) < 2 || len(c.Children[1].Children) < 1 {
+			ss.send(result(id, tag, ldap.LDAPResultProtocolError, "bad change"))
+			return
+		}
+		kind, _ := c.Children[0].Value.(int64)
+		ch := change{op: kind, attr: c.Children[1].Children[0].Data.String()}
+		if len(c.Children[1].Children) > 1 {
+			for _, v := range c.Children[1].Children[1].Children {
+				ch.vals = append(ch.vals, v.Data.String())
+			}
+		}
+		changes = append(changes, ch)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, ch := range changes {
+		s.modifies = append(s.modifies, fmt.Sprintf("%s: %d %s=%s", dn, ch.op, ch.attr, strings.Join(ch.vals, "|")))
+	}
+	if ss.bound == "" || !s.writers[norm(ss.bound)] {
+		ss.send(result(id, tag, ldap.LDAPResultInsufficientAccessRights,
+			"00002098: SecErr: DSID-03150F94, problem 4003 (INSUFF_ACCESS_RIGHTS), data 0"))
+		return
+	}
+	e, ok := s.entries[norm(dn)]
+	if !ok {
+		ss.send(result(id, tag, ldap.LDAPResultNoSuchObject, "no such object: "+dn))
+		return
+	}
+	attrs := map[string][]string{}
+	for k, v := range e.attrs {
+		attrs[k] = slices.Clone(v)
+	}
+	for _, ch := range changes {
+		k := strings.ToLower(ch.attr)
+		switch ch.op {
+		case ldap.AddAttribute:
+			attrs[k] = append(attrs[k], ch.vals...)
+		case ldap.DeleteAttribute:
+			if _, has := attrs[k]; !has {
+				ss.send(result(id, tag, ldap.LDAPResultNoSuchAttribute, "no such attribute: "+ch.attr))
+				return
+			}
+			if len(ch.vals) == 0 {
+				delete(attrs, k)
+				continue
+			}
+			attrs[k] = slices.DeleteFunc(attrs[k], func(v string) bool { return slices.Contains(ch.vals, v) })
+			if len(attrs[k]) == 0 {
+				delete(attrs, k)
+			}
+		case ldap.ReplaceAttribute:
+			if len(ch.vals) == 0 {
+				delete(attrs, k)
+			} else {
+				attrs[k] = slices.Clone(ch.vals)
+			}
+		default:
+			ss.send(result(id, tag, ldap.LDAPResultProtocolError, "bad modify operation"))
+			return
+		}
+		if _, named := e.names[k]; !named {
+			e.names[k] = ch.attr
+		}
+	}
+	e.attrs = attrs
+	ss.send(result(id, tag, ldap.LDAPResultSuccess, ""))
 }
 
 func inScope(dn, base string, scope int64) bool {

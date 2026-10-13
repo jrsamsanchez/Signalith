@@ -8,8 +8,9 @@ visual query builder, CIM-style data models, scheduled detections with a finding
 queue for triage, Sigma rule import, a MITRE ATT&CK coverage map, risk-based
 alerting with asset and identity context, threat intel feeds matched against your
 events, a security posture dashboard plus dashboards you build from queries, and
-investigation cases that collect findings, notes, searches and evidence in one place.
-Response actions and playbooks come next.
+investigation cases that collect findings, notes, searches and evidence in one place,
+and response actions (block an IP, disable an account, isolate a host) run from a
+finding or a case. Playbooks come next.
 
 Website: **https://signalith.io** (its source is in [`site/`](site/)).
 
@@ -22,7 +23,9 @@ service or a systemd unit.
 
 ### Docker (evaluation)
 
-From the folder you cloned Signalith into:
+It needs Docker Compose 2.20 or newer (Docker Desktop has it). Check with
+`docker compose version`; on Linux, update the `docker-compose-plugin` package if it is
+older. Then, from the folder you cloned Signalith into:
 
 ```sh
 docker compose -f deploy/docker/docker-compose.yml up -d
@@ -32,7 +35,11 @@ docker compose -f deploy/docker/docker-compose.yml exec signalith signalith init
 The first command starts OpenSearch and Signalith. On first start a setup step makes the
 admin password, the agents' ingest token and the certificates OpenSearch and Signalith use
 with each other, and keeps them in Docker volumes; no password is written in the compose
-files. The second command shows the admin password. Open https://localhost:8080 and sign
+files. Once OpenSearch is up, a second step loads OpenSearch's security settings (who may
+sign in, and what each may do), and Signalith starts after it. If the first command ends
+with `service "opensearch-security" didn't complete successfully`, see
+[If OpenSearch's security settings aren't loaded](docs/opensearch-security.md#if-opensearchs-security-settings-arent-loaded).
+The second command shows the admin password. Open https://localhost:8080 and sign
 in as `admin` with it. Signalith serves HTTPS with a certificate it makes for itself, so
 the browser warns until you trust it; the sign-in page has a **Download the server
 certificate** link, and [docs/https.md](docs/https.md) says how to trust it.
@@ -71,7 +78,10 @@ If the change you had made there was `plaintext_ingest: deny`, add that line bac
 `mode: auto`, indented the same, before you run the first command; otherwise agents on
 plain `http://` and the old example token may be accepted again. After a reboot
 everything starts again by itself once Docker is running; in Docker Desktop turn on
-Settings > General > "Start Docker Desktop when you sign in".
+Settings > General > "Start Docker Desktop when you sign in". If the computer restarted
+while the first command was still waiting for the step that loads OpenSearch's security
+settings, Signalith had not started yet and does not start by itself: https://localhost:8080
+doesn't answer. Run `docker compose -f deploy/docker/docker-compose.yml up -d` again then.
 
 #### Upgrading the Docker quick start
 
@@ -92,10 +102,15 @@ same):
    ```sh
    docker compose -f deploy/docker/docker-compose.yml up -d
    ```
-   This rebuilds Signalith, runs the setup step once and restarts OpenSearch with its
-   security plugin on; the first start takes a minute or two longer. Events, findings,
-   investigations, users, detections and dashboards are kept: they are in the
-   `opensearch-data` and `signalith-data` volumes, which stay.
+   This rebuilds Signalith, runs the setup step once, restarts OpenSearch with its
+   security plugin on, and then runs the step that loads OpenSearch's security settings;
+   Signalith starts after that. The first start takes a minute or two longer, and up to
+   about 10 minutes on a slow computer, where that step keeps trying while OpenSearch is
+   slow. Events, findings, investigations, users, detections and dashboards are kept: they
+   are in the `opensearch-data` and `signalith-data` volumes, which stay. If the command
+   ends with `service "opensearch-security" didn't complete successfully`, or the
+   **Servers** page later says OpenSearch's security settings aren't loaded, follow
+   [If OpenSearch's security settings aren't loaded](docs/opensearch-security.md#if-opensearchs-security-settings-arent-loaded).
 3. Show the new admin password:
    ```sh
    docker compose -f deploy/docker/docker-compose.yml exec signalith signalith initial-password
@@ -784,6 +799,24 @@ intel:
 
 See [docs/threat-intel.md](docs/threat-intel.md) for the catalog, formats, TAXII,
 download safety rules, matching details and the API.
+
+## Response actions
+
+Analysts can act on what they find without leaving Signalith: **Respond** on a
+finding or a case runs a **response action** on one of its users, hosts or IPs, such
+as blocking an IP on the firewall, disabling the user in Active Directory, isolating
+the host with a script, or starting a Shuffle workflow. The target is checked strictly
+for its kind, a disruptive action needs a reason, and a confirm step says exactly
+what will happen before anything runs. Every run is kept in the `<prefix>_actions`
+index with who ran it, why and what came back, and noted on the case or finding.
+
+Admins set actions up on the **Response actions** page from templates (OPNsense or
+pfSense alias, generic webhook, Shuffle, isolate-host script, disable or enable an AD
+user), with **Test** to check one without changing anything. Scripts run only from
+the server's scripts folder (`response.scripts_dir`), which no page can change.
+
+See [docs/response-actions.md](docs/response-actions.md) for each kind of action,
+the AD delegation, example isolate scripts and the API.
 
 ## Dashboards
 

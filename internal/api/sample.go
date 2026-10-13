@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
-	"strings"
 	"sync"
 	"time"
 
@@ -276,14 +275,18 @@ func sampleErrorText(op string, err error, st *sample.State) (string, string) {
 		return "Sample data is already loaded. Remove it before loading again.", ""
 	case errors.Is(err, sample.ErrPartial):
 		return "The last load or removal did not finish. Remove what is left, then load again.", ""
+	case store.NoAnswer(err):
+		msg = "OpenSearch didn't answer in time, so Signalith could not " + what + ". Check the Health page."
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 		msg = "Signalith stopped before it could " + what + "."
 	case errors.As(err, &ue):
 		msg = "Signalith lost its connection to OpenSearch and could not " + what + ". Check the Health page."
+	case store.RefusalOf(err) == store.RefusedNotInitialized:
+		msg = "OpenSearch's security settings aren't loaded, so it refuses every request and Signalith could not " + what + ". The Health page says what to do."
+	case store.IsClusterBlock(err):
+		msg = "OpenSearch is refusing changes (it may be low on disk space), so Signalith could not " + what + ". Check the Health page."
 	case errors.As(err, &se) && (se.Status == http.StatusTooManyRequests || se.Status >= 500):
 		msg = "OpenSearch was too busy to " + what + ". Check the Health page."
-	case errors.As(err, &se) && se.Status == http.StatusForbidden && strings.Contains(se.Body, "cluster_block_exception"):
-		msg = "OpenSearch is refusing changes (it may be low on disk space), so Signalith could not " + what + ". Check the Health page."
 	case errors.Is(err, sample.ErrNothingWritten):
 		msg = "OpenSearch did not accept any of the sample events, so nothing was loaded. Check the Health page."
 	default:

@@ -89,7 +89,10 @@ func sampleClient(ctx context.Context, c *config.Config) (*store.Client, error) 
 	_, herr := cl.Health(hctx)
 	cancel()
 	if herr != nil {
-		return nil, fmt.Errorf("OpenSearch is not reachable, so sample data cannot be loaded, removed or looked up: %w", herr)
+		if store.Problem(herr) == "" {
+			return nil, fmt.Errorf("OpenSearch is not reachable, so sample data cannot be loaded, removed or looked up: %w", herr)
+		}
+		return nil, fmt.Errorf("sample data cannot be loaded, removed or looked up: %s", store.Unusable(herr))
 	}
 	return cl, nil
 }

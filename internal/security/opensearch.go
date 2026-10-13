@@ -48,6 +48,8 @@ type anonymousResult struct {
 	why    string
 	demo   bool
 	listen bool
+	// notLoaded is OpenSearch saying its security settings aren't loaded.
+	notLoaded bool
 }
 
 // probeAnonymous asks OpenSearch to count events without signing in:
@@ -84,7 +86,7 @@ func probeAnonymous(ctx context.Context, conn store.Config, prefix string) anony
 	if err != nil {
 		r.why = cleanNetError(err)
 	} else {
-		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
 		resp.Body.Close()
 		switch {
 		case resp.StatusCode == http.StatusOK:
@@ -93,6 +95,7 @@ func probeAnonymous(ctx context.Context, conn store.Config, prefix string) anony
 			r.state = "closed"
 		default:
 			r.why = "status " + strconv.Itoa(resp.StatusCode)
+			r.notLoaded = store.RefusalOf(&store.Error{Status: resp.StatusCode, Body: string(body)}) == store.RefusedNotInitialized
 		}
 	}
 	mu.Lock()
@@ -178,7 +181,9 @@ type authInfo struct {
 }
 
 // probeAuthInfo asks OpenSearch what Signalith's own account may do.
-func probeAuthInfo(ctx context.Context, conn store.Config) (info authInfo, noPlugin bool, why string) {
+// refused is how OpenSearch refused to say, when it answered with an
+// error.
+func probeAuthInfo(ctx context.Context, conn store.Config) (info authInfo, noPlugin bool, why string, refused store.Refusal) {
 	conn.Timeout = OpenSearchTimeout
 	c := store.New(conn)
 	defer c.CloseIdleConnections()
@@ -187,13 +192,13 @@ func probeAuthInfo(ctx context.Context, conn store.Config) (info authInfo, noPlu
 	switch {
 	case errors.As(err, &se) && (se.Status == http.StatusNotFound || strings.Contains(se.Body, "no handler found")):
 		// OpenSearch without its security plugin.
-		return info, true, ""
+		return info, true, "", store.NotRefused
 	case errors.As(err, &se):
-		return info, false, "status " + strconv.Itoa(se.Status)
+		return info, false, "status " + strconv.Itoa(se.Status), store.RefusalOf(se)
 	case err != nil:
-		return info, false, cleanNetError(err)
+		return info, false, cleanNetError(err), store.NotRefused
 	}
-	return info, false, ""
+	return info, false, "", store.NotRefused
 }
 
 // probeDataPaths asks the OpenSearch node Signalith talks to where it
@@ -300,6 +305,7 @@ func OpenSearchCollectors(c *config.Config, inContainer bool, stateDir string) [
 				f.OpenSearch.Anonymous, f.OpenSearch.AnonymousErr = r.state, r.why
 				f.OpenSearch.DemoCert, f.OpenSearch.Listening = r.demo, r.listen
 				f.OpenSearch.SameNetwork = same
+				f.OpenSearch.SecurityNotLoaded = f.OpenSearch.SecurityNotLoaded || r.notLoaded
 			}
 		},
 	}, {
@@ -309,12 +315,13 @@ func OpenSearchCollectors(c *config.Config, inContainer bool, stateDir string) [
 		// reported as such rather than as a check that ran out of time.
 		Timeout: OpenSearchTimeout + DialTimeout,
 		Run: func(ctx context.Context) func(*Facts) {
-			info, noPlugin, why := probeAuthInfo(ctx, conn)
+			info, noPlugin, why, refused := probeAuthInfo(ctx, conn)
 			return func(f *Facts) {
 				o := &f.OpenSearch
-				o.AuthProbed, o.AuthNoPlugin, o.AuthErr = true, noPlugin, why
+				o.AuthProbed, o.AuthNoPlugin, o.AuthErr, o.AuthRefusal = true, noPlugin, why, refused
 				o.AuthUser, o.AuthRoles, o.AuthBackend = info.User, info.Roles, info.BackendRole
 				o.DemoAdmin = demoAdmin
+				o.SecurityNotLoaded = o.SecurityNotLoaded || refused == store.RefusedNotInitialized
 			}
 		},
 	}}

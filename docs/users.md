@@ -624,7 +624,9 @@ page itself.
 `POST /api/cases/{id}/entities`, `POST /api/dashboards`, `PUT /api/dashboards/{id}`,
 `DELETE /api/dashboards/{id}`, `POST /api/dashboards/{id}/panels`,
 `POST /api/intel/indicators`, `DELETE /api/intel/indicators/{id}`, `GET /api/endpoints`,
-`GET /api/endpoints/{id}`, `GET /api/endpoints/settings`, `GET /api/endpoints/checks`.
+`GET /api/endpoints/{id}`, `GET /api/endpoints/settings`, `GET /api/endpoints/checks`,
+`GET /api/respond/actions`, `GET /api/respond/runs`, `POST /api/respond/run` (running
+[response actions](response-actions.md)).
 
 **Admin:** `GET /api/agents/config`, `POST /api/tls/names`, `GET /api/security`,
 `POST /api/security/ca`, `POST /api/detections`,
@@ -634,6 +636,8 @@ page itself.
 `POST /api/intel/feeds`, `PUT /api/intel/feeds/{name}`, `DELETE /api/intel/feeds/{name}`,
 `POST /api/intel/feeds/test`, `POST /api/intel/feeds/{name}/refresh`, `POST /api/intel/catalog`,
 `POST /api/intel/taxii/collections`, `POST /api/intel/upload`,
+`GET /api/respond/config`, `PUT /api/respond/config`, `POST /api/respond/test`
+(setting up [response actions](response-actions.md)),
 `GET /api/sample`, `POST /api/sample/load`, `POST /api/sample/remove`
 (the one-click [sample data](sample-data.md)), `PUT /api/endpoints/settings`,
 `DELETE /api/endpoints/{id}`, `GET /api/endpoints/blocked`, `DELETE /api/endpoints/blocked/{host}`,

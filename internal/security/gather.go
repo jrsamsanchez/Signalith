@@ -247,10 +247,12 @@ func fileFacts(h Host) (FileFacts, bool) {
 			items = append(items, item{p, "key"})
 		}
 	}
-	for _, p := range []string{c.AdminHashFile(), c.UsersFile(), c.DirectoryFile(), c.SettingsFile(), c.IntelFeedsFile(), SavedDisksFile(state)} {
+	for _, p := range []string{c.AdminHashFile(), c.UsersFile(), c.DirectoryFile(), c.SettingsFile(), c.IntelFeedsFile(), c.ResponseFile(), SavedDisksFile(state)} {
 		items = append(items, item{p, "private"})
 	}
-	for _, p := range []string{state, filepath.Join(state, "keys"), tls, c.LookupsDir()} {
+	// Whoever can put a program in the scripts folder decides what
+	// response actions run.
+	for _, p := range []string{state, filepath.Join(state, "keys"), tls, c.LookupsDir(), c.ResponseScriptsDir()} {
 		items = append(items, item{p, "folder"})
 	}
 	if c.Path() != "" {

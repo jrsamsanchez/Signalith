@@ -23,7 +23,7 @@ few seconds.
 | Column | What it shows |
 | --- | --- |
 | Server | The server's name (`cluster.node_name`), **This server** on the one you are signed in to, and its address (`server.node_url`) |
-| Status | **Running**, **Starting**, **Stopping**, **Stopped** (shut down on purpose), **Not answering** (no sign of life for 30 seconds), **Can't reach OpenSearch** (this server, while it cannot), **Couldn't start** (a restart after a settings change failed with the new settings and the old ones: it receives nothing, runs no jobs and tries again every 30 seconds; its log says why) or **Identity in use** (see [Identity](#identity)). Below it: how long it has been up, or when it was last seen, counted by the server that answered the page, so neither the other server's clock nor yours matters. A clock more than 2 seconds off is shown here too |
+| Status | **Running**, **Starting**, **Stopping**, **Stopped** (shut down on purpose), **Not answering** (no sign of life for 30 seconds), **Couldn't start** (a restart after a settings change failed with the new settings and the old ones: it receives nothing, runs no jobs and tries again every 30 seconds; its log says why), **Identity in use** (see [Identity](#identity)), or, on this server only, what keeps it from using OpenSearch, such as **Can't reach OpenSearch** (see [When this server can't use OpenSearch](#when-this-server-cant-use-opensearch)). Below it: how long it has been up, or when it was last seen, counted by the server that answered the page, so neither the other server's clock nor yours matters. A clock more than 2 seconds off is shown here too |
 | Background jobs | **Runs jobs** on the server that runs them. **Standby** on a server that would take them over, or why it would not. **Doesn't run them** on a server that may not, with the reason |
 | Version | The Signalith version it runs |
 
@@ -42,8 +42,32 @@ should be looked at, red when something is not running. Each one names the serve
 and says what to do. Problems another server finds with itself, such as a state
 folder that was moved from another computer, are shown here too.
 
-While this server cannot reach OpenSearch, it shows itself as **Can't reach
-OpenSearch**, a red alert says so, and the other servers stay as it last saw them.
+While this server cannot use OpenSearch, its status says why, a red alert says what to
+do, and the other servers stay as it last saw them.
+
+## When this server can't use OpenSearch
+
+A server that can't use OpenSearch runs no background jobs. On its own Servers page,
+its status says why and a red alert says what to do. It tries again by itself every few
+seconds, so it never needs a restart once the cause is fixed. The Health page shows the
+same for OpenSearch itself.
+
+Some of the steps below send you to OpenSearch's log. With the Docker quick start, show
+it from the Signalith folder with
+`docker compose -f deploy/docker/docker-compose.yml logs opensearch`. Otherwise it is in
+`/var/log/opensearch`, or in the `logs` folder where you unpacked OpenSearch.
+
+| Status | What it means | What to do |
+| --- | --- | --- |
+| **Can't reach OpenSearch** | Nothing answers at OpenSearch's address: OpenSearch is stopped, the address is wrong, or a firewall is in the way | Check that OpenSearch is running. **Test connection** on the Settings page says what is wrong with the address |
+| **OpenSearch didn't answer in time** | OpenSearch took the request but answered too late, usually because its computer is short of memory or CPU | Nothing at first: Signalith keeps trying. If it lasts more than a few minutes, check that OpenSearch's computer has enough memory and CPU, and what OpenSearch's log says |
+| **OpenSearch security not loaded** | OpenSearch runs its security plugin, but its security settings (who may sign in, and what each may do) aren't loaded, so it refuses every request. OpenSearch loads them by itself only as it starts with none stored yet, and tries just once, which can fail on a slow computer; they then stay unloaded, also after OpenSearch restarts | If OpenSearch started only a few minutes ago, wait. Otherwise, with the Docker quick start, run `docker compose -f deploy/docker/docker-compose.yml up -d` again from the Signalith folder: it re-runs the step that loads OpenSearch's security settings. If that doesn't load them, follow [If OpenSearch's security settings aren't loaded](opensearch-security.md#if-opensearchs-security-settings-arent-loaded). Without Docker, load them with `securityadmin.sh`, as [Load the security settings](opensearch-security.md#3-load-the-security-settings) shows |
+| **OpenSearch too busy** | OpenSearch answered that it could not do the request in time | Nothing at first: Signalith keeps trying. If it lasts more than a few minutes, check that OpenSearch's computer has enough memory and CPU, and what OpenSearch's log says |
+| **OpenSearch refuses the sign-in** | OpenSearch does not accept the user name and password, or the client certificate, Signalith signs in with | Check them on the Settings page |
+| **OpenSearch refuses Signalith** | Signalith's OpenSearch user may not use `<prefix>_runtime` | Give it the right to create, read and write `<prefix>_runtime` (or `<prefix>_*`) |
+| **OpenSearch refuses writes** | A block stops OpenSearch from taking writes. OpenSearch sets one by itself when its disk is full, and an admin can set one, such as `cluster.blocks.read_only` | Give OpenSearch more disk, or remove the block |
+| **OpenSearch not ready** | OpenSearch is starting, or its nodes can't find each other | Wait a few minutes. If it lasts, OpenSearch's log says why |
+| **OpenSearch answers with an error** | Any other error, such as a closed `<prefix>_runtime` index. The alert quotes it | OpenSearch's log may say more |
 
 ## The background jobs
 

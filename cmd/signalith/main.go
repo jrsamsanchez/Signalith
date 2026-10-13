@@ -10,6 +10,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
@@ -41,12 +42,14 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/nlq"
 	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/redact"
+	"github.com/jrsamsanchez/signalith/internal/respond"
 	"github.com/jrsamsanchez/signalith/internal/retention"
 	"github.com/jrsamsanchez/signalith/internal/risk"
 	"github.com/jrsamsanchez/signalith/internal/safelog"
 	"github.com/jrsamsanchez/signalith/internal/sample"
 	"github.com/jrsamsanchez/signalith/internal/search"
 	"github.com/jrsamsanchez/signalith/internal/secrets"
+	"github.com/jrsamsanchez/signalith/internal/securefile"
 	"github.com/jrsamsanchez/signalith/internal/store"
 	"github.com/jrsamsanchez/signalith/internal/syslog"
 	"github.com/jrsamsanchez/signalith/internal/tlsauto"
@@ -452,8 +455,10 @@ func cmdValidate(args []string) error {
 	cl := newStore(c)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if status, err := cl.Health(ctx); err != nil {
+	if status, err := cl.Health(ctx); err != nil && store.Problem(err) == "" {
 		fmt.Printf("Warning: OpenSearch is not reachable yet: %v\n", err)
+	} else if err != nil {
+		fmt.Println("Warning:", store.Unusable(err))
 	} else {
 		fmt.Printf("OpenSearch at %s is %s.\n", redact.URL(c.OpenSearch.URL), status)
 	}
@@ -1070,6 +1075,22 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	// lookups folder, and its threat intel in memory: follow a load or
 	// removal made on another server.
 	in.jobs.Go(func() { sampleLoader.WatchLists(ctx, time.Minute) })
+	// Response actions: analysts run them by hand from a finding or a
+	// case, on whichever server they use, so every server can; each run
+	// is recorded in the <prefix>_actions index.
+	astore := respond.NewOpenSearch(cl, c.OpenSearch.IndexPrefix)
+	responder := &respond.Runner{
+		Actions:    &respond.Actions{File: c.ResponseFile(), Log: log},
+		Directory:  dir.Settings,
+		ScriptsDir: c.ResponseScriptsDir(),
+		Store:      astore,
+		Server:     sampleServer,
+		Log:        log,
+	}
+	if p := intel.ProtectedAddr(c.OpenSearch.URL); p != "" {
+		responder.Protected = []string{p}
+	}
+	ensureScriptsDir(c.ResponseScriptsDir(), log)
 	// Sessions and the failed sign-in limits carry over a restart.
 	r.sessions.SetIdle(c.SessionIdle())
 	srv := &api.Server{
@@ -1086,6 +1107,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		Feeds:      feeds,
 		Dashboards: boards,
 		Cases:      cstore,
+		Respond:    responder,
 		Retention:  ret,
 		Sample:     sampleLoader,
 		Endpoints:  estore,
@@ -1133,6 +1155,9 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		}
 		if err := estore.EnsureIndex(ctx); err != nil {
 			log.Error("could not create the endpoints index; osquery hosts cannot enroll", "index", estore.Index, "err", err)
+		}
+		if err := astore.EnsureIndex(ctx); err != nil {
+			log.Error("could not create the response actions index; response actions will not run", "index", astore.Index, "err", err)
 		}
 		close(indicesReady)
 	})
@@ -1526,6 +1551,18 @@ func newFeeds(c *config.Config, indicators *intel.Store, log *slog.Logger) *inte
 	return f
 }
 
+// ensureScriptsDir makes the response scripts folder, private to the
+// server's account, when it does not exist yet, so admins know where
+// scripts go. A folder that exists is left as it is.
+func ensureScriptsDir(dir string, log *slog.Logger) {
+	if _, err := os.Lstat(dir); !errors.Is(err, fs.ErrNotExist) {
+		return
+	}
+	if err := securefile.MkdirPrivate(dir); err != nil {
+		log.Warn("could not make the response scripts folder; script actions cannot run until it exists", "dir", dir, "err", err)
+	}
+}
+
 // reloadLookups picks up edits to the CSV files made outside the UI.
 func reloadLookups(ctx context.Context, lists *assets.Store, log *slog.Logger) {
 	t := time.NewTicker(time.Minute)
@@ -1587,7 +1624,11 @@ func ensureTemplate(ctx context.Context, cl *store.Client, c *config.Config, log
 			log.Info("opensearch index template ready", "url", redact.URL(c.OpenSearch.URL))
 			return true
 		}
-		log.Warn("waiting for opensearch", "url", redact.URL(c.OpenSearch.URL), "err", err)
+		if hint := store.Hint(err); hint != "" {
+			log.Warn("waiting for opensearch", "url", redact.URL(c.OpenSearch.URL), "err", err, "fix", hint)
+		} else {
+			log.Warn("waiting for opensearch", "url", redact.URL(c.OpenSearch.URL), "err", err)
+		}
 		select {
 		case <-ctx.Done():
 			return false

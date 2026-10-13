@@ -18,7 +18,10 @@
     stopped: ['idle', 'Stopped'],
     offline: ['down', 'Not answering'],
     conflict: ['down', 'Identity in use'],
+    // Or, when it was reached but didn't answer in time, osProblem's.
     unreachable: ['down', 'Can’t reach OpenSearch'],
+    // Reached, but turned away: osProblem says how.
+    refused: ['down', ''],
     down: ['down', 'Couldn’t start'],
   };
   const gone = (s) => s.state === 'offline' || s.state === 'stopped';
@@ -77,7 +80,7 @@
     return el('div', attrs, icon(ic), el('div', {}, el('b', {}, title), body ? el('p', {}, ...linked(body)) : null));
   }
 
-  // linked turns the names of pages into links.
+  // linked turns the names of pages into links, and sets commands as code.
   function linked(text) {
     const pages = { 'Data retention page': 'retention', 'Settings page': 'settings' };
     const parts = [];
@@ -85,11 +88,11 @@
     let last = 0;
     let m;
     while ((m = re.exec(text))) {
-      if (m.index > last) parts.push(text.slice(last, m.index));
+      if (m.index > last) parts.push(...withCode(text.slice(last, m.index)));
       parts.push(el('a', { href: '#' + pages[m[0]], 'data-page': pages[m[0]] }, m[0]));
       last = re.lastIndex;
     }
-    parts.push(text.slice(last));
+    parts.push(...withCode(text.slice(last)));
     return parts;
   }
 
@@ -150,7 +153,9 @@
   }
 
   function statusCell(s) {
-    const [state, label] = STATE[s.state] || ['idle', cap(s.state)];
+    const [state, named] = STATE[s.state] || ['idle', cap(s.state)];
+    const problem = (s.opensearch || {}).problem;
+    const label = s.state === 'refused' || (s.state === 'unreachable' && problem === 'timeout') ? osProblem(problem)[0] : named;
     const pulse = el('span', { class: 'pulse', 'aria-hidden': 'true' });
     if (state) pulse.dataset.state = state;
     const seenAgo = s.seen_seconds_ago;
@@ -164,7 +169,7 @@
       sub = el('div', { class: 'sv-sub', title: s.offline_since ? new Date(s.offline_since).toLocaleString() : '' }, ageSpan('seen', seenAgo));
     } else if (s.state === 'down') {
       sub = el('div', { class: 'sv-sub' }, 'Receives nothing and tries again every 30 seconds');
-    } else if ((s.state === 'ready' || s.state === 'unreachable') && s.uptime_seconds != null) {
+    } else if ((s.state === 'ready' || s.state === 'unreachable' || s.state === 'refused') && s.uptime_seconds != null) {
       sub = el('div', { class: 'sv-sub', title: s.started_at ? 'Started ' + new Date(s.started_at).toLocaleString() : '' }, ageSpan('up', s.uptime_seconds));
     }
     const clock = clockOff(s);
@@ -261,9 +266,10 @@
     const live = servers.filter((s) => !gone(s));
     const versions = [...new Set(live.filter((s) => s.version).map((s) => s.version))];
     if (live.length > 1 && versions.length === 1) parts.push('all on ' + versions[0]);
-    const os = (d.opensearch || {}).status;
+    const os = d.opensearch || {};
     if (full) parts.push('OpenSearch refuses writes (disk full)');
-    else if (os) parts.push(os === 'unreachable' ? 'OpenSearch can’t be reached' : 'OpenSearch ' + os);
+    else if (os.status === 'unreachable' && os.problem !== 'timeout') parts.push('OpenSearch can’t be reached');
+    else if (os.status) parts.push(osTitle(os));
     return parts.join(' · ');
   }
 
@@ -297,8 +303,8 @@
   // selection survive the refresh. The ages change in place.
   function view(d, servers) {
     const lease = d.lease || {};
-    return JSON.stringify([d.warnings, d.writes_refused, lease.frozen, lease.holder_name, (d.opensearch || {}).status, noteHidden(),
-      servers.map((s) => [s.node_id, s.name, s.self, s.state, s.jobs, s.version, s.node_url, s.listen, s.cannot_take_over, s.not_eligible,
+    return JSON.stringify([d.warnings, d.writes_refused, lease.frozen, lease.holder_name, (d.opensearch || {}).status, (d.opensearch || {}).problem, noteHidden(),
+      servers.map((s) => [s.node_id, s.name, s.self, s.state, (s.opensearch || {}).problem, s.jobs, s.version, s.node_url, s.listen, s.cannot_take_over, s.not_eligible,
         clockOff(s), s.problems, s.seen_seconds_ago == null, s.uptime_seconds == null])]);
   }
 

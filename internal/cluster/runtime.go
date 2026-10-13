@@ -120,8 +120,13 @@ const (
 	// changing.
 	StateOffline = "offline"
 	// StateUnreachable is never written either: it is this server, on its
-	// own page, while it cannot use OpenSearch.
+	// own page, while it cannot reach OpenSearch, or OpenSearch doesn't
+	// answer it in time (OSInfo.Problem is then store.ProblemTimeout).
 	StateUnreachable = "unreachable"
+	// StateRefused is never written either: it is this server, on its own
+	// page, while OpenSearch answers but turns it away (OSInfo.Problem
+	// says how).
+	StateRefused = "refused"
 )
 
 // Heartbeat is a server's document in the runtime index, node:<node_id>,
@@ -198,6 +203,10 @@ type OSInfo struct {
 	OK        bool   `json:"ok"`
 	Endpoint  string `json:"endpoint,omitempty"`
 	LatencyMS int64  `json:"latency_ms"`
+	// Problem is how OpenSearch turned the server's last heartbeat away
+	// (a store.Refusal, such as not_initialized or busy), or "timeout"
+	// when it took the heartbeat but didn't answer in time (store.Problem).
+	Problem string `json:"problem,omitempty"`
 }
 
 // LeaseDoc is lease:jobs, which names the server that runs the
