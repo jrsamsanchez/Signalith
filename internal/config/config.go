@@ -841,6 +841,31 @@ type Detections struct {
 	Scheduler bool `yaml:"scheduler"`
 	// MaxFindingsPerRun caps findings one run can raise.
 	MaxFindingsPerRun int `yaml:"max_findings_per_run"`
+	// ContentUpdates is how newer content pack rules arrive: manual (an
+	// admin checks or uploads on the Detections page) or daily (checked
+	// and installed every day). Empty means manual.
+	ContentUpdates string `yaml:"content_updates,omitempty"`
+	// ContentURL is where the signed content bundle is downloaded from;
+	// its signature is at the same address plus .sig. Empty means
+	// DefaultContentURL.
+	ContentURL string `yaml:"content_url,omitempty"`
+}
+
+// Content update modes.
+const (
+	ContentManual = "manual"
+	ContentDaily  = "daily"
+)
+
+// DefaultContentURL is where Signalith's own content bundle is published.
+const DefaultContentURL = "https://github.com/jrsamsanchez/Signalith/releases/download/content/signalith-content.tar.gz"
+
+// ContentUpdateURL is the content bundle's address.
+func (d Detections) ContentUpdateURL() string {
+	if u := strings.TrimSpace(d.ContentURL); u != "" {
+		return u
+	}
+	return DefaultContentURL
 }
 
 // Cluster is about this server among the Signalith servers that share
@@ -1782,6 +1807,16 @@ func (c *Config) Validate() error {
 	p = append(p, c.Intel.problems()...)
 	if c.Detections.MaxFindingsPerRun < 1 || c.Detections.MaxFindingsPerRun > 10000 {
 		p = append(p, "detections.max_findings_per_run must be between 1 and 10000")
+	}
+	switch c.Detections.ContentUpdates {
+	case "", ContentManual, ContentDaily:
+	default:
+		p = append(p, "detections.content_updates must be manual or daily")
+	}
+	if u := c.Detections.ContentURL; u != "" {
+		if pu, err := url.Parse(u); err != nil || pu.Scheme != "https" || pu.Host == "" {
+			p = append(p, fmt.Sprintf("detections.content_url %q must be https://host/path", redact.URL(u)))
+		}
 	}
 	for i, t := range c.Ingest.Tokens {
 		if len(t) < 16 {

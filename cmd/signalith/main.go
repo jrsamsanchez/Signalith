@@ -35,6 +35,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/cases"
 	"github.com/jrsamsanchez/signalith/internal/cluster"
 	"github.com/jrsamsanchez/signalith/internal/config"
+	"github.com/jrsamsanchez/signalith/internal/content"
 	"github.com/jrsamsanchez/signalith/internal/dashboards"
 	"github.com/jrsamsanchez/signalith/internal/detect"
 	"github.com/jrsamsanchez/signalith/internal/endpoint"
@@ -80,6 +81,7 @@ Usage:
   signalith sample-data load|remove|status [-c file] [-size ...]  load or remove a week of sample data to try
   signalith tokens    list|create|rename|revoke|legacy [-c file] ...  the tokens agents send with
   signalith secrets   status|encrypt|set|rotate-master [-c file] ...  the master key and stored passwords
+  signalith content   status|install|remove [-c file] ...  content pack updates (newer tested rules)
   signalith security  [-c file] [-json]   print the security report (exit 2 when something is at risk)
   signalith service   install|uninstall|start|stop     manage the Windows service
   signalith opensearch-certs -out DIR [-node name] [-san name]   certificates to secure your own OpenSearch
@@ -148,6 +150,8 @@ func main() {
 		err = cmdTokens(args)
 	case "secrets":
 		err = cmdSecrets(args)
+	case "content":
+		err = cmdContent(args)
 	case "security":
 		err = cmdSecurity(args)
 	case "version", "-v", "--version":
@@ -1037,10 +1041,15 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	if err := feeds.Load(); err != nil {
 		log.Error("threat intel feeds added on the Threat intel page cannot be used until the file is fixed", "err", err)
 	}
+	// A content update installed earlier goes into use before the
+	// detections load.
+	updater := &content.Updater{Dir: filepath.Join(c.DetectionsDir(), "content"), Log: log}
+	updater.Start()
 	lib, problems, err := detect.NewLibrary(c.DetectionsDir())
 	if err != nil {
 		return nil, err
 	}
+	updater.Library = lib
 	for _, p := range problems {
 		// One bad file should not stop the SIEM; it is skipped and reported.
 		log.Error("detection skipped", "err", p)
@@ -1203,6 +1212,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		Playbooks:  &api.Playbooks{Manager: pbooks, Runs: pruns},
 		Retention:  ret,
 		Sample:     sampleLoader,
+		Content:    updater,
 		Endpoints:  estore,
 		Background: r.backgroundContext(parent),
 		Assistant:  newAssistant(c),
@@ -1219,6 +1229,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		Version:    version,
 	}
 	srv.KnownBrowsers = r.browsers
+	in.jobs.Go(func() { srv.RunContentUpdates(ctx) })
 	pbRunner := &playbooks.Runner{
 		Playbooks: pbooks, Findings: fstore, Runs: pruns, Desk: srv.PlaybookDesk(), Respond: responder,
 		Notify: notes, Sender: senders, Server: sampleServer, Log: log,

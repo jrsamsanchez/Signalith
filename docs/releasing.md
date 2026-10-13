@@ -73,6 +73,29 @@ that file somewhere safe and offline, then delete it from the computer. If the k
 passphrase, add it as `SIGNALITH_GPG_PASSPHRASE`. The key expires after three years;
 make a new one before then.
 
+### Content updates
+
+The weekly **Content** workflow (`.github/workflows/content.yml`) rebuilds the SigmaHQ
+and Splunk packs from the newest upstream rules, runs every pack check, and publishes
+them as a signed bundle on the `content` release, which servers check for (see
+[Content updates](detections.md#content-updates)). It signs with an Ed25519 key in the
+`SIGNALITH_CONTENT_KEY` secret; without the secret it builds and tests but publishes
+nothing. Servers only take bundles signed by a key listed in
+`internal/content/trusted.keys`, so a new key reaches them with the next release.
+
+To make the key, with the Docker quick start running:
+
+```sh
+docker compose -f deploy/docker/docker-compose.yml exec signalith signalith content keygen
+```
+
+Then on GitHub: the repository's **Settings** > **Secrets and variables** > **Actions** >
+**New repository secret**, name `SIGNALITH_CONTENT_KEY`, and paste the private key line.
+Add the public key line to `internal/content/trusted.keys` (the workflow log also prints
+it, and warns while it is missing). Keep a copy of the private key somewhere safe and
+offline. To replace a key, add the new public key next to the old one, release, switch
+the secret, and remove the old key in a later release.
+
 ### Windows code signing
 
 The `.msi` is not yet signed with an Authenticode certificate, so Windows SmartScreen

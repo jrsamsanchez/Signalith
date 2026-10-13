@@ -20,6 +20,7 @@ func (s *Server) routeDetections(api *router) {
 	api.viewer("GET /api/detections/{id}/yaml", s.handleDetectionYAML)
 	api.viewer("GET /api/coverage", s.handleCoverage)
 	api.viewer("GET /api/detections/packs", s.handleListPacks)
+	s.routeContent(api)
 	// Writing, testing, importing and running detections is admin work;
 	// a run raises findings.
 	api.admin("POST /api/detections", s.handleCreateDetection)

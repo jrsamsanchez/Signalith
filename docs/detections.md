@@ -334,6 +334,51 @@ go run ./internal/detect/splunkgen -splunk /tmp/security_content
 go test ./internal/detect/ ./internal/splcheck/
 ```
 
+### Content updates
+
+Pack rules can be updated without a new Signalith release. Every week the Signalith
+project rebuilds both packs from the newest SigmaHQ and Splunk rules, runs every check
+above on them (in memory and against a real OpenSearch), and publishes the ones that
+pass as one signed bundle. A server only installs a bundle that:
+
+- is signed by a key built into Signalith (Ed25519; the keys are in
+  `internal/content/trusted.keys`), so a copy from anywhere else is as good as the
+  original, and a changed byte is refused;
+- is newer than the rules it uses, so an old bundle cannot roll rules back;
+- this version of Signalith can read. A rule for something it does not know yet, such as
+  a new log source, is left out and counted on the Detections page.
+
+Under the pack cards on the **Detections** page, the line says how new the rules are.
+Admins can:
+
+- **Check for updates**: download and install the newest bundle.
+- **Upload update…**: for a server without internet access. Download
+  `signalith-content.tar.gz` and `signalith-content.tar.gz.sig` from the
+  [content release](https://github.com/jrsamsanchez/Signalith/releases/tag/content)
+  on another computer, then choose both files together.
+- **Use built-in rules**: go back to the rules that came with this version of Signalith.
+
+Rules you turned on stay on, exceptions stay, and new rules start off. A rule that an
+update drops stops running; your choices for it come back if it returns.
+
+The **Content pack updates** setting (`detections.content_updates`) can be **Daily**:
+the server then checks once a day and installs what it finds. **Content update address**
+(`detections.content_url`) points servers at a copy on your own web server; the bundle's
+signature is read from the same address plus `.sig`. Each server keeps its update in
+`content/` in its detections folder. Upgrading Signalith to a version with newer rules
+built in uses those instead of an older update.
+
+From the command line (as the service, with `-c` for the config file):
+
+```sh
+signalith content status
+signalith content install signalith-content.tar.gz   # reads signalith-content.tar.gz.sig too
+signalith content remove
+```
+
+Restart Signalith after `install` or `remove` so a running server uses the change, or
+upload on the Detections page instead.
+
 ## Sigma rules
 
 **Import Sigma rule** on the Detections page (or `POST /api/detections/sigma`)
@@ -389,6 +434,10 @@ Imported rules start disabled with a 5 minute schedule and 10 minute lookback.
 | `POST /api/detections/{id}/run` | Run now and raise findings |
 | `POST /api/detections/sigma` | Convert a Sigma rule (YAML body, or JSON `{"rule": "..."}`) |
 | `GET /api/detections/packs` | Content packs with their rule IDs, how many are on, and counts by severity |
+| `GET /api/detections/content` | Content update status: the version in use, whether it is an update, the last check and the `content_updates` mode |
+| `POST /api/detections/content/check` | Download and install a newer content update (admin; 502 with the reason when it fails) |
+| `POST /api/detections/content/upload` | Install an update from a form with the files `bundle` and `signature` (admin; 409 when it is not newer) |
+| `DELETE /api/detections/content` | Remove the update and use the rules built into Signalith (admin) |
 | `POST /api/detections/{id}/exceptions` | Add an exception: `{"match": {"host": "web*"}, "for": "7d", "from", "until", "comment"}` (admin) |
 | `DELETE /api/detections/{id}/exceptions/{exception}` | Remove an exception (admin) |
 | `POST /api/findings/{id}/suppress` | Don't alert on this again: `{"fields": ["host", "user"], "for": "30d", "comment", "update": {"status": "closed", "disposition": "false_positive"}}` adds an exception for the finding's values of those fields and can update the finding (admin) |

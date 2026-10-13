@@ -4475,3 +4475,16 @@ dialog.ep-set { width: min(620px, calc(100vw - 32px)); }
 #page-detections .dx-ex__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; color: var(--text-3); font-size: var(--fs-xs); }
 #page-detections .dx-ex__note { margin: 0; color: var(--text-2); font-size: var(--fs-sm); overflow-wrap: anywhere; }
 #page-detections .dx-ex__del { position: absolute; top: 6px; right: 6px; }
+
+/* Content updates: how new the pack rules are, under the pack cards. */
+#page-detections .dx-content { display: flex; align-items: center; gap: 10px; padding: 2px 4px; color: var(--text-3); font-size: var(--fs-sm); }
+#page-detections .dx-content__icon { flex: none; display: grid; color: var(--text-3); }
+#page-detections .dx-content__icon svg { width: 16px; height: 16px; }
+#page-detections .dx-content__text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; line-height: 1.45; }
+#page-detections .dx-content__warn { color: var(--warning); }
+#page-detections .dx-content__err { color: var(--danger); }
+#page-detections .dx-content__actions { flex: none; display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+@media (max-width: 720px) {
+  #page-detections .dx-content { flex-wrap: wrap; align-items: flex-start; }
+  #page-detections .dx-content__actions { width: 100%; justify-content: flex-start; }
+}

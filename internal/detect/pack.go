@@ -2,6 +2,7 @@ package detect
 
 import (
 	"embed"
+	"errors"
 	"fmt"
 	"io/fs"
 	"path"
@@ -81,54 +82,141 @@ type PackRule struct {
 }
 
 var (
-	packsOnce sync.Once
-	packs     []*Pack
-	packDets  []*Detection
-	packsErr  error
+	embeddedOnce sync.Once
+	embedded     packSet
+
+	packsMu sync.RWMutex
+	update  *packSet // a content update in use, else nil
 )
 
-// Packs returns the content packs in the binary and their detections,
-// converted once and shared (callers copy before changing one).
-func Packs() ([]*Pack, []*Detection, error) {
-	packsOnce.Do(func() { packs, packDets, packsErr = loadPacks(packFS) })
-	return packs, packDets, packsErr
+// packSet is a set of packs and their detections, from the binary or a
+// content update.
+type packSet struct {
+	packs []*Pack
+	dets  []*Detection
+	err   error
+	// Version is when the content was made (content.VersionLayout).
+	version string
 }
 
-func loadPacks(fsys fs.FS) ([]*Pack, []*Detection, error) {
+func builtinPacks() *packSet {
+	embeddedOnce.Do(func() {
+		embedded.packs, embedded.dets, _, embedded.err = loadPacks(packFS, false)
+		embedded.version = packsVersion(embedded.packs)
+	})
+	return &embedded
+}
+
+// packsVersion is the content version of packs built into Signalith: the
+// day its newest pack was made.
+func packsVersion(ps []*Pack) string {
+	v := ""
+	for _, p := range ps {
+		if d := strings.ReplaceAll(p.Date, "-", ""); len(d) == 8 && d > v {
+			v = d
+		}
+	}
+	if v == "" {
+		return ""
+	}
+	return v + "000000"
+}
+
+// Packs returns the content packs in use and their detections, converted
+// once and shared (callers copy before changing one): those of a content
+// update when one is in use (UsePacks), else those built into Signalith.
+func Packs() ([]*Pack, []*Detection, error) {
+	packsMu.RLock()
+	u := update
+	packsMu.RUnlock()
+	if u != nil {
+		return u.packs, u.dets, nil
+	}
+	b := builtinPacks()
+	return b.packs, b.dets, b.err
+}
+
+// ContentVersion is the version of the content in use and whether it is
+// a content update.
+func ContentVersion() (version string, updated bool) {
+	packsMu.RLock()
+	defer packsMu.RUnlock()
+	if update != nil {
+		return update.version, true
+	}
+	return builtinPacks().version, false
+}
+
+// BuiltinContentVersion is the version of the packs built into Signalith.
+// A content update older than it is not used.
+func BuiltinContentVersion() string { return builtinPacks().version }
+
+// LoadPacks converts the packs of a content update (packs/<name>/ in
+// fsys). A rule this build cannot convert, such as one for a log source
+// it does not know yet, is left out and reported in skipped; a broken
+// manifest or a clash of IDs is an error.
+func LoadPacks(fsys fs.FS) (ps []*Pack, ds []*Detection, skipped []error, err error) {
+	ps, ds, skipped, err = loadPacks(fsys, true)
+	if err == nil && len(ps) == 0 {
+		err = errors.New("the content has no packs")
+	}
+	return ps, ds, skipped, err
+}
+
+// UsePacks makes packs from LoadPacks, at version, the ones in use; nil
+// goes back to the packs built into Signalith. Libraries pick them up
+// with Library.ReloadPacks.
+func UsePacks(ps []*Pack, ds []*Detection, version string) {
+	packsMu.Lock()
+	defer packsMu.Unlock()
+	if ps == nil {
+		update = nil
+		return
+	}
+	update = &packSet{packs: ps, dets: ds, version: version}
+}
+
+func loadPacks(fsys fs.FS, lenient bool) ([]*Pack, []*Detection, []error, error) {
 	manifests, err := fs.Glob(fsys, "packs/*/pack.yaml")
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	sort.Strings(manifests)
 	var ps []*Pack
 	var ds []*Detection
+	var skipped []error
 	ids := map[string]string{}
 	for _, m := range manifests {
 		data, err := fs.ReadFile(fsys, m)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		var p Pack
 		if err := yaml.Unmarshal(data, &p); err != nil {
-			return nil, nil, fmt.Errorf("%s: %w", m, err)
+			return nil, nil, nil, fmt.Errorf("%s: %w", m, err)
 		}
 		dir := path.Dir(m)
 		if p.Format == "splunk" {
 			if p.macros, err = loadMacros(fsys, dir); err != nil {
-				return nil, nil, err
+				return nil, nil, nil, err
 			}
 		}
 		for _, r := range p.Rules {
 			src, err := fs.ReadFile(fsys, path.Join(dir, "rules", r.File))
-			if err != nil {
-				return nil, nil, fmt.Errorf("%s: %w", m, err)
+			var d *Detection
+			if err == nil {
+				d, err = PackDetection(&p, r, src)
 			}
-			d, err := PackDetection(&p, r, src)
 			if err != nil {
-				return nil, nil, fmt.Errorf("%s: %s: %w", m, r.File, err)
+				err = fmt.Errorf("%s: %s: %w", m, r.File, err)
+				if lenient {
+					skipped = append(skipped, err)
+					continue
+				}
+				return nil, nil, nil, err
 			}
 			if prev, dup := ids[d.ID]; dup {
-				return nil, nil, fmt.Errorf("%s: id %s is used by %s too", m, d.ID, prev)
+				return nil, nil, nil, fmt.Errorf("%s: id %s is used by %s too", m, d.ID, prev)
 			}
 			ids[d.ID] = r.File
 			ds = append(ds, d)
@@ -136,7 +224,7 @@ func loadPacks(fsys fs.FS) ([]*Pack, []*Detection, error) {
 		p.Rules = nil
 		ps = append(ps, &p)
 	}
-	return ps, ds, nil
+	return ps, ds, skipped, nil
 }
 
 // Risk the pack rules add, by Sigma level. Low rules only add risk, as

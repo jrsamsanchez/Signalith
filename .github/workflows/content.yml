@@ -1,0 +1,109 @@
+name: Content
+# Content updates: every week, rebuild the SigmaHQ and Splunk content packs
+# from the newest upstream rules, run every pack check (in memory and
+# against a real OpenSearch), and publish the packs as a signed bundle on
+# the "content" release, which Signalith servers check for (Detections
+# page, or detections.content_updates: daily). Only rules that pass ship.
+# Nothing is published when the packs did not change, or without the
+# SIGNALITH_CONTENT_KEY secret (see docs/releasing.md); running it by hand
+# with "publish" off is a dry run.
+on:
+  schedule:
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the bundle when the packs changed (off is a dry run)
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: content
+  cancel-in-progress: false
+
+jobs:
+  content:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # the content release
+    services:
+      opensearch:
+        image: opensearchproject/opensearch:2.17.1
+        env:
+          discovery.type: single-node
+          DISABLE_SECURITY_PLUGIN: 'true'
+          DISABLE_INSTALL_DEMO_CONFIG: 'true'
+          OPENSEARCH_JAVA_OPTS: -Xms1g -Xmx1g
+        ports:
+          - 127.0.0.1:9200:9200
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+      - name: Get the newest upstream rules
+        run: |
+          git clone --depth 1 https://github.com/SigmaHQ/sigma "$RUNNER_TEMP/sigma"
+          git clone --depth 1 https://github.com/splunk/security_content "$RUNNER_TEMP/security_content"
+      - name: Rebuild the packs
+        run: |
+          go run ./internal/detect/packgen -sigma "$RUNNER_TEMP/sigma"
+          go run ./internal/detect/splunkgen -splunk "$RUNNER_TEMP/security_content"
+          git status --short internal/detect/packs | tail -5
+      - name: Check every pack rule
+        run: go test ./internal/detect/ ./internal/sigmacheck/ ./internal/splcheck/ ./internal/content/
+      - name: Check every pack rule against OpenSearch
+        env:
+          SIGNALITH_TEST_OPENSEARCH: http://127.0.0.1:9200
+        run: |
+          for i in $(seq 1 60); do curl -fs http://127.0.0.1:9200/_cluster/health >/dev/null && break; sleep 3; done
+          go test -tags integration ./internal/integration/ -run TestPackRulesAgainstOpenSearch -count=1 -timeout 30m
+      - name: Make the bundle
+        id: bundle
+        env:
+          SIGNALITH_CONTENT_KEY: ${{ secrets.SIGNALITH_CONTENT_KEY }}
+        run: |
+          mkdir -p dist
+          go build -o "$RUNNER_TEMP/signalith" ./cmd/signalith
+          "$RUNNER_TEMP/signalith" content bundle -packs internal/detect/packs -o dist/signalith-content.tar.gz
+          # The packs as published now, to publish only a change.
+          changed=true
+          if curl -fsSL -o "$RUNNER_TEMP/published.tar.gz" https://github.com/${{ github.repository }}/releases/download/content/signalith-content.tar.gz; then
+            mkdir -p "$RUNNER_TEMP/old" "$RUNNER_TEMP/new"
+            tar -xzf "$RUNNER_TEMP/published.tar.gz" -C "$RUNNER_TEMP/old"
+            tar -xzf dist/signalith-content.tar.gz -C "$RUNNER_TEMP/new"
+            if diff -rq "$RUNNER_TEMP/old/packs" "$RUNNER_TEMP/new/packs" >/dev/null; then changed=false; fi
+          fi
+          echo "changed=$changed" >> "$GITHUB_OUTPUT"
+          if [ -z "$SIGNALITH_CONTENT_KEY" ]; then
+            echo "::warning::No SIGNALITH_CONTENT_KEY secret, so the bundle is not signed or published. docs/releasing.md says how to add the key."
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          "$RUNNER_TEMP/signalith" content sign dist/signalith-content.tar.gz
+          pub=$("$RUNNER_TEMP/signalith" content pubkey)
+          echo "Signed with public key $pub"
+          if ! grep -qxF "$pub" internal/content/trusted.keys; then
+            echo "::warning::The signing key's public key $pub is not in internal/content/trusted.keys, so Signalith refuses this bundle until it is added there and released."
+          fi
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: signalith-content
+          path: dist/
+      - name: Publish on the content release
+        if: steps.bundle.outputs.signed == 'true' && steps.bundle.outputs.changed == 'true' && (github.event_name == 'schedule' || inputs.publish)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view content >/dev/null 2>&1; then
+            gh release create content --title "Content updates" --latest=false \
+              --notes "Signed content pack updates that Signalith servers download (Detections page, or detections.content_updates: daily). Not a Signalith release: see the other releases for the program. docs/detections.md explains content updates."
+          fi
+          # The bundle first, then its signature: a server that checks in
+          # between finds them mismatched, refuses, and tries again later.
+          gh release upload content dist/signalith-content.tar.gz --clobber
+          gh release upload content dist/signalith-content.tar.gz.sig --clobber

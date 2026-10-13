@@ -298,6 +298,14 @@ var Registry = []Setting{
 		Confirm: "This server will stop running detections, threat intel downloads, notifications and retention. If no other server shares its OpenSearch, none of them run until this is turned on again.", ConfirmWhen: "off"},
 	{Key: "detections.max_findings_per_run", Scope: ScopeCluster, Section: "detections", Label: "Most findings per run", Type: TypeNumber, Min: intp(1), Max: intp(10000),
 		Help: "The most findings one detection run can raise, so a noisy rule cannot flood the queue."},
+	{Key: "detections.content_updates", Scope: ScopeServer, Section: "detections", Label: "Content pack updates", Type: TypeChoice,
+		Help: "Newer SigmaHQ and Splunk rules, tested and signed by the Signalith project, without a new Signalith release. " +
+			"Manual: an admin checks for them on the Detections page, or uploads them on a computer without internet access. " +
+			"Daily: this server checks once a day and installs them. Rules you turned on stay on, and new rules start off.",
+		Choices: []Choice{{ContentManual, "Manual"}, {ContentDaily, "Daily"}}, EmptyMeans: ContentManual},
+	{Key: "detections.content_url", Scope: ScopeCluster, Section: "detections", Label: "Content update address", Type: TypeURL,
+		Help:        "Where content updates are downloaded from, such as a copy on your own web server. Only bundles signed by the Signalith project are installed, wherever they come from.",
+		Placeholder: DefaultContentURL, EmptyMeans: "the Signalith project's GitHub releases"},
 
 	{Key: "assistant.provider", Scope: ScopeCluster, Section: "assistant", Label: "Provider", Type: TypeChoice,
 		Help: "Who runs the model. OpenAI or compatible includes Ollama, LM Studio and vLLM on your own hardware.",

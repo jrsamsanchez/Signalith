@@ -171,9 +171,8 @@ func NewLibrary(dir string) (*Library, []error, error) {
 				err = nil
 			}
 		}
-		if err == nil && l.builtin[id] == nil && l.pack[id] == nil {
-			err = fmt.Errorf("no built-in or pack detection has id %q", id)
-		}
+		// A choice for a pack rule that a content update dropped is kept:
+		// it applies again if the rule comes back.
 		if p := exceptionProblems(st.Exceptions); err == nil && len(p) > 0 {
 			err = &ValidationError{ID: id, Problems: p}
 		}
@@ -184,6 +183,27 @@ func NewLibrary(dir string) (*Library, []error, error) {
 		l.state[id] = &st
 	}
 	return l, problems, nil
+}
+
+// ReloadPacks takes the content packs now in use (Packs), after a content
+// update was installed or removed. Choices made for pack rules carry over
+// by ID.
+func (l *Library) ReloadPacks() error {
+	_, pds, err := Packs()
+	if err != nil {
+		return err
+	}
+	pack := make(map[string]*Detection, len(pds))
+	for _, d := range pds {
+		if _, dup := l.builtin[d.ID]; dup {
+			return fmt.Errorf("pack detection %s has a built-in's id", d.ID)
+		}
+		pack[d.ID] = d
+	}
+	l.mu.Lock()
+	l.pack = pack
+	l.mu.Unlock()
+	return nil
 }
 
 // shipped returns the built-in or pack detection with an id, or nil.
