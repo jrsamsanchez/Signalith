@@ -364,7 +364,7 @@ change off the page.
 | `retention.days` | The data retention page. |
 | `auth.admin_user`, `auth.admin_password_hash` | `signalith.yaml` and `signalith passwd` only: the built-in admin is the break-glass account, so no page can lock everyone out. |
 | `auth.ldap` | The Users page sets up directory sign-in. |
-| `auth.users_file`, `intel.feeds_file`, `detections.dir`, `dashboards.dir`, `lookups.dir` | `signalith.yaml`: pages save into these files and folders, and the lookups folder holds the Settings page's own file. The page shows where they are. |
+| `auth.users_file`, `intel.feeds_file`, `notify.file`, `detections.dir`, `dashboards.dir`, `lookups.dir` | `signalith.yaml`: pages save into these files and folders, and the lookups folder holds the Settings page's own file. The page shows where they are. |
 | `ingest.tokens` | `signalith.yaml` (`ingest.tokens`) or `SIGNALITH_INGEST_TOKEN`; **Add data** shows the agent setup that uses them. The page shows how many there are. |
 | `intel.feeds` | The Threat intel page. |
 

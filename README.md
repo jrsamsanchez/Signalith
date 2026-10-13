@@ -527,7 +527,7 @@ are counted for each person's own address, not the proxy's. See
 | `syslog.allow` | any sender | Sender IPs or CIDRs allowed to send syslog; others are dropped and counted |
 | `syslog.public_port` | the listen port | Port devices send UDP and TCP syslog to, when it is forwarded to the listen port; shown on Add data |
 | `detections.dir` | `detections` | Folder for custom and edited detections, relative to the config file |
-| `detections.scheduler` | `true` | Lets this server run detections, threat intel downloads and retention. Servers that share one OpenSearch take turns automatically; turn it off only on a server that should never run them. See [More than one server](#more-than-one-server) |
+| `detections.scheduler` | `true` | Lets this server run detections, threat intel downloads, notifications and retention. Servers that share one OpenSearch take turns automatically; turn it off only on a server that should never run them. See [More than one server](#more-than-one-server) |
 | `detections.max_findings_per_run` | `100` | Cap on findings one run can raise |
 | `lookups.dir` | `lookups` | Folder for `assets.csv` and `identities.csv`, relative to the config file |
 | `intel.feeds` | none | Threat intel feeds kept in this file (read-only on the page); most people add feeds on the **Threat intel** page instead. See [Threat intel](#threat-intel). Nothing is fetched until a feed is added |
@@ -540,6 +540,7 @@ are counted for each person's own address, not the proxy's. See
 | `intel.feeds[].headers`, `.username`, `.password` | none | Request headers and HTTP basic sign-in for feeds that need a key; values may use `${ENV_VAR}` |
 | `intel.feeds[].tags`, `.description`, `.enabled` | none, `true` | Labels added to every indicator, and on/off |
 | `intel.feeds_file` | `<lookups.dir>/intel_feeds.yaml` | Where feeds added on the page are saved, with their API keys encrypted (file mode 0600) |
+| `notify.file` | `<lookups.dir>/notifications.yaml` | Where notification channels and rules set on the **Notifications** page are saved, with their webhook URLs, header values and passwords encrypted (file mode 0600). See [docs/notifications.md](docs/notifications.md) |
 | `intel.allow_loopback_feeds` | `false` | Allow feed downloads from this machine (`127.0.0.1`, `::1`), for a feed server on the same host |
 | `cluster.node_name` | the name kept in the state folder, else this computer's name | This server's name in the list of servers and on every log line (`node=`). 1 to 63 letters, digits, dots, dashes or underscores. In Docker, set it (or `SIGNALITH_NODE_NAME`), since a container's name is random. Set in signalith.yaml or the environment only |
 | `dashboards.dir` | `dashboards` | Folder for custom dashboards, one YAML file each, relative to the config file |
@@ -552,7 +553,7 @@ Secrets can come from the environment instead: `SIGNALITH_OPENSEARCH_PASSWORD`,
 `auth.ldap` in this file only; directory sign-in set up on the Users page keeps its own) (also
 `SIGNALITH_OPENSEARCH_URL`, `SIGNALITH_OPENSEARCH_USERNAME`, `SIGNALITH_OPENSEARCH_PROXY`, `SIGNALITH_LISTEN`,
 `SIGNALITH_PUBLIC_URL`, `SIGNALITH_DETECTIONS_DIR`, `SIGNALITH_LOOKUPS_DIR`, `SIGNALITH_DASHBOARDS_DIR`,
-`SIGNALITH_USERS_FILE`, `SIGNALITH_INTEL_FEEDS_FILE`, `SIGNALITH_ARCHIVE_DIR`, `SIGNALITH_ASSISTANT_API_KEY`, and
+`SIGNALITH_USERS_FILE`, `SIGNALITH_INTEL_FEEDS_FILE`, `SIGNALITH_NOTIFY_FILE`, `SIGNALITH_ARCHIVE_DIR`, `SIGNALITH_ASSISTANT_API_KEY`, and
 `SIGNALITH_SYSLOG_UDP` and `SIGNALITH_SYSLOG_TCP`, where `off` turns the listener off, `SIGNALITH_NODE_NAME` and
 `SIGNALITH_NODE_URL`). Secrets can also be read
 from a file, as Docker and Kubernetes secrets are: set `SIGNALITH_OPENSEARCH_PASSWORD_FILE`,
@@ -635,8 +636,9 @@ adding a server by hand, and load balancer examples.
 Passwords and API keys are encrypted in the files where Signalith keeps its settings: in `signalith.yaml`
 (`opensearch.password`, `assistant.api_key`, `auth.ldap.bind_password`, `ingest.tokens`, feed
 passwords and headers), in `settings.yaml` (the OpenSearch password and the AI model's API key
-saved on the **Settings** page), in `directory.json` (the directory service account password) and
-in `intel_feeds.yaml` (keys of feeds added on the page). They look like `enc:v1:9096cd23:...`. A
+saved on the **Settings** page), in `directory.json` (the directory service account password),
+in `intel_feeds.yaml` (keys of feeds added on the page) and in `notifications.yaml` (webhook URLs,
+headers, signing secrets and mail passwords of notification channels). They look like `enc:v1:9096cd23:...`. A
 plain value pasted into `signalith.yaml` still works, and `signalith validate` and the **Health**
 page say to encrypt it; the server encrypts plain values in the files it writes itself
 (`settings.yaml`, `directory.json`, `intel_feeds.yaml`) when it starts. The master key is made by
@@ -709,6 +711,23 @@ like an investigation in Splunk ES. Open the **Investigations** tab to see open 
 
 Cases are stored in OpenSearch in the `<prefix>_cases` index, and every change is
 recorded with who made it.
+
+## Notifications
+
+Signalith can tell you about new findings in Slack, Microsoft Teams, email or a webhook (a
+SOAR, ticketing system or your own script). On the **Notifications** page (admins), add a
+**channel** for each place messages go and test it with **Send test**. Then add a **rule**
+that says which findings go there, such as "High and critical findings from any detection go
+to Slack #soc and Email SOC team". Rules can also pick detections and a least risk score.
+Sample-data findings are skipped unless a rule includes them.
+
+Each finding goes to each channel once. Failed sends are retried for about 80 minutes,
+and the Health page warns about a failing channel. Only the server running the background jobs
+sends, so a cluster sends each message once. Webhook bodies are versioned JSON and can be
+signed with HMAC-SHA256.
+
+See [docs/notifications.md](docs/notifications.md) for setting up each kind of channel
+(Teams uses a Workflows webhook), the webhook body, checking its signature, and the API.
 
 ## Risk and context
 

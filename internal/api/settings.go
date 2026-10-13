@@ -586,6 +586,7 @@ func (s *Server) aboutServer(c *config.Config) map[string]any {
 		{Key: "dashboards.dir", Label: "Dashboards folder", Path: c.DashboardsDir(), Source: c.Source("dashboards.dir")},
 		{Key: "auth.users_file", Label: "Users file", Path: c.UsersFile(), Source: c.Source("auth.users_file")},
 		{Key: "intel.feeds_file", Label: "Threat intel feeds file", Path: c.IntelFeedsFile(), Source: c.Source("intel.feeds_file")},
+		{Key: "notify.file", Label: "Notifications file", Path: c.NotifyFile(), Source: c.Source("notify.file")},
 		{Key: "response.file", Label: "Response actions file", Path: c.ResponseFile(), Source: c.Source("response.file")},
 		{Key: "response.scripts_dir", Label: "Response scripts folder", Path: c.ResponseScriptsDir(), Source: c.Source("response.scripts_dir")},
 	}

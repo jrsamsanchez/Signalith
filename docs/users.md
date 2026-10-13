@@ -638,6 +638,7 @@ page itself.
 `GET /api/sample`, `POST /api/sample/load`, `POST /api/sample/remove`
 (the one-click [sample data](sample-data.md)),
 `GET /api/cluster` (the Servers page; see [servers.md](servers.md)), every
+`/api/notify` route (the Notifications page; see [notifications.md](notifications.md)), every
 `/api/retention` route (see [retention.md](retention.md)), every
 `/api/users` and `/api/auth/directory` route below, and every `/api/settings` route
 (`GET` and `PUT /api/settings`, `POST /api/settings/test/opensearch`,
