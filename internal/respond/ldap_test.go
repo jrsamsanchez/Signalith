@@ -32,7 +32,7 @@ func TestDisableAndEnableADUser(t *testing.T) {
 		Connector{Name: "disable", Label: "Disable AD user", Kind: KindDisableUser},
 		Connector{Name: "enable", Label: "Enable AD user", Kind: KindDisableUser, Operation: OpEnable})
 	r.Directory = func() users.LDAPSettings { return s }
-	if got := r.Describe(Connector{Kind: KindDisableUser, Operation: OpDisable}, "bob"); got != "Disable the AD account bob in corp.example.com." {
+	if got := r.Describe(Connector{Kind: KindDisableUser, Operation: OpDisable}, "bob"); got != "Disable the AD account of bob in corp.example.com." {
 		t.Errorf("Describe = %q", got)
 	}
 	run, err := r.Run(t.Context(), Request{Action: "disable", Target: `CORP\bob`, Reason: "phished", Actor: Actor{Name: "ann"}})

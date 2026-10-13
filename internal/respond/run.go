@@ -375,7 +375,7 @@ func (r *Runner) execute(ctx context.Context, c Connector, run *Run) result {
 }
 
 // Describe says in one sentence what running c on target will do, for
-// the confirm step, such as "Disable the AD account jdoe in
+// the confirm step, such as "Disable the AD account of jdoe in
 // corp.example.com." Target may be "{target}" to make a template.
 func (r *Runner) Describe(c Connector, target string) string {
 	switch c.Kind {
@@ -394,7 +394,7 @@ func (r *Runner) Describe(c Connector, target string) string {
 		if c.Operation == OpEnable {
 			verb = "Enable"
 		}
-		return fmt.Sprintf("%s the %s %s%s.", verb, what, target, where)
+		return fmt.Sprintf("%s the %s of %s%s.", verb, what, target, where)
 	case KindHTTP:
 		host := ""
 		if o, _, err := splitURLTemplate(c.URL); err == nil {
