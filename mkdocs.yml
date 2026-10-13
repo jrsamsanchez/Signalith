@@ -120,6 +120,7 @@ nav:
   - Data intake:
       - Agents and syslog: sending-data.md
       - OpenTelemetry: opentelemetry.md
+      - Endpoints (osquery): endpoints.md
       - Antivirus: antivirus.md
       - Sample data: sample-data.md
   - Using Signalith:
