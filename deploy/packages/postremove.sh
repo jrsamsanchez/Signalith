@@ -9,6 +9,9 @@ if [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1; then
 fi
 case "$1" in
   remove|purge|0)
+    # Tells postinstall.sh, if the package is installed again, to start
+    # the service the removal stopped.
+    if [ -d /var/lib/signalith ]; then : > /var/lib/signalith/.package-removed; fi
     echo "Signalith was removed. Its config (/etc/signalith) and data (/var/lib/signalith) were kept." ;;
 esac
 exit 0

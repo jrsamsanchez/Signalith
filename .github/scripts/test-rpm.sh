@@ -24,6 +24,10 @@ for image in rockylinux:9 fedora:42; do
     rpm -e signalith
     test ! -e /usr/bin/signalith
     test -f /etc/signalith/signalith.yaml
+    test -f /var/lib/signalith/.package-removed
+    rpm -i /p/$new
+    test ! -e /var/lib/signalith/.package-removed
+    test \"\$(signalith initial-password)\" = \"\$password\"
   "
 done
 echo "The .rpm installs, upgrades and removes cleanly."

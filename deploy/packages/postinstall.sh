@@ -1,19 +1,15 @@
 #!/bin/sh
 # After the files are in place. A first install writes a starter config
 # (HTTPS on, a generated admin password kept for "signalith
-# initial-password", syslog on 514 and 6514) and starts the service; an
-# upgrade encrypts passwords an older version kept as plain text and
-# restarts the service if it was running.
-#
-# dpkg calls this with "configure <old version>" (empty on a first install);
-# rpm with 1 for a first install and 2 for an upgrade.
+# initial-password", syslog on 514 and 6514) and starts the service.
+# With a config already there (an upgrade, or installing again after a
+# removal), passwords an older version kept as plain text are encrypted
+# and the service is restarted if it was running, or started again if the
+# removal had stopped it.
 set -e
 config=/etc/signalith/signalith.yaml
-upgrade=no
-case "$1" in
-  configure) [ -n "$2" ] && upgrade=yes ;;
-  2) upgrade=yes ;;
-esac
+# Left by postremove.sh when the package was removed.
+removed=/var/lib/signalith/.package-removed
 
 systemd=no
 if [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1; then
@@ -31,6 +27,7 @@ export SIGNALITH_ARCHIVE_DIR=/var/lib/signalith/archive
 if [ ! -e "$config" ]; then
   install -d -m 0750 -o root -g signalith /etc/signalith
   install -d -m 0750 -o signalith -g signalith /var/lib/signalith
+  rm -f "$removed"
   /usr/bin/signalith init -c "$config" -save-password > /dev/null
   # The service reads its config and may change only what is in
   # /var/lib/signalith; the first password stays root's.
@@ -61,9 +58,17 @@ Secure OpenSearch and give Signalith a certificate to sign in with:
 https://signalith.io/docs/opensearch-security/
 
 MSG
-elif [ "$upgrade" = yes ]; then
+else
   /usr/bin/signalith secrets encrypt -c "$config" || echo "Some passwords or keys could not be encrypted; check with: sudo signalith secrets status" >&2
-  if [ "$systemd" = yes ]; then
+  if [ -e "$removed" ]; then
+    # Installed again after being removed: the removal stopped and
+    # disabled the service, so it is turned back on with the kept config.
+    rm -f "$removed"
+    if [ "$systemd" = yes ]; then
+      systemctl enable signalith >/dev/null 2>&1 || true
+      systemctl start signalith || true
+    fi
+  elif [ "$systemd" = yes ]; then
     systemctl try-restart signalith || true
   fi
 fi
