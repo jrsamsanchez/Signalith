@@ -167,4 +167,10 @@ jobs:
         shell: pwsh
         run: |
           Get-Content "$env:windir\Temp\signalith-install.log" -ErrorAction SilentlyContinue
-          Get-ChildItem $env:RUNNER_TEMP -Filter 'msi-*.log' | ForEach-Object { Write-Host "== $($_.Name)"; Get-Content $_.FullName -Tail 120 }
+          Write-Host "== signalith.log"
+          Get-Content "$env:ProgramData\Signalith\signalith.log" -Tail 100 -ErrorAction SilentlyContinue
+          Write-Host "== Application events from Signalith"
+          Get-WinEvent -FilterHashtable @{ LogName = "Application"; ProviderName = "Signalith" } -MaxEvents 30 -ErrorAction SilentlyContinue | Format-List TimeCreated, Message
+          Write-Host "== Service Control Manager events"
+          Get-WinEvent -FilterHashtable @{ LogName = "System"; ProviderName = "Service Control Manager" } -MaxEvents 15 -ErrorAction SilentlyContinue | Format-List TimeCreated, Message
+          Get-ChildItem $env:RUNNER_TEMP -Filter 'msi-*.log' | ForEach-Object { Write-Host "== $($_.Name)"; Select-String -Path $_.FullName -Pattern 'Return value 3' -Context 30,2 | Select-Object -First 1 }
