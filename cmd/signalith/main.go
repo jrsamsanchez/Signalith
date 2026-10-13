@@ -1768,9 +1768,8 @@ func feedEndpointAssets(ctx context.Context, es *endpoint.Store, lists *assets.S
 // ensureTemplate installs the index template, retrying until OpenSearch is up.
 // It reports false if ctx ended first.
 func ensureTemplate(ctx context.Context, cl *store.Client, c *config.Config, log *slog.Logger) bool {
-	tmpl := ingest.IndexTemplate(c.OpenSearch.IndexPrefix, c.OpenSearch.Replicas)
 	for {
-		err := cl.PutIndexTemplate(ctx, c.OpenSearch.IndexPrefix, tmpl)
+		err := ingest.PutIndexTemplate(ctx, cl, c.OpenSearch.IndexPrefix, c.OpenSearch.Replicas)
 		if err == nil {
 			log.Info("opensearch index template ready", "url", redact.URL(c.OpenSearch.URL))
 			return true

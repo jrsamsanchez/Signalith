@@ -1,0 +1,4 @@
+{"rule": "c1344fa2-323b-4d2e-9176-84b4d4821c88", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"Set-MpPreference   -ExclusionExtension x"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}}
+]}

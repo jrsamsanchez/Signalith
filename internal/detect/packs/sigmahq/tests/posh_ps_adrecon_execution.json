@@ -1,0 +1,4 @@
+{"rule": "bf72941a-cba0-41ea-b18c-9aca3925690d", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"ADRecon-Report.xlsx"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}}
+]}

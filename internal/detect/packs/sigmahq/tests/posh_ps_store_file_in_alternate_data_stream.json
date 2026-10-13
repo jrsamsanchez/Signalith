@@ -1,0 +1,5 @@
+{"rule": "a699b30e-d010-46c8-bbd1-ee2e26765fe9", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"-FilePath \"$env:comspec\" \u003e-ArgumentList Start-Process"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"MessageNumber":"1","MessageTotal":"1","Path":"","ScriptBlockId":"5df17c37-d76b-446e-9f68-1b7b0abca2a4","ScriptBlockText":"\u0026 {if (!(Test-Path C:\\Users\\Public\\Libraries\\yanki -PathType Container)) {\n New-Item -ItemType Directory -Force -Path C:\\Users\\Public\\Libraries\\yanki\n }\nStart-Process -FilePath \"$env:comspec\" -ArgumentList \"/c,type,c:\\windows\\system32\\cmd.exe,\u003e,`\"C:\\Users\\Public\\Libraries\\yanki\\desktop.ini:desktop.ini`\"\"}"}}
+]}

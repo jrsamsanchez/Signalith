@@ -1,0 +1,4 @@
+{"rule": "0f017df3-8f5a-414f-ad6b-24aff1128278", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"ClearLog Eventing.Reader.EventLogSession"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}}
+]}

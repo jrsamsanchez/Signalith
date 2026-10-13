@@ -1,0 +1,4 @@
+{"rule": "05b3e303-faf0-4f4a-9b30-46cc13e69152", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"Add-Content $profile -Value \"Start-Process"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}}
+]}

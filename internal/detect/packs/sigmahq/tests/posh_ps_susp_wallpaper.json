@@ -1,0 +1,5 @@
+{"rule": "c5ac6a1e-9407-45f5-a0ce-ca9a0806a287", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"Registry:: Get-ItemProperty WallPaper HKEY_CURRENT_USER\\Control Panel\\Desktop\\"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"SystemParametersInfo(20,0,,3)"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}}
+]}

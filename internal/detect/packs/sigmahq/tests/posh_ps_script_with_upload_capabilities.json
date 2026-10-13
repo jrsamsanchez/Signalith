@@ -1,0 +1,4 @@
+{"rule": "d2e3f2f6-7e09-4bf2-bc5d-90186809e7fb", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"-Method \"POST\" iwr x"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}}
+]}

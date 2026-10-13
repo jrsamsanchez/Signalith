@@ -1,0 +1,5 @@
+{"rule": "66a4d409-451b-4151-94f4-a55d559c49b0", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"Remove-SmbShare"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"Microsoft.PowerShell.Core\\Export-ModuleMemberCmdletization.MethodParameterFileShare.cdxmlROOT/Microsoft/Windows/Storage/MSFT_FileShareRemove-SmbShareObjectModelWrapper"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}}
+]}

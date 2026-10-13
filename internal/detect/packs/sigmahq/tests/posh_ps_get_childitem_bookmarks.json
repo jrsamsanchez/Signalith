@@ -1,0 +1,4 @@
+{"rule": "e0565f5d-d420-4e02-8a68-ac00d864f9cf", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"x -Filter Bookmarks  -Recurse   -Force  -ErrorAction SilentlyContinue Get-ChildItem  -Path x"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}}
+]}

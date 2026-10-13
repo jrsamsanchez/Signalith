@@ -184,9 +184,9 @@ Content packs are rule sets from other open source projects, shipped unchanged
 inside Signalith and converted when it starts. Every pack detection is **off** until
 an admin turns it on.
 
-**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 1,552 Windows
+**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 1,695 Windows
 rules from [SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit, for
-these Sysmon and Security log sources:
+these Sysmon, Security and PowerShell log sources:
 
 | Sigma log source | Windows events | Data model |
 | --- | --- | --- |
@@ -197,11 +197,39 @@ these Sysmon and Security log sources:
 | `file_event`, `file_delete` | Sysmon 11; 23 and 26 | Filesystem |
 | `registry_add`, `registry_delete`, `registry_set`, `registry_event` | Sysmon 12; 12; 13; 12, 13 and 14 | Registry |
 | `dns_query` | Sysmon 22 | Network_Resolution |
+| `ps_script` | PowerShell 4104 | Script |
 
 Each pack rule only searches its own log source's event IDs, since several kinds of
 event share a data model (a process creation and a process access are both Endpoint).
 Sysmon only records the events its configuration asks for, so a rule fires only when
 your Sysmon configuration logs that kind of event.
+
+### PowerShell script blocks
+
+The `ps_script` rules read event 4104, which Windows PowerShell writes for each script
+it runs once **script block logging** is on (it is off by default). Turn it on with
+Group Policy (Administrative Templates > Windows Components > Windows PowerShell >
+Turn on PowerShell Script Block Logging) or, in an elevated PowerShell:
+
+```powershell
+$k = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging'
+New-Item -Path $k -Force | Out-Null
+Set-ItemProperty -Path $k -Name EnableScriptBlockLogging -Value 1
+```
+
+Then collect the `Microsoft-Windows-PowerShell/Operational` channel: **Include
+PowerShell** on the Add data page adds it to the Windows agent and the OpenTelemetry
+Collector. PowerShell 7 logs to its own `PowerShellCore/Operational` channel, which
+Signalith does not read yet.
+
+Script blocks are long (up to about 20,000 characters, and a longer script arrives in
+parts with `script_part` and `script_parts`), so `script_block_text` is a wildcard
+field, which finds text anywhere in a value of any length. That field type needs
+OpenSearch 2.15 or later. On older versions Signalith maps it as a keyword instead,
+and then the text of a script block longer than 8,191 characters cannot be searched.
+The type applies to indices created after an upgrade, so from the next day's index
+on. Rules that would list more script snippets than OpenSearch allows in one search
+(1,024 clauses by default) are left out of the pack.
 
 A rule is only shipped when:
 
@@ -259,10 +287,12 @@ converts a rule and shows the result for review. Supported:
 - Log sources `process_creation` (Endpoint), `network_connection` and `firewall`
   (Network_Traffic), `authentication` and Linux `auth` (Authentication), and
   `antivirus` (Malware, where `Signature` maps to `signature` and `Filename` to
-  `file_path`), plus the Sysmon log sources in the table above. Other log sources
+  `file_path`), plus the Sysmon and PowerShell log sources in the table above. Other log sources
   search all data and say so. `product: windows` limits the search to Windows event
   logs (and, for the log sources in the table, to their event IDs), and `linux` or
   `macos` leave them out.
+- For `ps_script`, `ScriptBlockText` maps to `script_block_text`, `ScriptBlockId` to
+  `script_block_id` and `Path` to `script_path`.
 - For the Sysmon log sources other than process creation, fields map by log source:
   `TargetFilename` to `file_path`; `TargetObject` to `registry_path` and `Details` to
   `registry_value_data`; `QueryName` to `query` and `QueryResults` to `answer`;

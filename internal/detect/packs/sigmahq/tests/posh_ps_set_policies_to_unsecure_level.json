@@ -1,0 +1,6 @@
+{"rule": "61d0475c-173f-4844-86f7-f3eebae1c66b", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"Set-ExecutionPolicyUnrestricted"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"Unrestricted(New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1')Set-ExecutionPolicy"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"MessageNumber":"1","MessageTotal":"1","Path":"","ScriptBlockId":"320640d1-585d-491c-9b54-3682135e8375","ScriptBlockText":"Set-ExecutionPolicy bypass"}}
+]}

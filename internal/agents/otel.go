@@ -82,6 +82,10 @@ func generateOTel(o Options) (*Agent, error) {
 			b.WriteString("  windowseventlog/sysmon:\n    channel: Microsoft-Windows-Sysmon/Operational\n    storage: file_storage/signalith\n")
 			receivers = append(receivers, "windowseventlog/sysmon")
 		}
+		if o.PowerShell {
+			b.WriteString("  windowseventlog/powershell:\n    channel: Microsoft-Windows-PowerShell/Operational\n    storage: file_storage/signalith\n")
+			receivers = append(receivers, "windowseventlog/powershell")
+		}
 	default:
 		return nil, fmt.Errorf("unknown collector os %q; use linux or windows", host)
 	}
@@ -134,6 +138,9 @@ func generateOTel(o Options) (*Agent, error) {
 	} else {
 		if o.Sysmon {
 			a.Steps = append(a.Steps, "Install Sysmon with a config such as SwiftOnSecurity's sysmon-config, so process and network events are recorded")
+		}
+		if o.PowerShell {
+			a.Steps = append(a.Steps, scriptBlockLoggingStep)
 		}
 		a.Steps = append(a.Steps, "Install the OpenTelemetry Collector Contrib for Windows (the otelcol-contrib .msi, 0.100 or later) from https://github.com/open-telemetry/opentelemetry-collector-releases/releases")
 		files := "config.yaml"

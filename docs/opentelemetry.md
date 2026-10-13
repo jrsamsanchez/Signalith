@@ -12,7 +12,8 @@ Open **Add data**, pick **OpenTelemetry**, and choose where the Collector runs:
 
 - **Linux**: reads `/var/log/auth.log` or `/var/log/secure`, or the systemd journal,
   like the Fluent Bit agent.
-- **Windows**: reads the Security event log, and Sysmon when **Include Sysmon** is on.
+- **Windows**: reads the Security event log, Sysmon when **Include Sysmon** is on, and
+  PowerShell script blocks when **Include PowerShell** is on.
 
 Either way the Collector also listens on `127.0.0.1:4317` (gRPC) and `127.0.0.1:4318`
 (HTTP) for apps on that host that export OTLP logs, and passes those on too.
@@ -61,7 +62,7 @@ agent collects them:
 
 | Receiver | Becomes |
 | --- | --- |
-| `windowseventlog` (Security log 4624, 4625, 4688, 4720, 4726, 4728, 4732, 4756; Sysmon 1, 3, 6, 7, 8, 10, 11, 12, 13, 14, 22, 23, 26) | Authentication, Endpoint, Change, Network_Traffic, Image_Load, Filesystem, Registry, Network_Resolution |
+| `windowseventlog` (Security log 4624, 4625, 4688, 4720, 4726, 4728, 4732, 4756; Sysmon 1, 3, 6, 7, 8, 10, 11, 12, 13, 14, 22, 23, 26; PowerShell 4104) | Authentication, Endpoint, Change, Network_Traffic, Image_Load, Filesystem, Registry, Network_Resolution, Script |
 | `filelog` on `auth.log` or `secure` (or any syslog-format file) | Authentication and Change for sshd, sudo, su and account changes |
 | `journald` | as the agent's journal input |
 | `syslog` | as Signalith's own syslog receiver |

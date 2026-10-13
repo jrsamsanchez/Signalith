@@ -1,0 +1,6 @@
+{"rule": "26b692dc-1722-49b2-b496-a8258aa6371d", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"–HistorySaveStyle SaveNothing Set-PSReadlineOption"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"-HistorySaveStyle Set-PSReadlineOption SaveNothing"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"(Get-PSReadlineOption).HistorySavePathRemove-Item"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}}
+]}

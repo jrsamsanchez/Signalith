@@ -1,0 +1,5 @@
+{"rule": "afd12fed-b0ec-45c9-a13d-aa86625dac81", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"Win32_ShadowCopy ).Create( ClientAccessible"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"MessageNumber":"1","MessageTotal":"1","Path":"","ScriptBlockId":"aee64b02-c1f1-4a3e-9169-1be3e4c74ba6","ScriptBlockText":"\u0026 {(gwmi -list win32_shadowcopy).Create('C:\\','ClientAccessible')}"}}
+]}

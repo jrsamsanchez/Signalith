@@ -1,0 +1,5 @@
+{"rule": "da34e323-1e65-42db-83be-a6725ac2caa3", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"Start-NetEventSession"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"MessageNumber":"1","MessageTotal":"1","Path":"","ScriptBlockId":"188b9281-0eb9-4a43-8087-b3d24113006f","ScriptBlockText":"\u0026 {New-NetEventSession -Name Capture007 -LocalFilePath \"$ENV:Temp\\sniff.etl\"\nAdd-NetEventPacketCaptureProvider -SessionName Capture007 -TruncationLength 100\nStart-NetEventSession -Name Capture007\nStop-NetEventSession -Name Capture007\nRemove-NetEventSession -Name Capture007}"}}
+]}

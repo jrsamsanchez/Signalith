@@ -1213,7 +1213,7 @@ function renderPacks(list) {
         el('div', { class: 'dx-pack__head' }, el('b', {}, p.title),
           el('span', { class: 'dx-meta' }, `${p.rules.toLocaleString()} rules · ${on ? on.toLocaleString() + ' on' : 'all off'}`)),
         el('p', { class: 'dx-pack__desc' }, browsing ? 'Filter by name, ATT&CK ID or tag, then turn on what fits your systems.'
-          : 'Windows rules for Sysmon and Security events, each tested before it ships. Off until you turn them on.'),
+          : 'Windows rules for Sysmon, Security and PowerShell events, each tested before it ships. Off until you turn them on.'),
         credit),
       el('div', { class: 'dx-pack__actions' }, ...actions));
   });

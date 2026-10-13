@@ -71,13 +71,14 @@ func TestOTelLinux(t *testing.T) {
 }
 
 func TestOTelWindows(t *testing.T) {
-	a, err := Generate(Options{OS: "otel", CollectorOS: "windows", Sysmon: true, ServerURL: "https://siem:8080", Token: "t", CA: "x"})
+	a, err := Generate(Options{OS: "otel", CollectorOS: "windows", Sysmon: true, PowerShell: true, ServerURL: "https://siem:8080", Token: "t", CA: "x"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	m := otelConfig(t, a)
 	if dig(m, "receivers", "windowseventlog/security", "channel") != "Security" ||
-		dig(m, "receivers", "windowseventlog/sysmon", "channel") != "Microsoft-Windows-Sysmon/Operational" {
+		dig(m, "receivers", "windowseventlog/sysmon", "channel") != "Microsoft-Windows-Sysmon/Operational" ||
+		dig(m, "receivers", "windowseventlog/powershell", "channel") != "Microsoft-Windows-PowerShell/Operational" {
 		t.Errorf("receivers = %v", m["receivers"])
 	}
 	if dig(m, "exporters", "otlphttp/signalith", "tls", "ca_file") != OTelWindowsCAPath {
@@ -86,7 +87,13 @@ func TestOTelWindows(t *testing.T) {
 	if dig(m, "extensions", "file_storage/signalith", "directory") != otelWindowsState {
 		t.Errorf("storage = %v", dig(m, "extensions"))
 	}
+	if !strings.Contains(strings.Join(a.Steps, " "), "EnableScriptBlockLogging") {
+		t.Errorf("no script block logging step: %q", a.Steps)
+	}
 	a, _ = Generate(Options{OS: "otel", CollectorOS: "windows", ServerURL: "https://siem:8080", Token: "t"})
+	if strings.Contains(a.Config, "powershell") || strings.Contains(strings.Join(a.Steps, " "), "ScriptBlock") {
+		t.Errorf("PowerShell off:\n%s", a.Config)
+	}
 	if strings.Contains(a.Config, "sysmon") || strings.Contains(strings.Join(a.Steps, " "), "Sysmon") {
 		t.Errorf("Sysmon off:\n%s", a.Config)
 	}

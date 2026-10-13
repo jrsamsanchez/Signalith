@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jrsamsanchez/signalith/internal/query"
 )
@@ -101,6 +102,11 @@ func compareQuery(c *query.Compare) (map[string]any, error) {
 	return nil, fmt.Errorf("unsupported operator %q", c.Op)
 }
 
+// WildcardFields are the fields the index template maps as OpenSearch
+// wildcard fields (ingest.IndexTemplate): long text, such as a PowerShell
+// script block, searched for words inside it.
+var WildcardFields = map[string]bool{"script_block_text": true}
+
 func equalsQuery(field, value string) map[string]any {
 	if field == "_time" {
 		field = TimeField
@@ -117,7 +123,15 @@ func equalsQuery(field, value string) map[string]any {
 	if strings.ContainsAny(value, "*?") {
 		// Backslash is the wildcard escape character; Windows paths need it literal.
 		escaped := strings.ReplaceAll(value, `\`, `\\`)
-		return map[string]any{"wildcard": map[string]any{field: map[string]any{"value": escaped, "case_insensitive": true}}}
+		q := map[string]any{"wildcard": map[string]any{field: map[string]any{"value": escaped, "case_insensitive": true}}}
+		if WildcardFields[field] && escaped != value {
+			// A wildcard field takes backslash literally, and older days
+			// or an OpenSearch before 2.15 have the field as a keyword:
+			// match either way.
+			raw := map[string]any{"wildcard": map[string]any{field: map[string]any{"value": value, "case_insensitive": true}}}
+			return boolQuery("should", []any{q, raw})
+		}
+		return q
 	}
 	if _, ok := parseNumber(value); ok {
 		// Numbers match both numeric and keyword fields exactly.
@@ -326,4 +340,52 @@ func spanInterval(span string) (map[string]any, error) {
 		return map[string]any{"calendar_interval": map[string]string{"M": "month", "y": "year"}[unit]}, nil
 	}
 	return map[string]any{"fixed_interval": strconv.Itoa(n) + unit}, nil
+}
+
+// WildcardFieldTerms estimates how many index terms a filter's searches of
+// wildcard fields expand to. OpenSearch finds a value in a wildcard field
+// by the three-character pieces of its literal parts, and one search may
+// use at most indices.query.bool.max_clause_count of them (1,024 by
+// default), so a rule listing many long script snippets can be refused.
+func WildcardFieldTerms(e query.Expr) int {
+	cost := func(field, value string) int {
+		if !WildcardFields[field] {
+			return 0
+		}
+		n := 0
+		for _, part := range strings.FieldsFunc(value, func(r rune) bool { return r == '*' || r == '?' }) {
+			if l := utf8.RuneCountInString(part); l > 2 {
+				n += l - 2
+			}
+		}
+		if strings.ContainsAny(value, "*?") && strings.Contains(value, `\`) {
+			n *= 2 // searched both ways (see equalsQuery)
+		}
+		return n
+	}
+	switch x := e.(type) {
+	case *query.And:
+		n := 0
+		for _, c := range x.Children {
+			n += WildcardFieldTerms(c)
+		}
+		return n
+	case *query.Or:
+		n := 0
+		for _, c := range x.Children {
+			n += WildcardFieldTerms(c)
+		}
+		return n
+	case *query.Not:
+		return WildcardFieldTerms(x.Child)
+	case *query.Compare:
+		return cost(x.Field, x.Value)
+	case *query.In:
+		n := 0
+		for _, v := range x.Values {
+			n += cost(x.Field, v)
+		}
+		return n
+	}
+	return 0
 }

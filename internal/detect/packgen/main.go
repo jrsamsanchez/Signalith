@@ -34,6 +34,7 @@ import (
 
 	"github.com/jrsamsanchez/signalith/internal/detect"
 	"github.com/jrsamsanchez/signalith/internal/query"
+	"github.com/jrsamsanchez/signalith/internal/search"
 	"github.com/jrsamsanchez/signalith/internal/sigmacheck"
 )
 
@@ -53,7 +54,13 @@ var categories = map[string]string{
 	"driver_load":          "rules/windows/driver_load",
 	"process_access":       "rules/windows/process_access",
 	"create_remote_thread": "rules/windows/create_remote_thread",
+	"ps_script":            "rules/windows/powershell/powershell_script",
 }
+
+// maxWildcardTerms keeps a rule's searches of wildcard fields under
+// OpenSearch's default limit of 1,024 clauses in one search (see
+// search.WildcardFieldTerms).
+const maxWildcardTerms = 1000
 
 var (
 	sigmaDir = flag.String("sigma", "", "SigmaHQ checkout")
@@ -151,6 +158,12 @@ func main() {
 			if err != nil {
 				log.Fatalf("%s: converted query does not parse: %v", rel, err)
 			}
+			if n := search.WildcardFieldTerms(q.Search); n > maxWildcardTerms {
+				skip("too many script text pieces for one OpenSearch search", fmt.Sprintf("%s: about %d", rel, n))
+				continue
+			} else if os.Getenv("PACKGEN_TERMS") != "" && n > 0 {
+				fmt.Fprintln(os.Stderr, "TERMS", n, rel)
+			}
 			syn, err := rule.Synthesize(seed(rule.ID), nil, sigmacheck.Bases[cat])
 			if err != nil {
 				skip("no test events: "+short(err), rel)
@@ -223,6 +236,7 @@ var prefixes = []struct{ from, to string }{
 	{"driver_load_win_", "sigma-driver-"},
 	{"proc_access_win_", "sigma-access-"},
 	{"create_remote_thread_win_", "sigma-thread-"},
+	{"posh_ps_", "sigma-ps-"},
 }
 
 var nonID = regexp.MustCompile(`[^a-z0-9]+`)

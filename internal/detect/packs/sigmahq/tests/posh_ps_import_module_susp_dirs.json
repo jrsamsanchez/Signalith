@@ -1,0 +1,4 @@
+{"rule": "21f9162c-5f5d-4b01-89a8-b705bd7d10ab", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"ipmo C:\\Users\\Public\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}}
+]}

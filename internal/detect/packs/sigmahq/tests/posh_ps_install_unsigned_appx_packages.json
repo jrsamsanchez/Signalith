@@ -1,0 +1,4 @@
+{"rule": "975b2262-9a49-439d-92a6-0709cccdf0b2", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"Add-AppPackage   -AllowUnsigned"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}}
+]}

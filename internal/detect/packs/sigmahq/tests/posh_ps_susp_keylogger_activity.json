@@ -1,0 +1,4 @@
+{"rule": "965e2db9-eddb-4cf6-a986-7a967df651e4", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"[Windows.Input.Keyboard]::IsKeyDown([System.Windows.Input.Key]::"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}}
+]}

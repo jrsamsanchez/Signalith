@@ -1,0 +1,4 @@
+{"rule": "953945c5-22fe-4a92-9f8a-a9edc1e522da", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"Set-Service  DCLCWPDTSD -SecurityDescriptorSddl x"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}}
+]}

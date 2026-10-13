@@ -902,7 +902,10 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
                 <option value="journal">systemd journal</option>
               </select>
             </label>
-            <label id="windows-opts" class="switch hidden"><input type="checkbox" id="sysmon" checked> Include Sysmon</label>
+            <span id="windows-opts" class="agent-opts hidden">
+              <label class="switch"><input type="checkbox" id="sysmon" checked> Include Sysmon</label>
+              <label class="switch" title="PowerShell script blocks: the scripts that run, for the PowerShell detections"><input type="checkbox" id="powershell" checked> Include PowerShell</label>
+            </span>
           </div>
         </div>
         <div class="card__body" id="agent-body">

@@ -1,0 +1,4 @@
+{"rule": "3ceb2083-a27f-449a-be33-14ec1b7cc973", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"$Session[\"Driver\"] -eqException in execution[Convert]::ToString($SYNOptions, 16)Stop-ComputerNew-RandomDNSField$Command | nslookup 2\u003e\u00261 | Out-StringClose-Dnscat2Tunnel$Session.Dead = $TrueSystem.Diagnostics.ProcessRestart-Computer$cmdargsset type=$LookupType`nserver"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}}
+]}

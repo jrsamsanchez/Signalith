@@ -1,0 +1,6 @@
+{"rule": "34f90d3c-c297-49e9-b26d-911b05a4866c", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"Get-Keystrokes"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"Get-ProcAddress user32.dll GetAsyncKeyState Get-ProcAddress user32.dll GetForegroundWindow"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"MessageNumber":"1","MessageTotal":"1","Path":"","ScriptBlockId":"c604eb9c-abc1-4a8b-8d0a-53b1877712b7","ScriptBlockText":"\u0026 {\u0026\"C:\\AtomicRedTeam\\atomics\\T1056.001\\src\\Get-Keystrokes.ps1\" -LogPath $env:TEMP\\key.log}"}}
+]}

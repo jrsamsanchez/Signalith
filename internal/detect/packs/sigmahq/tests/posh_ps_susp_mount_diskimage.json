@@ -1,0 +1,4 @@
+{"rule": "29e1c216-6408-489d-8a06-ee9d151ef819", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"Mount-DiskImage -ImagePath x"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}}
+]}

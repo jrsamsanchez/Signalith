@@ -113,13 +113,14 @@ func evalBool(b map[string]any, doc map[string]any) (bool, error) {
 }
 
 // indexedValue returns a field's value as OpenSearch indexed it: absent
-// when missing, and absent for a keyword longer than ignore_above.
+// when missing, and absent for a keyword longer than ignore_above (a
+// wildcard field indexes any length).
 func indexedValue(doc map[string]any, field string) (any, bool) {
 	v, ok := doc[field]
 	if !ok || v == nil {
 		return nil, false
 	}
-	if s, isStr := v.(string); isStr && field != StoredRawField && utf8.RuneCountInString(s) > keywordIgnoreAbove {
+	if s, isStr := v.(string); isStr && field != StoredRawField && !WildcardFields[field] && utf8.RuneCountInString(s) > keywordIgnoreAbove {
 		return nil, false
 	}
 	return v, true

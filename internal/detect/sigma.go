@@ -121,6 +121,10 @@ var sigmaEventFields = func() map[string]map[string]string {
 		"driver_load":          with(map[string]string{"imageloaded": "loaded_file_path", "signed": "signed", "signature": "signature", "signaturestatus": "signature_status", "image": "", "user": "", "processid": "", "processguid": ""}),
 		"process_access":       access,
 		"create_remote_thread": access,
+		"ps_script": {
+			"scriptblocktext": "script_block_text", "path": "script_path", "scriptblockid": "script_block_id",
+			"computer": "host", "computername": "host", "eventid": "signature_id",
+		},
 	}
 }()
 
@@ -141,6 +145,7 @@ var sigmaWindowsEvents = map[string][]string{
 	"driver_load":          {"6"},
 	"process_access":       {"10"},
 	"create_remote_thread": {"8"},
+	"ps_script":            {"4104"},
 }
 
 // sigmaLevels maps Sigma levels to severities.
@@ -339,6 +344,8 @@ func (c *sigmaConv) datamodel(ls map[string]any) string {
 		return "Image_Load"
 	case "process_access", "create_remote_thread":
 		return "Endpoint"
+	case "ps_script":
+		return "Script"
 	}
 	if get("product") == "linux" && get("service") == "auth" {
 		return "Authentication"

@@ -1,0 +1,4 @@
+{"rule": "8bc063d5-3a3a-4f01-a140-bc15e55e8437", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":".ShellExecute( ::GetTypeFromCLSID("}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}}
+]}

@@ -5317,6 +5317,578 @@ rules:
     rule_id: 193d5ccd-6f59-40c6-b5b0-8e32d5ddd3d1
     file: proc_creation_win_xwizard_execution_non_default_location.yml
     path: rules/windows/process_creation/proc_creation_win_xwizard_execution_non_default_location.yml
+  - id: sigma-ps-aadinternals-cmdlets-execution
+    rule_id: 91e69562-2426-42ce-a647-711b8152ced6
+    file: posh_ps_aadinternals_cmdlets_execution.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_aadinternals_cmdlets_execution.yml
+  - id: sigma-ps-access-to-browser-login-data
+    rule_id: fc028194-969d-4122-8abe-0470d5b8f12f
+    file: posh_ps_access_to_browser_login_data.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_access_to_browser_login_data.yml
+  - id: sigma-ps-active-directory-module-dll-import
+    rule_id: 9e620995-f2d8-4630-8430-4afd89f77604
+    file: posh_ps_active_directory_module_dll_import.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_active_directory_module_dll_import.yml
+  - id: sigma-ps-add-dnsclient-rule
+    rule_id: 4368354e-1797-463c-bc39-a309effbe8d7
+    file: posh_ps_add_dnsclient_rule.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_add_dnsclient_rule.yml
+  - id: sigma-ps-add-windows-capability
+    rule_id: 155c7fd5-47b4-49b2-bbeb-eb4fab335429
+    file: posh_ps_add_windows_capability.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_add_windows_capability.yml
+  - id: sigma-ps-adrecon-execution
+    rule_id: bf72941a-cba0-41ea-b18c-9aca3925690d
+    file: posh_ps_adrecon_execution.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_adrecon_execution.yml
+  - id: sigma-ps-amsi-bypass-pattern-nov22
+    rule_id: e0d6c087-2d1c-47fd-8799-3904103c5a98
+    file: posh_ps_amsi_bypass_pattern_nov22.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_amsi_bypass_pattern_nov22.yml
+  - id: sigma-ps-amsi-null-bits-bypass
+    rule_id: fa2559c8-1197-471d-9cdd-05a0273d4522
+    file: posh_ps_amsi_null_bits_bypass.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_amsi_null_bits_bypass.yml
+  - id: sigma-ps-apt-silence-eda
+    rule_id: 3ceb2083-a27f-449a-be33-14ec1b7cc973
+    file: posh_ps_apt_silence_eda.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_apt_silence_eda.yml
+  - id: sigma-ps-as-rep-roasting
+    rule_id: 96c982fe-3d08-4df4-bed2-eb14e02f21c8
+    file: posh_ps_as_rep_roasting.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_as_rep_roasting.yml
+  - id: sigma-ps-audio-exfiltration
+    rule_id: e4f93c99-396f-47c8-bb0f-201b1fa69034
+    file: posh_ps_audio_exfiltration.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_audio_exfiltration.yml
+  - id: sigma-ps-automated-collection
+    rule_id: c1dda054-d638-4c16-afc8-53e007f3fbc5
+    file: posh_ps_automated_collection.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_automated_collection.yml
+  - id: sigma-ps-capture-screenshots
+    rule_id: d4a11f63-2390-411c-9adf-d791fd152830
+    file: posh_ps_capture_screenshots.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_capture_screenshots.yml
+  - id: sigma-ps-clear-powershell-history
+    rule_id: 26b692dc-1722-49b2-b496-a8258aa6371d
+    file: posh_ps_clear_powershell_history.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_clear_powershell_history.yml
+  - id: sigma-ps-clearing-windows-console-history
+    rule_id: bde47d4b-9987-405c-94c7-b080410e8ea7
+    file: posh_ps_clearing_windows_console_history.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_clearing_windows_console_history.yml
+  - id: sigma-ps-cmdlet-scheduled-task
+    rule_id: 363eccc0-279a-4ccf-a3ab-24c2e63b11fb
+    file: posh_ps_cmdlet_scheduled_task.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_cmdlet_scheduled_task.yml
+  - id: sigma-ps-cor-profiler
+    rule_id: 23590215-4702-4a70-8805-8dc9e58314a2
+    file: posh_ps_cor_profiler.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_cor_profiler.yml
+  - id: sigma-ps-create-local-user
+    rule_id: 243de76f-4725-4f2e-8225-a8a69b15ad61
+    file: posh_ps_create_local_user.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_create_local_user.yml
+  - id: sigma-ps-create-volume-shadow-copy
+    rule_id: afd12fed-b0ec-45c9-a13d-aa86625dac81
+    file: posh_ps_create_volume_shadow_copy.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_create_volume_shadow_copy.yml
+  - id: sigma-ps-detect-vm-env
+    rule_id: d93129cd-1ee0-479f-bc03-ca6f129882e3
+    file: posh_ps_detect_vm_env.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_detect_vm_env.yml
+  - id: sigma-ps-directorysearcher
+    rule_id: 1f6399cf-2c80-4924-ace1-6fcff3393480
+    file: posh_ps_directorysearcher.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_directorysearcher.yml
+  - id: sigma-ps-directoryservices-accountmanagement
+    rule_id: b29a93fb-087c-4b5b-a84d-ee3309e69d08
+    file: posh_ps_directoryservices_accountmanagement.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_directoryservices_accountmanagement.yml
+  - id: sigma-ps-disable-psreadline-command-history
+    rule_id: 602f5669-6927-4688-84db-0d4b7afb2150
+    file: posh_ps_disable_psreadline_command_history.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_disable_psreadline_command_history.yml
+  - id: sigma-ps-disable-windows-optional-feature
+    rule_id: 99c4658d-2c5e-4d87-828d-7c066ca537c3
+    file: posh_ps_disable_windows_optional_feature.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_disable_windows_optional_feature.yml
+  - id: sigma-ps-dotnet-assembly-from-file
+    rule_id: ddcd88cb-7f62-4ce5-86f9-1704190feb0a
+    file: posh_ps_dotnet_assembly_from_file.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_dotnet_assembly_from_file.yml
+  - id: sigma-ps-download-com-cradles
+    rule_id: 3c7d1587-3b13-439f-9941-7d14313dbdfe
+    file: posh_ps_download_com_cradles.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_download_com_cradles.yml
+  - id: sigma-ps-dump-password-windows-credential-manager
+    rule_id: 99c49d9c-34ea-45f7-84a7-4751ae6b2cbc
+    file: posh_ps_dump_password_windows_credential_manager.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_dump_password_windows_credential_manager.yml
+  - id: sigma-ps-enable-psremoting
+    rule_id: 991a9744-f2f0-44f2-bd33-9092eba17dc3
+    file: posh_ps_enable_psremoting.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_enable_psremoting.yml
+  - id: sigma-ps-enable-susp-windows-optional-feature
+    rule_id: 55c925c1-7195-426b-a136-a9396800e29b
+    file: posh_ps_enable_susp_windows_optional_feature.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_enable_susp_windows_optional_feature.yml
+  - id: sigma-ps-enumerate-password-windows-credential-manager
+    rule_id: 603c6630-5225-49c1-8047-26c964553e0e
+    file: posh_ps_enumerate_password_windows_credential_manager.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_enumerate_password_windows_credential_manager.yml
+  - id: sigma-ps-etw-trace-evasion
+    rule_id: 115fdba9-f017-42e6-84cf-d5573bf2ddf8
+    file: posh_ps_etw_trace_evasion.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_etw_trace_evasion.yml
+  - id: sigma-ps-export-certificate
+    rule_id: aa7a3fce-bef5-4311-9cc1-5f04bb8c308c
+    file: posh_ps_export_certificate.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_export_certificate.yml
+  - id: sigma-ps-frombase64string-archive
+    rule_id: df69cb1d-b891-4cd9-90c7-d617d90100ce
+    file: posh_ps_frombase64string_archive.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_frombase64string_archive.yml
+  - id: sigma-ps-get-acl-service
+    rule_id: 95afc12e-3cbb-40c3-9340-84a032e596a3
+    file: posh_ps_get_acl_service.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_get_acl_service.yml
+  - id: sigma-ps-get-adcomputer
+    rule_id: 36bed6b2-e9a0-4fff-beeb-413a92b86138
+    file: posh_ps_get_adcomputer.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_get_adcomputer.yml
+  - id: sigma-ps-get-adgroup
+    rule_id: 8c3a6607-b7dc-4f0d-a646-ef38c00b76ee
+    file: posh_ps_get_adgroup.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_get_adgroup.yml
+  - id: sigma-ps-get-adreplaccount
+    rule_id: 060c3ef1-fd0a-4091-bf46-e7d625f60b73
+    file: posh_ps_get_adreplaccount.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_get_adreplaccount.yml
+  - id: sigma-ps-get-childitem-bookmarks
+    rule_id: e0565f5d-d420-4e02-8a68-ac00d864f9cf
+    file: posh_ps_get_childitem_bookmarks.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_get_childitem_bookmarks.yml
+  - id: sigma-ps-hktl-rubeus
+    rule_id: 3245cd30-e015-40ff-a31d-5cadd5f377ec
+    file: posh_ps_hktl_rubeus.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_hktl_rubeus.yml
+  - id: sigma-ps-hktl-winpwn
+    rule_id: 851fd622-b675-4d26-b803-14bc7baa517a
+    file: posh_ps_hktl_winpwn.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_hktl_winpwn.yml
+  - id: sigma-ps-hotfix-enum
+    rule_id: f5d1def8-1de0-4a0e-9794-1f6f27dd605c
+    file: posh_ps_hotfix_enum.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_hotfix_enum.yml
+  - id: sigma-ps-icmp-exfiltration
+    rule_id: 4c4af3cd-2115-479c-8193-6b8bfce9001c
+    file: posh_ps_icmp_exfiltration.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_icmp_exfiltration.yml
+  - id: sigma-ps-import-module-susp-dirs
+    rule_id: 21f9162c-5f5d-4b01-89a8-b705bd7d10ab
+    file: posh_ps_import_module_susp_dirs.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_import_module_susp_dirs.yml
+  - id: sigma-ps-install-unsigned-appx-packages
+    rule_id: 975b2262-9a49-439d-92a6-0709cccdf0b2
+    file: posh_ps_install_unsigned_appx_packages.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_install_unsigned_appx_packages.yml
+  - id: sigma-ps-invoke-command-remote
+    rule_id: 7b836d7f-179c-4ba4-90a7-a7e60afb48e6
+    file: posh_ps_invoke_command_remote.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_invoke_command_remote.yml
+  - id: sigma-ps-invoke-dnsexfiltration
+    rule_id: d59d7842-9a21-4bc6-ba98-64bfe0091355
+    file: posh_ps_invoke_dnsexfiltration.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_invoke_dnsexfiltration.yml
+  - id: sigma-ps-invoke-obfuscation-via-compress
+    rule_id: 20e5497e-331c-4cd5-8d36-935f6e2a9a07
+    file: posh_ps_invoke_obfuscation_via_compress.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_invoke_obfuscation_via_compress.yml
+  - id: sigma-ps-invoke-obfuscation-via-rundll
+    rule_id: e6cb92b4-b470-4eb8-8a9d-d63e8583aae0
+    file: posh_ps_invoke_obfuscation_via_rundll.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_invoke_obfuscation_via_rundll.yml
+  - id: sigma-ps-invoke-obfuscation-via-use-mhsta
+    rule_id: e55a5195-4724-480e-a77e-3ebe64bd3759
+    file: posh_ps_invoke_obfuscation_via_use_mhsta.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_invoke_obfuscation_via_use_mhsta.yml
+  - id: sigma-ps-invoke-obfuscation-via-use-rundll32
+    rule_id: a5a30a6e-75ca-4233-8b8c-42e0f2037d3b
+    file: posh_ps_invoke_obfuscation_via_use_rundll32.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_invoke_obfuscation_via_use_rundll32.yml
+  - id: sigma-ps-keylogging
+    rule_id: 34f90d3c-c297-49e9-b26d-911b05a4866c
+    file: posh_ps_keylogging.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_keylogging.yml
+  - id: sigma-ps-localuser
+    rule_id: 4fdc44df-bfe9-4fcc-b041-68f5a2d3031c
+    file: posh_ps_localuser.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_localuser.yml
+  - id: sigma-ps-mailboxexport-share
+    rule_id: 4a241dea-235b-4a7e-8d76-50d817b146c4
+    file: posh_ps_mailboxexport_share.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_mailboxexport_share.yml
+  - id: sigma-ps-malicious-keywords
+    rule_id: f62176f3-8128-4faa-bf6c-83261322e5eb
+    file: posh_ps_malicious_keywords.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_malicious_keywords.yml
+  - id: sigma-ps-memorydump-getstoragediagnosticinfo
+    rule_id: cd185561-4760-45d6-a63e-a51325112cae
+    file: posh_ps_memorydump_getstoragediagnosticinfo.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_memorydump_getstoragediagnosticinfo.yml
+  - id: sigma-ps-modify-group-policy-settings
+    rule_id: b7216a7d-687e-4c8d-82b1-3080b2ad961f
+    file: posh_ps_modify_group_policy_settings.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_modify_group_policy_settings.yml
+  - id: sigma-ps-msxml-com
+    rule_id: 78aa1347-1517-4454-9982-b338d6df8343
+    file: posh_ps_msxml_com.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_msxml_com.yml
+  - id: sigma-ps-nishang-malicious-commandlets
+    rule_id: f772cee9-b7c2-4cb2-8f07-49870adc02e0
+    file: posh_ps_nishang_malicious_commandlets.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_nishang_malicious_commandlets.yml
+  - id: sigma-ps-ntfs-ads-access
+    rule_id: 8c521530-5169-495d-a199-0a3a881ad24e
+    file: posh_ps_ntfs_ads_access.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_ntfs_ads_access.yml
+  - id: sigma-ps-office-comobject-registerxll
+    rule_id: 36fbec91-fa1b-4d5d-8df1-8d8edcb632ad
+    file: posh_ps_office_comobject_registerxll.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_office_comobject_registerxll.yml
+  - id: sigma-ps-packet-capture
+    rule_id: da34e323-1e65-42db-83be-a6725ac2caa3
+    file: posh_ps_packet_capture.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_packet_capture.yml
+  - id: sigma-ps-potential-invoke-mimikatz
+    rule_id: 189e3b02-82b2-4b90-9662-411eb64486d4
+    file: posh_ps_potential_invoke_mimikatz.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_potential_invoke_mimikatz.yml
+  - id: sigma-ps-powershell-web-access-installation
+    rule_id: 5f9c7f1a-7c21-4c39-b2f3-8d8006e0e51f
+    file: posh_ps_powershell_web_access_installation.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_powershell_web_access_installation.yml
+  - id: sigma-ps-powerview-malicious-commandlets
+    rule_id: dcd74b95-3f36-4ed9-9598-0490951643aa
+    file: posh_ps_powerview_malicious_commandlets.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_powerview_malicious_commandlets.yml
+  - id: sigma-ps-prompt-credentials
+    rule_id: ca8b77a9-d499-4095-b793-5d5f330d450e
+    file: posh_ps_prompt_credentials.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_prompt_credentials.yml
+  - id: sigma-ps-psasyncshell
+    rule_id: afd3df04-948d-46f6-ae44-25966c44b97f
+    file: posh_ps_psasyncshell.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_psasyncshell.yml
+  - id: sigma-ps-psattack
+    rule_id: b7ec41a4-042c-4f31-a5db-d0fcde9fa5c5
+    file: posh_ps_psattack.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_psattack.yml
+  - id: sigma-ps-remote-session-creation
+    rule_id: a0edd39f-a0c6-4c17-8141-261f958e8d8f
+    file: posh_ps_remote_session_creation.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_remote_session_creation.yml
+  - id: sigma-ps-remotefxvgpudisablement-abuse
+    rule_id: cacef8fc-9d3d-41f7-956d-455c6e881bc5
+    file: posh_ps_remotefxvgpudisablement_abuse.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_remotefxvgpudisablement_abuse.yml
+  - id: sigma-ps-request-kerberos-ticket
+    rule_id: a861d835-af37-4930-bcd6-5b178bfb54df
+    file: posh_ps_request_kerberos_ticket.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_request_kerberos_ticket.yml
+  - id: sigma-ps-resolve-list-of-ip-from-file
+    rule_id: fbc5e92f-3044-4e73-a5c6-1c4359b539de
+    file: posh_ps_resolve_list_of_ip_from_file.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_resolve_list_of_ip_from_file.yml
+  - id: sigma-ps-root-certificate-installed
+    rule_id: 42821614-9264-4761-acfc-5772c3286f76
+    file: posh_ps_root_certificate_installed.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_root_certificate_installed.yml
+  - id: sigma-ps-run-from-mount-diskimage
+    rule_id: 902cedee-0398-4e3a-8183-6f3a89773a96
+    file: posh_ps_run_from_mount_diskimage.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_run_from_mount_diskimage.yml
+  - id: sigma-ps-script-with-upload-capabilities
+    rule_id: d2e3f2f6-7e09-4bf2-bc5d-90186809e7fb
+    file: posh_ps_script_with_upload_capabilities.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_script_with_upload_capabilities.yml
+  - id: sigma-ps-sensitive-file-discovery
+    rule_id: 7d416556-6502-45b2-9bad-9d2f05f38997
+    file: posh_ps_sensitive_file_discovery.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_sensitive_file_discovery.yml
+  - id: sigma-ps-set-acl
+    rule_id: cae80281-ef23-44c5-873b-fd48d2666f49
+    file: posh_ps_set_acl.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_set_acl.yml
+  - id: sigma-ps-set-acl-susp-location
+    rule_id: 3bf1d859-3a7e-44cb-8809-a99e066d3478
+    file: posh_ps_set_acl_susp_location.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_set_acl_susp_location.yml
+  - id: sigma-ps-set-policies-to-unsecure-level
+    rule_id: 61d0475c-173f-4844-86f7-f3eebae1c66b
+    file: posh_ps_set_policies_to_unsecure_level.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_set_policies_to_unsecure_level.yml
+  - id: sigma-ps-shellcode-b64
+    rule_id: 16b37b70-6fcf-4814-a092-c36bd3aafcbd
+    file: posh_ps_shellcode_b64.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_shellcode_b64.yml
+  - id: sigma-ps-shellintel-malicious-commandlets
+    rule_id: 402e1e1d-ad59-47b6-bf80-1ee44985b3a7
+    file: posh_ps_shellintel_malicious_commandlets.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_shellintel_malicious_commandlets.yml
+  - id: sigma-ps-software-discovery
+    rule_id: 2650dd1a-eb2a-412d-ac36-83f06c4f2282
+    file: posh_ps_software_discovery.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_software_discovery.yml
+  - id: sigma-ps-store-file-in-alternate-data-stream
+    rule_id: a699b30e-d010-46c8-bbd1-ee2e26765fe9
+    file: posh_ps_store_file_in_alternate_data_stream.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_store_file_in_alternate_data_stream.yml
+  - id: sigma-ps-susp-ace-tampering
+    rule_id: 2f77047c-e6e9-4c11-b088-a3de399524cd
+    file: posh_ps_susp_ace_tampering.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_susp_ace_tampering.yml
+  - id: sigma-ps-susp-ad-group-reco
+    rule_id: 88f0884b-331d-403d-a3a1-b668cf035603
+    file: posh_ps_susp_ad_group_reco.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_susp_ad_group_reco.yml
+  - id: sigma-ps-susp-alias-obfscuation
+    rule_id: e8314f79-564d-4f79-bc13-fbc0bf2660d8
+    file: posh_ps_susp_alias_obfscuation.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_susp_alias_obfscuation.yml
+  - id: sigma-ps-susp-clear-eventlog
+    rule_id: 0f017df3-8f5a-414f-ad6b-24aff1128278
+    file: posh_ps_susp_clear_eventlog.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_susp_clear_eventlog.yml
+  - id: sigma-ps-susp-directory-enum
+    rule_id: 162e69a7-7981-4344-84a9-0f1c9a217a52
+    file: posh_ps_susp_directory_enum.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_susp_directory_enum.yml
+  - id: sigma-ps-susp-download
+    rule_id: 403c2cc0-7f6b-4925-9423-bfa573bed7eb
+    file: posh_ps_susp_download.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_susp_download.yml
+  - id: sigma-ps-susp-execute-batch-script
+    rule_id: b5522a23-82da-44e5-9c8b-e10ed8955f88
+    file: posh_ps_susp_execute_batch_script.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_susp_execute_batch_script.yml
+  - id: sigma-ps-susp-extracting
+    rule_id: bd5971a7-626d-46ab-8176-ed643f694f68
+    file: posh_ps_susp_extracting.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_susp_extracting.yml
+  - id: sigma-ps-susp-follina-execution
+    rule_id: 03409c93-a7c7-49ba-9a4c-a00badf2a153
+    file: posh_ps_susp_follina_execution.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_susp_follina_execution.yml
+  - id: sigma-ps-susp-get-addefaultdomainpasswordpolicy
+    rule_id: bbb9495b-58fc-4016-b9df-9a3a1b67ca82
+    file: posh_ps_susp_get_addefaultdomainpasswordpolicy.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_susp_get_addefaultdomainpasswordpolicy.yml
+  - id: sigma-ps-susp-get-current-user
+    rule_id: 4096a49c-7de4-4da0-a230-c66ccd56ea5a
+    file: posh_ps_susp_get_current_user.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_susp_get_current_user.yml
+  - id: sigma-ps-susp-get-gpo
+    rule_id: eb2fd349-ec67-4caa-9143-d79c7fb34441
+    file: posh_ps_susp_get_gpo.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_susp_get_gpo.yml
+  - id: sigma-ps-susp-get-process
+    rule_id: af4c87ce-bdda-4215-b998-15220772e993
+    file: posh_ps_susp_get_process.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_susp_get_process.yml
+  - id: sigma-ps-susp-getprocess-lsass
+    rule_id: 84c174ab-d3ef-481f-9c86-a50d0b8e3edb
+    file: posh_ps_susp_getprocess_lsass.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_susp_getprocess_lsass.yml
+  - id: sigma-ps-susp-gettypefromclsid
+    rule_id: 8bc063d5-3a3a-4f01-a140-bc15e55e8437
+    file: posh_ps_susp_gettypefromclsid.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_susp_gettypefromclsid.yml
+  - id: sigma-ps-susp-hyper-v-condlet
+    rule_id: 42d36aa1-3240-4db0-8257-e0118dcdd9cd
+    file: posh_ps_susp_hyper_v_condlet.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_susp_hyper_v_condlet.yml
+  - id: sigma-ps-susp-invocation-generic
+    rule_id: ed965133-513f-41d9-a441-e38076a0798f
+    file: posh_ps_susp_invocation_generic.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_susp_invocation_generic.yml
+  - id: sigma-ps-susp-invocation-specific
+    rule_id: ae7fbf8e-f3cb-49fd-8db4-5f3bed522c71
+    file: posh_ps_susp_invocation_specific.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_susp_invocation_specific.yml
+  - id: sigma-ps-susp-invoke-webrequest-useragent
+    rule_id: d4488827-73af-4f8d-9244-7b7662ef046e
+    file: posh_ps_susp_invoke_webrequest_useragent.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_susp_invoke_webrequest_useragent.yml
+  - id: sigma-ps-susp-iofilestream
+    rule_id: 70ad982f-67c8-40e0-a955-b920c2fa05cb
+    file: posh_ps_susp_iofilestream.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_susp_iofilestream.yml
+  - id: sigma-ps-susp-keylogger-activity
+    rule_id: 965e2db9-eddb-4cf6-a986-7a967df651e4
+    file: posh_ps_susp_keylogger_activity.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_susp_keylogger_activity.yml
+  - id: sigma-ps-susp-keywords
+    rule_id: 1f49f2ab-26bc-48b3-96cc-dcffbc93eadf
+    file: posh_ps_susp_keywords.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_susp_keywords.yml
+  - id: sigma-ps-susp-local-group-reco
+    rule_id: fa6a5a45-3ee2-4529-aa14-ee5edc9e29cb
+    file: posh_ps_susp_local_group_reco.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_susp_local_group_reco.yml
+  - id: sigma-ps-susp-mail-acces
+    rule_id: 2837e152-93c8-43d2-85ba-c3cd3c2ae614
+    file: posh_ps_susp_mail_acces.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_susp_mail_acces.yml
+  - id: sigma-ps-susp-mount-diskimage
+    rule_id: 29e1c216-6408-489d-8a06-ee9d151ef819
+    file: posh_ps_susp_mount_diskimage.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_susp_mount_diskimage.yml
+  - id: sigma-ps-susp-mounted-share-deletion
+    rule_id: 66a4d409-451b-4151-94f4-a55d559c49b0
+    file: posh_ps_susp_mounted_share_deletion.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_susp_mounted_share_deletion.yml
+  - id: sigma-ps-susp-networkcredential
+    rule_id: 1883444f-084b-419b-ac62-e0d0c5b3693f
+    file: posh_ps_susp_networkcredential.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_susp_networkcredential.yml
+  - id: sigma-ps-susp-new-psdrive
+    rule_id: 1c563233-030e-4a07-af8c-ee0490a66d3a
+    file: posh_ps_susp_new_psdrive.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_susp_new_psdrive.yml
+  - id: sigma-ps-susp-proxy-scripts
+    rule_id: bd33d2aa-497e-4651-9893-5c5364646595
+    file: posh_ps_susp_proxy_scripts.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_susp_proxy_scripts.yml
+  - id: sigma-ps-susp-recon-export
+    rule_id: a9723fcc-881c-424c-8709-fd61442ab3c3
+    file: posh_ps_susp_recon_export.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_susp_recon_export.yml
+  - id: sigma-ps-susp-remove-adgroupmember
+    rule_id: 48a45d45-8112-416b-8a67-46e03a4b2107
+    file: posh_ps_susp_remove_adgroupmember.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_susp_remove_adgroupmember.yml
+  - id: sigma-ps-susp-service-dacl-modification-set-service
+    rule_id: 22d80745-6f2c-46da-826b-77adaededd74
+    file: posh_ps_susp_service_dacl_modification_set_service.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_susp_service_dacl_modification_set_service.yml
+  - id: sigma-ps-susp-smb-share-reco
+    rule_id: 95f0643a-ed40-467c-806b-aac9542ec5ab
+    file: posh_ps_susp_smb_share_reco.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_susp_smb_share_reco.yml
+  - id: sigma-ps-susp-ssl-keyword
+    rule_id: 195626f3-5f1b-4403-93b7-e6cfd4d6a078
+    file: posh_ps_susp_ssl_keyword.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_susp_ssl_keyword.yml
+  - id: sigma-ps-susp-start-process
+    rule_id: 0718cd72-f316-4aa2-988f-838ea8533277
+    file: posh_ps_susp_start_process.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_susp_start_process.yml
+  - id: sigma-ps-susp-unblock-file
+    rule_id: 5947497f-1aa4-41dd-9693-c9848d58727d
+    file: posh_ps_susp_unblock_file.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_susp_unblock_file.yml
+  - id: sigma-ps-susp-wallpaper
+    rule_id: c5ac6a1e-9407-45f5-a0ce-ca9a0806a287
+    file: posh_ps_susp_wallpaper.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_susp_wallpaper.yml
+  - id: sigma-ps-susp-win32-pnpentity
+    rule_id: b26647de-4feb-4283-af6b-6117661283c5
+    file: posh_ps_susp_win32_pnpentity.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_susp_win32_pnpentity.yml
+  - id: sigma-ps-susp-win32-shadowcopy-deletion
+    rule_id: c1337eb8-921a-4b59-855b-4ba188ddcc42
+    file: posh_ps_susp_win32_shadowcopy_deletion.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_susp_win32_shadowcopy_deletion.yml
+  - id: sigma-ps-susp-windowstyle
+    rule_id: 313fbb0a-a341-4682-848d-6d6f8c4fab7c
+    file: posh_ps_susp_windowstyle.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_susp_windowstyle.yml
+  - id: sigma-ps-susp-write-eventlog
+    rule_id: 35f41cd7-c98e-469f-8a02-ec4ba0cc7a7e
+    file: posh_ps_susp_write_eventlog.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_susp_write_eventlog.yml
+  - id: sigma-ps-susp-zip-compress
+    rule_id: b7a3c9a3-09ea-4934-8864-6a32cacd98d9
+    file: posh_ps_susp_zip_compress.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_susp_zip_compress.yml
+  - id: sigma-ps-syncappvpublishingserver-exe
+    rule_id: dddfebae-c46f-439c-af7a-fdb6bde90218
+    file: posh_ps_syncappvpublishingserver_exe.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_syncappvpublishingserver_exe.yml
+  - id: sigma-ps-tamper-windows-defender-rem-mp
+    rule_id: ae2bdd58-0681-48ac-be7f-58ab4e593458
+    file: posh_ps_tamper_windows_defender_rem_mp.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_tamper_windows_defender_rem_mp.yml
+  - id: sigma-ps-test-netconnection
+    rule_id: adf876b3-f1f8-4aa9-a4e4-a64106feec06
+    file: posh_ps_test_netconnection.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_test_netconnection.yml
+  - id: sigma-ps-timestomp
+    rule_id: c6438007-e081-42ce-9483-b067fbef33c3
+    file: posh_ps_timestomp.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_timestomp.yml
+  - id: sigma-ps-user-profile-tampering
+    rule_id: 05b3e303-faf0-4f4a-9b30-46cc13e69152
+    file: posh_ps_user_profile_tampering.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_user_profile_tampering.yml
+  - id: sigma-ps-using-set-service-to-hide-services
+    rule_id: 953945c5-22fe-4a92-9f8a-a9edc1e522da
+    file: posh_ps_using_set_service_to_hide_services.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_using_set_service_to_hide_services.yml
+  - id: sigma-ps-veeam-credential-dumping-script
+    rule_id: 976d6e6f-a04b-4900-9713-0134a353e38b
+    file: posh_ps_veeam_credential_dumping_script.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_veeam_credential_dumping_script.yml
+  - id: sigma-ps-web-request-cmd-and-cmdlets
+    rule_id: 1139d2e2-84b1-4226-b445-354492eba8ba
+    file: posh_ps_web_request_cmd_and_cmdlets.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_web_request_cmd_and_cmdlets.yml
+  - id: sigma-ps-win-api-susp-access
+    rule_id: 03d83090-8cba-44a0-b02f-0b756a050306
+    file: posh_ps_win_api_susp_access.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_win_api_susp_access.yml
+  - id: sigma-ps-win-defender-exclusions-added
+    rule_id: c1344fa2-323b-4d2e-9176-84b4d4821c88
+    file: posh_ps_win_defender_exclusions_added.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_win_defender_exclusions_added.yml
+  - id: sigma-ps-win32-nteventlogfile-usage
+    rule_id: e2812b49-bae0-4b21-b366-7c142eafcde2
+    file: posh_ps_win32_nteventlogfile_usage.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_win32_nteventlogfile_usage.yml
+  - id: sigma-ps-win32-product-install-msi
+    rule_id: 91109523-17f0-4248-a800-f81d9e7c081d
+    file: posh_ps_win32_product_install_msi.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_win32_product_install_msi.yml
+  - id: sigma-ps-windows-firewall-profile-disabled
+    rule_id: 488b44e7-3781-4a71-888d-c95abfacf44d
+    file: posh_ps_windows_firewall_profile_disabled.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_windows_firewall_profile_disabled.yml
+  - id: sigma-ps-winlogon-helper-dll
+    rule_id: 851c506b-6b7c-4ce2-8802-c703009d03c0
+    file: posh_ps_winlogon_helper_dll.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_winlogon_helper_dll.yml
+  - id: sigma-ps-wmi-persistence
+    rule_id: 9e07f6e7-83aa-45c6-998e-0af26efd0a85
+    file: posh_ps_wmi_persistence.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_wmi_persistence.yml
+  - id: sigma-ps-wmi-unquoted-service-search
+    rule_id: 09658312-bc27-4a3b-91c5-e49ab9046d1b
+    file: posh_ps_wmi_unquoted_service_search.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_wmi_unquoted_service_search.yml
+  - id: sigma-ps-wmimplant
+    rule_id: 8028c2c3-e25a-46e3-827f-bbb5abf181d7
+    file: posh_ps_wmimplant.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_wmimplant.yml
+  - id: sigma-ps-x509enrollment
+    rule_id: 504d63cb-0dba-4d02-8531-e72981aace2c
+    file: posh_ps_x509enrollment.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_x509enrollment.yml
+  - id: sigma-ps-xml-iex
+    rule_id: 6c6c6282-7671-4fe9-a0ce-a2dcebdc342b
+    file: posh_ps_xml_iex.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_xml_iex.yml
   - id: sigma-reg-add-local-hidden-user
     rule_id: 460479f3-80b7-42da-9c43-2cc1d54dbccd
     file: registry_event_add_local_hidden_user.yml

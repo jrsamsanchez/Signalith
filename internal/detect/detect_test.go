@@ -614,6 +614,19 @@ detection:
 	if q := r.Detection.Query; !strings.Contains(q, "datamodel=Endpoint") || !strings.Contains(q, "signature_id IN (10)") || !strings.Contains(q, "target_process_name=lsass.exe") {
 		t.Errorf("query = %s", q)
 	}
+	r, err = ConvertSigmaWith([]byte(`title: Mimikatz in a script
+logsource: {product: windows, category: ps_script, definition: 'Script Block Logging must be enabled'}
+detection:
+  sel:
+    ScriptBlockText|contains: 'Invoke-Mimikatz'
+  condition: sel
+`), SigmaOptions{Strict: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := `datamodel=Script (sourcetype=WinEventLog:* AND signature_id IN (4104)) script_block_text=*Invoke-Mimikatz*`; r.Detection.Query != want {
+		t.Errorf("query = %s\nwant    %s", r.Detection.Query, want)
+	}
 	// In image_load, Description is the DLL's, not the process's: no mapping.
 	if _, err := ConvertSigmaWith([]byte(`title: x
 logsource: {product: windows, category: image_load}

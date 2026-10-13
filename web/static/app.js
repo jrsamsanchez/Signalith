@@ -2146,6 +2146,7 @@ $('linux-source').addEventListener('change', loadAgentConfig);
 $('otel-host').addEventListener('change', loadAgentConfig);
 $('osquery-platform').addEventListener('change', loadAgentConfig);
 $('sysmon').addEventListener('change', loadAgentConfig);
+$('powershell').addEventListener('change', loadAgentConfig);
 $('wazuh-syslog').addEventListener('click', (e) => {
   e.preventDefault();
   const radio = document.querySelector('input[name=os][value=syslog]');
@@ -2408,7 +2409,7 @@ async function agentSetupLoad() {
   steps.setAttribute('aria-busy', 'true');
   if (!agentSetupConfig) agentSetupSkeleton();
   const q = wazuh ? new URLSearchParams({ os: 'linux', source: 'wazuh' })
-    : new URLSearchParams({ os, source: $('linux-source').value, sysmon: $('sysmon').checked });
+    : new URLSearchParams({ os, source: $('linux-source').value, sysmon: $('sysmon').checked, powershell: $('powershell').checked });
   if (otel) q.set('collector', host);
   if (osq) q.set('platform', $('osquery-platform').value);
   const server = agentServerValue();

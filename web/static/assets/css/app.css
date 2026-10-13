@@ -2415,6 +2415,8 @@ body:has(.page.active .inspector:not([hidden], .hidden)) #toast { bottom: 88px; 
 #page-data .agent-setup .card__head { flex-wrap: wrap; row-gap: var(--sp-2); }
 #page-data .agent-setup .card__body { display: grid; gap: var(--sp-4); padding-top: 20px; }
 #page-data .agent-opt { display: inline-flex; align-items: center; gap: 8px; font-size: var(--fs-sm); color: var(--text-2); white-space: nowrap; }
+#page-data .agent-opts { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+#page-data .agent-opts.hidden { display: none; }
 #page-data .agent-setup .card__actions { flex-wrap: wrap; row-gap: var(--sp-2); }
 
 /* where agents send: one compact address field above the steps */

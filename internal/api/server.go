@@ -867,6 +867,7 @@ func (s *Server) handleAgentConfig(w http.ResponseWriter, r *http.Request) {
 		Token:       agents.TokenPlaceholder,
 		LinuxSource: v.Get("source"),
 		Sysmon:      v.Get("sysmon") == "true",
+		PowerShell:  v.Get("powershell") == "true",
 		CollectorOS: v.Get("collector"),
 		Platform:    v.Get("platform"),
 	}
