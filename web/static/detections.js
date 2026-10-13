@@ -1773,6 +1773,9 @@ function editDetection(d, opts = {}) {
   const list = (s) => s.split(',').map((x) => x.trim()).filter(Boolean);
   const read = () => ({
     id: id.value.trim(), title: title.value.trim(), description: desc.value.trim(), query: query.value.trim(),
+    // The name (the title without $field$ tokens) was written for this title;
+    // a new title goes without one, and the server derives it.
+    name: d.name && title.value.trim() === d.title ? d.name : undefined,
     schedule: schedule.value.trim(), lookback: lookback.value.trim(), severity: severity.value,
     mitre: list(mitre.value), throttle: { fields: list(tfields.value), window: twindow.value.trim() },
     enabled: enabled.checked, guidance: guidance.value.trim(), tags: d.tags || [], exceptions: d.exceptions || undefined,

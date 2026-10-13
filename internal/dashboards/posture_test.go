@@ -162,8 +162,15 @@ func TestPostureMetrics(t *testing.T) {
 	if d := rep.TopDetections[0]; d.ID != "endpoint-scheduled-task" || d.RiskEvents != 9 || d.Findings != 0 {
 		t.Errorf("top = %+v", d)
 	}
-	if d := rep.TopDetections[1]; d.ID != "auth-brute-force" || d.Findings != 2 || d.RiskEvents != 1 || strings.Contains(d.Title, "$") {
+	// Counted across hosts, a detection is named without its $field$
+	// placeholders, not "Brute force against dest from src".
+	if d := rep.TopDetections[1]; d.ID != "auth-brute-force" || d.Findings != 2 || d.RiskEvents != 1 || d.Title != "Brute force" {
 		t.Errorf("second = %+v", d)
+	}
+	for _, d := range rep.TopDetections {
+		if d.ID == "endpoint-encoded-powershell" && d.Title != "Encoded PowerShell command" {
+			t.Errorf("encoded PowerShell title = %q", d.Title)
+		}
 	}
 
 	// Tactics in matrix order with names.
@@ -182,7 +189,7 @@ func TestPostureMetrics(t *testing.T) {
 	if h.Total != len(lib.List()) || h.Enabled == 0 || h.Enabled >= h.Total || !h.SchedulerOn {
 		t.Errorf("health counts = %+v", h)
 	}
-	if len(h.Erroring) != 1 || h.Erroring[0].ID != "auth-password-spray" || h.Erroring[0].Error != "unknown field" {
+	if len(h.Erroring) != 1 || h.Erroring[0].ID != "auth-password-spray" || h.Erroring[0].Error != "unknown field" || h.Erroring[0].Title != "Password spray" {
 		t.Errorf("erroring = %+v", h.Erroring)
 	}
 	silent := map[string]bool{}
@@ -243,7 +250,30 @@ func TestTriageAndResolveTimes(t *testing.T) {
 	if _, ok := ResolvedAt(f); ok {
 		t.Error("open finding has a resolve time")
 	}
-	if cleanTitle("Brute force against $dest$ from $src$") != "Brute force against dest from src" {
-		t.Error("title tokens")
+}
+
+// A detection no longer in the library is named by its findings' title
+// only when every finding has the same one: a title filled in for one host
+// must not name a count across several.
+func TestPostureTopDetectionsRemovedDetection(t *testing.T) {
+	m := findings.NewMemory()
+	for i, x := range []struct{ det, title string }{
+		{"gone-same", "Odd thing seen"}, {"gone-same", "Odd thing seen"},
+		{"gone-mixed", "Odd login on ws-1"}, {"gone-mixed", "Odd login on ws-2"},
+	} {
+		f := mkFinding(fmt.Sprint("f", i), x.det, "low", "new", now.Add(-time.Hour), nil)
+		f.Title = x.title
+		if err := m.Create(context.Background(), f); err != nil {
+			t.Fatal(err)
+		}
+	}
+	p := &Posture{Engine: postureExec(t, ""), Findings: m, Now: func() time.Time { return now }}
+	rep := p.Report(context.Background(), 24*time.Hour, "24h")
+	got := map[string]string{}
+	for _, d := range rep.TopDetections {
+		got[d.ID] = d.Title
+	}
+	if got["gone-same"] != "Odd thing seen" || got["gone-mixed"] != "gone-mixed" {
+		t.Errorf("titles = %v", got)
 	}
 }

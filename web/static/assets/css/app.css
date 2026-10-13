@@ -287,6 +287,8 @@ kbd {
 .topbar__title { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .topbar__crumb { color: var(--text-3); font-weight: 500; white-space: nowrap; }
 .topbar__sep { color: var(--line-strong); }
+/* Empty until app.js names the page, so no page name shows before the right one. */
+.topbar__crumb:empty, .topbar__crumb:empty + .topbar__sep { display: none; }
 .topbar__title h1 { font-size: var(--fs-md); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .topbar__actions { margin-left: auto; display: flex; align-items: center; gap: 2px; }
 .topbar__mark { display: none; height: 20px; width: auto; color: var(--text); }

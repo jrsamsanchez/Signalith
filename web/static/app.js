@@ -696,11 +696,15 @@ refreshHealthCard();
 setInterval(refreshHealthCard, 30000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshHealthCard(); });
 
-// The first page: the URL hash, else the last page used, else Search.
-// Shown now so nothing flashes; its data loads once every script is in.
+// The first page: the URL hash, else the last page used, else the home
+// page, Dashboards (where the logo goes too). Signing in always names one
+// (see assets/login.js). No page is marked active in index.html, so none
+// shows before this picks one: picking it now, before the first paint,
+// means nothing flashes; its data loads once every script is in.
+const HOME_PAGE = 'dashboards';
 let firstPage = pageFromHash();
 try { firstPage = firstPage || localStorage.getItem('signalith.page'); } catch (_) { /* ignore */ }
-if (!firstPage || !$('page-' + firstPage)) firstPage = 'search';
+if (!firstPage || !$('page-' + firstPage)) firstPage = HOME_PAGE;
 // A page only some roles may open waits for the role.
 if (!pageRole(firstPage)) selectPage(firstPage);
 document.addEventListener('DOMContentLoaded', () => meReady.then(() => showPage(firstPage, { replace: true })));
@@ -861,6 +865,7 @@ function setQuery(text, fromBuilder) {
   hideExplanation();
   if (!fromBuilder) parseIntoBuilder();
   saveDraft();
+  syncTimePicker();
 }
 function saveDraft() {
   try { localStorage.setItem('signalith.query', queryBox.value); } catch (_) { /* ignore */ }
@@ -1056,6 +1061,7 @@ function onQueryInput() {
   clearQueryError();
   hideExplanation();
   saveDraft();
+  syncTimePicker();
   clearTimeout(parseTimer);
   parseTimer = setTimeout(() => { parseIntoBuilder(); loadFields(); }, 300);
 }
@@ -1206,7 +1212,57 @@ let lastSearch = null; // { query, earliest, res, tab, events, eventsQuery }
 // timeEarliest is the time picker's range for the server: "0" for All
 // time, which the default time range set on the Settings page never
 // replaces (it fills in only an empty one).
-const timeEarliest = () => $('time').value;
+const timeEarliest = () => ($('time').value === QUERY_TIME ? pickedTime : $('time').value);
+
+// The time picker always shows the range a search covers. A query can set
+// its own with earliest= and latest= (a pivot from a finding or an entity
+// searches the last 7 days, and Ask writes the range a question names), and
+// that range wins over the picker's, so the picker then shows it: the
+// matching choice, or "Set in query" (named when it can be, such as "Last
+// 2 hours") for one it has no choice for. Without one it goes back to the
+// range the person picked, which is what is kept for next time. Picking a
+// range takes the query's own out, so the picker's applies.
+const QUERY_TIME = 'query';
+let pickedTime = $('time').value;
+const queryTimePattern = () => /(^|[\s(])(earliest|latest)\s*=\s*("(?:[^"\\]|\\.)*"|[^\s()|]+)/gi;
+function queryTime(query) {
+  const out = {};
+  for (const m of splitPipes(query || '')[0].matchAll(queryTimePattern())) {
+    out[m[2].toLowerCase()] = m[3].replace(/^"(.*)"$/, '$1').replace(/\\(.)/g, '$1');
+  }
+  return out;
+}
+function withoutQueryTime(query) {
+  const [search, rest] = splitPipes(query);
+  const s = search.replace(queryTimePattern(), '$1').replace(/[ \t]+/g, ' ').replace(/\(\s*\)/g, '').trim() || '*';
+  return s + (rest ? '\n' + rest.trim() : '');
+}
+function queryTimeLabel(t) {
+  const units = { s: ['second', 'seconds'], m: ['minute', 'minutes'], h: ['hour', 'hours'], d: ['day', 'days'], w: ['week', 'weeks'] };
+  const m = !t.latest && t.earliest && t.earliest.match(/^-(\d+)([smhdw])$/);
+  if (!m) return 'Set in query';
+  const n = Number(m[1]);
+  return n === 1 ? 'Last ' + units[m[2]][0] : `Last ${n} ${units[m[2]][1]}`;
+}
+function syncTimePicker() {
+  const sel = $('time');
+  let opt = sel.querySelector(`option[value="${QUERY_TIME}"]`);
+  if (!opt) {
+    opt = el('option', { value: QUERY_TIME, hidden: '' });
+    sel.append(opt);
+  }
+  const t = queryTime(queryBox.value);
+  const own = t.earliest != null || t.latest != null;
+  const match = own && t.latest == null && [...sel.options].find((o) => o !== opt && o.value === t.earliest);
+  opt.hidden = !own || !!match;
+  if (!own) sel.value = pickedTime;
+  else if (match) sel.value = match.value;
+  else {
+    opt.textContent = queryTimeLabel(t);
+    sel.value = QUERY_TIME;
+  }
+  sel.title = own ? 'The query sets this time range with ' + Object.keys(t).map((k) => k + '=').join(' and ') + '. Pick another range to replace it.' : '';
+}
 
 async function runSearch() {
   const query = queryBox.value.trim() || '*';
@@ -1242,7 +1298,15 @@ async function runSearch() {
   }
 }
 $('run').addEventListener('click', runSearch);
-$('time').addEventListener('change', () => { try { localStorage.setItem('signalith.time', $('time').value); } catch (_) { /* ignore */ } runSearch(); });
+$('time').addEventListener('change', () => {
+  const v = $('time').value;
+  if (v === QUERY_TIME) return;
+  pickedTime = v;
+  try { localStorage.setItem('signalith.time', v); } catch (_) { /* ignore */ }
+  const t = queryTime(queryBox.value);
+  if (t.earliest != null || t.latest != null) setQuery(withoutQueryTime(queryBox.value));
+  runSearch();
+});
 
 function setSearching(on) {
   $('run').disabled = on;
@@ -3775,7 +3839,9 @@ function healthPageError(e) {
     const d = m && m.search_default_earliest != null ? (m.search_default_earliest || '0') : '';
     if (d && [...$('time').options].some((o) => o.value === d)) $('time').value = d;
   }
+  if ($('time').value !== QUERY_TIME) pickedTime = $('time').value;
   if (saved) setQuery(saved);
+  syncTimePicker();
   updateBuilderVisibility();
   loadFields();
   loadAskInfo();

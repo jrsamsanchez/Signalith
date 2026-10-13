@@ -1,5 +1,6 @@
 id: network-remote-admin-port
 title: $process_name$ on $src$ connected to $dest$ on remote admin port $dest_port$
+name: Unusual process on a remote admin port
 description: A process other than the usual clients opened a connection on SMB, RDP, WinRM or SSH ports.
 query: |
   datamodel=Network_Traffic dest_port IN (22, 445, 3389, 5985, 5986)

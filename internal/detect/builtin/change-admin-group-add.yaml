@@ -1,5 +1,6 @@
 id: change-admin-group-add
 title: $member$ added to privileged group $object$ on $dest$
+name: Account added to a privileged group
 description: An account was added to a group that grants administrator rights.
 query: |
   datamodel=Change object_category=group action=modified

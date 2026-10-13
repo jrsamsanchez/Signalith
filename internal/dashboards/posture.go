@@ -3,7 +3,6 @@ package dashboards
 import (
 	"context"
 	"fmt"
-	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -353,7 +352,7 @@ func (p *Posture) Report(ctx context.Context, rng time.Duration, rangeLabel stri
 	titles := map[string]string{}
 	if p.Detections != nil {
 		for _, d := range p.Detections.List() {
-			titles[d.ID] = cleanTitle(d.Title)
+			titles[d.ID] = d.BaseTitle()
 		}
 	}
 	byDet := map[string]*DetectionCount{}
@@ -468,10 +467,10 @@ func (p *Posture) health(fs *findingStats, r30, sources *search.Result, errs map
 				}
 			}
 			if st.LastError != "" && !p.Elsewhere {
-				h.Erroring = append(h.Erroring, DetectionIssue{ID: d.ID, Title: cleanTitle(d.Title), Error: st.LastError, LastRun: st.LastRun})
+				h.Erroring = append(h.Erroring, DetectionIssue{ID: d.ID, Title: d.BaseTitle(), Error: st.LastError, LastRun: st.LastRun})
 			}
 			if canJudgeSilence && !matched[d.ID] && st.LastResults == 0 {
-				h.Silent = append(h.Silent, DetectionIssue{ID: d.ID, Title: cleanTitle(d.Title), LastRun: st.LastRun})
+				h.Silent = append(h.Silent, DetectionIssue{ID: d.ID, Title: d.BaseTitle(), LastRun: st.LastRun})
 			}
 		}
 	}
@@ -556,8 +555,13 @@ func computeFindingStats(list []*findings.Finding, start, end, prevStart time.Ti
 		case 1:
 			fs.newCur++
 			fs.byDetection[f.DetectionID]++
-			if fs.titles[f.DetectionID] == "" {
+			// A detection no longer in the library is named by its
+			// findings' title, but only when they all agree: a title
+			// filled in for one host must not name a count across hosts.
+			if t, ok := fs.titles[f.DetectionID]; !ok {
 				fs.titles[f.DetectionID] = f.Title
+			} else if t != f.Title {
+				fs.titles[f.DetectionID] = ""
 			}
 			for _, t := range detect.Tactics(f.MITRE) {
 				fs.tactics[t]++
@@ -626,11 +630,6 @@ func bucketFor(rng time.Duration) time.Duration {
 	}
 	return 7 * 24 * time.Hour
 }
-
-var titleToken = regexp.MustCompile(`\$([A-Za-z_][A-Za-z0-9_.()]*)\$`)
-
-// cleanTitle turns "Brute force against $dest$" into "Brute force against dest".
-func cleanTitle(t string) string { return titleToken.ReplaceAllString(t, "$1") }
 
 // durLabel renders a duration as a relative search time such as -7d.
 func durLabel(d time.Duration) string {

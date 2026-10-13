@@ -581,6 +581,57 @@ func mustParse(t *testing.T, s string) *query.Query {
 	return q
 }
 
+func TestBaseTitle(t *testing.T) {
+	for in, want := range map[string]string{
+		"Encoded PowerShell command on $dest$":                                       "Encoded PowerShell command",
+		"Brute force against $dest$ from $src$":                                      "Brute force",
+		"Malware found on $dest$ ($signature$)":                                      "Malware found",
+		"Account $object$ created on $dest$":                                         "Account created",
+		"Threat intel match on $threat_match_field$ $threat_match_value$ ($source$)": "Threat intel match",
+		"Scheduled task created on $dest$ by $user$":                                 "Scheduled task created",
+		"$user$ logged on with $method$":                                             "Logged on",
+		"$dest$":                                                                     "dest",
+		"No tokens at all":                                                           "No tokens at all",
+		"éclair eaten on $dest$":                                                     "Éclair eaten",
+	} {
+		if got := BaseTitle(in); got != want {
+			t.Errorf("BaseTitle(%q) = %q, want %q", in, got, want)
+		}
+	}
+	d := &Detection{Title: "$a$ did $b$", Name: "Something done"}
+	if d.BaseTitle() != "Something done" {
+		t.Errorf("name not used: %q", d.BaseTitle())
+	}
+}
+
+// Every built-in detection has a clean name for views that count it
+// across hosts: no $field$ tokens, and more than one word, so a title
+// that starts with a token and reads badly without it gets a name.
+func TestBuiltinBaseTitles(t *testing.T) {
+	lib, _, err := NewLibrary("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]string{}
+	for _, d := range lib.List() {
+		if d.Source != "builtin" {
+			continue
+		}
+		b := d.BaseTitle()
+		if strings.Contains(b, "$") || len(strings.Fields(b)) < 2 {
+			t.Errorf("%s: base title %q", d.ID, b)
+		}
+		if other, dup := seen[b]; dup {
+			t.Errorf("%s and %s share the base title %q", d.ID, other, b)
+		}
+		seen[b] = d.ID
+	}
+	bad := &Detection{ID: "abc", Title: "x", Name: "on $dest$", Query: "*", Schedule: "5m", Lookback: "5m", Severity: "low"}
+	if err := bad.Validate(); err == nil || !strings.Contains(err.Error(), "name must not use") {
+		t.Errorf("token in name: %v", err)
+	}
+}
+
 // Sysmon log sources other than process creation map onto their own data
 // models, only see their own event IDs, and map fields by log source.
 func TestConvertSigmaSysmonLogSources(t *testing.T) {

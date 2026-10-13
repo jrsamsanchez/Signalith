@@ -15,6 +15,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/jrsamsanchez/signalith/internal/findings"
 	"github.com/jrsamsanchez/signalith/internal/query"
@@ -22,8 +24,12 @@ import (
 
 // Detection is one scheduled rule.
 type Detection struct {
-	ID          string `yaml:"id" json:"id"`
-	Title       string `yaml:"title" json:"title"` // may use $field$ tokens from the result row
+	ID    string `yaml:"id" json:"id"`
+	Title string `yaml:"title" json:"title"` // may use $field$ tokens from the result row
+	// Name is the detection's name without $field$ tokens, for views that
+	// count it across hosts and users, such as the posture dashboard.
+	// Optional: BaseTitle derives one from Title when it is empty.
+	Name        string `yaml:"name,omitempty" json:"name,omitempty"`
 	Description string `yaml:"description,omitempty" json:"description,omitempty"`
 	// Query is a Signalith query. It must not set earliest= or latest=;
 	// the lookback window decides the time range.
@@ -111,6 +117,9 @@ func (d *Detection) Validate() error {
 	if strings.TrimSpace(d.Title) == "" {
 		p = append(p, "title is required")
 	}
+	if tokenPattern.MatchString(d.Name) {
+		p = append(p, "name must not use $field$ tokens; it names the detection across all its findings")
+	}
 	if q, err := query.Parse(d.Query); err != nil {
 		p = append(p, "query: "+err.Error())
 	} else if q.Earliest != "" || q.Latest != "" {
@@ -160,6 +169,45 @@ type ValidationError struct {
 
 func (e *ValidationError) Error() string {
 	return fmt.Sprintf("detection %q: %s", e.ID, strings.Join(e.Problems, "; "))
+}
+
+var (
+	// tokenGroup is a parenthesised part of a title that holds a token,
+	// as in "Malware found on $dest$ ($signature$)".
+	tokenGroup = regexp.MustCompile(`\s*\([^()]*\$[A-Za-z_][A-Za-z0-9_.()]*\$[^()]*\)`)
+	// tokenPhrase is a token with the preposition that leads to it, as in
+	// "on $dest$", "from $src$" or "on port $dest_port$".
+	tokenPhrase  = regexp.MustCompile(`(?i)\s+(?:on|from|by|against|to|for|of|at|via|in)\s+(?:(?:remote admin )?port\s+)?\$[A-Za-z_][A-Za-z0-9_.()]*\$`)
+	trailingWord = regexp.MustCompile(`(?i)\s+(?:on|from|by|against|to|for|of|at|via|in|with|and)$`)
+)
+
+// BaseTitle is the detection's name for views that count it across many
+// results, where no one result's values apply: Name when set, else Title
+// with each $field$ token and the words that lead to it left out, so
+// "Encoded PowerShell command on $dest$" reads "Encoded PowerShell
+// command" rather than naming a host or the placeholder.
+func (d *Detection) BaseTitle() string {
+	if n := strings.TrimSpace(d.Name); n != "" {
+		return n
+	}
+	return BaseTitle(d.Title)
+}
+
+// BaseTitle derives a name without tokens from a title; see
+// Detection.BaseTitle.
+func BaseTitle(title string) string {
+	t := tokenGroup.ReplaceAllString(title, "")
+	t = tokenPhrase.ReplaceAllString(t, "")
+	t = tokenPattern.ReplaceAllString(t, "")
+	t = strings.Join(strings.Fields(t), " ")
+	// A word left leading to a token that is gone, as in "logged on with".
+	t = trailingWord.ReplaceAllString(t, "")
+	if t == "" {
+		// Nothing but tokens: name the fields, as before.
+		return strings.Join(strings.Fields(tokenPattern.ReplaceAllString(title, "$1")), " ")
+	}
+	r, n := utf8.DecodeRuneInString(t)
+	return string(unicode.ToUpper(r)) + t[n:]
 }
 
 // RenderTitle replaces $field$ tokens with values from a result row.

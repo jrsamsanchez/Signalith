@@ -28,6 +28,7 @@ a broken file is skipped at startup and logged, so it never stops the server.
 ```yaml
 id: auth-brute-force                    # 3-64 lowercase letters, digits, - or _
 title: Brute force against $dest$ from $src$   # $field$ is filled from the result row
+name: Brute force     # optional: the name without $field$ tokens, for counts across hosts
 description: One source failed to log on to a system many times.
 query: |
   datamodel=Authentication action=failure
@@ -55,6 +56,11 @@ Rules of thumb:
 - Make `lookback` at least as long as `schedule`, or events between runs are missed.
   A little overlap is fine; throttling keeps overlapping runs from raising duplicates.
 - Without `throttle.fields`, the whole result row is the throttle key.
+- Views that count a detection across many findings, such as **Top detections firing**
+  on the posture dashboard, show `name`. Without one, they show `title` with each
+  `$field$` and the word that leads to it left out ("Brute force against $dest$ from
+  $src$" reads "Brute force"). Set `name` when that reads badly, as for a title that
+  starts with a `$field$`.
 - Use `stats ... by` to raise one finding per entity instead of one per event.
 - Up to four detections run at once. A run is stopped when it takes longer than its
   schedule (at least 1 minute, at most 5); the Detections page then shows **Timed out**,
