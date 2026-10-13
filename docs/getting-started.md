@@ -148,9 +148,9 @@ text, and starts it again. Before going back to an older version, run
 
 ## Install from packages
 
-Signed `.deb`, `.rpm` and `.msi` packages are coming with the first release. They will
-be listed on the [releases page](https://github.com/jrsamsanchez/Signalith/releases).
-Until then, use the Docker quick start or the steps above.
+Each [release](https://github.com/jrsamsanchez/Signalith/releases) has signed `.deb`,
+`.rpm` and `.msi` packages that install Signalith as a service in one step, and a
+container image. See [Install from packages](install-packages.md).
 
 ## Send data
 

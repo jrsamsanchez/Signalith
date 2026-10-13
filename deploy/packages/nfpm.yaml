@@ -45,14 +45,14 @@ scripts:
 
 rpm:
   group: Applications/System
-  compression: zstd
+  compression: xz
   signature:
     # Set by build.sh when a signing key is given; empty means unsigned.
     key_file: ${NFPM_SIGNING_KEY_FILE}
     key_id: ${NFPM_SIGNING_KEY_ID}
 
 deb:
-  compression: zstd
+  compression: xz
   signature:
     method: debsign
     key_file: ${NFPM_SIGNING_KEY_FILE}

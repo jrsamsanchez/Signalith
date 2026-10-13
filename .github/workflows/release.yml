@@ -29,8 +29,6 @@ jobs:
     secrets:
       SIGNALITH_GPG_PRIVATE_KEY: ${{ secrets.SIGNALITH_GPG_PRIVATE_KEY }}
       SIGNALITH_GPG_PASSPHRASE: ${{ secrets.SIGNALITH_GPG_PASSPHRASE }}
-      WINDOWS_SIGNING_CERT: ${{ secrets.WINDOWS_SIGNING_CERT }}
-      WINDOWS_SIGNING_CERT_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERT_PASSWORD }}
 
   image:
     needs: packages

@@ -18,7 +18,7 @@
            UpgradeCode="6B2F3C1E-8E0A-4C7B-9A57-3D2E5B1F0C42" Scope="perMachine"
            InstallerVersion="500" Compressed="yes">
     <SummaryInformation Description="Signalith $(var.Version), an open-source SIEM" />
-    <MajorUpgrade DowngradeErrorMessage="A newer version of Signalith is already installed. To go back to an older one, uninstall this one first; your configuration and data in C:\ProgramData\Signalith are kept." />
+    <MajorUpgrade AllowSameVersionUpgrades="yes" DowngradeErrorMessage="A newer version of Signalith is already installed. To go back to an older one, uninstall this one first; your configuration and data in C:\ProgramData\Signalith are kept." />
     <MediaTemplate EmbedCab="yes" />
 
     <Icon Id="signalith.ico" SourceFile="signalith.ico" />

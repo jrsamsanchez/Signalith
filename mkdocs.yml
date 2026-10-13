@@ -112,7 +112,9 @@ markdown_extensions:
 
 nav:
   - Home: index.md
-  - Getting started: getting-started.md
+  - Getting started:
+      - Overview: getting-started.md
+      - Install from packages: install-packages.md
   - Data intake:
       - Agents and syslog: sending-data.md
       - OpenTelemetry: opentelemetry.md
@@ -133,3 +135,5 @@ nav:
       - Encryption: encryption.md
       - Securing OpenSearch: opensearch-security.md
   - Roadmap: roadmap.md
+  - Project:
+      - Releasing: releasing.md

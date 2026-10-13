@@ -15,10 +15,6 @@ on:
         required: false
       SIGNALITH_GPG_PASSPHRASE:
         required: false
-      WINDOWS_SIGNING_CERT:
-        required: false
-      WINDOWS_SIGNING_CERT_PASSWORD:
-        required: false
     outputs:
       version:
         value: ${{ jobs.versions.outputs.version }}
@@ -133,31 +129,15 @@ jobs:
   windows:
     needs: [versions, binaries]
     runs-on: windows-latest
-    env:
-      SIGN: ${{ secrets.WINDOWS_SIGNING_CERT != '' }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: binaries
           path: bin
-      - name: Sign the program
-        if: env.SIGN == 'true'
-        shell: pwsh
-        env:
-          CERT: ${{ secrets.WINDOWS_SIGNING_CERT }}
-          CERT_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERT_PASSWORD }}
-        run: .github/scripts/sign-windows.ps1 bin\signalith-windows-amd64.exe
       - name: Build the .msi
         shell: pwsh
         run: .\deploy\windows\msi\build.ps1 -Version "${{ needs.versions.outputs.version }}" -Exe bin\signalith-windows-amd64.exe -Out packages
-      - name: Sign the .msi
-        if: env.SIGN == 'true'
-        shell: pwsh
-        env:
-          CERT: ${{ secrets.WINDOWS_SIGNING_CERT }}
-          CERT_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERT_PASSWORD }}
-        run: .github/scripts/sign-windows.ps1 (Get-Item packages\*.msi).FullName
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: windows-packages
