@@ -239,6 +239,9 @@ type Store struct {
 	mu      sync.RWMutex
 	own     *lookup // the user's lists
 	overlay *lookup // rows added by the sample data, consulted second
+	// found are hosts Signalith found itself (osquery hosts on the
+	// Endpoints page), consulted last and kept in memory only.
+	found *lookup
 	// sums are the contents last loaded from each file in listFiles,
 	// zero for a missing one. Contents, not modification times: a file
 	// rewritten within the file system's time resolution (Windows) keeps
@@ -445,7 +448,7 @@ func (s *Store) lookups() (own, overlay *lookup) {
 }
 
 // Asset finds the asset for a host name or IP address: in the user's list
-// first, then in the overlay.
+// first, then in the overlay, then among the hosts Signalith found.
 func (s *Store) Asset(v string) (*Asset, bool) {
 	v = strings.TrimSpace(v)
 	if v == "" {
@@ -455,7 +458,52 @@ func (s *Store) Asset(v string) (*Asset, bool) {
 	if a, ok := own.asset(v); ok {
 		return a, true
 	}
-	return overlay.asset(v)
+	if a, ok := overlay.asset(v); ok {
+		return a, true
+	}
+	s.mu.RLock()
+	found := s.found
+	s.mu.RUnlock()
+	if found == nil {
+		return nil, false
+	}
+	return found.asset(v)
+}
+
+// SetFound replaces the hosts Signalith found itself, such as the osquery
+// hosts on the Endpoints page. They are never written to a file or the
+// user's list, and the user's list and the sample data win over them.
+func (s *Store) SetFound(as []Asset) {
+	l := newLookup(append([]Asset(nil), as...), nil)
+	s.mu.Lock()
+	s.found = l
+	s.mu.Unlock()
+}
+
+// Found returns copies of the hosts Signalith found itself that the
+// user's list does not already have.
+func (s *Store) Found() []Asset {
+	own, _ := s.lookups()
+	s.mu.RLock()
+	found := s.found
+	s.mu.RUnlock()
+	if found == nil {
+		return nil
+	}
+	var out []Asset
+	for _, a := range found.assets {
+		known := false
+		for _, h := range a.Host {
+			if _, ok := own.asset(h); ok {
+				known = true
+				break
+			}
+		}
+		if !known {
+			out = append(out, a)
+		}
+	}
+	return out
 }
 
 // Identity finds the identity for a username in any common form: in the
@@ -504,7 +552,10 @@ func (s *Store) Own() *Store {
 	if len(overlay.assets) == 0 && len(overlay.identities) == 0 {
 		return s
 	}
-	return &Store{own: own, overlay: newLookup(nil, nil)}
+	s.mu.RLock()
+	found := s.found
+	s.mu.RUnlock()
+	return &Store{own: own, overlay: newLookup(nil, nil), found: found}
 }
 
 // SetOverlay replaces the overlay with these rows and saves them to the

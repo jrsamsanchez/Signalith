@@ -30,6 +30,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/dashboards"
 	"github.com/jrsamsanchez/signalith/internal/datamodel"
 	"github.com/jrsamsanchez/signalith/internal/detect"
+	"github.com/jrsamsanchez/signalith/internal/endpoint"
 	"github.com/jrsamsanchez/signalith/internal/findings"
 	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"github.com/jrsamsanchez/signalith/internal/intel"
@@ -79,6 +80,9 @@ type Server struct {
 	// Retention enforces data retention policies; nil disables the Data
 	// retention page.
 	Retention *retention.Manager
+	// Endpoints manages the hosts that run osquery (the Endpoints page and
+	// osquery's remote API); nil disables them.
+	Endpoints *endpoint.Store
 	// Sample loads and removes the one-click sample data; nil disables the
 	// sample-data card and its endpoints.
 	Sample *sample.Loader
@@ -158,6 +162,7 @@ type Server struct {
 	secOnce       sync.Once
 	sec           *SecurityChecker
 	caMu          sync.Mutex // one change of certificate authority at a time
+	blockedLog    logOnce    // blocked osquery hosts that tried to enroll
 }
 
 // liveModel is the assistant after a change on the Settings page; nil
@@ -193,6 +198,7 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/ingest", s.handleIngest)
 	mux.HandleFunc(otlpLogsRoute, s.handleOTLPLogs)
+	s.routeOsquery(mux)
 
 	api := &router{s: s, mux: http.NewServeMux()}
 	api.viewer("GET /api/health", s.handleHealth)
@@ -225,6 +231,7 @@ func (s *Server) Handler() http.Handler {
 	s.routeUsers(api)
 	s.routeRetention(api)
 	s.routeSample(api)
+	s.routeEndpoints(api)
 	s.routeSettings(api)
 	s.routeCluster(api)
 	if s.UI != nil {
@@ -856,6 +863,7 @@ func (s *Server) handleAgentConfig(w http.ResponseWriter, r *http.Request) {
 		LinuxSource: v.Get("source"),
 		Sysmon:      v.Get("sysmon") == "true",
 		CollectorOS: v.Get("collector"),
+		Platform:    v.Get("platform"),
 	}
 	if certs != nil {
 		// While a new certificate authority is prepared, agents get both,

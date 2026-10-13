@@ -77,6 +77,9 @@ var knownFields = func() map[string]string {
 		// OpenTelemetry log records (OTLP).
 		"service": kw, "trace_id": kw, "span_id": kw, "otel_scope": kw,
 
+		// osquery (internal/endpoint).
+		"endpoint_id": kw, "file_old_path": kw, "user_id": kw, "inventory_type": kw,
+
 		// Risk events.
 		"group_key": kw, "risk_score": double, "risk_base_score": double,
 	}

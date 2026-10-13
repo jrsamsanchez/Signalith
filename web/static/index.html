@@ -186,6 +186,7 @@
     <div class="nav__group" data-group="Configure">
       <div class="nav__label">Configure</div>
       <a class="nav__item" href="#assets" data-page="assets"><svg class="icon" aria-hidden="true"><use href="#i-fingerprint"/></svg><span>Assets &amp; identities</span></a>
+      <a class="nav__item" href="#endpoints" data-page="endpoints" data-min-role="analyst"><svg class="icon" aria-hidden="true"><use href="#i-laptop"/></svg><span>Endpoints</span></a>
       <a class="nav__item" href="#data" data-page="data" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-database"/></svg><span>Add data</span></a>
       <a class="nav__item" href="#retention" data-page="retention" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-hourglass"/></svg><span>Data retention</span></a>
       <a class="nav__item" href="#notify" data-page="notify" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-bell"/></svg><span>Notifications</span></a>
@@ -827,7 +828,7 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
     <header class="page-head">
       <div>
         <h2 class="page-head__title">Add data</h2>
-        <p class="page-head__desc">Collect logs from your hosts with the Fluent Bit agent or an OpenTelemetry Collector, or receive syslog from network devices.</p>
+        <p class="page-head__desc">Collect logs from your hosts with the Fluent Bit agent or an OpenTelemetry Collector, manage hosts with osquery, or receive syslog from network devices.</p>
       </div>
     </header>
     <div class="card sample-card" id="sample-card" hidden></div>
@@ -859,6 +860,11 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
           <span class="agent-os__text"><b>OpenTelemetry</b><span>Collectors and apps that send OTLP logs</span></span>
           <input type="radio" name="os" value="otel">
         </label>
+        <label class="card agent-os__card">
+          <span class="agent-os__icon"><svg class="icon" aria-hidden="true"><use href="#i-laptop"/></svg></span>
+          <span class="agent-os__text"><b>osquery</b><span>Inventory, file changes and configuration checks</span></span>
+          <input type="radio" name="os" value="osquery">
+        </label>
       </fieldset>
 
       <div class="card agent-setup" id="agent-setup">
@@ -872,6 +878,13 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
               <select id="otel-host" class="select select--sm">
                 <option value="linux">Linux</option>
                 <option value="windows">Windows</option>
+              </select>
+            </label>
+            <label id="osquery-opts" class="agent-opt hidden"><span>Hosts run</span>
+              <select id="osquery-platform" class="select select--sm">
+                <option value="linux">Linux</option>
+                <option value="windows">Windows</option>
+                <option value="darwin">macOS</option>
               </select>
             </label>
             <label id="linux-opts" class="agent-opt"><span>Read from</span>
@@ -938,6 +951,31 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
       </div>
     </div>
     <p class="sr-only" id="agent-status" role="status"></p>
+  </section>
+
+  <!-- Endpoints (analysts and admins): hosts running osquery -->
+  <section id="page-endpoints" class="page">
+    <div class="page-head">
+      <div>
+        <h2 class="page-head__title">Endpoints</h2>
+        <p class="page-head__desc">Hosts running osquery that report to Signalith: what is on them, which files changed, and how their settings measure up.</p>
+      </div>
+      <div class="page-head__actions">
+        <button id="ep-settings" class="btn btn--secondary" type="button" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-sliders-horizontal"/></svg>What hosts collect</button>
+        <button id="ep-add" class="btn btn--primary" type="button" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>Add endpoints</button>
+      </div>
+    </div>
+    <div class="tabs ep-tabs" role="tablist" aria-label="Endpoints">
+      <button class="tab" type="button" role="tab" id="ep-tab-hosts" aria-controls="ep-panel-hosts" aria-selected="true">Hosts <span class="count hidden" id="ep-count"></span></button>
+      <button class="tab" type="button" role="tab" id="ep-tab-checks" aria-controls="ep-panel-checks" aria-selected="false" tabindex="-1">Configuration checks <span class="count hidden" id="ep-fail-count"></span></button>
+      <button class="tab" type="button" role="tab" id="ep-tab-query" aria-controls="ep-panel-query" aria-selected="false" tabindex="-1" data-min-role="admin">Live query</button>
+    </div>
+    <div id="ep-panel-hosts" class="ep-panel" role="tabpanel" aria-labelledby="ep-tab-hosts"></div>
+    <div id="ep-panel-checks" class="ep-panel" role="tabpanel" aria-labelledby="ep-tab-checks" hidden></div>
+    <div id="ep-panel-query" class="ep-panel" role="tabpanel" aria-labelledby="ep-tab-query" hidden></div>
+    <dialog id="ep-host" class="modal ep-host" aria-labelledby="ep-host-title"></dialog>
+    <dialog id="ep-settings-dialog" class="modal ep-set" aria-labelledby="ep-set-title"></dialog>
+    <dialog id="ep-remove" class="modal" aria-labelledby="ep-remove-title"></dialog>
   </section>
 
   <!-- Notifications (admins) -->
@@ -1347,5 +1385,6 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
 <script src="settings.js"></script>
 <script src="servers.js"></script>
 <script src="security.js"></script>
+<script src="endpoints.js"></script>
 </body>
 </html>

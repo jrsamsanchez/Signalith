@@ -35,6 +35,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/config"
 	"github.com/jrsamsanchez/signalith/internal/dashboards"
 	"github.com/jrsamsanchez/signalith/internal/detect"
+	"github.com/jrsamsanchez/signalith/internal/endpoint"
 	"github.com/jrsamsanchez/signalith/internal/findings"
 	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"github.com/jrsamsanchez/signalith/internal/intel"
@@ -1051,6 +1052,11 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	}
 	fstore := findings.NewOpenSearch(cl, c.OpenSearch.IndexPrefix)
 	cstore := cases.NewOpenSearch(cl, c.OpenSearch.IndexPrefix)
+	// Hosts running osquery, managed from the Endpoints page. Each server
+	// notes the hosts that reach it and writes their last contact in bulk.
+	estore := endpoint.NewStore(cl, c.OpenSearch.IndexPrefix)
+	in.jobs.Go(func() { estore.Run(ctx, 30*time.Second) })
+	in.jobs.Go(func() { feedEndpointAssets(ctx, estore, lists, log) })
 	// Notifications: the channels and rules set on the Notifications
 	// page, and the deliveries index that makes each message go out once.
 	notes, deliveries, senders := newNotify(c, cl, log)
@@ -1142,6 +1148,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		Respond:    responder,
 		Retention:  ret,
 		Sample:     sampleLoader,
+		Endpoints:  estore,
 		Background: r.backgroundContext(parent),
 		Assistant:  newAssistant(c),
 		Users:      people,
@@ -1183,6 +1190,9 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			log.Error("could not create the findings index; detections will not run", "index", fstore.Index, "err", err)
 		} else {
 			findingsOK = true
+		}
+		if err := estore.EnsureIndex(ctx); err != nil {
+			log.Error("could not create the endpoints index; osquery hosts cannot enroll", "index", estore.Index, "err", err)
 		}
 		if err := deliveries.EnsureIndex(ctx); err != nil {
 			log.Error("could not create the notifications index; notifications will not be sent", "index", deliveries.Index, "err", err)
@@ -1632,6 +1642,39 @@ func reloadLookups(ctx context.Context, lists *assets.Store, log *slog.Logger) {
 			log.Error("asset or identity list has errors; keeping the previous version", "err", err)
 		} else if changed {
 			log.Info("asset and identity lists reloaded", "assets", len(lists.Assets()), "identities", len(lists.Identities()))
+		}
+	}
+}
+
+// feedEndpointAssets puts the osquery hosts on the Endpoints page in the
+// asset list's found hosts every minute, so their names and addresses get
+// asset context (category endpoint and their platform) until the user's
+// own list describes them.
+func feedEndpointAssets(ctx context.Context, es *endpoint.Store, lists *assets.Store, log *slog.Logger) {
+	t := time.NewTicker(time.Minute)
+	defer t.Stop()
+	failed := false
+	for {
+		nodes, err := es.Nodes(ctx)
+		if err == nil {
+			as := make([]assets.Asset, 0, len(nodes))
+			for _, n := range nodes {
+				a := assets.Asset{Host: []string{n.Hostname}, IP: n.IPs, Category: []string{"endpoint", n.Platform}}
+				if short, _, ok := strings.Cut(n.Hostname, "."); ok && short != "" {
+					a.Host = append(a.Host, short)
+				}
+				as = append(as, a)
+			}
+			lists.SetFound(as)
+			failed = false
+		} else if !failed && ctx.Err() == nil {
+			log.Warn("could not read the osquery hosts for the asset list; trying again every minute", "err", err)
+			failed = true
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
 		}
 	}
 }
