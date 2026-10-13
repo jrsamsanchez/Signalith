@@ -11,7 +11,8 @@ events, a security posture dashboard plus dashboards you build from queries, and
 investigation cases that collect findings, notes, searches and evidence in one place.
 Response actions and playbooks come next.
 
-Website: **https://signalith.io** (its source is in [`site/`](site/)).
+Website: **https://signalith.io** (its source is in [`site/`](site/)). Documentation:
+**https://signalith.io/docs/** (built from [`docs/`](docs/)).
 
 The server is a single Go binary with the web UI embedded. It runs as a Windows
 service or a systemd unit.
@@ -950,7 +951,9 @@ syslog devices ─UDP/TCP/TLS▶ query compiler,
 
 ## Building
 
-Requires Go 1.24 or newer.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for tests, code style and how to send changes.
+
+Requires the Go version in `go.mod` (1.26.9) or newer.
 
 ```sh
 go test ./...
@@ -974,6 +977,10 @@ share one OpenSearch, and stop them with kill -9 and SIGSTOP (Linux only). Witho
 2. **Detect and triage**: scheduled detections in Sigma or Signalith queries, throttling, a findings queue, ATT&CK coverage.
 3. **ES depth**: risk-based alerting, asset and identity context, threat intel feeds, posture dashboards, and plain-English to query.
 4. **Respond and scale**: investigation cases, response actions, playbooks, multi-node deployments.
+
+What is being built now and what comes next, from detection content and osquery endpoint
+visibility to alerts, response actions and signed packages, is on the
+[public roadmap](https://signalith.io/docs/roadmap/) ([source](docs/roadmap.md)).
 
 ## License
 
