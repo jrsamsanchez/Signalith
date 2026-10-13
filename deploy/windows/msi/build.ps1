@@ -42,6 +42,8 @@ try {
     -d "Version=$msiVersion" -d "Exe=$exePath" -d "LicenseRtf=$rtf" `
     -o $msi
   if ($LASTEXITCODE -ne 0) { throw "wix build failed" }
+  # The debug symbols WiX writes next to the .msi are not shipped.
+  Remove-Item -Force -ErrorAction SilentlyContinue ([IO.Path]::ChangeExtension($msi, ".wixpdb"))
 } finally {
   Pop-Location
   Remove-Item -Recurse -Force $work

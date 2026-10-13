@@ -15,5 +15,8 @@ Then `sudo signalith initial-password` (on Windows, `signalith initial-password`
 gh attestation verify <file> --repo jrsamsanchez/Signalith
 ```
 
-or check `SHA256SUMS` against `SHA256SUMS.sigstore.json` (Sigstore) or `SHA256SUMS.asc` (GPG, key `signalith-release-key.asc`), as [the docs](https://signalith.io/docs/install-packages/#check-a-download) show. The SBOM is in `signalith-{VERSION}.spdx.json` (SPDX) and `signalith-{VERSION}.cdx.json` (CycloneDX).
+or check `SHA256SUMS` against `SHA256SUMS.sigstore.json` (Sigstore), as [the docs](https://signalith.io/docs/install-packages/#check-a-download) show.
+{GPG}`SHA256SUMS.asc` is a GPG signature of the same file, made with the key in `signalith-release-key.asc`.
+
+The SBOM is in `signalith-{VERSION}.spdx.json` (SPDX) and `signalith-{VERSION}.cdx.json` (CycloneDX).
 
