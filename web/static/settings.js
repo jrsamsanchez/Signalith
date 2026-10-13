@@ -938,6 +938,9 @@
     http: ['HTTP and HTTPS don’t match', 'opensearch.url'], auth: ['Sign-in refused', 'opensearch.password'],
     forbidden: ['Signed in, but not allowed', 'opensearch.username'], not_opensearch: ['That’s not OpenSearch', 'opensearch.url'],
     error: ['OpenSearch answered with an error', ''],
+    // About OpenSearch itself: no setting here fixes them.
+    not_initialized: ['OpenSearch’s security settings aren’t loaded', ''], busy: ['OpenSearch is too busy', ''],
+    timeout: ['OpenSearch didn’t answer in time', ''],
   };
   function settingLink(key) {
     if (!key || !S.fields[key] || readOnly(S.fields[key])) return null;
@@ -967,7 +970,7 @@
       } else {
         const [title, key] = OS_PROBLEM[r.problem] || ['Couldn’t connect', 'opensearch.url'];
         const field = r.problem === 'auth' && !current('opensearch.username') ? 'opensearch.username' : key;
-        kids.push(dxAlert('danger', title, r.message, settingLink(field)));
+        kids.push(dxAlert('danger', title, el('span', {}, ...withCode(r.message)), settingLink(field)));
       }
     } else if (r.ok) {
       const took = r.took_ms < 1000 ? 'in under a second' : `in ${(r.took_ms / 1000).toFixed(1)} seconds`;

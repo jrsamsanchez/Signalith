@@ -25,7 +25,10 @@ type Report struct {
 	URL     string `json:"url"`
 	// Problem is a code for what went wrong: unreachable, tls, http
 	// (plain HTTP where HTTPS was expected, or the other way round), auth,
-	// forbidden, not_opensearch or error.
+	// forbidden, not_opensearch, not_initialized (OpenSearch's security
+	// settings aren't loaded), busy (OpenSearch too busy to answer in
+	// time), timeout (it took the request but didn't answer in time) or
+	// error.
 	Problem string `json:"problem,omitempty"`
 	// Message says what was found and, on a problem, what to do.
 	Message      string `json:"message"`
@@ -120,6 +123,20 @@ func explainCheck(rep *Report, cfg Config, err error) {
 	var se *Error
 	if errors.As(err, &se) {
 		rep.Reached = true
+		// These two are about OpenSearch itself, whatever the settings
+		// here: changing them would not help.
+		switch RefusalOf(se) {
+		case RefusedNotInitialized:
+			rep.Problem = "not_initialized"
+			rep.Message = "OpenSearch is running, but its security settings aren't loaded, so it refuses every request, whatever the sign-in. " +
+				NotInitializedFix + " Then test again."
+			return
+		case RefusedBusy:
+			rep.Problem = "busy"
+			rep.Message = "OpenSearch answered, but is too busy to do the request in time (" + strings.TrimPrefix(se.Error(), "opensearch returned ") + "). " +
+				"Test again in a minute. " + BusyFix
+			return
+		}
 		switch se.Status {
 		case http.StatusUnauthorized:
 			rep.Problem = "auth"
@@ -143,6 +160,12 @@ func explainCheck(rep *Report, cfg Config, err error) {
 			rep.Problem = "error"
 			rep.Message = "OpenSearch answered with an error: " + strings.TrimPrefix(se.Error(), "opensearch returned ")
 		}
+		return
+	}
+	if NoAnswer(err) {
+		rep.Reached, rep.Problem = true, ProblemTimeout
+		rep.Message = fmt.Sprintf("OpenSearch at %s took the request but didn't answer within %d seconds. It may be starting, or too busy: test again in a minute. %s",
+			host, int(CheckTimeout.Seconds()), BusyFix)
 		return
 	}
 	var (

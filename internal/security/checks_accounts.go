@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/config"
+	"github.com/jrsamsanchez/signalith/internal/store"
 )
 
 // checkBuiltinPassword: accounts.builtin_password.
@@ -156,16 +157,40 @@ func checkAgentTokens(f *Facts) *Check {
 	if f.PublicTokenAccepted {
 		// Accepted for agents an older Docker quick start set up, while
 		// agents on plain HTTP are (see api.retiredTokenAccepted).
+		why := "This Docker quick start was upgraded from an older version, whose agents all send it."
+		if u := f.Config.DockerUpgrade(); u != nil && u.Index != "" {
+			why = "This Docker quick start was upgraded from an older version, whose agents all send it: when it was updated, OpenSearch held events from the older version, the oldest from " + day(u.IndexMade) + "."
+		}
 		return &Check{State: Risk, Line: "Agents can still send events over plain HTTP with change-this-ingest-token, an example token anyone can look up.",
-			Details: []string{"Signalith accepts it so agents set up by an older Docker quick start keep working, and only while agents on plain HTTP are accepted."},
+			Details: []string{why, "Signalith accepts it so those agents keep working, and only over plain HTTP. Refusing agents on plain HTTP ends it for good."},
 			Fix: &Fix{Steps: []string{"Choose Refuse them under Agents on plain HTTP once every agent has its configuration from Add data. The Health page names any agent still sending that way."},
-				Setting: "server.tls.plaintext_ingest", Page: &PageLink{ID: "data", Label: "Open Add data"}, Docs: doc(docHTTPSUpgrade)}}
+				Setting: "server.tls.plaintext_ingest", Page: &PageLink{ID: "data", Label: "Open Add data"}, Docs: doc(docHTTPSOldToken)}}
+	}
+	if f.Docker {
+		details = append(details, oldTokenRefused(f.Config))
 	}
 	if shortest < 24 {
 		return &Check{State: Attention, Line: "An agent token is only " + itoa(shortest) + plural(shortest, " character", " characters") +
 			" long, so it's easier to guess. Tokens Signalith makes have 48.", Details: details, Fix: fix}
 	}
 	return &Check{State: Good, Line: "Agents send with tokens of 24 characters or more.", Details: details}
+}
+
+// oldTokenRefused says why a Docker quick start refuses the example token
+// older ones gave every agent.
+func oldTokenRefused(c *config.Config) string {
+	const token = "The example token older Docker quick starts gave every agent, change-this-ingest-token, "
+	u := c.DockerUpgrade()
+	switch c.OldToken() {
+	case config.OldTokenUndecided:
+		return token + "is refused for now: Signalith hasn't yet been able to ask OpenSearch whether this install was upgraded from an older version. " +
+			"Agents that send it keep their events and send them again."
+	case config.OldTokenEnded:
+		return token + "is refused for good: this install was upgraded from an older version, and agents on plain HTTP have been refused since " + day(u.Ended) + "."
+	case config.OldTokenAccepted:
+		return token + "is refused while agents on plain HTTP are. Refusing them ends it for good."
+	}
+	return token + "is refused: this install started new, so none of its agents has it."
 }
 
 // checkOpenSearchRole: accounts.opensearch_role.
@@ -179,10 +204,30 @@ func checkOpenSearchRole(f *Facts) *Check {
 		return &Check{State: Risk, Line: "Signalith signs in to OpenSearch as admin with the password admin, which anyone can look up.", Fix: fix}
 	}
 	if o.AuthErr != "" {
-		c := &Check{State: Unknown, Line: "Signalith couldn't ask OpenSearch what its account may do.", Details: []string{osWhy(o.AuthErr)},
-			Fix: &Fix{Steps: []string{"Check the roles mapped to Signalith's account in OpenSearch's security settings."}, Docs: doc(docOSRoles)}}
-		if !osAnswered(o.AuthErr) {
+		// Only a refusal of the account itself is about its roles.
+		const couldnt = "Signalith couldn't ask OpenSearch what its account may do"
+		c := &Check{State: Unknown, Line: couldnt + ".", Details: []string{osWhy(o.AuthErr)}}
+		switch {
+		case o.SecurityNotLoaded:
+			c.Line, c.Details = couldnt+": OpenSearch's security settings aren't loaded, so it turns everyone away for now.", nil
+			c.Fix = notLoadedFix(f)
+		case !osAnswered(o.AuthErr):
 			c.Fix = reachFix()
+		case o.AuthRefusal == store.RefusedPermission:
+			c.Fix = &Fix{Steps: []string{"Check the roles mapped to Signalith's account in OpenSearch's security settings."}, Docs: doc(docOSRoles)}
+		case o.AuthRefusal == store.RefusedSignIn:
+			c.Line = couldnt + ": OpenSearch doesn't accept its sign-in."
+			setting := "opensearch.password"
+			if f.Config.OpenSearch.Username == "" {
+				setting = "opensearch.cert_file"
+			}
+			c.Fix = &Fix{Steps: []string{"Check the OpenSearch user name and password, or the client certificate, on the Settings page, then re-check."},
+				Setting: setting, Docs: doc(docOSPoint)}
+		case o.AuthRefusal == store.RefusedBusy:
+			c.Line = couldnt + ": OpenSearch was too busy to answer in time."
+			c.Fix = &Fix{Steps: []string{"Re-check in a few minutes. " + store.BusyFix}}
+		default:
+			c.Fix = &Fix{Steps: []string{"Re-check in a few minutes. If OpenSearch keeps answering this way, its log may say why. " + store.OpenSearchLog}}
 		}
 		return c
 	}

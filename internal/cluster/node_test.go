@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -822,4 +823,238 @@ func TestHeartbeatCarriesTheSecuritySummary(t *testing.T) {
 	if d := heartbeatOf(t, fos, b.ID()); d.Security == nil || d.Security.CheckedAt != nil {
 		t.Errorf("unchecked server: %+v", d.Security)
 	}
+}
+
+// selfOf is this server's own row in its status.
+func selfOf(st Status) ServerStatus {
+	for _, s := range st.Servers {
+		if s.Self {
+			return s
+		}
+	}
+	return ServerStatus{}
+}
+
+// redWarning waits for this server's red warning about OpenSearch.
+func redWarning(t *testing.T, n *Node) (Status, Warning) {
+	t.Helper()
+	var st Status
+	until(t, 5*time.Second, "a red warning about OpenSearch", func() bool {
+		st = n.Status()
+		return len(st.Warnings) > 0 && st.Warnings[0].Level == "red" && strings.Contains(st.Warnings[0].Text, "OpenSearch")
+	})
+	return st, st.Warnings[0]
+}
+
+// Each way OpenSearch turns a server away is told as what it is: only a
+// refusal of Signalith's own user gets the advice to give that user more
+// rights, a server that reached OpenSearch is never said not to reach it,
+// and an error that ends in a period gets no second one.
+func TestRefusalsAreWordedByKind(t *testing.T) {
+	notInit := func(m, p string) *ostest.Fault { f := ostest.NotInitialized; return &f }
+	for _, c := range []struct {
+		name    string
+		fault   func(m, p string) *ostest.Fault
+		state   string
+		problem string
+		why     string
+		text    []string
+		not     []string
+		banner  string
+	}{
+		{name: "security settings not loaded", fault: notInit, state: StateRefused, problem: "not_initialized",
+			why: "OpenSearch's security settings aren't loaded",
+			text: []string{
+				"OpenSearch is running, but its security settings aren't loaded, so it refuses every request from this server. ",
+				"Until they are, this server runs no detections, threat intel downloads or retention. ",
+				"If OpenSearch started only a few minutes ago, wait: it loads them as it starts. ",
+				"Otherwise, with the Docker quick start, run docker compose -f deploy/docker/docker-compose.yml up -d again from the Signalith folder: " +
+					"it re-runs the step that loads OpenSearch's security settings. ",
+				"If that doesn't load them, docs/opensearch-security.md#if-opensearchs-security-settings-arent-loaded says what to do. ",
+				"Without Docker, load them with securityadmin.sh, as docs/opensearch-security.md#3-load-the-security-settings shows. ",
+				"This server tries again by itself, so it needs no restart.",
+			},
+			not:    []string{"right to", "can't reach", "Can't reach", "setup step"},
+			banner: "OpenSearch's security settings aren't loaded, so it refuses this server, which runs no background jobs."},
+		{name: "busy", fault: func(m, p string) *ostest.Fault {
+			return &ostest.Fault{Status: 503, Type: "process_cluster_event_timeout_exception"}
+		}, state: StateRefused, problem: "busy", why: "OpenSearch is too busy to answer it in time",
+			text: []string{
+				"OpenSearch is too busy to answer this server in time (503 process_cluster_event_timeout_exception on s_runtime), " +
+					"so this server runs no detections, threat intel downloads or retention for now. ",
+				"Signalith keeps trying, and goes on by itself once OpenSearch catches up.",
+				"If this lasts more than a few minutes, check that OpenSearch's computer has enough memory and CPU, and what OpenSearch's log says. " +
+					"With the Docker quick start, show it with docker compose -f deploy/docker/docker-compose.yml logs opensearch from the Signalith folder; " +
+					"otherwise it is in /var/log/opensearch, or in the logs folder where you unpacked OpenSearch.",
+				"The error was: opensearch returned 503: process_cluster_event_timeout_exception: injected by the test.",
+			},
+			not:    []string{"right to", "can't reach"},
+			banner: "OpenSearch is too busy to answer this server, so it runs no background jobs for now."},
+		{name: "queue full", fault: func(m, p string) *ostest.Fault {
+			return &ostest.Fault{Status: 429, Type: "rejected_execution_exception"}
+		}, state: StateRefused, problem: "busy", text: []string{"OpenSearch is too busy to answer this server in time (429 rejected_execution_exception on s_runtime)"},
+			not: []string{"right to"}},
+		{name: "no rights", fault: func(m, p string) *ostest.Fault {
+			return &ostest.Fault{Status: 403, Type: "security_exception"}
+		}, state: StateRefused, problem: "forbidden", why: "OpenSearch refused its heartbeat (403 security_exception on s_runtime)",
+			text: []string{"OpenSearch refused this server's heartbeat (403 security_exception on s_runtime), so this server runs no detections, threat intel downloads or retention. " +
+				"Give Signalith's OpenSearch user the right to create, read and write s_runtime (or s_*). The error was: opensearch returned 403: security_exception: injected by the test."},
+			banner: "OpenSearch refuses this server, so it runs no background jobs."},
+		{name: "sign-in", fault: func(m, p string) *ostest.Fault {
+			return &ostest.Fault{Status: 401, Type: "security_exception"}
+		}, state: StateRefused, problem: "auth", why: "OpenSearch refuses its sign-in",
+			text: []string{"OpenSearch refused this server's sign-in (401 security_exception on s_runtime)", "on the Settings page."},
+			not:  []string{"right to"}},
+		{name: "not ready", fault: func(m, p string) *ostest.Fault {
+			return &ostest.Fault{Status: 503, Type: "cluster_manager_not_discovered_exception"}
+		}, state: StateRefused, problem: "unavailable", why: "OpenSearch isn't ready",
+			text: []string{"OpenSearch isn't ready to answer this server (503 cluster_manager_not_discovered_exception on s_runtime)",
+				"OpenSearch's log says why it isn't ready. With the Docker quick start, show it with docker compose -f deploy/docker/docker-compose.yml logs opensearch"},
+			not: []string{"right to"}},
+		// A block, by itself on a full disk or set by an admin: not a
+		// matter of rights. OpenSearch answers so even for an index that
+		// exists while it blocks making indices.
+		{name: "index creation blocked", fault: func(m, p string) *ostest.Fault {
+			return &ostest.Fault{Status: 403, Type: "index_create_block_exception"}
+		}, state: StateRefused, problem: "blocked", why: "OpenSearch refuses writes",
+			text: []string{"OpenSearch refuses writes (403 index_create_block_exception on s_runtime), so this server runs no detections, threat intel downloads or retention. " +
+				"OpenSearch does this when its disk is full, or when someone set a block such as cluster.blocks.read_only: give OpenSearch more disk, or remove the block. " +
+				"This server goes on by itself after that."},
+			not:    []string{"right to"},
+			banner: "OpenSearch refuses writes, so this server runs no background jobs."},
+		// Any other error answer is not about rights either, and is not
+		// labelled as a refusal of Signalith.
+		{name: "other error", fault: func(m, p string) *ostest.Fault {
+			return &ostest.Fault{Status: 400, Type: "index_closed_exception"}
+		}, state: StateRefused, problem: "other", why: "OpenSearch answered its heartbeat with an error (400 index_closed_exception on s_runtime)",
+			text: []string{"OpenSearch answered this server's heartbeat with an error (400 index_closed_exception on s_runtime), " +
+				"so this server runs no detections, threat intel downloads or retention. Signalith keeps trying. OpenSearch's log may say why. " +
+				"With the Docker quick start, show it with docker compose -f deploy/docker/docker-compose.yml logs opensearch"},
+			not:    []string{"right to", "refuse"},
+			banner: "OpenSearch answers this server with an error, so it runs no background jobs."},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			fos := ostest.New(t)
+			fos.SetFault(c.fault)
+			n := testNode(t, t.TempDir(), store.New(store.Config{URL: fos.URL}), true)
+			redWarning(t, n)
+			// The warning can show before the heartbeat records how
+			// OpenSearch turned it away; wait for that too.
+			var st Status
+			var w Warning
+			until(t, 5*time.Second, "the heartbeat to say how OpenSearch refused it", func() bool {
+				st, w = redWarning(t, n)
+				self := selfOf(st)
+				return self.Detail != nil && self.Detail.OpenSearch.Problem == c.problem &&
+					(c.why == "" || self.Detail.NotEligible == c.why)
+			})
+			for _, want := range c.text {
+				if !strings.Contains(w.Text, want) {
+					t.Errorf("the warning lacks %q:\n%s", want, w.Text)
+				}
+			}
+			for _, bad := range c.not {
+				if strings.Contains(w.Text, bad) {
+					t.Errorf("the warning says %q:\n%s", bad, w.Text)
+				}
+			}
+			if strings.Contains(w.Text, "..") || strings.Contains(w.Banner, "..") {
+				t.Errorf("a doubled period:\n%s\n%s", w.Text, w.Banner)
+			}
+			if c.banner != "" && w.Banner != c.banner {
+				t.Errorf("banner %q", w.Banner)
+			}
+			self := selfOf(st)
+			if self.State != c.state || self.Detail == nil || self.Detail.OpenSearch.Problem != c.problem || self.Detail.OpenSearch.OK {
+				t.Errorf("state %q, opensearch %+v", self.State, self.Detail.OpenSearch)
+			}
+			if c.why != "" && self.Detail.NotEligible != c.why {
+				t.Errorf("why it doesn't run the jobs: %q", self.Detail.NotEligible)
+			}
+			if ok, why := n.Ready(); ok || why != NotReadyOpenSearch {
+				t.Errorf("ready %v %q", ok, why)
+			}
+			if b := n.Banners(); len(b) != 1 || b[0] != w.Banner {
+				t.Errorf("banners %q", b)
+			}
+		})
+	}
+}
+
+// A server that cannot reach OpenSearch at all says so, with the error
+// ending in one period.
+func TestUnreachableIsWordedAsSuch(t *testing.T) {
+	ln, _ := net.Listen("tcp", "127.0.0.1:0")
+	closed := ln.Addr().String()
+	ln.Close()
+	n := testNode(t, t.TempDir(), store.New(store.Config{URL: "http://" + closed, Timeout: time.Second}), true)
+	st, w := redWarning(t, n)
+	if !strings.HasPrefix(w.Text, "This server can't reach OpenSearch, so it can't see the other servers and runs no background jobs. The error was: opensearch unreachable at") ||
+		strings.Contains(w.Text, "..") || !strings.HasSuffix(w.Text, ".") || strings.Contains(w.Text, "right to") {
+		t.Errorf("%q", w.Text)
+	}
+	if w.Banner != "This server can't use OpenSearch, so it runs no background jobs." {
+		t.Errorf("banner %q", w.Banner)
+	}
+	if s := selfOf(st); s.State != StateUnreachable || s.Detail.OpenSearch.Problem != "" || s.Detail.NotEligible != "it cannot reach OpenSearch" {
+		t.Errorf("%q %+v %q", s.State, s.Detail.OpenSearch, s.Detail.NotEligible)
+	}
+}
+
+// An OpenSearch that takes the requests but doesn't answer in time is
+// too slow, not out of reach, and is said to be so.
+func TestNoAnswerIsWordedAsSuch(t *testing.T) {
+	fos := ostest.New(t)
+	fos.SetFault(func(m, p string) *ostest.Fault { return &ostest.Fault{Stall: true} })
+	n := testNode(t, t.TempDir(), store.New(store.Config{URL: fos.URL, Timeout: 200 * time.Millisecond}), true)
+	st, w := redWarning(t, n)
+	if !strings.HasPrefix(w.Text, "OpenSearch didn't answer this server in time, so this server can't see the other servers and runs no background jobs. "+
+		"Signalith keeps trying, and goes on by itself once OpenSearch answers. If this lasts more than a few minutes,") ||
+		!strings.Contains(w.Text, "The error was: opensearch at "+fos.URL+" did not answer in time: ") ||
+		strings.Contains(w.Text, "..") || !strings.HasSuffix(w.Text, ".") || strings.Contains(w.Text, "can't reach") || strings.Contains(w.Text, "right to") {
+		t.Errorf("%q", w.Text)
+	}
+	if w.Banner != "OpenSearch doesn't answer this server in time, so it runs no background jobs." {
+		t.Errorf("banner %q", w.Banner)
+	}
+	if s := selfOf(st); s.State != StateUnreachable || s.Detail.OpenSearch.Problem != "timeout" || s.Detail.NotEligible != "OpenSearch doesn't answer it in time" {
+		t.Errorf("%q %+v %q", s.State, s.Detail.OpenSearch, s.Detail.NotEligible)
+	}
+	if ok, why := n.Ready(); ok || why != NotReadyOpenSearch {
+		t.Errorf("ready %v %q", ok, why)
+	}
+	// It goes on by itself once OpenSearch answers again.
+	fos.SetFault(nil)
+	waitReady(t, n, 5*time.Second)
+	until(t, 5*time.Second, "the problem cleared", func() bool {
+		s := selfOf(n.Status())
+		return s.State == StateReady && s.Detail.OpenSearch.Problem == ""
+	})
+}
+
+// A server that ran, and then finds OpenSearch's security settings not
+// loaded (OpenSearch started again without them), says so too, and that
+// the other servers are shown as it last saw them; it goes on by itself
+// once they are loaded.
+func TestRefusedAfterRunning(t *testing.T) {
+	fos := ostest.New(t)
+	n := testNode(t, t.TempDir(), store.New(store.Config{URL: fos.URL}), true)
+	waitReady(t, n, 5*time.Second)
+	fos.SetFault(func(m, p string) *ostest.Fault { f := ostest.NotInitialized; return &f })
+	st, w := redWarning(t, n)
+	if !strings.HasPrefix(w.Text, "OpenSearch is running, but its security settings aren't loaded") ||
+		!strings.HasSuffix(w.Text, "This server tries again by itself, so it needs no restart. The servers below are as it last saw them.") {
+		t.Errorf("%q", w.Text)
+	}
+	if s := selfOf(st); s.State != StateRefused || s.Detail.OpenSearch.Problem != "not_initialized" {
+		t.Errorf("%q %+v", s.State, s.Detail.OpenSearch)
+	}
+	fos.SetFault(nil)
+	waitReady(t, n, 5*time.Second)
+	// A read can make it ready before its next heartbeat clears the
+	// problem.
+	until(t, 5*time.Second, "the problem cleared", func() bool {
+		s := selfOf(n.Status())
+		return s.State == StateReady && s.Detail.OpenSearch.Problem == ""
+	})
 }

@@ -515,7 +515,7 @@ func TestOverview(t *testing.T) {
 		cats[c.ID] = c
 	}
 	// No "other" events yet, so that row is left out.
-	if !slices.Equal(ids, []string{"authentication", "endpoint", "network_traffic", "change", "risk", Findings, Cases, Intel}) {
+	if !slices.Equal(ids, []string{"authentication", "endpoint", "network_traffic", "change", "filesystem", "registry", "network_resolution", "image_load", "script", "inventory", "configuration_check", "alerts", "risk", Findings, Cases, Intel}) {
 		t.Errorf("categories = %v", ids)
 	}
 	ep := cats["endpoint"]
@@ -549,11 +549,11 @@ func TestOverview(t *testing.T) {
 		t.Errorf("archive = %+v", ov.Archive)
 	}
 
-	// OpenSearch down: the page still gets policies, and says why sizes
-	// are missing.
+	// OpenSearch down: the page still gets policies (every category but
+	// "other", which has no events), and says why sizes are missing.
 	f.mem.Fail["indices"] = errors.New("connection refused")
 	ov = f.m.Overview(context.Background())
-	if !strings.Contains(ov.Error, "connection refused") || len(ov.Categories) != 8 || ov.Guard.Status.State != GuardUnknown {
+	if !strings.Contains(ov.Error, "connection refused") || len(ov.Categories) != len(Categories())-1 || ov.Guard.Status.State != GuardUnknown {
 		t.Errorf("down: %+v", ov)
 	}
 }

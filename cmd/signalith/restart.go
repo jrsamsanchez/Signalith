@@ -86,6 +86,9 @@ type runner struct {
 	// These carry over a restart.
 	sessions *auth.Sessions
 	limiter  *auth.Limiter
+	// browsers signs the known-browser cookies: the key in the state
+	// folder, or one kept in memory.
+	browsers *auth.BrowserKey
 	people   *users.Store
 	// node is this server among those that share its OpenSearch: its
 	// identity and lock, heartbeat and job lease. A restart keeps it and
@@ -155,7 +158,7 @@ type move struct {
 func newRunner(path string, log *slog.Logger) *runner {
 	r := &runner{
 		path: path, log: log, started: time.Now(),
-		sessions: auth.NewSessions(12 * time.Hour), limiter: auth.NewLimiter(),
+		sessions: auth.NewSessions(12 * time.Hour), limiter: auth.NewLimiter(), browsers: auth.NewBrowserKey(),
 		front: &front{}, requests: make(chan restartRequest, 1), confirmed: make(chan *move, 1),
 	}
 	r.front.ready = r.ready

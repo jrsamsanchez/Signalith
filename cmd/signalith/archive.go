@@ -15,6 +15,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/config"
 	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"github.com/jrsamsanchez/signalith/internal/retention"
+	"github.com/jrsamsanchez/signalith/internal/store"
 )
 
 const archiveUsage = `Usage:
@@ -82,7 +83,7 @@ func cmdArchive(args []string) error {
 				herr = fmt.Errorf("could not install the index template, so nothing was restored: %w", herr)
 			}
 		} else {
-			herr = fmt.Errorf("OpenSearch is not reachable: %w", herr)
+			herr = errors.New(store.Unusable(herr))
 		}
 		cancel()
 		if herr != nil {

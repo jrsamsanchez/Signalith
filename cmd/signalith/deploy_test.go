@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"maps"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -149,13 +151,49 @@ func TestDockerCompose(t *testing.T) {
 			t.Errorf("health check does not use %s: %s", f, health)
 		}
 	}
-	if !strings.Contains(health, "https://localhost:9200/") {
+	// Healthy only once its security settings are loaded.
+	if !strings.Contains(health, "https://localhost:9200/") || !strings.Contains(health, "/_plugins/_security/health") {
 		t.Errorf("health check: %s", health)
 	}
 
-	// Signalith: secrets only as files from setup, and hardened.
+	// The step that loads OpenSearch's security settings: the same files
+	// as OpenSearch's, the certificates and its script read-only, and
+	// hardened. It waits for OpenSearch to start, not to be healthy, since
+	// OpenSearch turns healthy only once it has done its job.
+	l := svc["opensearch-security"]
+	if l.DependsOn["setup"].Condition != "service_completed_successfully" || l.DependsOn["opensearch"].Condition != "service_started" {
+		t.Errorf("opensearch-security depends on %v", l.DependsOn)
+	}
+	if _, ok := vols["opensearch-security-loaded"]; !ok {
+		t.Error("volume opensearch-security-loaded is not declared")
+	}
+	want = []string{
+		"opensearch-certs:/usr/share/opensearch/config/certs:ro",
+		"./opensearch/load-security.sh:/usr/share/opensearch/load-security.sh:ro",
+		"opensearch-security-loaded:/usr/share/opensearch/data",
+	}
+	for name := range ospki.SecurityFiles() {
+		want = append(want, "./opensearch/security/"+name+":/usr/share/opensearch/config/opensearch-security/"+name+":ro")
+	}
+	for _, v := range want {
+		if !slices.Contains(l.Volumes, v) {
+			t.Errorf("opensearch-security lacks volume %s", v)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dockerDir, "opensearch", "load-security.sh")); err != nil {
+		t.Error(err)
+	}
+	if l.User != "1000:1000" || l.Restart != "no" || !l.ReadOnly || !slices.Contains(l.Tmpfs, "/tmp") || !slices.Equal(l.CapDrop, []string{"ALL"}) ||
+		len(l.CapAdd) != 0 || !slices.Contains(l.SecurityOpt, "no-new-privileges:true") || len(l.Ports) != 0 {
+		t.Errorf("opensearch-security: user %q restart %q read_only %v tmpfs %v cap_drop %v cap_add %v security_opt %v ports %v",
+			l.User, l.Restart, l.ReadOnly, l.Tmpfs, l.CapDrop, l.CapAdd, l.SecurityOpt, l.Ports)
+	}
+
+	// Signalith: secrets only as files from setup, and hardened. It starts
+	// once OpenSearch's security settings are loaded.
 	s := svc["signalith"]
-	if s.DependsOn["setup"].Condition != "service_completed_successfully" || s.DependsOn["opensearch"].Condition != "service_healthy" {
+	if s.DependsOn["setup"].Condition != "service_completed_successfully" || s.DependsOn["opensearch"].Condition != "service_healthy" ||
+		s.DependsOn["opensearch-security"].Condition != "service_completed_successfully" {
 		t.Errorf("signalith depends on %v", s.DependsOn)
 	}
 	secretsAt := ""
@@ -251,7 +289,9 @@ func TestDockerConfigLoads(t *testing.T) {
 	if !c.CheckPassword("admin", strings.TrimSpace(string(pw))) || !slices.Equal(c.Ingest.Tokens, []string{strings.TrimSpace(string(token))}) {
 		t.Errorf("secrets not taken from the files: tokens %v", c.Ingest.Tokens)
 	}
-	if c.Server.TLSMode() != config.TLSAuto || !c.Server.PlaintextIngest() || c.Server.PublicURL != "https://localhost:8080" {
+	// A new install refuses agents on plain HTTP: no plaintext_ingest is
+	// set, and nothing says it was upgraded.
+	if c.Server.TLSMode() != config.TLSAuto || c.Server.PlaintextIngest() || c.Server.PublicURL != "https://localhost:8080" {
 		t.Errorf("server: mode %s plaintext %v url %s", c.Server.TLSMode(), c.Server.PlaintextIngest(), c.Server.PublicURL)
 	}
 	if c.OpenSearch.URL != "https://opensearch:9200" || c.OpenSearch.Username != "" || c.Syslog.TLS != "0.0.0.0:6514" {
@@ -260,49 +300,195 @@ func TestDockerConfigLoads(t *testing.T) {
 	if w := c.Warnings(); len(w) != 0 {
 		t.Errorf("warnings: %v", w)
 	}
-	dockerUpgrade(t, c)
+	setup, err := os.Stat(filepath.Join(sigDir, ingestTokenFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dockerNew(t, path, setup.ModTime())
+	dockerUpgrade(t, path, setup.ModTime())
 }
 
-// dockerUpgrade checks what agents from the older Docker quick start meet
-// after the upgrade, with the quick start's own config. They sent the
-// example token change-this-ingest-token over plain HTTP, which the new
-// docker-compose.yml no longer sets: they keep sending while
-// plaintext_ingest is allow, as shipped, and new agents get the server's
-// own token, even if the old one is put back in the environment.
-func dockerUpgrade(t *testing.T, c *config.Config) {
+// dockerOpenSearch is an OpenSearch that answers _cat/indices for
+// Signalith's event indices, with when it made each one.
+func dockerOpenSearch(t *testing.T, made map[string]time.Time) *store.Client {
 	t.Helper()
-	srv := &api.Server{
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/_cat/indices/signalith-*" || r.URL.Query().Get("h") != "index,creation.date" {
+			http.Error(w, `{"error":"unexpected"}`, http.StatusBadRequest)
+			return
+		}
+		rows := []map[string]string{}
+		for name, at := range made {
+			rows = append(rows, map[string]string{"index": name, "creation.date": strconv.FormatInt(at.UnixMilli(), 10)})
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(rows)
+	}))
+	t.Cleanup(ts.Close)
+	return store.New(store.Config{URL: ts.URL})
+}
+
+// dockerServer serves c as the Docker quick start's container does, over
+// plain HTTP and HTTPS on the same port, and posts a batch of one
+// Windows event with a token.
+type dockerServer struct {
+	srv           *api.Server
+	plain, secure *httptest.Server
+}
+
+func newDockerServer(t *testing.T, c *config.Config) *dockerServer {
+	t.Helper()
+	d := &dockerServer{srv: &api.Server{
 		Config:   c,
 		Pipeline: &ingest.Pipeline{Store: nopBulk{}},
 		Log:      slog.New(slog.DiscardHandler),
 		Runtime:  &api.Runtime{OS: "linux", Container: true, Addresses: []string{}},
+	}}
+	d.plain = httptest.NewServer(d.srv.PlainHandler(d.srv.Handler()))
+	d.secure = httptest.NewTLSServer(d.srv.Handler())
+	t.Cleanup(d.plain.Close)
+	t.Cleanup(d.secure.Close)
+	return d
+}
+
+func (d *dockerServer) post(t *testing.T, https bool, token string) int {
+	t.Helper()
+	ts := d.plain
+	if https {
+		ts = d.secure
 	}
-	plain := httptest.NewServer(srv.PlainHandler(srv.Handler()))
-	defer plain.Close()
-	secure := httptest.NewTLSServer(srv.Handler())
-	defer secure.Close()
-	post := func(cl *http.Client, url, token string) int {
-		req, _ := http.NewRequest("POST", url+"/api/ingest", strings.NewReader(`[{"Computer":"WIN-01","EventID":4624,"Channel":"Security"}]`))
-		req.Header.Set("Authorization", "Bearer "+token)
-		resp, err := cl.Do(req)
-		if err != nil {
-			t.Fatal(err)
-		}
-		resp.Body.Close()
-		return resp.StatusCode
+	req, _ := http.NewRequest("POST", ts.URL+"/api/ingest", strings.NewReader(`[{"Computer":"WIN-01","EventID":4624,"Channel":"Security"}]`))
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if code := post(plain.Client(), plain.URL, "change-this-ingest-token"); code != http.StatusOK {
+	resp.Body.Close()
+	return resp.StatusCode
+}
+
+// decideAt makes the decision about the example token for the quick
+// start whose setup step ran at setup, as its first start does.
+func decideAt(t *testing.T, path string, setup time.Time, cat indexLister) *config.DockerUpgrade {
+	t.Helper()
+	old := dockerSetup
+	dockerSetup = func() (time.Time, error) { return setup, nil }
+	defer func() { dockerSetup = old }()
+	c, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	u, err := decideDockerUpgradeOnce(context.Background(), c, cat, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return u
+}
+
+// restart loads the config again, as the next start does, and runs what
+// each start runs about the example token.
+func restart(t *testing.T, path string, cat indexLister) (*config.Config, *dockerServer) {
+	t.Helper()
+	c, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := newDockerServer(t, c)
+	settleDockerUpgrade(context.Background(), c, cat, d.srv, slog.New(slog.DiscardHandler))
+	return d.srv.Running(), d
+}
+
+// dockerNew checks a quick start installed new with its own config. The
+// example token change-this-ingest-token, which older quick starts gave
+// every agent and anyone can look up, is a wrong token there: 401, even
+// over plain HTTP. Events stored right after setup, by a test or by
+// sample data dated a week back, do not make it look upgraded, and the
+// decision is kept: OpenSearch holding older events later changes
+// nothing.
+func dockerNew(t *testing.T, path string, setup time.Time) {
+	t.Helper()
+	t.Setenv("SIGNALITH_STATE_DIR", t.TempDir())
+	week := setup.AddDate(0, 0, -6).UTC().Format("2006.01.02")
+	made := map[string]time.Time{
+		"signalith-windows-" + setup.UTC().Format("2006.01.02"): setup.Add(time.Minute),
+		"signalith-authentication-" + week:                      setup.Add(3 * time.Minute),
+	}
+	cat := dockerOpenSearch(t, made)
+	if u := decideAt(t, path, setup, cat); u.Upgraded || u.Index != "" || !u.Setup.Equal(setup.UTC()) {
+		t.Fatalf("new install decided %+v", u)
+	}
+	c, d := restart(t, path, cat)
+	if c.OldToken() != config.OldTokenRefused || c.Server.PlaintextIngest() {
+		t.Errorf("new install: old token %v, plain %v", c.OldToken(), c.Server.PlaintextIngest())
+	}
+	if code := d.post(t, false, "change-this-ingest-token"); code != http.StatusUnauthorized {
+		t.Errorf("new install, old token over plain HTTP: %d", code)
+	}
+	if code := d.post(t, true, "change-this-ingest-token"); code != http.StatusUnauthorized {
+		t.Errorf("new install, old token over HTTPS: %d", code)
+	}
+	if code := d.post(t, true, c.Ingest.Tokens[0]); code != http.StatusOK {
+		t.Errorf("new install, its own token over HTTPS: %d", code)
+	}
+	// Its own token over plain HTTP: refused, as a batch the agent keeps.
+	if code := d.post(t, false, c.Ingest.Tokens[0]); code != http.StatusServiceUnavailable {
+		t.Errorf("new install, its own token over plain HTTP: %d", code)
+	}
+	if got := d.srv.Pipeline.Stats().Received; got != 1 {
+		t.Errorf("received %d events", got)
+	}
+	// Decided once: with older events in OpenSearch now, the next start
+	// keeps the decision.
+	before, _ := os.ReadFile(config.DockerUpgradeFileIn(c.StateDir()))
+	made["signalith-linux-2026.01.01"] = setup.AddDate(0, -3, 0)
+	c, d = restart(t, path, cat)
+	if after, _ := os.ReadFile(config.DockerUpgradeFileIn(c.StateDir())); string(after) != string(before) || c.OldToken() != config.OldTokenRefused {
+		t.Errorf("the decision changed:\n%s\n%s", before, after)
+	}
+	if code := d.post(t, false, "change-this-ingest-token"); code != http.StatusUnauthorized {
+		t.Errorf("new install after a restart, old token over plain HTTP: %d", code)
+	}
+}
+
+// dockerUpgrade checks a quick start upgraded from the older one, whose
+// OpenSearch held events from before the setup step first ran. Its
+// agents sent the example token change-this-ingest-token over plain HTTP,
+// which the new docker-compose.yml no longer sets: they keep sending, and
+// agents on plain HTTP are accepted, until those are refused, which ends
+// the token for good. New agents get the server's own token, even if the
+// old one is put back in the environment.
+func dockerUpgrade(t *testing.T, path string, setup time.Time) {
+	t.Helper()
+	t.Setenv("SIGNALITH_STATE_DIR", t.TempDir())
+	made := map[string]time.Time{
+		"signalith-windows-2026.09.30": setup.AddDate(0, 0, -13),
+		"signalith-windows-2026.10.01": setup.AddDate(0, 0, -12),
+		// Today's, made after the upgrade.
+		"signalith-windows-" + setup.UTC().Format("2006.01.02"): setup.Add(time.Minute),
+	}
+	cat := dockerOpenSearch(t, made)
+	if u := decideAt(t, path, setup, cat); !u.Upgraded || u.Index != "signalith-windows-2026.09.30" || !u.IndexMade.Equal(setup.AddDate(0, 0, -13).Truncate(time.Millisecond).UTC()) {
+		t.Fatalf("upgrade decided %+v", u)
+	}
+	// Stable across restarts, even once retention has deleted the old days.
+	delete(made, "signalith-windows-2026.09.30")
+	delete(made, "signalith-windows-2026.10.01")
+	c, d := restart(t, path, cat)
+	if c.OldToken() != config.OldTokenAccepted || !c.Server.PlaintextIngest() {
+		t.Fatalf("upgraded: old token %v, plain %v", c.OldToken(), c.Server.PlaintextIngest())
+	}
+	if code := d.post(t, false, "change-this-ingest-token"); code != http.StatusOK {
 		t.Errorf("an old agent over plain HTTP: %d", code)
 	}
-	if got := srv.Pipeline.PlaintextSenders(time.Time{}); len(got) != 1 || !slices.Equal(got[0].Hosts, []string{"WIN-01"}) {
+	if got := d.srv.Pipeline.PlaintextSenders(time.Time{}); len(got) != 1 || !slices.Equal(got[0].Hosts, []string{"WIN-01"}) {
 		t.Errorf("plain-text senders %+v", got)
 	}
 	// Over HTTPS the old token is refused, with a status Fluent Bit
 	// retries; the server's own token works.
-	if code := post(secure.Client(), secure.URL, "change-this-ingest-token"); code != http.StatusServiceUnavailable {
+	if code := d.post(t, true, "change-this-ingest-token"); code != http.StatusServiceUnavailable {
 		t.Errorf("the old token over HTTPS: %d", code)
 	}
-	if code := post(secure.Client(), secure.URL, c.Ingest.Tokens[0]); code != http.StatusOK {
+	if code := d.post(t, true, c.Ingest.Tokens[0]); code != http.StatusOK {
 		t.Errorf("the new token over HTTPS: %d", code)
 	}
 	// Put back in the environment, the old token is not handed to new
@@ -311,9 +497,9 @@ func dockerUpgrade(t *testing.T, c *config.Config) {
 	slices.Reverse(c.Ingest.Tokens)
 	h, _ := config.HashPassword("an admin password")
 	c.Auth.AdminPasswordHash = h
-	req, _ := http.NewRequest("GET", secure.URL+"/api/agents/config?os=windows", nil)
+	req, _ := http.NewRequest("GET", d.secure.URL+"/api/agents/config?os=windows", nil)
 	req.SetBasicAuth("admin", "an admin password")
-	resp, err := secure.Client().Do(req)
+	resp, err := d.secure.Client().Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -321,6 +507,41 @@ func dockerUpgrade(t *testing.T, c *config.Config) {
 	resp.Body.Close()
 	if resp.StatusCode != 200 || strings.Contains(string(b), "change-this-ingest-token") || !strings.Contains(string(b), c.Ingest.Tokens[1]) {
 		t.Errorf("agent config: %d %s", resp.StatusCode, b)
+	}
+
+	// Agents on plain HTTP refused in signalith.yaml: the next start ends
+	// the old token for good.
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	setPlain := func(v string) {
+		t.Helper()
+		text := strings.Replace(string(raw), "    mode: auto\n", "    mode: auto\n    plaintext_ingest: "+v+"\n", 1)
+		if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	defer os.WriteFile(path, raw, 0o600)
+	setPlain("deny")
+	if c, d = restart(t, path, cat); c.OldToken() != config.OldTokenEnded {
+		t.Errorf("after refusing agents on plain HTTP: %v", c.OldToken())
+	}
+	if code := d.post(t, false, "change-this-ingest-token"); code != http.StatusServiceUnavailable {
+		t.Errorf("an old agent, refused: %d", code)
+	}
+	// Accepted again later: the old token stays refused, as a batch the
+	// agent keeps; agents with the server's own token are accepted.
+	setPlain("allow")
+	c, d = restart(t, path, cat)
+	if c.OldToken() != config.OldTokenEnded || !c.Server.PlaintextIngest() {
+		t.Errorf("accepted again: old token %v, plain %v", c.OldToken(), c.Server.PlaintextIngest())
+	}
+	if code := d.post(t, false, "change-this-ingest-token"); code != http.StatusServiceUnavailable {
+		t.Errorf("an old agent after the token ended: %d", code)
+	}
+	if code := d.post(t, false, c.Ingest.Tokens[0]); code != http.StatusOK {
+		t.Errorf("the new token over plain HTTP, accepted: %d", code)
 	}
 }
 

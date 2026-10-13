@@ -29,6 +29,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/api"
 	"github.com/jrsamsanchez/signalith/internal/assets"
 	"github.com/jrsamsanchez/signalith/internal/assistant"
+	"github.com/jrsamsanchez/signalith/internal/auth"
 	"github.com/jrsamsanchez/signalith/internal/cases"
 	"github.com/jrsamsanchez/signalith/internal/cluster"
 	"github.com/jrsamsanchez/signalith/internal/config"
@@ -453,8 +454,10 @@ func cmdValidate(args []string) error {
 	cl := newStore(c)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if status, err := cl.Health(ctx); err != nil {
+	if status, err := cl.Health(ctx); err != nil && store.Problem(err) == "" {
 		fmt.Printf("Warning: OpenSearch is not reachable yet: %v\n", err)
+	} else if err != nil {
+		fmt.Println("Warning:", store.Unusable(err))
 	} else {
 		fmt.Printf("OpenSearch at %s is %s.\n", redact.URL(c.OpenSearch.URL), status)
 	}
@@ -810,8 +813,22 @@ func serve(ctx context.Context, path string, log *slog.Logger) error {
 	}
 	defer node.Close()
 	defer node.Stop()
+	// The first start of the Docker quick start with this version decides
+	// whether it was upgraded from one whose agents send the example
+	// ingest token (see config.Config.OldToken).
+	if c.OldToken() == config.OldTokenUndecided {
+		cl := newStore(c)
+		decided := decideDockerUpgradeAtStart(ctx, c, cl, log)
+		cl.CloseIdleConnections()
+		if decided {
+			if c, err = loadConfig(path, log); err != nil {
+				return err
+			}
+		}
+	}
 	r := newRunner(path, log)
 	r.node = node
+	r.browsers = loadBrowserKey(c, log)
 	// The node outlives ctx: stopping gives the job lease up first, which
 	// needs it.
 	node.Start(context.WithoutCancel(ctx))
@@ -1101,6 +1118,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		Log:        log,
 		Version:    version,
 	}
+	srv.KnownBrowsers = r.browsers
 	// Every server makes the indices it uses when they are missing; the
 	// indicesReady channel is closed once it has tried, and the flags say
 	// which ones are there. Changes to existing indices and the background
@@ -1195,6 +1213,10 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		in.node = r.node
 	}
 	in.srv, in.handler = srv, srv.Handler()
+	// The example ingest token of an older Docker quick start: decide
+	// whether this one was upgraded if that is still open, and end it for
+	// good once agents on plain HTTP are refused.
+	in.jobs.Go(func() { settleDockerUpgrade(ctx, c, cl, srv, log) })
 	// The security checks: 30 seconds after the process started, a moment
 	// after a restart in place, then hourly.
 	in.jobs.Go(func() { srv.RunSecurityChecks(ctx, api.SecurityDelay(r.started)) })
@@ -1374,6 +1396,23 @@ func openNode(c *config.Config, log *slog.Logger) (*cluster.Node, *slog.Logger, 
 	return node, log, nil
 }
 
+// loadBrowserKey reads the key that signs the known-browser cookie from
+// the state folder, making it on first start (see auth.Limiter). Without
+// it the server uses a key kept in memory: browsers are then recognized
+// only until the process stops.
+func loadBrowserKey(c *config.Config, log *slog.Logger) *auth.BrowserKey {
+	path := c.SignInKeyFile()
+	key, created, err := auth.LoadBrowserKey(path)
+	if err != nil {
+		log.Warn("could not use the sign-in key, so browsers that signed in before are recognized only until Signalith stops", "path", path, "err", err)
+		return auth.NewBrowserKey()
+	}
+	if created {
+		log.Info("made the sign-in key", "path", path)
+	}
+	return key
+}
+
 // openUsers opens the user store once and keeps it across restarts, so
 // sign-in sessions stay valid; the directory sign-in settings are read
 // again each time.
@@ -1542,7 +1581,11 @@ func ensureTemplate(ctx context.Context, cl *store.Client, c *config.Config, log
 			log.Info("opensearch index template ready", "url", redact.URL(c.OpenSearch.URL))
 			return true
 		}
-		log.Warn("waiting for opensearch", "url", redact.URL(c.OpenSearch.URL), "err", err)
+		if hint := store.Hint(err); hint != "" {
+			log.Warn("waiting for opensearch", "url", redact.URL(c.OpenSearch.URL), "err", err, "fix", hint)
+		} else {
+			log.Warn("waiting for opensearch", "url", redact.URL(c.OpenSearch.URL), "err", err)
+		}
 		select {
 		case <-ctx.Done():
 			return false

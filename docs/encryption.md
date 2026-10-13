@@ -106,6 +106,10 @@ of backups that many people can read, as you keep the master key:
   `C:\ProgramData\Signalith\tls`, and in Docker the `signalith-data` volume). Whoever
   has `ca.key` can make certificates that browsers and agents trusting Signalith's CA
   accept; see [docs/https.md](https.md).
+- **The sign-in key**, `signin.key` in the state folder. It signs the cookie that lets
+  a browser that signed in to an account before keep signing in while someone else is
+  guessing that account's password (see [failed sign-in limits](users.md#signing-in)).
+  Whoever has it can make such cookies, but still needs the password to sign in.
 - **The Docker quick start's `signalith-secrets` volume**, made by its setup step: the
   first admin password (`initial-admin-password`), the agents' ingest token
   (`ingest-token`) and Signalith's OpenSearch client key (`opensearch-client-key.pem`).

@@ -190,7 +190,7 @@ var Registry = []Setting{
 		Help:       "The most connections open at once from browsers, agents and the API. One computer may use a tenth of them.",
 		EmptyMeans: "10000"},
 	{Key: "server.shared_addresses", Scope: ScopeServer, Section: "web", Label: "Proxies and gateways", Type: TypeList, Restart: true,
-		Help:        "IP addresses or ranges of a reverse proxy, load balancer or NAT gateway that many people and agents reach Signalith through. They are not limited like one computer.",
+		Help:        "IP addresses or ranges of a reverse proxy, load balancer or NAT gateway that many people and agents reach Signalith through. They are not limited like one computer: wrong passwords from them count against each account, and never pause sign-ins from the whole address.",
 		Placeholder: "10.0.0.5", EmptyMeans: "none", check: checkAddressList, problem: listProblem("server.shared_addresses")},
 
 	{Key: "server.tls.mode", Scope: ScopeServer, Section: "https", Label: "HTTPS", Type: TypeChoice, Restart: true,
@@ -220,11 +220,18 @@ var Registry = []Setting{
 		Placeholder: "/etc/signalith/tls/key.pem", problem: tlsFileProblem("server.tls_key")},
 	{Key: "server.tls.plaintext_ingest", Scope: ScopeCluster, Section: "https", Label: "Agents on plain HTTP", Type: TypeChoice,
 		Help: "Agents set up before HTTPS was the default still send to an http:// address. Accept them while you give each one a new configuration from Add data " +
-			"(the Health page lists those still on plain HTTP, whose events anyone on the network can read), then refuse them. A refused agent keeps its events and sends them again once it is updated.",
+			"(the Health page lists those still on plain HTTP, whose events anyone on the network can read), then refuse them. A refused agent keeps its events and sends them again once it is updated. " +
+			"On a Docker quick start upgraded from an older version, refusing them also ends the old example token change-this-ingest-token for good.",
 		Choices: []Choice{{"deny", "Refuse them"}, {"allow", "Accept them for now"}}},
 	{Key: "server.trusted_proxies", Scope: ScopeCluster, Section: "https", Label: "Trusted reverse proxies", Type: TypeList,
 		Help:        "IP addresses or ranges of reverse proxies in front of Signalith. Only from them is X-Forwarded-Proto believed, so a browser that reached the proxy over HTTPS gets the HTTPS-only sign-in cookie and is not sent to https:// again.",
 		Placeholder: "10.0.0.5", EmptyMeans: "none", check: checkAddressList, problem: listProblem("server.trusted_proxies")},
+	{Key: "server.client_header", Scope: ScopeCluster, Section: "https", Label: "Client address header", Type: TypeChoice,
+		Help: "The header your trusted reverse proxies write each person's address into. The sign-in limits and the log then use that address instead of the proxy's. " +
+			"Choose one only if the proxy sets the header itself (for nginx: proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;), " +
+			"because a proxy that passes on the header from the browser lets anyone pick the address they are counted under. " +
+			"With None, everyone reaching Signalith through a trusted proxy counts as one shared address.",
+		Choices: []Choice{{"", "None: count everyone behind the proxy together"}, {ClientHeaderXFF, "X-Forwarded-For"}, {ClientHeaderForwarded, "Forwarded"}}},
 
 	{Key: "opensearch.url", Scope: ScopeBootstrap, Section: "opensearch", Label: "Address", Type: TypeURL, Restart: true,
 		Help:        "Where OpenSearch answers.",

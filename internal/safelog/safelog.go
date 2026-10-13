@@ -25,6 +25,7 @@ const (
 var shortKeys = map[string]bool{
 	"user": true, "username": true, "by": true, "client": true, "sender": true,
 	"host": true, "hostname": true, "path": true, "tag": true, "remote": true,
+	"peer": true, "forwarded": true,
 }
 
 // New returns a handler that cuts long values before passing records to
