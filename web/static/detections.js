@@ -915,6 +915,8 @@ function renderFindingDetail(box, data, opts = {}) {
     d ? { icon: 'crosshair', label: 'Open the detection', run: () => focusDetection(f.detection_id) } : null,
     d ? { icon: 'list-filter', label: 'Findings from this detection', run: () => { fnd.detection = f.detection_id; fnd.urgency.clear(); loadFindings(); } } : null,
     can('analyst') ? { icon: 'zap', label: 'Respond…', run: () => { const b = box.querySelector('[data-action="respond"]'); if (b) b.click(); } } : null,
+    d && can('admin') ? 'sep' : null,
+    d && can('admin') ? { icon: 'bell-off', label: 'Don’t alert on this again…', run: () => suppressFinding(f, d) } : null,
   ]);
 
   const sev = sevBadge(u);
@@ -1416,7 +1418,7 @@ function renderDetectionInspector() {
       const n = res.findings.length;
       det.msg = {
         id: d.id, tone: 'success', title: n ? `${dxPlural(n, 'new finding')} raised.` : 'Run finished. No new findings.',
-        text: `${dxPlural(res.results, 'result')}, ${res.throttled} held back as repeats${res.risk_events ? `, ${dxPlural(res.risk_events, 'risk event')}` : ''}.`,
+        text: `${dxPlural(res.results, 'result')}, ${res.throttled} held back as repeats${res.suppressed ? `, ${res.suppressed} matched an exception` : ''}${res.risk_events ? `, ${dxPlural(res.risk_events, 'risk event')}` : ''}.`,
         action: n ? { label: 'View findings', run: () => viewDetectionFindings(d.id) } : null,
       };
     } catch (e) {
@@ -1482,7 +1484,7 @@ function renderDetectionInspector() {
         el('pre', { class: 'dx-code' }, d.query)),
       dxSection('Last run', dxKv([
         ['When', st.last_run ? el('span', { title: fmtTime(st.last_run) }, ago(st.last_run) + (st.last_duration_ms ? ` · took ${st.last_duration_ms} ms` : '')) : runsOn ? `Not here: it runs on ${runsOn}` : runsOn === '' ? 'Not here' : 'Not run yet'],
-        st.last_run ? ['Results', `${dxPlural(st.last_results, 'result')}, ${dxPlural(st.last_findings, 'new finding')}`] : null,
+        st.last_run ? ['Results', `${dxPlural(st.last_results, 'result')}, ${dxPlural(st.last_findings, 'new finding')}${st.last_suppressed ? `, ${st.last_suppressed} matched an exception` : ''}`] : null,
         lagText(st) ? ['Behind schedule', lagText(st)] : null,
         n24 != null ? ['Last 24 hours', n24 ? el('button', { class: 'link-btn', type: 'button' }, dxPlural(n24, 'finding')) : 'No findings'] : null,
         schedulerOn && d.enabled ? null : ['Schedule', schedulerOn || runsOn != null && !d.enabled ? 'Off, so it does not run'
@@ -1496,6 +1498,7 @@ function renderDetectionInspector() {
         d.origin.status ? ['Maturity', d.origin.status === 'stable' ? 'Stable' : d.origin.status === 'test' ? 'Tested by its authors' : d.origin.status] : null,
         (d.origin.references || []).length ? ['References', el('div', { class: 'dx-refs' }, ...d.origin.references.slice(0, 5).map((u) => /^https?:\/\//.test(u) ? el('a', { href: u, target: '_blank', rel: 'noopener noreferrer' }, u.replace(/^https?:\/\//, '')) : el('span', {}, u)))] : null,
       ])) : null,
+      exceptionsSection(d, admin),
       dxSection('Settings', dxKv([
         ['Repeats', (thr.fields || []).length ? `One finding per ${thr.fields.join(', ')}${thr.window ? ' for ' + thr.window : ''}` : thr.window ? `Held back for ${thr.window}` : 'Every result raises a finding'],
         ['Risk', risk ? `+${risk.score} to ${(risk.objects || []).map((o) => o.field).join(', ') || 'nothing'}${risk.only ? ', no findings' : ''}` : 'None'],
@@ -1540,6 +1543,199 @@ function dxConfirm(o) {
   });
 }
 
+// ---- tuning: exceptions ----
+// tuneDialog is the dialog for exceptions. It sits on the body, not in a
+// page, because "Don't alert on this again" opens from the Findings page.
+function tuneDialog() {
+  let dlg = $('d-tune');
+  if (!dlg) {
+    dlg = el('dialog', { class: 'modal', id: 'd-tune', 'aria-labelledby': 'd-tune-title' });
+    document.body.append(dlg);
+  }
+  return dlg;
+}
+const SUPPRESS_FOR = [['24h', 'For 24 hours'], ['7d', 'For 7 days'], ['30d', 'For 30 days'], ['', 'Until removed']];
+// Result fields that are counts, times or the raw event make poor exceptions.
+const SUPPRESS_SKIP = new Set(['_time', '_raw', 'count', 'risk_object', 'risk_object_type', 'earliest', 'latest', 'first_seen', 'last_seen']);
+
+// suppressFields lists the fields of a finding an exception can match on:
+// its entities first, then other single values of its result.
+function suppressFields(f) {
+  const out = [];
+  const seen = new Set();
+  const add = (k, v, entity) => {
+    if (seen.has(k) || SUPPRESS_SKIP.has(k) || k.startsWith('_')) return;
+    if (Array.isArray(v)) { if (v.length !== 1) return; v = v[0]; }
+    if (v == null || typeof v === 'object' || String(v).trim() === '' || String(v).length > 1024) return;
+    seen.add(k);
+    out.push({ field: k, value: String(v), entity });
+  };
+  for (const [k, v] of Object.entries(f.entities || {})) add(k, f.result && f.result[k] != null ? f.result[k] : v, true);
+  for (const [k, v] of Object.entries(f.result || {})) if (typeof v !== 'number') add(k, v, false);
+  return out;
+}
+
+// suppressFinding is "Don't alert on this again": an exception on the
+// finding's detection for the values picked, closing the finding too.
+function suppressFinding(f, d) {
+  const dlg = tuneDialog();
+  const fields = suppressFields(f);
+  const boxes = fields.map((x, i) => {
+    const cb = el('input', { type: 'checkbox', id: 'sf-field-' + i });
+    cb.checked = x.entity && !fields.slice(0, i).some((y) => y.entity);
+    return cb;
+  });
+  const more = el('details', { class: 'dx-sf-more' }, el('summary', {}, 'More fields from the result'));
+  const row = (x, i) => el('label', { class: 'check dx-sf-field' }, boxes[i], el('span', { class: 'mono' }, x.field), el('span', { class: 'mono dx-sf-value', title: x.value }, x.value));
+  const entityRows = fields.map((x, i) => (x.entity ? row(x, i) : null)).filter(Boolean);
+  const otherRows = fields.map((x, i) => (x.entity ? null : row(x, i))).filter(Boolean);
+  more.append(...otherRows);
+  const dur = select('sf-for', SUPPRESS_FOR, '7d');
+  dur.className = 'select select--block';
+  const note = el('textarea', { class: 'textarea', id: 'sf-comment', rows: 2, placeholder: 'Why: a scanner, a known admin script, a test host…' });
+  const close = el('input', { type: 'checkbox', id: 'sf-close' });
+  close.checked = f.status !== 'closed';
+  const disp = select('sf-disposition', Object.entries(DISPOSITION_LABEL).filter(([k]) => k), f.disposition || 'false_positive');
+  disp.className = 'select select--block';
+  const errBox = el('div', {});
+  const cancel = dxBtn('ghost', 'Cancel', () => dlg.close());
+  const ok = dxBtn('primary', 'Stop alerting', null, { icon: 'bell-off' });
+  const preview = el('p', { class: 'dx-hint', 'aria-live': 'polite' });
+  const picked = () => fields.filter((_, i) => boxes[i].checked);
+  const update = () => {
+    const p = picked();
+    ok.disabled = !p.length;
+    preview.textContent = p.length
+      ? `This detection raises no findings where ${p.map((x) => `${x.field} is ${x.value}`).join(' and ')}${dur.value ? ', ' + dur.selectedOptions[0].textContent.toLowerCase() : ''}.`
+      : 'Pick at least one field.';
+  };
+  for (const b of boxes) b.addEventListener('change', update);
+  dur.addEventListener('change', update);
+  ok.addEventListener('click', async () => {
+    ok.disabled = true;
+    fill(errBox);
+    try {
+      const body = { fields: picked().map((x) => x.field), for: dur.value, comment: note.value.trim() };
+      if (close.checked) body.update = { status: 'closed', disposition: disp.value };
+      const res = await api('api/findings/' + encodeURIComponent(f.id) + '/suppress', body);
+      dlg.close();
+      dxNotify(res.warning ? 'Exception saved, but the finding was not updated.' : close.checked ? 'Exception saved and the finding closed.' : 'Exception saved.',
+        { label: 'Undo', run: () => removeException(f.detection_id, res.exception.id) });
+      await loadFindings({ quiet: true });
+      if (openFinding === f.id) showFinding(f.id, { focus: false });
+      if (typeof loadDetections === 'function' && detections.length) loadDetections();
+    } catch (e) {
+      fill(errBox, dxAlert('danger', 'Couldn’t save the exception.', e.message));
+      ok.disabled = false;
+    }
+  });
+  fill(dlg,
+    el('div', { class: 'modal__head' }, el('div', {},
+      el('h2', { class: 'modal__title', id: 'd-tune-title' }, 'Don’t alert on this again'),
+      el('p', { class: 'modal__desc' }, 'Adds an exception to the detection. Matching results raise no finding and add no risk; other results still alert.'))),
+    el('div', { class: 'modal__body' },
+      errBox,
+      fields.length ? el('fieldset', { class: 'dx-sf-fields' }, el('legend', { class: 'label' }, 'Match these values'),
+        ...entityRows, otherRows.length ? (entityRows.length ? more : el('div', {}, ...otherRows)) : null)
+        : dxAlert('warning', 'This finding has no values to match on.', 'Turn the detection off, or edit its query, instead.'),
+      el('div', { class: 'form-grid' }, dxField('How long', dur), dxField('Close as', disp)),
+      el('label', { class: 'check' }, close, 'Close this finding'),
+      dxField('Comment', note),
+      preview),
+    el('div', { class: 'modal__foot' }, cancel, ok));
+  close.addEventListener('change', () => { disp.disabled = !close.checked; });
+  update();
+  dlg.onclose = null;
+  dlg.showModal();
+  (boxes.find((b) => b.checked) || cancel).focus();
+}
+
+async function removeException(detID, exID) {
+  try {
+    await api('api/detections/' + encodeURIComponent(detID) + '/exceptions/' + encodeURIComponent(exID), undefined, 'DELETE');
+    dxNotify('Exception removed.');
+    if (typeof loadDetections === 'function') await loadDetections();
+  } catch (e) { dxNotify('Couldn’t remove the exception: ' + e.message, null, { tone: 'danger' }); }
+}
+
+function exceptionWhen(e) {
+  const now = Date.now();
+  if (e.from && new Date(e.from).getTime() > now) return `From ${dxClock(e.from)}${e.until ? ' to ' + dxClock(e.until) : ''}`;
+  if (e.until) return new Date(e.until).getTime() <= now ? 'Ended ' + ago(e.until) : 'Until ' + dxClock(e.until);
+  return 'Until removed';
+}
+
+// exceptionsSection lists a detection's exceptions; admins add a
+// maintenance window or remove one.
+function exceptionsSection(d, admin) {
+  const es = d.exceptions || [];
+  const items = es.map((e) => {
+    const ended = e.until && new Date(e.until).getTime() <= Date.now();
+    const what = e.match && Object.keys(e.match).length
+      ? Object.entries(e.match).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => el('span', { class: 'badge badge--outline badge--mono', title: `${k} = ${v}` }, `${k}=${v}`))
+      : [el('span', { class: 'badge' }, 'Every result')];
+    return el('li', { class: 'dx-ex' + (ended ? ' dx-ex--ended' : '') },
+      el('div', { class: 'dx-ex__what' }, ...what),
+      el('div', { class: 'dx-ex__meta' }, ...dxDots(el('span', {}, exceptionWhen(e)), e.by ? el('span', {}, 'by ' + e.by) : null,
+        e.added ? el('span', { title: fmtTime(e.added) }, 'added ' + ago(e.added)) : null)),
+      e.comment ? el('p', { class: 'dx-ex__note' }, e.comment) : null,
+      admin ? dxBtn('ghost', '', () => removeException(d.id, e.id), { sm: true, icon: 'trash-2', title: 'Remove this exception', cls: 'dx-ex__del' }) : null);
+  });
+  const add = admin ? dxBtn('ghost', 'Add', () => addException(d), { sm: true, icon: 'plus', title: 'Add an exception or a maintenance window' }) : null;
+  return el('section', { class: 'section' },
+    el('div', { class: 'dx-sec-head' }, el('h3', { class: 'section-title' }, 'Exceptions', es.length ? el('span', { class: 'count' }, String(es.length)) : null), add),
+    es.length ? el('ul', { class: 'dx-exlist' }, ...items)
+      : el('p', { class: 'muted' }, admin ? 'None. Use Don’t alert on this again on a finding, or Add, to stop alerts for a host, user or time window.' : 'None.'));
+}
+
+// addException adds an exception by hand: field values to match, or none
+// for a maintenance window that silences every result.
+function addException(d) {
+  const dlg = tuneDialog();
+  const match = el('textarea', { class: 'textarea mono', id: 'ae-match', rows: 3, spellcheck: 'false', placeholder: 'host=web*\nuser=svc-backup' });
+  const fromIn = el('input', { class: 'input', id: 'ae-from', type: 'datetime-local' });
+  const dur = select('ae-for', [['1h', '1 hour'], ['4h', '4 hours'], ...SUPPRESS_FOR], '7d');
+  dur.className = 'select select--block';
+  const note = el('textarea', { class: 'textarea', id: 'ae-comment', rows: 2, placeholder: 'Why' });
+  const errBox = el('div', {});
+  const cancel = dxBtn('ghost', 'Cancel', () => dlg.close());
+  const ok = dxBtn('primary', 'Add exception', null, { icon: 'plus' });
+  ok.addEventListener('click', async () => {
+    fill(errBox);
+    const m = {};
+    for (const line of match.value.split('\n').map((s) => s.trim()).filter(Boolean)) {
+      const i = line.indexOf('=');
+      if (i < 1) { fill(errBox, dxAlert('danger', 'Write each value as field=value.', line)); return; }
+      m[line.slice(0, i).trim()] = line.slice(i + 1).trim();
+    }
+    const body = { match: m, for: dur.value, comment: note.value.trim() };
+    if (fromIn.value) body.from = new Date(fromIn.value).toISOString();
+    ok.disabled = true;
+    try {
+      await api('api/detections/' + encodeURIComponent(d.id) + '/exceptions', body);
+      dlg.close();
+      dxNotify('Exception added.');
+      await loadDetections();
+    } catch (e) {
+      fill(errBox, dxAlert('danger', 'Couldn’t add the exception.', e.problems ? e.problems.join(' ') : e.message));
+      ok.disabled = false;
+    }
+  });
+  fill(dlg,
+    el('div', { class: 'modal__head' }, el('div', {},
+      el('h2', { class: 'modal__title', id: 'd-tune-title' }, 'Add an exception'),
+      el('p', { class: 'modal__desc' }, 'Results of this detection that match raise no finding and add no risk.'))),
+    el('div', { class: 'modal__body' },
+      errBox,
+      dxField('Match', match, 'One field=value per line; * and ? are wildcards and case is ignored. Leave it empty to silence every result for a maintenance window.'),
+      el('div', { class: 'form-grid' }, dxField('Starting', fromIn, 'Empty starts now.'), dxField('How long', dur)),
+      dxField('Comment', note)),
+    el('div', { class: 'modal__foot' }, cancel, ok));
+  dlg.onclose = null;
+  dlg.showModal();
+  match.focus();
+}
+
 // ---- detection editor ----
 const blankDetection = () => ({
   id: '', title: '', description: '', query: '', schedule: '5m', lookback: '15m', severity: 'medium',
@@ -1579,7 +1775,7 @@ function editDetection(d, opts = {}) {
     id: id.value.trim(), title: title.value.trim(), description: desc.value.trim(), query: query.value.trim(),
     schedule: schedule.value.trim(), lookback: lookback.value.trim(), severity: severity.value,
     mitre: list(mitre.value), throttle: { fields: list(tfields.value), window: twindow.value.trim() },
-    enabled: enabled.checked, guidance: guidance.value.trim(), tags: d.tags || [],
+    enabled: enabled.checked, guidance: guidance.value.trim(), tags: d.tags || [], exceptions: d.exceptions || undefined,
     risk: riskScore.value.trim() ? {
       score: parseInt(riskScore.value, 10),
       objects: list(riskObjs.value).map((x) => { const [field, type] = x.split(':').map((s) => s.trim()); return { field, type: type || 'other' }; }),

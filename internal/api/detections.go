@@ -29,6 +29,11 @@ func (s *Server) routeDetections(api *router) {
 	api.admin("PUT /api/detections/{id}", s.handlePutDetection)
 	api.admin("DELETE /api/detections/{id}", s.handleDeleteDetection)
 	api.admin("POST /api/detections/{id}/run", s.handleRunDetection)
+	// Exceptions change what a detection raises, so they are admin work
+	// too, including "don't alert on this again" from a finding.
+	api.admin("POST /api/detections/{id}/exceptions", s.handleAddException)
+	api.admin("DELETE /api/detections/{id}/exceptions/{exception}", s.handleDeleteException)
+	api.admin("POST /api/findings/{id}/suppress", s.handleSuppressFinding)
 
 	api.viewer("GET /api/findings", s.handleListFindings)
 	api.viewer("GET /api/findings/summary", s.handleFindingsSummary)

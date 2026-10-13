@@ -136,6 +136,9 @@ type RunState struct {
 	// searched because the detection fell further behind than its
 	// catch-up limit (see CatchUp).
 	Unsearched int64 `json:"unsearched_ms,omitempty"`
+	// LastSuppressed is how many results of the last run an exception
+	// matched.
+	LastSuppressed int `json:"last_suppressed,omitempty"`
 
 	queued bool // waiting for a worker
 }
@@ -146,9 +149,11 @@ type RunResult struct {
 	Findings  []*findings.Finding `json:"findings"`
 	Risk      int                 `json:"risk_events"`
 	Throttled int                 `json:"throttled"`
-	Capped    bool                `json:"capped,omitempty"`
-	Earliest  time.Time           `json:"earliest"`
-	Latest    time.Time           `json:"latest"`
+	// Suppressed counts the results an exception matched.
+	Suppressed int       `json:"suppressed,omitempty"`
+	Capped     bool      `json:"capped,omitempty"`
+	Earliest   time.Time `json:"earliest"`
+	Latest     time.Time `json:"latest"`
 }
 
 // ErrNotAllowed stops a scheduled run on a server that no longer runs the
@@ -404,6 +409,7 @@ func (s *Scheduler) Run(ctx context.Context, d *Detection) (*RunResult, error) {
 	st.LastError = ""
 	st.LastResults = res.Results
 	st.LastFindings = len(res.Findings)
+	st.LastSuppressed = res.Suppressed
 	if len(res.Findings) > 0 || res.Risk > 0 {
 		s.log().Info("detection fired", "detection", d.ID, "findings", len(res.Findings), "risk_events", res.Risk, "throttled", res.Throttled)
 	}
@@ -528,6 +534,10 @@ func (s *Scheduler) run(ctx context.Context, d *Detection, now, since time.Time)
 	}
 	seen := map[string]bool{}
 	for _, row := range res.Rows {
+		if d.Suppressing(row, now) != nil {
+			out.Suppressed++
+			continue
+		}
 		key := GroupKey(d, row)
 		if s.SampleMark != "" {
 			key = sampleGroupKey(key, s.SampleMark)

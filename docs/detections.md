@@ -14,9 +14,10 @@ raised recently.
   for the systemd unit and Docker image). One file per detection, named `<id>.yaml`.
 - A file whose `id` matches a built-in or pack detection **overrides** it. Delete
   the file, or click **Revert to built-in**, to go back.
-- Turning a built-in or pack detection on or off without other changes only writes
-  a small file to `detections/state/<id>.yaml` (`enabled: true` or `false`), so the
-  rule itself keeps coming from the binary and gets fixes on upgrade.
+- Turning a built-in or pack detection on or off, or giving it
+  [exceptions](#exceptions), without other changes only writes a small file to
+  `detections/state/<id>.yaml`, so the rule itself keeps coming from the binary and
+  gets fixes on upgrade.
 
 You can edit detections in the UI or drop YAML files into the folder and restart.
 `signalith validate` checks every file and reports problems with the field to fix;
@@ -99,6 +100,50 @@ to `threat_target` and `user`. See [threat-intel.md](threat-intel.md).
 
 Write your own the same way, for example
 `datamodel=Risk risk_object_type=user | stats sum(risk_score) as risk_score by risk_object | where risk_score >= 200`.
+
+## Exceptions
+
+An exception tunes a detection without editing its query, like a suppression in
+Splunk Enterprise Security: results that match it raise no finding and add no risk,
+and every other result still alerts. Use one for a vulnerability scanner that trips
+a brute force rule, an admin script that looks like an attack, or a maintenance
+window.
+
+- **From a finding**: admins open the finding, choose **More actions** (⋯) >
+  **Don't alert on this again**, tick the values to match (the finding's host, user
+  and so on), pick how long (24 hours, 7 days, 30 days or until removed), and add a
+  comment. The finding can be closed in the same step, as a false positive by
+  default, and its activity records what was suppressed.
+- **On the detection**: the **Exceptions** section of a detection lists each
+  exception with who added it, when and why, and how long it lasts. Admins remove
+  one with its bin icon, or add one by hand with **Add**: one `field=value` per line,
+  where `*` and `?` are wildcards and case is ignored. Leave the values empty, with a
+  start time and how long, to silence every result for a maintenance window.
+
+Each run counts the results exceptions matched; **Last run** on the Detections page
+shows them. An exception that has ended stays listed, greyed out, until it is
+removed. A detection can have up to 500 exceptions, each matching up to 8 fields.
+
+In YAML (a custom detection keeps them in its own file; a built-in or pack detection
+in `detections/state/<id>.yaml`):
+
+```yaml
+exceptions:
+  - id: ex-3f9a1c2b7d10
+    match: {src: 203.0.113.9}           # every field must match; * and ? are wildcards
+    until: 2026-11-01T00:00:00Z          # optional: without it, until removed
+    comment: Quarterly vulnerability scan
+    by: admin
+    added: 2026-10-13T21:00:00Z
+  - id: ex-maintenance
+    from: 2026-10-18T02:00:00Z           # no match: every result, so until is required
+    until: 2026-10-18T06:00:00Z
+    comment: Patch window
+```
+
+Exceptions are checked against the fields of each result row, so match on fields the
+query returns: after `stats ... by src, dest`, only `src`, `dest` and the
+aggregates exist.
 
 ## Antivirus detections
 
@@ -259,6 +304,9 @@ Imported rules start disabled with a 5 minute schedule and 10 minute lookback.
 | `POST /api/detections/{id}/run` | Run now and raise findings |
 | `POST /api/detections/sigma` | Convert a Sigma rule (YAML body, or JSON `{"rule": "..."}`) |
 | `GET /api/detections/packs` | Content packs with their rule IDs, how many are on, and counts by severity |
+| `POST /api/detections/{id}/exceptions` | Add an exception: `{"match": {"host": "web*"}, "for": "7d", "from", "until", "comment"}` (admin) |
+| `DELETE /api/detections/{id}/exceptions/{exception}` | Remove an exception (admin) |
+| `POST /api/findings/{id}/suppress` | Don't alert on this again: `{"fields": ["host", "user"], "for": "30d", "comment", "update": {"status": "closed", "disposition": "false_positive"}}` adds an exception for the finding's values of those fields and can update the finding (admin) |
 | `POST /api/detections/enable` | `{"ids": [...], "enabled": true}`: turn up to 5,000 detections on or off at once (404 and no change if any ID is unknown) |
 | `GET /api/coverage` | ATT&CK matrix with coverage |
 | `GET /api/findings?status=&severity=&urgency=&owner=&detection=&q=&since=7d&limit=` | Queue |

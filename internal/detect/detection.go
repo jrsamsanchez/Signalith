@@ -43,6 +43,8 @@ type Detection struct {
 	// Origin is set on detections from a content pack: where the rule
 	// came from and whom to credit.
 	Origin *Origin `yaml:"origin,omitempty" json:"origin,omitempty"`
+	// Exceptions are results that raise nothing (see Exception).
+	Exceptions []Exception `yaml:"exceptions,omitempty" json:"exceptions,omitempty"`
 
 	// Source is "builtin", "pack", "custom" or "override"; set when loaded.
 	Source string `yaml:"-" json:"source"`
@@ -143,6 +145,7 @@ func (d *Detection) Validate() error {
 			p = append(p, "throttle.window: "+err.Error())
 		}
 	}
+	p = append(p, exceptionProblems(d.Exceptions)...)
 	if len(p) > 0 {
 		return &ValidationError{ID: d.ID, Problems: p}
 	}

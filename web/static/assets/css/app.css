@@ -4346,3 +4346,21 @@ dialog.ep-set { width: min(620px, calc(100vw - 32px)); }
   .ep-facts { grid-template-columns: 1fr; gap: 2px; }
   .ep-facts dd { margin-bottom: 6px; }
 }
+
+/* tuning: exceptions on a detection, and "don't alert on this again" */
+#d-tune { width: min(560px, calc(100vw - 32px)); }
+#d-tune .modal__body { max-height: min(70vh, 640px); overflow-y: auto; scrollbar-width: thin; }
+#d-tune .dx-sf-fields { border: 0; margin: 0; padding: 0; display: grid; gap: 6px; min-width: 0; }
+#d-tune .dx-sf-fields > legend { padding: 0; margin-bottom: 6px; }
+#d-tune .dx-sf-field { display: grid; grid-template-columns: auto minmax(80px, max-content) minmax(0, 1fr); gap: 8px; align-items: center; min-width: 0; }
+#d-tune .dx-sf-value { color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#d-tune .dx-sf-more > summary { cursor: pointer; color: var(--text-2); font-size: var(--fs-sm); padding: 4px 0; }
+#d-tune .dx-sf-more[open] { display: grid; gap: 6px; }
+#page-detections .dx-exlist { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+#page-detections .dx-ex { position: relative; display: grid; gap: 4px; padding: 10px 40px 10px 12px; border: 1px solid var(--line-subtle); border-radius: var(--r-md); }
+#page-detections .dx-ex--ended { opacity: .6; }
+#page-detections .dx-ex__what { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; }
+#page-detections .dx-ex__what .badge { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+#page-detections .dx-ex__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; color: var(--text-3); font-size: var(--fs-xs); }
+#page-detections .dx-ex__note { margin: 0; color: var(--text-2); font-size: var(--fs-sm); overflow-wrap: anywhere; }
+#page-detections .dx-ex__del { position: absolute; top: 6px; right: 6px; }

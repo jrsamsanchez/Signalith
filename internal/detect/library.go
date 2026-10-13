@@ -10,6 +10,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -41,7 +42,11 @@ type Library struct {
 // editing it.
 type State struct {
 	Enabled *bool `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+	// Exceptions tune the detection (see Exception).
+	Exceptions []Exception `yaml:"exceptions,omitempty" json:"exceptions,omitempty"`
 }
+
+func (st *State) empty() bool { return st.Enabled == nil && len(st.Exceptions) == 0 }
 
 // StateDir is the folder under the detections folder that holds State
 // files.
@@ -169,6 +174,9 @@ func NewLibrary(dir string) (*Library, []error, error) {
 		if err == nil && l.builtin[id] == nil && l.pack[id] == nil {
 			err = fmt.Errorf("no built-in or pack detection has id %q", id)
 		}
+		if p := exceptionProblems(st.Exceptions); err == nil && len(p) > 0 {
+			err = &ValidationError{ID: id, Problems: p}
+		}
 		if err != nil {
 			problems = append(problems, fmt.Errorf("%s: %w", f, err))
 			continue
@@ -201,8 +209,11 @@ func (l *Library) resolve(id string) *Detection {
 		if _, ok := l.pack[id]; ok {
 			c.Source = "pack"
 		}
-		if st := l.state[id]; st != nil && st.Enabled != nil {
-			c.Enabled = *st.Enabled
+		if st := l.state[id]; st != nil {
+			if st.Enabled != nil {
+				c.Enabled = *st.Enabled
+			}
+			c.Exceptions = st.Exceptions
 		}
 		return &c
 	}
@@ -254,16 +265,25 @@ func (l *Library) Put(d *Detection) error {
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if base := l.shipped(c.ID); base != nil && l.custom[c.ID] == nil && sameApartFromEnabled(base, &c) {
-		return l.setEnabled(c.ID, c.Enabled)
+	if base := l.shipped(c.ID); base != nil && l.custom[c.ID] == nil && sameApartFromTuning(base, &c) {
+		st := l.stateCopy(c.ID)
+		st.Exceptions = c.Exceptions
+		st.Enabled = nil
+		if c.Enabled != base.Enabled {
+			st.Enabled = &c.Enabled
+		}
+		return l.writeState(c.ID, st)
 	}
 	return l.saveCustom(&c)
 }
 
-func sameApartFromEnabled(base, d *Detection) bool {
+// sameApartFromTuning reports whether d is the shipped detection apart
+// from being on or off and its exceptions, which State records.
+func sameApartFromTuning(base, d *Detection) bool {
 	a, b := *base, *d
 	a.Source, b.Source = "", ""
 	a.Enabled, b.Enabled = false, false
+	a.Exceptions, b.Exceptions = nil, nil
 	ya, err1 := Encode(&a)
 	yb, err2 := Encode(&b)
 	return err1 == nil && err2 == nil && bytes.Equal(ya, yb)
@@ -299,21 +319,68 @@ func (l *Library) SetEnabled(ids []string, on bool) error {
 	return nil
 }
 
+// UpdateExceptions changes a detection's exceptions with fn, which gets a
+// copy of the current ones, and saves the result: in the detection's file
+// for a custom detection or override, and as State for a built-in or pack
+// detection. It returns the detection as saved.
+func (l *Library) UpdateExceptions(id string, fn func([]Exception) ([]Exception, error)) (*Detection, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	cur := l.resolve(id)
+	if cur == nil {
+		return nil, ErrNotFound
+	}
+	next, err := fn(slices.Clone(cur.Exceptions))
+	if err != nil {
+		return nil, err
+	}
+	if p := exceptionProblems(next); len(p) > 0 {
+		return nil, &ValidationError{ID: id, Problems: p}
+	}
+	if d := l.custom[id]; d != nil {
+		c := *d
+		c.Exceptions = next
+		if err := l.saveCustom(&c); err != nil {
+			return nil, err
+		}
+	} else {
+		st := l.stateCopy(id)
+		st.Exceptions = next
+		if err := l.writeState(id, st); err != nil {
+			return nil, err
+		}
+	}
+	return l.resolve(id), nil
+}
+
 // setEnabled records the on or off choice for a shipped detection; a
 // choice equal to the shipped default removes the record. l.mu is held.
 func (l *Library) setEnabled(id string, on bool) error {
 	base := l.shipped(id)
-	st := &State{}
-	if prev := l.state[id]; prev != nil {
-		c := *prev
-		st = &c
-	}
+	st := l.stateCopy(id)
 	if on == base.Enabled {
 		st.Enabled = nil
 	} else {
 		st.Enabled = &on
 	}
-	empty := *st == State{}
+	return l.writeState(id, st)
+}
+
+// stateCopy returns a copy of a shipped detection's state to change; l.mu
+// is held.
+func (l *Library) stateCopy(id string) *State {
+	st := &State{}
+	if prev := l.state[id]; prev != nil {
+		*st = *prev
+		st.Exceptions = slices.Clone(prev.Exceptions)
+	}
+	return st
+}
+
+// writeState saves a shipped detection's state, removing the file when it
+// holds nothing; l.mu is held.
+func (l *Library) writeState(id string, st *State) error {
+	empty := st.empty()
 	if l.Dir != "" {
 		name := filepath.Join(l.Dir, StateDir, id+".yaml")
 		if empty {
