@@ -8,7 +8,41 @@ import (
 
 	"github.com/jrsamsanchez/signalith/internal/cluster"
 	"github.com/jrsamsanchez/signalith/internal/redact"
+	"github.com/jrsamsanchez/signalith/internal/store"
 )
+
+// osTrouble says, for api/health and api/cluster, why OpenSearch's health
+// could not be read: status is "unreachable" when OpenSearch gave no
+// answer, "refused" when it answered with an error; problem says how it
+// refused (a store.Refusal, such as not_initialized or busy), or is
+// "timeout" when it was reached but didn't answer in time; advice says
+// what to do, when the error alone doesn't. Only a refusal of Signalith's
+// own OpenSearch user gets advice about that user.
+func osTrouble(err error) (status, problem, advice string) {
+	if store.NoAnswer(err) {
+		return "unreachable", store.ProblemTimeout, "Signalith keeps trying. " + store.BusyFix
+	}
+	r := store.RefusalOf(err)
+	switch r {
+	case store.NotRefused:
+		return "unreachable", "", ""
+	case store.RefusedNotInitialized:
+		advice = store.NotInitializedFix + " Signalith keeps trying, so it needs no restart."
+	case store.RefusedBusy:
+		advice = "Signalith keeps trying. " + store.BusyFix
+	case store.RefusedSignIn:
+		advice = "Check the OpenSearch user name and password, or the client certificate, on the Settings page."
+	case store.RefusedPermission:
+		advice = "Give Signalith's OpenSearch user the cluster_monitor permission."
+	case store.RefusedBlocked:
+		advice = store.BlockedFix
+	case store.RefusedUnavailable:
+		advice = "Signalith keeps trying. OpenSearch's log says why it isn't ready. " + store.OpenSearchLog
+	default:
+		advice = "OpenSearch's log may say why. " + store.OpenSearchLog
+	}
+	return "refused", string(r), advice
+}
 
 // Cluster is this server among the servers that share its OpenSearch.
 type Cluster interface {
@@ -108,10 +142,16 @@ func (s *Server) handleCluster(w http.ResponseWriter, r *http.Request) {
 		AcquiredAt: st.Jobs.AcquiredAt, RenewedAt: st.Jobs.RenewedAt, Mine: st.Jobs.Mine, ReleasedBy: st.Jobs.ReleasedBy}
 	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 	defer cancel()
+	osOut := map[string]any{"url": redact.URL(s.conf().OpenSearch.URL)}
 	health, err := s.Backend.Health(ctx)
 	if err != nil {
-		health = "unreachable"
+		var problem string
+		health, problem, _ = osTrouble(err)
+		if problem != "" {
+			osOut["problem"] = problem
+		}
 	}
+	osOut["status"] = health
 	writeJSON(w, http.StatusOK, map[string]any{"self": st.Self, "servers": servers, "lease": lease, "warnings": st.Warnings,
-		"writes_refused": st.WritesRefused, "opensearch": map[string]any{"status": health, "url": redact.URL(s.conf().OpenSearch.URL)}})
+		"writes_refused": st.WritesRefused, "opensearch": osOut})
 }

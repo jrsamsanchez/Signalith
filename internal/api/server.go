@@ -102,6 +102,10 @@ type Server struct {
 	// Sessions and Limiter back the sign-in page; nil uses defaults.
 	Sessions *auth.Sessions
 	Limiter  *auth.Limiter
+	// KnownBrowsers signs the cookie that marks a browser as one that
+	// signed in to an account before (see auth.Limiter); nil makes a key
+	// kept in memory only.
+	KnownBrowsers *auth.BrowserKey
 	// Users holds local users and directory users seen at sign-in, and
 	// Directory the LDAP or Active Directory sign-in settings. nil keeps
 	// them in memory only.
@@ -524,16 +528,20 @@ func bearerToken(r *http.Request) string {
 // server's, and answers it when it is refused.
 //
 // The Docker quick start used to give every agent the same example token,
-// change-this-ingest-token, over plain HTTP. In a container (where that
-// quick start runs), agents still sending it over plain HTTP are accepted
-// while server.tls.plaintext_ingest is allow, as other agents set up for
-// http:// are, and the Health page lists them to update. Over HTTPS it is
-// refused with 503, which Fluent Bit keeps and sends again. Any other
-// token is refused with 401. Refused agents are noted for the Health page.
+// change-this-ingest-token, over plain HTTP. On a Docker quick start
+// upgraded from such a version (see config.Config.OldToken), agents still
+// sending it over plain HTTP are accepted while agents on plain HTTP are,
+// as other agents set up for http:// are, and the Health page lists them
+// to update. There, and while Signalith has not yet found out whether the
+// quick start was upgraded, it is otherwise refused with 503, which
+// Fluent Bit keeps and sends again. Everywhere else, a quick start
+// installed new included, it is a wrong token like any other: anyone can
+// look it up. A wrong token is refused with 401. Refused agents are noted
+// for the Health page.
 func (s *Server) retiredTokenAccepted(w http.ResponseWriter, r *http.Request) bool {
 	from := clientaddr.Parse(r.RemoteAddr)
-	if config.IsPublicIngestToken(bearerToken(r)) && s.inContainer() {
-		if plaintextIngest(r) {
+	if s.oldTokenAgent(r) {
+		if s.conf().OldToken() == config.OldTokenAccepted && plaintextIngest(r) {
 			return true
 		}
 		s.Pipeline.NoteRefused(from, ingest.RefusedOldToken)
@@ -545,6 +553,61 @@ func (s *Server) retiredTokenAccepted(w http.ResponseWriter, r *http.Request) bo
 	s.Pipeline.NoteRefused(from, ingest.RefusedToken)
 	writeError(w, http.StatusUnauthorized, errors.New("missing or invalid ingest token"))
 	return false
+}
+
+// oldTokenAgent reports whether r carries the example ingest token on a
+// Docker quick start that may still have agents sending it: one upgraded
+// from a version that gave it to them, or one not yet known to be new.
+// Such a batch is answered as one from an agent of this server's.
+func (s *Server) oldTokenAgent(r *http.Request) bool {
+	if !config.IsPublicIngestToken(bearerToken(r)) || !s.inContainer() {
+		return false
+	}
+	return s.conf().OldToken() != config.OldTokenRefused
+}
+
+// UseDockerUpgrade puts into use the decision about the example ingest
+// token that Signalith made after the server started (see
+// config.Config.OldToken): an upgraded Docker quick start then accepts
+// its older agents at once.
+func (s *Server) UseDockerUpgrade(u *config.DockerUpgrade) {
+	s.settingsMu.Lock()
+	defer s.settingsMu.Unlock()
+	s.live.Store(s.conf().WithDockerUpgrade(u))
+	s.endOldTokenLocked()
+}
+
+// EndOldTokenIfRefused ends the example ingest token for good when the
+// server starts with agents on plain HTTP refused (see endOldTokenLocked).
+func (s *Server) EndOldTokenIfRefused() {
+	s.settingsMu.Lock()
+	defer s.settingsMu.Unlock()
+	s.endOldTokenLocked()
+}
+
+// endOldTokenLocked ends the example ingest token for good on a Docker
+// quick start upgraded from a version whose agents send it, once agents
+// on plain HTTP are refused: it notes when in the state folder, and the
+// token is refused from then on, even if they are accepted again. The
+// caller holds settingsMu.
+func (s *Server) endOldTokenLocked() {
+	c := s.conf()
+	if c.OldToken() != config.OldTokenAccepted || c.Server.PlaintextIngest() {
+		return
+	}
+	u := *c.DockerUpgrade()
+	u.Ended = time.Now().UTC()
+	dir := c.StateDir()
+	if err := config.WriteDockerUpgrade(dir, &u); err != nil {
+		if s.Log != nil {
+			s.Log.Error("could not note in the state folder that the example ingest token change-this-ingest-token is refused for good; "+
+				"it is refused until Signalith restarts, and after that while agents on plain HTTP are refused", "file", config.DockerUpgradeFileIn(dir), "err", err)
+		}
+	} else if s.Log != nil {
+		s.Log.Info("agents on plain HTTP are refused, so the example ingest token change-this-ingest-token, which the older Docker quick start gave every agent, is refused for good",
+			"audit", true, "file", config.DockerUpgradeFileIn(dir))
+	}
+	s.live.Store(c.WithDockerUpgrade(&u))
 }
 
 // ---- search ----
@@ -872,8 +935,9 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	out := map[string]any{"version": s.Version, "ingest": s.Pipeline.Stats(), "syslog": s.Syslog.Stats()}
 	status, err := s.Backend.Health(ctx)
+	var problem, advice string
 	if err != nil {
-		status = "unreachable"
+		status, problem, advice = osTrouble(err)
 	}
 	// No server running detections, a full disk: everyone sees those, on
 	// every page.
@@ -886,7 +950,11 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	// paths, addresses, the OpenSearch URL and its errors) and the setup
 	// advice is for admins, who are the ones able to change it.
 	if p := principalOf(r); p == nil || !p.Role.AtLeast(users.Admin) {
-		out["opensearch"] = map[string]any{"status": status}
+		brief := map[string]any{"status": status}
+		if problem != "" {
+			brief["problem"] = problem
+		}
+		out["opensearch"] = brief
 		writeJSON(w, http.StatusOK, out)
 		return
 	}
@@ -898,12 +966,17 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	if sec := s.securityHealth(); sec != nil {
 		out["security"] = sec
 	}
-	osURL := redact.URL(s.conf().OpenSearch.URL)
+	osOut := map[string]any{"status": status, "url": redact.URL(s.conf().OpenSearch.URL)}
 	if err != nil {
-		out["opensearch"] = map[string]any{"status": status, "error": err.Error(), "url": osURL}
-	} else {
-		out["opensearch"] = map[string]any{"status": status, "url": osURL}
+		osOut["error"] = err.Error()
 	}
+	if problem != "" {
+		osOut["problem"] = problem
+	}
+	if advice != "" {
+		osOut["advice"] = advice
+	}
+	out["opensearch"] = osOut
 	warnings := s.conf().Warnings()
 	if len(s.conf().Ingest.Tokens) == 0 {
 		warnings = append(warnings, "No ingest tokens are configured, so agents cannot send data. Add one under ingest.tokens.")
@@ -912,7 +985,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	docker := s.inContainer()
 	if senders := s.Pipeline.PlaintextSenders(since); len(senders) > 0 {
 		out["plaintext_senders"] = senders
-		warnings = append(warnings, plaintextWarning(senders, docker))
+		warnings = append(warnings, plaintextWarning(senders, docker, docker && s.conf().OldToken() == config.OldTokenAccepted))
 	}
 	if refused := s.Pipeline.RefusedSenders(since); len(refused) > 0 {
 		out["refused_senders"] = refused
@@ -996,8 +1069,10 @@ const plaintextWindow = 24 * time.Hour
 
 // plaintextWarning names the agents still sending over plain HTTP and
 // says how to move them to HTTPS. docker adds that Docker's port
-// forwarding may hide the agents' own addresses.
-func plaintextWarning(senders []ingest.Sender, docker bool) string {
+// forwarding may hide the agents' own addresses, and oldToken that
+// refusing them also ends the example token on an upgraded Docker quick
+// start.
+func plaintextWarning(senders []ingest.Sender, docker, oldToken bool) string {
 	n, list := agentList(senders)
 	where := "signalith.yaml"
 	if docker {
@@ -1012,6 +1087,9 @@ func plaintextWarning(senders []ingest.Sender, docker bool) string {
 		msg = fmt.Sprintf("%d agents still send events over plain HTTP, which anyone on the network can read: %s. "+
 			"On the Add data page, get a new configuration, which uses HTTPS, and put it on each of them. "+
 			"Once all are updated, refuse agents on plain HTTP on the Settings page, under HTTPS, or set server.tls.plaintext_ingest: deny in %s.", n, list, where)
+	}
+	if oldToken {
+		msg += " That also ends for good the example token change-this-ingest-token, which the older Docker quick start gave every agent and which anyone can look up."
 	}
 	return msg + dockerNote(senders, docker)
 }

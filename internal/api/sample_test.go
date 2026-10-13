@@ -33,7 +33,12 @@ func TestSampleErrorText(t *testing.T) {
 		{"remove", &store.Error{Status: 403, Body: `{"error":{"type":"cluster_block_exception"}}`}, removing, "OpenSearch is refusing changes"},
 		{"remove", &store.Error{Status: 503, Body: "busy"}, removing, "OpenSearch was too busy to remove the sample data. Check the Health page. Use Finish removing to take out the rest."},
 		{"load", &store.Error{Status: 429, Body: "busy"}, nil, "OpenSearch was too busy to load the sample data. Check the Health page. Try again."},
+		// A full disk in OpenSearch 2 is a 429 too, but not a busy one.
+		{"load", &store.Error{Status: 429, Body: `{"error":{"type":"cluster_block_exception"}}`}, nil, "OpenSearch is refusing changes"},
+		{"load", &store.Error{Status: 503, Body: "OpenSearch Security not initialized."}, nil,
+			"OpenSearch's security settings aren't loaded, so it refuses every request and Signalith could not load the sample data. The Health page says what to do. Try again."},
 		{"load", context.Canceled, partial, "Signalith stopped before it could load the sample data."},
+		{"load", noAnswerErr(t), nil, "OpenSearch didn't answer in time, so Signalith could not load the sample data. Check the Health page. Try again."},
 		{"load", sample.ErrBusy, nil, "Another sample-data load or removal is running."},
 		{"load", sample.ErrTakenOver, partial, "another server took the job over. Remove what was loaded, then load it again."},
 		{"load", fmt.Errorf("%w: rejected", sample.ErrNothingWritten), nil, "OpenSearch did not accept any of the sample events, so nothing was loaded. Check the Health page. Try again."},

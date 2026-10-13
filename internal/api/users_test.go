@@ -5,9 +5,11 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/users"
 	"github.com/jrsamsanchez/signalith/internal/users/ldaptest"
@@ -470,5 +472,61 @@ func TestDirectoryUnavailable(t *testing.T) {
 	}
 	if code, _, _ := login(t, ts, "admin", adminPass); code != 200 {
 		t.Errorf("admin after directory failures = %d", code)
+	}
+}
+
+// TestPasswordChangeEndsSessionsOnOtherServers: servers that share the
+// users file sign a user out everywhere when they change their password
+// on one of them, except in the browser they changed it from.
+func TestPasswordChangeEndsSessionsOnOtherServers(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "users.json")
+	first, err := users.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := first.Create(users.NewUser{Username: "jane", Role: users.Analyst, Password: "jane-old-pass"}); err != nil {
+		t.Fatal(err)
+	}
+	server := func() *httptest.Server {
+		st, err := users.Open(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ts, _ := newUsersServer(t, func(s *Server) { s.Users = st })
+		return ts
+	}
+	a, b := server(), server()
+	_, _, onA := login(t, a, "jane", "jane-old-pass")
+	_, _, onB := login(t, b, "jane", "jane-old-pass")
+	if onA == nil || onB == nil {
+		t.Fatal("sign-in failed")
+	}
+	if code, _, _ := call(t, b, "GET", "/api/me", "", "", "", onB); code != 200 {
+		t.Fatalf("B before = %d", code)
+	}
+	if code, body, _ := call(t, a, "POST", "/api/me/password", `{"current_password":"jane-old-pass","new_password":"jane-new-pass"}`, "", "", onA); code != 200 {
+		t.Fatalf("change = %d %v", code, body)
+	}
+	ended := false
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(100 * time.Millisecond) {
+		if code, _, _ := call(t, b, "GET", "/api/me", "", "", "", onB); code == 401 {
+			ended = true
+			break
+		}
+	}
+	if !ended {
+		t.Error("the session on the other server outlived the password change")
+	}
+	// The browser the change was made in, and new sign-ins, carry on.
+	_, _, again := login(t, b, "jane", "jane-new-pass")
+	time.Sleep(1100 * time.Millisecond) // past the users file recheck
+	if code, _, _ := call(t, a, "GET", "/api/me", "", "", "", onA); code != 200 {
+		t.Errorf("the browser that changed the password = %d, want 200", code)
+	}
+	if again == nil {
+		t.Fatal("sign-in with the new password failed")
+	}
+	if code, _, _ := call(t, b, "GET", "/api/me", "", "", "", again); code != 200 {
+		t.Errorf("new sign-in on the other server = %d, want 200", code)
 	}
 }

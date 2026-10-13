@@ -22,7 +22,9 @@ service or a systemd unit.
 
 ### Docker (evaluation)
 
-From the folder you cloned Signalith into:
+It needs Docker Compose 2.20 or newer (Docker Desktop has it). Check with
+`docker compose version`; on Linux, update the `docker-compose-plugin` package if it is
+older. Then, from the folder you cloned Signalith into:
 
 ```sh
 docker compose -f deploy/docker/docker-compose.yml up -d
@@ -32,10 +34,25 @@ docker compose -f deploy/docker/docker-compose.yml exec signalith signalith init
 The first command starts OpenSearch and Signalith. On first start a setup step makes the
 admin password, the agents' ingest token and the certificates OpenSearch and Signalith use
 with each other, and keeps them in Docker volumes; no password is written in the compose
-files. The second command shows the admin password. Open https://localhost:8080 and sign
+files. Once OpenSearch is up, a second step loads OpenSearch's security settings (who may
+sign in, and what each may do), and Signalith starts after it. If the first command ends
+with `service "opensearch-security" didn't complete successfully`, see
+[If OpenSearch's security settings aren't loaded](docs/opensearch-security.md#if-opensearchs-security-settings-arent-loaded).
+The second command shows the admin password. Open https://localhost:8080 and sign
 in as `admin` with it. Signalith serves HTTPS with a certificate it makes for itself, so
 the browser warns until you trust it; the sign-in page has a **Download the server
 certificate** link, and [docs/https.md](docs/https.md) says how to trust it.
+
+Agents get their configuration from the **Add data** page: they send over HTTPS, with the
+ingest token this install made. A new install refuses events sent over plain `http://`,
+and refuses `change-this-ingest-token`, the example token older versions gave every agent.
+Coming from an older version? See
+[Upgrading the Docker quick start](#upgrading-the-docker-quick-start).
+
+Port 8080 is open on every network this computer is on. To take agents and browsers from
+one network only, put this computer's address on that network in front of it in
+`docker-compose.yml`, for example `- "192.168.1.20:8080:8080"`, then run the first command
+again.
 
 OpenSearch runs with its security plugin on: it answers only over HTTPS, publishes no
 port, and lets in only Signalith's certificate, which may use only Signalith's own
@@ -54,9 +71,16 @@ certificate authority, so they survive updates; settings given in `docker-compos
 `environment:` show there locked.
 
 To update, run `git pull` and then the first command again. It rebuilds Signalith from the
-new code each time. After a reboot everything starts again by itself once Docker is
-running; in Docker Desktop turn on Settings > General > "Start Docker Desktop when you
-sign in".
+new code each time. If `git pull` says your local changes to
+`deploy/docker/signalith.yaml` would be overwritten, run `git stash` and `git pull` again.
+If the change you had made there was `plaintext_ingest: deny`, add that line back under
+`mode: auto`, indented the same, before you run the first command; otherwise agents on
+plain `http://` and the old example token may be accepted again. After a reboot
+everything starts again by itself once Docker is running; in Docker Desktop turn on
+Settings > General > "Start Docker Desktop when you sign in". If the computer restarted
+while the first command was still waiting for the step that loads OpenSearch's security
+settings, Signalith had not started yet and does not start by itself: https://localhost:8080
+doesn't answer. Run `docker compose -f deploy/docker/docker-compose.yml up -d` again then.
 
 #### Upgrading the Docker quick start
 
@@ -77,10 +101,15 @@ same):
    ```sh
    docker compose -f deploy/docker/docker-compose.yml up -d
    ```
-   This rebuilds Signalith, runs the setup step once and restarts OpenSearch with its
-   security plugin on; the first start takes a minute or two longer. Events, findings,
-   investigations, users, detections and dashboards are kept: they are in the
-   `opensearch-data` and `signalith-data` volumes, which stay.
+   This rebuilds Signalith, runs the setup step once, restarts OpenSearch with its
+   security plugin on, and then runs the step that loads OpenSearch's security settings;
+   Signalith starts after that. The first start takes a minute or two longer, and up to
+   about 10 minutes on a slow computer, where that step keeps trying while OpenSearch is
+   slow. Events, findings, investigations, users, detections and dashboards are kept: they
+   are in the `opensearch-data` and `signalith-data` volumes, which stay. If the command
+   ends with `service "opensearch-security" didn't complete successfully`, or the
+   **Servers** page later says OpenSearch's security settings aren't loaded, follow
+   [If OpenSearch's security settings aren't loaded](docs/opensearch-security.md#if-opensearchs-security-settings-arent-loaded).
 3. Show the new admin password:
    ```sh
    docker compose -f deploy/docker/docker-compose.yml exec signalith signalith initial-password
@@ -88,12 +117,15 @@ same):
    The old one no longer works. People you added on the **Users** page keep theirs.
 4. Open **https**://localhost:8080 (old `http://` bookmarks are redirected) and sign in as
    `admin`. Trust the certificate as described in [docs/https.md](docs/https.md).
-5. Update the agents. Agents you set up before keep sending for now: over plain `http://`
-   the old example token is still accepted, and the **Health** page lists each agent that
-   still uses it (behind Docker Desktop they share one address, so it names them by the
-   computer names in their events). On each of them, install the configuration from the
-   **Add data** page again; it has this server's own token and moves the agent to HTTPS.
-   Syslog devices need no change. If you had set a token of your own in
+5. Update the agents. Agents you set up before keep sending for now: on its first start
+   Signalith sees that OpenSearch already holds events from before the upgrade, so it
+   still accepts agents over plain `http://`, with the old example token. (A new install
+   refuses both. Signalith decides this once and keeps the answer, so events stored later,
+   such as sample data, never change it.) The **Health** page lists each agent still
+   sending over plain `http://` (behind Docker Desktop they share one address, so it names
+   them by the computer names in their events). On each of them, install the configuration
+   from the **Add data** page again; it has this server's own token and moves the agent to
+   HTTPS. Syslog devices need no change. If you had set a token of your own in
    `SIGNALITH_INGEST_TOKEN`, add that line back under `environment:` of the `signalith`
    service in `docker-compose.yml` and run step 2 again; new agents still get the new
    token.
@@ -101,9 +133,10 @@ same):
    changes in the new files (`SIGNALITH_PUBLIC_URL` now starts with `https://`).
 7. Once the **Health** page lists no agent still sending over plain `http://`, set
    **Agents on plain HTTP** to **Refuse them** on the **Settings** page (the **HTTPS**
-   card; it applies at once), or set `plaintext_ingest: deny` in
-   `deploy/docker/signalith.yaml` and run step 2 again. That also ends the old token. An agent you missed is turned away until it gets a new
-   configuration; it keeps its events and sends them then, and Health names it.
+   card; it applies at once). That also ends the old token for good: it stays refused even
+   if you accept agents on plain HTTP again later. An agent you missed is turned away until
+   it gets a new configuration; it keeps its events and sends them then, and Health names
+   it. Until then the **Security** page shows the old token as a risk.
 
 This version encrypts the passwords and keys it keeps in the `signalith-data` volume
 (`directory.json`, `intel_feeds.yaml` and `settings.yaml`), which older versions cannot
@@ -215,6 +248,12 @@ Supported sources in Phase 1:
 | OpenTelemetry Collector or SDK logs over OTLP/HTTP ([docs/opentelemetry.md](docs/opentelemetry.md)) | the same models for Windows, Linux and syslog records; Other for app logs |
 | Anything else | Other (searchable by text and fields) |
 
+sshd prints the user name a client sends, and on a failed key sign-in the key ID of the
+certificate it offers, as they were sent. When either copies sshd's own "from <address>
+port <n>" so that the real address cannot be told, the event is stored without `src` and
+with `src_ambiguous=true`. Search `src_ambiguous=true` to find these sign-in attempts;
+`host` says which server they were made against.
+
 #### Ingest limits
 
 Agents send batches to `/api/ingest`, and OpenTelemetry Collectors to `/api/otlp/v1/logs`. One request can be up to 16 MB, with up to 200,000
@@ -246,6 +285,14 @@ produces are always kept, so an event is never lost to extra fields. Fields left
 counted in the event's `dropped_fields` (search `dropped_fields>0`), their values stay in
 `_raw`, and the Health page and `/api/health` show the totals under `ingest`
 (`retimed`, `fields_dropped`).
+
+A few field names belong to Signalith, which sets them itself: `@timestamp`, `datamodel`,
+`device_time`, `dropped_fields` and the sample-data marker `signalith_sample`. When a
+sender's event has one of them, it is left out and counted in `dropped_fields` the same
+way; the event is stored without it. The one exception is the time of a JSON record:
+its `date` (Fluent Bit sends one) is the event's time, or its `@timestamp` when it has
+no `date`. These two are read as the time, not stored as fields and not counted. When
+a record has both, its `@timestamp` is not used.
 
 #### Syslog
 
@@ -419,7 +466,10 @@ which these commands read from its unit; where they cannot, give it with
 Behind a reverse proxy that serves HTTPS, have it send `X-Forwarded-Proto: https` and
 list it under `server.trusted_proxies` (**Trusted reverse proxies** on the Settings
 page), so the sign-in cookie is marked for HTTPS only; the header is ignored from
-anyone else.
+anyone else. If the proxy also sets `X-Forwarded-For` itself, set
+`server.client_header: x-forwarded-for` (**Client address header**) so failed sign-ins
+are counted for each person's own address, not the proxy's. See
+[docs/https.md](docs/https.md#behind-a-reverse-proxy).
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
@@ -428,12 +478,13 @@ anyone else.
 | `server.tls.mode` | `auto` | `auto`: HTTPS with a certificate Signalith makes and renews itself; `files`: `server.tls_cert` and `tls_key`; `off`: plain HTTP behind a reverse proxy that adds HTTPS. See [docs/https.md](docs/https.md) |
 | `server.tls.names` | none | Extra host names or IP addresses for the `auto` certificate (this machine's names and addresses, `public_url` and addresses entered on Add data are always in it) |
 | `server.tls.ca_scope` | `standard` | How far a certificate authority Signalith makes may vouch: `standard` (this server and private network names) or `strict` (only this server's own names and addresses). Used on the first start and when you make a new one on the Security page. See [docs/https.md](docs/https.md#how-far-the-certificate-authority-reaches) |
-| `server.tls.plaintext_ingest` | `deny` (`allow` for configs from before HTTPS was the default) | Whether agents may still send events over plain `http://`; the Health page lists any that do |
+| `server.tls.plaintext_ingest` | `deny` (`allow` for configs from before HTTPS was the default, and on a Docker quick start upgraded from one that served plain HTTP, until agents on plain HTTP are first refused) | Whether agents may still send events over plain `http://`; the Health page lists any that do |
 | `server.tls_cert`, `server.tls_key` | none | Your certificate (with its chain) and key, for `server.tls.mode: files`; reloaded when they change. TLS 1.2 or newer; browsers are told to use HTTPS only |
 | `server.trusted_proxies` | none | IPs or CIDRs of reverse proxies whose `X-Forwarded-Proto: https` is believed (HSTS, HTTPS-only cookie, no redirect) |
+| `server.client_header` | none | `x-forwarded-for` or `forwarded`: the header the trusted proxies set to each person's address, for the failed sign-in limits and the log. Only for a proxy that sets it itself; empty counts everyone behind a trusted proxy as one shared address |
 | `server.max_connections` | `10000` | Open connections (and, over HTTPS, requests in progress) allowed at once; one client, an IPv4 address or an IPv6 /64, may hold a tenth of them. Connections from this machine, such as a local reverse proxy, are not limited that way |
 | `server.node_url` | from `listen` and this computer's name | The address other Signalith servers that share this OpenSearch reach this one at, shown in the list of servers. Set in signalith.yaml or `SIGNALITH_NODE_URL` only; in Docker set it, since a container cannot know it |
-| `server.shared_addresses` | none | IPs or CIDRs that many clients reach Signalith through: a reverse proxy, load balancer or NAT on another machine, or Docker Desktop's port forwarding, where every client seems to come from one address. These are not held to one client's share of connections, requests and ingest memory, only to the totals. The log names the address when one reaches its share |
+| `server.shared_addresses` | none | IPs or CIDRs that many clients reach Signalith through: a reverse proxy, load balancer or NAT on another machine, or Docker Desktop's port forwarding, where every client seems to come from one address. These are not held to one client's share of connections, requests and ingest memory, only to the totals, and wrong passwords from them count per account, never pausing sign-ins from the whole address. The log names the address when one reaches its share |
 | `opensearch.url` | `http://127.0.0.1:9200` | Event store, `http(s)://host:port` (no query string). A `user:password@` in it is moved to `username` and `password` when loaded and never shown; `signalith secrets encrypt` moves it there in the file, encrypted |
 | `opensearch.username`, `opensearch.password` | none | OpenSearch credentials. Sent only over https, or plain http to this machine, unless `allow_insecure_http` is on |
 | `opensearch.ca_file` | none | PEM file with the CA that signed OpenSearch's certificate (for a private CA); system CAs are trusted too. Relative to the config file |
@@ -927,7 +978,7 @@ syslog devices ─UDP/TCP/TLS▶ query compiler,
 | `internal/search` | Compiles queries to OpenSearch DSL and runs remaining commands in memory |
 | `internal/ingest` | Fluent Bit and OTLP record parsing for Windows and Linux, index template |
 | `internal/syslog` | Syslog receiver (UDP, TCP, TLS), RFC 5424, RFC 3164 and CEF parsing |
-| `internal/datamodel` | Authentication, Endpoint, Network_Traffic, Change, Risk, Other |
+| `internal/datamodel` | Authentication, Endpoint, Network_Traffic, Change, Filesystem, Registry, Network_Resolution, Image_Load, Script, Inventory, Configuration_Check, Alerts, Risk, Other |
 | `internal/agents` | Fluent Bit and OpenTelemetry Collector configuration generator |
 | `internal/detect` | Detection format, built-in content, scheduler, Sigma converter, ATT&CK catalog |
 | `internal/findings` | Findings model and its OpenSearch store |

@@ -77,7 +77,7 @@ func Matches(f *Finding, flt Filter) bool {
 	if flt.DetectionID != "" && f.DetectionID != flt.DetectionID {
 		return false
 	}
-	if flt.Sample != "" && f.Sample != flt.Sample {
+	if flt.Sample != nil && (*flt.Sample == "" || f.Sample != *flt.Sample) {
 		return false
 	}
 	if len(flt.EntityValues) > 0 {

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
-	"strings"
 	"sync"
 	"time"
 
@@ -264,6 +263,8 @@ func sampleErrorText(op string, err error, st *sample.State) (string, string) {
 	var old *sample.OldJobsServerError
 	var msg string
 	switch {
+	case errors.Is(err, sample.ErrUnnamedLoad):
+		return "The record of the sample data did not say which load it was, so Signalith could not tell sample events, findings and investigations from yours and deleted none of them. It removed the sample threat intel and asset entries and cleared the record. Findings from an earlier load, and its investigation \"" + sample.CaseTitle + "\", may still be on the Findings and Cases pages: close them there by hand. Its sample events stay until retention deletes them; detections ignore them. You can load the sample data again.", ""
 	case errors.As(err, &old):
 		return sampleOldJobsServerText(old), err.Error()
 	case errors.Is(err, sample.ErrBusy):
@@ -274,14 +275,18 @@ func sampleErrorText(op string, err error, st *sample.State) (string, string) {
 		return "Sample data is already loaded. Remove it before loading again.", ""
 	case errors.Is(err, sample.ErrPartial):
 		return "The last load or removal did not finish. Remove what is left, then load again.", ""
+	case store.NoAnswer(err):
+		msg = "OpenSearch didn't answer in time, so Signalith could not " + what + ". Check the Health page."
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 		msg = "Signalith stopped before it could " + what + "."
 	case errors.As(err, &ue):
 		msg = "Signalith lost its connection to OpenSearch and could not " + what + ". Check the Health page."
+	case store.RefusalOf(err) == store.RefusedNotInitialized:
+		msg = "OpenSearch's security settings aren't loaded, so it refuses every request and Signalith could not " + what + ". The Health page says what to do."
+	case store.IsClusterBlock(err):
+		msg = "OpenSearch is refusing changes (it may be low on disk space), so Signalith could not " + what + ". Check the Health page."
 	case errors.As(err, &se) && (se.Status == http.StatusTooManyRequests || se.Status >= 500):
 		msg = "OpenSearch was too busy to " + what + ". Check the Health page."
-	case errors.As(err, &se) && se.Status == http.StatusForbidden && strings.Contains(se.Body, "cluster_block_exception"):
-		msg = "OpenSearch is refusing changes (it may be low on disk space), so Signalith could not " + what + ". Check the Health page."
 	case errors.Is(err, sample.ErrNothingWritten):
 		msg = "OpenSearch did not accept any of the sample events, so nothing was loaded. Check the Health page."
 	default:
@@ -350,7 +355,10 @@ func (s *Server) handleSampleRemove(w http.ResponseWriter, r *http.Request) {
 	user := userOf(r)
 	started := s.sampleJob.start(s.sampleBase(), "remove", func(ctx context.Context, prog sample.ProgressFn) error {
 		_, err := loader.Remove(ctx, prog)
-		if err != nil {
+		switch {
+		case errors.Is(err, sample.ErrUnnamedLoad):
+			s.Log.Warn("sample data record named no load: cleared it, deleted no events, findings or investigations", "audit", true, "by", user)
+		case err != nil:
 			s.Log.Warn("sample data remove failed", "audit", true, "by", user, "err", err)
 		}
 		return err

@@ -72,7 +72,7 @@ func matches(c *Case, flt Filter) bool {
 	if flt.FindingID != "" && !slices.Contains(c.Findings, flt.FindingID) {
 		return false
 	}
-	if flt.Sample != "" && c.Sample != flt.Sample {
+	if flt.Sample != nil && (*flt.Sample == "" || c.Sample != *flt.Sample) {
 		return false
 	}
 	if t := strings.ToLower(strings.TrimSpace(flt.Text)); t != "" {

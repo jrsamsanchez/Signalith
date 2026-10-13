@@ -1,0 +1,6 @@
+# Files that Linux containers read or run keep Unix line endings (LF), also
+# in a checkout on Windows: Docker Desktop mounts them into the containers
+# as they are, and sh cannot run a script with Windows line endings (CRLF).
+deploy/docker/opensearch/*.sh text eol=lf
+deploy/docker/opensearch/*.yml text eol=lf
+deploy/docker/opensearch/security/*.yml text eol=lf

@@ -51,8 +51,12 @@ func TestAnonymousProbe(t *testing.T) {
 		t.Errorf("403: %+v", r)
 	}
 	fake.SetFault(func(m, p string) *ostest.Fault { return &ostest.Fault{Status: 503, Type: "x"} })
-	if r := probeAnonymous(ctx, conn(fake.URL), "signalith"); r.state != "unknown" || r.why != "status 503" {
+	if r := probeAnonymous(ctx, conn(fake.URL), "signalith"); r.state != "unknown" || r.why != "status 503" || r.notLoaded {
 		t.Errorf("503: %+v", r)
+	}
+	fake.SetFault(func(m, p string) *ostest.Fault { f := ostest.NotInitialized; return &f })
+	if r := probeAnonymous(ctx, conn(fake.URL), "signalith"); r.state != "unknown" || r.why != "status 503" || !r.notLoaded {
+		t.Errorf("security settings not loaded: %+v", r)
 	}
 	// Nothing listening.
 	l, _ := net.Listen("tcp", "127.0.0.1:0")
@@ -85,18 +89,35 @@ func TestAnonymousProbeTimeout(t *testing.T) {
 func TestAuthInfo(t *testing.T) {
 	fake := ostest.New(t)
 	ctx := context.Background()
-	if _, noPlugin, why := probeAuthInfo(ctx, conn(fake.URL)); !noPlugin || why != "" {
+	if _, noPlugin, why, _ := probeAuthInfo(ctx, conn(fake.URL)); !noPlugin || why != "" {
 		t.Errorf("no plugin: %v %q", noPlugin, why)
 	}
 	fake.Secure(&ostest.Account{User: "signalith", Password: sentinelOS, Roles: []string{"signalith_server"}, BackendRoles: []string{"siem"}})
-	info, noPlugin, why := probeAuthInfo(ctx, conn(fake.URL))
-	if noPlugin || why != "" || info.User != "signalith" || !slices.Equal(info.Roles, []string{"signalith_server"}) || !slices.Equal(info.BackendRole, []string{"siem"}) {
+	info, noPlugin, why, refused := probeAuthInfo(ctx, conn(fake.URL))
+	if noPlugin || why != "" || refused != store.NotRefused || info.User != "signalith" || !slices.Equal(info.Roles, []string{"signalith_server"}) || !slices.Equal(info.BackendRole, []string{"siem"}) {
 		t.Errorf("%+v %v %q", info, noPlugin, why)
 	}
 	wrong := conn(fake.URL)
 	wrong.Password = secrets.New("opensearch.password", "wrong")
-	if _, _, why := probeAuthInfo(ctx, wrong); why != "status 401" {
-		t.Errorf("wrong password: %q", why)
+	if _, _, why, refused := probeAuthInfo(ctx, wrong); why != "status 401" || refused != store.RefusedSignIn {
+		t.Errorf("wrong password: %q %q", why, refused)
+	}
+	// Security settings not loaded: OpenSearch turns everyone away with
+	// 503, before it looks at the sign-in.
+	fake.Secure(nil)
+	fake.SetFault(func(m, p string) *ostest.Fault { f := ostest.NotInitialized; return &f })
+	if _, noPlugin, why, refused := probeAuthInfo(ctx, conn(fake.URL)); noPlugin || why != "status 503" || refused != store.RefusedNotInitialized {
+		t.Errorf("not loaded: %v %q %q", noPlugin, why, refused)
+	}
+	fake.SetFault(func(m, p string) *ostest.Fault { return &ostest.Fault{Status: 503, Type: "x"} })
+	if _, _, _, refused := probeAuthInfo(ctx, conn(fake.URL)); refused != store.RefusedUnavailable {
+		t.Errorf("another 503 is not the security settings: %q", refused)
+	}
+	fake.SetFault(func(m, p string) *ostest.Fault {
+		return &ostest.Fault{Status: 429, Type: "rejected_execution_exception"}
+	})
+	if _, _, _, refused := probeAuthInfo(ctx, conn(fake.URL)); refused != store.RefusedBusy {
+		t.Errorf("busy: %q", refused)
 	}
 }
 

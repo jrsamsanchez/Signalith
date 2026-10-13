@@ -122,3 +122,47 @@ func TestOpenSearchRequests(t *testing.T) {
 		t.Errorf("summary = %+v %v", sum, err)
 	}
 }
+
+// TestSampleFilterNeverMeansAll: a search for sample findings with an
+// empty load ID finds none, in memory and in OpenSearch, so a caller that
+// lost the ID cannot reach (and delete) every finding by mistake.
+func TestSampleFilterNeverMeansAll(t *testing.T) {
+	ctx := context.Background()
+	m := NewMemory()
+	for _, f := range []*Finding{
+		{ID: "real-1", Status: StatusNew},
+		{ID: "real-2", Status: StatusNew},
+		{ID: "sample-1", Status: StatusNew, Sample: "sample-20261013-120000"},
+	} {
+		if err := m.Create(ctx, f); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, tc := range []struct {
+		flt  Filter
+		want int
+	}{
+		{Filter{}, 3},
+		{Filter{Sample: ptr("")}, 0},
+		{Filter{Sample: ptr("sample-20261013-120000")}, 1},
+		{Filter{Sample: ptr("sample-other")}, 0},
+	} {
+		got, total, err := m.Search(ctx, tc.flt)
+		if err != nil || len(got) != tc.want || total != tc.want {
+			t.Errorf("memory search %+v = %d (%d), %v; want %d", tc.flt, len(got), total, err, tc.want)
+		}
+	}
+
+	b, _ := json.Marshal(filterQuery(Filter{Sample: ptr(""), Status: []string{StatusNew}}))
+	if string(b) != `{"match_none":{}}` {
+		t.Errorf("an empty sample ID searches with %s, want match_none", b)
+	}
+	b, _ = json.Marshal(filterQuery(Filter{Sample: ptr("sample-x")}))
+	if !strings.Contains(string(b), `{"term":{"sample":"sample-x"}}`) {
+		t.Errorf("a sample ID searches with %s", b)
+	}
+	b, _ = json.Marshal(filterQuery(Filter{}))
+	if string(b) != `{"match_all":{}}` {
+		t.Errorf("no filter searches with %s", b)
+	}
+}

@@ -2,7 +2,9 @@ package api
 
 import (
 	"context"
+	"errors"
 	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -11,6 +13,7 @@ import (
 
 	"github.com/jrsamsanchez/signalith/internal/cluster"
 	"github.com/jrsamsanchez/signalith/internal/intel"
+	"github.com/jrsamsanchez/signalith/internal/store"
 	"github.com/jrsamsanchez/signalith/internal/users"
 )
 
@@ -172,4 +175,74 @@ func TestFeedsChangeOnlyWhereTheyDownload(t *testing.T) {
 	if out := asMap(t, getRaw(t, ts, "/api/intel")); out["manage"] != true || out["downloads_why"] != nil {
 		t.Errorf("holder overview %v", out)
 	}
+}
+
+// The Health and Servers pages tell an OpenSearch that answers but turns
+// Signalith away from one that can't be reached, and say how it refused;
+// what to do is for admins.
+func TestOpenSearchRefusalsInHealth(t *testing.T) {
+	cl := &fakeCluster{holder: "siem-a"}
+	ts, fos := newTestServerWith(t, func(s *Server) {
+		s.Cluster = cl
+		s.Users = users.NewMemory()
+		if _, err := s.Users.Create(users.NewUser{Username: "vera", Role: users.Viewer, Password: "role-password"}); err != nil {
+			t.Fatal(err)
+		}
+	})
+	osOf := func(body map[string]any) map[string]any {
+		m, _ := body["opensearch"].(map[string]any)
+		return m
+	}
+	for _, c := range []struct {
+		name            string
+		err             error
+		status, problem string
+		advice          string
+	}{
+		{"security settings not loaded", &store.Error{Status: 503, Body: "OpenSearch Security not initialized."}, "refused", "not_initialized",
+			"Otherwise, with the Docker quick start, run docker compose -f deploy/docker/docker-compose.yml up -d again from the Signalith folder: " +
+				"it re-runs the step that loads OpenSearch's security settings."},
+		{"busy", &store.Error{Status: 429, Body: `{"error":{"type":"rejected_execution_exception","reason":"queue full"},"status":429}`}, "refused", "busy",
+			"Signalith keeps trying."},
+		{"no rights", &store.Error{Status: 403, Body: `{"error":{"type":"security_exception","reason":"no permissions"},"status":403}`}, "refused", "forbidden",
+			"cluster_monitor"},
+		{"not ready", &store.Error{Status: 503, Body: `{"error":{"type":"cluster_manager_not_discovered_exception","reason":"no cluster manager"},"status":503}`},
+			"refused", "unavailable", "OpenSearch's log says why it isn't ready. With the Docker quick start, show it with docker compose -f deploy/docker/docker-compose.yml logs opensearch"},
+		{"unreachable", errors.New("opensearch unreachable at http://os:9200: connection refused"), "unreachable", "", ""},
+		// Reached, but too slow: not out of reach.
+		{"no answer in time", noAnswerErr(t), "unreachable", "timeout", "Signalith keeps trying. If this lasts more than a few minutes"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			fos.healthErr = c.err
+			_, body := do(t, ts, "GET", "/api/health", "", true)
+			o := osOf(body)
+			if o["status"] != c.status || (o["problem"] != nil) != (c.problem != "") || c.problem != "" && o["problem"] != c.problem || o["error"] != c.err.Error() {
+				t.Errorf("admin: %v", o)
+			}
+			if adv, _ := o["advice"].(string); !strings.Contains(adv, c.advice) || c.advice == "" && adv != "" || strings.Contains(adv, "right to") {
+				t.Errorf("advice %q", adv)
+			}
+			_, body = doAs(t, ts, "vera", "role-password", "GET", "/api/health", "")
+			if o := osOf(body); o["status"] != c.status || o["error"] != nil || o["advice"] != nil || c.problem != "" && o["problem"] != c.problem {
+				t.Errorf("viewer: %v", o)
+			}
+			_, body = do(t, ts, "GET", "/api/cluster", "", true)
+			if o := osOf(body); o["status"] != c.status || c.problem != "" && o["problem"] != c.problem || o["url"] == nil {
+				t.Errorf("cluster: %v", o)
+			}
+		})
+	}
+}
+
+// noAnswerErr is the error of a request OpenSearch took but didn't
+// answer in time.
+func noAnswerErr(t *testing.T) error {
+	t.Helper()
+	stall := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { <-r.Context().Done() }))
+	defer stall.Close()
+	_, err := store.New(store.Config{URL: stall.URL, Timeout: 50 * time.Millisecond}).Health(context.Background())
+	if !store.NoAnswer(err) {
+		t.Fatalf("not a late answer: %v", err)
+	}
+	return err
 }

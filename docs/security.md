@@ -244,10 +244,13 @@ because `signalith.yaml` was written before HTTPS was the default.
 **Looks at:** each entry in `server.trusted_proxies`, and the proxies believed for the
 older reason in the last day.
 
-- Good: only the listed proxies are believed.
+- Good: only the listed proxies are believed. With **Client address header** empty, a
+  tip says that everyone behind them counts as one shared address for the sign-in
+  limits, and how to count each person instead.
 - Needs attention: an entry is wider than a /16 (IPv4) or /48 (IPv6), so any computer in
-  it can claim a browser used HTTPS; or a proxy is believed only because of the older
-  config.
+  it can claim a browser used HTTPS (and, with **Client address header** set, choose the
+  address its failed sign-ins are counted under); or a proxy is believed only because of
+  the older config.
 
 **To fix:** list only the proxies' own addresses. See
 [Behind a reverse proxy](https.md#behind-a-reverse-proxy).
@@ -517,11 +520,16 @@ replaced.
 
 - Good: every token has 24 characters or more. Tokens Signalith makes have 48.
 - Needs attention: a token is shorter than 24 characters.
-- At risk: the example token `change-this-ingest-token`, which anyone can look up. In a
-  container, an older Docker quick start's agents may still send it over plain HTTP,
-  and Signalith accepts it that way while **Agents on plain HTTP** accepts them, even
+- At risk: the example token `change-this-ingest-token`, which anyone can look up. On a
+  Docker quick start upgraded from an older version, whose agents all have it, Signalith
+  accepts it from them over plain HTTP while **Agents on plain HTTP** accepts them, even
   when it isn't in `ingest.tokens`. Choose **Refuse them** once every agent has its
-  configuration from **Add data**.
+  configuration from **Add data**; that ends it for good.
+
+On the Docker quick start the check also says why the old example token is refused: the
+install started new, it was upgraded and agents on plain HTTP were refused since a date,
+or Signalith couldn't yet ask OpenSearch which it is. See
+[The Docker quick start's old example token](https.md#the-docker-quick-starts-old-example-token).
 
 **To fix:** add a new token with `sudo signalith secrets set ingest.tokens` (press Enter
 to have one made), give each agent a new configuration from **Add data**, then remove the
@@ -601,8 +609,9 @@ keep `read_only: true`, `cap_drop: [ALL]`, `security_opt: [no-new-privileges:tru
 
 ### File permissions
 
-**Looks at:** who may read or change Signalith's keys (the HTTPS keys in `tls/`, a key
-file for OpenSearch, and the files named by `SIGNALITH_*_FILE` variables), its private
+**Looks at:** who may read or change Signalith's keys (the HTTPS keys in `tls/`, the
+sign-in key `signin.key`, a key file for OpenSearch, and the files named by
+`SIGNALITH_*_FILE` variables), its private
 files (`users.json`, `directory.json`, `settings.yaml`, `intel_feeds.yaml`, the admin
 password hash), its folders, and `signalith.yaml` with its folder. The master key is
 left to [Master key](#master-key). On Windows it reads each file's access list; on Linux

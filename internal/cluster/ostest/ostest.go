@@ -47,12 +47,18 @@ import (
 // normally.
 type Fault struct {
 	// Status, when set, answers with this status and an error of Type,
-	// without doing the request.
+	// without doing the request; or, when Text is set, with Text as plain
+	// text, as OpenSearch's security plugin answers before its settings
+	// are loaded (see NotInitialized).
 	Status int
 	Type   string
+	Text   string
 	// Drop does the request, then closes the connection without an answer,
 	// as when a connection is reset after the request was sent.
 	Drop bool
+	// Stall takes the request and answers nothing until the client gives
+	// up, as an OpenSearch too slow to answer in time.
+	Stall bool
 }
 
 // Server is the fake OpenSearch.
@@ -185,6 +191,11 @@ func (s *Server) SetFault(f func(method, path string) *Fault) {
 	defer s.mu.Unlock()
 	s.fault = f
 }
+
+// NotInitialized is the answer of OpenSearch's security plugin to every
+// request before its security settings are loaded, word for word
+// (OpenSearch 2.17).
+var NotInitialized = Fault{Status: http.StatusServiceUnavailable, Text: "OpenSearch Security not initialized."}
 
 // FailN answers the next n requests that match (method and a path that
 // contains part) with status and an error of typ.
@@ -353,9 +364,19 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	}
 	if fault != nil {
 		if f := fault(r.Method, r.URL.RequestURI()); f != nil {
+			if f.Stall {
+				<-r.Context().Done()
+				return
+			}
 			if f.Drop {
 				s.handle(httptest.NewRecorder(), r, p, body)
 				drop(w)
+				return
+			}
+			if f.Text != "" {
+				w.Header().Set("Content-Type", "text/plain; charset=UTF-8")
+				w.WriteHeader(f.Status)
+				_, _ = io.WriteString(w, f.Text)
 				return
 			}
 			writeError(w, f.Status, f.Type, "injected by the test")

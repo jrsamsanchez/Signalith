@@ -497,10 +497,10 @@ func TestCategories(t *testing.T) {
 		ids = append(ids, c.ID)
 		names = append(names, c.Name)
 	}
-	if !slices.Equal(ids, []string{"authentication", "endpoint", "network_traffic", "change", "other", "risk", Findings, Cases, Intel}) {
+	if !slices.Equal(ids, []string{"authentication", "endpoint", "network_traffic", "change", "filesystem", "registry", "network_resolution", "image_load", "script", "inventory", "configuration_check", "alerts", "other", "risk", Findings, Cases, Intel}) {
 		t.Errorf("ids = %v", ids)
 	}
-	if names[2] != "Network traffic" || names[4] != "Other events" || names[5] != "Risk events" || names[7] != "Investigations" {
+	if n := len(names); names[2] != "Network traffic" || names[n-5] != "Other events" || names[n-4] != "Risk events" || names[n-2] != "Investigations" {
 		t.Errorf("names = %v", names)
 	}
 }

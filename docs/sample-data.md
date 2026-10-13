@@ -22,6 +22,10 @@ Every document the sample writes carries a hidden marker field,
 the marker and nothing else. The marker is kept out of search results and
 field lists, so it never clutters what you see.
 
+Only the sample-data load can set the marker. Signalith removes it from every
+event that agents and syslog senders send, so nobody can hide their own events
+from the detections, or have them deleted with the sample data, by adding it.
+
 ## Load and remove it
 
 **In the browser (admins):** open **Add data** under Configure. The **Try it
@@ -168,6 +172,22 @@ Your own events, findings, cases, detections, intel feeds and lists are never
 changed, even where they mention a host or user with the same name as a sample
 one. If retention has already made a day that holds sample events read-only,
 removal lifts that for the delete and puts it back.
+
+The load's ID is kept in a record in OpenSearch (see
+[Several servers](#several-servers)). If that record does not say which load it
+was (it was damaged, or changed by hand), Signalith cannot tell the sample's
+events, findings and investigation from yours, so it deletes none of them. It
+removes only the sample threat intel and the sample asset and identity entries,
+then clears the record, and the card (or `signalith sample-data remove`) says
+so. What an earlier load made stays:
+
+- Its findings and its investigation, *Sample: phishing intrusion on ws-fin-07*,
+  stay on the **Findings** and **Cases** pages. Close them there by hand.
+- Its events stay until retention deletes them on its usual schedule. Detections
+  ignore them, as they ignore all sample events.
+
+You can then load the sample data again. **Remove** later deletes what that new
+load adds, but not what the earlier load left.
 
 ## Several servers
 

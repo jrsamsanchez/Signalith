@@ -81,7 +81,8 @@ to tell HTTPS from plain HTTP, so old `http://` bookmarks and agents still reach
   (403, with a message to use `https://`). A password is never accepted in clear text.
 - Agents sending events over plain HTTP are accepted or refused by
   `server.tls.plaintext_ingest`; see [Upgrading from plain HTTP](#upgrading-from-plain-http).
-  A refused batch gets 503, so the agent keeps it and sends it again later.
+  A refused batch gets 503, so the agent keeps it and sends it again later. A batch with a
+  wrong token, or none, gets 401, as over HTTPS.
 
 Over HTTPS, browsers are told to use HTTPS only for this site (HSTS), and the session
 cookie is `__Host-signalith_session`, which browsers only send over HTTPS. HSTS is not sent
@@ -490,21 +491,44 @@ server:
   tls:
     mode: off
   trusted_proxies: [127.0.0.1]
+  client_header: x-forwarded-for      # only if the proxy sets it, see below
 ```
 
 The proxy must send `X-Forwarded-Proto: https`. Signalith believes that header only from
 the addresses in `server.trusted_proxies`; from anyone else it is ignored, since any
 client can send it. With it, Signalith sends HSTS and uses the HTTPS-only session cookie.
-For nginx:
+
+The proxy should also set `X-Forwarded-For` to the address it got the request from. Then
+set `server.client_header: x-forwarded-for` (**Client address header** on the Settings
+page), and the failed sign-in limits and the log use each person's own address instead
+of the proxy's (see [failed sign-in limits](users.md#signing-in)). The proxy must *set*
+the header, not only pass on one the browser sent: otherwise anyone could pick the
+address their wrong passwords are counted under. With `server.client_header` empty, the
+default, Signalith reads no such header and everyone reaching it through a trusted proxy
+counts as one shared address, so nobody can pause sign-ins for the others. For nginx:
 
 ```nginx
 location / {
     proxy_pass http://127.0.0.1:8080;
     proxy_set_header Host $host;
     proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     client_max_body_size 20m;
 }
 ```
+
+Without the `X-Forwarded-For` line, nginx passes on whatever the browser sent, so add the
+line before you set `server.client_header`. Caddy and Traefik set `X-Forwarded-For`
+themselves; HAProxy needs `option forwardfor`; IIS with Application Request Routing sets
+it when **Preserve client IP in the following header** is on. A proxy that writes
+`Forwarded` (RFC 7239) instead can use `server.client_header: forwarded`.
+
+**Upgrading with a proxy already listed.** Earlier versions did not read
+`X-Forwarded-For`, and neither does this one until you set `server.client_header`, so
+nothing changes on its own. Until then, wrong passwords through the proxy count against
+each account only, not against anyone's address. To count each person by their own
+address, add the `X-Forwarded-For` line above to the proxy (if it is nginx), then choose
+**X-Forwarded-For** under **Client address header** on the Settings page.
 
 With `mode: off`, `server.listen` reachable from other machines and no
 `server.trusted_proxies`, `signalith validate` and the **Health** page warn that passwords
@@ -542,6 +566,10 @@ you upgrade:
 - **The Docker quick start** has HTTPS set in its own files now. Updating it also brings
   generated passwords and a secured OpenSearch; see
   [Upgrading the Docker quick start](../README.md#upgrading-the-docker-quick-start).
+  Its agents keep sending over `http://`, with the example token
+  `change-this-ingest-token` they were given, until you refuse agents on plain HTTP,
+  which ends that token for good. A new install refuses both; see
+  [The Docker quick start's old example token](#the-docker-quick-starts-old-example-token).
 
 While agents still send over plain HTTP, the **Health** page names them (by address, and
 by the host names in their events) and says how to move them over:
@@ -565,6 +593,35 @@ by the host names in their events) and says how to move them over:
 New configs from `signalith init` and `install.ps1` already have `mode: auto` and
 `plaintext_ingest: deny`.
 
+### The Docker quick start's old example token
+
+Older versions of the Docker quick start gave every agent the same ingest token,
+`change-this-ingest-token`, over plain HTTP. Anyone can look it up, so it is accepted only
+where agents may still have it: on a Docker quick start upgraded from such a version.
+
+On its first start after the update, Signalith asks the quick start's own OpenSearch (the
+`opensearch` service in `docker-compose.yml`) when it made each of Signalith's event
+indices. One made before the quick start's setup step first ran can only come from the
+older version, which had no setup step. A quick start set up to use another OpenSearch,
+such as one shared with other servers, counts as new without asking: other servers' events
+there say nothing about this install's agents. Then:
+
+- **Upgraded** (there is such an index): agents on plain HTTP are accepted, and the old
+  token from them, until you choose **Refuse them** under **Agents on plain HTTP** on the
+  Settings page, or set `plaintext_ingest: deny`. That ends the old token for good, even if
+  you accept agents on plain HTTP again later. Over HTTPS the old token gets 503, so the
+  agent keeps its events.
+- **New** (there is none): agents on plain HTTP are refused, and the old token is a wrong
+  token like any other (401), over plain HTTP too.
+
+Signalith decides this once and keeps the answer in its state folder (`docker-upgrade.json`
+in the `signalith-data` volume), so nothing that happens later changes it: not sample data,
+whose events are dated up to a week back but whose indices are made when it loads, nor a
+test right after installing, nor anyone sending events. If OpenSearch does not answer on
+that first start, Signalith waits up to a minute, then starts anyway and keeps asking; until
+it knows, it tells agents on plain HTTP, and agents with the old token, to try again later
+(503), so they keep their events. The **Security** page (Agent tokens) says which applies.
+
 Scripts that used `http://` with a user name and password are refused (403) until they
 use `https://`; give them the CA, for example `curl --cacert ca.pem`.
 
@@ -575,8 +632,9 @@ use `https://`; give them the CA, for example `curl --cacert ca.pem`.
 | `server.tls.mode` | `auto` | `auto`: Signalith makes and renews its own certificate. `files`: `server.tls_cert` and `tls_key`. `off`: plain HTTP, only behind a reverse proxy that adds HTTPS |
 | `server.tls.names` | none | Extra host names or IP addresses for the `auto` certificate, such as a DNS alias or the address a NAT or Docker publishes. Best set before the first start (see [Names the certificate can cover](#names-the-certificate-can-cover)) |
 | `server.tls.ca_scope` | `standard` | How far a certificate authority Signalith makes may vouch: `standard` (this server and private network names) or `strict` (only this server's own names and addresses). Used on the first start and when you make a new CA; see [How far the certificate authority reaches](#how-far-the-certificate-authority-reaches) |
-| `server.tls.plaintext_ingest` | `deny` (`allow` for configs from before HTTPS was the default) | Whether agents may still send events over plain HTTP |
+| `server.tls.plaintext_ingest` | `deny` (`allow` for configs from before HTTPS was the default, and on a Docker quick start upgraded from one that served plain HTTP, until agents on plain HTTP are first refused) | Whether agents may still send events over plain HTTP |
 | `server.trusted_proxies` | none | IPs or CIDRs of reverse proxies whose `X-Forwarded-Proto` header is believed |
+| `server.client_header` | none | `x-forwarded-for` or `forwarded`: the header the trusted proxies set to each person's address, for the failed sign-in limits and the log. Only for a proxy that sets it itself (see [Behind a reverse proxy](#behind-a-reverse-proxy)) |
 | `server.tls_cert`, `server.tls_key` | none | Your certificate (with its chain) and key, for `mode: files` |
 | `syslog.tls` | off (`init` sets `0.0.0.0:6514`) | Syslog over TLS, with the same certificate |
 | `SIGNALITH_STATE_DIR` | the folder holding `lookups.dir` | Where the `tls` folder is kept |
@@ -633,6 +691,11 @@ is older than 3.1. Update Fluent Bit with the install step on Add data.
 **An agent gets 503 and the Health page says it was turned away.** It sends over plain HTTP
 while `plaintext_ingest` is `deny`, or with the old example token from an earlier Docker
 quick start. It keeps its events and retries; give it a new configuration from Add data.
+
+**An agent gets 401.** Its ingest token is wrong; on a Docker quick start that started new,
+that includes the old example token `change-this-ingest-token` (see
+[The Docker quick start's old example token](#the-docker-quick-starts-old-example-token)).
+Fluent Bit drops what is refused this way. Give it a new configuration from Add data.
 
 **Signalith cannot write its certificate.** The error names the folder. Give Signalith's
 user write access to it, or set `SIGNALITH_STATE_DIR` to a folder it can write.

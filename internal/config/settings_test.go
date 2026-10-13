@@ -716,3 +716,45 @@ func TestAddressListProblem(t *testing.T) {
 		t.Errorf("field problem %q", got)
 	}
 }
+
+// AdminPasswordVersion stays the same for the same password from the
+// environment, which each process hashes with a new salt, and follows the
+// password changed with signalith passwd once there is one.
+func TestAdminPasswordVersion(t *testing.T) {
+	path := writeConfig(t, "")
+	t.Setenv("SIGNALITH_ADMIN_PASSWORD", "env-password-one")
+	a, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	envHash.Lock()
+	envHash.password, envHash.hash = "", "" // as in a new process
+	envHash.Unlock()
+	b, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.Auth.AdminPasswordHash == b.Auth.AdminPasswordHash || a.AdminPasswordVersion() != b.AdminPasswordVersion() {
+		t.Errorf("versions %q and %q for the same password", a.AdminPasswordVersion(), b.AdminPasswordVersion())
+	}
+	if strings.Contains(a.AdminPasswordVersion(), "env-password-one") {
+		t.Error("the version shows the password")
+	}
+	h, err := HashPassword("changed-with-passwd")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(b.AdminHashFile()), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(b.AdminHashFile(), []byte(h+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.AdminPasswordVersion() != "hash:"+h {
+		t.Errorf("version after signalith passwd = %q", c.AdminPasswordVersion())
+	}
+}

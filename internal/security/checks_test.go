@@ -14,6 +14,7 @@ import (
 
 	"github.com/jrsamsanchez/signalith/internal/config"
 	"github.com/jrsamsanchez/signalith/internal/secrets"
+	"github.com/jrsamsanchez/signalith/internal/store"
 	"github.com/jrsamsanchez/signalith/internal/tlsauto"
 	"github.com/jrsamsanchez/signalith/internal/users"
 )
@@ -566,8 +567,15 @@ func TestProxies(t *testing.T) {
 	runCases(t, "transit.proxies", []checkCase{
 		{name: "none", state: ""},
 		{name: "good", set: func(f *Facts) { f.Config.Server.TrustedProxies = []string{"10.0.0.5", "10.1.0.0/24"} }, state: Good, line: "Signalith believes forwarded HTTPS only from 10.0.0.5 and 10.1.0.0/24."},
+		{name: "good with client header", set: func(f *Facts) {
+			f.Config.Server.TrustedProxies, f.Config.Server.ClientHeader = []string{"10.0.0.5"}, "x-forwarded-for"
+		}, state: Good, line: "Signalith believes forwarded HTTPS and client addresses (X-Forwarded-For) only from 10.0.0.5."},
 		{name: "wide", set: func(f *Facts) { f.Config.Server.TrustedProxies = []string{"10.0.0.0/8"} }, state: Attention,
 			line: "Trusted reverse proxies includes 10.0.0.0/8, so any computer in it can claim a browser used HTTPS."},
+		{name: "wide with client header", set: func(f *Facts) {
+			f.Config.Server.TrustedProxies, f.Config.Server.ClientHeader = []string{"10.0.0.0/8"}, "forwarded"
+		}, state: Attention,
+			line: "Trusted reverse proxies includes 10.0.0.0/8, so any computer in it can claim a browser used HTTPS, and choose the address its sign-ins are counted under."},
 		{name: "wide v6", set: func(f *Facts) { f.Config.Server.TrustedProxies = []string{"fd00::/32"} }, state: Attention},
 		{name: "legacy", set: func(f *Facts) { f.Runtime.LegacyProxies = []string{"127.0.0.1"} }, state: Attention,
 			line: "Signalith believes the reverse proxy at 127.0.0.1 only because signalith.yaml was written before HTTPS was the default."},
@@ -822,6 +830,10 @@ func TestOpenSearchDisk(t *testing.T) {
 			line: "Signalith runs in a container, so it can't see the disk where OpenSearch (opensearch) keeps events."},
 		{name: "failed", set: func(f *Facts) { f.OpenSearch.DataErr = "status 403"; f.OpenSearch.DataPaths = nil }, state: Unknown,
 			line: "Signalith couldn't ask OpenSearch where it keeps events (status 403)."},
+		{name: "security settings not loaded", set: func(f *Facts) {
+			f.OpenSearch.DataErr, f.OpenSearch.DataPaths, f.OpenSearch.SecurityNotLoaded = "status 503", nil, true
+		}, state: Unknown,
+			line: "Signalith couldn't ask OpenSearch where it keeps events: OpenSearch's security settings aren't loaded, so it turns everyone away for now."},
 		{name: "virtual", set: func(f *Facts) { f.OpenSearch.DataPaths = []Disk{{Kind: DiskVirtual}} }, state: Unknown,
 			line: "OpenSearch's data files are on a virtual disk. Its host may encrypt it, but Signalith can't see that from inside."},
 		// OpenSearch in Docker, Signalith on the computer itself: the
@@ -886,6 +898,31 @@ func TestOpenSearchAccess(t *testing.T) {
 			fix: func(t *testing.T, c *Check) {
 				if len(c.Details) != 1 || c.Details[0] != "OpenSearch answered: status 503." {
 					t.Errorf("%q", c.Details)
+				}
+			}},
+		// OpenSearch's security plugin is on, but its settings aren't
+		// loaded: not a reason to check the network.
+		{name: "security settings not loaded", set: func(f *Facts) {
+			f.OpenSearch.Anonymous, f.OpenSearch.AnonymousErr, f.OpenSearch.SecurityNotLoaded = "unknown", "status 503", true
+		}, state: Unknown,
+			line: "OpenSearch's security settings aren't loaded, so it turns everyone away for now, Signalith too. Who can read events once they are loaded depends on them.",
+			fix: func(t *testing.T, c *Check) {
+				if len(c.Fix.Commands) != 0 || c.Fix.Docs.Anchor != "3-load-the-security-settings" ||
+					c.Fix.Steps[0] != "If OpenSearch started only a few minutes ago, re-check in a few minutes: it loads them as it starts. "+
+						"Otherwise, load them with securityadmin.sh, as the docs show. Then re-check." {
+					t.Errorf("%+v", c.Fix)
+				}
+			}},
+		// With the Docker quick start: run its step that loads them again.
+		{name: "security settings not loaded, Docker", set: func(f *Facts) {
+			f.Docker = true
+			f.OpenSearch.Anonymous, f.OpenSearch.AnonymousErr, f.OpenSearch.SecurityNotLoaded = "unknown", "status 503", true
+		}, state: Unknown,
+			fix: func(t *testing.T, c *Check) {
+				if c.Fix.Docs.Anchor != "if-opensearchs-security-settings-arent-loaded" || c.Fix.Commands["docker"] != "docker compose -f deploy/docker/docker-compose.yml up -d" ||
+					!strings.Contains(c.Fix.Steps[0], "Otherwise, run the command below from the Signalith folder: it re-runs the step that loads OpenSearch's security settings.") ||
+					strings.Contains(c.Fix.Steps[0], "securityadmin") || strings.Contains(c.Fix.Steps[0], "setup step") {
+					t.Errorf("%+v", c.Fix)
 				}
 			}},
 		{name: "timed out", set: func(f *Facts) { f.TimedOut = map[string]bool{"rest.opensearch_access": true} }, state: Unknown, line: TimedOutLine},
@@ -1072,18 +1109,51 @@ func TestAgentTokens(t *testing.T) {
 					t.Errorf("%q", c.Fix.Commands)
 				}
 			}},
-		// The Docker quick start still accepts the old example token over
-		// plain HTTP while agents on plain HTTP are (see
-		// api.retiredTokenAccepted), whatever tokens are set.
+		// A Docker quick start upgraded from a version whose agents send
+		// the old example token accepts it over plain HTTP while agents on
+		// plain HTTP are (see api.retiredTokenAccepted), whatever tokens
+		// are set.
 		{name: "public token accepted", extra: "ingest:\n  tokens: [" + sentinelToken + "]\n", set: func(f *Facts) {
+			f.Config = f.Config.WithDockerUpgrade(&config.DockerUpgrade{Upgraded: true, Index: "signalith-authentication-2026.09.30",
+				IndexMade: time.Date(2026, 9, 30, 0, 4, 0, 0, time.UTC), Decided: now})
 			f.InContainer, f.Docker, f.PublicTokenAccepted = true, true, true
 		}, state: Risk, line: "Agents can still send events over plain HTTP with change-this-ingest-token, an example token anyone can look up.",
 			fix: func(t *testing.T, c *Check) {
 				if c.Fix.Setting != "server.tls.plaintext_ingest" || c.Fix.Page == nil || c.Fix.Page.ID != "data" {
 					t.Errorf("%+v", c.Fix)
 				}
+				if len(c.Details) != 2 || !strings.Contains(c.Details[0], "upgraded from an older version") || !strings.Contains(c.Details[0], "the oldest from 30 Sep 2026") ||
+					!strings.Contains(c.Details[1], "ends it for good") {
+					t.Errorf("%q", c.Details)
+				}
 			}},
 		{name: "public token accepted, no tokens", set: func(f *Facts) { f.PublicTokenAccepted = true }, state: Risk},
+		// Elsewhere on the Docker quick start, the check says why the old
+		// token is refused.
+		{name: "quick start installed new", extra: "ingest:\n  tokens: [" + sentinelToken + "]\n", set: func(f *Facts) {
+			f.Config = f.Config.WithDockerUpgrade(&config.DockerUpgrade{Decided: now})
+			f.InContainer, f.Docker = true, true
+		}, state: Good, fix: func(t *testing.T, c *Check) {
+			if len(c.Details) != 2 || !strings.Contains(c.Details[1], "change-this-ingest-token, is refused: this install started new") {
+				t.Errorf("%q", c.Details)
+			}
+		}},
+		{name: "quick start not decided yet", extra: "ingest:\n  tokens: [" + sentinelToken + "]\n", set: func(f *Facts) {
+			f.Config = f.Config.WithDockerUpgrade(nil)
+			f.InContainer, f.Docker = true, true
+		}, state: Good, fix: func(t *testing.T, c *Check) {
+			if len(c.Details) != 2 || !strings.Contains(c.Details[1], "is refused for now") || !strings.Contains(c.Details[1], "keep their events") {
+				t.Errorf("%q", c.Details)
+			}
+		}},
+		{name: "upgraded quick start, ended", extra: "ingest:\n  tokens: [" + sentinelToken + "]\n", set: func(f *Facts) {
+			f.Config = f.Config.WithDockerUpgrade(&config.DockerUpgrade{Upgraded: true, Decided: now, Ended: time.Date(2026, 10, 2, 9, 0, 0, 0, time.UTC)})
+			f.InContainer, f.Docker = true, true
+		}, state: Good, fix: func(t *testing.T, c *Check) {
+			if len(c.Details) != 2 || !strings.Contains(c.Details[1], "is refused for good") || !strings.Contains(c.Details[1], "since 2 Oct 2026") {
+				t.Errorf("%q", c.Details)
+			}
+		}},
 		{name: "short", extra: "ingest:\n  tokens: [SENTINEL-short-tok20]\n", state: Attention,
 			line: "An agent token is only 20 characters long, so it's easier to guess. Tokens Signalith makes have 48."},
 	})
@@ -1110,10 +1180,54 @@ func TestOpenSearchRole(t *testing.T) {
 					t.Errorf("%q %+v", c.Details, c.Fix)
 				}
 			}},
-		{name: "refused", set: func(f *Facts) { f.OpenSearch.AuthErr = "status 403" }, state: Unknown,
+		{name: "refused", set: func(f *Facts) { f.OpenSearch.AuthErr, f.OpenSearch.AuthRefusal = "status 403", store.RefusedPermission }, state: Unknown,
 			fix: func(t *testing.T, c *Check) {
 				if c.Details[0] != "OpenSearch answered: status 403." || !strings.Contains(c.Fix.Steps[0], "roles mapped") {
 					t.Errorf("%q %+v", c.Details, c.Fix)
+				}
+			}},
+		// Not about the roles: no advice to change them.
+		{name: "security settings not loaded", set: func(f *Facts) {
+			f.OpenSearch.AuthErr, f.OpenSearch.AuthRefusal, f.OpenSearch.SecurityNotLoaded = "status 503", store.RefusedNotInitialized, true
+		}, state: Unknown,
+			line: "Signalith couldn't ask OpenSearch what its account may do: OpenSearch's security settings aren't loaded, so it turns everyone away for now.",
+			fix: func(t *testing.T, c *Check) {
+				if strings.Contains(c.Fix.Steps[0], "roles") || !strings.Contains(c.Fix.Steps[0], "load them with securityadmin.sh") || len(c.Details) != 0 {
+					t.Errorf("%+v %q", c.Fix, c.Details)
+				}
+			}},
+		{name: "sign-in refused", set: func(f *Facts) { f.OpenSearch.AuthErr, f.OpenSearch.AuthRefusal = "status 401", store.RefusedSignIn }, state: Unknown,
+			line: "Signalith couldn't ask OpenSearch what its account may do: OpenSearch doesn't accept its sign-in.",
+			fix: func(t *testing.T, c *Check) {
+				if strings.Contains(c.Fix.Steps[0], "roles") || !strings.Contains(c.Fix.Steps[0], "user name and password, or the client certificate, on the Settings page") ||
+					c.Fix.Setting != "opensearch.password" || c.Fix.Docs.Anchor != "4-point-signalith-at-it" {
+					t.Errorf("%+v", c.Fix)
+				}
+			}},
+		{name: "sign-in refused, certificate", set: func(f *Facts) {
+			f.Config.OpenSearch.Username = ""
+			f.OpenSearch.AuthErr, f.OpenSearch.AuthRefusal = "status 401", store.RefusedSignIn
+		}, state: Unknown,
+			fix: func(t *testing.T, c *Check) {
+				if c.Fix.Setting != "opensearch.cert_file" {
+					t.Errorf("%+v", c.Fix)
+				}
+			}},
+		{name: "busy", set: func(f *Facts) { f.OpenSearch.AuthErr, f.OpenSearch.AuthRefusal = "status 429", store.RefusedBusy }, state: Unknown,
+			line: "Signalith couldn't ask OpenSearch what its account may do: OpenSearch was too busy to answer in time.",
+			fix: func(t *testing.T, c *Check) {
+				if strings.Contains(c.Fix.Steps[0], "roles") || !strings.HasPrefix(c.Fix.Steps[0], "Re-check in a few minutes. If this lasts more than a few minutes") ||
+					!strings.Contains(c.Fix.Steps[0], "logs opensearch") {
+					t.Errorf("%+v", c.Fix)
+				}
+			}},
+		{name: "not ready", set: func(f *Facts) {
+			f.OpenSearch.AuthErr, f.OpenSearch.AuthRefusal = "status 503", store.RefusedUnavailable
+		}, state: Unknown,
+			line: "Signalith couldn't ask OpenSearch what its account may do.",
+			fix: func(t *testing.T, c *Check) {
+				if strings.Contains(c.Fix.Steps[0], "roles") || !strings.Contains(c.Fix.Steps[0], "its log may say why. With the Docker quick start, show it with") {
+					t.Errorf("%+v", c.Fix)
 				}
 			}},
 	})

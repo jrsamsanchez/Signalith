@@ -8,6 +8,7 @@ import (
 
 	"github.com/jrsamsanchez/signalith/internal/config"
 	"github.com/jrsamsanchez/signalith/internal/secrets"
+	"github.com/jrsamsanchez/signalith/internal/store"
 )
 
 // keyPermCommands make a key file Signalith's own, on this server's
@@ -389,6 +390,9 @@ func checkOpenSearchDisk(f *Facts) *Check {
 		return &Check{State: Unknown, Line: "Signalith runs in a container, so it can't see the disk where OpenSearch (" + host + ") keeps events.", Fix: howTo}
 	case !isLoopback(host):
 		return &Check{State: Unknown, Line: "OpenSearch runs on another computer (" + host + "), so Signalith can't see its disk.", Fix: howTo}
+	case o.DataErr != "" && o.SecurityNotLoaded:
+		return &Check{State: Unknown, Line: "Signalith couldn't ask OpenSearch where it keeps events: OpenSearch's security settings aren't loaded, so it turns everyone away for now.",
+			Fix: notLoadedFix(f)}
 	case o.DataErr != "":
 		return &Check{State: Unknown, Line: "Signalith couldn't ask OpenSearch where it keeps events (" + short(o.DataErr) + ").", Fix: howTo}
 	case len(o.DataPaths) == 0 && len(o.DataMissing) > 0:
@@ -453,12 +457,16 @@ func checkOpenSearchAccess(f *Facts) *Check {
 	case "closed":
 		return &Check{State: Good, Line: "OpenSearch turns away anyone who doesn't sign in."}
 	}
+	if o.SecurityNotLoaded {
+		return &Check{State: Unknown, Line: "OpenSearch's security settings aren't loaded, so it turns everyone away for now, Signalith too. " +
+			"Who can read events once they are loaded depends on them.", Fix: notLoadedFix(f)}
+	}
 	c := &Check{State: Unknown, Line: "Signalith couldn't reach OpenSearch just now, so it can't tell who else can.", Fix: reachFix()}
 	if o.AnonymousErr != "" {
 		c.Details = []string{osWhy(o.AnonymousErr)}
 		if osAnswered(o.AnonymousErr) {
 			c.Line = "Signalith couldn't tell whether OpenSearch lets anyone read events without signing in."
-			c.Fix = &Fix{Steps: []string{"Re-check in a few minutes. If OpenSearch keeps answering this way, its log may say why."}, Docs: doc(docs)}
+			c.Fix = &Fix{Steps: []string{"Re-check in a few minutes. If OpenSearch keeps answering this way, its log may say why. " + store.OpenSearchLog}, Docs: doc(docs)}
 		}
 	}
 	return c
@@ -474,6 +482,19 @@ func osWhy(why string) string {
 		return "OpenSearch answered: " + short(why) + "."
 	}
 	return "Signalith couldn't reach OpenSearch: " + short(why) + "."
+}
+
+// notLoadedFix is the step when OpenSearch's security settings aren't
+// loaded: with the Docker quick start, run its step that loads them again;
+// else securityadmin.sh, as the docs show.
+func notLoadedFix(f *Facts) *Fix {
+	const wait = "If OpenSearch started only a few minutes ago, re-check in a few minutes: it loads them as it starts. "
+	if f.Docker {
+		return &Fix{Steps: []string{wait + "Otherwise, run the command below from the Signalith folder: it re-runs the step that loads " +
+			"OpenSearch's security settings. If that doesn't load them, the docs say what to do. Then re-check."},
+			Commands: cmds("", "", dockerCompose+" up -d"), Docs: doc(docOSNotLoaded)}
+	}
+	return &Fix{Steps: []string{wait + "Otherwise, load them with securityadmin.sh, as the docs show. Then re-check."}, Docs: doc(docOSRoles)}
 }
 
 // reachFix is the step when OpenSearch couldn't be reached.

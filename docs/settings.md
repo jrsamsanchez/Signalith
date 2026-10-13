@@ -53,6 +53,15 @@ match how Signalith answers (`http://` while it serves HTTPS, or another port),
 the page warns and offers the matching address with one click. That is right
 only behind a proxy or a port forward.
 
+**Proxies and gateways**, in the **Web server** card, lists addresses that stand for
+many people, such as a NAT gateway or Docker Desktop's port forwarding. Such an
+address is not held to one computer's share of connections, and wrong passwords
+from it count against each account instead of pausing sign-ins from the whole
+address. For a reverse proxy that sets `X-Forwarded-For` itself, list it under
+**Trusted reverse proxies** in the **HTTPS** card instead and choose **Client address
+header**, so each person is counted by their own address. See
+[failed sign-in limits](users.md#signing-in). Applies after a restart.
+
 Turning syslog on is two settings in the **Syslog** card (UDP and TCP address,
 such as `0.0.0.0:514`), then a restart. The **Add data** page's syslog steps send
 you there.
@@ -75,13 +84,22 @@ over TLS private (see [HTTPS](https.md)):
 - **Certificate file** and **Key file**: used only with your own certificate files. The
   page checks that they load before saving.
 - **Agents on plain HTTP**: whether agents set up for `http://` may still send while you
-  update them from **Add data**. Applies at once.
+  update them from **Add data**. Applies at once. On a Docker quick start upgraded from an
+  older version, choosing **Refuse them** also ends the old example token
+  `change-this-ingest-token` for good.
 - **Trusted reverse proxies**: the proxies whose `X-Forwarded-Proto` header is believed.
   Applies at once. With this empty, a `signalith.yaml` from before HTTPS was the default
   believes a proxy on this computer or a private network, and the field says so; listing
   one ends that. A list that leaves out the proxy you opened the page through is
   refused, since with HTTPS on that proxy would stop working at once: add it, or make
   the change from a browser that reaches Signalith without the proxy.
+- **Client address header**: the header the trusted proxies set to each person's
+  address, `X-Forwarded-For` or `Forwarded`. The sign-in limits and the log then use
+  that address instead of the proxy's (see [failed sign-in limits](users.md#signing-in)).
+  Choose one only if the proxy sets the header itself; for nginx that takes
+  `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;` (see
+  [Behind a reverse proxy](https.md#behind-a-reverse-proxy)). With **None**, everyone
+  reaching Signalith through a trusted proxy counts as one shared address. Applies at once.
 
 The rules are those of `signalith.yaml`: your own files need both files, and the files
 are refused with the other modes; an `http://` public address is read as `https://`
@@ -318,7 +336,11 @@ to the browser; the page only says whether one is set.
 
 **Test connection** checks OpenSearch with the values on the form, saved or not,
 and says plainly what is wrong: nothing answers, wrong password, a certificate that
-is not trusted, HTTP on an HTTPS port, or not an OpenSearch at all. **Test** for the
+is not trusted, HTTP on an HTTPS port, or not an OpenSearch at all. It also says when
+the problem is OpenSearch itself, so that no setting here would fix it: its security
+settings aren't loaded, it is too busy, or it took the request but didn't answer in time.
+[When this server can't use OpenSearch](servers.md#when-this-server-cant-use-opensearch)
+says what to do about each. **Test** for the
 AI assistant asks the model one fixed question ("failed logins in the last 24
 hours") and shows the query it wrote. A result is marked out of date as soon as
 one of the settings it used changes.

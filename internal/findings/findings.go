@@ -88,8 +88,10 @@ type Filter struct {
 	Owner       string   `json:"owner,omitempty"`
 	DetectionID string   `json:"detection_id,omitempty"`
 	Text        string   `json:"text,omitempty"`
-	// Sample keeps only findings with this sample-load marker.
-	Sample string `json:"sample,omitempty"`
+	// Sample, when set, keeps only findings with this sample-load marker.
+	// A marker is never empty, so a set but empty one matches no finding:
+	// it never means "every finding".
+	Sample *string `json:"sample,omitempty"`
 	// EntityValues keeps findings whose entity values include any of these,
 	// used to find findings raised from sample entities (hosts, IPs, users).
 	EntityValues []string `json:"entity_values,omitempty"`

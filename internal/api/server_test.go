@@ -30,6 +30,8 @@ import (
 
 type fakeOS struct {
 	bulk []store.IndexedDoc
+	// healthErr, when set, is what Health fails with.
+	healthErr error
 
 	mu      sync.Mutex
 	indices []string // every index pattern searched or mapped
@@ -54,7 +56,12 @@ func (f *fakeOS) Bulk(_ context.Context, docs []store.IndexedDoc) ([]store.BulkI
 	f.bulk = append(f.bulk, docs...)
 	return nil, nil
 }
-func (f *fakeOS) Health(context.Context) (string, error) { return "green", nil }
+func (f *fakeOS) Health(context.Context) (string, error) {
+	if f.healthErr != nil {
+		return "", f.healthErr
+	}
+	return "green", nil
+}
 func (f *fakeOS) Mapping(_ context.Context, pattern string) (map[string]string, error) {
 	f.searched(pattern)
 	return map[string]string{"user": "keyword", "custom_score": "long"}, nil
@@ -240,6 +247,34 @@ func TestIngestNeedsToken(t *testing.T) {
 	}
 	if len(fos.bulk) != 1 || fos.bulk[0].Doc["user"] != "bob" {
 		t.Errorf("bulk = %v", fos.bulk)
+	}
+}
+
+// TestIngestDropsSampleMarker: an agent cannot mark its own events as
+// sample data, which would hide them from live detections and have them
+// deleted with the sample. The event is stored, without the marker.
+func TestIngestDropsSampleMarker(t *testing.T) {
+	ts, fos := newTestServer(t)
+	batch := `[{"user":"svc-backup","action":"failure","app":"vpn","src":"203.0.113.9","signalith_sample":"x"}]`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/ingest", strings.NewReader(batch))
+	req.Header.Set("Authorization", "Bearer tok-0123456789abcdef")
+	req.Header.Set("X-Signalith-Tag", "app.vpn")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var res map[string]any
+	_ = json.NewDecoder(resp.Body).Decode(&res)
+	resp.Body.Close()
+	if resp.StatusCode != 200 || res["indexed"] != float64(1) || res["fields_dropped"] != float64(1) {
+		t.Fatalf("ingest = %d %v", resp.StatusCode, res)
+	}
+	if len(fos.bulk) != 1 {
+		t.Fatalf("bulk = %v", fos.bulk)
+	}
+	doc := fos.bulk[0].Doc
+	if _, ok := doc[ingest.SampleField]; ok || doc["user"] != "svc-backup" {
+		t.Errorf("stored %v, want the event without the sample marker", doc)
 	}
 }
 

@@ -2,11 +2,13 @@ package users
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/mail"
 	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -190,6 +192,16 @@ func GeneratePassword() string {
 
 // Store keeps users in a JSON file. Writes go to a temporary file that is
 // renamed over the old one, so a crash never leaves half a file.
+//
+// Servers that share a lookups folder share the file, so another server
+// may change it at any time. Every change is therefore made to the file
+// as it is now, while holding a lock file next to it (see lockFile): the
+// store reads it again first when it changed since this store last read
+// or wrote it, and changes only what the change is about.
+// A user disabled or deleted on one server stays so when another records
+// a sign-in or edits someone else. Reads look for changes at most once a
+// second (recheck), so a disabled user is also refused on the other
+// servers within a second or so.
 type Store struct {
 	// BuiltinAdmin is the built-in admin's name from signalith.yaml. The
 	// name is reserved, and that account always counts as an enabled admin.
@@ -201,7 +213,26 @@ type Store struct {
 	users       map[string]*User
 	hashes      map[string]string // username -> bcrypt hash, local users only
 	builtinLast *time.Time
+	// sum is the SHA-256 of the file as this store last read or wrote it.
+	// The content is compared, not the modification time, which some
+	// file systems keep only to the second or two.
+	sum [sha256.Size]byte
+
+	// gen counts the times this store read or wrote the file under mu,
+	// so a read made without mu (fresh) is not applied over a newer one.
+	gen uint64
+
+	// recheck is how often reads look for changes to the file, checked
+	// when they last did, and reading whether one such read is under way.
+	recheck   time.Duration
+	checkMu   sync.Mutex
+	checked   time.Time
+	checkedOK bool
+	reading   bool
 }
+
+// recheckEvery is how often reads look for changes another server made.
+const recheckEvery = time.Second
 
 // storedUser is a user as written to the file, with the password hash.
 type storedUser struct {
@@ -226,22 +257,55 @@ func NewMemory() *Store {
 func Open(path string) (*Store, error) {
 	s := NewMemory()
 	s.path = path
-	data, err := os.ReadFile(path)
+	s.recheck = recheckEvery
+	if err := s.reloadLocked(); err != nil {
+		return nil, err
+	}
+	s.checked, s.checkedOK = time.Now(), true
+	return s, nil
+}
+
+// readUsersFile reads the users file; tests replace it.
+var readUsersFile = os.ReadFile
+
+// reloadLocked reads the users file again when it changed since this store
+// last read or wrote it: another server that shares it wrote it. The
+// caller holds the write lock. A file that is not there (yet) leaves the
+// users as they are, and the next change writes it. A file that cannot be
+// read or understood is an error, and the users stay as they were.
+func (s *Store) reloadLocked() error {
+	if s.path == "" {
+		return nil
+	}
+	s.gen++
+	data, err := readUsersFile(s.path)
 	if errors.Is(err, os.ErrNotExist) {
-		return s, nil
+		return nil
 	}
 	if err != nil {
-		return nil, err
+		return err
+	}
+	return s.applyLocked(data)
+}
+
+// applyLocked takes the users from the file's content when it differs
+// from what this store last read or wrote. The caller holds the write
+// lock.
+func (s *Store) applyLocked(data []byte) error {
+	sum := sha256.Sum256(data)
+	if sum == s.sum {
+		return nil
 	}
 	var f storeFile
 	if err := json.Unmarshal(data, &f); err != nil {
-		return nil, fmt.Errorf("users file %s is damaged (%v); fix it, or move it away to start with only the built-in admin", path, err)
+		return fmt.Errorf("users file %s is damaged (%v); fix it, or move it away and restart Signalith to start with only the built-in admin", s.path, err)
 	}
+	people, hashes := map[string]*User{}, map[string]string{}
 	for _, su := range f.Users {
 		u := su.User
 		u.Username = NormalizeUsername(u.Username)
-		if u.Username == "" || s.users[u.Username] != nil {
-			return nil, fmt.Errorf("users file %s lists an empty or repeated username %q", path, su.Username)
+		if u.Username == "" || people[u.Username] != nil {
+			return fmt.Errorf("users file %s lists an empty or repeated username %q", s.path, su.Username)
 		}
 		if u.Source != SourceDirectory {
 			u.Source = SourceLocal
@@ -250,13 +314,150 @@ func Open(path string) (*Store, error) {
 			// An unknown role grants nothing.
 			u.Role = Viewer
 		}
-		s.users[u.Username] = &u
+		people[u.Username] = &u
 		if su.PasswordHash != "" && u.Source == SourceLocal {
-			s.hashes[u.Username] = su.PasswordHash
+			hashes[u.Username] = su.PasswordHash
 		}
 	}
-	s.builtinLast = f.BuiltinLastSignIn
-	return s, nil
+	s.users, s.hashes, s.builtinLast, s.sum = people, hashes, f.BuiltinLastSignIn, sum
+	return nil
+}
+
+// fresh brings the users up to date with changes another server made to
+// the file, looking at most once every recheck. A file that cannot be
+// read just then leaves the users as they were.
+//
+// The file is read without holding mu, and by one caller at a time, so a
+// shared folder that stops answering holds up that one read, never every
+// sign-in and page: the others go on with the users as last read.
+func (s *Store) fresh() {
+	if s.path == "" {
+		return
+	}
+	s.checkMu.Lock()
+	due := !s.reading && (!s.checkedOK || time.Since(s.checked) >= s.recheck)
+	if due {
+		s.checked, s.checkedOK, s.reading = time.Now(), true, true
+	}
+	s.checkMu.Unlock()
+	if !due {
+		return
+	}
+	defer func() {
+		s.checkMu.Lock()
+		s.reading = false
+		s.checkMu.Unlock()
+	}()
+	s.mu.RLock()
+	gen := s.gen
+	s.mu.RUnlock()
+	data, err := readUsersFile(s.path)
+	if err != nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.gen != gen {
+		return // a change read or wrote the file meanwhile; that is newer
+	}
+	_ = s.applyLocked(data)
+}
+
+// The lock file next to the users file lets one server at a time change
+// it: each change reads the file, changes it and writes it back while it
+// holds the lock, so no server writes over a change another made
+// meanwhile. A change holds it for milliseconds. One left behind by a
+// server that stopped mid-change is taken over once it has stayed the
+// same for lockStale.
+const lockPoll = 20 * time.Millisecond
+
+// lockStale and lockWait are variables so tests can shorten them.
+var (
+	lockStale = 5 * time.Second
+	lockWait  = 15 * time.Second
+)
+
+// ErrBusy says another server kept the users file locked too long.
+var ErrBusy = errors.New("another Signalith server that shares the users file is still changing it; try again in a minute")
+
+// lockFile takes the lock file and returns what releases it. A memory
+// store needs none.
+func (s *Store) lockFile() (func(), error) {
+	if s.path == "" {
+		return func() {}, nil
+	}
+	name := s.path + ".lock"
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return nil, err
+	}
+	token := fmt.Sprintf("%x", b)
+	start := time.Now()
+	seen, seenAt, made := "", time.Time{}, false
+	for {
+		f, err := os.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+		if err == nil {
+			_, werr := f.WriteString(token)
+			if cerr := f.Close(); werr == nil {
+				werr = cerr
+			}
+			if werr != nil {
+				_ = os.Remove(name)
+				return nil, werr
+			}
+			return func() {
+				if held, err := os.ReadFile(name); err == nil && string(held) == token {
+					_ = os.Remove(name)
+				}
+			}, nil
+		}
+		if errors.Is(err, os.ErrNotExist) && !made {
+			// The folder is made the way the users file's write makes it.
+			made = true
+			if err := os.MkdirAll(filepath.Dir(name), 0o750); err != nil {
+				return nil, err
+			}
+			continue
+		}
+		// Windows refuses to create a file that is being removed with
+		// access denied, so that is waited out too.
+		if !errors.Is(err, os.ErrExist) && !errors.Is(err, os.ErrPermission) {
+			return nil, err
+		}
+		now := time.Now()
+		if held, rerr := os.ReadFile(name); rerr == nil {
+			if seenAt.IsZero() || string(held) != seen {
+				seen, seenAt = string(held), now
+			} else if now.Sub(seenAt) >= lockStale {
+				// The same holder all along: it stopped mid-change.
+				_ = os.Remove(name)
+				seen, seenAt = "", time.Time{}
+				continue
+			}
+		}
+		if now.Sub(start) >= lockWait {
+			if errors.Is(err, os.ErrPermission) {
+				return nil, fmt.Errorf("cannot create %s: %w", name, err)
+			}
+			return nil, ErrBusy
+		}
+		time.Sleep(lockPoll)
+	}
+}
+
+// beginLocked starts a change: it takes the lock file and reads the file
+// as it is now. The caller holds the write lock, and calls the returned
+// function once the change is written or given up.
+func (s *Store) beginLocked() (func(), error) {
+	release, err := s.lockFile()
+	if err != nil {
+		return nil, err
+	}
+	if err := s.reloadLocked(); err != nil {
+		release()
+		return nil, err
+	}
+	return release, nil
 }
 
 // Path returns the users file, or "" for a memory-only store.
@@ -282,8 +483,28 @@ func (s *Store) saveLocked() error {
 	if err != nil {
 		return err
 	}
-	return WriteFileAtomic(s.path, append(data, '\n'))
+	data = append(data, '\n')
+	// On Windows a file another program has open just then (another
+	// server reading it from a shared folder, or a virus scanner) cannot
+	// be replaced, so a failed write is tried again shortly.
+	wait := 50 * time.Millisecond
+	for try := 1; ; try++ {
+		err = WriteFileAtomic(s.path, data)
+		if err == nil || try == saveTries {
+			break
+		}
+		time.Sleep(wait)
+		wait *= 2
+	}
+	if err == nil {
+		s.sum = sha256.Sum256(data)
+		s.gen++
+	}
+	return err
 }
+
+// saveTries is how often a write of the users file is tried.
+const saveTries = 3
 
 // WriteFileAtomic replaces name with data whole, readable only by
 // Signalith's own account; a file that is replaced keeps its permissions.
@@ -303,6 +524,7 @@ func (s *Store) sortedNamesLocked() []string {
 
 // Get returns a user by name, ignoring case.
 func (s *Store) Get(name string) (User, bool) {
+	s.fresh()
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	u, ok := s.users[NormalizeUsername(name)]
@@ -314,6 +536,7 @@ func (s *Store) Get(name string) (User, bool) {
 
 // List returns every user, sorted by username.
 func (s *Store) List() []User {
+	s.fresh()
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make([]User, 0, len(s.users))
@@ -355,6 +578,11 @@ func (s *Store) Create(in NewUser) (User, error) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	release, err := s.beginLocked()
+	if err != nil {
+		return User{}, err
+	}
+	defer release()
 	if _, ok := s.users[name]; ok {
 		return User{}, fieldError("username", ErrExists)
 	}
@@ -397,6 +625,11 @@ func (s *Store) Update(name string, ch Change) (User, error) {
 	name = NormalizeUsername(name)
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	release, err := s.beginLocked()
+	if err != nil {
+		return User{}, err
+	}
+	defer release()
 	cur, ok := s.users[name]
 	if !ok {
 		return User{}, ErrNotFound
@@ -447,6 +680,11 @@ func (s *Store) Delete(name string) (User, error) {
 	name = NormalizeUsername(name)
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	release, err := s.beginLocked()
+	if err != nil {
+		return User{}, err
+	}
+	defer release()
 	cur, ok := s.users[name]
 	if !ok {
 		return User{}, ErrNotFound
@@ -482,6 +720,11 @@ func (s *Store) SetPassword(name, password string, mustChange bool) (User, error
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	release, err := s.beginLocked()
+	if err != nil {
+		return User{}, err
+	}
+	defer release()
 	cur, ok := s.users[name]
 	if !ok {
 		return User{}, ErrNotFound
@@ -503,6 +746,7 @@ func (s *Store) SetPassword(name, password string, mustChange bool) (User, error
 // CheckPassword reports whether password is the local user's password. It
 // takes as long for a user that does not exist.
 func (s *Store) CheckPassword(name, password string) bool {
+	s.fresh()
 	s.mu.RLock()
 	hash, ok := s.hashes[NormalizeUsername(name)]
 	s.mu.RUnlock()
@@ -516,6 +760,7 @@ func (s *Store) CheckPassword(name, password string) bool {
 // PasswordVersion changes whenever the user's password does, so a cache
 // of checked passwords can include it in its keys.
 func (s *Store) PasswordVersion(name string) string {
+	s.fresh()
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.hashes[NormalizeUsername(name)]
@@ -525,11 +770,18 @@ func (s *Store) PasswordVersion(name string) string {
 // signing in on every request does not rewrite the file each time.
 const signInWrites = time.Minute
 
-// RecordSignIn notes when a user signed in.
+// RecordSignIn notes when a user signed in. It changes only that, in the
+// file as it is now: a user another server disabled or deleted meanwhile
+// stays disabled or deleted.
 func (s *Store) RecordSignIn(name string) {
 	name = NormalizeUsername(name)
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	release, err := s.beginLocked()
+	if err != nil {
+		return // the file cannot be read or is busy: leave it alone
+	}
+	defer release()
 	cur, ok := s.users[name]
 	if !ok {
 		return
@@ -550,6 +802,11 @@ func (s *Store) RecordSignIn(name string) {
 func (s *Store) RecordBuiltinSignIn() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	release, err := s.beginLocked()
+	if err != nil {
+		return // the file cannot be read or is busy: leave it alone
+	}
+	defer release()
 	now := s.now()
 	if s.builtinLast != nil && now.Sub(*s.builtinLast) < signInWrites {
 		return
@@ -563,6 +820,7 @@ func (s *Store) RecordBuiltinSignIn() {
 
 // BuiltinLastSignIn returns when the built-in admin last signed in.
 func (s *Store) BuiltinLastSignIn() *time.Time {
+	s.fresh()
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.builtinLast
@@ -579,6 +837,11 @@ func (s *Store) SeeDirectoryUser(d DirectoryUser) (User, error) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	release, err := s.beginLocked()
+	if err != nil {
+		return User{}, err
+	}
+	defer release()
 	now := s.now()
 	cur, ok := s.users[name]
 	if ok && cur.Source != SourceDirectory {
@@ -619,6 +882,11 @@ func (s *Store) RefreshDirectoryUser(name string, d DirectoryUser) (User, bool, 
 	name = NormalizeUsername(name)
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	release, err := s.beginLocked()
+	if err != nil {
+		return User{}, false, err
+	}
+	defer release()
 	cur, ok := s.users[name]
 	if !ok || cur.Source != SourceDirectory {
 		return User{}, false, ErrNotFound
@@ -646,6 +914,11 @@ func (s *Store) RefuseDirectoryUser(name, reason string) (User, bool, error) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	release, err := s.beginLocked()
+	if err != nil {
+		return User{}, false, err
+	}
+	defer release()
 	cur, ok := s.users[name]
 	if !ok || cur.Source != SourceDirectory {
 		return User{}, false, ErrNotFound
@@ -666,6 +939,7 @@ func (s *Store) RefuseDirectoryUser(name, reason string) (User, bool, error) {
 
 // Count returns how many users come from each source.
 func (s *Store) Count() map[string]int {
+	s.fresh()
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := map[string]int{SourceLocal: 0, SourceDirectory: 0}
