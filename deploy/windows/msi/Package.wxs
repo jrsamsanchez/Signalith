@@ -46,13 +46,18 @@
         <!-- signalith commands work in any elevated PowerShell. -->
         <Environment Id="Path" Name="PATH" Value="[INSTALLFOLDER]" Part="last" Action="set" System="yes" Permanent="no" />
       </Component>
-      <Component Id="Scripts" Bitness="always64">
+      <!-- One file per component, so each gets a generated GUID. -->
+      <Component Bitness="always64">
         <File Id="install.ps1" Source="..\install.ps1" KeyPath="yes" />
-        <File Id="msi_setup.ps1" Source="msi-setup.ps1" />
       </Component>
-      <Component Id="Docs" Bitness="always64">
+      <Component Bitness="always64">
+        <File Id="msi_setup.ps1" Source="msi-setup.ps1" KeyPath="yes" />
+      </Component>
+      <Component Bitness="always64">
         <File Id="LICENSE.txt" Source="..\..\..\LICENSE" Name="LICENSE.txt" KeyPath="yes" />
-        <File Id="NOTICE.txt" Source="..\..\..\NOTICE" Name="NOTICE.txt" />
+      </Component>
+      <Component Bitness="always64">
+        <File Id="NOTICE.txt" Source="..\..\..\NOTICE" Name="NOTICE.txt" KeyPath="yes" />
       </Component>
       <Component Id="Settings" Bitness="always64">
         <RegistryValue Root="HKLM" Key="Software\Signalith" Name="OpenSearchUrl" Type="string" Value="[OPENSEARCHURL]" KeyPath="yes" />
