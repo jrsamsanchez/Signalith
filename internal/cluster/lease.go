@@ -257,7 +257,9 @@ func (l *Lease) fence(stop <-chan struct{}) {
 		now := l.Clock.Mono()
 		// The deadline counts from this reading: a wait of the time left
 		// would start late by however long this goroutine waited to run.
-		wake := min(max(sent+l.Timing.Fence, now+time.Millisecond), now+time.Second)
+		// The clock may have passed the deadline since the check above;
+		// then the wait ends at once and the next round stops the jobs.
+		wake := min(sent+l.Timing.Fence, now+time.Second)
 		l.mu.Unlock()
 		select {
 		case <-stop:
