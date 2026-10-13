@@ -37,11 +37,11 @@ func TestHTTPSSection(t *testing.T) {
 		keys = append(keys, fm["key"].(string))
 		apply[fm["key"].(string)] = fm["apply"].(string)
 	}
-	if want := []string{"server.tls.mode", "server.tls.names", "server.tls.ca_scope", "server.tls_cert", "server.tls_key", "server.tls.plaintext_ingest", "server.trusted_proxies"}; !slices.Equal(keys, want) {
+	if want := []string{"server.tls.mode", "server.tls.names", "server.tls.ca_scope", "server.tls_cert", "server.tls_key", "server.tls.plaintext_ingest", "server.trusted_proxies", "server.client_header"}; !slices.Equal(keys, want) {
 		t.Errorf("fields %v", keys)
 	}
 	for k, want := range map[string]string{"server.tls.mode": "restart", "server.tls.names": "restart", "server.tls.ca_scope": "live", "server.tls_cert": "restart",
-		"server.tls_key": "restart", "server.tls.plaintext_ingest": "live", "server.trusted_proxies": "live"} {
+		"server.tls_key": "restart", "server.tls.plaintext_ingest": "live", "server.trusted_proxies": "live", "server.client_header": "live"} {
 		if apply[k] != want {
 			t.Errorf("%s applies %s", k, apply[k])
 		}

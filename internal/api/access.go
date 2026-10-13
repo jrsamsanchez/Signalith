@@ -8,12 +8,12 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/auth"
-	"github.com/jrsamsanchez/signalith/internal/clientaddr"
 	"github.com/jrsamsanchez/signalith/internal/search"
 	"github.com/jrsamsanchez/signalith/internal/users"
 )
@@ -280,68 +280,173 @@ func writeSignInError(w http.ResponseWriter, err error) {
 	writeJSON(w, se.status, map[string]any{"error": se.msg, "code": se.code})
 }
 
-func lockedOut(wait time.Duration) error {
-	msg := "Too many sign-in attempts at the same time. Wait a few seconds, then try again."
-	if wait > auth.Busy {
-		n := int(math.Ceil(wait.Minutes()))
-		msg = fmt.Sprintf("Too many failed sign-ins. Try again in %d minutes.", n)
-		if n == 1 {
-			msg = "Too many failed sign-ins. Try again in a minute."
-		}
+// lockedOut is the answer to a sign-in the limits refused (see
+// auth.Limiter).
+func lockedOut(rf *auth.Refusal) error {
+	var msg string
+	switch rf.Reason {
+	case auth.ReasonBusy:
+		msg = "Too many sign-in attempts at the same time. Wait a few seconds, then try again."
+	case auth.ReasonSlowed:
+		msg = "Many wrong passwords were tried for this account, so sign-ins to it from new browsers are slowed down. " +
+			"Try again in " + waitText(rf.Wait) + ", or use a browser you have signed in to this account with before."
+	default:
+		msg = "Too many failed sign-ins. Try again in " + waitText(rf.Wait) + "."
 	}
-	return &signInError{status: http.StatusTooManyRequests, code: "locked_out", retryAfter: wait, msg: msg}
+	return &signInError{status: http.StatusTooManyRequests, code: "locked_out", retryAfter: rf.Wait, msg: msg}
 }
 
-// limitKey is the client a sign-in attempt counts against: its IPv4
-// address, or its IPv6 /64 network, since an IPv6 host can usually pick
-// any address in its /64 and would otherwise get a fresh allowance of
-// guesses with each one.
-func limitKey(r *http.Request) string {
-	if a := clientaddr.Parse(r.RemoteAddr); a.IsValid() {
-		return clientaddr.Key(a).String()
+// waitText says how long a wait is in whole seconds or minutes, rounded
+// up: "a minute", "15 minutes", "8 seconds".
+func waitText(d time.Duration) string {
+	secs := max(int(math.Ceil(d.Seconds())), 1)
+	switch {
+	case secs == 1:
+		return "a second"
+	case secs < 60:
+		return fmt.Sprintf("%d seconds", secs)
+	case secs <= 60:
+		return "a minute"
 	}
-	return clientIP(r)
+	return fmt.Sprintf("%d minutes", (secs+59)/60)
+}
+
+// knownCookiePrefix starts the name of the cookie that marks a browser as
+// one that signed in to an account before; the rest of the name stands
+// for the account (auth.BrowserKey.CookieSuffix). It is HTTPS-only, for
+// this exact host and every path (the __Host- prefix), like the session
+// cookie.
+const knownCookiePrefix = "__Host-signalith_known_"
+
+// browserKey signs the known-browser cookies; one kept in memory when
+// none was given.
+func (s *Server) browserKey() *auth.BrowserKey {
+	s.sessions()
+	return s.KnownBrowsers
+}
+
+// passwordVersion changes whenever account's password does, for the
+// passwords Signalith keeps itself: the built-in admin's and local users'.
+// A known-browser cookie is only good for the version it was made with, so
+// changing or resetting the password makes every browser a stranger to
+// the account again. Directory passwords are not seen here.
+func (s *Server) passwordVersion(account string) string {
+	login := users.LoginName(account)
+	if strings.EqualFold(login, s.conf().Auth.AdminUser) {
+		return "builtin:" + s.conf().AdminPasswordVersion()
+	}
+	if v := s.userStore().PasswordVersion(login); v != "" {
+		return "local:" + v
+	}
+	return "directory"
+}
+
+// knownBrowser returns the id from a valid known-browser cookie for
+// account, if the request has one.
+func (s *Server) knownBrowser(r *http.Request, account string) (string, bool) {
+	key := s.browserKey()
+	name := knownCookiePrefix + key.CookieSuffix(account)
+	version, now := "", time.Now()
+	for _, c := range r.Cookies() {
+		if c.Name != name {
+			continue
+		}
+		if version == "" {
+			version = s.passwordVersion(account)
+		}
+		if id, ok := key.Check(account, version, c.Value, now); ok {
+			return id, true
+		}
+	}
+	return "", false
+}
+
+// rememberBrowser marks the browser as one that has signed in to each of
+// the accounts named (the name typed and the account's own name), so the
+// account's slow-down for strangers does not apply to it. The cookie is
+// HTTPS-only, so over plain HTTP nothing is remembered.
+func (s *Server) rememberBrowser(w http.ResponseWriter, r *http.Request, names ...string) {
+	if !s.secureCookie(r) {
+		return
+	}
+	key, now := s.browserKey(), time.Now()
+	seen := map[string]bool{}
+	for _, n := range names {
+		account := strings.ToLower(users.LoginName(n))
+		if account == "" || seen[account] {
+			continue
+		}
+		seen[account] = true
+		http.SetCookie(w, &http.Cookie{Name: knownCookiePrefix + key.CookieSuffix(account),
+			Value: key.Issue(account, s.passwordVersion(account), now), Path: "/",
+			MaxAge: int(auth.KnownBrowserAge.Seconds()), HttpOnly: true, Secure: true, SameSite: http.SameSiteStrictMode})
+	}
 }
 
 // beginAttempt starts a password check that counts toward the sign-in
-// limits (see auth.Limiter), or returns the locked-out error.
-func (s *Server) beginAttempt(r *http.Request, account string) (*auth.Attempt, error) {
-	a, ok, wait := s.limiter().Begin(limitKey(r), users.LoginName(account))
-	if !ok {
-		return nil, lockedOut(wait)
+// limits (see auth.Limiter), or returns the locked-out error. browser
+// names a signed-in session making the check, if any; otherwise a
+// known-browser cookie for the account counts.
+func (s *Server) beginAttempt(r *http.Request, from clientInfo, account, browser string) (*auth.Attempt, error) {
+	account = users.LoginName(account)
+	c := auth.Client{Address: from.key(), Shared: from.Shared, Browser: browser, Version: s.passwordVersion(account)}
+	if c.Browser == "" {
+		if id, ok := s.knownBrowser(r, account); ok {
+			c.Browser = "cookie:" + id
+		}
 	}
-	return a, nil
+	a, err := s.limiter().Begin(c, account)
+	var rf *auth.Refusal
+	if errors.As(err, &rf) {
+		return nil, lockedOut(rf)
+	}
+	return a, err
+}
+
+// noteFailure logs what a wrong password led to beyond the failure
+// itself: an address locked for every account may be many people behind
+// one proxy or NAT, which can be listed so that it never is.
+func (s *Server) noteFailure(from clientInfo, f auth.Failure) {
+	if f.AddressLocked {
+		s.Log.Warn("sign-ins from this address are paused after too many wrong passwords. If many people reach Signalith through it, "+
+			"list it on the Settings page. If it is a reverse proxy that sets X-Forwarded-For itself, list it under Trusted reverse proxies (server.trusted_proxies) "+
+			"and choose X-Forwarded-For under Client address header (server.client_header). Otherwise list it under Proxies and gateways (server.shared_addresses)",
+			append(from.logAttrs(), "minutes", int(s.limiter().Lockout.Minutes()))...)
+	}
 }
 
 // signIn checks a username and password for the sign-in page or Basic
 // auth: the built-in admin first, then local users, then the directory.
 // A local username is never looked up in the directory. Wrong passwords
-// count toward the limits per address and account, and every attempt is
-// logged without the password.
+// count toward the limits (see auth.Limiter), and every attempt is logged
+// without the password.
 func (s *Server) signIn(r *http.Request, name, password, method string) (*principal, error) {
-	client := clientIP(r)
+	from := s.client(r)
 	name = strings.TrimSpace(name)
-	attempt, err := s.beginAttempt(r, name)
+	attempt, err := s.beginAttempt(r, from, name, "")
 	if err != nil {
 		return nil, err
 	}
 	p, reason, err := s.checkCredentials(r.Context(), name, password)
 	if err != nil {
-		locked := false
+		var f auth.Failure
 		if errors.Is(err, errWrongCredentials) {
-			locked = attempt.Fail()
+			f = attempt.Fail()
 		} else {
 			// Unreachable directory, or a right password for an account
 			// that may not sign in: no guess was refused.
 			attempt.Done()
 		}
-		s.Log.Warn("sign-in failed", "audit", true, "user", name, "client", client, "method", method, "reason", reason, "locked_out", locked)
+		s.Log.Warn("sign-in failed", slices.Concat([]any{"audit", true, "user", name}, from.logAttrs(),
+			[]any{"method", method, "reason", reason, "locked_out", f.LockedOut()})...)
+		s.noteFailure(from, f)
 		return nil, err
 	}
 	attempt.Succeed()
 	s.notePlainSignIn(r)
 	s.noteName(r)
-	s.Log.Info("signed in", "audit", true, "user", p.Username, "role", p.Role, "source", p.Source, "client", client, "method", method)
+	s.Log.Info("signed in", slices.Concat([]any{"audit", true, "user", p.Username, "role", p.Role, "source", p.Source}, from.logAttrs(),
+		[]any{"method", method})...)
 	return p, nil
 }
 

@@ -5,6 +5,7 @@ package config
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/hex"
@@ -62,6 +63,10 @@ type Config struct {
 	// publicAdminPassword is set when SIGNALITH_ADMIN_PASSWORD is the
 	// example from an older docker-compose.yml.
 	publicAdminPassword bool
+	// envAdminVersion stands for the password in SIGNALITH_ADMIN_PASSWORD
+	// (see AdminPasswordVersion), and envAdminHash is the hash made from
+	// it for this process.
+	envAdminVersion, envAdminHash string
 	// publicURLFromEnv is set when SIGNALITH_PUBLIC_URL set
 	// server.public_url.
 	publicURLFromEnv bool
@@ -97,6 +102,11 @@ type Config struct {
 	// publicURLDerived is true when server.public_url was empty and
 	// Validate worked it out from the listen address.
 	publicURLDerived bool
+	// quickStart is true in the Docker quick start's container, and
+	// dockerUpgrade is whether it was upgraded from a version whose agents
+	// send the example ingest token (see OldToken), nil until decided.
+	quickStart    bool
+	dockerUpgrade *DockerUpgrade
 }
 
 // PublicURLDerived reports whether server.public_url was worked out from
@@ -148,8 +158,18 @@ type Server struct {
 	// TrustedProxies lists the IP addresses or CIDRs of reverse proxies
 	// whose X-Forwarded-Proto header is believed, so a browser that
 	// reached the proxy over HTTPS is treated as such (HSTS, secure
-	// cookies) and not redirected.
+	// cookies) and not redirected; and, with ClientHeader, whose
+	// X-Forwarded-For or Forwarded header names the client for the
+	// sign-in limits and the audit log.
 	TrustedProxies []string `yaml:"trusted_proxies,omitempty"`
+	// ClientHeader is the header the trusted proxies write the client's
+	// address into: x-forwarded-for or forwarded. Empty reads neither,
+	// and everyone reaching Signalith through a trusted proxy counts as
+	// one shared address. A proxy that passes on a header the client sent
+	// instead of writing it would let the client pick its own address,
+	// so this is only set for a proxy that writes it (see
+	// ClientAddressHeader).
+	ClientHeader string `yaml:"client_header,omitempty"`
 	// MaxConnections caps open connections to the UI, API and ingest;
 	// 0 means 10000. One client (an IPv4 address, or an IPv6 /64 network)
 	// may hold a tenth of them; connections from this machine, such as a
@@ -159,7 +179,9 @@ type Server struct {
 	// SharedAddresses lists IP addresses or CIDRs that stand for many
 	// clients, such as a reverse proxy, load balancer or NAT gateway on
 	// another machine. They are not limited to one client's share of
-	// connections, requests and ingest memory, only by the totals.
+	// connections, requests and ingest memory, only by the totals, and
+	// failed sign-ins from them count per account, never locking the
+	// address.
 	SharedAddresses []string `yaml:"shared_addresses,omitempty"`
 	// NodeURL is the address other Signalith servers that share this
 	// OpenSearch reach this one at, shown on the Servers page. Empty works
@@ -176,6 +198,10 @@ type Server struct {
 	// effect, because the Settings page changed one (see materializeTLS):
 	// what LegacyProxy allows still holds.
 	legacyFile bool
+	// oldAgents is set on a Docker quick start upgraded from a version
+	// whose agents send over plain HTTP with the example token, until
+	// agents on plain HTTP are refused (see Config.OldToken).
+	oldAgents bool
 }
 
 // materializeTLS fills in the server.tls section with the HTTPS settings
@@ -277,14 +303,16 @@ func (s Server) TLSMode() string {
 func (s Server) HTTPS() bool { return s.TLSMode() != TLSOff }
 
 // PlaintextIngest reports whether agents may send events over plain HTTP
-// to the HTTPS port: server.tls.plaintext_ingest, else allowed only for a
-// config written before HTTPS was the default (no server.tls section and
-// no tls_cert), whose agents were set up for http://.
+// to the HTTPS port: server.tls.plaintext_ingest, else allowed only where
+// agents were set up for http://: for a config written before HTTPS was
+// the default (no server.tls section and no tls_cert), and on a Docker
+// quick start upgraded from one that served plain HTTP, until agents on
+// plain HTTP are first refused (see Config.OldToken).
 func (s Server) PlaintextIngest() bool {
 	if s.TLS != nil && s.TLS.PlaintextIngest != "" {
 		return strings.EqualFold(strings.TrimSpace(s.TLS.PlaintextIngest), "allow")
 	}
-	return s.legacyHTTP()
+	return s.legacyHTTP() || s.oldAgents
 }
 
 // legacyHTTP reports whether the config was written when Signalith served
@@ -332,6 +360,25 @@ func (s Server) LegacyProxy(a netip.Addr) bool {
 // server.trusted_proxies are listed.
 func (s Server) LegacyProxied() bool {
 	return s.TLSMode() == TLSOff && (s.legacyHTTP() || s.legacyFile) && len(s.TrustedProxies) == 0
+}
+
+// Values of server.client_header.
+const (
+	ClientHeaderXFF       = "x-forwarded-for"
+	ClientHeaderForwarded = "forwarded"
+)
+
+// ClientAddressHeader returns the header named by server.client_header,
+// as it is written in a request ("X-Forwarded-For" or "Forwarded"), or
+// "" when the trusted proxies' client addresses are not read.
+func (s Server) ClientAddressHeader() string {
+	switch strings.ToLower(strings.TrimSpace(s.ClientHeader)) {
+	case ClientHeaderXFF:
+		return "X-Forwarded-For"
+	case ClientHeaderForwarded:
+		return "Forwarded"
+	}
+	return ""
 }
 
 // TrustsProxy reports whether a is in server.trusted_proxies.
@@ -388,6 +435,11 @@ func (s *Server) tlsProblems(resolve func(string) string) []string {
 				p = append(p, fmt.Sprintf("server.tls.names[%d] %q must be a host name or IP address, such as siem.example.com or 192.168.1.20", i, n))
 			}
 		}
+	}
+	switch strings.ToLower(strings.TrimSpace(s.ClientHeader)) {
+	case "", ClientHeaderXFF, ClientHeaderForwarded:
+	default:
+		p = append(p, fmt.Sprintf("server.client_header %q must be x-forwarded-for, forwarded, or empty to read neither", s.ClientHeader))
 	}
 	for i, a := range s.TrustedProxies {
 		if _, err := parseAllow(a); err != nil {
@@ -1189,6 +1241,7 @@ func readAndEnv(path string) (*Config, error) {
 	if err := c.applyAdminHashFile(); err != nil {
 		return nil, err
 	}
+	c.readDockerUpgrade()
 	c.layers.pageFileEnv = strings.TrimSpace(os.Getenv("SIGNALITH_SETTINGS_FILE")) != ""
 	c.layers.pageFile = c.SettingsFile()
 	return c, nil
@@ -1266,6 +1319,12 @@ func (c *Config) AdminHashFile() string { return AdminHashFileIn(c.StateDir()) }
 
 // AdminHashFileIn is AdminHashFile for the state folder dir.
 func AdminHashFileIn(dir string) string { return filepath.Join(dir, "admin-password-hash") }
+
+// SignInKeyFile is the key that signs the cookie marking a browser as one
+// that signed in to an account before, so that guesses at the account's
+// password from elsewhere do not keep it out (see auth.Limiter). The
+// server makes it on first start.
+func (c *Config) SignInKeyFile() string { return filepath.Join(c.StateDir(), "signin.key") }
 
 // AdminPasswordChanged returns AdminHashFile when the built-in admin's
 // password comes from it, else "".
@@ -1370,6 +1429,7 @@ func (c *Config) applyEnv() error {
 			return fmt.Errorf("SIGNALITH_ADMIN_PASSWORD: %w", err)
 		}
 		c.Auth.AdminPasswordHash = h
+		c.envAdminHash, c.envAdminVersion = h, envPasswordVersion(v[0])
 		c.publicAdminPassword = v[0] == publicAdminPassword
 		c.fromEnv("auth.admin_password_hash", from)
 	}
@@ -1429,6 +1489,26 @@ func (c *Config) applyEnv() error {
 		c.fromEnv("syslog.tcp", "SIGNALITH_SYSLOG_TCP")
 	}
 	return nil
+}
+
+// AdminPasswordVersion changes when the built-in admin's password does,
+// and stays the same while it does not, across restarts too. It is the
+// password hash, except for a password from SIGNALITH_ADMIN_PASSWORD(_FILE):
+// that is hashed again with a new salt by each process, so its version is
+// worked out from the password itself instead. It is never written
+// anywhere or shown.
+func (c *Config) AdminPasswordVersion() string {
+	if c.envAdminVersion != "" && c.Auth.AdminPasswordHash == c.envAdminHash {
+		return "env:" + c.envAdminVersion
+	}
+	return "hash:" + c.Auth.AdminPasswordHash
+}
+
+// envPasswordVersion is AdminPasswordVersion for a password from the
+// environment: a hash of it made only for this purpose.
+func envPasswordVersion(pw string) string {
+	sum := sha256.Sum256([]byte("signalith admin password version\x00" + pw))
+	return hex.EncodeToString(sum[:])
 }
 
 // envHash remembers the hash of SIGNALITH_ADMIN_PASSWORD, which every
@@ -1864,10 +1944,14 @@ const header = `# Signalith configuration.
 #                    authority reaches when one is made (see docs/https.md)
 # server.trusted_proxies  IPs or CIDRs of reverse proxies whose X-Forwarded-Proto
 #                    header is believed
+# server.client_header  x-forwarded-for or forwarded: the header those proxies
+#                    write each person's address into, for the sign-in limits and
+#                    the log; empty counts everyone behind them as one shared address
 # server.max_connections  open connections allowed at once (default 10000); one
 #                    client may hold a tenth of them
 # server.shared_addresses  IPs or CIDRs of a proxy, load balancer or NAT that many
-#                    clients reach Signalith through; not limited as one client
+#                    clients reach Signalith through; not limited as one client,
+#                    and wrong passwords from them never lock the address
 # auth.admin_user    the built-in admin, a break-glass account; add other users on the Users page
 # auth.session_timeout  sign the web UI out after this long idle (default 12h)
 # auth.users_file    where Users page accounts are kept (default users.json in lookups.dir)

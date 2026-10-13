@@ -106,6 +106,22 @@ jobs:
             -H 'Content-Type: application/json' -d '{"username":"admin","password":"change-me-please"}' \
             https://localhost:8080/api/login)
           test "$code" = 401
+      - name: Check a new install refuses the old example ingest token
+        run: |
+          # Older quick starts gave every agent change-this-ingest-token,
+          # which anyone can look up. Only an upgraded install accepts it;
+          # this one started new, so it is a wrong token, over plain HTTP too.
+          $COMPOSE cp signalith:/var/lib/signalith/docker-upgrade.json "$RUNNER_TEMP/docker-upgrade.json"
+          jq -e '.upgraded == false' "$RUNNER_TEMP/docker-upgrade.json"
+          for url in http://localhost:8080/api/ingest https://localhost:8080/api/ingest; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --cacert "$RUNNER_TEMP/signalith-ca.pem" \
+              -H 'Authorization: Bearer change-this-ingest-token' -d '[{"log":"forged"}]' "$url")
+            test "$code" = 401
+          done
+          # The install's own token works over HTTPS.
+          code=$(curl -s -o /dev/null -w '%{http_code}' --cacert "$RUNNER_TEMP/signalith-ca.pem" \
+            -H "Authorization: Bearer $(cat "$RUNNER_TEMP/signalith-secrets/ingest-token")" -d '[{"log":"hello"}]' https://localhost:8080/api/ingest)
+          test "$code" = 200
       - name: Check OpenSearch refuses anyone without Signalith's certificate
         run: |
           ca="$RUNNER_TEMP/signalith-secrets/opensearch-ca.pem"

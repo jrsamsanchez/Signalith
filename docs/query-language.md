@@ -16,7 +16,7 @@ datamodel=Authentication action=failure earliest=-24h
 
 | Syntax | Meaning |
 | --- | --- |
-| `datamodel=Authentication` | Events of one data model: Authentication, Endpoint, Network_Traffic, Change, Other. `datamodel=Risk` searches risk events, which are left out otherwise |
+| `datamodel=Authentication` | Events of one data model: Authentication, Endpoint, Network_Traffic, Change, Filesystem, Registry, Network_Resolution, Image_Load, Script, Inventory, Configuration_Check, Alerts, Other. `datamodel=Risk` searches risk events, which are left out otherwise |
 | `index=signalith-authentication-2026.10.*` | One pattern of Signalith's daily indices, `<prefix>-<datamodel>-YYYY.MM.DD`. It must start with the configured `opensearch.index_prefix` and `-`; `index=*` means all events, as when `index=` is left out. Lists (`a,b`), exclusions (`-x`), other indices and system indices, other clusters (`remote:x`) and date math are refused |
 | `field=value` | Exact match, case-insensitive |
 | `field=val*` | Wildcard match with `*` and `?` |

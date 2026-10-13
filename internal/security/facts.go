@@ -29,8 +29,9 @@ type Facts struct {
 	// when that container is the Docker quick start's.
 	InContainer, Docker bool
 	// PublicTokenAccepted is true when the server accepts the old example
-	// ingest token over plain HTTP: in a container, with HTTPS on and
-	// agents on plain HTTP allowed (see api.retiredTokenAccepted).
+	// ingest token over plain HTTP: a Docker quick start upgraded from a
+	// version whose agents send it, with HTTPS on and agents on plain HTTP
+	// allowed (see config.Config.OldToken and api.retiredTokenAccepted).
 	PublicTokenAccepted bool
 	// Uptime is how long the server has run (zero in the CLI).
 	Uptime time.Duration
