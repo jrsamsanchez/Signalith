@@ -1,0 +1,5 @@
+{"rule": "6b65c28e-11f3-46cb-902a-68f2cafaf474", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":":\\Windows\\SysWOW64\\FxsTmp\\","Image":"\\odbcconf.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\odbcconf.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":":\\Windows\\SysWOW64\\FxsTmp\\"}}
+]}

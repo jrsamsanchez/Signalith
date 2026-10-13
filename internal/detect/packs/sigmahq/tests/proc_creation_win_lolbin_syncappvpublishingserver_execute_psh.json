@@ -1,0 +1,5 @@
+{"rule": "fbd7c32d-db2a-4418-b92c-566eb8911133", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"\"n; x","Image":"\\SyncAppvPublishingServer.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\SyncAppvPublishingServer.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"\"n; x"}}
+]}

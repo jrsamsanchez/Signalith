@@ -7,11 +7,16 @@ raised recently.
 ## Where detections live
 
 - **Built-in detections** ship inside the binary (`internal/detect/builtin`).
+- **Content pack detections** ship inside the binary too, off until you turn them
+  on (see [Content packs](#content-packs)).
 - **Custom and edited detections** are YAML files in `detections.dir`
   (default: a `detections` folder next to the config file; `/var/lib/signalith/detections`
   for the systemd unit and Docker image). One file per detection, named `<id>.yaml`.
-- A file whose `id` matches a built-in **overrides** it. Delete the file, or click
-  **Revert to built-in**, to go back.
+- A file whose `id` matches a built-in or pack detection **overrides** it. Delete
+  the file, or click **Revert to built-in**, to go back.
+- Turning a built-in or pack detection on or off without other changes only writes
+  a small file to `detections/state/<id>.yaml` (`enabled: true` or `false`), so the
+  rule itself keeps coming from the binary and gets fixes on upgrade.
 
 You can edit detections in the UI or drop YAML files into the folder and restart.
 `signalith validate` checks every file and reports problems with the field to fix;
@@ -109,6 +114,62 @@ an owner, a disposition (`true_positive`, `benign_true_positive`, `false_positiv
 `undetermined`), comments, and a history of every change. They are stored in the
 OpenSearch index `<index_prefix>_findings`, which event searches never include.
 
+## Content packs
+
+Content packs are rule sets from other open source projects, shipped unchanged
+inside Signalith and converted when it starts. Every pack detection is **off** until
+an admin turns it on.
+
+**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 1,055 Windows
+process creation and network connection rules from [SigmaHQ](https://github.com/SigmaHQ/sigma),
+pinned to one commit. A rule is only shipped when:
+
+- its status is `stable` or `test` (not `experimental` or `deprecated`), and its
+  level is not `informational`;
+- it converts exactly: every field maps to a Signalith field and every modifier is
+  supported (strict mode, below);
+- it fires on its test events and stays quiet on its near misses. Test events are
+  made from the rule itself (every way the rule can match, plus events with each
+  field removed or changed and events hitting each exclusion), and SigmaHQ's own
+  recorded events are added where they exist. Each event goes through the real
+  Windows parser, and two independent readings must agree: a Sigma evaluator on the
+  raw event, and the converted query on the stored event.
+
+`internal/detect/packs/sigmahq/REPORT.md` lists every rule left out and why.
+CI runs the same checks on every change (`TestPackRulesFireOnTheirTests`) and
+repeats them against a real OpenSearch (`TestPackRulesAgainstOpenSearch`), so a
+change to the parser, the field mappings or the query compiler that breaks a
+shipped rule fails the build.
+
+Pack detections get these defaults: the title names the host, at most one finding
+per host, user and command line a day (per host, program, destination and port for
+network rules), and risk on the user and the host by Sigma level (low 10, medium 25,
+high 50, critical 80). Low level rules only add risk and raise no finding, so they
+feed [risk-based alerting](#risk) without flooding the queue. Each is tagged
+`sigma`, the pack name, the product and the log source.
+
+On the **Detections** page, the pack card shows how many rules are on.
+**Turn on N high and critical rules** is the suggested start; **Browse rules** lists
+the pack so you can filter, read a rule's source and turn rules on or off one at a
+time or all shown at once (with Undo). Pack rules cannot be deleted, only turned
+off; editing one saves an override that keeps the credit.
+
+Licence: the SigmaHQ rules are under the [Detection Rule License 1.1](https://github.com/SigmaHQ/Detection-Rule-License)
+(full text in the pack folder). As it requires, every finding from a pack rule
+carries a credit line naming the rule's author, the pack and the licence, shown on
+the finding and stored as its `credit` field.
+
+To refresh the pack from a newer SigmaHQ commit:
+
+```sh
+git clone https://github.com/SigmaHQ/sigma /tmp/sigma
+go run ./internal/detect/packgen -sigma /tmp/sigma
+go test ./internal/detect/
+```
+
+The generator keeps each rule's Signalith ID across runs, rewrites `rules/`,
+`tests/`, `pack.yaml` and `REPORT.md`, and only lists rules whose checks pass.
+
 ## Sigma rules
 
 **Import Sigma rule** on the Detections page (or `POST /api/detections/sigma`)
@@ -116,17 +177,26 @@ converts a rule and shows the result for review. Supported:
 
 - Log sources `process_creation` (Endpoint), `network_connection` and `firewall`
   (Network_Traffic), `authentication` and Linux `auth` (Authentication). Other log
-  sources search all data and say so.
+  sources search all data and say so. `product: windows` limits the search to
+  Windows event logs, and `linux` or `macos` leave them out.
 - Sysmon and Windows Security field names, mapped to Signalith fields (`Image` to
   `process_path`, or `process_name` for `endswith` a file name; `CommandLine` to
-  `process`; `TargetUserName` to `user`; `IpAddress` to `src`; and so on). Unmapped
-  fields are searched as-is and listed as warnings.
-- Modifiers `contains`, `startswith`, `endswith`, `all`, `windash`, `exists`; lists,
-  `null`, keyword lists; conditions with `and`, `or`, `not`, parentheses,
-  `1 of`, `all of`, `them` and `selection_*` patterns.
+  `process`; `OriginalFileName` to `original_file_name`; `ParentUser`,
+  `IntegrityLevel`, `CurrentDirectory`, `Description`, `Product`, `Company`,
+  `FileVersion`, `LogonId`, `ProcessGuid`, `SourceHostname`, `Initiated` and more;
+  `TargetUserName` to `user`; `IpAddress` to `src`; and so on). Unmapped fields are
+  searched as-is and listed as warnings.
+- Modifiers `contains`, `startswith`, `endswith`, `all`, `windash`, `exists`,
+  `base64`, `base64offset`, `utf16le`, `utf16be`, `utf16`, `wide` and `cidr` (IPv4);
+  lists, `null` and empty values, keyword lists; conditions with `and`, `or`, `not`,
+  parentheses, `1 of`, `all of`, `them` and `selection_*` patterns.
 
-Not supported, and reported as an error: `re`, `base64`, `base64offset`, `cidr` and
-other modifiers, aggregation conditions (`| count() > 10`), and escaped wildcards.
+Not supported, and reported as an error: `re`, IPv6 `cidr` and other modifiers,
+aggregation conditions (`| count() > 10`), and escaped wildcards.
+
+Strict mode, used for content packs, also refuses anything that would only be
+approximated: unmapped fields, keyword (free text) searches, rules with no data
+model, and `cased`.
 
 Imported rules start disabled with a 5 minute schedule and 10 minute lookback.
 
@@ -141,6 +211,8 @@ Imported rules start disabled with a 5 minute schedule and 10 minute lookback.
 | `POST /api/detections/test` | Run an unsaved detection; returns rows and titles, raises nothing |
 | `POST /api/detections/{id}/run` | Run now and raise findings |
 | `POST /api/detections/sigma` | Convert a Sigma rule (YAML body, or JSON `{"rule": "..."}`) |
+| `GET /api/detections/packs` | Content packs with their rule IDs, how many are on, and counts by severity |
+| `POST /api/detections/enable` | `{"ids": [...], "enabled": true}`: turn up to 5,000 detections on or off at once (404 and no change if any ID is unknown) |
 | `GET /api/coverage` | ATT&CK matrix with coverage |
 | `GET /api/findings?status=&severity=&urgency=&owner=&detection=&q=&since=7d&limit=` | Queue |
 | `GET`, `PATCH /api/findings/{id}` | Read; update status, owner, severity, disposition, comment |

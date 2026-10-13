@@ -1,0 +1,5 @@
+{"rule": "6812a10b-60ea-420c-832f-dfcc33b646ba", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"Invoke-Command","OriginalFileName":"RegSvcs.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"RegSvcs.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"Invoke-Command"}}
+]}

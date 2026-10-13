@@ -1,0 +1,5 @@
+{"rule": "47147b5b-9e17-4d76-b8d2-7bac24c5ce1b", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"\\Microsoft\\Edge\\User Data","OriginalFileName":"robocopy.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"robocopy.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"\\Microsoft\\Edge\\User Data"}}
+]}

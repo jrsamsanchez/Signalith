@@ -1,0 +1,5 @@
+{"rule": "692f0bec-83ba-4d04-af7e-e884a96059b6", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"pwsh.dll","ParentImage":"\\WmiPrvSE.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"ParentImage":"\\WmiPrvSE.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"pwsh.dll"}}
+]}

@@ -1,0 +1,5 @@
+{"rule": "97dbf6e2-e436-44d8-abee-4261b24d3e41", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"connectionStrings -pdf","OriginalFileName":"aspnet_regiis.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"aspnet_regiis.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"connectionStrings -pdf"}}
+]}

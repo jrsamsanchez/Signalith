@@ -1,0 +1,6 @@
+{"rule": "a9e416a8-e613-4f8b-88b8-a7d1d1af2f61", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\csi.exe","OriginalFileName":"csi.exe","ParentImage":"\\powershell.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"csi.exe","ParentImage":"\\powershell.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\csi.exe","ParentImage":"\\powershell.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\csi.exe","OriginalFileName":"csi.exe"}}
+]}

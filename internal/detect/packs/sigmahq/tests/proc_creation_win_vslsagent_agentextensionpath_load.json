@@ -1,0 +1,10 @@
+{"rule": "43103702-5886-11ed-9b6a-0242ac120002", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"--agentExtensionPath","Image":"\\vsls-agent.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"--agentExtensionPath","NewProcessName":"\\vsls-agent.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"Microsoft.VisualStudio.LiveShare.Agent.--agentExtensionPath","Image":"\\vsls-agent.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"Microsoft.VisualStudio.LiveShare.Agent.--agentExtensionPath","NewProcessName":"\\vsls-agent.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\vsls-agent.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"\\vsls-agent.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"--agentExtensionPath"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"--agentExtensionPath","SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

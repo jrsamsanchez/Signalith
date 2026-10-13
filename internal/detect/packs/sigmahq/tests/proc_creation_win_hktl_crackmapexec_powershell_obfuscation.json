@@ -1,0 +1,5 @@
+{"rule": "6f8b3439-a203-45dc-a88b-abf57ea15ccf", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"( $PSHome[]+$PSHOME[]+","OriginalFileName":"pwsh.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"pwsh.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"( $PSHome[]+$PSHOME[]+"}}
+]}

@@ -1,0 +1,5 @@
+{"rule": "cd1f961e-0b96-436b-b7c6-38da4583ec00", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"Circular Kernel Context Logger stop x","OriginalFileName":"Logman.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"Logman.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"Circular Kernel Context Logger stop x"}}
+]}

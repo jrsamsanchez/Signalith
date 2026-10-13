@@ -1,0 +1,4 @@
+{"rule": "ca387a8e-1c84-4da3-9993-028b45342d30", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Description":"Application for scanning networks"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{}}
+]}

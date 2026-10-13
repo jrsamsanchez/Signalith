@@ -1,0 +1,5 @@
+{"rule": "6e22722b-dfb1-4508-a911-49ac840b40f8", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":":\\Users\\Public\\.rdp\"","Image":"\\mstsc.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\mstsc.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":":\\Users\\Public\\.rdp\""}}
+]}

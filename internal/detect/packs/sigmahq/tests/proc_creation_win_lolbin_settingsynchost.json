@@ -1,0 +1,5 @@
+{"rule": "b2ddd389-f676-4ac4-845a-e00781a48e5f", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"ParentCommandLine":"-outputpath cmd.exe /c RoamDiag.cmd"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"C:\\Windows\\System32\\","ParentCommandLine":"RoamDiag.cmd-outputpathcmd.exe /c"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{}}
+]}

@@ -1,0 +1,5 @@
+{"rule": "3f5491e2-8db8-496b-9e95-1029fce852d4", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":".dll INSTALLDRIVER x","Image":"\\odbcconf.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\odbcconf.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":".dll INSTALLDRIVER x"}}
+]}

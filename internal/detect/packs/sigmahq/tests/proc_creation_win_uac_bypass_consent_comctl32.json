@@ -1,0 +1,6 @@
+{"rule": "1ca6bd18-0ba0-44ca-851c-92ed89a61085", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\werfault.exe","IntegrityLevel":"System","ParentImage":"\\consent.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"IntegrityLevel":"System","ParentImage":"\\consent.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\werfault.exe","ParentImage":"\\consent.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\werfault.exe","IntegrityLevel":"System"}}
+]}

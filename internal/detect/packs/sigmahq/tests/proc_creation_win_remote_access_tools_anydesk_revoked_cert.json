@@ -1,0 +1,6 @@
+{"rule": "41f407b5-3096-44ea-a74f-96d04fbc41be", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Company":"AnyDesk Software GmbH","FileVersion":"8.0.2"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x --remove","Company":"AnyDesk Software GmbH","FileVersion":"8.0.2"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"FileVersion":"8.0.2"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Company":"AnyDesk Software GmbH"}}
+]}

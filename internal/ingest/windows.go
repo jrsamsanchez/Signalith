@@ -47,7 +47,12 @@ var windowsFailureReasons = map[string]string{
 	"0xc0000224": "password must change",
 }
 
-func parseWindows(r map[string]any) Event {
+func parseWindows(r map[string]any) Event { return parseWindowsWith(r, nil) }
+
+// parseWindowsWith is parseWindows with a Sysmon event's named values
+// already known (the OpenTelemetry Collector sends them); they win over
+// what the rendered message says.
+func parseWindowsWith(r map[string]any, named map[string]string) Event {
 	channel := str(r, "Channel")
 	eventID := str(r, "EventID")
 	computer := str(r, "Computer", "ComputerName")
@@ -72,7 +77,11 @@ func parseWindows(r map[string]any) Event {
 	case channel == "Security":
 		parseWindowsSecurity(eventID, in, &ev)
 	case strings.EqualFold(channel, "Microsoft-Windows-Sysmon/Operational"):
-		parseSysmon(eventID, keyValues(str(r, "Message")), &ev)
+		kv := keyValues(str(r, "Message"))
+		for k, v := range named {
+			kv[k] = v
+		}
+		parseSysmon(eventID, kv, &ev)
 	}
 	return ev
 }
@@ -120,6 +129,8 @@ func parseWindowsSecurity(eventID string, in []string, ev *Event) {
 		f["user"] = at(in, 1)
 		f["user_domain"] = at(in, 2)
 		f["process_id"] = atoi(at(in, 4))
+		f["parent_process_id"] = atoi(at(in, 7))
+		f["logon_id"] = at(in, 3)
 		f["process_path"] = at(in, 5)
 		f["process_name"] = baseName(at(in, 5))
 		f["process"] = at(in, 8)
@@ -169,6 +180,20 @@ func parseSysmon(eventID string, kv map[string]string, ev *Event) {
 		f["parent_process"] = kv["ParentCommandLine"]
 		f["parent_process_path"] = kv["ParentImage"]
 		f["parent_process_name"] = baseName(kv["ParentImage"])
+		f["parent_process_id"] = atoi(kv["ParentProcessId"])
+		f["parent_user"] = kv["ParentUser"]
+		// The PE header fields Sigma rules match on: a renamed binary keeps
+		// its OriginalFileName.
+		f["original_file_name"] = kv["OriginalFileName"]
+		f["process_description"] = kv["Description"]
+		f["process_product"] = kv["Product"]
+		f["process_company"] = kv["Company"]
+		f["process_file_version"] = kv["FileVersion"]
+		f["process_integrity_level"] = kv["IntegrityLevel"]
+		f["process_current_directory"] = kv["CurrentDirectory"]
+		f["process_guid"] = kv["ProcessGuid"]
+		f["parent_process_guid"] = kv["ParentProcessGuid"]
+		f["logon_id"] = kv["LogonId"]
 	case "3":
 		ev.Model = "Network_Traffic"
 		f["action"] = "allowed"
@@ -182,6 +207,14 @@ func parseSysmon(eventID string, kv map[string]string, ev *Event) {
 		f["dest_port"] = atoi(kv["DestinationPort"])
 		f["process_name"] = baseName(kv["Image"])
 		f["process_path"] = kv["Image"]
+		f["process_guid"] = kv["ProcessGuid"]
+		f["src_host"] = kv["SourceHostname"]
+		switch strings.ToLower(kv["Initiated"]) {
+		case "true":
+			f["direction"] = "outbound"
+		case "false":
+			f["direction"] = "inbound"
+		}
 	}
 }
 
@@ -205,17 +238,33 @@ func splitHashes(v string, f map[string]any) {
 	}
 }
 
-// keyValues parses "Key: Value" lines from a rendered event message.
+// multiLine are the Sysmon fields whose values can run over several
+// lines: a command line can hold a whole script.
+var multiLine = map[string]bool{"CommandLine": true, "ParentCommandLine": true}
+
+// keyValues parses "Key: Value" lines from a rendered event message. The
+// first value of a key is kept. A line that is not a "Key: Value" line
+// continues a multi-line value (a command line with line breaks in it,
+// blank lines included) up to the next key line.
 func keyValues(msg string) map[string]string {
 	out := map[string]string{}
-	for _, line := range strings.Split(msg, "\n") {
-		line = strings.TrimSpace(line)
+	cont := "" // the multi-line key being continued
+	for _, raw := range strings.Split(msg, "\n") {
+		line := strings.TrimSpace(raw)
 		k, v, ok := strings.Cut(line, ":")
-		if !ok || strings.ContainsAny(k, " \t") {
+		isKey := ok && k != "" && !strings.ContainsAny(k, " \t") && (v == "" || v[0] == ' ' || v[0] == '\t')
+		if !isKey {
+			if cont != "" {
+				out[cont] += "\n" + strings.TrimRight(raw, "\r")
+			}
 			continue
 		}
+		cont = ""
 		if _, exists := out[k]; !exists {
 			out[k] = strings.TrimSpace(v)
+			if multiLine[k] {
+				cont = k
+			}
 		}
 	}
 	return out

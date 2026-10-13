@@ -1,0 +1,8 @@
+{"rule": "f26307d8-14cd-47e3-a26b-4b4769f24af6", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"tasklist /fi  cmd /c  Imagename eq lsass.exe","User":"AUTORI"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"%%B  full \\Windows\\Temp\\ do rundll32.exe C:\\windows\\System32\\comsvcs.dll, MiniDump"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"tasklist /v /fo csvfindstr /i \"lsass\""}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"User":"AUTORI"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"tasklist /fi  cmd /c  Imagename eq lsass.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{}}
+]}

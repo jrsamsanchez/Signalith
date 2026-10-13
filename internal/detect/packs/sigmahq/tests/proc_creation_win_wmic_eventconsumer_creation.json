@@ -1,0 +1,5 @@
+{"rule": "ebef4391-1a81-4761-a40a-1db446c0e625", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"ActiveScriptEventConsumer  CREATE x","Image":"\\WMIC.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\WMIC.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"ActiveScriptEventConsumer  CREATE x"}}
+]}

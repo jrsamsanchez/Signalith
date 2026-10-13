@@ -40,8 +40,11 @@ type Detection struct {
 	Tags []string `yaml:"tags,omitempty" json:"tags,omitempty"`
 	// Notes for the analyst: how to triage, known false positives.
 	Guidance string `yaml:"guidance,omitempty" json:"guidance,omitempty"`
+	// Origin is set on detections from a content pack: where the rule
+	// came from and whom to credit.
+	Origin *Origin `yaml:"origin,omitempty" json:"origin,omitempty"`
 
-	// Source is "builtin", "custom" or "override"; set when loaded.
+	// Source is "builtin", "pack", "custom" or "override"; set when loaded.
 	Source string `yaml:"-" json:"source"`
 }
 

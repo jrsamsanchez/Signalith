@@ -1,0 +1,5 @@
+{"rule": "bb76d96b-821c-47cf-944b-7ce377864492", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"http /print/pipe/ C:\\windows\\system32\\davclnt.dll,DavSetCookie","Image":"\\rundll32.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\rundll32.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"http /print/pipe/ C:\\windows\\system32\\davclnt.dll,DavSetCookie"}}
+]}

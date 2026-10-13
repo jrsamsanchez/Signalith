@@ -1,0 +1,6 @@
+{"rule": "efec536f-72e8-4656-8960-5e85d091345b", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"\\Windows\\Temp\\  +s .vbe","OriginalFileName":"ATTRIB.EXE"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"\\Windows\\Temp\\ .vbe .exe  +s \\Windows\\TEMP\\","OriginalFileName":"ATTRIB.EXE"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"ATTRIB.EXE"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"\\Windows\\Temp\\  +s .vbe"}}
+]}

@@ -1,0 +1,6 @@
+{"rule": "503d581c-7df0-4bbe-b9be-5840c0ecc1fc", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\changepk.exe","IntegrityLevel":"System","ParentImage":"\\slui.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"IntegrityLevel":"System","ParentImage":"\\slui.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\changepk.exe","ParentImage":"\\slui.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\changepk.exe","IntegrityLevel":"System"}}
+]}

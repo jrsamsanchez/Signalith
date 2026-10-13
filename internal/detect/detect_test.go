@@ -93,7 +93,30 @@ func TestLibraryOverrideAndDelete(t *testing.T) {
 	if err != nil || b.Source != "builtin" || !b.Enabled {
 		t.Fatalf("builtin = %+v %v", b, err)
 	}
+	// Turning it off unchanged records only the choice, not a copy.
 	b.Enabled = false
+	if err := lib.Put(b); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "auth-brute-force.yaml")); !os.IsNotExist(err) {
+		t.Fatalf("turning a built-in off wrote an override: %v", err)
+	}
+	lib, _, _ = NewLibrary(dir)
+	got, _ := lib.Get("auth-brute-force")
+	if got.Source != "builtin" || got.Enabled {
+		t.Fatalf("after turning off = %+v", got)
+	}
+	// Back on: the choice equals the default, so its file goes.
+	if err := lib.SetEnabled([]string{"auth-brute-force"}, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, StateDir, "auth-brute-force.yaml")); !os.IsNotExist(err) {
+		t.Fatalf("state file kept: %v", err)
+	}
+
+	// Editing it makes an override.
+	b.Enabled = false
+	b.Severity = "high"
 	if err := lib.Put(b); err != nil {
 		t.Fatal(err)
 	}
@@ -102,8 +125,8 @@ func TestLibraryOverrideAndDelete(t *testing.T) {
 	}
 	// Reload from disk to prove the override persists.
 	lib, _, _ = NewLibrary(dir)
-	got, _ := lib.Get("auth-brute-force")
-	if got.Source != "override" || got.Enabled {
+	got, _ = lib.Get("auth-brute-force")
+	if got.Source != "override" || got.Enabled || got.Severity != "high" {
 		t.Fatalf("override = %+v", got)
 	}
 	if err := lib.Delete("auth-brute-force"); err != nil {
@@ -319,7 +342,7 @@ func TestConvertSigma(t *testing.T) {
 			t.Errorf("query missing %s:\n%s", want, s)
 		}
 	}
-	if !strings.Contains(strings.Join(res.Warnings, "\n"), "renamed binaries") {
+	if len(res.Warnings) != 0 {
 		t.Errorf("warnings = %v", res.Warnings)
 	}
 	if _, err := (&search.Engine{}).Compile(q); err != nil {
@@ -348,8 +371,8 @@ func TestConvertSigmaUnsupported(t *testing.T) {
 		t.Fatal(err)
 	}
 	res2, err := ConvertSigma([]byte("title: W\nlogsource:\n  category: process_creation\ndetection:\n  sel:\n    - Image|endswith: '\\\\whoami.exe'\n    - OriginalFileName: whoami.exe\n  condition: sel\n"))
-	if err != nil || res2.Detection.Query != "datamodel=Endpoint process_name=whoami.exe" {
-		t.Errorf("duplicate branches not merged: %v %+v", err, res2)
+	if err != nil || res2.Detection.Query != "datamodel=Endpoint process_name=whoami.exe OR original_file_name=whoami.exe" {
+		t.Errorf("query = %v %+v", err, res2.Detection.Query)
 	}
 	if !strings.Contains(res.Detection.Query, "signature_id=4625") || !strings.Contains(res.Detection.Query, `"*bad stuff*"`) {
 		t.Errorf("query = %s", res.Detection.Query)

@@ -1,0 +1,3 @@
+# Content pack files are hashed and signed byte for byte: keep them as
+# committed on every system (no CRLF conversion on Windows).
+internal/detect/packs/** -text

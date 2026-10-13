@@ -1,0 +1,6 @@
+{"rule": "d80d5c81-04ba-45b4-84e4-92eba40e0ad3", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":".dll'","Image":"\\dotnet.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"\\cs-script\\cscs.dll C:\\ProgramData\\CSScriptNpp\\ -cscs_path: .dll'","Image":"\\dotnet.exe","ParentImage":"C:\\Program Files (x86)\\Notepad++\\notepad++.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\dotnet.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":".dll'"}}
+]}

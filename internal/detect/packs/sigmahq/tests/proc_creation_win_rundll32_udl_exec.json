@@ -1,0 +1,6 @@
+{"rule": "0ea52357-cd59-4340-9981-c46c7e900428", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"oledb32.dll \\Users\\\\Downloads\\ ,OpenDSLFile  .udl","OriginalFileName":"RUNDLL32.EXE","ParentImage":"\\explorer.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"RUNDLL32.EXE","ParentImage":"\\explorer.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"oledb32.dll \\Users\\\\Downloads\\ ,OpenDSLFile  .udl","ParentImage":"\\explorer.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"oledb32.dll \\Users\\\\Downloads\\ ,OpenDSLFile  .udl","OriginalFileName":"RUNDLL32.EXE"}}
+]}

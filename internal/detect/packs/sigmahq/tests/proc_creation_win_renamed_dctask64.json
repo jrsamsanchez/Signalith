@@ -1,0 +1,5 @@
+{"rule": "340a090b-c4e9-412e-bb36-b4b16fe96f9b", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Hashes":"IMPHASH=FAA2AC19875FADE461C8D89DCF2710A3"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Hashes":"IMPHASH=FAA2AC19875FADE461C8D89DCF2710A3","Image":"\\dctask64.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{}}
+]}

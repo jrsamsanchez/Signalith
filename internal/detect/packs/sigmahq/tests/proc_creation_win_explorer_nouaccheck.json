@@ -1,0 +1,6 @@
+{"rule": "534f2ef7-e8a2-4433-816d-c91bccde289b", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/NOUACCHECK","Image":"\\explorer.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/NOUACCHECK","Image":"\\explorer.exe","ParentCommandLine":"C:\\Windows\\system32\\svchost.exe -k netsvcs -p -s Schedule"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\explorer.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/NOUACCHECK"}}
+]}

@@ -1,0 +1,5 @@
+{"rule": "970823b7-273b-460a-8afc-3a6811998529", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"once 00:00 wmic x","Image":"\\schtasks.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\schtasks.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"once 00:00 wmic x"}}
+]}

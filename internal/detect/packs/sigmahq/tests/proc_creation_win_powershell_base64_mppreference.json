@@ -1,0 +1,6 @@
+{"rule": "c6fb44c6-71f5-49e6-9462-1425d328aee3", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"cwBlAHQALQBtAHAAcAByAGUAZgBlAHIAZQBuAGMAZQAgA"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"cwBlAHQALQBtAHAAcAByAGUAZgBlAHIAZQBuAGMAZQAgA","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

@@ -1,0 +1,7 @@
+{"rule": "f99abdf0-6283-4e71-bd2b-b5c048a94743", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"\\AppData\\Roaming\\Microsoft\\Word\\Startup\\","Image":"\\WINWORD.exe","ParentImage":"\\dopus.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"\\AppData\\Roaming\\Microsoft\\Word\\Startup\\ .xltx","Image":"\\WINWORD.exe","ParentImage":"\\dopus.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\WINWORD.exe","ParentImage":"\\dopus.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"\\AppData\\Roaming\\Microsoft\\Word\\Startup\\","ParentImage":"\\dopus.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"\\AppData\\Roaming\\Microsoft\\Word\\Startup\\","Image":"\\WINWORD.exe"}}
+]}

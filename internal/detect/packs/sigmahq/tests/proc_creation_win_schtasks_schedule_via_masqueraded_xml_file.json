@@ -1,0 +1,9 @@
+{"rule": "dd2a821e-3b07-4d3b-a9ac-929fe4c6ca0c", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"-xml /create","Image":"\\schtasks.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"-xml .xml /create","Image":"\\schtasks.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/create-xml","Image":"\\schtasks.exe","ParentCommandLine":".tmp,zzzzInvokeManagedCustomActionOutOfProc:\\WINDOWS\\Installer\\MSI","ParentImage":"\\rundll32.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/create-xml","Image":"\\schtasks.exe","IntegrityLevel":"System"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"-xml /create","Image":"\\schtasks.exe","ParentImage":":\\ProgramData\\OEM\\UpgradeTool\\CareCenter_\\BUnzip\\Setup_msi.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\schtasks.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"-xml /create"}}
+]}

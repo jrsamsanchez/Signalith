@@ -1,0 +1,6 @@
+{"rule": "99c8be4f-3087-4f9f-9c24-8c7e257b442e", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"ParentCommandLine":"x -m x","ParentImage":"C:\\Windows\\SysWOW64\\setup16.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"C:\\~MSSETUP.T\\","ParentCommandLine":"x -m x","ParentImage":"C:\\Windows\\SysWOW64\\setup16.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"ParentImage":"C:\\Windows\\SysWOW64\\setup16.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"ParentCommandLine":"x -m x"}}
+]}

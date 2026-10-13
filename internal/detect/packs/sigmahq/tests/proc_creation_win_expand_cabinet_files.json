@@ -1,0 +1,16 @@
+{"rule": "9f107a84-532c-41af-b005-8d12a607639f", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"\\AppData\\Local\\Temp\\-F:","Image":"\\expand.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"\\AppData\\Local\\Temp\\-F:","NewProcessName":"\\expand.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"\\Favorites\\—F::\\Users\\","Image":"\\expand.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"\\Favorites\\—F::\\Users\\","NewProcessName":"\\expand.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"C:\\ProgramData\\Dell\\UpdateService\\Temp\\ -F: \\AppData\\Local\\Temp\\","Image":"\\expand.exe","ParentImage":"C:\\Program Files (x86)\\Dell\\UpdateService\\ServiceShell.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"C:\\ProgramData\\Dell\\UpdateService\\Temp\\ -F: \\AppData\\Local\\Temp\\","NewProcessName":"\\expand.exe","ParentProcessName":"C:\\Program Files (x86)\\Dell\\UpdateService\\ServiceShell.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\expand.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"\\expand.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"\\AppData\\Local\\Temp\\-F:"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"\\AppData\\Local\\Temp\\-F:","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":":\\Users\\ —F: \\Favorites\\ C:\\ProgramData\\Dell\\UpdateService\\Temp\\","Image":"\\expand.exe","ParentImage":"C:\\Program Files (x86)\\Dell\\UpdateService\\ServiceShell.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":":\\Users\\ —F: \\Favorites\\ C:\\ProgramData\\Dell\\UpdateService\\Temp\\","NewProcessName":"\\expand.exe","ParentProcessName":"C:\\Program Files (x86)\\Dell\\UpdateService\\ServiceShell.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"\\Favorites\\—F::\\Users\\"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"\\Favorites\\—F::\\Users\\","SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

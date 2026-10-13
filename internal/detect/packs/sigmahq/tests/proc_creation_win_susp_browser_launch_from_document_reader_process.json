@@ -1,0 +1,14 @@
+{"rule": "1193d960-2369-499f-a158-7b50a31df682", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"http","Image":"\\maxthon.exe","ParentImage":"Acrobat Reader"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"http","NewProcessName":"\\maxthon.exe","ParentProcessName":"Acrobat Reader","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"httphttps://go.microsoft.com/fwlink/","Image":"\\maxthon.exe","ParentImage":"Acrobat Reader"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"httphttps://go.microsoft.com/fwlink/","NewProcessName":"\\maxthon.exe","ParentProcessName":"Acrobat Reader","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"http://ad.foxitsoftware.com/adlog.phpxhttp","Image":"\\maxthon.exe","ParentImage":"Acrobat Reader"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"http://ad.foxitsoftware.com/adlog.phpxhttp","NewProcessName":"\\maxthon.exe","ParentProcessName":"Acrobat Reader","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\maxthon.exe","ParentImage":"Acrobat Reader"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"\\maxthon.exe","ParentProcessName":"Acrobat Reader","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"http","ParentImage":"Acrobat Reader"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"http","ParentProcessName":"Acrobat Reader","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"http","Image":"\\maxthon.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"http","NewProcessName":"\\maxthon.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

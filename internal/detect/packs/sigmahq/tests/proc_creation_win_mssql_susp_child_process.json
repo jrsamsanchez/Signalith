@@ -1,0 +1,10 @@
+{"rule": "869b9ca7-9ea2-4a5a-8325-e80e62f75445", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\rundll32.exe","ParentImage":"\\sqlservr.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"\\rundll32.exe","ParentProcessName":"\\sqlservr.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"\"C:\\Windows\\system32\\cmd.exe\" x","Image":"C:\\Windows\\System32\\cmd.exe","ParentImage":"C:\\Program Files\\Microsoft SQL Server\\ DATEV_DBENGINE\\MSSQL\\Binn\\sqlservr.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"\"C:\\Windows\\system32\\cmd.exe\" x","NewProcessName":"C:\\Windows\\System32\\cmd.exe","ParentProcessName":"C:\\Program Files\\Microsoft SQL Server\\ DATEV_DBENGINE\\MSSQL\\Binn\\sqlservr.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"ParentImage":"\\sqlservr.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"ParentProcessName":"\\sqlservr.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\rundll32.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"\\rundll32.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

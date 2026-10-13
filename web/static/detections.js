@@ -955,6 +955,7 @@ function renderFindingDetail(box, data, opts = {}) {
     el('div', { class: 'inspector__body' },
       dxPanel(prefix, 'overview', fnd.tab,
         f.description ? el('p', { class: 'dx-lede' }, f.description) : null,
+        f.credit ? el('p', { class: 'dx-credit' }, f.credit) : null,
         d && d.guidance ? el('div', { class: 'callout' }, icon('lightbulb'), el('div', {}, el('b', {}, 'How to triage. '), d.guidance)) : null,
         (f.mitre || []).length ? techRow(f.mitre) : null,
         err,
@@ -1009,12 +1010,17 @@ let schedulerOn = true;
 // off. schedulerHere is this server's own scheduler setting.
 let runsOn = null;
 let schedulerHere = true;
-const det = { show: '', open: null, closed: false, list: [], counts24: null, loaded: false, seq: 0, msg: null, test: null, running: null };
+const det = { show: '', open: null, closed: false, list: [], counts24: null, loaded: false, seq: 0, msg: null, test: null, running: null,
+  // source: '' shows Signalith's and your own detections plus pack rules
+  // that are on; 'pack:<name>' browses one content pack; 'all' is every one.
+  source: '', packs: [], limit: 0 };
+// The list draws this many rows at first; Show more adds as many again.
+const DET_PAGE = 150;
 // d-show is a group of pills; other pages set it like a select ($('d-show').value = '').
 Object.defineProperty($('d-show'), 'value', { configurable: true, get: () => det.show, set: (v) => { det.show = v || ''; } });
 const DET_SHOW = [['', 'All'], ['enabled', 'On'], ['disabled', 'Off'], ['custom', 'Custom or edited'], ['errors', 'Failing']];
 const detShows = (d, show) => (show === 'enabled' ? d.enabled : show === 'disabled' ? !d.enabled
-  : show === 'custom' ? d.source !== 'builtin' : show === 'errors' ? !!(d.state && d.state.last_error) : true);
+  : show === 'custom' ? d.source === 'custom' || d.source === 'override' : show === 'errors' ? !!(d.state && d.state.last_error) : true);
 const plainTitle = (t) => t.replace(/\$([^$]+)\$/g, '$1');
 // detTitle shows $field$ tokens as quiet code.
 function detTitle(t) {
@@ -1022,18 +1028,23 @@ function detTitle(t) {
   t.split(/(\$[A-Za-z_][A-Za-z0-9_.()]*\$)/).forEach((part, i) => { if (part) out.push(i % 2 ? el('span', { class: 'dx-tok' }, part) : part); });
   return out;
 }
-const SOURCE_LABEL = { builtin: 'Built-in', custom: 'Custom', override: 'Edited' };
+const SOURCE_LABEL = { builtin: 'Built-in', custom: 'Custom', override: 'Edited', pack: 'SigmaHQ' };
+const sourceLabel = (d) => (d.source === 'pack' && d.origin ? packShort(d.origin.pack) : SOURCE_LABEL[d.source] || d.source);
+const packShort = (name) => ({ sigmahq: 'SigmaHQ' }[name] || name);
+const inSource = (d, src) => (src === 'all' ? true : src.startsWith('pack:') ? !!d.origin && d.origin.pack === src.slice(5) : !d.origin || d.enabled);
 
 async function loadDetections() {
   const seq = ++det.seq;
   if (!det.loaded) renderDetectionsSkeleton();
   try {
-    const [res, f24] = await Promise.all([
+    const [res, f24, packs] = await Promise.all([
       api('api/detections'),
       api('api/findings?since=24h&limit=1000').catch(() => null),
+      api('api/detections/packs').catch(() => null),
     ]);
     if (seq !== det.seq) return;
     detections = res.detections;
+    det.packs = packs ? packs.packs : [];
     schedulerOn = res.scheduler;
     runsOn = typeof res.runs_on === 'string' ? res.runs_on : null;
     schedulerHere = res.scheduler_here !== false;
@@ -1125,7 +1136,9 @@ function detectionRow(d) {
   sw.addEventListener('change', () => setDetectionEnabled(d, sw.checked, sw));
   const n24 = det.counts24 ? (det.counts24[d.id] || 0) : null;
   const sub = [el('span', { class: 'dx-id' }, d.id), ...(d.mitre || []).slice(0, 3).map((t) => el('span', { class: 'chip' }, t))];
-  if (d.source !== 'builtin') sub.splice(1, 0, el('span', { class: 'badge' }, SOURCE_LABEL[d.source] || d.source));
+  // While a pack is browsed every row is from it, so its badge would only
+  // repeat the card above.
+  if (d.source !== 'builtin' && !(d.source === 'pack' && det.source.startsWith('pack:'))) sub.splice(1, 0, el('span', { class: 'badge' }, sourceLabel(d)));
   if (d.risk && d.risk.only) sub.push(el('span', { class: 'badge', title: 'Records risk without raising findings' }, 'Risk only'));
   const tr = el('tr', { 'data-id': d.id, 'aria-selected': String(det.open === d.id), class: d.enabled ? '' : 'dx-off' },
     el('td', { 'data-col': 'sev' }, sevBadge(d.severity)),
@@ -1143,13 +1156,87 @@ function detectionRow(d) {
   return tr;
 }
 
+// renderPacks draws a card per content pack: what it is, how many of its
+// rules are on, and (for admins) one click to turn on its strongest rules.
+// While a pack is browsed, the card turns into the bar for that view.
+function renderPacks(list) {
+  const box = $('d-packs');
+  const admin = can('admin');
+  const browsing = det.source.startsWith('pack:') ? det.packs.find((p) => 'pack:' + p.name === det.source) : null;
+  const cards = det.packs.map((p) => {
+    if (browsing && browsing !== p) return null;
+    const rules = detections.filter((d) => d.origin && d.origin.pack === p.name);
+    const on = rules.filter((d) => d.enabled).length;
+    const strong = rules.filter((d) => !d.enabled && (d.severity === 'high' || d.severity === 'critical'));
+    const credit = el('p', { class: 'dx-pack__credit' }, 'By the SigmaHQ authors named on each rule, under the ',
+      el('a', { href: p.license_url, target: '_blank', rel: 'noopener' }, 'Detection Rule License 1.1'), ' · ',
+      el('a', { href: p.source, target: '_blank', rel: 'noopener' }, 'SigmaHQ on GitHub'));
+    const actions = [];
+    if (browsing) {
+      actions.push(dxBtn('ghost', 'Back to your detections', () => { det.source = ''; det.limit = DET_PAGE; renderDetections(); }, { sm: true, icon: 'arrow-left' }));
+      if (admin && list.length) {
+        const off = list.filter((d) => !d.enabled), onNow = list.filter((d) => d.enabled);
+        if (off.length) actions.push(dxBtn('secondary', `Turn on ${off.length === list.length ? 'all ' : ''}${dxPlural(off.length, 'shown rule')}`, (ev) => bulkEnable(off, true, ev.currentTarget), { sm: true, icon: 'power' }));
+        if (onNow.length) actions.push(dxBtn('ghost', `Turn off ${dxPlural(onNow.length, 'shown rule')}`, (ev) => bulkEnable(onNow, false, ev.currentTarget), { sm: true }));
+      }
+    } else {
+      actions.push(dxBtn('secondary', 'Browse rules', () => { det.source = 'pack:' + p.name; det.show = ''; det.limit = DET_PAGE; renderDetections(); }, { sm: true, icon: 'list-filter' }));
+      if (admin && strong.length) actions.push(dxBtn('ghost', `Turn on ${dxPlural(strong.length, 'high and critical rule')}`, (ev) => bulkEnable(strong, true, ev.currentTarget), { sm: true, icon: 'power' }));
+    }
+    return el('div', { class: 'card dx-pack' },
+      el('div', { class: 'dx-pack__mark', 'aria-hidden': 'true' }, icon('sigma')),
+      el('div', { class: 'dx-pack__body' },
+        el('div', { class: 'dx-pack__head' }, el('b', {}, p.title),
+          el('span', { class: 'dx-meta' }, `${p.rules.toLocaleString()} rules · ${on ? on.toLocaleString() + ' on' : 'all off'}`)),
+        el('p', { class: 'dx-pack__desc' }, browsing ? 'Filter by name, ATT&CK ID or tag, then turn on what fits your systems.'
+          : 'Windows process and network rules, each tested before it ships. Off until you turn them on.'),
+        credit),
+      el('div', { class: 'dx-pack__actions' }, ...actions));
+  });
+  fill(box, ...cards);
+  box.classList.toggle('hidden', !det.packs.length);
+}
+
+// bulkEnable turns many detections on or off at once, after a check when
+// it is more than a handful.
+async function bulkEnable(ds, on, btn) {
+  if (!ds.length) return;
+  if (on && ds.length > 20) {
+    const ok = await dxConfirm({
+      title: `Turn on ${dxPlural(ds.length, 'rule')}?`,
+      text: `They start running on their schedules and raise findings for what they match. You can turn any of them off again here.`,
+      confirm: 'Turn on',
+    });
+    if (!ok) return;
+  }
+  if (btn) { dxKeep(btn); btn.disabled = true; }
+  const ids = ds.map((d) => d.id);
+  try {
+    await api('api/detections/enable', { ids, enabled: on });
+    await loadDetections();
+    dxNotify(`${dxPlural(ids.length, 'rule')} turned ${on ? 'on' : 'off'}.`, {
+      label: 'Undo',
+      run: async () => {
+        try { await api('api/detections/enable', { ids, enabled: !on }); await loadDetections(); dxNotify('Change undone.'); }
+        catch (e) { dxNotify('Couldn’t undo: ' + e.message, null, { tone: 'danger' }); }
+      },
+    });
+  } catch (e) {
+    dxNotify(`Couldn’t turn ${on ? 'on' : 'off'} the rules: ${e.message}`, null, { tone: 'danger' });
+    if (btn) btn.disabled = false;
+  }
+}
+
 function renderDetections() {
   const term = $('d-filter').value.trim().toLowerCase();
-  const list = detections.filter((d) => detShows(d, det.show)
+  if (!det.limit) det.limit = DET_PAGE;
+  const scoped = detections.filter((d) => inSource(d, det.source));
+  const list = scoped.filter((d) => detShows(d, det.show)
     && (!term || [d.id, d.title, d.description, ...(d.mitre || []), ...(d.tags || [])].join(' ').toLowerCase().includes(term)));
   det.list = list;
+  renderPacks(list);
   const pills = DET_SHOW.map(([v, label]) => {
-    const n = detections.filter((d) => detShows(d, v)).length;
+    const n = scoped.filter((d) => detShows(d, v)).length;
     if (v && !n && det.show !== v) return null;
     const b = el('button', { class: 'pill', type: 'button', 'aria-pressed': String(det.show === v) }, v ? null : icon('crosshair'), label, el('span', { class: 'num' }, String(n)));
     b.addEventListener('click', () => { det.show = det.show === v ? '' : v; renderDetections(); });
@@ -1163,23 +1250,31 @@ function renderDetections() {
       ? dxEmpty({ icon: 'filter-x', title: 'No detections match', text: 'Try another name or ATT&CK ID, or show every detection.', action: { label: 'Clear filters', run: () => { $('d-filter').value = ''; det.show = ''; renderDetections(); } } })
       : dxEmpty({ icon: 'crosshair', title: 'No detections yet', text: can('admin') ? 'Write one with New detection, import a Sigma rule, or use Save as detection on the Search page.' : 'Detections an admin adds appear here.' }));
   } else {
-    box.replaceChildren(el('table', { class: 'table table--stack dx-detections' }, detectionsHead(), el('tbody', {}, ...list.map(detectionRow))));
+    // Long lists (a whole content pack) draw in pages, keeping the open
+    // detection's row in view.
+    const openAt = det.open ? list.findIndex((d) => d.id === det.open) : -1;
+    if (openAt >= det.limit) det.limit = Math.ceil((openAt + 1) / DET_PAGE) * DET_PAGE;
+    const shown = list.slice(0, det.limit);
+    const more = list.length > shown.length
+      ? el('div', { class: 'dx-more' }, dxBtn('ghost', `Show ${Math.min(DET_PAGE, list.length - shown.length)} more of ${list.length.toLocaleString()}`, () => { det.limit += DET_PAGE; renderDetections(); }, { sm: true }))
+      : null;
+    box.replaceChildren(el('table', { class: 'table table--stack dx-detections' }, detectionsHead(), el('tbody', {}, ...shown.map(detectionRow))), ...(more ? [more] : []));
   }
   const foot = $('d-foot');
   foot.classList.toggle('hidden', !detections.length);
   fill(foot,
-    el('span', {}, `${enabled} of ${dxPlural(detections.length, 'detection')} on`),
+    el('span', {}, `${enabled.toLocaleString()} of ${dxPlural(detections.length, 'detection')} on`),
     det.counts24 ? el('span', {}, det.counts24Partial ? '24h counts the newest 1000 findings' : '24h is findings raised in the last 24 hours') : null,
     el('span', { class: 'spacer' }),
     list.length ? el('span', { class: 'shortcuts hide-sm', 'aria-hidden': 'true' }, el('kbd', {}, 'J'), el('kbd', {}, 'K'), el('span', {}, 'move')) : null);
   // Keep the open detection; on wide screens open the first one.
-  if (det.open && detections.some((d) => d.id === det.open)) {
+  if (det.open && list.some((d) => d.id === det.open)) {
     openDetection(det.open, { focus: false, slide: det.slide });
     det.slide = false;
   } else if (!det.closed && !dxSlideOver.matches && list.length && currentPage === 'detections') openDetection(list[0].id, { focus: false });
   else closeDetectionInspector({ keepState: true });
 }
-$('d-filter').addEventListener('input', renderDetections);
+$('d-filter').addEventListener('input', () => { det.limit = DET_PAGE; renderDetections(); });
 
 async function setDetectionEnabled(d, on, input) {
   // the list and inspector are redrawn, so note where focus was to put it back
@@ -1194,12 +1289,11 @@ async function setDetectionEnabled(d, on, input) {
       const again = $('d-list').querySelector(`tr[data-id="${CSS.escape(d.id)}"] input[role="switch"]`);
       if (again) again.focus({ preventScroll: true });
     }
-    // Undo puts back exactly what was there: a built-in comes back by
-    // removing the saved copy, anything else by saving it as it was.
+    // Undo puts back exactly what was there by saving it as it was (for a
+    // built-in or pack rule that only records on or off again).
     const undo = async () => {
       try {
-        if (d.source === 'builtin') await api('api/detections/' + encodeURIComponent(d.id), undefined, 'DELETE');
-        else await api('api/detections/' + encodeURIComponent(d.id), body, 'PUT');
+        await api('api/detections/' + encodeURIComponent(d.id), body, 'PUT');
         await loadDetections();
         dxNotify('Change undone.');
       } catch (e) { dxNotify('Couldn’t undo: ' + e.message, null, { tone: 'danger' }); }
@@ -1349,7 +1443,7 @@ function renderDetectionInspector() {
       el('h2', { class: 'inspector__title', id: 'dd-title', tabindex: '-1' }, ...detTitle(d.title)),
       el('div', { class: 'row dx-tags' }, sevBadge(d.severity),
         admin ? el('label', { class: 'switch', for: 'dd-enabled' }, sw, d.enabled ? 'On' : 'Off') : el('span', { class: 'badge' }, d.enabled ? 'On' : 'Off'),
-        el('span', { class: 'badge' }, SOURCE_LABEL[d.source] || d.source)),
+        el('span', { class: 'badge' }, sourceLabel(d))),
       el('div', { class: 'inspector__meta' }, ...dxDots(
         el('span', {}, 'Every ' + d.schedule), el('span', {}, 'looks back ' + d.lookback),
         next ? el('span', {}, 'next run ' + next) : null))),
@@ -1372,6 +1466,14 @@ function renderDetectionInspector() {
         schedulerOn && d.enabled ? null : ['Schedule', schedulerOn || runsOn != null && !d.enabled ? 'Off, so it does not run'
           : runsOn ? `Runs on ${runsOn}` : runsOn === '' ? 'No server runs detections right now' : 'Scheduler off; runs only with Run now'],
       ])),
+      d.origin ? dxSection('Source', dxKv([
+        ['From', d.origin.pack_title],
+        d.origin.author ? ['Author', d.origin.author] : null,
+        ['Licence', el('a', { href: d.origin.license_url, target: '_blank', rel: 'noopener' }, d.origin.license === 'DRL-1.1' ? 'Detection Rule License 1.1' : d.origin.license)],
+        ['Rule', el('a', { href: d.origin.url, target: '_blank', rel: 'noopener' }, 'View the original rule')],
+        d.origin.status ? ['Maturity', d.origin.status === 'stable' ? 'Stable' : d.origin.status === 'test' ? 'Tested by its authors' : d.origin.status] : null,
+        (d.origin.references || []).length ? ['References', el('div', { class: 'dx-refs' }, ...d.origin.references.slice(0, 5).map((u) => /^https?:\/\//.test(u) ? el('a', { href: u, target: '_blank', rel: 'noopener noreferrer' }, u.replace(/^https?:\/\//, '')) : el('span', {}, u)))] : null,
+      ])) : null,
       dxSection('Settings', dxKv([
         ['Repeats', (thr.fields || []).length ? `One finding per ${thr.fields.join(', ')}${thr.window ? ' for ' + thr.window : ''}` : thr.window ? `Held back for ${thr.window}` : 'Every result raises a finding'],
         ['Risk', risk ? `+${risk.score} to ${(risk.objects || []).map((o) => o.field).join(', ') || 'nothing'}${risk.only ? ', no findings' : ''}` : 'None'],

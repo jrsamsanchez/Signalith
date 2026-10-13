@@ -1,0 +1,20 @@
+{"rule": "0fc35fc3-efe6-4898-8a37-0b233339524f", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/v ScreenSaveActiveHKCU\\Control Panel\\Desktop/t REG_SZ/f/d 1","Image":"\\reg.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"/v ScreenSaveActiveHKCU\\Control Panel\\Desktop/t REG_SZ/f/d 1","NewProcessName":"\\reg.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/d /f/v ScreenSaveTimeoutHKEY_CURRENT_USER\\Control Panel\\Desktop/t REG_SZ","Image":"\\reg.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"/d /f/v ScreenSaveTimeoutHKEY_CURRENT_USER\\Control Panel\\Desktop/t REG_SZ","NewProcessName":"\\reg.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/v ScreenSaverIsSecure/d 0/fHKEY_CURRENT_USER\\Control Panel\\Desktop/t REG_SZ","Image":"\\reg.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"/v ScreenSaverIsSecure/d 0/fHKEY_CURRENT_USER\\Control Panel\\Desktop/t REG_SZ","NewProcessName":"\\reg.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/v SCRNSAVE.EXE .scr HKEY_CURRENT_USER\\Control Panel\\Desktop /d  /t REG_SZ /f","Image":"\\reg.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"/v SCRNSAVE.EXE .scr HKEY_CURRENT_USER\\Control Panel\\Desktop /d  /t REG_SZ /f","NewProcessName":"\\reg.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\reg.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"\\reg.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/v ScreenSaveActiveHKCU\\Control Panel\\Desktop/t REG_SZ/f/d 1"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"/v ScreenSaveActiveHKCU\\Control Panel\\Desktop/t REG_SZ/f/d 1","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/d /f/v ScreenSaveTimeoutHKEY_CURRENT_USER\\Control Panel\\Desktop/t REG_SZ"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"/d /f/v ScreenSaveTimeoutHKEY_CURRENT_USER\\Control Panel\\Desktop/t REG_SZ","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/v ScreenSaverIsSecure/d 0/fHKEY_CURRENT_USER\\Control Panel\\Desktop/t REG_SZ"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"/v ScreenSaverIsSecure/d 0/fHKEY_CURRENT_USER\\Control Panel\\Desktop/t REG_SZ","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/v SCRNSAVE.EXE .scr HKEY_CURRENT_USER\\Control Panel\\Desktop /d  /t REG_SZ /f"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"/v SCRNSAVE.EXE .scr HKEY_CURRENT_USER\\Control Panel\\Desktop /d  /t REG_SZ /f","SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

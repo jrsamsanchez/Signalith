@@ -1,0 +1,5 @@
+{"rule": "24c77512-782b-448a-8950-eddb0785fc71", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"\\ChromiumViewer\\ Bookmarks","Product":"SQLite"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Product":"SQLite"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"\\ChromiumViewer\\ Bookmarks"}}
+]}

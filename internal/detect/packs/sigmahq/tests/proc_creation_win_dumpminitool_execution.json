@@ -1,0 +1,5 @@
+{"rule": "dee0a7a3-f200-4112-a99b-952196d81e42", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x Mini","Image":"\\DumpMinitool.x86.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\DumpMinitool.x86.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x Mini"}}
+]}

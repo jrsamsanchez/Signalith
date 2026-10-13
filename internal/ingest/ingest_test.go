@@ -72,6 +72,23 @@ func TestSysmonProcessHashes(t *testing.T) {
 	})
 }
 
+// A command line spanning several lines in the rendered message stays whole,
+// blank lines included, and the fields after it are still read. (A line
+// shaped like "Key: value" ends it: the rendered message cannot tell them
+// apart, which is why the OTLP path reads the named values instead.)
+func TestSysmonMultiLineCommandLine(t *testing.T) {
+	msg := "Process Create:\r\nImage: C:\\Windows\\System32\\cmd.exe\r\nOriginalFileName: Cmd.Exe\r\n" +
+		"CommandLine: cmd /c echo one\r\necho two\r\n\r\necho three\r\nCurrentDirectory: C:\\Temp\\\r\n" +
+		"User: CORP\\bob\r\nLogonId: 0x3E7\r\nIntegrityLevel: High\r\nParentProcessId: 77\r\nParentUser: CORP\\svc"
+	b, _ := json.Marshal(map[string]any{"Channel": "Microsoft-Windows-Sysmon/Operational", "Computer": "WS1", "EventID": 1, "Message": msg})
+	ev := Normalize("win.sysmon", decode(t, string(b)), now)
+	expect(t, ev.Document(), map[string]any{
+		"process": "cmd /c echo one\necho two\n\necho three", "original_file_name": "Cmd.Exe",
+		"process_current_directory": `C:\Temp\`, "logon_id": "0x3E7", "process_integrity_level": "High",
+		"parent_process_id": int64(77), "parent_user": `CORP\svc`,
+	})
+}
+
 func TestSysmonNetwork(t *testing.T) {
 	msg := "Network connection detected:\r\nRuleName: -\r\nImage: C:\\Tools\\nc.exe\r\nUser: CORP\\bob\r\nProtocol: tcp\r\nSourceIp: 10.0.0.5\r\nSourcePort: 50000\r\nDestinationIp: 198.51.100.7\r\nDestinationHostname: -\r\nDestinationPort: 4444"
 	b, _ := json.Marshal(map[string]any{"Channel": "Microsoft-Windows-Sysmon/Operational", "Computer": "WS1", "EventID": 3, "Message": msg})

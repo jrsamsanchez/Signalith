@@ -1,0 +1,8 @@
+{"rule": "ec1d5e28-8f3b-4188-a6f8-6e8df81dc28e", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"C:\\WINDOWS\\system32\\wbem\\scrcons.exe","ParentImage":"C:\\Windows\\System32\\svchost.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"C:\\WINDOWS\\system32\\wbem\\scrcons.exe","ParentProcessName":"C:\\Windows\\System32\\svchost.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"ParentImage":"C:\\Windows\\System32\\svchost.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"ParentProcessName":"C:\\Windows\\System32\\svchost.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"C:\\WINDOWS\\system32\\wbem\\scrcons.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"C:\\WINDOWS\\system32\\wbem\\scrcons.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

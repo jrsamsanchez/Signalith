@@ -1,0 +1,5 @@
+{"rule": "ef61af62-bc74-4f58-b49b-626448227652", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"\\Windows\\Temp\\ snapshot","Product":"Sysinternals ADExplorer"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Product":"Sysinternals ADExplorer"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"\\Windows\\Temp\\ snapshot"}}
+]}

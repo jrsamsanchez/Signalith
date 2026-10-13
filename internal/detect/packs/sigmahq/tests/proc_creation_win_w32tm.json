@@ -1,0 +1,5 @@
+{"rule": "6da2c9f5-7c53-401b-aacb-92c040ce1215", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/dataonly /stripchart /computer: /samples: /period:","Image":"\\w32tm.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\w32tm.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/dataonly /stripchart /computer: /samples: /period:"}}
+]}

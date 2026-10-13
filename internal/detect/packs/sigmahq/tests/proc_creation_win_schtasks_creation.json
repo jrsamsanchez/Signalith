@@ -1,0 +1,7 @@
+{"rule": "92626ddd-662c-49e3-ac59-f6535f12d189", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x /create x","Image":"\\schtasks.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x /create x","Image":"\\schtasks.exe","User":"AUTORI"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x /create  Microsoft\\Office\\Office Performance Monitor","Image":"C:\\Windows\\SysWOW64\\schtasks.exe","ParentImage":"C:\\Program Files (x86)\\Microsoft Office\\root\\integration\\integrator.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\schtasks.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x /create x"}}
+]}

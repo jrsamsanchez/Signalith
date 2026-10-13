@@ -1,0 +1,5 @@
+{"rule": "a95b9b42-1308-4735-a1af-abb1c5e6f5ac", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":";;;WD -sd  Set-Service  D;;","OriginalFileName":"pwsh.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"pwsh.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":";;;WD -sd  Set-Service  D;;"}}
+]}

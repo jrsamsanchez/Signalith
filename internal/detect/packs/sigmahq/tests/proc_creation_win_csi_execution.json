@@ -1,0 +1,5 @@
+{"rule": "40b95d31-1afc-469e-8d34-9a3a667d058e", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Company":"Microsoft Corporation","Image":"\\rcsi.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\rcsi.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Company":"Microsoft Corporation"}}
+]}

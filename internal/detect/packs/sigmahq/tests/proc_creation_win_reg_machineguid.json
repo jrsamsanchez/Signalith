@@ -1,0 +1,8 @@
+{"rule": "f5240972-3938-4e56-8e4b-e33893176c1f", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"MachineGuid SOFTWARE\\Microsoft\\Cryptography /v x","Image":"\\reg.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"MachineGuid SOFTWARE\\Microsoft\\Cryptography /v x","NewProcessName":"\\reg.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\reg.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"\\reg.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"MachineGuid SOFTWARE\\Microsoft\\Cryptography /v x"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"MachineGuid SOFTWARE\\Microsoft\\Cryptography /v x","SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

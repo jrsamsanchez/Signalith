@@ -1,0 +1,8 @@
+{"rule": "cea2b7ea-792b-405f-95a1-b903ea06458f", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\curl.exe","ParentImage":"\\ManageEngine\\ServiceDesk\\ \\java.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"\\curl.exe","ParentProcessName":"\\ManageEngine\\ServiceDesk\\ \\java.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"ParentImage":"\\ManageEngine\\ServiceDesk\\ \\java.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"ParentProcessName":"\\ManageEngine\\ServiceDesk\\ \\java.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\curl.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"\\curl.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

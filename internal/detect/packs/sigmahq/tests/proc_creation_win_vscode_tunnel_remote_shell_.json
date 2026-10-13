@@ -1,0 +1,11 @@
+{"rule": "f4a623c2-4ef5-4c33-b811-0642f702c9f1", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"\\terminal\\browser\\media\\shellIntegration.ps1","Image":"\\powershell.exe","ParentCommandLine":".vscode-server","ParentImage":"\\servers\\Stable- \\server\\node.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\wsl.exe","ParentCommandLine":".vscode-server","ParentImage":"\\servers\\Stable-\\server\\node.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\powershell.exe","ParentCommandLine":".vscode-server","ParentImage":"\\servers\\Stable- \\server\\node.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"\\terminal\\browser\\media\\shellIntegration.ps1","ParentCommandLine":".vscode-server","ParentImage":"\\servers\\Stable- \\server\\node.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"\\terminal\\browser\\media\\shellIntegration.ps1","Image":"\\powershell.exe","ParentImage":"\\servers\\Stable- \\server\\node.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"\\terminal\\browser\\media\\shellIntegration.ps1","Image":"\\powershell.exe","ParentCommandLine":".vscode-server"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"ParentCommandLine":".vscode-server","ParentImage":"\\servers\\Stable-\\server\\node.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\wsl.exe","ParentImage":"\\servers\\Stable-\\server\\node.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\wsl.exe","ParentCommandLine":".vscode-server"}}
+]}

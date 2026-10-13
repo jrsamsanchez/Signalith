@@ -1,0 +1,10 @@
+{"rule": "214641c2-c579-4ecb-8427-0cf19df6842e", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/lockscreenurl:http","Image":"\\desktopimgdownldr.exe","ParentImage":"\\desktopimgdownldr.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"/lockscreenurl:http","NewProcessName":"\\desktopimgdownldr.exe","ParentProcessName":"\\desktopimgdownldr.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\desktopimgdownldr.exe","ParentImage":"\\desktopimgdownldr.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"\\desktopimgdownldr.exe","ParentProcessName":"\\desktopimgdownldr.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/lockscreenurl:http","ParentImage":"\\desktopimgdownldr.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"/lockscreenurl:http","ParentProcessName":"\\desktopimgdownldr.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/lockscreenurl:http","Image":"\\desktopimgdownldr.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"/lockscreenurl:http","NewProcessName":"\\desktopimgdownldr.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

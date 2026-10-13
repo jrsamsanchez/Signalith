@@ -1,0 +1,5 @@
+{"rule": "edc2f8ae-2412-4dfd-b9d5-0c57727e70be", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":".GetStream( .Write(  Net.Sockets.TCPClient","OriginalFileName":"PowerShell.EXE"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"PowerShell.EXE"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":".GetStream( .Write(  Net.Sockets.TCPClient"}}
+]}

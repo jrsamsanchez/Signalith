@@ -1,0 +1,8 @@
+{"rule": "c8da0dfd-4ed0-4b68-962d-13c9c884384e", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\Windows\\System32\\lsass.exe","ParentImage":"\\Windows\\System32\\lsass.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"\\Windows\\System32\\lsass.exe","ParentProcessName":"\\Windows\\System32\\lsass.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"ParentImage":"\\Windows\\System32\\lsass.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"ParentProcessName":"\\Windows\\System32\\lsass.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\Windows\\System32\\lsass.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"\\Windows\\System32\\lsass.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

@@ -1,0 +1,5 @@
+{"rule": "9257c05b-4a4a-48e5-a670-b7b073cf401b", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"collect-- x","OriginalFileName":"dotnet-trace.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"dotnet-trace.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"collect-- x"}}
+]}

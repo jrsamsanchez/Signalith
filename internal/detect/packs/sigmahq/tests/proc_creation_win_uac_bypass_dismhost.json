@@ -1,0 +1,5 @@
+{"rule": "853e74f9-9392-4935-ad3b-2e8c040dae86", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"IntegrityLevel":"S-1-16-12288","ParentImage":"C:\\Users\\\\AppData\\Local\\Temp\\\\DismHost.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"ParentImage":"C:\\Users\\\\AppData\\Local\\Temp\\\\DismHost.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"IntegrityLevel":"S-1-16-12288"}}
+]}

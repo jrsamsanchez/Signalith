@@ -1,0 +1,5 @@
+{"rule": "6345b048-8441-43a7-9bed-541133633d7a", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x injectDll x","Hashes":"IMPHASH=1BB6F93B129F398C7C4A76BB97450BBA"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Hashes":"IMPHASH=1BB6F93B129F398C7C4A76BB97450BBA"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x injectDll x"}}
+]}

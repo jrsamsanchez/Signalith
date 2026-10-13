@@ -1,0 +1,5 @@
+{"rule": "84972c80-251c-4c3a-9079-4f00aad93938", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"itemtype:File recovery\\config\\SYSTEMrecoveryTarget","OriginalFileName":"WBADMIN.EXE"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"WBADMIN.EXE"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"itemtype:File recovery\\config\\SYSTEMrecoveryTarget"}}
+]}

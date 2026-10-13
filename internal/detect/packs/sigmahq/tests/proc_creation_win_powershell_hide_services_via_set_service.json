@@ -1,0 +1,5 @@
+{"rule": "514e4c3a-c77d-4cde-a00f-046425e2301e", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"-SecurityDescriptorSddl DCLCWPDTSDSet-Service x","Image":"\\pwsh.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\pwsh.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"-SecurityDescriptorSddl DCLCWPDTSDSet-Service x"}}
+]}

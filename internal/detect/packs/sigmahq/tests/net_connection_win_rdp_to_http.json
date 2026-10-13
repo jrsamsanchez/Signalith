@@ -1,0 +1,7 @@
+{"rule": "b1e5da3b-ca8e-4adf-915c-9921f3d85481", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationPort":"80","Image":"\\svchost.exe","Initiated":"true","SourcePort":"3389"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"Image":"\\svchost.exe","Initiated":"true","SourcePort":"3389"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationPort":"80","Initiated":"true","SourcePort":"3389"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationPort":"80","Image":"\\svchost.exe","SourcePort":"3389"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationPort":"80","Image":"\\svchost.exe","Initiated":"true"}}
+]}

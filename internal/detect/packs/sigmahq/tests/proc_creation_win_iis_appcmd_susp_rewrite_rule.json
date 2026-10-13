@@ -1,0 +1,5 @@
+{"rule": "7c8af9b2-dcae-41a2-a9db-b28c288b5f08", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"commit:setsection:system.webServer/rewrite/globalRulesconfig","Image":"\\appcmd.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\appcmd.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"commit:setsection:system.webServer/rewrite/globalRulesconfig"}}
+]}

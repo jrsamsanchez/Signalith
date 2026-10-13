@@ -1,0 +1,5 @@
+{"rule": "7aa4e81a-a65c-4e10-9f81-b200eb229d7d", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x script   set x","Image":"\\VMwareToolBoxCmd.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\VMwareToolBoxCmd.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x script   set x"}}
+]}

@@ -1,0 +1,6 @@
+{"rule": "3b5b0213-0460-4e3f-8937-3abf98ff7dcc", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"LockWorkStation user32.dll,","Image":"\\rundll32.exe","ParentImage":"\\cmd.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\rundll32.exe","ParentImage":"\\cmd.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"LockWorkStation user32.dll,","ParentImage":"\\cmd.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"LockWorkStation user32.dll,","Image":"\\rundll32.exe"}}
+]}

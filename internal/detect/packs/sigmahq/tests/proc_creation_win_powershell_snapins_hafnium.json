@@ -1,0 +1,6 @@
+{"rule": "25676e10-2121-446e-80a4-71ff8506af47", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"Add-PSSnapinMicrosoft.Exchange.Management.PowerShell.SnapIn","Image":"\\pwsh.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"$exserver=Get-ExchangeServer ([Environment]::MachineName) -ErrorVariable exerr 2\u003e $nullMicrosoft.Exchange.Management.PowerShell.SnapInAdd-PSSnapin","Image":"\\pwsh.exe","ParentImage":"C:\\Windows\\System32\\msiexec.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\pwsh.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"Add-PSSnapinMicrosoft.Exchange.Management.PowerShell.SnapIn"}}
+]}

@@ -530,7 +530,7 @@ page itself.
 `POST /api/build`, `POST /api/parse`, `GET /api/datamodels`, `GET /api/fields`,
 `GET /api/fields/values`, `GET /api/language`, `GET /api/ask`,
 `GET /api/detections`, `GET /api/detections/{id}`, `GET /api/detections/{id}/yaml`,
-`GET /api/coverage`, `GET /api/findings`, `GET /api/findings/summary`,
+`GET /api/coverage`, `GET /api/detections/packs`, `GET /api/findings`, `GET /api/findings/summary`,
 `GET /api/findings/{id}`, `GET /api/cases`, `GET /api/cases/summary`,
 `GET /api/cases/{id}`, `GET /api/lookups/context`, `GET /api/lookups/{kind}`,
 `GET /api/risk`, `GET /api/risk/object`, `GET /api/intel`, `GET /api/intel/feeds`,
@@ -548,7 +548,7 @@ page itself.
 
 **Admin:** `GET /api/agents/config`, `POST /api/tls/names`, `GET /api/security`,
 `POST /api/security/ca`, `POST /api/detections`,
-`POST /api/detections/test`, `POST /api/detections/sigma`,
+`POST /api/detections/test`, `POST /api/detections/sigma`, `POST /api/detections/enable`,
 `PUT /api/detections/{id}`, `DELETE /api/detections/{id}`,
 `POST /api/detections/{id}/run`, `PUT /api/lookups/{kind}`,
 `POST /api/intel/feeds`, `PUT /api/intel/feeds/{name}`, `DELETE /api/intel/feeds/{name}`,

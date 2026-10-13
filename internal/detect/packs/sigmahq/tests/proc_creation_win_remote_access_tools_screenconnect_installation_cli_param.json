@@ -1,0 +1,6 @@
+{"rule": "75bfe6e6-cd8e-429e-91d3-03921e1d7962", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"y=Guest\u0026\u0026p=\u0026c=e=Access\u0026\u0026k="}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"y=Guest\u0026\u0026p=\u0026c=e=Access\u0026\u0026k=","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

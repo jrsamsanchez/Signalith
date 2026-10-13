@@ -1,0 +1,10 @@
+{"rule": "0685b176-c816-4837-8e7b-1216f346636b", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"--ntds-file","CurrentDirectory":"D:\\apps\\work\\","IntegrityLevel":"Medium","ParentCommandLine":"\"D:\\apps\\launcher\\launcher.exe\" --run","ParentImage":"D:\\apps\\launcher\\launcher.exe","ParentProcessId":"4100","ProcessId":"4242","User":"CORP\\tester"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"--ntds-file","ParentProcessName":"D:\\apps\\launcher\\launcher.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\QuarksPwDump.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"\\QuarksPwDump.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CurrentDirectory":"D:\\apps\\work\\","IntegrityLevel":"Medium","ParentCommandLine":"\"D:\\apps\\launcher\\launcher.exe\" --run","ParentImage":"D:\\apps\\launcher\\launcher.exe","ParentProcessId":"4100","ProcessId":"4242","User":"CORP\\tester"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"ParentProcessName":"D:\\apps\\launcher\\launcher.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

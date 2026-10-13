@@ -1,0 +1,6 @@
+{"rule": "ec88289a-7e1a-4cc3-8d18-bd1f60e4b9ba", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\TypedPaths"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\TypedPaths","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

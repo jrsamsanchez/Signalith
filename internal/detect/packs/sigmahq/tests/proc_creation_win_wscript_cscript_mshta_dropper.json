@@ -1,0 +1,8 @@
+{"rule": "cea72823-df4d-4567-950c-0b579eaf0846", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":".vbs\\AppData\\Local\\Temp\\","Image":"\\cscript.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":".vbs\\AppData\\Local\\Temp\\","NewProcessName":"\\cscript.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\cscript.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"\\cscript.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":".vbs\\AppData\\Local\\Temp\\"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":".vbs\\AppData\\Local\\Temp\\","SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

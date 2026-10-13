@@ -1,0 +1,10 @@
+{"rule": "3c1b5fb0-c72f-45ba-abd1-4d4c353144ab", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":":\\Windows\\Sysnative\\"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":":\\Windows\\Sysnative\\","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":":\\Windows\\Sysnative\\install","Image":"C:\\Windows\\Microsoft.NET\\Framework64\\v\\ngen.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":":\\Windows\\Sysnative\\install","NewProcessName":"C:\\Windows\\Microsoft.NET\\Framework64\\v\\ngen.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":":\\Windows\\Sysnative\\ \\xampp\\ \"C:\\Windows\\sysnative\\cmd.exe\" \\catalina_start.bat"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":":\\Windows\\Sysnative\\ \\xampp\\ \"C:\\Windows\\sysnative\\cmd.exe\" \\catalina_start.bat","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

@@ -1,0 +1,14 @@
+{"rule": "2cf29f11-e356-4f61-98c0-1bdb9393d6da", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":".exe tunnel"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"--accept-server-license-terms.exe tunnel"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"internal-run tunnel  tunnel-service.log service"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/d /c  \\servers\\Stable- code-server.cmd","Image":"\\cmd.exe","ParentCommandLine":"x tunnel"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":".exe tunnel","Image":"\\code.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":".exe tunnel--accept-server-license-terms","Image":"\\code.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"internal-runtunnel-service.logtunnel service","Image":"\\code-tunnel.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"code-server.cmd \\servers\\Stable- /d /c x","Image":"\\cmd.exe","ParentCommandLine":"x tunnel","ParentImage":"\\code-tunnel.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\cmd.exe","ParentCommandLine":"x tunnel"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/d /c  \\servers\\Stable- code-server.cmd","ParentCommandLine":"x tunnel"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/d /c  \\servers\\Stable- code-server.cmd","Image":"\\cmd.exe"}}
+]}

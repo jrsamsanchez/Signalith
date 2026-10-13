@@ -1,0 +1,5 @@
+{"rule": "a383dec4-deec-4e6e-913b-ed9249670848", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"TurnOnDeveloperFeaturesDeveloperUnlock","Image":"\\SystemSettingsAdminFlows.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\SystemSettingsAdminFlows.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"TurnOnDeveloperFeaturesDeveloperUnlock"}}
+]}

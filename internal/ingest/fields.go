@@ -59,6 +59,11 @@ var knownFields = func() map[string]string {
 
 		// Windows and Linux parsers.
 		"src_host": kw, "logon_type_name": kw, "member": kw,
+		// Sysmon process fields that Sigma rules match on.
+		"original_file_name": kw, "process_description": kw, "process_product": kw,
+		"process_company": kw, "process_file_version": kw, "process_integrity_level": kw,
+		"process_current_directory": kw, "process_guid": kw, "parent_process_guid": kw,
+		"parent_process_id": long, "parent_user": kw, "logon_id": kw,
 
 		// Syslog receiver, including the CIM names CEF keys map to.
 		"facility": kw, "severity": kw, "severity_id": long, "msgid": kw, "sequence": long,

@@ -1,0 +1,5 @@
+{"rule": "9bd04a79-dabe-4f1f-a5ff-92430265c96b", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"\\\\.\\pipe\\echo\u003e","OriginalFileName":"PowerShell.EXE"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"PowerShell.EXE"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"\\\\.\\pipe\\echo\u003e"}}
+]}

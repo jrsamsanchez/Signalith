@@ -1,0 +1,10 @@
+{"rule": "6e968eb1-5f05-4dac-94e9-fd0c5cb49fd6", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"LINK /","Image":"\\link.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"LINK /","NewProcessName":"\\link.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"LINK /","Image":"\\link.exe","ParentImage":"C:\\Program Files (x86)\\Microsoft Visual Studio\\ \\VC\\Tools\\"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"LINK /","NewProcessName":"\\link.exe","ParentProcessName":"C:\\Program Files (x86)\\Microsoft Visual Studio\\ \\VC\\Tools\\","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\link.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"\\link.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"LINK /"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"LINK /","SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

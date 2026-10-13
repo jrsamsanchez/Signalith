@@ -1,0 +1,10 @@
+{"rule": "ab37a6ec-6068-432b-a64e-2c7bf95b1d22", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\regsvr32.exe","ParentImage":"\\pwsh.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"\\regsvr32.exe","ParentProcessName":"\\pwsh.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x /s C:\\Windows\\System32\\RpcProxy\\RpcProxy.dll","Image":"\\regsvr32.exe","ParentImage":"C:\\Windows\\System32\\cmd.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"x /s C:\\Windows\\System32\\RpcProxy\\RpcProxy.dll","NewProcessName":"\\regsvr32.exe","ParentProcessName":"C:\\Windows\\System32\\cmd.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"ParentImage":"\\pwsh.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"ParentProcessName":"\\pwsh.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\regsvr32.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"\\regsvr32.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

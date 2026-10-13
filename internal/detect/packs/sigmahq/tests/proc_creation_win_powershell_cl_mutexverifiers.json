@@ -1,0 +1,10 @@
+{"rule": "1e0e1a81-e79b-44bc-935b-ddb9c8006b3d", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x -nologo -windowstyle minimized -file \\AppData\\Local\\Temp\\","Image":"\\powershell.exe","ParentImage":"\\powershell.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"x -nologo -windowstyle minimized -file \\AppData\\Local\\Temp\\","NewProcessName":"\\powershell.exe","ParentProcessName":"\\powershell.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\powershell.exe","ParentImage":"\\powershell.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"\\powershell.exe","ParentProcessName":"\\powershell.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x -nologo -windowstyle minimized -file \\AppData\\Local\\Temp\\","ParentImage":"\\powershell.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"x -nologo -windowstyle minimized -file \\AppData\\Local\\Temp\\","ParentProcessName":"\\powershell.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x -nologo -windowstyle minimized -file \\AppData\\Local\\Temp\\","Image":"\\powershell.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"x -nologo -windowstyle minimized -file \\AppData\\Local\\Temp\\","NewProcessName":"\\powershell.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

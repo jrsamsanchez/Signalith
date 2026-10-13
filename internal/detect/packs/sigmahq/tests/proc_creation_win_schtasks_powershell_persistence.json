@@ -1,0 +1,6 @@
+{"rule": "b66474aa-bd92-4333-a16c-298155b120df", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x -ep bypass","ParentCommandLine":"-k netsvcs-s Schedule","ParentImage":"C:\\WINDOWS\\System32\\svchost.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"ParentCommandLine":"-k netsvcs-s Schedule","ParentImage":"C:\\WINDOWS\\System32\\svchost.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x -ep bypass","ParentImage":"C:\\WINDOWS\\System32\\svchost.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x -ep bypass","ParentCommandLine":"-k netsvcs-s Schedule"}}
+]}

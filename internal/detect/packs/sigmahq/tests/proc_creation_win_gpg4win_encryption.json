@@ -1,0 +1,5 @@
+{"rule": "550bbb84-ce5d-4e61-84ad-e590f0024dcd", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"passphrase -c x","Description":"GnuPG’s OpenPGP tool"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Description":"GnuPG’s OpenPGP tool"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"passphrase -c x"}}
+]}

@@ -1,0 +1,6 @@
+{"rule": "86588b36-c6d3-465f-9cee-8f9093e07798", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"HKCU:/CreateGet-ItemProperty","Image":"\\schtasks.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/Create HKCU: encodedcommand Get-ItemProperty","Image":"\\schtasks.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\schtasks.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"HKCU:/CreateGet-ItemProperty"}}
+]}

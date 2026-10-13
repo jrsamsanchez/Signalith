@@ -1,0 +1,8 @@
+{"rule": "817f252c-5143-4dae-b418-48c3e9f63728", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"DisableAIDataAnalysis Microsoft\\Windows\\WindowsAI add","Image":"\\reg.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"DisableAIDataAnalysis Microsoft\\Windows\\WindowsAI delete","OriginalFileName":"reg.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\reg.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"DisableAIDataAnalysis Microsoft\\Windows\\WindowsAI add"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"reg.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"DisableAIDataAnalysis Microsoft\\Windows\\WindowsAI delete"}}
+]}

@@ -1,0 +1,8 @@
+{"rule": "d20ee2f4-822c-4827-9e15-41500b1fff10", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"-id  -register  -region  -code x","Image":"\\amazon-ssm-agent.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"-id  -register  -region  -code x","NewProcessName":"\\amazon-ssm-agent.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\amazon-ssm-agent.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"\\amazon-ssm-agent.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"-id  -register  -region  -code x"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"-id  -register  -region  -code x","SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

@@ -1,0 +1,6 @@
+{"rule": "ad92e3f9-7eb6-460e-96b1-582b0ccbb980", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"\"C:\\Windows\\system32\\msconfig.exe\" -5","IntegrityLevel":"System","ParentImage":"\\AppData\\Local\\Temp\\pkgmgr.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"IntegrityLevel":"System","ParentImage":"\\AppData\\Local\\Temp\\pkgmgr.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"\"C:\\Windows\\system32\\msconfig.exe\" -5","ParentImage":"\\AppData\\Local\\Temp\\pkgmgr.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"\"C:\\Windows\\system32\\msconfig.exe\" -5","IntegrityLevel":"System"}}
+]}

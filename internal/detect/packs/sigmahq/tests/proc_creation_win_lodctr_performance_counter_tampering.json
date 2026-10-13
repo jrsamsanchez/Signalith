@@ -1,0 +1,6 @@
+{"rule": "cc9d3712-6310-4320-b2df-7cb408274d53", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x —r","Image":"\\lodctr.exe","OriginalFileName":"LODCTR.EXE"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\lodctr.exe","OriginalFileName":"LODCTR.EXE"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x —r","OriginalFileName":"LODCTR.EXE"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x —r","Image":"\\lodctr.exe"}}
+]}

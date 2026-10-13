@@ -1,0 +1,5 @@
+{"rule": "05b2aa93-1210-42c8-8d9a-2fcc13b284f5", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"\\SYSTEM\\CurrentControlSet\\services\\ delete x","Image":"reg.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"reg.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"\\SYSTEM\\CurrentControlSet\\services\\ delete x"}}
+]}

@@ -1,0 +1,15 @@
+{"rule": "7e9cf7b6-e827-11ed-a05b-15959c120003", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":"api.notion.com"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":"api.notion.com","Image":"\\brave.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":"api.notion.com","Image":"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":"api.notion.com","Image":"C:\\Program Files (x86)\\Microsoft\\EdgeWebView\\Application\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":"api.notion.com","Image":"C:\\Program Files (x86)\\Microsoft\\EdgeCore\\ \\msedge.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":"api.notion.com","Image":"C:\\Program Files (x86)\\Mozilla Firefox\\firefox.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":"api.notion.com","Image":"C:\\Program Files (x86)\\Internet Explorer\\iexplore.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":"api.notion.com","Image":"\\maxthon.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":"api.notion.com","Image":"\\AppData\\Local\\Programs\\Notion\\Notion.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":"api.notion.com","Image":"\\opera.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":"api.notion.com","Image":"\\safari.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":"api.notion.com","Image":"\\seamonkey.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":"api.notion.com","Image":"\\vivaldi.exe"}}
+]}

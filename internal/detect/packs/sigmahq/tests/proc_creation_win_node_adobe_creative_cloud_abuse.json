@@ -1,0 +1,8 @@
+{"rule": "df1f26d3-bea7-4700-9ea2-ad3e990cf90e", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\Adobe Creative Cloud Experience\\libs\\node.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"\\Adobe Creative Cloud Experience\\libs\\node.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"Adobe Creative Cloud Experience\\js","Image":"\\Adobe Creative Cloud Experience\\libs\\node.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"Adobe Creative Cloud Experience\\js","NewProcessName":"\\Adobe Creative Cloud Experience\\libs\\node.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

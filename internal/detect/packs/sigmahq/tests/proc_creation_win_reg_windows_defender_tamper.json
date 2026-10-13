@@ -1,0 +1,8 @@
+{"rule": "452bce90-6fb0-43cc-97a5-affc283139b3", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"d 0 SOFTWARE\\Microsoft\\Windows Defender\\ DisallowExploitProtectionOverride  add x","OriginalFileName":"reg.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x add SOFTWARE\\Policies\\Microsoft\\Windows Defender\\DisableOnAccessProtectiond 1","Image":"\\reg.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"reg.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"d 0 SOFTWARE\\Microsoft\\Windows Defender\\ DisallowExploitProtectionOverride  add x"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\reg.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x add SOFTWARE\\Policies\\Microsoft\\Windows Defender\\DisableOnAccessProtectiond 1"}}
+]}

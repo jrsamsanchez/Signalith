@@ -1,0 +1,5 @@
+{"rule": "46123129-1024-423e-9fae-43af4a0fa9a5", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"url DownloadFile","Description":"Microsoft Malware Protection Command Line Utility"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Description":"Microsoft Malware Protection Command Line Utility"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"url DownloadFile"}}
+]}

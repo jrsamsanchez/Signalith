@@ -1,0 +1,5 @@
+{"rule": "378a05d8-963c-46c9-bcce-13c7657eac99", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"--renderer-cmd-prefix","OriginalFileName":"GitHubDesktop.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"GitHubDesktop.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"--renderer-cmd-prefix"}}
+]}

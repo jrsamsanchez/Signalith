@@ -1,0 +1,4 @@
+{"rule": "fa5b1358-b040-4403-9868-15f7d9ab6329", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":"monerohash.com"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{}}
+]}

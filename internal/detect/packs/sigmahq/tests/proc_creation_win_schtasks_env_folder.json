@@ -1,0 +1,16 @@
+{"rule": "81325ce1-be01-4250-944f-b4789644556f", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x /create  \\AppData\\Local\\","Image":"\\schtasks.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":":\\Windows\\Temp","ParentCommandLine":"\\svchost.exe -k netsvcs -p -s Schedule"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x /create \\AppData\\Local\\\\Temp\\.CR./Create /Xml \\Avira_Security_Installation.xml","Image":"\\schtasks.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":".tmp\\UpdateFallbackTask.xml\\Temp\\/Create /F /TN\\AppData\\Local\\Avira_ /create /Xml x","Image":"\\schtasks.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"\\Temp\\ /Create /TN \"klcp_update\" /XML  \\klcp_update_task.xml  /create  \\AppData\\Local\\","Image":"\\schtasks.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x /create \\AppData\\Local\\","Image":"\\schtasks.exe","ParentCommandLine":"unattended.ini"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/Create /TN TVInstallRestore /TR  /create  \\AppData\\Local\\","Image":"\\schtasks.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\schtasks.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x /create  \\AppData\\Local\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"\\Temp\\.CR.:\\Windows\\Temp/Create /Xml \\Avira_Security_Installation.xml","ParentCommandLine":"\\svchost.exe -k netsvcs -p -s Schedule"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"\\Temp\\ /Create /F /TN .tmp\\MaintenanceTask.xml :\\Windows\\Temp /Xml  Avira_","ParentCommandLine":"\\svchost.exe -k netsvcs -p -s Schedule"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/Create /TN \"klcp_update\" /XML \\Temp\\:\\Windows\\Temp\\klcp_update_task.xml","ParentCommandLine":"\\svchost.exe -k netsvcs -p -s Schedule"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":":\\Windows\\Temp","ParentCommandLine":"unattended.ini \\svchost.exe -k netsvcs -p -s Schedule"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/Create /TN TVInstallRestore /TR :\\Windows\\Temp","ParentCommandLine":"\\svchost.exe -k netsvcs -p -s Schedule"}}
+]}

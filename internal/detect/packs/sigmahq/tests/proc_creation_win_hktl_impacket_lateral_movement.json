@@ -1,0 +1,8 @@
+{"rule": "10c14723-61c7-4c75-92ca-9af245723ad2", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"cmd.exe\u00261/CWindows\\Temp\\","ParentCommandLine":"svchost.exe -k netsvcs"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"\u00261/Qcmd.exe\\\\127.0.0.1\\/c","ParentImage":"\\services.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"ParentCommandLine":"svchost.exe -k netsvcs"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"cmd.exe\u00261/CWindows\\Temp\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"ParentImage":"\\services.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"\u00261/Qcmd.exe\\\\127.0.0.1\\/c"}}
+]}

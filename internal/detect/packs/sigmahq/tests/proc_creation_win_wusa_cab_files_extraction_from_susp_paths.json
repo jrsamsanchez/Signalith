@@ -1,0 +1,8 @@
+{"rule": "c74c0390-3e20-41fd-a69a-128f0275a5ea", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/extract: \\Appdata\\Local\\Temp\\","Image":"\\wusa.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"/extract: \\Appdata\\Local\\Temp\\","NewProcessName":"\\wusa.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\wusa.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"\\wusa.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/extract: \\Appdata\\Local\\Temp\\"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"/extract: \\Appdata\\Local\\Temp\\","SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

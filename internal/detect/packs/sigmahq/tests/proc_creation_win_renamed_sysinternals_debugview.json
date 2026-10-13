@@ -1,0 +1,5 @@
+{"rule": "cd764533-2e07-40d6-a718-cfeec7f2da7f", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Product":"Sysinternals DebugView"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\Dbgview.exe","OriginalFileName":"Dbgview.exe","Product":"Sysinternals DebugView"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{}}
+]}

@@ -1,0 +1,6 @@
+{"rule": "3268b746-88d8-4cd3-bffc-30077d02c787", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x -NoP -NonI -c $x=$((gp HKCU:Software\\Microsoft\\Windows Update).Update);"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"x -NoP -NonI -c $x=$((gp HKCU:Software\\Microsoft\\Windows Update).Update);","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

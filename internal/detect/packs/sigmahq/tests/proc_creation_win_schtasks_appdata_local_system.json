@@ -1,0 +1,10 @@
+{"rule": "c5c00f49-b3f9-45a6-997e-cfdecc6e1967", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"C:\\Users\\ /RU /Create  SYSTEM  /TR \\AppData\\Local\\","Image":"\\schtasks.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"C:\\Users\\ /RU /Create  SYSTEM  /TR \\AppData\\Local\\","NewProcessName":"\\schtasks.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/TR /RU C:\\Users\\ /TN TVInstallRestore /Create \\AppData\\Local\\  SYSTEM x","Image":"\\schtasks.exe","ParentImage":"\\AppData\\Local\\Temp\\TeamViewer_.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"/TR /RU C:\\Users\\ /TN TVInstallRestore /Create \\AppData\\Local\\  SYSTEM x","NewProcessName":"\\schtasks.exe","ParentProcessName":"\\AppData\\Local\\Temp\\TeamViewer_.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\schtasks.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"\\schtasks.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"C:\\Users\\ /RU /Create  SYSTEM  /TR \\AppData\\Local\\"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"C:\\Users\\ /RU /Create  SYSTEM  /TR \\AppData\\Local\\","SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

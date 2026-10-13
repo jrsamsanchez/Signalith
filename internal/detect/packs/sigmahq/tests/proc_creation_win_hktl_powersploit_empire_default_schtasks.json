@@ -1,0 +1,10 @@
+{"rule": "56c217c3-2de2-479b-990f-5c109ba8458f", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/Createpowershell.exe -NonI/SC DAILY /ST/TN Updater /TR","Image":"\\schtasks.exe","ParentImage":"\\powershell.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"/Createpowershell.exe -NonI/SC DAILY /ST/TN Updater /TR","NewProcessName":"\\schtasks.exe","ParentProcessName":"\\powershell.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\schtasks.exe","ParentImage":"\\powershell.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"\\schtasks.exe","ParentProcessName":"\\powershell.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/Createpowershell.exe -NonI/SC DAILY /ST/TN Updater /TR","ParentImage":"\\powershell.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"/Createpowershell.exe -NonI/SC DAILY /ST/TN Updater /TR","ParentProcessName":"\\powershell.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/Createpowershell.exe -NonI/SC DAILY /ST/TN Updater /TR","Image":"\\schtasks.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"/Createpowershell.exe -NonI/SC DAILY /ST/TN Updater /TR","NewProcessName":"\\schtasks.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

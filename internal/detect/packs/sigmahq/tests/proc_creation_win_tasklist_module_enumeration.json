@@ -1,0 +1,5 @@
+{"rule": "34275eb8-fa19-436b-b959-3d9ecd53fa1f", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"rdpcorets.dll –m","Image":"\\tasklist.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\tasklist.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"rdpcorets.dll –m"}}
+]}

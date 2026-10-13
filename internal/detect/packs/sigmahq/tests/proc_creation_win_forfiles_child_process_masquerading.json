@@ -1,0 +1,7 @@
+{"rule": "f53714ec-5077-420e-ad20-907ff9bb2958", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/c echo \"","Image":"\\cmd.exe","ParentCommandLine":".exe\""}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/c echo \"","Image":":\\Windows\\SysWOW64\\ \\cmd.exe","ParentCommandLine":".exe\"","ParentImage":":\\Windows\\System32\\\\forfiles.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\cmd.exe","ParentCommandLine":".exe\""}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/c echo \"","ParentCommandLine":".exe\""}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/c echo \"","Image":"\\cmd.exe"}}
+]}

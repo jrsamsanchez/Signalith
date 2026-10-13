@@ -1,0 +1,10 @@
+{"rule": "2fdefcb3-dbda-401e-ae23-f0db027628bc", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"utilman.exe","Image":"\\wscript.exe","ParentImage":"\\winlogon.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"utilman.exe","NewProcessName":"\\wscript.exe","ParentProcessName":"\\winlogon.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\wscript.exe","ParentImage":"\\winlogon.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"\\wscript.exe","ParentProcessName":"\\winlogon.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"utilman.exe","ParentImage":"\\winlogon.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"utilman.exe","ParentProcessName":"\\winlogon.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"utilman.exe","Image":"\\wscript.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"utilman.exe","NewProcessName":"\\wscript.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

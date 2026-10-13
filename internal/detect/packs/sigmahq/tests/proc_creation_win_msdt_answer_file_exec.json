@@ -1,0 +1,10 @@
+{"rule": "9c8c7000-3065-44a8-a555-79bcba5d9955", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x –af \\WINDOWS\\diagnostics\\index\\PCWDiagnostic.xml","Image":"\\msdt.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"x –af \\WINDOWS\\diagnostics\\index\\PCWDiagnostic.xml","NewProcessName":"\\msdt.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"\\WINDOWS\\diagnostics\\index\\PCWDiagnostic.xml  –af x","Image":"\\msdt.exe","ParentImage":"\\pcwrun.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"\\WINDOWS\\diagnostics\\index\\PCWDiagnostic.xml  –af x","NewProcessName":"\\msdt.exe","ParentProcessName":"\\pcwrun.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\msdt.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"\\msdt.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x –af \\WINDOWS\\diagnostics\\index\\PCWDiagnostic.xml"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"x –af \\WINDOWS\\diagnostics\\index\\PCWDiagnostic.xml","SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

@@ -653,6 +653,7 @@ func NewFinding(d *Detection, q *query.Query, row map[string]any, key string, ea
 		DetectionID: d.ID,
 		Title:       RenderTitle(d.Title, row),
 		Description: d.Description,
+		Credit:      d.Origin.Credit(),
 		Severity:    d.Severity,
 		Urgency:     d.Severity,
 		Status:      findings.StatusNew,

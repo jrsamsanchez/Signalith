@@ -1,0 +1,5 @@
+{"rule": "9df0dd3a-1a5c-47e3-a2bc-30ed177646a0", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"winrm invoke Create wmicimv2/Win32_ -r:http","OriginalFileName":"cscript.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"cscript.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"winrm invoke Create wmicimv2/Win32_ -r:http"}}
+]}

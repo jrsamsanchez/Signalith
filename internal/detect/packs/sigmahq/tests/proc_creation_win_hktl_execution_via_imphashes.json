@@ -1,0 +1,4 @@
+{"rule": "24e3e58a-646b-4b50-adef-02ef935b9fc8", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Hashes":"IMPHASH=959A83047E80AB68B368FDB3F4C6E4EA"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{}}
+]}

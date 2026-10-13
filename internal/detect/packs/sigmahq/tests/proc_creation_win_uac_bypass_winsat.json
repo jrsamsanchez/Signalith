@@ -1,0 +1,6 @@
+{"rule": "7a01183d-71a2-46ad-ad5c-acd989ac1793", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"IntegrityLevel":"S-1-16-16384","ParentCommandLine":"C:\\Windows \\system32\\winsat.exe","ParentImage":"\\AppData\\Local\\Temp\\system32\\winsat.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"ParentCommandLine":"C:\\Windows \\system32\\winsat.exe","ParentImage":"\\AppData\\Local\\Temp\\system32\\winsat.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"IntegrityLevel":"S-1-16-16384","ParentImage":"\\AppData\\Local\\Temp\\system32\\winsat.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"IntegrityLevel":"S-1-16-16384","ParentCommandLine":"C:\\Windows \\system32\\winsat.exe"}}
+]}

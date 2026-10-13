@@ -1,0 +1,5 @@
+{"rule": "18749301-f1c5-4efc-a4c3-276ff1f5b6f8", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x -a x","Image":"\\VSIISExeLauncher.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\VSIISExeLauncher.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x -a x"}}
+]}

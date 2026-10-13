@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -18,11 +19,13 @@ func (s *Server) routeDetections(api *router) {
 	api.viewer("GET /api/detections/{id}", s.handleGetDetection)
 	api.viewer("GET /api/detections/{id}/yaml", s.handleDetectionYAML)
 	api.viewer("GET /api/coverage", s.handleCoverage)
+	api.viewer("GET /api/detections/packs", s.handleListPacks)
 	// Writing, testing, importing and running detections is admin work;
 	// a run raises findings.
 	api.admin("POST /api/detections", s.handleCreateDetection)
 	api.admin("POST /api/detections/test", s.handleTestDetection)
 	api.admin("POST /api/detections/sigma", s.handleSigma)
+	api.admin("POST /api/detections/enable", s.handleEnableDetections)
 	api.admin("PUT /api/detections/{id}", s.handlePutDetection)
 	api.admin("DELETE /api/detections/{id}", s.handleDeleteDetection)
 	api.admin("POST /api/detections/{id}/run", s.handleRunDetection)
@@ -265,6 +268,74 @@ func (s *Server) handleSigma(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, res)
+}
+
+// packView is a content pack with how many of its rules are on.
+type packView struct {
+	*detect.Pack
+	Rules      int            `json:"rules"`
+	Enabled    int            `json:"enabled"`
+	Severities map[string]int `json:"severities"`
+}
+
+func (s *Server) handleListPacks(w http.ResponseWriter, r *http.Request) {
+	if !s.detectionsReady(w) {
+		return
+	}
+	ps, _, err := detect.Packs()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	views := make([]*packView, 0, len(ps))
+	byName := map[string]*packView{}
+	for _, p := range ps {
+		v := &packView{Pack: p, Severities: map[string]int{}}
+		views = append(views, v)
+		byName[p.Name] = v
+	}
+	for _, d := range s.Detections.List() {
+		if d.Origin == nil {
+			continue
+		}
+		if v := byName[d.Origin.Pack]; v != nil {
+			v.Rules++
+			v.Severities[d.Severity]++
+			if d.Enabled {
+				v.Enabled++
+			}
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"packs": views})
+}
+
+// maxEnableIDs caps one request that turns detections on or off.
+const maxEnableIDs = 5000
+
+// handleEnableDetections turns many detections on or off at once, such
+// as every high-severity rule of a content pack.
+func (s *Server) handleEnableDetections(w http.ResponseWriter, r *http.Request) {
+	if !s.detectionsReady(w) {
+		return
+	}
+	var req struct {
+		IDs     []string `json:"ids"`
+		Enabled bool     `json:"enabled"`
+	}
+	if err := readJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if len(req.IDs) == 0 || len(req.IDs) > maxEnableIDs {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("send between 1 and %d detection ids", maxEnableIDs))
+		return
+	}
+	if err := s.Detections.SetEnabled(req.IDs, req.Enabled); err != nil {
+		writeDetectionError(w, err)
+		return
+	}
+	s.Log.Info("detections turned "+map[bool]string{true: "on", false: "off"}[req.Enabled], "count", len(req.IDs), "by", userOf(r))
+	writeJSON(w, http.StatusOK, map[string]any{"changed": len(req.IDs), "enabled": req.Enabled})
 }
 
 func (s *Server) handleCoverage(w http.ResponseWriter, r *http.Request) {

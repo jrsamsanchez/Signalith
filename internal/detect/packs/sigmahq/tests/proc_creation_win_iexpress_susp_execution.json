@@ -1,0 +1,5 @@
+{"rule": "b2b048b0-7857-4380-b0fb-d3f0ab820b71", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x —n :\\Windows\\Temp\\","OriginalFileName":"IEXPRESS.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"IEXPRESS.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x —n :\\Windows\\Temp\\"}}
+]}

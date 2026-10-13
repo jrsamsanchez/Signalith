@@ -1,0 +1,10 @@
+{"rule": "8cbc9475-8d05-4e27-9c32-df960716c701", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"CurrentVersion\\Policies\\Systemadd/v NoChangingWallpaper/d 1","OriginalFileName":"reg.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"CurrentVersion\\Policies\\ActiveDesktop/t REG_SZadd/v Wallpaper","Image":"\\reg.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"add/v WallpaperStyleControl Panel\\Desktop/d 2","Image":"\\reg.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"reg.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"CurrentVersion\\Policies\\Systemadd/v NoChangingWallpaper/d 1"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\reg.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"CurrentVersion\\Policies\\ActiveDesktop/t REG_SZadd/v Wallpaper"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"add/v WallpaperStyleControl Panel\\Desktop/d 2"}}
+]}

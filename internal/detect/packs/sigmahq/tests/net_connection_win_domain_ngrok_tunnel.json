@@ -1,0 +1,4 @@
+{"rule": "1d08ac94-400d-4469-a82f-daee9a908849", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":"tunnel.jp.ngrok.com"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{}}
+]}

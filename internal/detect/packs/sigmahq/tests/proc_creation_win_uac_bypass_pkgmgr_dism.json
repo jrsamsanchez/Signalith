@@ -1,0 +1,6 @@
+{"rule": "a743ceba-c771-4d75-97eb-8a90f7f4844c", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\dism.exe","IntegrityLevel":"S-1-16-12288","ParentImage":"\\pkgmgr.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"IntegrityLevel":"S-1-16-12288","ParentImage":"\\pkgmgr.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\dism.exe","ParentImage":"\\pkgmgr.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\dism.exe","IntegrityLevel":"S-1-16-12288"}}
+]}

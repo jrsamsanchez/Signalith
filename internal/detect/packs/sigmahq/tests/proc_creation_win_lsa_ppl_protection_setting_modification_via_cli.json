@@ -1,0 +1,5 @@
+{"rule": "8c0eca51-0f88-4db2-9183-fdfb10c703f9", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"ControlSetNew-ItemProperty\\Control\\LsaIsPplAutoEnabled","OriginalFileName":"pwsh.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"pwsh.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"ControlSetNew-ItemProperty\\Control\\LsaIsPplAutoEnabled"}}
+]}

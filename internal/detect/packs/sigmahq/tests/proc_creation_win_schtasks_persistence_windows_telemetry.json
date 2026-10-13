@@ -1,0 +1,5 @@
+{"rule": "f548a603-c9f2-4c89-b511-b089f7e94549", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"run  \\Application Experience\\Microsoft Compatibility Appraiser","Image":"\\schtasks.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\schtasks.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"run  \\Application Experience\\Microsoft Compatibility Appraiser"}}
+]}

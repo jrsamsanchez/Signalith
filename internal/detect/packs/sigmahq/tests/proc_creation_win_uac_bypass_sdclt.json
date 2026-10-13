@@ -1,0 +1,5 @@
+{"rule": "40f9af16-589d-4984-b78d-8c2aec023197", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"sdclt.exe","IntegrityLevel":"S-1-16-12288"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"IntegrityLevel":"S-1-16-12288"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"sdclt.exe"}}
+]}

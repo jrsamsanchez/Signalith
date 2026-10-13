@@ -1,0 +1,10 @@
+{"rule": "431a1fdb-4799-4f3b-91c3-a683b003fc49", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"kerneltypeconfigbinPath","Image":"\\sc.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"kerneltypeconfigbinPath","NewProcessName":"\\sc.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"binPath= System32\\drivers\\netprotection_network_filter DisplayName= netprotection_network_filter type= kernel start=  kernel config group= PNP_TDI tag= yes binPath type create netprotection_network_filter","Image":"\\sc.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"binPath= System32\\drivers\\netprotection_network_filter DisplayName= netprotection_network_filter type= kernel start=  kernel config group= PNP_TDI tag= yes binPath type create netprotection_network_filter","NewProcessName":"\\sc.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\sc.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"\\sc.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"kerneltypeconfigbinPath"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"kerneltypeconfigbinPath","SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

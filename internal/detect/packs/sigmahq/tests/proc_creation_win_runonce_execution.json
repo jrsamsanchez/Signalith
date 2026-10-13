@@ -1,0 +1,5 @@
+{"rule": "198effb6-6c98-4d0c-9ea3-451fa143c45c", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/AlternateShellStartup","Image":"\\runonce.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\runonce.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/AlternateShellStartup"}}
+]}

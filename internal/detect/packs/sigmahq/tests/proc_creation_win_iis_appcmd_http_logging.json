@@ -1,0 +1,5 @@
+{"rule": "e4ed6030-ffe5-4e6a-8a8a-ab3c1ab9d94e", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"configdontLog:truesetsection:httplogging","Image":"\\appcmd.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\appcmd.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"configdontLog:truesetsection:httplogging"}}
+]}

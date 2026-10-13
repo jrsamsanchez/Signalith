@@ -1,0 +1,5 @@
+{"rule": "c86133ad-4725-4bd0-8170-210788e0a7ba", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"TgBlAFQALgB3AEUAYg","Image":"\\powershell.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\powershell.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"TgBlAFQALgB3AEUAYg"}}
+]}

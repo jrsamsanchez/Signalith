@@ -1,0 +1,5 @@
+{"rule": "12f6b752-042d-483e-bf9c-915a6d06ad75", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"Domain Set-NetFirewallProfile   False  -Enabled x","Image":"\\pwsh.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\pwsh.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"Domain Set-NetFirewallProfile   False  -Enabled x"}}
+]}

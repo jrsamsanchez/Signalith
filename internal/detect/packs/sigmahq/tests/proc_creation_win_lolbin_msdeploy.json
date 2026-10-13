@@ -1,0 +1,8 @@
+{"rule": "646bc99f-6682-4b47-a73a-17b1b64c9d34", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"verb:sync-source:RunCommand-dest:runCommand","Image":"\\msdeploy.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"verb:sync-source:RunCommand-dest:runCommand","NewProcessName":"\\msdeploy.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\msdeploy.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"\\msdeploy.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"verb:sync-source:RunCommand-dest:runCommand"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"verb:sync-source:RunCommand-dest:runCommand","SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

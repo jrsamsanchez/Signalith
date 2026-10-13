@@ -1,0 +1,6 @@
+{"rule": "80fc36aa-945e-4181-89f2-2f907ab6775d", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\AppData\\Local\\Temp\\ consent.exe","IntegrityLevel":"High","ParentImage":"\\ieinstal.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"IntegrityLevel":"High","ParentImage":"\\ieinstal.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\AppData\\Local\\Temp\\ consent.exe","ParentImage":"\\ieinstal.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\AppData\\Local\\Temp\\ consent.exe","IntegrityLevel":"High"}}
+]}

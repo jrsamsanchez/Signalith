@@ -1,0 +1,7 @@
+{"rule": "cbb9e3d1-2386-4e59-912e-62f1484f7a89", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\conhost.exe","ParentImage":"\\explorer.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\conhost.exe","ParentCommandLine":"-k imgsvc","ParentImage":"\\explorer.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\conhost.exe","ParentCommandLine":"C:\\Program Files\\Dropbox\\Client\\","ParentImage":"\\explorer.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"ParentImage":"\\explorer.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\conhost.exe"}}
+]}

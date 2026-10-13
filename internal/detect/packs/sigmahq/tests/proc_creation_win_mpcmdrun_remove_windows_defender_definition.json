@@ -1,0 +1,5 @@
+{"rule": "9719a8aa-401c-41af-8108-ced7ec9cd75c", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x -All -RemoveDefinitions","Image":"\\MpCmdRun.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\MpCmdRun.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x -All -RemoveDefinitions"}}
+]}

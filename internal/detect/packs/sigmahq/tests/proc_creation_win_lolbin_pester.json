@@ -1,0 +1,5 @@
+{"rule": "18988e1b-9087-4f8a-82fe-0414dce49878", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"ParentCommandLine":"\\WindowsPowerShell\\Modules\\Pester\\ { Invoke-Pester -EnableExit ;","ParentImage":"\\pwsh.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"ParentImage":"\\pwsh.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"ParentCommandLine":"\\WindowsPowerShell\\Modules\\Pester\\ { Invoke-Pester -EnableExit ;"}}
+]}

@@ -1260,9 +1260,15 @@ func detectionsFingerprint(dir string) string {
 	if err != nil {
 		return cluster.Hash([]byte(err.Error()))
 	}
+	// The on and off choices for built-in and pack rules count too.
+	states, err := filepath.Glob(filepath.Join(dir, detect.StateDir, "*.yaml"))
+	if err != nil {
+		return cluster.Hash([]byte(err.Error()))
+	}
 	sort.Strings(files)
+	sort.Strings(states)
 	var parts [][]byte
-	for _, f := range files {
+	for _, f := range append(files, states...) {
 		b, err := os.ReadFile(f)
 		if err != nil {
 			b = []byte("unreadable: " + err.Error())
@@ -1272,7 +1278,11 @@ func detectionsFingerprint(dir string) string {
 		// them.
 		b = bytes.TrimPrefix(b, []byte("\ufeff"))
 		b = bytes.ReplaceAll(b, []byte("\r\n"), []byte("\n"))
-		parts = append(parts, []byte(filepath.Base(f)), b)
+		name := filepath.Base(f)
+		if filepath.Base(filepath.Dir(f)) == detect.StateDir {
+			name = detect.StateDir + "/" + name
+		}
+		parts = append(parts, []byte(name), b)
 	}
 	return cluster.Hash(parts...)
 }

@@ -1,0 +1,16 @@
+{"rule": "0a99eb3e-1617-41bd-b095-13dc767f3def", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":".bat.exepowershell.exe","Image":"\\xcopy.exe","ParentCommandLine":".bat","ParentImage":"\\cmd.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"pwsh.exe.bat.exe","Image":"\\xcopy.exe","ParentCommandLine":".bat","ParentImage":"\\cmd.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"+h +s .bat.exe","Image":"\\attrib.exe","ParentCommandLine":".bat","ParentImage":"\\cmd.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\xcopy.exe","ParentCommandLine":".bat","ParentImage":"\\cmd.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":".bat.exepowershell.exe","ParentCommandLine":".bat","ParentImage":"\\cmd.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":".bat.exepowershell.exe","Image":"\\xcopy.exe","ParentImage":"\\cmd.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":".bat.exepowershell.exe","Image":"\\xcopy.exe","ParentCommandLine":".bat"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"pwsh.exe.bat.exe","ParentCommandLine":".bat","ParentImage":"\\cmd.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"pwsh.exe.bat.exe","Image":"\\xcopy.exe","ParentImage":"\\cmd.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"pwsh.exe.bat.exe","Image":"\\xcopy.exe","ParentCommandLine":".bat"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\attrib.exe","ParentCommandLine":".bat","ParentImage":"\\cmd.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"+h +s .bat.exe","ParentCommandLine":".bat","ParentImage":"\\cmd.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"+h +s .bat.exe","Image":"\\attrib.exe","ParentImage":"\\cmd.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"+h +s .bat.exe","Image":"\\attrib.exe","ParentCommandLine":".bat"}}
+]}
