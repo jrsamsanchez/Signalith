@@ -50,6 +50,7 @@ type Config struct {
 	Dashboards Dashboards `yaml:"dashboards"`
 	Assistant  Assistant  `yaml:"assistant"`
 	Intel      Intel      `yaml:"intel"`
+	Response   Response   `yaml:"response,omitempty"`
 	Cluster    Cluster    `yaml:"cluster,omitempty"`
 
 	// path is where the file was loaded from.
@@ -923,6 +924,37 @@ func (c *Config) IntelFeedsFile() string {
 	return filepath.Join(c.LookupsDir(), "intel_feeds.yaml")
 }
 
+// Response sets where response actions are kept and which programs they
+// may run (see docs/response-actions.md).
+type Response struct {
+	// File keeps the actions set up on the Response actions page.
+	// Default: response.yaml in lookups.dir. A relative path is relative
+	// to the folder this config file is in.
+	File string `yaml:"file,omitempty"`
+	// ScriptsDir is the only folder script actions may run programs from.
+	// Default: scripts in the state folder. Only this file or
+	// SIGNALITH_RESPONSE_SCRIPTS_DIR can set it, never a page: it decides
+	// which programs Signalith may run.
+	ScriptsDir string `yaml:"scripts_dir,omitempty"`
+}
+
+// ResponseFile returns the file that keeps the actions set up on the
+// Response actions page.
+func (c *Config) ResponseFile() string {
+	if c.Response.File != "" {
+		return c.resolve(c.Response.File)
+	}
+	return filepath.Join(c.LookupsDir(), "response.yaml")
+}
+
+// ResponseScriptsDir returns the folder script actions run programs from.
+func (c *Config) ResponseScriptsDir() string {
+	if c.Response.ScriptsDir != "" {
+		return c.resolve(c.Response.ScriptsDir)
+	}
+	return filepath.Join(c.StateDir(), "scripts")
+}
+
 // LookupsDir returns the absolute lookups folder.
 func (c *Config) LookupsDir() string { return c.resolve(c.Lookups.Dir) }
 
@@ -1458,6 +1490,14 @@ func (c *Config) applyEnv() error {
 		c.Intel.FeedsFile = v
 		c.fromEnv("intel.feeds_file", "SIGNALITH_INTEL_FEEDS_FILE")
 	}
+	if v := os.Getenv("SIGNALITH_RESPONSE_FILE"); v != "" {
+		c.Response.File = v
+		c.fromEnv("response.file", "SIGNALITH_RESPONSE_FILE")
+	}
+	if v := os.Getenv("SIGNALITH_RESPONSE_SCRIPTS_DIR"); v != "" {
+		c.Response.ScriptsDir = v
+		c.fromEnv("response.scripts_dir", "SIGNALITH_RESPONSE_SCRIPTS_DIR")
+	}
 	if v := os.Getenv("SIGNALITH_ARCHIVE_DIR"); v != "" {
 		c.Retention.ArchiveDir = v
 		c.fromEnv("retention.archive_dir", "SIGNALITH_ARCHIVE_DIR")
@@ -1985,6 +2025,11 @@ const header = `# Signalith configuration.
 #                      - name: feodo-tracker
 #                        url: https://feodotracker.abuse.ch/downloads/ipblocklist.txt
 #                    format: lines, csv (with column:), stix or auto; see docs/threat-intel.md
+# response.file      where the Response actions page keeps its actions (default
+#                    lookups.dir/response.yaml; SIGNALITH_RESPONSE_FILE overrides it)
+# response.scripts_dir  the only folder script actions may run programs from
+#                    (default: scripts in the state folder; only this file or
+#                    SIGNALITH_RESPONSE_SCRIPTS_DIR can set it)
 # cluster.node_name  this server's name on the Servers page (default: this computer's
 #                    name; SIGNALITH_NODE_NAME overrides it)
 # server.node_url    the address other Signalith servers reach this one at (default:

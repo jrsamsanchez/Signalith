@@ -14,6 +14,7 @@ import (
 
 	"github.com/jrsamsanchez/signalith/internal/config"
 	"github.com/jrsamsanchez/signalith/internal/secrets"
+	"github.com/jrsamsanchez/signalith/internal/store"
 	"github.com/jrsamsanchez/signalith/internal/tlsauto"
 	"github.com/jrsamsanchez/signalith/internal/users"
 )
@@ -829,6 +830,10 @@ func TestOpenSearchDisk(t *testing.T) {
 			line: "Signalith runs in a container, so it can't see the disk where OpenSearch (opensearch) keeps events."},
 		{name: "failed", set: func(f *Facts) { f.OpenSearch.DataErr = "status 403"; f.OpenSearch.DataPaths = nil }, state: Unknown,
 			line: "Signalith couldn't ask OpenSearch where it keeps events (status 403)."},
+		{name: "security settings not loaded", set: func(f *Facts) {
+			f.OpenSearch.DataErr, f.OpenSearch.DataPaths, f.OpenSearch.SecurityNotLoaded = "status 503", nil, true
+		}, state: Unknown,
+			line: "Signalith couldn't ask OpenSearch where it keeps events: OpenSearch's security settings aren't loaded, so it turns everyone away for now."},
 		{name: "virtual", set: func(f *Facts) { f.OpenSearch.DataPaths = []Disk{{Kind: DiskVirtual}} }, state: Unknown,
 			line: "OpenSearch's data files are on a virtual disk. Its host may encrypt it, but Signalith can't see that from inside."},
 		// OpenSearch in Docker, Signalith on the computer itself: the
@@ -893,6 +898,31 @@ func TestOpenSearchAccess(t *testing.T) {
 			fix: func(t *testing.T, c *Check) {
 				if len(c.Details) != 1 || c.Details[0] != "OpenSearch answered: status 503." {
 					t.Errorf("%q", c.Details)
+				}
+			}},
+		// OpenSearch's security plugin is on, but its settings aren't
+		// loaded: not a reason to check the network.
+		{name: "security settings not loaded", set: func(f *Facts) {
+			f.OpenSearch.Anonymous, f.OpenSearch.AnonymousErr, f.OpenSearch.SecurityNotLoaded = "unknown", "status 503", true
+		}, state: Unknown,
+			line: "OpenSearch's security settings aren't loaded, so it turns everyone away for now, Signalith too. Who can read events once they are loaded depends on them.",
+			fix: func(t *testing.T, c *Check) {
+				if len(c.Fix.Commands) != 0 || c.Fix.Docs.Anchor != "3-load-the-security-settings" ||
+					c.Fix.Steps[0] != "If OpenSearch started only a few minutes ago, re-check in a few minutes: it loads them as it starts. "+
+						"Otherwise, load them with securityadmin.sh, as the docs show. Then re-check." {
+					t.Errorf("%+v", c.Fix)
+				}
+			}},
+		// With the Docker quick start: run its step that loads them again.
+		{name: "security settings not loaded, Docker", set: func(f *Facts) {
+			f.Docker = true
+			f.OpenSearch.Anonymous, f.OpenSearch.AnonymousErr, f.OpenSearch.SecurityNotLoaded = "unknown", "status 503", true
+		}, state: Unknown,
+			fix: func(t *testing.T, c *Check) {
+				if c.Fix.Docs.Anchor != "if-opensearchs-security-settings-arent-loaded" || c.Fix.Commands["docker"] != "docker compose -f deploy/docker/docker-compose.yml up -d" ||
+					!strings.Contains(c.Fix.Steps[0], "Otherwise, run the command below from the Signalith folder: it re-runs the step that loads OpenSearch's security settings.") ||
+					strings.Contains(c.Fix.Steps[0], "securityadmin") || strings.Contains(c.Fix.Steps[0], "setup step") {
+					t.Errorf("%+v", c.Fix)
 				}
 			}},
 		{name: "timed out", set: func(f *Facts) { f.TimedOut = map[string]bool{"rest.opensearch_access": true} }, state: Unknown, line: TimedOutLine},
@@ -1150,10 +1180,54 @@ func TestOpenSearchRole(t *testing.T) {
 					t.Errorf("%q %+v", c.Details, c.Fix)
 				}
 			}},
-		{name: "refused", set: func(f *Facts) { f.OpenSearch.AuthErr = "status 403" }, state: Unknown,
+		{name: "refused", set: func(f *Facts) { f.OpenSearch.AuthErr, f.OpenSearch.AuthRefusal = "status 403", store.RefusedPermission }, state: Unknown,
 			fix: func(t *testing.T, c *Check) {
 				if c.Details[0] != "OpenSearch answered: status 403." || !strings.Contains(c.Fix.Steps[0], "roles mapped") {
 					t.Errorf("%q %+v", c.Details, c.Fix)
+				}
+			}},
+		// Not about the roles: no advice to change them.
+		{name: "security settings not loaded", set: func(f *Facts) {
+			f.OpenSearch.AuthErr, f.OpenSearch.AuthRefusal, f.OpenSearch.SecurityNotLoaded = "status 503", store.RefusedNotInitialized, true
+		}, state: Unknown,
+			line: "Signalith couldn't ask OpenSearch what its account may do: OpenSearch's security settings aren't loaded, so it turns everyone away for now.",
+			fix: func(t *testing.T, c *Check) {
+				if strings.Contains(c.Fix.Steps[0], "roles") || !strings.Contains(c.Fix.Steps[0], "load them with securityadmin.sh") || len(c.Details) != 0 {
+					t.Errorf("%+v %q", c.Fix, c.Details)
+				}
+			}},
+		{name: "sign-in refused", set: func(f *Facts) { f.OpenSearch.AuthErr, f.OpenSearch.AuthRefusal = "status 401", store.RefusedSignIn }, state: Unknown,
+			line: "Signalith couldn't ask OpenSearch what its account may do: OpenSearch doesn't accept its sign-in.",
+			fix: func(t *testing.T, c *Check) {
+				if strings.Contains(c.Fix.Steps[0], "roles") || !strings.Contains(c.Fix.Steps[0], "user name and password, or the client certificate, on the Settings page") ||
+					c.Fix.Setting != "opensearch.password" || c.Fix.Docs.Anchor != "4-point-signalith-at-it" {
+					t.Errorf("%+v", c.Fix)
+				}
+			}},
+		{name: "sign-in refused, certificate", set: func(f *Facts) {
+			f.Config.OpenSearch.Username = ""
+			f.OpenSearch.AuthErr, f.OpenSearch.AuthRefusal = "status 401", store.RefusedSignIn
+		}, state: Unknown,
+			fix: func(t *testing.T, c *Check) {
+				if c.Fix.Setting != "opensearch.cert_file" {
+					t.Errorf("%+v", c.Fix)
+				}
+			}},
+		{name: "busy", set: func(f *Facts) { f.OpenSearch.AuthErr, f.OpenSearch.AuthRefusal = "status 429", store.RefusedBusy }, state: Unknown,
+			line: "Signalith couldn't ask OpenSearch what its account may do: OpenSearch was too busy to answer in time.",
+			fix: func(t *testing.T, c *Check) {
+				if strings.Contains(c.Fix.Steps[0], "roles") || !strings.HasPrefix(c.Fix.Steps[0], "Re-check in a few minutes. If this lasts more than a few minutes") ||
+					!strings.Contains(c.Fix.Steps[0], "logs opensearch") {
+					t.Errorf("%+v", c.Fix)
+				}
+			}},
+		{name: "not ready", set: func(f *Facts) {
+			f.OpenSearch.AuthErr, f.OpenSearch.AuthRefusal = "status 503", store.RefusedUnavailable
+		}, state: Unknown,
+			line: "Signalith couldn't ask OpenSearch what its account may do.",
+			fix: func(t *testing.T, c *Check) {
+				if strings.Contains(c.Fix.Steps[0], "roles") || !strings.Contains(c.Fix.Steps[0], "its log may say why. With the Docker quick start, show it with") {
+					t.Errorf("%+v", c.Fix)
 				}
 			}},
 	})

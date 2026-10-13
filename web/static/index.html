@@ -187,6 +187,7 @@
       <a class="nav__item" href="#data" data-page="data" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-database"/></svg><span>Add data</span></a>
       <a class="nav__item" href="#retention" data-page="retention" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-hourglass"/></svg><span>Data retention</span></a>
       <a class="nav__item" href="#users" data-page="users" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-users"/></svg><span>Users</span></a>
+      <a class="nav__item" href="#respond" data-page="respond" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-zap"/></svg><span>Response actions</span></a>
       <a class="nav__item" href="#security" data-page="security" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-shield-check"/></svg><span>Security</span><span id="security-count" class="nav__count hidden" data-critical></span></a>
       <a class="nav__item" href="#health" data-page="health"><svg class="icon" aria-hidden="true"><use href="#i-activity"/></svg><span>Health</span></a>
       <a class="nav__item" href="#servers" data-page="servers" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-server"/></svg><span>Servers</span></a>
@@ -920,6 +921,21 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
     <p class="sr-only" id="agent-status" role="status"></p>
   </section>
 
+  <!-- Response actions (admins) -->
+  <section id="page-respond" class="page">
+    <div class="page-head">
+      <div>
+        <h2 class="page-head__title">Response actions</h2>
+        <p class="page-head__desc">What analysts can do about a finding or a case: block an IP, disable an account, isolate a host. Every run is confirmed, checked and recorded.</p>
+      </div>
+      <div class="page-head__actions">
+        <button id="rp-refresh" class="btn btn--ghost btn--icon" type="button" aria-label="Refresh" title="Refresh"><svg class="icon" aria-hidden="true"><use href="#i-refresh-cw"/></svg></button>
+        <button id="rp-add" class="btn btn--primary" type="button"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>Add action</button>
+      </div>
+    </div>
+    <div id="rp-body"></div>
+  </section>
+
   <!-- Users (admins) -->
   <section id="page-users" class="page">
     <div class="page-head">
@@ -1285,6 +1301,7 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
 <script src="intel.js"></script>
 <script src="dashboards.js"></script>
 <script src="cases.js"></script>
+<script src="respond.js"></script>
 <script src="users.js"></script>
 <script src="retention.js"></script>
 <script src="sample.js"></script>

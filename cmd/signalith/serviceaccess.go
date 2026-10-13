@@ -51,7 +51,7 @@ func serviceAccess(configPath string) serviceFiles {
 		return false
 	}
 	folders := []string{c.StateDir(), filepath.Join(c.StateDir(), "keys"), c.TLSDir(), c.LookupsDir(), c.DetectionsDir(), c.DashboardsDir(), c.ArchiveDir(),
-		filepath.Dir(c.UsersFile()), filepath.Dir(c.IntelFeedsFile()), filepath.Dir(c.SettingsFile())}
+		filepath.Dir(c.UsersFile()), filepath.Dir(c.IntelFeedsFile()), filepath.Dir(c.ResponseFile()), filepath.Dir(c.SettingsFile())}
 	for _, d := range folders {
 		if d == "" || slices.ContainsFunc(out.write, func(have string) bool { return strings.EqualFold(have, d) }) {
 			continue

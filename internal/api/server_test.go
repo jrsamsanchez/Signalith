@@ -30,6 +30,8 @@ import (
 
 type fakeOS struct {
 	bulk []store.IndexedDoc
+	// healthErr, when set, is what Health fails with.
+	healthErr error
 
 	mu      sync.Mutex
 	indices []string // every index pattern searched or mapped
@@ -54,7 +56,12 @@ func (f *fakeOS) Bulk(_ context.Context, docs []store.IndexedDoc) ([]store.BulkI
 	f.bulk = append(f.bulk, docs...)
 	return nil, nil
 }
-func (f *fakeOS) Health(context.Context) (string, error) { return "green", nil }
+func (f *fakeOS) Health(context.Context) (string, error) {
+	if f.healthErr != nil {
+		return "", f.healthErr
+	}
+	return "green", nil
+}
 func (f *fakeOS) Mapping(_ context.Context, pattern string) (map[string]string, error) {
 	f.searched(pattern)
 	return map[string]string{"user": "keyword", "custom_score": "long"}, nil

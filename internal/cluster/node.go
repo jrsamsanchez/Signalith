@@ -488,7 +488,11 @@ func (n *Node) logFailure(msg string, err error) {
 	}
 	n.mu.Unlock()
 	if !quiet {
-		n.log.Warn(msg, "err", err)
+		if hint := store.Hint(err); hint != "" {
+			n.log.Warn(msg, "err", err, "fix", hint)
+		} else {
+			n.log.Warn(msg, "err", err)
+		}
 	}
 }
 
@@ -677,6 +681,9 @@ func (n *Node) heartbeatDoc(state string) Heartbeat {
 		Frozen: view.State == frozen.String(), FilesFingerprint: n.fp, MachineMoved: n.local.Moved, Problems: []string{},
 		OpenSearch: OSInfo{OK: n.contacted && n.lastErr == "", Endpoint: n.endpoint, LatencyMS: n.osLatency.Milliseconds()},
 		Features:   features}
+	if n.lastErr != "" {
+		hb.OpenSearch.Problem = store.Problem(n.lastErrRaw)
+	}
 	if view.Mine {
 		hb.LeaseEpoch = view.Doc.Epoch
 	}
@@ -914,10 +921,83 @@ func (n *Node) eligibleLocked() (bool, string) {
 // its heartbeat. The caller holds n.mu.
 func (n *Node) osProblemLocked() string {
 	var oe *store.Error
-	if errors.As(n.lastErrRaw, &oe) {
+	switch {
+	case store.NoAnswer(n.lastErrRaw):
+		return "OpenSearch doesn't answer it in time"
+	case !errors.As(n.lastErrRaw, &oe):
+		return "it cannot reach OpenSearch"
+	}
+	switch store.RefusalOf(oe) {
+	case store.RefusedNotInitialized:
+		return "OpenSearch's security settings aren't loaded"
+	case store.RefusedBusy:
+		return "OpenSearch is too busy to answer it in time"
+	case store.RefusedSignIn:
+		return "OpenSearch refuses its sign-in"
+	case store.RefusedUnavailable:
+		return "OpenSearch isn't ready"
+	case store.RefusedBlocked:
+		return "OpenSearch refuses writes"
+	case store.RefusedPermission:
 		return fmt.Sprintf("OpenSearch refused its heartbeat (%s)", refusal(oe, RuntimeIndex(n.prefix)))
 	}
-	return "it cannot reach OpenSearch"
+	return fmt.Sprintf("OpenSearch answered its heartbeat with an error (%s)", refusal(oe, RuntimeIndex(n.prefix)))
+}
+
+// osTroubleLocked words why this server can't use OpenSearch, for its
+// red warning: a short first sentence, then what it means and what to do;
+// and briefly, for the banner on every page. Only a refusal of Signalith's
+// own OpenSearch user gets the advice to change that user. The caller
+// holds n.mu.
+func (n *Node) osTroubleLocked() (text, banner string) {
+	const noJobs = "so this server runs no detections, threat intel downloads or retention"
+	var oe *store.Error
+	if n.lastErr != "" && store.NoAnswer(n.lastErrRaw) {
+		// It reached OpenSearch, which is too slow: not out of reach.
+		return "OpenSearch didn't answer this server in time, so this server can't see the other servers and runs no background jobs. " +
+				"Signalith keeps trying, and goes on by itself once OpenSearch answers. " + store.BusyFix + " The error was: " + store.Sentence(n.lastErr),
+			"OpenSearch doesn't answer this server in time, so it runs no background jobs."
+	}
+	if n.lastErr == "" || !errors.As(n.lastErrRaw, &oe) {
+		text = "This server can't reach OpenSearch, so it can't see the other servers and runs no background jobs."
+		if n.lastErr != "" {
+			text += " The error was: " + store.Sentence(n.lastErr)
+		}
+		return text, "This server can't use OpenSearch, so it runs no background jobs."
+	}
+	index := RuntimeIndex(n.prefix)
+	was := " The error was: " + store.Sentence(oe.Error())
+	switch store.RefusalOf(oe) {
+	case store.RefusedNotInitialized:
+		return "OpenSearch is running, but its security settings aren't loaded, so it refuses every request from this server. " +
+				"Until they are, this server runs no detections, threat intel downloads or retention. " + store.NotInitializedFix +
+				" This server tries again by itself, so it needs no restart.",
+			"OpenSearch's security settings aren't loaded, so it refuses this server, which runs no background jobs."
+	case store.RefusedBusy:
+		return fmt.Sprintf("OpenSearch is too busy to answer this server in time (%s), %s for now. "+
+				"Signalith keeps trying, and goes on by itself once OpenSearch catches up. %s%s",
+				refusal(oe, index), noJobs, store.BusyFix, was),
+			"OpenSearch is too busy to answer this server, so it runs no background jobs for now."
+	case store.RefusedSignIn:
+		return fmt.Sprintf("OpenSearch refused this server's sign-in (%s), %s. "+
+				"Check the OpenSearch user name and password, or the client certificate, on the Settings page.%s", refusal(oe, index), noJobs, was),
+			"OpenSearch refuses this server's sign-in, so it runs no background jobs."
+	case store.RefusedPermission:
+		return fmt.Sprintf("OpenSearch refused this server's heartbeat (%s), %s. Give Signalith's OpenSearch user the right to create, read and write %s (or %s_*).%s",
+				refusal(oe, index), noJobs, index, n.prefix, was),
+			"OpenSearch refuses this server, so it runs no background jobs."
+	case store.RefusedBlocked:
+		return fmt.Sprintf("OpenSearch refuses writes (%s), %s. %s This server goes on by itself after that.%s",
+				refusal(oe, index), noJobs, store.BlockedFix, was),
+			"OpenSearch refuses writes, so this server runs no background jobs."
+	case store.RefusedUnavailable:
+		return fmt.Sprintf("OpenSearch isn't ready to answer this server (%s), %s. Signalith keeps trying. OpenSearch's log says why it isn't ready. %s%s",
+				refusal(oe, index), noJobs, store.OpenSearchLog, was),
+			"OpenSearch isn't ready, so this server runs no background jobs."
+	}
+	return fmt.Sprintf("OpenSearch answered this server's heartbeat with an error (%s), %s. Signalith keeps trying. OpenSearch's log may say why. %s%s",
+			refusal(oe, index), noJobs, store.OpenSearchLog, was),
+		"OpenSearch answers this server with an error, so it runs no background jobs."
 }
 
 // refusal names an OpenSearch error briefly, such as "403
@@ -1221,7 +1301,9 @@ type ServerStatus struct {
 	Name   string `json:"name"`
 	Self   bool   `json:"self"`
 	// State is starting, ready, stopping, stopped, conflict, unreachable
-	// (this server cannot use OpenSearch) or offline.
+	// (this server cannot reach OpenSearch, or OpenSearch doesn't answer
+	// it in time), refused (OpenSearch answers this server but turns it
+	// away) or offline.
 	State string `json:"state"`
 	// OfflineSince is when its heartbeat stopped, for an offline or
 	// stopped server, on this server's clock, and SeenAgo how long ago
@@ -1289,6 +1371,10 @@ func (n *Node) Status() Status {
 			NotReadyDown: StateDown}[reason]
 		if self.State == "" {
 			self.State = StateStarting
+		}
+		if self.State == StateUnreachable && n.lastErr != "" && store.RefusalOf(n.lastErrRaw) != store.NotRefused {
+			// It reached OpenSearch, which turned it away.
+			self.State = StateRefused
 		}
 	}
 	mine := ServerStatus{NodeID: self.NodeID, Name: self.Name, Self: true, State: self.State, Version: self.Version,
@@ -1399,20 +1485,11 @@ func (n *Node) warningsLocked(st Status, view LeaseView, notWhy string) []Warnin
 	// This server cannot use OpenSearch: what it knows of the others is
 	// old, so nothing more is said about them.
 	if ready, why := n.readyLocked(); !ready && why == NotReadyOpenSearch {
-		var text string
-		if n.lastErr != "" && !n.hb.checked {
-			var oe *store.Error
-			if errors.As(n.lastErrRaw, &oe) {
-				text = fmt.Sprintf("OpenSearch refused this server's heartbeat (%s), so this server runs no detections, threat intel downloads or retention. "+
-					"Give Signalith's OpenSearch user the right to create, read and write %s (or %s_*). The error was: %s.",
-					refusal(oe, RuntimeIndex(n.prefix)), RuntimeIndex(n.prefix), n.prefix, oe.Error())
-			} else {
-				text = "This server can't reach OpenSearch, so it can't see the other servers and runs no background jobs. The error was: " + n.lastErr + "."
-			}
-		} else {
-			text = "This server can't reach OpenSearch, so it can't see the other servers and runs no background jobs. The servers below are as it last saw them."
+		text, banner := n.osTroubleLocked()
+		if n.hb.checked {
+			text += " The servers below are as it last saw them."
 		}
-		w = append(w, Warning{Level: "red", Text: text, Banner: "This server can't use OpenSearch, so it runs no background jobs."})
+		w = append(w, Warning{Level: "red", Text: text, Banner: banner})
 		return append(w, n.localWarningsLocked(st)...)
 	}
 	runs := false
