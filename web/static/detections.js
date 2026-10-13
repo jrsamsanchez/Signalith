@@ -1052,9 +1052,21 @@ function detTitle(t) {
   t.split(/(\$[A-Za-z_][A-Za-z0-9_.()]*\$)/).forEach((part, i) => { if (part) out.push(i % 2 ? el('span', { class: 'dx-tok' }, part) : part); });
   return out;
 }
-const SOURCE_LABEL = { builtin: 'Built-in', custom: 'Custom', override: 'Edited', pack: 'SigmaHQ' };
+const SOURCE_LABEL = { builtin: 'Built-in', custom: 'Custom', override: 'Edited', pack: 'Content pack' };
 const sourceLabel = (d) => (d.source === 'pack' && d.origin ? packShort(d.origin.pack) : SOURCE_LABEL[d.source] || d.source);
-const packShort = (name) => ({ sigmahq: 'SigmaHQ' }[name] || name);
+const packShort = (name) => ({ sigmahq: 'SigmaHQ', splunk: 'Splunk' }[name] || name);
+// PACK_INFO is how each pack's card reads: who wrote the rules, under
+// which licence, and which of its rules the one-click button turns on
+// (Splunk's TTP rules raise findings; its anomalies only add risk).
+const PACK_INFO = {
+  sigmahq: { icon: 'sigma', by: 'By the SigmaHQ authors named on each rule, under the ', license: 'Detection Rule License 1.1', home: 'SigmaHQ on GitHub',
+    desc: 'Windows rules for Sysmon, Security and PowerShell events, each tested before it ships. Off until you turn them on.',
+    strong: (d) => d.severity === 'high' || d.severity === 'critical', strongName: 'high and critical rule' },
+  splunk: { icon: 'layers', by: 'By Splunk’s Threat Research Team and the authors named on each rule, under the ', license: 'Apache License 2.0', home: 'security_content on GitHub',
+    desc: 'Splunk’s Windows process, file and registry detections, each tested before it ships. TTP rules raise findings; anomalies add risk. Off until you turn them on.',
+    strong: (d) => (d.tags || []).includes('ttp'), strongName: 'TTP rule' },
+};
+const packInfo = (p) => PACK_INFO[p.name] || { icon: 'layers', by: 'Under the ', license: p.license, home: 'Source', desc: p.description, strong: () => false, strongName: 'rule' };
 const inSource = (d, src) => (src === 'all' ? true : src.startsWith('pack:') ? !!d.origin && d.origin.pack === src.slice(5) : !d.origin || d.enabled);
 
 async function loadDetections() {
@@ -1191,10 +1203,11 @@ function renderPacks(list) {
     if (browsing && browsing !== p) return null;
     const rules = detections.filter((d) => d.origin && d.origin.pack === p.name);
     const on = rules.filter((d) => d.enabled).length;
-    const strong = rules.filter((d) => !d.enabled && (d.severity === 'high' || d.severity === 'critical'));
-    const credit = el('p', { class: 'dx-pack__credit' }, 'By the SigmaHQ authors named on each rule, under the ',
-      el('a', { href: p.license_url, target: '_blank', rel: 'noopener' }, 'Detection Rule License 1.1'), ' · ',
-      el('a', { href: p.source, target: '_blank', rel: 'noopener' }, 'SigmaHQ on GitHub'));
+    const info = packInfo(p);
+    const strong = rules.filter((d) => !d.enabled && info.strong(d));
+    const credit = el('p', { class: 'dx-pack__credit' }, info.by,
+      el('a', { href: p.license_url, target: '_blank', rel: 'noopener' }, info.license), ' · ',
+      el('a', { href: p.source, target: '_blank', rel: 'noopener' }, info.home));
     const actions = [];
     if (browsing) {
       actions.push(dxBtn('ghost', 'Back to your detections', () => { det.source = ''; det.limit = DET_PAGE; renderDetections(); }, { sm: true, icon: 'arrow-left' }));
@@ -1205,15 +1218,15 @@ function renderPacks(list) {
       }
     } else {
       actions.push(dxBtn('secondary', 'Browse rules', () => { det.source = 'pack:' + p.name; det.show = ''; det.limit = DET_PAGE; renderDetections(); }, { sm: true, icon: 'list-filter' }));
-      if (admin && strong.length) actions.push(dxBtn('ghost', `Turn on ${dxPlural(strong.length, 'high and critical rule')}`, (ev) => bulkEnable(strong, true, ev.currentTarget), { sm: true, icon: 'power' }));
+      if (admin && strong.length) actions.push(dxBtn('ghost', `Turn on ${dxPlural(strong.length, info.strongName)}`, (ev) => bulkEnable(strong, true, ev.currentTarget), { sm: true, icon: 'power' }));
     }
     return el('div', { class: 'card dx-pack' },
-      el('div', { class: 'dx-pack__mark', 'aria-hidden': 'true' }, icon('sigma')),
+      el('div', { class: 'dx-pack__mark', 'aria-hidden': 'true' }, icon(info.icon)),
       el('div', { class: 'dx-pack__body' },
         el('div', { class: 'dx-pack__head' }, el('b', {}, p.title),
           el('span', { class: 'dx-meta' }, `${p.rules.toLocaleString()} rules · ${on ? on.toLocaleString() + ' on' : 'all off'}`)),
         el('p', { class: 'dx-pack__desc' }, browsing ? 'Filter by name, ATT&CK ID or tag, then turn on what fits your systems.'
-          : 'Windows rules for Sysmon, Security and PowerShell events, each tested before it ships. Off until you turn them on.'),
+          : info.desc),
         credit),
       el('div', { class: 'dx-pack__actions' }, ...actions));
   });

@@ -26,6 +26,14 @@ full text is in internal/detect/packs/sigmahq/LICENSE.Detection.Rules.md.
 Findings raised by these rules credit the rule's author and source, as the
 DRL requires.
 
+The Splunk Security Content pack (internal/detect/packs/splunk) contains
+detection rules and search macros from Splunk security_content
+(https://github.com/splunk/security_content), Copyright Splunk Inc., unchanged,
+by the authors named in each rule. They are licensed under the Apache License,
+Version 2.0, whose full text is in internal/detect/packs/splunk/LICENSE.
+Signalith converts them to its own detections when it starts. Signalith is not
+affiliated with or endorsed by Splunk.
+
 The endpoint configuration checks in internal/endpoint/checks are based on
 rules from the SCAP Security Guide (ComplianceAsCode project,
 https://github.com/ComplianceAsCode/content). Signalith uses the SSG rule

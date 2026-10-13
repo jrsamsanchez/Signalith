@@ -719,6 +719,12 @@ changes and more, plus two risk incident rules); 19 are on by default.
 - **Import Sigma rule** converts a [Sigma](https://github.com/SigmaHQ/sigma) rule to a
   Signalith query and lists anything it had to approximate. Imported rules start
   disabled so you can test them first.
+- **Content packs** add community rules, off until you turn them on: 1,695 tested
+  [SigmaHQ](https://github.com/SigmaHQ/sigma) Windows rules and 173 Windows detections
+  from Splunk's open source
+  [security_content](https://github.com/splunk/security_content) (Apache 2.0). With
+  both packs on, detections cover 140 ATT&CK techniques. See
+  [docs/detections.md](docs/detections.md#content-packs).
 - **ATT&CK coverage** shows the Enterprise matrix with techniques covered by enabled
   detections, by disabled ones, and gaps.
 
@@ -1125,7 +1131,9 @@ visibility to alerts, response actions and signed packages, is on the
 ## Trademarks
 
 Signalith is an independent open-source project. It is not affiliated with,
-endorsed by or sponsored by Splunk or Cisco, and contains no Splunk code.
+endorsed by or sponsored by Splunk or Cisco, and contains no Splunk software code.
+Its optional Splunk Security Content pack ships detection rules from Splunk's open
+source security_content project under the Apache License 2.0 (see NOTICE).
 Splunk, Splunk Enterprise Security and SPL are trademarks of Splunk LLC; they are
 named here only to describe what Signalith works like. OpenSearch, Fluent Bit,
 Sigma and MITRE ATT&CK are trademarks of their respective owners.

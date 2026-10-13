@@ -200,12 +200,15 @@ func TestContentPacks(t *testing.T) {
 	ts, _ := newTestServer(t)
 	code, body := do(t, ts, "GET", "/api/detections/packs", "", true)
 	packs, _ := body["packs"].([]any)
-	if code != 200 || len(packs) != 1 {
+	if code != 200 || len(packs) != 2 {
 		t.Fatalf("packs = %d %v", code, body)
 	}
 	p := packs[0].(map[string]any)
 	if p["name"] != "sigmahq" || p["license"] != "DRL-1.1" || p["rules"].(float64) < 500 || p["enabled"].(float64) != 0 {
 		t.Fatalf("pack = %v", p)
+	}
+	if p := packs[1].(map[string]any); p["name"] != "splunk" || p["license"] != "Apache-2.0" || p["format"] != "splunk" || p["rules"].(float64) < 100 {
+		t.Fatalf("splunk pack = %v", p)
 	}
 
 	// Turn two pack rules and a built-in on or off at once; pack rules keep
@@ -227,8 +230,12 @@ func TestContentPacks(t *testing.T) {
 		t.Fatalf("enabled pack rule = %d %v", code, body)
 	}
 	code, body = do(t, ts, "GET", "/api/detections/packs", "", true)
-	if p := body["packs"].([]any)[0].(map[string]any); p["enabled"].(float64) != 2 {
-		t.Errorf("pack after enabling = %v", p)
+	on := 0.0
+	for _, x := range body["packs"].([]any) {
+		on += x.(map[string]any)["enabled"].(float64)
+	}
+	if on != 2 {
+		t.Errorf("packs after enabling = %v", body["packs"])
 	}
 	// An unknown ID changes nothing.
 	code, _ = do(t, ts, "POST", "/api/detections/enable", fmt.Sprintf(`{"ids":["%s","no-such-rule"],"enabled":false}`, ids[0]), true)

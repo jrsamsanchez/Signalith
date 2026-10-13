@@ -1,0 +1,7 @@
+{"rule": "7d15f645-58cc-4cb7-a9bf-2dcf15bc4b28", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x /vmware/horizon/workspace/webapps/ x x .jsp"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\vmware\\horizon\\workspace\\webapps\\ x x .jsp"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x /vmware/horizon/workspace/webapps/ x x .jsq"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\vmware\\horizon\\workspace\\webapps\\ x x .jsq"}}
+]}

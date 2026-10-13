@@ -1,0 +1,10 @@
+{"rule": "08cb291e-ea77-48e8-a95a-0799319bf056", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"x 1","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\System\\CurrentControlSet\\Control\\Lsa\\DSRMAdminLogonBehavior"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"x 2","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\System\\CurrentControlSet\\Control\\Lsa\\DSRMAdminLogonBehavior"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"x 1","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\System\\CurrentControlSet\\Control\\Lsa\\DSRMAdminLogonBehavios"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"x 1","EventType":"SetValue","ProcessId":"4242","TargetObject":"HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\System\\CurrentControlSet\\Control\\Lsa\\DSRMAdminLogonBehavior"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"x 2","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\System\\CurrentControlSet\\Control\\Lsa\\DSRMAdminLogonBehavios"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"x 2","EventType":"SetValue","ProcessId":"4242","TargetObject":"HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"x 3","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\System\\CurrentControlSet\\Control\\Lsa\\DSRMAdminLogonBehavior"}}
+]}

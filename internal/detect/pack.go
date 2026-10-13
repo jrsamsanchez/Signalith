@@ -12,6 +12,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/jrsamsanchez/signalith/internal/query"
+	"github.com/jrsamsanchez/signalith/internal/splcheck"
 )
 
 // Content packs are rule sets from other projects that ship inside the
@@ -22,7 +23,7 @@ import (
 // pass in CI are listed in the manifest (see pack_test.go and
 // internal/sigmacheck).
 //
-//go:embed packs/*/pack.yaml packs/*/rules/*.yml
+//go:embed packs/*/pack.yaml packs/*/rules/*.yml packs/*/macros/*.yml
 var packFS embed.FS
 
 // Origin says where a detection from a content pack came from. It is
@@ -54,16 +55,21 @@ func (o *Origin) Credit() string {
 
 // Pack is one content pack's manifest.
 type Pack struct {
-	Name        string     `yaml:"name" json:"name"`
-	Title       string     `yaml:"title" json:"title"`
-	Description string     `yaml:"description" json:"description"`
-	Source      string     `yaml:"source" json:"source"`   // the project's repository
-	Version     string     `yaml:"version" json:"version"` // the upstream commit the rules come from
-	Date        string     `yaml:"date" json:"date"`       // when the pack was made
-	License     string     `yaml:"license" json:"license"`
-	LicenseURL  string     `yaml:"license_url" json:"license_url"`
-	Notice      string     `yaml:"notice" json:"notice"`
-	Rules       []PackRule `yaml:"rules" json:"-"`
+	Name        string `yaml:"name" json:"name"`
+	Title       string `yaml:"title" json:"title"`
+	Description string `yaml:"description" json:"description"`
+	Source      string `yaml:"source" json:"source"`   // the project's repository
+	Version     string `yaml:"version" json:"version"` // the upstream commit the rules come from
+	Date        string `yaml:"date" json:"date"`       // when the pack was made
+	License     string `yaml:"license" json:"license"`
+	LicenseURL  string `yaml:"license_url" json:"license_url"`
+	Notice      string `yaml:"notice" json:"notice"`
+	// Format is how the rules are written: sigma (the default) or splunk
+	// (security_content detections, with the macros they use in macros/).
+	Format string     `yaml:"format,omitempty" json:"format,omitempty"`
+	Rules  []PackRule `yaml:"rules" json:"-"`
+
+	macros map[string]*splcheck.Macro
 }
 
 // PackRule is one rule in a manifest.
@@ -107,6 +113,11 @@ func loadPacks(fsys fs.FS) ([]*Pack, []*Detection, error) {
 			return nil, nil, fmt.Errorf("%s: %w", m, err)
 		}
 		dir := path.Dir(m)
+		if p.Format == "splunk" {
+			if p.macros, err = loadMacros(fsys, dir); err != nil {
+				return nil, nil, err
+			}
+		}
 		for _, r := range p.Rules {
 			src, err := fs.ReadFile(fsys, path.Join(dir, "rules", r.File))
 			if err != nil {
@@ -162,6 +173,13 @@ func packThrottle(category, datamodel string) []string {
 // host, program and what it acted on (packThrottle), and risk on the user
 // and the host.
 func PackDetection(p *Pack, r PackRule, src []byte) (*Detection, error) {
+	switch p.Format {
+	case "", "sigma":
+	case "splunk":
+		return SplunkDetection(p, r, src)
+	default:
+		return nil, fmt.Errorf("pack format %q is unknown", p.Format)
+	}
 	res, err := ConvertSigmaWith(src, SigmaOptions{Strict: true})
 	if err != nil {
 		return nil, err

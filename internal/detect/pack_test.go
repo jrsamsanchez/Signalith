@@ -13,6 +13,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/search"
 	"github.com/jrsamsanchez/signalith/internal/sigmacheck"
+	"github.com/jrsamsanchez/signalith/internal/splcheck"
 )
 
 // readManifests returns every pack manifest with its rules listed (Packs
@@ -50,6 +51,12 @@ func TestPackRulesFireOnTheirTests(t *testing.T) {
 	eng := &search.Engine{Intel: intel.NewStore(intel.NewMemory())}
 	total := 0
 	for dir, p := range readManifests(t) {
+		if p.Format == "splunk" {
+			var err error
+			if p.macros, err = loadMacros(packFS, dir); err != nil {
+				t.Fatal(err)
+			}
+		}
 		listed := map[string]bool{}
 		for _, r := range p.Rules {
 			listed[r.File] = true
@@ -71,13 +78,29 @@ func TestPackRulesFireOnTheirTests(t *testing.T) {
 			if _, err := eng.Compile(q); err != nil {
 				t.Errorf("%s: query does not compile: %v", r.ID, err)
 			}
-			rule, err := sigmacheck.Parse(src)
-			if err != nil {
-				t.Errorf("%s: %v", r.ID, err)
-				continue
+			// verify checks the converted detection against the rule as its
+			// own project reads it.
+			var ruleID string
+			var verify func(tf *sigmacheck.TestFile) []error
+			if p.Format == "splunk" {
+				rule, err := splcheck.Parse(src, p.macros)
+				if err != nil {
+					t.Errorf("%s: %v", r.ID, err)
+					continue
+				}
+				ruleID = rule.ID
+				verify = func(tf *sigmacheck.TestFile) []error { return splcheck.Verify(rule, q.Datamodel, q.Search, tf) }
+			} else {
+				rule, err := sigmacheck.Parse(src)
+				if err != nil {
+					t.Errorf("%s: %v", r.ID, err)
+					continue
+				}
+				ruleID = rule.ID
+				verify = func(tf *sigmacheck.TestFile) []error { return sigmacheck.Verify(rule, q.Datamodel, q.Search, tf) }
 			}
-			if rule.ID != r.RuleID {
-				t.Errorf("%s: manifest says rule %s, file has %s", r.ID, r.RuleID, rule.ID)
+			if ruleID != r.RuleID {
+				t.Errorf("%s: manifest says rule %s, file has %s", r.ID, r.RuleID, ruleID)
 			}
 			data, err := os.ReadFile(path.Join(dir, "tests", strings.TrimSuffix(r.File, ".yml")+".json"))
 			if err != nil {
@@ -101,7 +124,7 @@ func TestPackRulesFireOnTheirTests(t *testing.T) {
 			if positives == 0 {
 				t.Errorf("%s: no positive test event", r.ID)
 			}
-			for _, err := range sigmacheck.Verify(rule, q.Datamodel, q.Search, tf) {
+			for _, err := range verify(tf) {
 				t.Errorf("%s (%s): %v", r.ID, r.Path, err)
 			}
 			total++
@@ -114,7 +137,7 @@ func TestPackRulesFireOnTheirTests(t *testing.T) {
 			}
 		}
 	}
-	if total < 500 {
+	if total < 1500 {
 		t.Errorf("only %d pack rules checked", total)
 	}
 }
@@ -132,11 +155,20 @@ func TestPackDetections(t *testing.T) {
 			t.Errorf("%s is on by default", d.ID)
 		}
 		o := d.Origin
-		if o == nil || o.Rule == "" || o.License != "DRL-1.1" || !strings.HasPrefix(o.URL, "https://github.com/SigmaHQ/sigma/blob/") || o.LicenseURL == "" {
+		if o == nil {
+			t.Errorf("%s: no origin", d.ID)
+			continue
+		}
+		license, url := "DRL-1.1", "https://github.com/SigmaHQ/sigma/blob/"
+		if o.Pack == "splunk" {
+			license, url = "Apache-2.0", "https://github.com/splunk/security_content/blob/"
+		}
+		if o.Rule == "" || o.License != license || !strings.HasPrefix(o.URL, url) || o.LicenseURL == "" {
 			t.Errorf("%s: origin %+v", d.ID, o)
 			continue
 		}
-		// DRL 1.1: findings must name the rule's author.
+		// DRL 1.1 requires findings to name the rule's author; Splunk's
+		// rules are credited the same way.
 		if o.Author == "" || !strings.Contains(o.Credit(), o.Author) {
 			t.Errorf("%s: credit %q", d.ID, o.Credit())
 		}

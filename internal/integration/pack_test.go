@@ -31,15 +31,6 @@ import (
 func TestPackRulesAgainstOpenSearch(t *testing.T) {
 	cl, eng, prefix := setup(t)
 	ctx := context.Background()
-	dir := filepath.Join("..", "detect", "packs", "sigmahq")
-	data, err := os.ReadFile(filepath.Join(dir, "pack.yaml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var manifest detect.Pack
-	if err := yaml.Unmarshal(data, &manifest); err != nil {
-		t.Fatal(err)
-	}
 	_, dets, err := detect.Packs()
 	if err != nil {
 		t.Fatal(err)
@@ -59,29 +50,42 @@ func TestPackRulesAgainstOpenSearch(t *testing.T) {
 	var rules []ruleCases
 	var records []map[string]any
 	at := time.Now().Add(-5 * time.Minute)
-	for i, r := range manifest.Rules {
-		d := byID[r.ID]
-		if d == nil {
-			t.Fatalf("%s is in the manifest but not loaded", r.ID)
-		}
-		raw, err := os.ReadFile(filepath.Join(dir, "tests", strings.TrimSuffix(r.File, ".yml")+".json"))
+	i := 0
+	for _, name := range []string{"sigmahq", "splunk"} {
+		dir := filepath.Join("..", "detect", "packs", name)
+		data, err := os.ReadFile(filepath.Join(dir, "pack.yaml"))
 		if err != nil {
 			t.Fatal(err)
 		}
-		tf, err := sigmacheck.DecodeTestFile(raw)
-		if err != nil {
+		var manifest detect.Pack
+		if err := yaml.Unmarshal(data, &manifest); err != nil {
 			t.Fatal(err)
 		}
-		rc := ruleCases{det: d, positives: map[string]bool{}}
-		for j, c := range tf.Cases {
-			host := fmt.Sprintf("case-%d-%d", i, j)
-			rc.hosts = append(rc.hosts, host)
-			if c.Expect {
-				rc.positives[host] = true
+		for _, r := range manifest.Rules {
+			i++
+			d := byID[r.ID]
+			if d == nil {
+				t.Fatalf("%s is in the manifest but not loaded", r.ID)
 			}
-			records = append(records, ingest.WinEventRecord(c.Channel, c.EventID, host, at, c.Data))
+			raw, err := os.ReadFile(filepath.Join(dir, "tests", strings.TrimSuffix(r.File, ".yml")+".json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			tf, err := sigmacheck.DecodeTestFile(raw)
+			if err != nil {
+				t.Fatal(err)
+			}
+			rc := ruleCases{det: d, positives: map[string]bool{}}
+			for j, c := range tf.Cases {
+				host := fmt.Sprintf("case-%d-%d", i, j)
+				rc.hosts = append(rc.hosts, host)
+				if c.Expect {
+					rc.positives[host] = true
+				}
+				records = append(records, ingest.WinEventRecord(c.Channel, c.EventID, host, at, c.Data))
+			}
+			rules = append(rules, rc)
 		}
-		rules = append(rules, rc)
 	}
 	p := &ingest.Pipeline{Store: cl, Prefix: prefix}
 	for start := 0; start < len(records); start += 500 {

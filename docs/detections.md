@@ -285,6 +285,55 @@ go test ./internal/detect/
 The generator keeps each rule's Signalith ID across runs, rewrites `rules/`,
 `tests/`, `pack.yaml` and `REPORT.md`, and only lists rules whose checks pass.
 
+### Splunk Security Content
+
+**Splunk Security Content** (`internal/detect/packs/splunk`) holds 173 Windows
+detections from Splunk's Threat Research Team
+([security_content](https://github.com/splunk/security_content)), pinned to one
+commit. They are the production TTP and anomaly rules that search the CIM
+`Endpoint.Processes`, `Endpoint.Filesystem` and `Endpoint.Registry` nodes with
+`tstats`. Signalith uses the same CIM field names, so each rule's `where` clause
+becomes a Signalith filter field for field:
+
+| Splunk node | Windows events | Data model |
+| --- | --- | --- |
+| `Endpoint.Processes` | Sysmon 1, Security 4688 | Endpoint |
+| `Endpoint.Filesystem` | Sysmon 11, 23 and 26 | Filesystem |
+| `Endpoint.Registry` | Sysmon 12, 13 and 14 | Registry |
+
+The rule files and the macros they use ship unchanged; Signalith converts them when
+it starts, reading the search the way Splunk does: `*` is the only wildcard (`?` is
+literal, so rules with one are left out), case is ignored, and `!=` only matches
+when the field is present. TTP rules raise findings and add risk; anomaly rules only
+add risk, as in Splunk ES risk-based alerting. Severity follows the rule's risk score
+(TTP: 80 and up critical, 64 high, 30 medium; anomalies low). Each is tagged
+`splunk`, the pack name, `ttp` or `anomaly`, and the node, and keeps the rule's
+known false positives as triage guidance.
+
+A rule is shipped only when its whole search converts exactly (a `tstats` search
+whose later stages only rename fields, format times or apply the rule's empty
+`_filter` macro) and, on test events made from its `where` clause and passed through
+the real Windows parser, the converted detection agrees with Splunk's reading of the
+clause on every event. Searches with `eval`, `rex`, `regex`, `lookup` or raw `sysmon`
+event searches are left out for now; `internal/detect/packs/splunk/REPORT.md` lists
+every rule left out and why. The same CI checks as the SigmaHQ pack run on it.
+
+On the pack card, **Turn on N TTP rules** is the suggested start.
+
+Licence: the rules are © Splunk Inc. under the
+[Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0) (the licence text
+is in the pack folder and the attribution in `NOTICE`). Findings credit the rule's
+authors and link to the rule at the pinned commit. Signalith is not affiliated with
+or endorsed by Splunk.
+
+To refresh the pack from a newer commit:
+
+```sh
+git clone https://github.com/splunk/security_content /tmp/security_content
+go run ./internal/detect/splunkgen -splunk /tmp/security_content
+go test ./internal/detect/ ./internal/splcheck/
+```
+
 ## Sigma rules
 
 **Import Sigma rule** on the Detections page (or `POST /api/detections/sigma`)
