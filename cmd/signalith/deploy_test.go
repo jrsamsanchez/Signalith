@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
-	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -45,6 +44,7 @@ type composeService struct {
 	Ulimits     map[string]any    `yaml:"ulimits"`
 	DependsOn   map[string]dep    `yaml:"depends_on"`
 	Healthcheck map[string]any    `yaml:"healthcheck"`
+	Image       string            `yaml:"image"`
 	Build       map[string]string `yaml:"build"`
 	PullPolicy  string            `yaml:"pull_policy"`
 	Hostname    string            `yaml:"hostname"`
@@ -99,8 +99,8 @@ func TestDockerCompose(t *testing.T) {
 	if !slices.Contains(setup.Volumes, "opensearch-certs:"+osDir) || !slices.Contains(setup.Volumes, "signalith-secrets:"+sigDir) {
 		t.Errorf("setup volumes %v", setup.Volumes)
 	}
-	if setup.User != "0:0" || setup.Restart != "no" || setup.NetworkMode != "none" || setup.PullPolicy != "build" {
-		t.Errorf("setup: user %q restart %q network %q pull %q", setup.User, setup.Restart, setup.NetworkMode, setup.PullPolicy)
+	if setup.User != "0:0" || setup.Restart != "no" || setup.NetworkMode != "none" {
+		t.Errorf("setup: user %q restart %q network %q", setup.User, setup.Restart, setup.NetworkMode)
 	}
 	// bootstrap-docker needs to change owners (CHOWN), write in folders
 	// it gave away (DAC_OVERRIDE) and set modes on files it gave away
@@ -108,8 +108,33 @@ func TestDockerCompose(t *testing.T) {
 	if !slices.Equal(setup.CapDrop, []string{"ALL"}) || !slices.Equal(setup.CapAdd, []string{"CHOWN", "DAC_OVERRIDE", "FOWNER"}) {
 		t.Errorf("setup capabilities: drop %v add %v", setup.CapDrop, setup.CapAdd)
 	}
-	if len(setup.Build) == 0 || !maps.Equal(setup.Build, svc["signalith"].Build) {
-		t.Errorf("setup builds %v, signalith %v", setup.Build, svc["signalith"].Build)
+	// setup and signalith run the same image: the one GitHub built, fetched
+	// again on every `up`, or with docker-compose.build.yml the one built
+	// from the checked-out code on every `up`.
+	const image = "ghcr.io/jrsamsanchez/signalith:${SIGNALITH_VERSION:-main}"
+	for _, name := range []string{"setup", "signalith"} {
+		if s := svc[name]; s.Image != image || s.PullPolicy != "always" || len(s.Build) != 0 {
+			t.Errorf("%s: image %q pull %q build %v", name, s.Image, s.PullPolicy, s.Build)
+		}
+	}
+	rawBuild, err := os.ReadFile(filepath.Join(dockerDir, "docker-compose.build.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var build struct {
+		Services map[string]composeService `yaml:"services"`
+	}
+	if err := yaml.Unmarshal(rawBuild, &build); err != nil {
+		t.Fatalf("docker-compose.build.yml: %v", err)
+	}
+	if len(build.Services) != 2 {
+		t.Errorf("docker-compose.build.yml changes %d services, want setup and signalith", len(build.Services))
+	}
+	for _, name := range []string{"setup", "signalith"} {
+		b := build.Services[name]
+		if b.Image != "signalith:local" || b.PullPolicy != "build" || b.Build["context"] != "../.." || b.Build["dockerfile"] != "deploy/docker/Dockerfile" {
+			t.Errorf("docker-compose.build.yml %s: image %q pull %q build %v", name, b.Image, b.PullPolicy, b.Build)
+		}
 	}
 
 	// OpenSearch: our settings and security files, the certificates

@@ -1,0 +1,21 @@
+# Builds Signalith's image from the code you checked out, instead of
+# downloading the one GitHub built. Add it after the main file in every
+# command, for example:
+#
+#   docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.build.yml up -d
+#
+# It rebuilds on every `up`, so after `git pull` the same command runs the
+# new code. Building needs a few minutes and about 1 GB of disk the first time.
+services:
+  setup:
+    image: signalith:local
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    pull_policy: build
+  signalith:
+    image: signalith:local
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    pull_policy: build

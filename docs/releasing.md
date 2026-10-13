@@ -18,7 +18,8 @@ The **Release** workflow (`.github/workflows/release.yml`) runs when a tag such 
 3. Builds the container image for amd64 and arm64, pushes it to
    `ghcr.io/jrsamsanchez/signalith:<version>` (and `:latest` unless the version has a
    `-` suffix such as `-rc.1`), signs it with Sigstore and attaches its SBOM and
-   provenance.
+   provenance. (Between releases, the **Image (main)** workflow publishes the same kind
+   of signed image as `:main` on every push to `main`; the Docker quick start runs it.)
 4. Writes the SBOM (SPDX and CycloneDX, made by [Syft](https://github.com/anchore/syft)
    from the Linux program), `SHA256SUMS`, its Sigstore signature, its GPG signature when
    the key is set up (below), and GitHub build provenance for every file.
