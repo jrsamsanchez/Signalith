@@ -75,7 +75,9 @@ extra:
 
 validation:
   nav:
-    omitted_files: warn
+    # A page not yet in the nav below is still built and searchable;
+    # add it to the nav when you add the page.
+    omitted_files: info
     not_found: warn
     absolute_links: info
   links:
@@ -124,6 +126,7 @@ nav:
       - Detections: detections.md
       - Threat intel: threat-intel.md
       - Dashboards: dashboards.md
+      - Response actions: response-actions.md
   - Administration:
       - Server settings: settings.md
       - Users and sign-in: users.md
