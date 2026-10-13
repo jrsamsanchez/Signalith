@@ -527,6 +527,9 @@ func (s *Server) handleRemoveCaseEntry(w http.ResponseWriter, r *http.Request) {
 		if i >= 0 && c.Entries[i].Kind == cases.KindFinding {
 			return false, badRequest{errors.New("remove the finding from the case instead")}
 		}
+		if i >= 0 && c.Entries[i].Kind == cases.KindAction {
+			return false, badRequest{errors.New("a response action stays on the timeline: it is the record of what was done")}
+		}
 		// Notes, pinned events and searches are evidence: analysts remove
 		// only their own, admins anyone's.
 		if i >= 0 && !p.Role.AtLeast(users.Admin) && !strings.EqualFold(c.Entries[i].Author, p.Username) {

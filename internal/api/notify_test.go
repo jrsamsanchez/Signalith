@@ -58,7 +58,7 @@ func TestNotifyAPI(t *testing.T) {
 	if code != 200 {
 		t.Fatalf("save: %d %v", code, body)
 	}
-	raw := mustJSON(t, body)
+	raw := notifyJSON(t, body)
 	for _, secret := range []string{"token-abcdef", "header-secret", "sig-secret"} {
 		if strings.Contains(raw, secret) {
 			t.Errorf("the answer holds %s: %s", secret, raw)
@@ -123,7 +123,7 @@ func TestNotifyAPI(t *testing.T) {
 		t.Errorf("last %v", last)
 	}
 	_, body = doAs(t, ts, "admin", "s3cret-pass", "GET", "/api/health", "")
-	if !strings.Contains(mustJSON(t, body["warnings"]), "Notifications to Webhook SOAR are failing") {
+	if !strings.Contains(notifyJSON(t, body["warnings"]), "Notifications to Webhook SOAR are failing") {
 		t.Errorf("health warnings %v", body["warnings"])
 	}
 
@@ -189,7 +189,7 @@ func TestNotifyDeliveriesListsNewestFirst(t *testing.T) {
 	}
 }
 
-func mustJSON(t *testing.T, v any) string {
+func notifyJSON(t *testing.T, v any) string {
 	t.Helper()
 	b, err := json.Marshal(v)
 	if err != nil {

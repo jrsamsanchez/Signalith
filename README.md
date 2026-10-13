@@ -8,8 +8,9 @@ visual query builder, CIM-style data models, scheduled detections with a finding
 queue for triage, Sigma rule import, a MITRE ATT&CK coverage map, risk-based
 alerting with asset and identity context, threat intel feeds matched against your
 events, a security posture dashboard plus dashboards you build from queries, and
-investigation cases that collect findings, notes, searches and evidence in one place.
-Response actions and playbooks come next.
+investigation cases that collect findings, notes, searches and evidence in one place,
+and response actions (block an IP, disable an account, isolate a host) run from a
+finding or a case. Playbooks come next.
 
 Website: **https://signalith.io** (its source is in [`site/`](site/)).
 
@@ -813,6 +814,24 @@ intel:
 
 See [docs/threat-intel.md](docs/threat-intel.md) for the catalog, formats, TAXII,
 download safety rules, matching details and the API.
+
+## Response actions
+
+Analysts can act on what they find without leaving Signalith: **Respond** on a
+finding or a case runs a **response action** on one of its users, hosts or IPs, such
+as blocking an IP on the firewall, disabling the user in Active Directory, isolating
+the host with a script, or starting a Shuffle workflow. The target is checked strictly
+for its kind, a disruptive action needs a reason, and a confirm step says exactly
+what will happen before anything runs. Every run is kept in the `<prefix>_actions`
+index with who ran it, why and what came back, and noted on the case or finding.
+
+Admins set actions up on the **Response actions** page from templates (OPNsense or
+pfSense alias, generic webhook, Shuffle, isolate-host script, disable or enable an AD
+user), with **Test** to check one without changing anything. Scripts run only from
+the server's scripts folder (`response.scripts_dir`), which no page can change.
+
+See [docs/response-actions.md](docs/response-actions.md) for each kind of action,
+the AD delegation, example isolate scripts and the API.
 
 ## Dashboards
 

@@ -10,6 +10,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
@@ -41,12 +42,14 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/notify"
 	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/redact"
+	"github.com/jrsamsanchez/signalith/internal/respond"
 	"github.com/jrsamsanchez/signalith/internal/retention"
 	"github.com/jrsamsanchez/signalith/internal/risk"
 	"github.com/jrsamsanchez/signalith/internal/safelog"
 	"github.com/jrsamsanchez/signalith/internal/sample"
 	"github.com/jrsamsanchez/signalith/internal/search"
 	"github.com/jrsamsanchez/signalith/internal/secrets"
+	"github.com/jrsamsanchez/signalith/internal/securefile"
 	"github.com/jrsamsanchez/signalith/internal/store"
 	"github.com/jrsamsanchez/signalith/internal/syslog"
 	"github.com/jrsamsanchez/signalith/internal/tlsauto"
@@ -1089,6 +1092,22 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	// lookups folder, and its threat intel in memory: follow a load or
 	// removal made on another server.
 	in.jobs.Go(func() { sampleLoader.WatchLists(ctx, time.Minute) })
+	// Response actions: analysts run them by hand from a finding or a
+	// case, on whichever server they use, so every server can; each run
+	// is recorded in the <prefix>_actions index.
+	astore := respond.NewOpenSearch(cl, c.OpenSearch.IndexPrefix)
+	responder := &respond.Runner{
+		Actions:    &respond.Actions{File: c.ResponseFile(), Log: log},
+		Directory:  dir.Settings,
+		ScriptsDir: c.ResponseScriptsDir(),
+		Store:      astore,
+		Server:     sampleServer,
+		Log:        log,
+	}
+	if p := intel.ProtectedAddr(c.OpenSearch.URL); p != "" {
+		responder.Protected = []string{p}
+	}
+	ensureScriptsDir(c.ResponseScriptsDir(), log)
 	// Sessions and the failed sign-in limits carry over a restart.
 	r.sessions.SetIdle(c.SessionIdle())
 	srv := &api.Server{
@@ -1106,6 +1125,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		Notify:     &api.Notify{Settings: notes, Deliveries: deliveries, Sender: senders, Server: sampleServer},
 		Dashboards: boards,
 		Cases:      cstore,
+		Respond:    responder,
 		Retention:  ret,
 		Sample:     sampleLoader,
 		Background: r.backgroundContext(parent),
@@ -1154,6 +1174,9 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			log.Error("could not create the notifications index; notifications will not be sent", "index", deliveries.Index, "err", err)
 		} else {
 			notifyOK = true
+		}
+		if err := astore.EnsureIndex(ctx); err != nil {
+			log.Error("could not create the response actions index; response actions will not run", "index", astore.Index, "err", err)
 		}
 		close(indicesReady)
 	})
@@ -1567,6 +1590,18 @@ func newNotify(c *config.Config, cl *store.Client, log *slog.Logger) (*notify.Ma
 	}
 	senders.Hostname, _ = os.Hostname()
 	return &notify.Manager{File: c.NotifyFile(), Log: log}, notify.NewOpenSearch(cl, c.OpenSearch.IndexPrefix), senders
+}
+
+// ensureScriptsDir makes the response scripts folder, private to the
+// server's account, when it does not exist yet, so admins know where
+// scripts go. A folder that exists is left as it is.
+func ensureScriptsDir(dir string, log *slog.Logger) {
+	if _, err := os.Lstat(dir); !errors.Is(err, fs.ErrNotExist) {
+		return
+	}
+	if err := securefile.MkdirPrivate(dir); err != nil {
+		log.Warn("could not make the response scripts folder; script actions cannot run until it exists", "dir", dir, "err", err)
+	}
 }
 
 // reloadLookups picks up edits to the CSV files made outside the UI.
