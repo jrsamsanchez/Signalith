@@ -379,7 +379,7 @@ const JUMP_WORDS = {
   dashboards: 'home overview posture charts', findings: 'alerts incidents queue triage', cases: 'cases investigations',
   risk: 'risk scores', search: 'query events logs hunt', intel: 'threat intel ioc indicators feeds',
   detections: 'rules sigma alerts', coverage: 'mitre attack matrix techniques tactics', assets: 'hosts users identities cmdb priority',
-  data: 'ingest agents fluent bit sources onboarding syslog firewall switch router cisco sample demo test data try example', retention: 'retention rotation archive restore delete storage disk guard policies',
+  data: 'ingest agents fluent bit sources onboarding syslog firewall switch router cisco wazuh ossec alerts sample demo test data try example', retention: 'retention rotation archive restore delete storage disk guard policies',
   health: 'status opensearch ingest', help: 'help syntax language commands',
   servers: 'cluster nodes servers background jobs leader failover standby readyz',
   users: 'accounts people roles permissions ldap active directory sign-in passwords',
@@ -2143,6 +2143,13 @@ $('linux-source').addEventListener('change', loadAgentConfig);
 $('otel-host').addEventListener('change', loadAgentConfig);
 $('osquery-platform').addEventListener('change', loadAgentConfig);
 $('sysmon').addEventListener('change', loadAgentConfig);
+$('wazuh-syslog').addEventListener('click', (e) => {
+  e.preventDefault();
+  const radio = document.querySelector('input[name=os][value=syslog]');
+  radio.checked = true;
+  radio.focus();
+  loadDataSource();
+});
 agentServerEl.addEventListener('input', () => {
   clearTimeout(agentServerTimer);
   agentServerTimer = setTimeout(agentServerChanged, 400);
@@ -2190,19 +2197,26 @@ async function agentSetupLoad() {
   // as Fluent Bit there, so it shares their options.
   const otel = os === 'otel';
   const osq = os === 'osquery';
+  // Wazuh: Fluent Bit on the Linux machine that runs the Wazuh manager.
+  const wazuh = os === 'wazuh';
   const host = otel ? $('otel-host').value : osq ? '' : os;
   $('otel-opts').classList.toggle('hidden', !otel);
   $('osquery-opts').classList.toggle('hidden', !osq);
   $('linux-opts').classList.toggle('hidden', host !== 'linux');
   $('windows-opts').classList.toggle('hidden', host !== 'windows');
+  $('wazuh-note').classList.toggle('hidden', !wazuh);
   const osqName = { linux: 'Linux', windows: 'Windows', darwin: 'macOS' }[$('osquery-platform').value];
   $('agent-title').textContent = osq ? 'Manage ' + osqName + ' hosts with osquery' : otel ? 'Set up the OpenTelemetry Collector on ' + (host === 'windows' ? 'Windows' : 'Linux')
+    : wazuh ? 'Set up Fluent Bit on the Wazuh manager'
     : 'Set up Fluent Bit on ' + (os === 'windows' ? 'Windows' : 'Linux');
+  $('agent-sub').textContent = wazuh ? 'Do this once, on the Wazuh manager. Your Wazuh agents keep reporting to it as before.'
+    : 'Do this on each host you want to collect from.';
   const steps = $('agent-steps');
   const seq = ++agentSetupSeq;
   steps.setAttribute('aria-busy', 'true');
   if (!agentSetupConfig) agentSetupSkeleton();
-  const q = new URLSearchParams({ os, source: $('linux-source').value, sysmon: $('sysmon').checked });
+  const q = wazuh ? new URLSearchParams({ os: 'linux', source: 'wazuh' })
+    : new URLSearchParams({ os, source: $('linux-source').value, sysmon: $('sysmon').checked });
   if (otel) q.set('collector', host);
   if (osq) q.set('platform', $('osquery-platform').value);
   const server = agentServerValue();
