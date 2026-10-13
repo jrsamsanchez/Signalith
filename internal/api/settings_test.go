@@ -180,7 +180,7 @@ func TestGetSettings(t *testing.T) {
 		t.Errorf("skip verify %v", f)
 	}
 	about := view["about"].(map[string]any)
-	if about["ingest_tokens"] != float64(1) || len(about["paths"].([]any)) != 10 {
+	if about["ingest_tokens"] != float64(1) || len(about["paths"].([]any)) != 11 {
 		t.Errorf("about %v", about)
 	}
 	restart := view["restart"].(map[string]any)

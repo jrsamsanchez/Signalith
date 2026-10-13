@@ -385,6 +385,8 @@ const JUMP_WORDS = {
   users: 'accounts people roles permissions ldap active directory sign-in passwords',
   notify: 'notifications alerts email slack teams webhook smtp channels rules paging',
   respond: 'response actions respond block ip firewall opnsense pfsense webhook shuffle script isolate disable account soar playbook',
+  playbooks: 'playbooks automation soar workflow runbook automatic response steps',
+  approvals: 'approvals approve reject pending waiting playbook runs',
   security: 'hardening encryption certificate authority ca tls https keys permissions bitlocker luks',
   settings: 'configuration config server opensearch syslog listen address port tls certificate ai assistant model api key restart yaml',
 };

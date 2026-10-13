@@ -244,6 +244,8 @@ type Fingerprints struct {
 	// Notify is the notification channels and rules; "" when a server
 	// has none.
 	Notify string `json:"notify,omitempty"`
+	// Playbooks is the playbooks; "" when a server has none.
+	Playbooks string `json:"playbooks,omitempty"`
 	// Archives names the archive folder (its id file), only while some
 	// retention policy archives: servers that share one folder share it.
 	Archives string `json:"archives,omitempty"`
@@ -265,12 +267,16 @@ func (f Fingerprints) Combined() string {
 		h.Write([]byte("notify:" + f.Notify))
 		h.Write([]byte{0})
 	}
+	if f.Playbooks != "" {
+		h.Write([]byte("playbooks:" + f.Playbooks))
+		h.Write([]byte{0})
+	}
 	return "sha256:" + hex.EncodeToString(h.Sum(nil))
 }
 
 // Differ lists the parts that differ between f and o, in words: "retention
 // policies", "threat intel feeds", "detections folder", "notification
-// channels", "archive folder".
+// channels", "playbooks", "archive folder".
 func (f Fingerprints) Differ(o Fingerprints) []string {
 	var out []string
 	if f.Retention != o.Retention {
@@ -284,6 +290,9 @@ func (f Fingerprints) Differ(o Fingerprints) []string {
 	}
 	if f.Notify != o.Notify {
 		out = append(out, "notification channels")
+	}
+	if f.Playbooks != o.Playbooks {
+		out = append(out, "playbooks")
 	}
 	if f.Archives != o.Archives {
 		out = append(out, "archive folder")

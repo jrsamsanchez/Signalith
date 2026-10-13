@@ -346,6 +346,7 @@ var Excluded = map[string]Exclusion{
 	"intel.feeds_file":         {ScopeBootstrap, "The Threat intel page keeps its feeds there, and a page cannot move a file it depends on. Shown under About this server."},
 	"notify.file":              {ScopeBootstrap, "The Notifications page keeps its channels and rules there, and a page cannot move a file it depends on. Shown under About this server."},
 	"response.file":            {ScopeBootstrap, "The Response actions page keeps its actions there, and a page cannot move a file it depends on. Shown under About this server."},
+	"playbooks.file":           {ScopeBootstrap, "The Playbooks page keeps its playbooks there, and a page cannot move a file it depends on. Shown under About this server."},
 	"response.scripts_dir":     {ScopeServer, "It decides which programs response actions may run, so only signalith.yaml or SIGNALITH_RESPONSE_SCRIPTS_DIR can set it, never a page. Shown under About this server."},
 	"cluster.node_name":        {ScopeBootstrap, "This server's name is set in signalith.yaml or with SIGNALITH_NODE_NAME, and kept in its state folder once chosen. The Servers page shows it."},
 	"server.node_url":          {ScopeServer, "The address other servers reach this one at is set in signalith.yaml or with SIGNALITH_NODE_URL. The Servers page shows it."},

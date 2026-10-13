@@ -77,6 +77,9 @@ type Server struct {
 	Cases cases.Store
 	// Respond runs response actions; nil disables them.
 	Respond *respond.Runner
+	// Playbooks backs the Playbooks and Approvals pages; nil disables
+	// them.
+	Playbooks *Playbooks
 	// Retention enforces data retention policies; nil disables the Data
 	// retention page.
 	Retention *retention.Manager
@@ -228,6 +231,7 @@ func (s *Server) Handler() http.Handler {
 	s.routeDashboards(api)
 	s.routeCases(api)
 	s.routeRespond(api)
+	s.routePlaybooks(api)
 	s.routeUsers(api)
 	s.routeRetention(api)
 	s.routeSample(api)

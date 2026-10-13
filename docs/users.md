@@ -39,6 +39,8 @@ By area:
 | Threat intel: view and look up | Yes | Yes | Yes |
 | Threat intel: add or remove indicators by hand | No | Yes | Yes |
 | Threat intel: add, change, test and refresh feeds, upload files | No | No | Yes |
+| Playbooks: see runs, approve or reject steps that wait | No | Yes | Yes |
+| Playbooks: create, edit, delete, turn on and off | No | No | Yes |
 | Add data (agent setup and ingest token) | No | No | Yes |
 | Users and directory sign-in | No | No | Yes |
 | Server settings (Settings page, restart) | No | No | Yes |
@@ -626,7 +628,9 @@ page itself.
 `POST /api/intel/indicators`, `DELETE /api/intel/indicators/{id}`, `GET /api/endpoints`,
 `GET /api/endpoints/{id}`, `GET /api/endpoints/settings`, `GET /api/endpoints/checks`,
 `GET /api/respond/actions`, `GET /api/respond/runs`, `POST /api/respond/run` (running
-[response actions](response-actions.md)).
+[response actions](response-actions.md)), `GET /api/playbooks/runs`,
+`POST /api/playbooks/runs/{id}/approve`, `POST /api/playbooks/runs/{id}/reject`
+(the Approvals page; see [playbooks.md](playbooks.md)).
 
 **Admin:** `GET /api/agents/config`, `POST /api/tls/names`, `GET /api/security`,
 `POST /api/security/ca`, `POST /api/detections`,
@@ -638,6 +642,7 @@ page itself.
 `POST /api/intel/taxii/collections`, `POST /api/intel/upload`,
 `GET /api/respond/config`, `PUT /api/respond/config`, `POST /api/respond/test`
 (setting up [response actions](response-actions.md)),
+`GET /api/playbooks`, `PUT /api/playbooks` (the Playbooks page; see [playbooks.md](playbooks.md)),
 `GET /api/sample`, `POST /api/sample/load`, `POST /api/sample/remove`
 (the one-click [sample data](sample-data.md)), `PUT /api/endpoints/settings`,
 `DELETE /api/endpoints/{id}`, `GET /api/endpoints/blocked`, `DELETE /api/endpoints/blocked/{host}`,

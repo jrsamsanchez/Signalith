@@ -98,6 +98,10 @@ var Models = []Model{
 			{Name: "target_process_id", Type: "number", Description: "ID of the target process"},
 			{Name: "target_process_guid", Type: "string", Description: "Sysmon's unique ID for the target process"},
 			{Name: "granted_access", Type: "string", Description: "Access rights granted to the target process, as a hex mask", Examples: []string{"0x1010"}},
+			{Name: "call_trace", Type: "string", Description: "Modules on the call stack when the target process was opened (Sysmon 10 CallTrace), separated by |"},
+			{Name: "start_address", Type: "string", Description: "Memory address where a remote thread starts, in hex (Sysmon 8)", Examples: []string{"0xFFFFF80000001000"}},
+			{Name: "start_module", Type: "string", Description: "Path of the module a remote thread starts in (Sysmon 8)"},
+			{Name: "start_function", Type: "string", Description: "Function a remote thread starts at (Sysmon 8)", Examples: []string{"LoadLibraryW"}},
 		},
 	},
 	{

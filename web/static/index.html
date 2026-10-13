@@ -172,6 +172,7 @@
       <a class="nav__item" href="#findings" data-page="findings"><svg class="icon" aria-hidden="true"><use href="#i-shield-alert"/></svg><span>Findings</span><span id="open-count" class="nav__count hidden"></span></a>
       <a class="nav__item" href="#cases" data-page="cases"><svg class="icon" aria-hidden="true"><use href="#i-briefcase"/></svg><span>Investigations</span><span id="case-count" class="nav__count hidden"></span></a>
       <a class="nav__item" href="#risk" data-page="risk"><svg class="icon" aria-hidden="true"><use href="#i-gauge"/></svg><span>Risk</span></a>
+      <a class="nav__item" href="#approvals" data-page="approvals" data-min-role="analyst"><svg class="icon" aria-hidden="true"><use href="#i-user-check"/></svg><span>Approvals</span><span id="approval-count" class="nav__count hidden"></span></a>
     </div>
     <div class="nav__group" data-group="Hunt">
       <div class="nav__label">Hunt</div>
@@ -192,6 +193,7 @@
       <a class="nav__item" href="#notify" data-page="notify" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-bell"/></svg><span>Notifications</span></a>
       <a class="nav__item" href="#users" data-page="users" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-users"/></svg><span>Users</span></a>
       <a class="nav__item" href="#respond" data-page="respond" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-zap"/></svg><span>Response actions</span></a>
+      <a class="nav__item" href="#playbooks" data-page="playbooks" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-list-checks"/></svg><span>Playbooks</span></a>
       <a class="nav__item" href="#security" data-page="security" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-shield-check"/></svg><span>Security</span><span id="security-count" class="nav__count hidden" data-critical></span></a>
       <a class="nav__item" href="#health" data-page="health"><svg class="icon" aria-hidden="true"><use href="#i-activity"/></svg><span>Health</span></a>
       <a class="nav__item" href="#servers" data-page="servers" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-server"/></svg><span>Servers</span></a>
@@ -1018,6 +1020,33 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
     <div id="rp-body"></div>
   </section>
 
+  <!-- Playbooks (admins) -->
+  <section id="page-playbooks" class="page">
+    <div class="page-head">
+      <div>
+        <h2 class="page-head__title">Playbooks</h2>
+        <p class="page-head__desc">Steps that run on their own when a finding fires: notify the team, run a response action once an analyst approves, open a case.</p>
+      </div>
+      <div class="page-head__actions">
+        <button id="pb-add" class="btn btn--primary hidden" type="button"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>Add playbook</button>
+      </div>
+    </div>
+    <div id="pb-page" class="pb-page" aria-busy="true"></div>
+    <dialog id="pb-dialog" class="modal pb-dialog" aria-labelledby="pb-dialog-title"></dialog>
+    <dialog id="pb-confirm" class="modal" aria-labelledby="pb-confirm-title" aria-describedby="pb-confirm-desc"></dialog>
+  </section>
+
+  <!-- Approvals (analysts) -->
+  <section id="page-approvals" class="page">
+    <div class="page-head">
+      <div>
+        <h2 class="page-head__title">Approvals</h2>
+        <p class="page-head__desc">Playbook steps that wait for an analyst before they run. Nothing happens until someone approves, and a step nobody approves within a day expires.</p>
+      </div>
+    </div>
+    <div id="ap-page" class="ap-page" aria-busy="true"></div>
+  </section>
+
   <!-- Users (admins) -->
   <section id="page-users" class="page">
     <div class="page-head">
@@ -1387,6 +1416,7 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
 <script src="respond.js"></script>
 <script src="users.js"></script>
 <script src="notify.js"></script>
+<script src="playbooks.js"></script>
 <script src="retention.js"></script>
 <script src="sample.js"></script>
 <script src="settings.js"></script>

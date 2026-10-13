@@ -32,3 +32,19 @@ func TestFingerprintsNotify(t *testing.T) {
 		t.Errorf("fix %q", msg)
 	}
 }
+
+// Playbooks count only when a server has some, like notifications.
+func TestFingerprintsPlaybooks(t *testing.T) {
+	f := Fingerprints{Retention: "r", Feeds: "f", Detections: "d", Notify: "n"}
+	g := f
+	g.Playbooks = "p"
+	if g.Combined() == f.Combined() {
+		t.Error("playbooks do not count")
+	}
+	if d := f.Differ(g); !slices.Equal(d, []string{"playbooks"}) {
+		t.Errorf("differ %v", d)
+	}
+	if msg := fixFiles([]string{"playbooks"}, "siem-b", "siem-a"); msg != "Make siem-b's playbooks (playbooks.yaml in the lookups folder) the same as siem-a's, then restart siem-b." {
+		t.Errorf("fix %q", msg)
+	}
+}

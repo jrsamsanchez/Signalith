@@ -553,6 +553,7 @@ are counted for each person's own address, not the proxy's. See
 | `intel.feeds[].tags`, `.description`, `.enabled` | none, `true` | Labels added to every indicator, and on/off |
 | `intel.feeds_file` | `<lookups.dir>/intel_feeds.yaml` | Where feeds added on the page are saved, with their API keys encrypted (file mode 0600) |
 | `notify.file` | `<lookups.dir>/notifications.yaml` | Where notification channels and rules set on the **Notifications** page are saved, with their webhook URLs, header values and passwords encrypted (file mode 0600). See [docs/notifications.md](docs/notifications.md) |
+| `playbooks.file` | `<lookups.dir>/playbooks.yaml` | Where playbooks set on the **Playbooks** page are saved (file mode 0600; they hold no secrets). See [docs/playbooks.md](docs/playbooks.md) |
 | `intel.allow_loopback_feeds` | `false` | Allow feed downloads from this machine (`127.0.0.1`, `::1`), for a feed server on the same host |
 | `cluster.node_name` | the name kept in the state folder, else this computer's name | This server's name in the list of servers and on every log line (`node=`). 1 to 63 letters, digits, dots, dashes or underscores. In Docker, set it (or `SIGNALITH_NODE_NAME`), since a container's name is random. Set in signalith.yaml or the environment only |
 | `dashboards.dir` | `dashboards` | Folder for custom dashboards, one YAML file each, relative to the config file |
@@ -565,7 +566,7 @@ Secrets can come from the environment instead: `SIGNALITH_OPENSEARCH_PASSWORD`,
 `auth.ldap` in this file only; directory sign-in set up on the Users page keeps its own) (also
 `SIGNALITH_OPENSEARCH_URL`, `SIGNALITH_OPENSEARCH_USERNAME`, `SIGNALITH_OPENSEARCH_PROXY`, `SIGNALITH_LISTEN`,
 `SIGNALITH_PUBLIC_URL`, `SIGNALITH_DETECTIONS_DIR`, `SIGNALITH_LOOKUPS_DIR`, `SIGNALITH_DASHBOARDS_DIR`,
-`SIGNALITH_USERS_FILE`, `SIGNALITH_INTEL_FEEDS_FILE`, `SIGNALITH_NOTIFY_FILE`, `SIGNALITH_ARCHIVE_DIR`, `SIGNALITH_ASSISTANT_API_KEY`, and
+`SIGNALITH_USERS_FILE`, `SIGNALITH_INTEL_FEEDS_FILE`, `SIGNALITH_NOTIFY_FILE`, `SIGNALITH_PLAYBOOKS_FILE`, `SIGNALITH_ARCHIVE_DIR`, `SIGNALITH_ASSISTANT_API_KEY`, and
 `SIGNALITH_SYSLOG_UDP` and `SIGNALITH_SYSLOG_TCP`, where `off` turns the listener off, `SIGNALITH_NODE_NAME` and
 `SIGNALITH_NODE_URL`). Secrets can also be read
 from a file, as Docker and Kubernetes secrets are: set `SIGNALITH_OPENSEARCH_PASSWORD_FILE`,
@@ -860,6 +861,20 @@ the server's scripts folder (`response.scripts_dir`), which no page can change.
 
 See [docs/response-actions.md](docs/response-actions.md) for each kind of action,
 the AD delegation, example isolate scripts and the API.
+
+## Playbooks
+
+A **playbook** does the first steps when a detection fires: notify a channel, run a
+response action, open a case (or add to the one it opened), set the finding's status
+and owner. Admins build them on the **Playbooks** page, step by step, and the page says
+in one sentence what each does. Disruptive actions (block, disable, isolate) always wait
+for an analyst: they show on the **Approvals** page with exactly what will happen, and run
+only once someone approves, within 24 hours. A rejected, expired or failed step stops the
+playbook. Each playbook runs once per finding, only on the server running the background
+jobs, and everything it does is noted on the finding and the case.
+
+See [docs/playbooks.md](docs/playbooks.md) for the steps, the approval flow, an example
+and the API.
 
 ## Dashboards
 

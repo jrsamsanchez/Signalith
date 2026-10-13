@@ -191,7 +191,7 @@ func (d *Dispatcher) collect(ctx context.Context, s Settings, now time.Time, per
 	if len(rules) == 0 {
 		return nil
 	}
-	list, _, err := d.Findings.Search(ctx, findings.Filter{Since: now.Add(-Window), Limit: maxFindings})
+	list, err := RecentFindings(ctx, d.Findings, now)
 	if err != nil {
 		return err
 	}
@@ -293,6 +293,15 @@ func (d *Dispatcher) sendChannel(ctx context.Context, c Channel, items []item, n
 		return
 	}
 	d.send(ctx, c, summaryMessage(len(claims), d.link(), d.now()), claims)
+}
+
+// RecentFindings reads the findings raised in the Window before now, as
+// each pass of the dispatcher does; playbooks read new findings the same
+// way. A matching rule or playbook still skips those raised before it
+// was turned on.
+func RecentFindings(ctx context.Context, fs findings.Store, now time.Time) ([]*findings.Finding, error) {
+	list, _, err := fs.Search(ctx, findings.Filter{Since: now.Add(-Window), Limit: maxFindings})
+	return list, err
 }
 
 // claimed is a delivery this server claimed and is about to send.

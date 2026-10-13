@@ -52,6 +52,7 @@ type Config struct {
 	Intel      Intel      `yaml:"intel"`
 	Notify     Notify     `yaml:"notify,omitempty"`
 	Response   Response   `yaml:"response,omitempty"`
+	Playbooks  Playbooks  `yaml:"playbooks,omitempty"`
 	Cluster    Cluster    `yaml:"cluster,omitempty"`
 
 	// path is where the file was loaded from.
@@ -967,6 +968,23 @@ func (c *Config) ResponseFile() string {
 	return filepath.Join(c.LookupsDir(), "response.yaml")
 }
 
+// Playbooks sets where the playbooks set on the Playbooks page are kept
+// (see docs/playbooks.md).
+type Playbooks struct {
+	// File keeps the playbooks. Default: playbooks.yaml in lookups.dir. A
+	// relative path is relative to the folder this config file is in.
+	File string `yaml:"file,omitempty"`
+}
+
+// PlaybooksFile returns the file that keeps the playbooks set on the
+// Playbooks page.
+func (c *Config) PlaybooksFile() string {
+	if c.Playbooks.File != "" {
+		return c.resolve(c.Playbooks.File)
+	}
+	return filepath.Join(c.LookupsDir(), "playbooks.yaml")
+}
+
 // ResponseScriptsDir returns the folder script actions run programs from.
 func (c *Config) ResponseScriptsDir() string {
 	if c.Response.ScriptsDir != "" {
@@ -1518,6 +1536,10 @@ func (c *Config) applyEnv() error {
 		c.Response.File = v
 		c.fromEnv("response.file", "SIGNALITH_RESPONSE_FILE")
 	}
+	if v := os.Getenv("SIGNALITH_PLAYBOOKS_FILE"); v != "" {
+		c.Playbooks.File = v
+		c.fromEnv("playbooks.file", "SIGNALITH_PLAYBOOKS_FILE")
+	}
 	if v := os.Getenv("SIGNALITH_RESPONSE_SCRIPTS_DIR"); v != "" {
 		c.Response.ScriptsDir = v
 		c.fromEnv("response.scripts_dir", "SIGNALITH_RESPONSE_SCRIPTS_DIR")
@@ -2056,6 +2078,8 @@ const header = `# Signalith configuration.
 # response.scripts_dir  the only folder script actions may run programs from
 #                    (default: scripts in the state folder; only this file or
 #                    SIGNALITH_RESPONSE_SCRIPTS_DIR can set it)
+# playbooks.file     where the Playbooks page keeps its playbooks (default
+#                    lookups.dir/playbooks.yaml; SIGNALITH_PLAYBOOKS_FILE overrides it)
 # cluster.node_name  this server's name on the Servers page (default: this computer's
 #                    name; SIGNALITH_NODE_NAME overrides it)
 # server.node_url    the address other Signalith servers reach this one at (default:

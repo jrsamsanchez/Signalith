@@ -589,6 +589,7 @@ func (s *Server) aboutServer(c *config.Config) map[string]any {
 		{Key: "notify.file", Label: "Notifications file", Path: c.NotifyFile(), Source: c.Source("notify.file")},
 		{Key: "response.file", Label: "Response actions file", Path: c.ResponseFile(), Source: c.Source("response.file")},
 		{Key: "response.scripts_dir", Label: "Response scripts folder", Path: c.ResponseScriptsDir(), Source: c.Source("response.scripts_dir")},
+		{Key: "playbooks.file", Label: "Playbooks file", Path: c.PlaybooksFile(), Source: c.Source("playbooks.file")},
 	}
 	// Whoever reads the page is not in Signalith's working folder.
 	for i := range paths {

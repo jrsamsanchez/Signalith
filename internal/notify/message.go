@@ -18,6 +18,9 @@ const (
 	// would send a channel more than FloodLimit messages.
 	KindSummary = "summary"
 	KindTest    = "test"
+	// KindApproval asks people to approve a playbook step about a
+	// finding: Ask says what waits, and Link opens the Approvals page.
+	KindApproval = "approval"
 )
 
 // Entities are the entity fields a message names, in order, with their
@@ -48,6 +51,10 @@ type Message struct {
 	Sample bool   `json:"sample,omitempty"`
 	// Count is how many findings a summary stands for.
 	Count int `json:"count,omitempty"`
+	// Ask says what waits for approval, in a KindApproval message, as in
+	// "Playbook Brute force response waits for approval to: Send POST to
+	// fw.example.com for 203.0.113.7."
+	Ask string `json:"ask,omitempty"`
 }
 
 // Limits on the text of a message, which comes from the events that
@@ -101,6 +108,24 @@ func NewMessage(f *findings.Finding, link string) Message {
 	if score, ok := RiskScore(f); ok {
 		m.RiskScore = &score
 	}
+	return m
+}
+
+// ApprovalsLink returns the link to the Approvals page of the Signalith
+// at publicURL, or "" when it is not known.
+func ApprovalsLink(publicURL string) string {
+	publicURL = strings.TrimRight(strings.TrimSpace(publicURL), "/")
+	if publicURL == "" {
+		return ""
+	}
+	return publicURL + "/#approvals"
+}
+
+// ApprovalMessage asks a channel to approve a playbook step about a
+// finding: ask says what waits, and link opens the Approvals page.
+func ApprovalMessage(f *findings.Finding, ask, link string) Message {
+	m := NewMessage(f, link)
+	m.Kind, m.Ask = KindApproval, clean(ask, 1000)
 	return m
 }
 
@@ -168,6 +193,8 @@ func (m Message) headline() string {
 		return m.Title
 	case KindTest:
 		return m.Title
+	case KindApproval:
+		return "Approval needed: " + m.Title
 	}
 	h := UrgencyLabel(m.Urgency) + ": " + m.Title
 	if m.Sample {
@@ -220,6 +247,8 @@ func (m Message) text(channel string) string {
 		b.WriteString("This is a test message from Signalith. If you can read it, Signalith can send notifications to " + channel + ".\n\n")
 	case KindSummary:
 		fmt.Fprintf(&b, "%s.\n\nThere were too many to send one message each. Open the Findings page to see them all.\n\n", m.Title)
+	case KindApproval:
+		b.WriteString(m.headline() + "\n\n" + m.Ask + " Approve or reject it on the Approvals page within 24 hours.\n\n")
 	default:
 		b.WriteString(m.headline() + "\n\n")
 	}
@@ -234,7 +263,9 @@ func (m Message) text(channel string) string {
 		}
 		b.WriteString("\n")
 	}
-	if m.Link != "" {
+	if m.Link != "" && m.Kind == KindApproval {
+		b.WriteString("Approve or reject: " + m.Link + "\n\n")
+	} else if m.Link != "" {
 		b.WriteString("Open in Signalith: " + m.Link + "\n\n")
 	}
 	b.WriteString("-- \nSent by Signalith. Admins choose what is sent where on the Notifications page.\n")
@@ -258,6 +289,14 @@ type WebhookBody struct {
 	Sent    time.Time       `json:"sent"`
 	Finding *WebhookFinding `json:"finding,omitempty"`
 	Summary *WebhookSummary `json:"summary,omitempty"`
+	// Approval, in an approval message, says what waits for approval.
+	Approval *WebhookApproval `json:"approval,omitempty"`
+}
+
+// WebhookApproval is a playbook step waiting for approval.
+type WebhookApproval struct {
+	Text string `json:"text"`
+	Link string `json:"link"`
 }
 
 // WebhookFinding is the finding a webhook message is about.
@@ -299,7 +338,18 @@ func (m Message) webhookBody(sent time.Time) WebhookBody {
 	}
 	b.Finding = &WebhookFinding{ID: m.FindingID, Title: m.Title, Urgency: m.Urgency, Severity: m.Severity, Detection: m.DetectionID,
 		MITRE: mitre, Entities: ent, RiskScore: m.RiskScore, Created: m.Created, Link: m.Link, Sample: m.Sample}
+	if m.Kind == KindApproval {
+		b.Approval = &WebhookApproval{Text: m.Ask, Link: m.Link}
+	}
 	return b
+}
+
+// linkLabel names a message's link button.
+func (m Message) linkLabel() string {
+	if m.Kind == KindApproval {
+		return "Approve or reject"
+	}
+	return "Open in Signalith"
 }
 
 // slackEscape escapes the characters Slack's mrkdwn gives meaning to
@@ -322,6 +372,8 @@ func (m Message) slackBody(channel string) map[string]any {
 		blocks = append(blocks, map[string]any{"type": "section", "text": plain("If you can read this, Signalith can send notifications to "+channel+".", 2000)})
 	case KindSummary:
 		blocks = append(blocks, map[string]any{"type": "section", "text": plain("There were too many to send one message each. Open the Findings page to see them all.", 2000)})
+	case KindApproval:
+		blocks = append(blocks, map[string]any{"type": "section", "text": plain(m.Ask+" Approve or reject it on the Approvals page within 24 hours.", 2000)})
 	}
 	if m.Kind != KindSummary {
 		var fields []any
@@ -337,7 +389,7 @@ func (m Message) slackBody(channel string) map[string]any {
 	}
 	if m.Link != "" {
 		blocks = append(blocks, map[string]any{"type": "actions", "elements": []any{map[string]any{
-			"type": "button", "text": plain("Open in Signalith", 75), "url": m.Link,
+			"type": "button", "text": plain(m.linkLabel(), 75), "url": m.Link,
 		}}})
 	}
 	return map[string]any{"text": slackEscape(m.headline()), "blocks": blocks, "unfurl_links": false, "unfurl_media": false}
@@ -359,6 +411,8 @@ func (m Message) teamsBody(channel string) map[string]any {
 		body = append(body, map[string]any{"type": "TextBlock", "text": teamsEscape("If you can read this, Signalith can send notifications to " + channel + "."), "wrap": true})
 	case KindSummary:
 		body = append(body, map[string]any{"type": "TextBlock", "text": "There were too many to send one message each. Open the Findings page to see them all.", "wrap": true})
+	case KindApproval:
+		body = append(body, map[string]any{"type": "TextBlock", "text": teamsEscape(m.Ask + " Approve or reject it on the Approvals page within 24 hours."), "wrap": true})
 	}
 	if m.Kind != KindSummary {
 		var facts []any
@@ -376,7 +430,7 @@ func (m Message) teamsBody(channel string) map[string]any {
 		"body":    body,
 	}
 	if m.Link != "" {
-		card["actions"] = []any{map[string]any{"type": "Action.OpenUrl", "title": "Open in Signalith", "url": m.Link}}
+		card["actions"] = []any{map[string]any{"type": "Action.OpenUrl", "title": m.linkLabel(), "url": m.Link}}
 	}
 	return map[string]any{
 		"type": "message",

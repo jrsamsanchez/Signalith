@@ -76,6 +76,7 @@ These run on one server only:
 - detections on their schedule,
 - threat intel feed downloads,
 - [notifications](notifications.md#which-server-sends) about new findings,
+- [playbooks](playbooks.md#which-server-runs-playbooks) for new findings, and the approved steps,
 - data retention, including the disk guard and archiving,
 - index upgrades after a new version.
 
@@ -89,7 +90,7 @@ stopped, or it lost OpenSearch), another server takes the jobs over within about
 another server has them within seconds. Two servers do not run them at once: a
 server that cannot confirm for 20 seconds stops its jobs by itself, on a timer of
 its own, before anyone else may start them after 30 seconds. Detections, feed
-downloads and notifications also check, before each run or send, that their server still
+downloads, notifications and playbooks also check, before each run, send or step, that their server still
 runs the jobs.
 
 **Which servers may run them.** Every server, unless **Run detections on schedule**
@@ -98,12 +99,12 @@ servers take turns by themselves. Turn it off only on a server that should never
 run the jobs, for example one that only receives data.
 
 **Changing retention and feeds.** Until settings are shared between servers, the
-Data retention, Threat intel feed and Notifications settings can be changed only on
+Data retention, Threat intel feed, Notifications and Playbooks settings can be changed only on
 the server that runs the jobs.
 
 ## When a server will not take over
 
-Retention policies, threat intel feeds, notifications and custom detections are still kept in
+Retention policies, threat intel feeds, notifications, playbooks and custom detections are still kept in
 files on each server. A server whose files differ from those of the server that
 runs the jobs does not take the jobs over by itself: it would delete, download or
 alert differently. The list shows it as **Standby** with "Won't take over" and the
@@ -114,6 +115,7 @@ reason, and an alert says what to copy:
 | Retention policies | `retention.yaml` in the lookups folder, and `retention` in signalith.yaml |
 | Threat intel feeds | `intel_feeds.yaml` in the lookups folder, and `intel` in signalith.yaml |
 | Notification channels | `notifications.yaml` in the lookups folder (only once a channel or rule is set up) |
+| Playbooks | `playbooks.yaml` in the lookups folder (only once a playbook is set up) |
 | Detections folder | The custom detection files in `detections.dir` |
 | Archive folder | Only while a retention policy archives: every server must use one shared archive folder. Set `retention.archive_dir` to the same shared folder on each server. Signalith names the folder with a small file in it, `.signalith-archive-id`; leave it there |
 
