@@ -1,7 +1,8 @@
 name: Website
-# Publishes site/ (the project website) to GitHub Pages at
-# https://jrsamsanchez.github.io/signalith/. Pages must be set to deploy from
-# GitHub Actions: Settings > Pages > Build and deployment > Source.
+# Publishes site/ (the project website) to GitHub Pages at https://signalith.io.
+# Pages must be set to deploy from GitHub Actions (Settings > Pages > Build and
+# deployment > Source), with signalith.io as its custom domain there; with
+# Actions deployments the custom domain is that setting, not a CNAME file.
 on:
   push:
     branches: [main]
