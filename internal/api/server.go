@@ -66,6 +66,8 @@ type Server struct {
 	// Intel disables the threat intel endpoints.
 	Intel *intel.Store
 	Feeds *intel.Feeds
+	// Notify backs the Notifications page; nil disables it.
+	Notify *Notify
 	// Dashboards holds custom dashboards; nil disables them (the built-in
 	// posture dashboard still works).
 	Dashboards *dashboards.Store
@@ -209,6 +211,7 @@ func (s *Server) Handler() http.Handler {
 	s.routeRisk(api)
 	s.routeAsk(api)
 	s.routeIntel(api)
+	s.routeNotify(api)
 	s.routeDashboards(api)
 	s.routeCases(api)
 	s.routeUsers(api)
@@ -929,6 +932,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	if w := s.behindWarning(time.Now()); w != "" {
 		warnings = append(warnings, w)
 	}
+	warnings = append(warnings, s.notifyWarnings(ctx)...)
 	if len(warnings) > 0 {
 		out["warnings"] = warnings
 	}

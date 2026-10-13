@@ -287,8 +287,8 @@ var Registry = []Setting{
 		EmptyMeans: "the listen port"},
 
 	{Key: "detections.scheduler", Scope: ScopeServer, Section: "detections", Label: "Run detections on schedule", Type: TypeBool, Restart: true,
-		Help:    "Lets this server run detections, threat intel downloads and retention. Servers that share one OpenSearch take turns automatically; turn it off only on a server that should never run them.",
-		Confirm: "This server will stop running detections, threat intel downloads and retention. If no other server shares its OpenSearch, none of them run until this is turned on again.", ConfirmWhen: "off"},
+		Help:    "Lets this server run detections, threat intel downloads, notifications and retention. Servers that share one OpenSearch take turns automatically; turn it off only on a server that should never run them.",
+		Confirm: "This server will stop running detections, threat intel downloads, notifications and retention. If no other server shares its OpenSearch, none of them run until this is turned on again.", ConfirmWhen: "off"},
 	{Key: "detections.max_findings_per_run", Scope: ScopeCluster, Section: "detections", Label: "Most findings per run", Type: TypeNumber, Min: intp(1), Max: intp(10000),
 		Help: "The most findings one detection run can raise, so a noisy rule cannot flood the queue."},
 
@@ -337,6 +337,7 @@ var Excluded = map[string]Exclusion{
 	"dashboards.dir":           {ScopeBootstrap, "Pages save dashboards there, and a page cannot move a folder it saves into. Shown under About this server."},
 	"intel.feeds":              {ScopeCluster, "Feeds are added and changed on the Threat intel page."},
 	"intel.feeds_file":         {ScopeBootstrap, "The Threat intel page keeps its feeds there, and a page cannot move a file it depends on. Shown under About this server."},
+	"notify.file":              {ScopeBootstrap, "The Notifications page keeps its channels and rules there, and a page cannot move a file it depends on. Shown under About this server."},
 	"cluster.node_name":        {ScopeBootstrap, "This server's name is set in signalith.yaml or with SIGNALITH_NODE_NAME, and kept in its state folder once chosen. The Servers page shows it."},
 	"server.node_url":          {ScopeServer, "The address other servers reach this one at is set in signalith.yaml or with SIGNALITH_NODE_URL. The Servers page shows it."},
 }
