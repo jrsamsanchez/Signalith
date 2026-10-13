@@ -40,6 +40,12 @@ or detection covers every source of the same kind.
 | OpenTelemetry Collector or SDK logs over OTLP/HTTP ([OpenTelemetry](opentelemetry.md)) | the same models for Windows, Linux and syslog records; Other for app logs |
 | Anything else | Other (searchable by text and fields) |
 
+sshd prints the user name a client sends, and on a failed key sign-in the key ID of the
+certificate it offers, as they were sent. When either copies sshd's own "from <address>
+port <n>" so that the real address cannot be told, the event is stored without `src` and
+with `src_ambiguous=true`. Search `src_ambiguous=true` to find these sign-in attempts;
+`host` says which server they were made against.
+
 ## Ingest limits
 
 Agents send batches to `/api/ingest`, and OpenTelemetry Collectors to `/api/otlp/v1/logs`. One request can be up to 16 MB, with up to 200,000
@@ -71,6 +77,14 @@ produces are always kept, so an event is never lost to extra fields. Fields left
 counted in the event's `dropped_fields` (search `dropped_fields>0`), their values stay in
 `_raw`, and the Health page and `/api/health` show the totals under `ingest`
 (`retimed`, `fields_dropped`).
+
+A few field names belong to Signalith, which sets them itself: `@timestamp`, `datamodel`,
+`device_time`, `dropped_fields` and the sample-data marker `signalith_sample`. When a
+sender's event has one of them, it is left out and counted in `dropped_fields` the same
+way; the event is stored without it. The one exception is the time of a JSON record:
+its `date` (Fluent Bit sends one) is the event's time, or its `@timestamp` when it has
+no `date`. These two are read as the time, not stored as fields and not counted. When
+a record has both, its `@timestamp` is not used.
 
 ## Syslog
 
