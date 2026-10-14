@@ -103,6 +103,9 @@ type runner struct {
 	// sharedContent links the shared settings' content (feeds, retention
 	// policies) to the components of each start; nil with shared.
 	sharedContent *sharedContent
+	// audit is the process's audit spool (see sharedaudit.go); nil in
+	// some tests.
+	audit *processAudit
 	// security runs the Security page's checks and keeps the last
 	// report, which a restart keeps.
 	security *api.SecurityChecker
@@ -369,6 +372,11 @@ func (r *runner) followShared(ctx context.Context) {
 			{wantSettings, settingsOn, switchWhy(wantSettings,
 				"this server now takes the settings of the Settings page from the shared settings",
 				"this server now takes the settings of the Settings page from its own files")},
+			// The audit records, the retention history and the archive
+			// list (sharedaudit.go).
+			{r.wantAudit(), r.auditOn(), switchWhy(r.wantAudit(),
+				"every server now keeps its audit records, the retention history and the archive list in OpenSearch",
+				"this server now keeps its retention history and archive list in its own files")},
 			// Append a new shared feature's switch here.
 		}
 		i := slices.IndexFunc(switches, func(s sharedSwitch) bool { return s.want != s.on })

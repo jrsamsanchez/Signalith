@@ -279,11 +279,14 @@ var sharedPrints = []func(fp *cluster.Fingerprints, rt *shared.Runtime, s string
 // runs the background jobs: a feed download asked on another server, and
 // a retention run. A new shared feature appends its handlers to the list,
 // each with its own request types.
-func contentHandlers(feeds *intel.Feeds, ret *retention.Manager) map[string]shared.Handler {
+func contentHandlers(feeds *intel.Feeds, ret *retention.Manager, archives map[string]shared.Handler) map[string]shared.Handler {
 	out := map[string]shared.Handler{}
 	for _, hs := range []map[string]shared.Handler{
 		feedHandlers(feeds),
 		retentionHandlers(ret),
+		// Restores of shared archives (sharedaudit.go), nil until they
+		// are shared.
+		archives,
 		// Append a new shared feature's handlers here.
 	} {
 		for k := range hs {

@@ -1,0 +1,20 @@
+# S2, CI size: a few analysts on every server at once, triaging the same
+# findings and writing in the same case, with agents sending.
+name: s2-browsers-small
+description: 10 analysts spread over the servers, no sticky sessions.
+targets: [https://localhost:8441, https://localhost:8442]
+ca_files: [loadtest/compose/out/siem-a-ca.pem, loadtest/compose/out/siem-b-ca.pem]
+credentials:
+  admin_file: loadtest/compose/out/admin.txt
+  token_file: loadtest/compose/out/token.txt
+phases:
+  - name: busy
+    for: 90s
+    agents: {n: 10, rate: 200}
+    users: {n: 10, create: true, triage: true, think: 2s}
+criteria:
+  - {name: unexpected_signouts, max: 0}
+  - {name: search_p95_ms, max: 3000}
+  - {name: page_p95_ms, max: 2000}
+  - {name: write_p95_ms}
+  - {name: write_conflicts}

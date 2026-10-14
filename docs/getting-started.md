@@ -60,6 +60,15 @@ build the image from your own checkout, see
 once Docker is running (in Docker Desktop, turn on *Start Docker Desktop when you sign
 in*).
 
+If an update stays at `Container docker-signalith-1 Stopping` for more than about two
+minutes, Docker itself is stuck, not Signalith, which stops in seconds. On Windows, quit
+Docker Desktop, run `wsl --shutdown` in PowerShell, start Docker Desktop again and run the
+`up` command again. Your data is kept. If `wsl --shutdown` hangs too, restart the
+computer, or run `taskkill /F /IM wslservice.exe` in PowerShell as administrator. It
+happens most when the computer is short of memory; the README's
+[Docker quick start](https://github.com/jrsamsanchez/Signalith/blob/main/README.md#docker-evaluation)
+shows how to give WSL a fixed share of memory in `.wslconfig`.
+
 !!! note "Coming from an older quick start?"
     Earlier versions served plain HTTP and took the admin password from
     `docker-compose.yml`. The README has

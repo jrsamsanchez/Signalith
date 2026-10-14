@@ -7,13 +7,13 @@ import (
 	"io/fs"
 )
 
-// Level 4 keeps the cluster's one certificate authority in the shared
+// Level 5 keeps the cluster's one certificate authority in the shared
 // settings (the tls document, internal/clustertls): every server issues
 // its own HTTPS certificate from it, so an agent set up against one
-// server trusts them all. A server whose version reads only level 3 would
+// server trusts them all. A server whose version reads only the level below would
 // keep a certificate authority of its own, so the level is raised once
 // every server seen lately reads it, the same way as the levels before.
-const LevelSharedTLS = 4
+const LevelSharedTLS = 5
 
 // ImportTLS is the name of the importer of the founder's certificate
 // authority in cluster.import.done. It is recorded whether or not it

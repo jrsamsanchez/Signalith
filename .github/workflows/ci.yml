@@ -211,8 +211,13 @@ jobs:
         run: |
           # The tests use indices of their own; stop the server so it does
           # not work on them at the same time. The cluster tests run in the
-          # cluster job.
+          # cluster job. Signalith stops in seconds: a stop that runs into
+          # Docker's 90-second limit means shutdown waits on something.
+          start=$(date +%s)
           $COMPOSE stop signalith
+          took=$(( $(date +%s) - start ))
+          echo "Signalith stopped in ${took}s"
+          if [ "$took" -gt 30 ]; then $COMPOSE logs --no-color --tail 50 signalith; exit 1; fi
           go test -tags integration -count=1 -v -skip '^TestCluster' ./internal/integration/
       - name: Container logs
         if: failure()

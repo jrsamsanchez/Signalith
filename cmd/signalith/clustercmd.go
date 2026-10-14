@@ -43,6 +43,7 @@ const clusterUsage = `usage:
   signalith cluster accept-restore [-c file] [-yes]           accept the shared settings after an OpenSearch snapshot was restored
   signalith cluster tls            [-c file] [-json]          the cluster's certificate authority and each server's
   signalith cluster tls choose     [-c file] [-yes] <server|fingerprint>   keep that certificate authority for the whole cluster
+  signalith cluster upgrade-check  [-c file] [-json]          whether it is safe to upgrade the next server
 
 The servers that share one OpenSearch keep the settings they share in it
 (the <prefix>_config index), signed with the cluster key that each of them
@@ -95,7 +96,7 @@ func runCluster(args []string, in *os.File, out, errOut io.Writer) error {
 	file := flags.String("f", "", "the file of settings to apply")
 	pos := parseInterleaved(flags, args)
 	switch sub {
-	case "status", "found", "export", "import", "export-key", "import-key", "reset-key", "accept-restore", "apply", "tls":
+	case "status", "found", "export", "import", "export-key", "import-key", "reset-key", "accept-restore", "apply", "tls", "upgrade-check":
 	default:
 		return fmt.Errorf("unknown cluster command %q\n\n%s", sub, clusterUsage)
 	}
@@ -150,6 +151,8 @@ func runCluster(args []string, in *os.File, out, errOut io.Writer) error {
 		return x.acceptRestore(ctx, *yes)
 	case "tls":
 		return x.tlsCommand(ctx, pos, *asJSON, *yes)
+	case "upgrade-check":
+		return upgradeExit(x.upgradeCheck(ctx, *asJSON))
 	}
 	return nil
 }

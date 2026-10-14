@@ -1,0 +1,4 @@
+{"rule": "6c82cf5c-090d-4d57-9188-533577631108", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Application","event_id":"1001","data":{"Data":"mpengine.dll MsMpEng.exe","Provider_Name":"Windows Error Reporting"}},
+  {"expect":false,"source":"synthesized","channel":"Application","event_id":"1001","data":{"Provider_Name":"Windows Error Reporting"}}
+]}

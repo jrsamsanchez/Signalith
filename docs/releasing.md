@@ -65,7 +65,9 @@ signed with it, and the public key is published with each release as
 https://signalith.io/apt and https://signalith.io/rpm, which the **Website** workflow
 rebuilds from the five newest releases after every **Release** run
 (`deploy/repos/build.sh`; packages from before the key existed are signed there). Until
-the secret is set, the website has no repositories.
+the secret is set, the website has no repositories. The **Package repositories** workflow then
+installs the latest release from them on four Linux distributions, after every website
+publish and weekly, so a broken publish or an expiring key shows up there.
 
 To make the key (with Docker, on any computer), in an empty folder:
 

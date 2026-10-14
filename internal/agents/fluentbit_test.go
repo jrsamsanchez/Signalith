@@ -266,7 +266,7 @@ func TestAntivirusCollection(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		channels := "Security,System,Microsoft-Windows-Windows Defender/Operational"
+		channels := "Security,System,Application,Microsoft-Windows-Windows Defender/Operational,Microsoft-Windows-CodeIntegrity/Operational"
 		if sysmon {
 			channels += ",Microsoft-Windows-Sysmon/Operational"
 		}
@@ -365,7 +365,7 @@ func TestFluentBitWindowsPowerShell(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(a.Config, "Channels             Security,System,Microsoft-Windows-Windows Defender/Operational,Microsoft-Windows-Sysmon/Operational,Microsoft-Windows-PowerShell/Operational") {
+	if !strings.Contains(a.Config, "Channels             Security,System,Application,Microsoft-Windows-Windows Defender/Operational,Microsoft-Windows-CodeIntegrity/Operational,Microsoft-Windows-Sysmon/Operational,Microsoft-Windows-PowerShell/Operational") {
 		t.Errorf("config:\n%s", a.Config)
 	}
 	if !strings.Contains(strings.Join(a.Steps, "\n"), `Set-ItemProperty -Path $k -Name EnableScriptBlockLogging -Value 1`) {

@@ -43,7 +43,46 @@ type Archive struct {
 	Seal       func(io.Writer) (io.WriteCloser, error)
 	Unseal     func(io.Reader) (io.Reader, error)
 	Encryption string
+	// KID names the key Seal uses, recorded in manifests.
+	KID string
+	// Server names this server in the manifests it writes, when servers
+	// share one archive folder.
+	Server string
+	// Manifests, when set, keeps the manifests (servers that share one
+	// OpenSearch and one archive folder keep them in OpenSearch, so two
+	// servers never write the same archive): IDs are reserved there
+	// before a file is written, and listings read from there. A manifest
+	// file is still written next to each archive. When nil, the manifest
+	// files are the list.
+	Manifests ManifestStore
 }
+
+// Manifest states, for a ManifestStore: an archive is pending from when
+// its ID is reserved until its file is written and checked.
+const (
+	ManifestPending  = "pending"
+	ManifestComplete = "complete"
+)
+
+// ManifestStore keeps archive manifests outside the archive folder.
+type ManifestStore interface {
+	// Reserve reserves the first free archive ID for m.Index (the index
+	// name, then <index>.2, <index>.3 and so on), with m pending, and
+	// returns it. An ID is reserved once: two servers never get the same.
+	// skip reports IDs to pass over, such as ones whose file exists.
+	Reserve(ctx context.Context, m Manifest, skip func(id string) bool) (string, error)
+	// Complete records the finished manifest of a reserved ID.
+	Complete(ctx context.Context, m Manifest) error
+	// Abandon gives up a reserved ID whose archive was not written.
+	Abandon(ctx context.Context, id string) error
+	// List returns the complete manifests, and problems with others.
+	List(ctx context.Context) ([]Manifest, []string, error)
+	// Get returns one complete manifest, or ErrArchiveNotFound.
+	Get(ctx context.Context, id string) (Manifest, error)
+}
+
+// storeTimeout bounds a call to the ManifestStore.
+const storeTimeout = 30 * time.Second
 
 // Manifest describes one archive file.
 type Manifest struct {
@@ -66,6 +105,13 @@ type Manifest struct {
 	SHA256     string    `json:"sha256"`
 	Created    time.Time `json:"created"`
 	Encryption string    `json:"encryption,omitempty"`
+	// KID names the key the file was sealed with.
+	KID string `json:"kid,omitempty"`
+	// State is pending or complete in a ManifestStore; empty in files.
+	State string `json:"state,omitempty"`
+	// Server is the server that wrote the archive, when servers share one
+	// archive folder.
+	Server string `json:"server,omitempty"`
 }
 
 var archiveID = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,250}$`)
@@ -95,13 +141,20 @@ func (a *Archive) ensureDir() error {
 func (a *Archive) freeID(index string) string {
 	id := index
 	for n := 2; ; n++ {
-		_, err1 := os.Lstat(a.path(id + dataExt))
-		_, err2 := os.Lstat(a.path(id + manifestExt))
-		if errors.Is(err1, os.ErrNotExist) && errors.Is(err2, os.ErrNotExist) {
+		if !a.taken(id) {
 			return id
 		}
-		id = index + "." + strconv.Itoa(n)
+		id = ArchiveID(index, n)
 	}
+}
+
+// ArchiveID is the nth archive ID of an index: the index name, then
+// <index>.2, <index>.3 and so on.
+func ArchiveID(index string, n int) string {
+	if n <= 1 {
+		return index
+	}
+	return index + "." + strconv.Itoa(n)
 }
 
 // countingWriter counts bytes written through it.
@@ -228,19 +281,50 @@ func (a *Archive) Write(ctx context.Context, ex Exporter, src Source, expectDocs
 			enc = "sealed"
 		}
 	}
-	id := a.freeID(index)
 	m := &Manifest{
-		Format: ArchiveFormat, ID: id, Index: index, IndexUUID: src.UUID, Category: src.Category, Day: src.Day,
-		Docs: docs, File: id + dataExt, Bytes: counted.n, IndexBytes: src.Bytes,
+		Format: ArchiveFormat, Index: index, IndexUUID: src.UUID, Category: src.Category, Day: src.Day,
+		Docs: docs, Bytes: counted.n, IndexBytes: src.Bytes,
 		SHA256: hex.EncodeToString(sum.Sum(nil)), Created: time.Now().UTC(), Encryption: enc,
 	}
+	if a.Seal != nil {
+		m.KID = a.KID
+	}
+	m.Server = a.Server
+	var id string
+	if a.Manifests != nil {
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), storeTimeout)
+		defer cancel()
+		pend := *m
+		pend.State = ManifestPending
+		if id, err = a.Manifests.Reserve(ctx, pend, a.taken); err != nil {
+			return nil, fmt.Errorf("could not reserve an archive name for %s: %w", index, err)
+		}
+	} else {
+		id = a.freeID(index)
+	}
+	m.ID, m.File = id, id+dataExt
+	abandon := func() {
+		if a.Manifests != nil {
+			ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), storeTimeout)
+			defer cancel()
+			_ = a.Manifests.Abandon(ctx, id)
+		}
+	}
+	// A reserved name is this server's alone, but a file of that name
+	// must never be written over.
+	if a.taken(id) {
+		abandon()
+		return nil, fmt.Errorf("the archive file %s exists already", m.File)
+	}
 	if err := os.Rename(tmp.Name(), a.path(m.File)); err != nil {
+		abandon()
 		return nil, err
 	}
 	keep = true
 	fail := func(err error) (*Manifest, error) {
 		os.Remove(a.path(m.File))
 		os.Remove(a.path(id + manifestExt))
+		abandon()
 		return nil, err
 	}
 	if err := writeFileSynced(a.path(id+manifestExt), m); err != nil {
@@ -250,7 +334,24 @@ func (a *Archive) Write(ctx context.Context, ex Exporter, src Source, expectDocs
 	if err := a.Verify(*m); err != nil {
 		return fail(fmt.Errorf("the archive of %s could not be read back: %w", index, err))
 	}
+	if a.Manifests != nil {
+		done := *m
+		done.State = ManifestComplete
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), storeTimeout)
+		defer cancel()
+		if err := a.Manifests.Complete(ctx, done); err != nil {
+			return fail(fmt.Errorf("could not record the archive of %s: %w", index, err))
+		}
+		*m = done
+	}
 	return m, nil
+}
+
+// taken reports whether an archive's files exist.
+func (a *Archive) taken(id string) bool {
+	_, err1 := os.Lstat(a.path(id + dataExt))
+	_, err2 := os.Lstat(a.path(id + manifestExt))
+	return !errors.Is(err1, os.ErrNotExist) || !errors.Is(err2, os.ErrNotExist)
 }
 
 // writeFileSynced writes JSON to a file atomically and syncs it to disk.
@@ -292,6 +393,17 @@ func syncDir(dir string) {
 // List returns every archive, newest day first, and a problem for each
 // manifest that cannot be read.
 func (a *Archive) List() ([]Manifest, []string, error) {
+	if a.Manifests != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), storeTimeout)
+		defer cancel()
+		return a.Manifests.List(ctx)
+	}
+	return a.ListFiles()
+}
+
+// ListFiles is List from the manifest files in the archive folder,
+// whatever keeps the manifests.
+func (a *Archive) ListFiles() ([]Manifest, []string, error) {
 	if a.Dir == "" {
 		return nil, nil, nil
 	}
@@ -383,12 +495,20 @@ func (a *Archive) Get(id string) (Manifest, error) {
 	if !archiveID.MatchString(id) {
 		return Manifest{}, ErrArchiveNotFound
 	}
+	if a.Manifests != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), storeTimeout)
+		defer cancel()
+		return a.Manifests.Get(ctx, id)
+	}
 	m, err := a.readManifest(id)
 	if errors.Is(err, os.ErrNotExist) {
 		return Manifest{}, ErrArchiveNotFound
 	}
 	return m, err
 }
+
+// ReadManifestFile reads the manifest file of archive id.
+func (a *Archive) ReadManifestFile(id string) (Manifest, error) { return a.readManifest(id) }
 
 func (a *Archive) readManifest(id string) (Manifest, error) {
 	data, err := os.ReadFile(a.path(id + manifestExt))

@@ -1,0 +1,40 @@
+# S4, lab size: every fault in turn under load, against each server
+# directly (so each can be asked whether it runs the jobs). The commands
+# run on the load generator's machine; see README.md for what each needs
+# on the lab's machines.
+name: s4-chaos
+description: Kill, stall, cut off from OpenSearch, clock offset and full disk, under load.
+targets: [https://siem-1.lab:8443, https://siem-2.lab:8443, https://siem-3.lab:8443]
+ca_file: lab/ca.pem
+credentials:
+  admin_file: lab/admin.txt
+  token_file: lab/token.txt
+opensearch:
+  url: https://os-1.lab:9200
+  ca: lab/opensearch-ca.pem
+  cert: lab/opensearch-client.pem
+  key: lab/opensearch-client-key.pem
+toxiproxy: {url: "http://toxiproxy.lab:8474", proxy: opensearch}
+drain: 5m
+phases:
+  - {name: warm, for: 1m, agents: {n: 200, rate: 10000, switch_on_error: true}}
+  - name: chaos
+    for: 20m
+    agents: {n: 200, rate: 10000, switch_on_error: true}
+    users: {n: 20, create: true, triage: true}
+    churn: {every: 30s, key: search.max_events, values: [10000, 10001]}
+faults:
+  - {at: 2m, kind: kill9, target: leader, cmd: "ssh {server} sudo systemctl kill -s KILL signalith", for: 1m, undo: "ssh {server} sudo systemctl start signalith"}
+  - {at: 5m, kind: stop, target: leader, for: 60s, cmd: "ssh {server} sudo systemctl kill -s STOP signalith", undo: "ssh {server} sudo systemctl kill -s CONT signalith"}
+  # Through toxiproxy, which sits between the leader and OpenSearch.
+  - {at: 8m, kind: cut_opensearch, target: leader, for: 2m}
+  - {at: 12m, kind: clock, target: standby, for: 3m, cmd: "ssh {server} sudo /usr/local/sbin/loadtest-clock +10", undo: "ssh {server} sudo /usr/local/sbin/loadtest-clock 0"}
+  - {at: 16m, kind: fill_disk, for: 3m, cmd: "ssh os-1.lab sudo /usr/local/sbin/loadtest-fill-disk 96", undo: "ssh os-1.lab sudo /usr/local/sbin/loadtest-fill-disk 0"}
+criteria:
+  - {name: takeover_seconds, max: 45}
+  - {name: leaders_at_once, max: 1}
+  - {name: events_lost, max: 0}
+  - {name: events_duplicated, max: 0}
+  - {name: unexpected_signouts, max: 0}
+  - {name: settings_converge_seconds, max: 3}
+  - {name: write_conflicts}

@@ -724,6 +724,12 @@ func TestSettingsResetOnMember(t *testing.T) {
 		t.Fatalf("save: %d %v", code, out)
 	}
 	path := filepath.Join(rs.dir, "signalith.yaml")
+	// The command treats the server as a member once its copy of the
+	// shared settings is written, which happens in the background.
+	eventually(t, "the server writes its copy of the shared settings", func() bool {
+		_, err := os.Stat(shared.CachePath(config.StateDirFor(path)))
+		return err == nil
+	})
 	out, err := capture(t, func() error { return cmdSettings([]string{"reset", "-c", path, "search.max_events"}) })
 	if err != nil || !strings.Contains(out, "Reset search.max_events for every server of the cluster") {
 		t.Fatalf("reset of a shared setting: %v\n%s", err, out)

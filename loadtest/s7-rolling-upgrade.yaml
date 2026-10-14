@@ -1,0 +1,15 @@
+# S7: a rolling upgrade under load. It needs rolling upgrades, which a
+# later version adds; until then it is skipped.
+name: s7-rolling-upgrade
+description: Upgrade each server in turn while agents and people keep working.
+needs: [rolling_upgrade]
+targets: [https://lb.lab:8443]
+ca_file: lab/ca.pem
+credentials:
+  admin_file: lab/admin.txt
+  token_file: lab/token.txt
+phases:
+  - {name: upgrade, for: 15m, agents: {n: 200, rate: 10000}, users: {n: 20, create: true}}
+criteria:
+  - {name: unexpected_signouts, max: 0}
+  - {name: events_undelivered, max: 0}

@@ -28,6 +28,7 @@ func (s *Server) routeRetention(api *router) {
 	api.admin("GET /api/retention/archive", s.handleRetentionArchive)
 	api.admin("POST /api/retention/archive/preview", s.handleRetentionRestorePreview)
 	api.admin("POST /api/retention/archive/restore", s.handleRetentionRestore)
+	api.admin("GET /api/retention/job", s.handleRetentionJob)
 }
 
 var errRetentionOff = errors.New("data retention is not available on this server")
@@ -105,6 +106,7 @@ func (s *Server) handleRetention(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	ov := s.Retention.Overview(ctx)
+	ov.RestoreQueued = s.Audit.on()
 	if ov.ETag != "" {
 		w.Header().Set("ETag", ov.ETag)
 	}
@@ -331,6 +333,9 @@ func (s *Server) handleRetentionRestore(w http.ResponseWriter, r *http.Request) 
 	var req restoreRequest
 	if err := readStrict(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if s.restoreQueued(w, r, req) {
 		return
 	}
 	user := userOf(r)

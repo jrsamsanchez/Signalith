@@ -89,8 +89,8 @@ Usage:
   signalith security  [-c file] [-json]   print the security report (exit 2 when something is at risk)
   signalith cluster   status|found|export|import|export-key|import-key|reset-key|accept-restore [-c file] ...  the settings the servers share in OpenSearch
   signalith service   install|uninstall|start|stop     manage the Windows service
-  signalith opensearch-certs -out DIR [-node name] [-san name]   certificates to secure your own OpenSearch
-  signalith bootstrap-docker -opensearch-dir DIR -signalith-dir DIR   prepare the Docker quick start (its setup service runs this)
+  signalith opensearch-certs [-ca-dir DIR] -node NAME [-san ...] [-peer ...] -out DIR   certificates to secure your own OpenSearch
+  signalith bootstrap-docker [-opensearch-name NAME] [-nodes N] [-export-ca-key] [-apply-security] [-new-ca]   prepare the Docker quick start (its setup service runs this)
   signalith version
 
 The config file defaults to %s
@@ -924,6 +924,10 @@ func serve(ctx context.Context, path string, log *slog.Logger) error {
 	}
 	defer node.Close()
 	defer node.Stop()
+	// The audit spool belongs to the process too, and hears every audit
+	// line logged from here on (see sharedaudit.go).
+	audits, log := openAudit(c, node, log)
+	go audits.sink.Run(ctx)
 	// The first start of the Docker quick start with this version decides
 	// whether it was upgraded from one whose agents send the example
 	// ingest token (see config.Config.OldToken).
@@ -939,6 +943,7 @@ func serve(ctx context.Context, path string, log *slog.Logger) error {
 	}
 	r := newRunner(path, log)
 	r.node = node
+	r.audit = audits
 	// The shared configuration belongs to the process too; each start of
 	// the components points it at their OpenSearch client.
 	r.shared, r.sharedContent = openShared(c, node, log)
@@ -1069,6 +1074,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	if sharedOn {
 		r.sharedContent.sharedRetention(ret)
 	}
+	r.useAudit(ctx, in, c, cl, ret)
 	maxAge := c.MaxEventAge(retentionKeepDays(ret))
 	pipeline := &ingest.Pipeline{Store: cl, Prefix: c.OpenSearch.IndexPrefix, MaxEventAge: maxAge, Log: log}
 	// Each day's new field names are shared out among the servers that
@@ -1537,7 +1543,8 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		}},
 	}
 	if r.shared != nil {
-		in.jobsList = append(in.jobsList, requestsJob(r.shared, contentHandlers(feeds, ret)))
+		in.jobsList = append(in.jobsList, requestsJob(r.shared, contentHandlers(feeds, ret, r.auditHandlers(ret))))
+		in.jobsList = append(in.jobsList, r.auditJobs(c, cl, ret)...)
 	}
 	if parts != nil {
 		// Signed-in directory users are checked again by this one server
@@ -1550,6 +1557,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		in.jobs.Go(func() { r.sharedContent.apply(ctx, r.shared, c) })
 	}
 	in.retention = ret
+	srv.Audit = r.auditAPI(c, cl)
 	if hook := jobStarting; hook != nil {
 		in.jobsList = watchJobs(in.jobsList, c, hook)
 	}

@@ -1,0 +1,27 @@
+# S1, CI size: steady agent ingest, every event checked by sequence
+# number. Against one server it is the baseline the other runs are
+# compared with. The addresses are the laptop cluster's
+# (compose/docker-compose.loadtest.yml); use -target and -ca for others.
+name: s1-small
+description: Agents sending steadily; nothing lost, nothing stored twice.
+targets: [https://localhost:8441, https://localhost:8442]
+ca_files: [loadtest/compose/out/siem-a-ca.pem, loadtest/compose/out/siem-b-ca.pem]
+credentials:
+  admin_file: loadtest/compose/out/admin.txt
+  token_file: loadtest/compose/out/token.txt
+opensearch:
+  url: https://localhost:9200
+  ca: loadtest/compose/out/opensearch-ca.pem
+  cert: loadtest/compose/out/opensearch-client.pem
+  key: loadtest/compose/out/opensearch-client-key.pem
+phases:
+  - {name: warm, for: 30s, agents: {n: 20, rate: 200}}
+  - {name: load, for: 2m, agents: {n: 50, rate: 2000}}
+criteria:
+  - {name: events_lost, max: 0}
+  - {name: events_duplicated, max: 0}
+  - {name: events_undelivered, max: 0}
+  - {name: ingest_error_rate, phase: load, max: 0.01}
+  - {name: ingest_p99_ms, phase: load, max: 2000}
+  - {name: generator_lag_ms, max: 1000}
+  - {name: leaders_at_once, max: 1}

@@ -15,6 +15,13 @@
 'use strict';
 
 (function () {
+  // The Audit page, with the records of settings saved on any server.
+  {
+    const btn = el('button', { class: 'btn btn--ghost', type: 'button', id: 'st-audit' }, icon('scroll-text'), 'Audit');
+    btn.addEventListener('click', () => window.openAudit && window.openAudit({ q: 'settings' }));
+    document.querySelector('#page-settings .page-head').append(el('div', { class: 'page-head__actions' }, btn));
+  }
+
   // S.view is the last api/settings reply. S.drafts holds the unsaved
   // changes by setting: { kind: 'value', value, raw } for a new value,
   // 'clear' to remove a saved password or key, 'reset' to take a setting

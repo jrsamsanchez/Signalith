@@ -1,0 +1,35 @@
+# S1, lab size: ingest scaling. Run it once against one server, then two,
+# then three, through the load balancer (the first target), and compare
+# the events per second each reaches with p99 under 2 s. Syslog runs
+# alongside from many devices. See README.md for the lab.
+name: s1-ingest
+description: 500 agents from 5k to 100k events/s and syslog from 1,000 devices.
+targets: [https://lb.lab:8443]
+ca_file: lab/ca.pem
+syslog_targets:
+  tcp: [lb.lab:6514]
+credentials:
+  admin_file: lab/admin.txt
+  token_file: lab/token.txt
+opensearch:
+  url: https://os-1.lab:9200
+  ca: lab/opensearch-ca.pem
+  cert: lab/opensearch-client.pem
+  key: lab/opensearch-client-key.pem
+drain: 5m
+settle: 3m
+phases:
+  - {name: warm, for: 1m, agents: {n: 500, rate: 5000}}
+  - {name: 20k, for: 5m, agents: {n: 500, rate: 20000}, syslog: {proto: tls, sources: 1000, rate: 2000}}
+  - {name: 50k, for: 5m, agents: {n: 500, rate: 50000}, syslog: {proto: tls, sources: 1000, rate: 10000}}
+  - {name: 100k, for: 5m, agents: {n: 500, rate: 100000}, syslog: {proto: tls, sources: 1000, rate: 30000}}
+criteria:
+  - {name: events_lost, max: 0}
+  - {name: events_duplicated, max: 0}
+  - {name: ingest_p99_ms, phase: 20k, max: 2000}
+  - {name: ingest_p99_ms, phase: 50k}
+  - {name: ingest_p99_ms, phase: 100k}
+  - {name: ingest_error_rate, phase: 20k, max: 0.01}
+  - {name: ingest_error_rate, phase: 100k}
+  - {name: syslog_send_errors, max: 0}
+  - {name: generator_lag_ms, max: 1000}

@@ -39,7 +39,7 @@ signalith cluster status [-c file] [-json]
 ```
 
 Shows this server's name and identity, its mode, the cluster's name, identity and
-level (3 once every server can read shared settings, 2 once every server can read shared users, 1 before), the cluster key it uses, the servers in the keyring and any problem, such as a
+level (4 once every server keeps audit records and archives in OpenSearch, 3 once every server can read shared settings, 2 once every server can read shared users, 1 before), the cluster key it uses, the servers in the keyring and any problem, such as a
 shared setting that does not check out. `-json` prints the same as JSON, with the
 mode and the cluster under `shared`, and `problems` and `warnings` when there are any:
 
@@ -284,3 +284,50 @@ counts may be short, so it refuses unless you add `-yes`. The other servers take
 seconds: each keeps its old one in `tls/retired` in its state folder, and the agents set
 up with an old one are marked as needing a new configuration. The choice is made once:
 changing the cluster's certificate authority comes in a later version.
+
+## upgrade-check
+
+```
+signalith cluster upgrade-check [-c file] [-json]
+```
+
+Run it on any server before each server's upgrade, with the version installed now. It
+only reads, so it may run while the servers run. It says whether it is safe to stop one
+more server and install the new version on it:
+
+- every server that is up has applied every change of the shared settings;
+- no server is starting, stopping, down or restarting to apply new settings;
+- no retention step is deleting data (OpenSearch runs no delete, reindex or snapshot
+  of the cluster's indices, and the server that runs the jobs is not in delete-only
+  mode);
+- the servers run at most two versions, and each can read the cluster's level of
+  stored data.
+
+It also warns, without blocking, when the server that runs the background jobs is the
+only one that can run them (the jobs then pause for about 40 seconds while it is
+upgraded), when a server is offline, and when an older server does not say how far it
+applied the shared settings. It suggests which server to upgrade next: the ones that
+do not run the jobs first, then the one that does, so the jobs move once, to the new
+version.
+
+| Exit code | Meaning |
+| --- | --- |
+| 0 | Safe to upgrade the next server |
+| 3 | Not safe yet: the output says what to wait for |
+| 1 | The check could not run (OpenSearch not reachable, no identity) |
+
+```
+Server  Version  State  Jobs       Caught up
+siem-a  0.2.0    ready  runs them  yes
+siem-b  0.2.0    ready             yes
+
+Safe to upgrade the next server.
+
+Upgrade siem-b next: it does not run the jobs. Upgrade siem-a, which runs them, last.
+```
+
+With `-json` it prints `safe`, `servers` (each with `name`, `version`, `state`, `live`,
+`jobs`, `caught_up` as `yes`, `no` or `unknown`, and `level_max`), `versions`,
+`cluster_level`, `blockers` and `warnings` (each with a `code`, the `server` and the
+`text`) and `next`. A server that is the only one using its OpenSearch prints that
+it can simply be stopped, upgraded and started, and exits 0.
