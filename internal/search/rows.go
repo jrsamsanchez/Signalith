@@ -331,12 +331,33 @@ func compareValues(a, b any) int {
 	return strings.Compare(strings.ToLower(fmt.Sprint(a)), strings.ToLower(fmt.Sprint(b)))
 }
 
+// regex reports whether a where clause's regular expression is found in
+// s; a pattern that does not compile fails the search.
+func (m *matcher) regex(pattern, s string) bool {
+	re, ok := m.regexes[pattern]
+	if !ok {
+		var err error
+		if re, err = ParseRegex(pattern); err != nil {
+			if m.err == nil {
+				m.err = err
+			}
+			return false
+		}
+		if m.regexes == nil {
+			m.regexes = map[string]*Regex{}
+		}
+		m.regexes[pattern] = re
+	}
+	return re.MatchString(s)
+}
+
 // matcher evaluates where expressions over rows. Each wildcard pattern is
 // compiled once and kept for the rows that follow, rather than once per
 // row.
 type matcher struct {
-	globs map[string]glob
-	lower map[string]string
+	globs   map[string]glob
+	lower   map[string]string
+	regexes map[string]*Regex
 
 	// ctx is checked every checkWork characters of wildcard matching;
 	// once it ends, err holds its error and every match fails.
@@ -380,6 +401,8 @@ func (m *matcher) eval(e query.Expr, r Row) bool {
 			return m.equals(v, e.Value)
 		case "!=":
 			return !m.equals(v, e.Value)
+		case "=~":
+			return m.regex(e.Value, fmt.Sprint(v))
 		}
 		cmp := compareValues(v, e.Value)
 		switch e.Op {

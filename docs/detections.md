@@ -242,9 +242,9 @@ Content packs are rule sets from other open source projects, shipped unchanged
 inside Signalith and converted when it starts. Every pack detection is **off** until
 an admin turns it on.
 
-**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 1,918 rules from
-[SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 1,808 Windows rules
-for these Sysmon, Security, PowerShell and System log sources, and 110 Linux rules (see
+**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 1,990 rules from
+[SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 1,877 Windows rules
+for these Sysmon, Security, PowerShell and System log sources, and 113 Linux rules (see
 [Linux endpoints](#linux-endpoints-sysmon-for-linux)):
 
 | Sigma log source | Windows events | Data model |
@@ -287,8 +287,7 @@ objects whose auditing (SACL) asks for them. Directory object
 types and properties are kept as Windows records them (`%{19195a5b-...}`), so a rule
 that compares one to a bare GUID matches only events that already carry the name. An access list
 (`AccessList`) is searched by its codes (`%%4417`) and by their names (`WriteData`),
-since rules use both. Rules that match a share name with a literal `*`
-(`\\*\IPC$`) are left out: Signalith patterns cannot yet say "a literal asterisk".
+since rules use both.
 
 Each pack rule only searches its own log source's event IDs, since several kinds of
 event share a data model (a process creation and a process access are both Endpoint).
@@ -598,12 +597,15 @@ converts a rule and shows the result for review. Supported:
   `TargetUserName` to `user`; `IpAddress` to `src`; and so on). Unmapped fields are
   searched as-is and listed as warnings.
 - Modifiers `contains`, `startswith`, `endswith`, `all`, `windash`, `exists`,
-  `base64`, `base64offset`, `utf16le`, `utf16be`, `utf16`, `wide` and `cidr` (IPv4);
+  `base64`, `base64offset`, `utf16le`, `utf16be`, `utf16`, `wide`, `cidr` (IPv4) and
+  `re` (with `i`, `m` and `s`), searched as a regular expression (`field=~"..."`);
+  escaped wildcards (`\*`, a literal asterisk) also become a regular expression;
   lists, `null` and empty values, keyword lists; conditions with `and`, `or`, `not`,
   parentheses, `1 of`, `all of`, `them` and `selection_*` patterns.
 
-Not supported, and reported as an error: `re`, IPv6 `cidr` and other modifiers,
-aggregation conditions (`| count() > 10`), and escaped wildcards.
+Not supported, and reported as an error: IPv6 `cidr` and other modifiers, regular
+expressions with word boundaries (`\b`) or line anchors, and aggregation conditions
+(`| count() > 10`).
 
 Strict mode, used for content packs, also refuses anything that would only be
 approximated: unmapped fields, keyword (free text) searches, rules with no data

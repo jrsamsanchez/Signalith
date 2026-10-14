@@ -1,0 +1,8 @@
+{"rule": "1a0d4aba-7668-4365-9ce4-6d79ab088dfd", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"0xAAAAAAAA","Image":"\\ping.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"0xAAAAAAAA","NewProcessName":"\\ping.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\ping.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"\\ping.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"0xAAAAAAAA"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"0xAAAAAAAA","SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

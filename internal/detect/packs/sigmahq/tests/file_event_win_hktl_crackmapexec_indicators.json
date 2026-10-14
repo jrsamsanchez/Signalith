@@ -1,0 +1,5 @@
+{"rule": "736ffa74-5f6f-44ca-94ef-1c0df4f51d2a", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"C:\\Windows\\Temp\\ \\aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa.txt"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"C:\\Windows\\Temp\\ \\msol.ps1"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{}}
+]}

@@ -1,0 +1,7 @@
+{"rule": "afe52666-401e-4a02-b4ff-5d128990b8cb", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x -r   x:\\PerfLogs\\  -hp","Description":"Command line RAR"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x -r .exe a  -hp x:\\Temp"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Description":"Command line RAR"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x -r   x:\\PerfLogs\\  -hp"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{}}
+]}

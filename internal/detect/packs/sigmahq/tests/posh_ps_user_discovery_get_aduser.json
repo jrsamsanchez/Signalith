@@ -1,0 +1,4 @@
+{"rule": "c2993223-6da8-4b1a-88ee-668b8bf315e9", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"x -Filter * \u003e Get-ADUser x"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}}
+]}

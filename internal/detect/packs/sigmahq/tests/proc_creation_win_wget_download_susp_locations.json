@@ -1,0 +1,5 @@
+{"rule": "40aa399c-7b02-4715-8e5f-73572b493f33", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"--output-document http :\\Users\\ \\Pictures\\ ://0.0.0.0","OriginalFileName":"wget.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"wget.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"--output-document http :\\Users\\ \\Pictures\\ ://0.0.0.0"}}
+]}

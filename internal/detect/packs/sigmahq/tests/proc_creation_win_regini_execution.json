@@ -1,0 +1,5 @@
+{"rule": "5f60740a-f57b-4e76-82a1-15b6ff2cb134", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\regini.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":":A","Image":"\\regini.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{}}
+]}

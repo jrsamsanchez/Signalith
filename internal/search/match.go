@@ -64,6 +64,12 @@ func evalDSL(q map[string]any, doc map[string]any) (bool, error) {
 			text, _ := doc[field].(string)
 			pat := unescapeQueryString(fmt.Sprint(b["query"]))
 			return globMatch("*"+strings.Trim(pat, "*")+"*", text), nil
+		case "regexp":
+			for field, spec := range b {
+				s, _ := spec.(map[string]any)
+				return evalRegexp(field, fmt.Sprint(s["value"]), doc)
+			}
+			return false, nil
 		case "range":
 			for field, spec := range b {
 				s, _ := spec.(map[string]any)
@@ -163,6 +169,29 @@ func evalLeaf(kind, field string, spec map[string]any, doc map[string]any) (bool
 		return strings.EqualFold(strconv.FormatBool(x), want), nil
 	}
 	return false, nil
+}
+
+// evalRegexp evaluates a regexp query: the pattern matches a string
+// field's whole value, lowercased for a wildcard field, which the index
+// lowercases (ingest.IndexTemplate). OpenSearch refuses it on a numeric
+// or boolean field.
+func evalRegexp(field, pattern string, doc map[string]any) (bool, error) {
+	v, ok := indexedValue(doc, field)
+	if !ok {
+		return false, nil
+	}
+	s, isStr := v.(string)
+	if !isStr {
+		return false, fmt.Errorf("regexp query on non-text field %s", field)
+	}
+	if WildcardFields[field] {
+		s = strings.ToLower(s)
+	}
+	re, err := luceneRegexp(pattern)
+	if err != nil {
+		return false, err
+	}
+	return re.MatchString(s), nil
 }
 
 func evalRange(field string, spec map[string]any, doc map[string]any) bool {

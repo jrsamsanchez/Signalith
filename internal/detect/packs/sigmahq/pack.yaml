@@ -13,6 +13,10 @@ rules:
     rule_id: 3b4b232a-af90-427c-a22f-30b0c0837b95
     file: proc_access_win_cmstp_execution_by_access.yml
     path: rules/windows/process_access/proc_access_win_cmstp_execution_by_access.yml
+  - id: sigma-access-hktl-cobaltstrike-bof-injection-pattern
+    rule_id: 09706624-b7f6-455d-9d02-adee024cee1d
+    file: proc_access_win_hktl_cobaltstrike_bof_injection_pattern.yml
+    path: rules/windows/process_access/proc_access_win_hktl_cobaltstrike_bof_injection_pattern.yml
   - id: sigma-access-hktl-generic-access
     rule_id: d0d2f720-d14f-448d-8242-51ff396a334e
     file: proc_access_win_hktl_generic_access.yml
@@ -301,6 +305,10 @@ rules:
     rule_id: 5d756aee-ad3e-4306-ad95-cb1abec48de2
     file: file_event_win_gotoopener_artefact.yml
     path: rules/windows/file/file_event/file_event_win_gotoopener_artefact.yml
+  - id: sigma-file-hktl-crackmapexec-indicators
+    rule_id: 736ffa74-5f6f-44ca-94ef-1c0df4f51d2a
+    file: file_event_win_hktl_crackmapexec_indicators.yml
+    path: rules/windows/file/file_event/file_event_win_hktl_crackmapexec_indicators.yml
   - id: sigma-file-hktl-dumpert
     rule_id: 93d94efc-d7ad-4161-ad7d-1638c4f908d8
     file: file_event_win_hktl_dumpert.yml
@@ -333,6 +341,10 @@ rules:
     rule_id: 847def9e-924d-4e90-b7c4-5f581395a2b4
     file: file_event_win_hktl_quarkspw_filedump.yml
     path: rules/windows/file/file_event/file_event_win_hktl_quarkspw_filedump.yml
+  - id: sigma-file-hktl-remote-cred-dump
+    rule_id: 6e2a900a-ced9-4e4a-a9c2-13e706f9518a
+    file: file_event_win_hktl_remote_cred_dump.yml
+    path: rules/windows/file/file_event/file_event_win_hktl_remote_cred_dump.yml
   - id: sigma-file-hktl-safetykatz
     rule_id: e074832a-eada-4fd7-94a1-10642b130e16
     file: file_event_win_hktl_safetykatz.yml
@@ -769,6 +781,10 @@ rules:
     rule_id: 33f41cdd-35ac-4ba8-814b-c6a4244a1ad4
     file: file_event_win_wmi_persistence_script_event_consumer_write.yml
     path: rules/windows/file/file_event/file_event_win_wmi_persistence_script_event_consumer_write.yml
+  - id: sigma-file-wmiexec-default-filename
+    rule_id: 8d5aca11-22b3-4f22-b7ba-90e60533e1fb
+    file: file_event_win_wmiexec_default_filename.yml
+    path: rules/windows/file/file_event/file_event_win_wmiexec_default_filename.yml
   - id: sigma-file-wmiprvse-wbemcomn-dll-hijack
     rule_id: 614a7e17-5643-4d89-b6fe-f9df1a79641c
     file: file_event_win_wmiprvse_wbemcomn_dll_hijack.yml
@@ -1053,6 +1069,10 @@ rules:
     rule_id: c6714a24-d7d5-4283-a36b-3ffd091d5f7e
     file: proc_creation_lnx_php_reverse_shell.yml
     path: rules/linux/process_creation/proc_creation_lnx_php_reverse_shell.yml
+  - id: sigma-lnx-proc-pnscan-binary-cli-pattern
+    rule_id: 97de11cd-4b67-4abf-9a8b-1020e670aa9e
+    file: proc_creation_lnx_pnscan_binary_cli_pattern.yml
+    path: rules/linux/process_creation/proc_creation_lnx_pnscan_binary_cli_pattern.yml
   - id: sigma-lnx-proc-proxy-connection
     rule_id: 72f4ab3f-787d-495d-a55d-68c2ff46cf4c
     file: proc_creation_lnx_proxy_connection.yml
@@ -1117,6 +1137,10 @@ rules:
     rule_id: 746c86fb-ccda-4816-8997-01386263acc4
     file: proc_creation_lnx_susp_container_residence_discovery.yml
     path: rules/linux/process_creation/proc_creation_lnx_susp_container_residence_discovery.yml
+  - id: sigma-lnx-proc-susp-curl-fileupload
+    rule_id: 00b90cc1-17ec-402c-96ad-3a8117d7a582
+    file: proc_creation_lnx_susp_curl_fileupload.yml
+    path: rules/linux/process_creation/proc_creation_lnx_susp_curl_fileupload.yml
   - id: sigma-lnx-proc-susp-curl-useragent
     rule_id: b86d356d-6093-443d-971c-9b07db583c68
     file: proc_creation_lnx_susp_curl_useragent.yml
@@ -1217,6 +1241,10 @@ rules:
     rule_id: 818f7b24-0fba-4c49-a073-8b755573b9c7
     file: proc_creation_lnx_webshell_detection.yml
     path: rules/linux/process_creation/proc_creation_lnx_webshell_detection.yml
+  - id: sigma-lnx-proc-wget-download-suspicious-directory
+    rule_id: cf610c15-ed71-46e1-bdf8-2bd1a99de6c4
+    file: proc_creation_lnx_wget_download_suspicious_directory.yml
+    path: rules/linux/process_creation/proc_creation_lnx_wget_download_suspicious_directory.yml
   - id: sigma-lnx-proc-xterm-reverse-shell
     rule_id: 4e25af4b-246d-44ea-8563-e42aacab006b
     file: proc_creation_lnx_xterm_reverse_shell.yml
@@ -1717,6 +1745,10 @@ rules:
     rule_id: f24bcaea-0cd1-11eb-adc1-0242ac120002
     file: proc_creation_win_atbroker_uncommon_ats_execution.yml
     path: rules/windows/process_creation/proc_creation_win_atbroker_uncommon_ats_execution.yml
+  - id: sigma-proc-attrib-hiding-files
+    rule_id: 4281cb20-2994-4580-aa63-c8b86d019934
+    file: proc_creation_win_attrib_hiding_files.yml
+    path: rules/windows/process_creation/proc_creation_win_attrib_hiding_files.yml
   - id: sigma-proc-attrib-system-susp-paths
     rule_id: efec536f-72e8-4656-8960-5e85d091345b
     file: proc_creation_win_attrib_system_susp_paths.yml
@@ -1833,6 +1865,10 @@ rules:
     rule_id: 70ad0861-d1fe-491c-a45f-fa48148a300d
     file: proc_creation_win_certoc_download.yml
     path: rules/windows/process_creation/proc_creation_win_certoc_download.yml
+  - id: sigma-proc-certoc-download-direct-ip
+    rule_id: b86f6dea-0b2f-41f5-bdcc-a057bd19cd6a
+    file: proc_creation_win_certoc_download_direct_ip.yml
+    path: rules/windows/process_creation/proc_creation_win_certoc_download_direct_ip.yml
   - id: sigma-proc-certoc-load-dll
     rule_id: 242301bc-f92f-4476-8718-78004a6efd9f
     file: proc_creation_win_certoc_load_dll.yml
@@ -1937,6 +1973,10 @@ rules:
     rule_id: 379fa130-190e-4c3f-b7bc-6c8e834485f3
     file: proc_creation_win_cmd_del_execution.yml
     path: rules/windows/process_creation/proc_creation_win_cmd_del_execution.yml
+  - id: sigma-proc-cmd-del-greedy-deletion
+    rule_id: 204b17ae-4007-471b-917b-b917b315c5db
+    file: proc_creation_win_cmd_del_greedy_deletion.yml
+    path: rules/windows/process_creation/proc_creation_win_cmd_del_greedy_deletion.yml
   - id: sigma-proc-cmd-dir-execution
     rule_id: 7c9340a9-e2ee-4e43-94c5-c54ebbea1006
     file: proc_creation_win_cmd_dir_execution.yml
@@ -1989,6 +2029,10 @@ rules:
     rule_id: 41ca393d-538c-408a-ac27-cf1e038be80c
     file: proc_creation_win_cmd_rmdir_execution.yml
     path: rules/windows/process_creation/proc_creation_win_cmd_rmdir_execution.yml
+  - id: sigma-proc-cmd-shadowcopy-access
+    rule_id: c73124a7-3e89-44a3-bdc1-25fe4df754b1
+    file: proc_creation_win_cmd_shadowcopy_access.yml
+    path: rules/windows/process_creation/proc_creation_win_cmd_shadowcopy_access.yml
   - id: sigma-proc-cmd-stdin-redirect
     rule_id: 241e802a-b65e-484f-88cd-c2dc10f9206d
     file: proc_creation_win_cmd_stdin_redirect.yml
@@ -2049,6 +2093,14 @@ rules:
     rule_id: 515c8be5-e5df-4c5e-8f6d-a4a2f05e4b48
     file: proc_creation_win_createdump_lolbin_execution.yml
     path: rules/windows/process_creation/proc_creation_win_createdump_lolbin_execution.yml
+  - id: sigma-proc-csc-susp-dynamic-compilation
+    rule_id: dcaa3f04-70c3-427a-80b4-b870d73c94c4
+    file: proc_creation_win_csc_susp_dynamic_compilation.yml
+    path: rules/windows/process_creation/proc_creation_win_csc_susp_dynamic_compilation.yml
+  - id: sigma-proc-csc-susp-parent
+    rule_id: b730a276-6b63-41b8-bcf8-55930c8fc6ee
+    file: proc_creation_win_csc_susp_parent.yml
+    path: rules/windows/process_creation/proc_creation_win_csc_susp_parent.yml
   - id: sigma-proc-csi-execution
     rule_id: 40b95d31-1afc-469e-8d34-9a3a667d058e
     file: proc_creation_win_csi_execution.yml
@@ -2061,10 +2113,30 @@ rules:
     rule_id: e5d36acd-acb4-4c6f-a13f-9eb203d50099
     file: proc_creation_win_csvde_export.yml
     path: rules/windows/process_creation/proc_creation_win_csvde_export.yml
+  - id: sigma-proc-curl-cookie-hijacking
+    rule_id: 5a6e1e16-07de-48d8-8aae-faa766c05e88
+    file: proc_creation_win_curl_cookie_hijacking.yml
+    path: rules/windows/process_creation/proc_creation_win_curl_cookie_hijacking.yml
+  - id: sigma-proc-curl-custom-user-agent
+    rule_id: 85de1f22-d189-44e4-8239-dc276b45379b
+    file: proc_creation_win_curl_custom_user_agent.yml
+    path: rules/windows/process_creation/proc_creation_win_curl_custom_user_agent.yml
+  - id: sigma-proc-curl-download-direct-ip-exec
+    rule_id: 9cc85849-3b02-4cb5-b371-3a1ff54f2218
+    file: proc_creation_win_curl_download_direct_ip_exec.yml
+    path: rules/windows/process_creation/proc_creation_win_curl_download_direct_ip_exec.yml
+  - id: sigma-proc-curl-download-direct-ip-susp-extensions
+    rule_id: 5cb299fc-5fb1-4d07-b989-0644c68b6043
+    file: proc_creation_win_curl_download_direct_ip_susp_extensions.yml
+    path: rules/windows/process_creation/proc_creation_win_curl_download_direct_ip_susp_extensions.yml
   - id: sigma-proc-curl-download-susp-file-sharing-domains
     rule_id: 56454143-524f-49fb-b1c6-3fb8b1ad41fb
     file: proc_creation_win_curl_download_susp_file_sharing_domains.yml
     path: rules/windows/process_creation/proc_creation_win_curl_download_susp_file_sharing_domains.yml
+  - id: sigma-proc-curl-insecure-connection
+    rule_id: cb9cc1d1-e84e-4bdc-b7ad-c31b1b7908ec
+    file: proc_creation_win_curl_insecure_connection.yml
+    path: rules/windows/process_creation/proc_creation_win_curl_insecure_connection.yml
   - id: sigma-proc-curl-insecure-proxy-or-doh
     rule_id: 2c1486f5-02e8-4f86-9099-b97f2da4ed77
     file: proc_creation_win_curl_insecure_proxy_or_doh.yml
@@ -2073,6 +2145,10 @@ rules:
     rule_id: aa6f6ea6-0676-40dd-b510-6e46f02d8867
     file: proc_creation_win_curl_local_file_read.yml
     path: rules/windows/process_creation/proc_creation_win_curl_local_file_read.yml
+  - id: sigma-proc-curl-ntlm-hash-leak-attempt
+    rule_id: 916eb839-895e-47f8-99ee-3008bf377a3e
+    file: proc_creation_win_curl_ntlm_hash_leak_attempt.yml
+    path: rules/windows/process_creation/proc_creation_win_curl_ntlm_hash_leak_attempt.yml
   - id: sigma-proc-curl-susp-download
     rule_id: e218595b-bbe7-4ee5-8a96-f32a24ad3468
     file: proc_creation_win_curl_susp_download.yml
@@ -2521,10 +2597,30 @@ rules:
     rule_id: b222df08-0e07-11eb-adc1-0242ac120002
     file: proc_creation_win_hktl_invoke_obfuscation_clip.yml
     path: rules/windows/process_creation/proc_creation_win_hktl_invoke_obfuscation_clip.yml
+  - id: sigma-proc-hktl-invoke-obfuscation-obfuscated-iex-commandline
+    rule_id: 4bf943c6-5146-4273-98dd-e958fd1e3abf
+    file: proc_creation_win_hktl_invoke_obfuscation_obfuscated_iex_commandline.yml
+    path: rules/windows/process_creation/proc_creation_win_hktl_invoke_obfuscation_obfuscated_iex_commandline.yml
+  - id: sigma-proc-hktl-invoke-obfuscation-stdin
+    rule_id: 6c96fc76-0eb1-11eb-adc1-0242ac120002
+    file: proc_creation_win_hktl_invoke_obfuscation_stdin.yml
+    path: rules/windows/process_creation/proc_creation_win_hktl_invoke_obfuscation_stdin.yml
+  - id: sigma-proc-hktl-invoke-obfuscation-var
+    rule_id: 27aec9c9-dbb0-4939-8422-1742242471d0
+    file: proc_creation_win_hktl_invoke_obfuscation_var.yml
+    path: rules/windows/process_creation/proc_creation_win_hktl_invoke_obfuscation_var.yml
   - id: sigma-proc-hktl-invoke-obfuscation-via-compress
     rule_id: 7eedcc9d-9fdb-4d94-9c54-474e8affc0c7
     file: proc_creation_win_hktl_invoke_obfuscation_via_compress.yml
     path: rules/windows/process_creation/proc_creation_win_hktl_invoke_obfuscation_via_compress.yml
+  - id: sigma-proc-hktl-invoke-obfuscation-via-stdin
+    rule_id: 9c14c9fa-1a63-4a64-8e57-d19280559490
+    file: proc_creation_win_hktl_invoke_obfuscation_via_stdin.yml
+    path: rules/windows/process_creation/proc_creation_win_hktl_invoke_obfuscation_via_stdin.yml
+  - id: sigma-proc-hktl-invoke-obfuscation-via-use-clip
+    rule_id: e1561947-b4e3-4a74-9bdd-83baed21bdb5
+    file: proc_creation_win_hktl_invoke_obfuscation_via_use_clip.yml
+    path: rules/windows/process_creation/proc_creation_win_hktl_invoke_obfuscation_via_use_clip.yml
   - id: sigma-proc-hktl-invoke-obfuscation-via-use-mhsta
     rule_id: ac20ae82-8758-4f38-958e-b44a3140ca88
     file: proc_creation_win_hktl_invoke_obfuscation_via_use_mhsta.yml
@@ -2737,6 +2833,10 @@ rules:
     rule_id: e4ed6030-ffe5-4e6a-8a8a-ab3c1ab9d94e
     file: proc_creation_win_iis_appcmd_http_logging.yml
     path: rules/windows/process_creation/proc_creation_win_iis_appcmd_http_logging.yml
+  - id: sigma-proc-iis-appcmd-service-account-password-dumped
+    rule_id: 2d3cdeec-c0db-45b4-aa86-082f7eb75701
+    file: proc_creation_win_iis_appcmd_service_account_password_dumped.yml
+    path: rules/windows/process_creation/proc_creation_win_iis_appcmd_service_account_password_dumped.yml
   - id: sigma-proc-iis-appcmd-susp-module-install
     rule_id: 9465ddf4-f9e4-4ebd-8d98-702df3a93239
     file: proc_creation_win_iis_appcmd_susp_module_install.yml
@@ -2853,6 +2953,10 @@ rules:
     rule_id: cc268ac1-42d9-40fd-9ed3-8c4e1a5b87e6
     file: proc_creation_win_lolbin_devtoolslauncher.yml
     path: rules/windows/process_creation/proc_creation_win_lolbin_devtoolslauncher.yml
+  - id: sigma-proc-lolbin-diantz-ads
+    rule_id: 6b369ced-4b1d-48f1-b427-fdc0de0790bd
+    file: proc_creation_win_lolbin_diantz_ads.yml
+    path: rules/windows/process_creation/proc_creation_win_lolbin_diantz_ads.yml
   - id: sigma-proc-lolbin-diantz-remote-cab
     rule_id: 185d7418-f250-42d0-b72e-0c8b70661e93
     file: proc_creation_win_lolbin_diantz_remote_cab.yml
@@ -2861,6 +2965,10 @@ rules:
     rule_id: aa8e035d-7be4-48d3-a944-102aec04400d
     file: proc_creation_win_lolbin_extrac32.yml
     path: rules/windows/process_creation/proc_creation_win_lolbin_extrac32.yml
+  - id: sigma-proc-lolbin-extrac32-ads
+    rule_id: 4b13db67-0c45-40f1-aba8-66a1a7198a1e
+    file: proc_creation_win_lolbin_extrac32_ads.yml
+    path: rules/windows/process_creation/proc_creation_win_lolbin_extrac32_ads.yml
   - id: sigma-proc-lolbin-gather-network-info
     rule_id: 575dce0c-8139-4e30-9295-1ee75969f7fe
     file: proc_creation_win_lolbin_gather_network_info.yml
@@ -2921,6 +3029,10 @@ rules:
     rule_id: 18988e1b-9087-4f8a-82fe-0414dce49878
     file: proc_creation_win_lolbin_pester.yml
     path: rules/windows/process_creation/proc_creation_win_lolbin_pester.yml
+  - id: sigma-proc-lolbin-pester-1
+    rule_id: 59e938ff-0d6d-4dc3-b13f-36cc28734d4e
+    file: proc_creation_win_lolbin_pester_1.yml
+    path: rules/windows/process_creation/proc_creation_win_lolbin_pester_1.yml
   - id: sigma-proc-lolbin-printbrm
     rule_id: cafeeba3-01da-4ab4-b6c4-a31b1d9730c7
     file: proc_creation_win_lolbin_printbrm.yml
@@ -3437,6 +3549,10 @@ rules:
     rule_id: d81871ef-5738-47ab-9797-7a9c90cd4bfb
     file: proc_creation_win_php_inline_command_execution.yml
     path: rules/windows/process_creation/proc_creation_win_php_inline_command_execution.yml
+  - id: sigma-proc-ping-hex-ip
+    rule_id: 1a0d4aba-7668-4365-9ce4-6d79ab088dfd
+    file: proc_creation_win_ping_hex_ip.yml
+    path: rules/windows/process_creation/proc_creation_win_ping_hex_ip.yml
   - id: sigma-proc-pktmon-execution
     rule_id: f956c7c1-0f60-4bc5-b7d7-b39ab3c08908
     file: proc_creation_win_pktmon_execution.yml
@@ -3541,6 +3657,14 @@ rules:
     rule_id: b6b49cd1-34d6-4ead-b1bf-176e9edba9a4
     file: proc_creation_win_powershell_cmdline_reversed_strings.yml
     path: rules/windows/process_creation/proc_creation_win_powershell_cmdline_reversed_strings.yml
+  - id: sigma-proc-powershell-cmdline-special-characters
+    rule_id: d7bcd677-645d-4691-a8d4-7a5602b780d1
+    file: proc_creation_win_powershell_cmdline_special_characters.yml
+    path: rules/windows/process_creation/proc_creation_win_powershell_cmdline_special_characters.yml
+  - id: sigma-proc-powershell-computer-discovery-get-adcomputer
+    rule_id: 435e10e4-992a-4281-96f3-38b11106adde
+    file: proc_creation_win_powershell_computer_discovery_get_adcomputer.yml
+    path: rules/windows/process_creation/proc_creation_win_powershell_computer_discovery_get_adcomputer.yml
   - id: sigma-proc-powershell-create-service
     rule_id: c02e96b7-c63a-4c47-bd83-4a9f74afcfb2
     file: proc_creation_win_powershell_create_service.yml
@@ -3549,6 +3673,10 @@ rules:
     rule_id: 98767d61-b2e8-4d71-b661-e36783ee24c1
     file: proc_creation_win_powershell_decode_gzip.yml
     path: rules/windows/process_creation/proc_creation_win_powershell_decode_gzip.yml
+  - id: sigma-proc-powershell-decrypt-pattern
+    rule_id: 434c08ba-8406-4d15-8b24-782cb071a691
+    file: proc_creation_win_powershell_decrypt_pattern.yml
+    path: rules/windows/process_creation/proc_creation_win_powershell_decrypt_pattern.yml
   - id: sigma-proc-powershell-defender-disable-feature
     rule_id: 1ec65a5f-9473-4f12-97da-622044d6df21
     file: proc_creation_win_powershell_defender_disable_feature.yml
@@ -3777,6 +3905,14 @@ rules:
     rule_id: ac175779-025a-4f12-98b0-acdaeb77ea85
     file: proc_creation_win_powershell_susp_ps_appdata.yml
     path: rules/windows/process_creation/proc_creation_win_powershell_susp_ps_appdata.yml
+  - id: sigma-proc-powershell-token-obfuscation
+    rule_id: deb9b646-a508-44ee-b7c9-d8965921c6b6
+    file: proc_creation_win_powershell_token_obfuscation.yml
+    path: rules/windows/process_creation/proc_creation_win_powershell_token_obfuscation.yml
+  - id: sigma-proc-powershell-user-discovery-get-aduser
+    rule_id: 1114e048-b69c-4f41-bc20-657245ae6e3f
+    file: proc_creation_win_powershell_user_discovery_get_aduser.yml
+    path: rules/windows/process_creation/proc_creation_win_powershell_user_discovery_get_aduser.yml
   - id: sigma-proc-powershell-webclient-casing
     rule_id: c86133ad-4725-4bd0-8170-210788e0a7ba
     file: proc_creation_win_powershell_webclient_casing.yml
@@ -4005,6 +4141,10 @@ rules:
     rule_id: faa48cae-6b25-4f00-a094-08947fef582f
     file: proc_creation_win_rar_compression_with_password.yml
     path: rules/windows/process_creation/proc_creation_win_rar_compression_with_password.yml
+  - id: sigma-proc-rar-susp-greedy-compression
+    rule_id: afe52666-401e-4a02-b4ff-5d128990b8cb
+    file: proc_creation_win_rar_susp_greedy_compression.yml
+    path: rules/windows/process_creation/proc_creation_win_rar_susp_greedy_compression.yml
   - id: sigma-proc-rasdial-execution
     rule_id: 6bba49bf-7f8c-47d6-a1bb-6b4dece4640e
     file: proc_creation_win_rasdial_execution.yml
@@ -4137,10 +4277,26 @@ rules:
     rule_id: f0e53e89-8d22-46ea-9db5-9d4796ee2f8a
     file: proc_creation_win_regedit_export_keys.yml
     path: rules/windows/process_creation/proc_creation_win_regedit_export_keys.yml
+  - id: sigma-proc-regedit-import-keys
+    rule_id: 73bba97f-a82d-42ce-b315-9182e76c57b1
+    file: proc_creation_win_regedit_import_keys.yml
+    path: rules/windows/process_creation/proc_creation_win_regedit_import_keys.yml
+  - id: sigma-proc-regedit-import-keys-ads
+    rule_id: 0b80ade5-6997-4b1d-99a1-71701778ea61
+    file: proc_creation_win_regedit_import_keys_ads.yml
+    path: rules/windows/process_creation/proc_creation_win_regedit_import_keys_ads.yml
   - id: sigma-proc-regedit-trustedinstaller
     rule_id: 883835a7-df45-43e4-bf1d-4268768afda4
     file: proc_creation_win_regedit_trustedinstaller.yml
     path: rules/windows/process_creation/proc_creation_win_regedit_trustedinstaller.yml
+  - id: sigma-proc-regini-ads
+    rule_id: 77946e79-97f1-45a2-84b4-f37b5c0d8682
+    file: proc_creation_win_regini_ads.yml
+    path: rules/windows/process_creation/proc_creation_win_regini_ads.yml
+  - id: sigma-proc-regini-execution
+    rule_id: 5f60740a-f57b-4e76-82a1-15b6ff2cb134
+    file: proc_creation_win_regini_execution.yml
+    path: rules/windows/process_creation/proc_creation_win_regini_execution.yml
   - id: sigma-proc-registry-cimprovider-dll-load
     rule_id: a2910908-e86f-4687-aeba-76a5f996e652
     file: proc_creation_win_registry_cimprovider_dll_load.yml
@@ -4445,6 +4601,10 @@ rules:
     rule_id: 20a5ffa1-3848-4584-b6f8-c7c7fd9f69c8
     file: proc_creation_win_ruby_inline_command_execution.yml
     path: rules/windows/process_creation/proc_creation_win_ruby_inline_command_execution.yml
+  - id: sigma-proc-rundll32-ads-stored-dll-execution
+    rule_id: 9248c7e1-2bf3-4661-a22c-600a8040b446
+    file: proc_creation_win_rundll32_ads_stored_dll_execution.yml
+    path: rules/windows/process_creation/proc_creation_win_rundll32_ads_stored_dll_execution.yml
   - id: sigma-proc-rundll32-advpack-obfuscated-ordinal-call
     rule_id: a1473adb-5338-4a20-b4c3-126763e2d3d3
     file: proc_creation_win_rundll32_advpack_obfuscated_ordinal_call.yml
@@ -4553,6 +4713,10 @@ rules:
     rule_id: 2dbd9d3d-9e27-42a8-b8df-f13825c6c3d5
     file: proc_creation_win_rundll32_webdav_client_execution.yml
     path: rules/windows/process_creation/proc_creation_win_rundll32_webdav_client_execution.yml
+  - id: sigma-proc-rundll32-webdav-client-susp-execution
+    rule_id: 982e9f2d-1a85-4d5b-aea4-31f5e97c6555
+    file: proc_creation_win_rundll32_webdav_client_susp_execution.yml
+    path: rules/windows/process_creation/proc_creation_win_rundll32_webdav_client_susp_execution.yml
   - id: sigma-proc-rundll32-without-parameters
     rule_id: 5bb68627-3198-40ca-b458-49f973db8752
     file: proc_creation_win_rundll32_without_parameters.yml
@@ -4629,6 +4793,10 @@ rules:
     rule_id: dbc1f800-0fe0-4bc0-9c66-292c2abe3f78
     file: proc_creation_win_schtasks_delete.yml
     path: rules/windows/process_creation/proc_creation_win_schtasks_delete.yml
+  - id: sigma-proc-schtasks-delete-all
+    rule_id: 220457c1-1c9f-4c2e-afe6-9598926222c1
+    file: proc_creation_win_schtasks_delete_all.yml
+    path: rules/windows/process_creation/proc_creation_win_schtasks_delete_all.yml
   - id: sigma-proc-schtasks-disable
     rule_id: 9ac94dc8-9042-493c-ba45-3b5e7c86b980
     file: proc_creation_win_schtasks_disable.yml
@@ -4865,6 +5033,10 @@ rules:
     rule_id: 855bc8b5-2ae8-402e-a9ed-b889e6df1900
     file: proc_creation_win_susp_copy_lateral_movement.yml
     path: rules/windows/process_creation/proc_creation_win_susp_copy_lateral_movement.yml
+  - id: sigma-proc-susp-copy-system-dir
+    rule_id: fff9d2b7-e11c-4a69-93d3-40ef66189767
+    file: proc_creation_win_susp_copy_system_dir.yml
+    path: rules/windows/process_creation/proc_creation_win_susp_copy_system_dir.yml
   - id: sigma-proc-susp-copy-system-dir-lolbin
     rule_id: f5d19838-41b5-476c-98d8-ba8af4929ee2
     file: proc_creation_win_susp_copy_system_dir_lolbin.yml
@@ -4873,6 +5045,10 @@ rules:
     rule_id: 66c3b204-9f88-4d0a-a7f7-8a57d521ca55
     file: proc_creation_win_susp_crypto_mining_monero.yml
     path: rules/windows/process_creation/proc_creation_win_susp_crypto_mining_monero.yml
+  - id: sigma-proc-susp-data-exfiltration-via-cli
+    rule_id: 7d1aaf3d-4304-425c-b7c3-162055e0b3ab
+    file: proc_creation_win_susp_data_exfiltration_via_cli.yml
+    path: rules/windows/process_creation/proc_creation_win_susp_data_exfiltration_via_cli.yml
   - id: sigma-proc-susp-disable-raccine
     rule_id: a31eeaed-3fd5-478e-a8ba-e62c6b3f9ecc
     file: proc_creation_win_susp_disable_raccine.yml
@@ -4949,6 +5125,10 @@ rules:
     rule_id: 3dfd06d2-eaf4-4532-9555-68aca59f57c4
     file: proc_creation_win_susp_execution_path.yml
     path: rules/windows/process_creation/proc_creation_win_susp_execution_path.yml
+  - id: sigma-proc-susp-file-characteristics
+    rule_id: 9637e8a5-7131-4f7f-bdc7-2b05d8670c43
+    file: proc_creation_win_susp_file_characteristics.yml
+    path: rules/windows/process_creation/proc_creation_win_susp_file_characteristics.yml
   - id: sigma-proc-susp-gather-network-info-execution
     rule_id: 07aa184a-870d-413d-893a-157f317f6f58
     file: proc_creation_win_susp_gather_network_info_execution.yml
@@ -4993,6 +5173,10 @@ rules:
     rule_id: 180c7c5c-d64b-4a63-86e9-68910451bc8b
     file: proc_creation_win_susp_ms_appinstaller_download.yml
     path: rules/windows/process_creation/proc_creation_win_susp_ms_appinstaller_download.yml
+  - id: sigma-proc-susp-network-command
+    rule_id: a29c1813-ab1f-4dde-b489-330b952e91ae
+    file: proc_creation_win_susp_network_command.yml
+    path: rules/windows/process_creation/proc_creation_win_susp_network_command.yml
   - id: sigma-proc-susp-network-scan-loop
     rule_id: f8ad2e2c-40b6-4117-84d7-20b89896ab23
     file: proc_creation_win_susp_network_scan_loop.yml
@@ -5085,6 +5269,10 @@ rules:
     rule_id: 1228c958-e64e-4e71-92ad-7d429f4138ba
     file: proc_creation_win_susp_script_exec_from_env_folder.yml
     path: rules/windows/process_creation/proc_creation_win_susp_script_exec_from_env_folder.yml
+  - id: sigma-proc-susp-sensitive-file-access-shadowcopy
+    rule_id: f57f8d16-1f39-4dcb-a604-6c73d9b54b3d
+    file: proc_creation_win_susp_sensitive_file_access_shadowcopy.yml
+    path: rules/windows/process_creation/proc_creation_win_susp_sensitive_file_access_shadowcopy.yml
   - id: sigma-proc-susp-service-creation
     rule_id: 17a1be64-8d88-40bf-b5ff-a4f7a50ebcc8
     file: proc_creation_win_susp_service_creation.yml
@@ -5117,6 +5305,10 @@ rules:
     rule_id: e4a6b256-3e47-40fc-89d2-7a477edd6915
     file: proc_creation_win_susp_system_exe_anomaly.yml
     path: rules/windows/process_creation/proc_creation_win_susp_system_exe_anomaly.yml
+  - id: sigma-proc-susp-system-user-anomaly
+    rule_id: 2617e7ed-adb7-40ba-b0f3-8f9945fe6c09
+    file: proc_creation_win_susp_system_user_anomaly.yml
+    path: rules/windows/process_creation/proc_creation_win_susp_system_user_anomaly.yml
   - id: sigma-proc-susp-sysvol-access
     rule_id: 05f3c945-dcc8-4393-9f3d-af65077a8f86
     file: proc_creation_win_susp_sysvol_access.yml
@@ -5229,6 +5421,10 @@ rules:
     rule_id: 4beb6ae0-f85b-41e2-8f18-8668abc8af78
     file: proc_creation_win_sysinternals_pssuspend_susp_execution.yml
     path: rules/windows/process_creation/proc_creation_win_sysinternals_pssuspend_susp_execution.yml
+  - id: sigma-proc-sysinternals-sdelete
+    rule_id: a4824fca-976f-4964-b334-0621379e84c4
+    file: proc_creation_win_sysinternals_sdelete.yml
+    path: rules/windows/process_creation/proc_creation_win_sysinternals_sdelete.yml
   - id: sigma-proc-sysinternals-susp-psexec-paexec-flags
     rule_id: 207b0396-3689-42d9-8399-4222658efc99
     file: proc_creation_win_sysinternals_susp_psexec_paexec_flags.yml
@@ -5533,6 +5729,18 @@ rules:
     rule_id: 5394fcc7-aeb2-43b5-9a09-cac9fc5edcd5
     file: proc_creation_win_wermgr_susp_exec_location.yml
     path: rules/windows/process_creation/proc_creation_win_wermgr_susp_exec_location.yml
+  - id: sigma-proc-wget-download-direct-ip
+    rule_id: 17f0c0a8-8bd5-4ee0-8c5f-a342c0199f35
+    file: proc_creation_win_wget_download_direct_ip.yml
+    path: rules/windows/process_creation/proc_creation_win_wget_download_direct_ip.yml
+  - id: sigma-proc-wget-download-susp-file-sharing-domains
+    rule_id: a0d7e4d2-bede-4141-8896-bc6e237e977c
+    file: proc_creation_win_wget_download_susp_file_sharing_domains.yml
+    path: rules/windows/process_creation/proc_creation_win_wget_download_susp_file_sharing_domains.yml
+  - id: sigma-proc-wget-download-susp-locations
+    rule_id: 40aa399c-7b02-4715-8e5f-73572b493f33
+    file: proc_creation_win_wget_download_susp_locations.yml
+    path: rules/windows/process_creation/proc_creation_win_wget_download_susp_locations.yml
   - id: sigma-proc-where-browser-data-recon
     rule_id: 725a9768-0f5e-4cb3-aec2-bc5719c6831a
     file: proc_creation_win_where_browser_data_recon.yml
@@ -5573,6 +5781,10 @@ rules:
     rule_id: 81a0ecb5-0a41-4ba1-b2ba-c944eb92bfa2
     file: proc_creation_win_winget_add_insecure_custom_source.yml
     path: rules/windows/process_creation/proc_creation_win_winget_add_insecure_custom_source.yml
+  - id: sigma-proc-winget-add-susp-custom-source
+    rule_id: c15a46a0-07d4-4c87-b4b6-89207835a83b
+    file: proc_creation_win_winget_add_susp_custom_source.yml
+    path: rules/windows/process_creation/proc_creation_win_winget_add_susp_custom_source.yml
   - id: sigma-proc-winget-local-install-via-manifest
     rule_id: 313d6012-51a0-4d93-8dfc-de8553239e25
     file: proc_creation_win_winget_local_install_via_manifest.yml
@@ -5737,6 +5949,10 @@ rules:
     rule_id: 2267fe65-0681-42ad-9a6d-46553d3f3480
     file: proc_creation_win_wsl_child_processes_anomalies.yml
     path: rules/windows/process_creation/proc_creation_win_wsl_child_processes_anomalies.yml
+  - id: sigma-proc-wsl-windows-binaries-execution
+    rule_id: ed825c86-c009-4014-b413-b76003e33d35
+    file: proc_creation_win_wsl_windows_binaries_execution.yml
+    path: rules/windows/process_creation/proc_creation_win_wsl_windows_binaries_execution.yml
   - id: sigma-proc-wuauclt-dll-loading
     rule_id: af77cf95-c469-471c-b6a0-946c685c4798
     file: proc_creation_win_wuauclt_dll_loading.yml
@@ -5821,6 +6037,10 @@ rules:
     rule_id: 363eccc0-279a-4ccf-a3ab-24c2e63b11fb
     file: posh_ps_cmdlet_scheduled_task.yml
     path: rules/windows/powershell/powershell_script/posh_ps_cmdlet_scheduled_task.yml
+  - id: sigma-ps-computer-discovery-get-adcomputer
+    rule_id: db885529-903f-4c5d-9864-28fe199e6370
+    file: posh_ps_computer_discovery_get_adcomputer.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_computer_discovery_get_adcomputer.yml
   - id: sigma-ps-cor-profiler
     rule_id: 23590215-4702-4a70-8805-8dc9e58314a2
     file: posh_ps_cor_profiler.yml
@@ -5909,6 +6129,10 @@ rules:
     rule_id: e0565f5d-d420-4e02-8a68-ac00d864f9cf
     file: posh_ps_get_childitem_bookmarks.yml
     path: rules/windows/powershell/powershell_script/posh_ps_get_childitem_bookmarks.yml
+  - id: sigma-ps-get-process-security-software-discovery
+    rule_id: 904e8e61-8edf-4350-b59c-b905fc8e810c
+    file: posh_ps_get_process_security_software_discovery.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_get_process_security_software_discovery.yml
   - id: sigma-ps-hktl-rubeus
     rule_id: 3245cd30-e015-40ff-a31d-5cadd5f377ec
     file: posh_ps_hktl_rubeus.yml
@@ -5949,6 +6173,14 @@ rules:
     rule_id: e6cb92b4-b470-4eb8-8a9d-d63e8583aae0
     file: posh_ps_invoke_obfuscation_via_rundll.yml
     path: rules/windows/powershell/powershell_script/posh_ps_invoke_obfuscation_via_rundll.yml
+  - id: sigma-ps-invoke-obfuscation-via-stdin
+    rule_id: 86b896ba-ffa1-4fea-83e3-ee28a4c915c7
+    file: posh_ps_invoke_obfuscation_via_stdin.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_invoke_obfuscation_via_stdin.yml
+  - id: sigma-ps-invoke-obfuscation-via-use-clip
+    rule_id: db92dd33-a3ad-49cf-8c2c-608c3e30ace0
+    file: posh_ps_invoke_obfuscation_via_use_clip.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_invoke_obfuscation_via_use_clip.yml
   - id: sigma-ps-invoke-obfuscation-via-use-mhsta
     rule_id: e55a5195-4724-480e-a77e-3ebe64bd3759
     file: posh_ps_invoke_obfuscation_via_use_mhsta.yml
@@ -5957,6 +6189,10 @@ rules:
     rule_id: a5a30a6e-75ca-4233-8b8c-42e0f2037d3b
     file: posh_ps_invoke_obfuscation_via_use_rundll32.yml
     path: rules/windows/powershell/powershell_script/posh_ps_invoke_obfuscation_via_use_rundll32.yml
+  - id: sigma-ps-invoke-obfuscation-via-var
+    rule_id: e54f5149-6ba3-49cf-b153-070d24679126
+    file: posh_ps_invoke_obfuscation_via_var.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_invoke_obfuscation_via_var.yml
   - id: sigma-ps-keylogging
     rule_id: 34f90d3c-c297-49e9-b26d-911b05a4866c
     file: posh_ps_keylogging.yml
@@ -6269,6 +6505,10 @@ rules:
     rule_id: c6438007-e081-42ce-9483-b067fbef33c3
     file: posh_ps_timestomp.yml
     path: rules/windows/powershell/powershell_script/posh_ps_timestomp.yml
+  - id: sigma-ps-user-discovery-get-aduser
+    rule_id: c2993223-6da8-4b1a-88ee-668b8bf315e9
+    file: posh_ps_user_discovery_get_aduser.yml
+    path: rules/windows/powershell/powershell_script/posh_ps_user_discovery_get_aduser.yml
   - id: sigma-ps-user-profile-tampering
     rule_id: 05b3e303-faf0-4f4a-9b30-46cc13e69152
     file: posh_ps_user_profile_tampering.yml
@@ -7109,6 +7349,10 @@ rules:
     rule_id: 7c81fec3-1c1d-43b0-996a-46753041b1b6
     file: registry_set_uac_bypass_eventvwr.yml
     path: rules/windows/registry/registry_set/registry_set_uac_bypass_eventvwr.yml
+  - id: sigma-reg-set-uac-bypass-sdclt
+    rule_id: 5b872a46-3b90-45c1-8419-f675db8053aa
+    file: registry_set_uac_bypass_sdclt.yml
+    path: rules/windows/registry/registry_set/registry_set_uac_bypass_sdclt.yml
   - id: sigma-reg-set-uac-bypass-winsat
     rule_id: 6597be7b-ac61-4ac8-bef4-d3ec88174853
     file: registry_set_uac_bypass_winsat.yml
@@ -7269,10 +7513,18 @@ rules:
     rule_id: f6de9536-0441-4b3f-a646-f4e00f300ffd
     file: win_security_alert_enable_weak_encryption.yml
     path: rules/windows/builtin/security/win_security_alert_enable_weak_encryption.yml
+  - id: sigma-win-security-atsvc-task
+    rule_id: f6de6525-4509-495a-8a82-1f8b0ed73a00
+    file: win_security_atsvc_task.yml
+    path: rules/windows/builtin/security/win_security_atsvc_task.yml
   - id: sigma-win-security-cobaltstrike-service-installs
     rule_id: d7a95147-145f-4678-b85d-d1ff4a3bb3f6
     file: win_security_cobaltstrike_service_installs.yml
     path: rules/windows/builtin/security/win_security_cobaltstrike_service_installs.yml
+  - id: sigma-win-security-dce-rpc-smb-spoolss-named-pipe
+    rule_id: 214e8f95-100a-4e04-bb31-ef6cba8ce07e
+    file: win_security_dce_rpc_smb_spoolss_named_pipe.yml
+    path: rules/windows/builtin/security/win_security_dce_rpc_smb_spoolss_named_pipe.yml
   - id: sigma-win-security-dcom-iertutil-dll-hijack
     rule_id: c39f0c81-7348-4965-ab27-2fde35a1b641
     file: win_security_dcom_iertutil_dll_hijack.yml
@@ -7301,10 +7553,22 @@ rules:
     rule_id: 0ee4d8a5-4e67-4faf-acfa-62a78457d1f2
     file: win_security_hybridconnectionmgr_svc_installation.yml
     path: rules/windows/builtin/security/win_security_hybridconnectionmgr_svc_installation.yml
+  - id: sigma-win-security-impacket-psexec
+    rule_id: 32d56ea1-417f-44ff-822b-882873f5f43b
+    file: win_security_impacket_psexec.yml
+    path: rules/windows/builtin/security/win_security_impacket_psexec.yml
+  - id: sigma-win-security-impacket-secretdump
+    rule_id: 252902e3-5830-4cf6-bf21-c22083dfd5cf
+    file: win_security_impacket_secretdump.yml
+    path: rules/windows/builtin/security/win_security_impacket_secretdump.yml
   - id: sigma-win-security-invoke-obfuscation-clip-services-security
     rule_id: 4edf51e1-cb83-4e1a-bc39-800e396068e3
     file: win_security_invoke_obfuscation_clip_services_security.yml
     path: rules/windows/builtin/security/win_security_invoke_obfuscation_clip_services_security.yml
+  - id: sigma-win-security-invoke-obfuscation-obfuscated-iex-services-se
+    rule_id: fd0f5778-d3cb-4c9a-9695-66759d04702a
+    file: win_security_invoke_obfuscation_obfuscated_iex_services_security.yml
+    path: rules/windows/builtin/security/win_security_invoke_obfuscation_obfuscated_iex_services_security.yml
   - id: sigma-win-security-invoke-obfuscation-stdin-services-security
     rule_id: 0c718a5e-4284-4fb9-b4d9-b9a50b3a1974
     file: win_security_invoke_obfuscation_stdin_services_security.yml
@@ -7345,6 +7609,10 @@ rules:
     rule_id: d04ae2b8-ad54-4de0-bd87-4bc1da66aa59
     file: win_security_kerberoasting_activity.yml
     path: rules/windows/builtin/security/win_security_kerberoasting_activity.yml
+  - id: sigma-win-security-lm-namedpipe
+    rule_id: 52d8b0c6-53d6-439a-9e41-52ad442ad9ad
+    file: win_security_lm_namedpipe.yml
+    path: rules/windows/builtin/security/win_security_lm_namedpipe.yml
   - id: sigma-win-security-lsass-access-non-system-account
     rule_id: 962fe167-e48d-4fd6-9974-11e5b9a5d6d1
     file: win_security_lsass_access_non_system_account.yml
@@ -7473,6 +7741,10 @@ rules:
     rule_id: 749c9f5e-b353-4b90-a9c1-05243357ca4b
     file: win_security_susp_privesc_kerberos_relay_over_ldap.yml
     path: rules/windows/builtin/security/account_management/win_security_susp_privesc_kerberos_relay_over_ldap.yml
+  - id: sigma-win-security-susp-psexec
+    rule_id: c462f537-a1e3-41a6-b5fc-b2c2cef9bf82
+    file: win_security_susp_psexec.yml
+    path: rules/windows/builtin/security/win_security_susp_psexec.yml
   - id: sigma-win-security-susp-raccess-sensitive-fext
     rule_id: 91c945bc-2ad1-4799-a591-4d00198a1215
     file: win_security_susp_raccess_sensitive_fext.yml
@@ -7489,6 +7761,10 @@ rules:
     rule_id: 5af54681-df95-4c26-854f-2565e13cfab0
     file: win_security_susp_wmi_login.yml
     path: rules/windows/builtin/security/account_management/win_security_susp_wmi_login.yml
+  - id: sigma-win-security-svcctl-remote-service
+    rule_id: 586a8d6b-6bfe-4ad9-9d78-888cd2fe50c3
+    file: win_security_svcctl_remote_service.yml
+    path: rules/windows/builtin/security/win_security_svcctl_remote_service.yml
   - id: sigma-win-security-syskey-registry-access
     rule_id: 9a4ff3b8-6187-4fd2-8e8b-e0eae1129495
     file: win_security_syskey_registry_access.yml
@@ -7545,6 +7821,10 @@ rules:
     rule_id: f7385ee2-0e0c-11eb-adc1-0242ac120002
     file: win_system_invoke_obfuscation_clip_services.yml
     path: rules/windows/builtin/system/service_control_manager/win_system_invoke_obfuscation_clip_services.yml
+  - id: sigma-win-system-invoke-obfuscation-obfuscated-iex-services
+    rule_id: 51aa9387-1c53-4153-91cc-d73c59ae1ca9
+    file: win_system_invoke_obfuscation_obfuscated_iex_services.yml
+    path: rules/windows/builtin/system/service_control_manager/win_system_invoke_obfuscation_obfuscated_iex_services.yml
   - id: sigma-win-system-invoke-obfuscation-stdin-services
     rule_id: 72862bf2-0eb1-11eb-adc1-0242ac120002
     file: win_system_invoke_obfuscation_stdin_services.yml
@@ -7649,6 +7929,10 @@ rules:
     rule_id: 85cce894-dd8b-4427-a958-5cc47a4dc9b9
     file: win_system_service_install_remote_utilities.yml
     path: rules/windows/builtin/system/service_control_manager/win_system_service_install_remote_utilities.yml
+  - id: sigma-win-system-service-install-sliver
+    rule_id: 31c51af6-e7aa-4da7-84d4-8f32cc580af2
+    file: win_system_service_install_sliver.yml
+    path: rules/windows/builtin/system/service_control_manager/win_system_service_install_sliver.yml
   - id: sigma-win-system-service-install-susp
     rule_id: 1d61f71d-59d2-479e-9562-4ff5f4ead16b
     file: win_system_service_install_susp.yml
@@ -7677,6 +7961,10 @@ rules:
     rule_id: 5e993621-67d4-488a-b9ae-b420d08b96cb
     file: win_system_susp_service_installation_folder.yml
     path: rules/windows/builtin/system/service_control_manager/win_system_susp_service_installation_folder.yml
+  - id: sigma-win-system-susp-service-installation-folder-pattern
+    rule_id: 1b2ae822-6fe1-43ba-aa7c-d1a3b3d1d5f2
+    file: win_system_susp_service_installation_folder_pattern.yml
+    path: rules/windows/builtin/system/service_control_manager/win_system_susp_service_installation_folder_pattern.yml
   - id: sigma-win-system-susp-service-installation-script
     rule_id: 70f00d10-60b2-4f34-b9a0-dc3df3fe762a
     file: win_system_susp_service_installation_script.yml

@@ -1,0 +1,5 @@
+{"rule": "31c51af6-e7aa-4da7-84d4-8f32cc580af2", "cases": [
+  {"expect":true,"source":"synthesized","channel":"System","event_id":"7045","data":{"ImagePath":"A:\\windows\\temp\\AAAAAAAAAA.exe","Provider_Name":"Service Control Manager"}},
+  {"expect":true,"source":"synthesized","channel":"System","event_id":"7045","data":{"Provider_Name":"Service Control Manager","ServiceName":"Sliver implant"}},
+  {"expect":false,"source":"synthesized","channel":"System","event_id":"7045","data":{"Provider_Name":"Service Control Manager"}}
+]}

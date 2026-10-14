@@ -1,0 +1,5 @@
+{"rule": "32d56ea1-417f-44ff-822b-882873f5f43b", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"5145","data":{"RelativeTargetName":"RemCom_stdout","ShareName":"\\\\*\\IPC$"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"5145","data":{"ShareName":"\\\\*\\IPC$"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"5145","data":{"RelativeTargetName":"RemCom_stdout"}}
+]}

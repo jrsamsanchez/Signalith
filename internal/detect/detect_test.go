@@ -367,9 +367,33 @@ func TestConvertSigma(t *testing.T) {
 	}
 }
 
+func TestConvertSigmaRegex(t *testing.T) {
+	for rule, want := range map[string]string{
+		// |re keeps its pattern; |i makes it ignore case.
+		"title: R\nlogsource:\n  category: process_creation\ndetection:\n  sel:\n    CommandLine|re|i: 'curl .*://[0-9]{1,3}\\.'\n  condition: sel\n": `datamodel=Endpoint process=~"(?i)curl .*://[0-9]{1,3}\\."`,
+		// An escaped * is the character itself, searched as a pattern.
+		"title: S\nlogsource:\n  product: windows\n  service: security\ndetection:\n  sel:\n    EventID: 5145\n    ShareName: '\\\\\\*\\IPC$'\n  condition: sel\n": `share_name=~`,
+	} {
+		res, err := ConvertSigma([]byte(rule))
+		if err != nil {
+			t.Fatalf("%v\n%s", err, rule)
+		}
+		if !strings.Contains(res.Detection.Query, want) {
+			t.Errorf("query = %s, want %s", res.Detection.Query, want)
+		}
+		q, err := query.Parse(res.Detection.Query)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := (&search.Engine{}).Compile(q); err != nil {
+			t.Errorf("compile: %v", err)
+		}
+	}
+}
+
 func TestConvertSigmaUnsupported(t *testing.T) {
 	for name, rule := range map[string]string{
-		"regex":       "title: x\ndetection:\n  sel:\n    CommandLine|re: 'a.*b'\n  condition: sel\n",
+		"regex":       "title: x\ndetection:\n  sel:\n    CommandLine|re: '\\bab'\n  condition: sel\n",
 		"aggregation": "title: x\ndetection:\n  sel:\n    EventID: 4625\n  condition: sel | count() by IpAddress > 10\n",
 		"unknown sel": "title: x\ndetection:\n  sel:\n    EventID: 4625\n  condition: other\n",
 		"not sigma":   "hello: world\n",

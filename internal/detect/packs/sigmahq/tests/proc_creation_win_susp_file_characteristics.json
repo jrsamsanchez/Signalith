@@ -1,0 +1,12 @@
+{"rule": "9637e8a5-7131-4f7f-bdc7-2b05d8670c43", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Description":"?","FileVersion":"?","Image":"\\Downloads\\"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Description":"?","Image":"\\Downloads\\","Product":"?"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Company":"?","Description":"?","Image":"\\Downloads\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"FileVersion":"?","Image":"\\Downloads\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Description":"?","Image":"\\Downloads\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Description":"?","FileVersion":"?"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\Downloads\\","Product":"?"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Description":"?","Product":"?"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Company":"?","Image":"\\Downloads\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Company":"?","Description":"?"}}
+]}

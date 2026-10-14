@@ -94,6 +94,9 @@ func describeExpr(e query.Expr) string {
 		if e.Value == "*" && e.Op == "=" {
 			return e.Field + " has any value"
 		}
+		if e.Op == "=~" {
+			return fmt.Sprintf("%s matches the regular expression %s", e.Field, e.Value)
+		}
 		verb := map[string]string{"=": "is", "!=": "is not", "<": "is less than", "<=": "is at most", ">": "is greater than", ">=": "is at least"}[e.Op]
 		if strings.ContainsAny(e.Value, "*?") && (e.Op == "=" || e.Op == "!=") {
 			verb = map[string]string{"=": "matches", "!=": "does not match"}[e.Op]

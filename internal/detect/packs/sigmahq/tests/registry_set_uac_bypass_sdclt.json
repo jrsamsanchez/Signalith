@@ -1,0 +1,7 @@
+{"rule": "5b872a46-3b90-45c1-8419-f675db8053aa", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"Software\\Classes\\exefile\\shell\\runas\\command\\isolatedCommand"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"-1000\\Software\\Classes\\","TargetObject":"Software\\Classes\\Folder\\shell\\open\\command\\SymbolicLinkValue"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"Software\\Classes\\Folder\\shell\\open\\command\\SymbolicLinkValue"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"-1000\\Software\\Classes\\"}}
+]}

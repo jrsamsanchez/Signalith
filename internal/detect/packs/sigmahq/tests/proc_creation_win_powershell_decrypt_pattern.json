@@ -1,0 +1,6 @@
+{"rule": "434c08ba-8406-4d15-8b24-782cb071a691", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x .length  *.lnk type  Get-ChildItem   -ExpandProperty  WriteAllBytes","Image":"\\pwsh.exe","OriginalFileName":"pwsh.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\pwsh.exe","OriginalFileName":"pwsh.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x .length  *.lnk type  Get-ChildItem   -ExpandProperty  WriteAllBytes","OriginalFileName":"pwsh.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x .length  *.lnk type  Get-ChildItem   -ExpandProperty  WriteAllBytes","Image":"\\pwsh.exe"}}
+]}

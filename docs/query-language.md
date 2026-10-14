@@ -23,6 +23,7 @@ datamodel=Authentication action=failure earliest=-24h
 | `field=*` | The field has any value |
 | `src=10.0.0.0/8` | An IPv4 address range (CIDR) |
 | `field!=value` | Does not match |
+| `field=~"pattern"` | Regular expression ([RE2 syntax](https://github.com/google/re2/wiki/Syntax)), found anywhere in the value unless `^` or `$` anchor it, and case-sensitive unless it starts with `(?i)`. Also works in `where`. Word boundaries (`\b`), `(?m)` and `^`/`$` other than at the ends are refused, since the search runs in OpenSearch |
 | `field>10`, `>=`, `<`, `<=` | Numeric (or text) comparison |
 | `field IN (a, b, c)` | Any of several values |
 | `word` or `"a phrase"` | Text anywhere in the raw event (`_raw`) |
@@ -36,6 +37,8 @@ with `@d`, `@h`, `@w`. Absolute times are ISO 8601 (`2026-10-01T00:00:00Z`).
 Quote values that contain spaces or symbols: `process_path="C:\Windows\System32\cmd.exe"`.
 Inside quotes, `\"` is a quote and `\\` is one backslash; any other backslash is
 kept as typed, so Windows paths work without doubling.
+In a regular expression that means `\.` stays `\.`, and a literal backslash is
+`\\\\` (two backslashes after quoting, which the expression reads as one).
 
 ## Commands
 

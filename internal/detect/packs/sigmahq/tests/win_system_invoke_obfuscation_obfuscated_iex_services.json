@@ -1,0 +1,4 @@
+{"rule": "51aa9387-1c53-4153-91cc-d73c59ae1ca9", "cases": [
+  {"expect":true,"source":"synthesized","channel":"System","event_id":"7045","data":{"ImagePath":"$VerbosePreference.ToString("}},
+  {"expect":false,"source":"synthesized","channel":"System","event_id":"7045","data":{}}
+]}

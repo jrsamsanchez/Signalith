@@ -1,0 +1,4 @@
+{"rule": "1b2ae822-6fe1-43ba-aa7c-d1a3b3d1d5f2", "cases": [
+  {"expect":true,"source":"synthesized","channel":"System","event_id":"7045","data":{"ImagePath":"C:\\ProgramData\\x.exe","Provider_Name":"Service Control Manager"}},
+  {"expect":false,"source":"synthesized","channel":"System","event_id":"7045","data":{"Provider_Name":"Service Control Manager"}}
+]}

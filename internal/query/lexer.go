@@ -97,7 +97,8 @@ func lex(src string) ([]token, error) {
 			i++
 		case c == '=' || c == '!' || c == '<' || c == '>':
 			start := i
-			if i+1 < len(src) && src[i+1] == '=' {
+			if i+1 < len(src) && (src[i+1] == '=' || c == '=' && src[i+1] == '~') {
+				// =~ matches a regular expression.
 				i += 2
 			} else {
 				i++

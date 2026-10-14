@@ -1,0 +1,5 @@
+{"rule": "c15a46a0-07d4-4c87-b4b6-89207835a83b", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"source  add  ://0.0.0.0","OriginalFileName":"winget.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"winget.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"source  add  ://0.0.0.0"}}
+]}

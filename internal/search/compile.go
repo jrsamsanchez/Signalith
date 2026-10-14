@@ -86,6 +86,15 @@ func compareQuery(c *query.Compare) (map[string]any, error) {
 		return equalsQuery(c.Field, c.Value), nil
 	case "!=":
 		return boolQuery("must_not", []any{equalsQuery(c.Field, c.Value)}), nil
+	case "=~":
+		if c.Field == RawField || c.Field == "_time" {
+			return nil, fmt.Errorf("a regular expression (=~) needs a field other than %s", c.Field)
+		}
+		re, err := ParseRegex(c.Value)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"regexp": map[string]any{c.Field: map[string]any{"value": re.Lucene}}}, nil
 	case "<", "<=", ">", ">=":
 		key := map[string]string{"<": "lt", "<=": "lte", ">": "gt", ">=": "gte"}[c.Op]
 		var v any = c.Value

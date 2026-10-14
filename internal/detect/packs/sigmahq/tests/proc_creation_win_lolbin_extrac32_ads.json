@@ -1,0 +1,6 @@
+{"rule": "4b13db67-0c45-40f1-aba8-66a1a7198a1e", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"extrac32.exe .cab :A"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"extrac32.exe .cab :A","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

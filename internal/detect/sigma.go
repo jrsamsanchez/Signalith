@@ -16,6 +16,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/jrsamsanchez/signalith/internal/query"
+	"github.com/jrsamsanchez/signalith/internal/search"
 )
 
 // SigmaResult is a converted Sigma rule.
@@ -835,12 +836,16 @@ func (c *sigmaConv) fieldCond(key string, v any) (query.Expr, error) {
 	}
 	all := false
 	how := "equals"
+	reFlags := ""
 	// transforms apply in order to each value before matching.
 	var transforms []string
 	for _, m := range mods {
 		switch lm := strings.ToLower(m); lm {
-		case "contains", "startswith", "endswith", "cidr":
+		case "contains", "startswith", "endswith", "cidr", "re":
 			how = lm
+		case "i", "m", "s":
+			// Regular expression flags.
+			reFlags += lm
 		case "all":
 			all = true
 		case "windash", "base64", "base64offset", "utf16le", "wide", "utf16be", "utf16":
@@ -877,6 +882,14 @@ func (c *sigmaConv) fieldCond(key string, v any) (query.Expr, error) {
 				s = "inbound"
 			}
 		}
+		if how == "re" {
+			e, err := c.regex(field, key, reFlags, s)
+			if err != nil {
+				return nil, err
+			}
+			kids = append(kids, e)
+			continue
+		}
 		if how == "cidr" {
 			p, err := netip.ParsePrefix(s)
 			if err != nil || !p.Addr().Is4() {
@@ -908,6 +921,16 @@ func (c *sigmaConv) fieldCond(key string, v any) (query.Expr, error) {
 			}
 		} else {
 			v, err := sigmaValue(s)
+			if errors.Is(err, errEscapedWildcard) {
+				// A literal * or ? in a pattern: a regular expression says
+				// it.
+				e, err := c.regex(field, key, "is", sigmaWildcardRegex(s, how))
+				if err != nil {
+					return nil, err
+				}
+				kids = append(kids, e)
+				continue
+			}
 			if err != nil {
 				return nil, fmt.Errorf("%s: %w", key, err)
 			}
@@ -952,8 +975,13 @@ func (c *sigmaConv) compare(field, sigField, how, s string) query.Expr {
 	return &query.Compare{Field: field, Op: "=", Value: s}
 }
 
+// errEscapedWildcard is a value with a literal * or ?, which a wildcard
+// pattern cannot say.
+var errEscapedWildcard = errors.New("escaped wildcard")
+
 // sigmaValue resolves Sigma escapes: \\ is a backslash; \* and \? are
-// literal wildcards, which Signalith cannot express inside a pattern.
+// literal wildcards, which a Signalith pattern cannot express
+// (errEscapedWildcard).
 func sigmaValue(s string) (string, error) {
 	var b strings.Builder
 	for i := 0; i < len(s); i++ {
@@ -964,12 +992,57 @@ func sigmaValue(s string) (string, error) {
 				i++
 				continue
 			case '*', '?':
-				return "", fmt.Errorf("escaped wildcard \\%c is not supported", s[i+1])
+				return "", errEscapedWildcard
 			}
 		}
 		b.WriteByte(s[i])
 	}
 	return b.String(), nil
+}
+
+// regex is field=~pattern for a Sigma regular expression (|re, with
+// the flags of |i, |m and |s): found anywhere in the value, and
+// case-sensitive unless it says otherwise. A long text field is indexed
+// lowercased, so a case-sensitive expression cannot be searched on one.
+func (c *sigmaConv) regex(field, key, flags, pattern string) (query.Expr, error) {
+	if flags != "" {
+		pattern = "(?" + flags + ")" + pattern
+	}
+	if _, err := search.ParseRegex(pattern); err != nil {
+		return nil, fmt.Errorf("%s: %w", key, err)
+	}
+	if search.WildcardFields[field] && !strings.HasPrefix(pattern, "(?i") && !strings.Contains(flags, "i") {
+		return nil, fmt.Errorf("%s: a case-sensitive regular expression on %s, which is searched ignoring case", key, field)
+	}
+	return &query.Compare{Field: field, Op: "=~", Value: pattern}, nil
+}
+
+// sigmaWildcardRegex is the regular expression of a Sigma pattern with
+// a literal * or ?: * any run of characters, ? any one, the rest (and
+// the escaped wildcards) literal, matched as how says.
+func sigmaWildcardRegex(s, how string) string {
+	var b strings.Builder
+	if how == "equals" || how == "startswith" {
+		b.WriteByte('^')
+	}
+	rs := []rune(s)
+	for i := 0; i < len(rs); i++ {
+		switch c := rs[i]; {
+		case c == '\\' && i+1 < len(rs) && (rs[i+1] == '*' || rs[i+1] == '?' || rs[i+1] == '\\'):
+			b.WriteString(regexp.QuoteMeta(string(rs[i+1])))
+			i++
+		case c == '*':
+			b.WriteString(".*")
+		case c == '?':
+			b.WriteByte('.')
+		default:
+			b.WriteString(regexp.QuoteMeta(string(c)))
+		}
+	}
+	if how == "equals" || how == "endswith" {
+		b.WriteByte('$')
+	}
+	return b.String()
 }
 
 // sigmaLiteral resolves a value's escapes and refuses wildcards, for

@@ -1,0 +1,5 @@
+{"rule": "a4824fca-976f-4964-b334-0621379e84c4", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"sdelete.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x -z","OriginalFileName":"sdelete.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{}}
+]}

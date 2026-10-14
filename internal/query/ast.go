@@ -31,7 +31,9 @@ type Or struct{ Children []Expr }
 // Not negates its child.
 type Not struct{ Child Expr }
 
-// Compare is field <op> value, where op is one of = != < <= > >=.
+// Compare is field <op> value, where op is one of = != < <= > >=, or =~
+// for a regular expression found anywhere in the value (RE2 syntax, ^ and
+// $ to anchor it).
 type Compare struct {
 	Field string
 	Op    string

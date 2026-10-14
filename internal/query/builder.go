@@ -99,6 +99,9 @@ func FromQuery(q *Query) (s Spec, ok bool) {
 	for _, t := range terms {
 		switch t := t.(type) {
 		case *Compare:
+			if t.Op == "=~" {
+				return s, false
+			}
 			s.Filters = append(s.Filters, Filter{Field: t.Field, Op: t.Op, Value: t.Value})
 		case *Text:
 			if s.Text != "" {

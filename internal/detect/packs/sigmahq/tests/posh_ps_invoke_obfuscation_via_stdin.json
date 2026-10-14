@@ -1,0 +1,4 @@
+{"rule": "86b896ba-ffa1-4fea-83e3-ee28a4c915c7", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"SETx\u0026\u0026 SETx$INPUT\u0026\u0026\""}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}}
+]}
