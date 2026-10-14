@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/cluster"
+	"github.com/jrsamsanchez/signalith/internal/clusterauth"
 	"github.com/jrsamsanchez/signalith/internal/clustercfg"
 	"github.com/jrsamsanchez/signalith/internal/config"
 	"github.com/jrsamsanchez/signalith/internal/shared"
@@ -44,12 +45,83 @@ func openShared(c *config.Config, node *cluster.Node, log *slog.Logger) (*shared
 		LeaseEpoch: node.Lease().Epoch,
 		Peers:      func() []shared.Peer { return peersOf(node.Status()) },
 		Content:    ct.track,
-		Importers:  append(clustercfg.Importers(ct.docs, ct.files()), auditImporters(ct)...),
+		Importers:  sharedImporters(ct.sharedDocs, ct.files()),
 		Log:        log,
 	})
 	ct.rt.Store(rt)
 	ct.users.follow(rt)
 	return rt, ct
+}
+
+// sharedDocs are the documents of the shared settings a process keeps a
+// copy of: those of the content (the feeds, the retention policies and
+// the settings) and those of the users. The server's (newSharedContent)
+// and those of a founding from the command line (clusterCLI.runtime) are
+// both made by newSharedDocs, so both track and import the same. A new
+// shared feature adds its documents here and in newSharedDocs, then one
+// entry to trackers and one to sharedImporters.
+type sharedDocs struct {
+	docs *clustercfg.Docs
+	// auth holds the users, the directory sign-in settings and the
+	// sessions; on the server, the same documents as sharedUsers.docs.
+	auth *clusterauth.Docs
+}
+
+// newSharedDocs returns the documents of a process, with auth as the
+// users' documents.
+func newSharedDocs(auth *clusterauth.Docs) sharedDocs {
+	d := sharedDocs{docs: clustercfg.NewDocs(), auth: auth}
+	// The users and directory importers and the auth settings of
+	// signalith.yaml reach the users' documents.
+	d.docs.UseAuth(auth)
+	return d
+}
+
+// sharedTracker is a collection of shared documents: it tracks them on
+// the runtime's hub, and forgets the components of a start that ended.
+type sharedTracker interface {
+	Track(h *shared.Hub)
+	Reset()
+}
+
+// trackers lists the collections of shared documents, in the order they
+// are tracked. A new shared collection appends its entry here.
+func (d sharedDocs) trackers() []sharedTracker {
+	return []sharedTracker{
+		d.docs,
+		d.auth,
+		// Append a new shared collection here.
+	}
+}
+
+// track makes the shared documents on h.
+func (d sharedDocs) track(h *shared.Hub) {
+	for _, t := range d.trackers() {
+		t.Track(h)
+	}
+}
+
+// reset tells the components of the start that ended no more changes.
+func (d sharedDocs) reset() {
+	for _, t := range d.trackers() {
+		t.Reset()
+	}
+}
+
+// sharedImporters lists the importers of the shared settings, which move
+// this server's files into them when it founds the cluster (or once the
+// cluster's level brings a feature in), from the server and from the
+// command line alike. A new shared feature appends its importers here,
+// from its own package.
+func sharedImporters(d sharedDocs, f clustercfg.Files) []shared.Importer {
+	return slices.Concat(
+		// The feeds, their status, the retention policies, the users, the
+		// directory sign-in settings and the settings of the Settings page.
+		clustercfg.Importers(d.docs, f),
+		// The retention history and the archive manifests (sharedaudit.go).
+		auditImporters(f),
+		// Append a new shared feature's importers here.
+	)
 }
 
 // peersOf lists the servers as the node sees them.

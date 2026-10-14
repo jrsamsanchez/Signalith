@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -29,7 +30,9 @@ import (
 // sharedContent links the shared settings' documents to the components
 // of each start. Like the runtime, it belongs to the process.
 type sharedContent struct {
-	docs *clustercfg.Docs
+	// sharedDocs are the documents of the shared settings: the content's
+	// (docs) and the users' (auth, which are users.docs).
+	sharedDocs
 	// users links the users, the directory sign-in settings and the
 	// sessions kept in the shared settings (see sharedusers.go).
 	users *sharedUsers
@@ -71,18 +74,10 @@ type osTarget struct {
 
 // newSharedContent returns the content's link for the process.
 func newSharedContent(c *config.Config, node *cluster.Node, log *slog.Logger) *sharedContent {
-	ct := &sharedContent{docs: clustercfg.NewDocs(), users: newSharedUsers(log), node: node, log: log, settingsKick: make(chan struct{}, 1)}
-	// The users and directory importers and the auth settings of
-	// signalith.yaml reach the users' documents.
-	ct.docs.UseAuth(ct.users.docs)
+	users := newSharedUsers(log)
+	ct := &sharedContent{sharedDocs: newSharedDocs(users.docs), users: users, node: node, log: log, settingsKick: make(chan struct{}, 1)}
 	ct.cfg.Store(c)
 	return ct
-}
-
-// track makes the shared documents of the content and of the users on h.
-func (ct *sharedContent) track(h *shared.Hub) {
-	ct.docs.Track(h)
-	ct.users.docs.Track(h)
 }
 
 // files is what the importers read: this server's files and settings.
@@ -118,8 +113,7 @@ func (ct *sharedContent) use(c *config.Config, cl *store.Client) {
 	ct.cfg.Store(c)
 	ct.target.Store(&osTarget{cl: cl, prefix: c.OpenSearch.IndexPrefix})
 	// A component of the start that ended hears of no more changes.
-	ct.docs.Reset()
-	ct.users.docs.Reset()
+	ct.reset()
 }
 
 // peerAge is how recent another server's heartbeat must be for its
@@ -259,18 +253,56 @@ func sharedFingerprints(fp cluster.Fingerprints, rt *shared.Runtime, on bool) cl
 		return fp
 	}
 	if id := rt.Status().ClusterID; id != "" {
-		fp.Retention, fp.Feeds = cluster.SharedFingerprint(id), cluster.SharedFingerprint(id)
-		if rt.SharedUsers() {
-			fp.Users = cluster.SharedFingerprint(id)
+		for _, put := range sharedPrints {
+			put(&fp, rt, cluster.SharedFingerprint(id))
 		}
 	}
 	return fp
 }
 
+// sharedPrints put the shared sentinel s in place of the fingerprints of
+// one feature, when rt takes it from the shared settings. A new shared
+// feature appends its entry here.
+var sharedPrints = []func(fp *cluster.Fingerprints, rt *shared.Runtime, s string){
+	// The retention policies and the feeds come with the content.
+	func(fp *cluster.Fingerprints, _ *shared.Runtime, s string) { fp.Retention, fp.Feeds = s, s },
+	// The users, once they are shared too.
+	func(fp *cluster.Fingerprints, rt *shared.Runtime, s string) {
+		if rt.SharedUsers() {
+			fp.Users = s
+		}
+	},
+	// Append a new shared feature's entry here.
+}
+
 // contentHandlers runs the requests of the content on the server that
 // runs the background jobs: a feed download asked on another server, and
-// a retention run.
-func contentHandlers(feeds *intel.Feeds, ret *retention.Manager) map[string]shared.Handler {
+// a retention run. A new shared feature appends its handlers to the list,
+// each with its own request types.
+func contentHandlers(feeds *intel.Feeds, ret *retention.Manager, archives map[string]shared.Handler) map[string]shared.Handler {
+	out := map[string]shared.Handler{}
+	for _, hs := range []map[string]shared.Handler{
+		feedHandlers(feeds),
+		retentionHandlers(ret),
+		// Restores of shared archives (sharedaudit.go), nil until they
+		// are shared.
+		archives,
+		// Append a new shared feature's handlers here.
+	} {
+		for k := range hs {
+			if _, dup := out[k]; dup {
+				// Two features naming one request type would leave one
+				// of them silently unrun.
+				panic("shared request type " + k + " has two handlers")
+			}
+		}
+		maps.Copy(out, hs)
+	}
+	return out
+}
+
+// feedHandlers runs a feed download asked on another server.
+func feedHandlers(feeds *intel.Feeds) map[string]shared.Handler {
 	return map[string]shared.Handler{
 		clustercfg.RequestFeedRefresh: func(ctx context.Context, req *shared.Request) error {
 			var a clustercfg.FeedRefreshArgs
@@ -288,6 +320,12 @@ func contentHandlers(feeds *intel.Feeds, ret *retention.Manager) map[string]shar
 			}
 			return req.SetResult(st)
 		},
+	}
+}
+
+// retentionHandlers runs a retention run asked on any server.
+func retentionHandlers(ret *retention.Manager) map[string]shared.Handler {
+	return map[string]shared.Handler{
 		clustercfg.RequestRetentionRun: func(ctx context.Context, req *shared.Request) error {
 			var a clustercfg.RetentionRunArgs
 			if len(req.Args) > 0 {

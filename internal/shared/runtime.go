@@ -152,16 +152,7 @@ func (rt *Runtime) SharedContent() bool {
 // (every server reads them), and the users and the directory settings
 // were imported.
 func (rt *Runtime) SharedUsers() bool {
-	if !rt.SharedContent() {
-		return false
-	}
-	b, ok := rt.Cluster().Get()
-	if !ok || b.Level < LevelSharedUsers {
-		return false
-	}
-	_, users := b.Import.Done[ImportUsers]
-	_, dir := b.Import.Done[ImportDirectory]
-	return users && dir
+	return rt.SharedContent() && rt.sharedAt(LevelSharedUsers, ImportUsers, ImportDirectory)
 }
 
 // SharedSettings reports whether this server takes the settings of the
@@ -170,15 +161,24 @@ func (rt *Runtime) SharedUsers() bool {
 // them and runs the requests that name it), and the founder's settings
 // were imported.
 func (rt *Runtime) SharedSettings() bool {
-	if !rt.SharedUsers() {
-		return false
-	}
+	return rt.SharedUsers() && rt.sharedAt(LevelSharedSettings, ImportSettings)
+}
+
+// sharedAt reports whether a feature that comes with a cluster level is
+// on: the cluster is at level or above, and the importers named imports
+// ran. It says nothing of this server's mode, so a feature's gate chains
+// it on another gate, such as SharedSettings.
+func (rt *Runtime) sharedAt(level int, imports ...string) bool {
 	b, ok := rt.Cluster().Get()
-	if !ok || b.Level < LevelSharedSettings {
+	if !ok || b.Level < level {
 		return false
 	}
-	_, done := b.Import.Done[ImportSettings]
-	return done
+	for _, name := range imports {
+		if _, done := b.Import.Done[name]; !done {
+			return false
+		}
+	}
+	return true
 }
 
 // ImportStalled is how long the founder may take to move its files into

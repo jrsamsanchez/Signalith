@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/audit"
 	"github.com/jrsamsanchez/signalith/internal/cluster"
 	"github.com/jrsamsanchez/signalith/internal/clusterarchive"
+	"github.com/jrsamsanchez/signalith/internal/clustercfg"
 	"github.com/jrsamsanchez/signalith/internal/config"
 	"github.com/jrsamsanchez/signalith/internal/retention"
 	"github.com/jrsamsanchez/signalith/internal/shared"
@@ -62,7 +64,7 @@ func (r *runner) auditOn() bool { return r.audit != nil && r.audit.on.Load() }
 // records: the cluster keeps them, and the content comes from the shared
 // settings.
 func (r *runner) wantAudit() bool {
-	return r.shared != nil && r.sharedContent != nil && r.sharedContent.on.Load() && r.shared.SharedAudit()
+	return r.audit != nil && r.shared != nil && r.sharedContent != nil && r.sharedContent.on.Load() && r.shared.SharedAudit()
 }
 
 // useAudit decides, for one start, whether the audit records, the
@@ -254,46 +256,30 @@ func exportSharedSettings(ctx context.Context, cl *store.Client, prefix, archive
 	return file, nil
 }
 
-// withAuditHandlers adds the archive restore request to handlers, when
-// the archives are shared.
-func (r *runner) withAuditHandlers(handlers map[string]shared.Handler, ret *retention.Manager) map[string]shared.Handler {
+// auditHandlers are the handlers of the archive restore request, nil
+// until the archives are shared (contentHandlers).
+func (r *runner) auditHandlers(ret *retention.Manager) map[string]shared.Handler {
 	if !r.auditOn() {
-		return handlers
+		return nil
 	}
-	for k, h := range clusterarchive.Handlers(ret, r.shared.Requests().SetProgress) {
-		handlers[k] = h
-	}
-	return handlers
-}
-
-// auditFlip reports whether the components should restart in place to
-// start or stop sharing the audit records, with why.
-func (r *runner) auditFlip() (bool, string) {
-	if r.audit == nil {
-		return false, ""
-	}
-	want := r.wantAudit()
-	if want == r.audit.on.Load() {
-		return false, ""
-	}
-	if want {
-		return true, "every server now keeps its audit records, the retention history and the archive list in OpenSearch"
-	}
-	return true, "this server now keeps its retention history and archive list in its own files"
+	return clusterarchive.Handlers(ret, r.shared.Requests().SetProgress)
 }
 
 // auditImporters move the founder's retention history and archive
 // manifests into OpenSearch once the cluster reaches
 // shared.LevelSharedAudit, reading what this start uses when they run.
-func auditImporters(ct *sharedContent) []shared.Importer {
+func auditImporters(f clustercfg.Files) []shared.Importer {
 	opts := func() (clusterarchive.ImportOptions, *store.Client) {
-		c := ct.cfg.Load()
-		o := clusterarchive.ImportOptions{Server: ct.node.Name(), NodeID: ct.node.ID(), Log: ct.log,
+		c := f.Config()
+		o := clusterarchive.ImportOptions{Server: f.Node, NodeID: f.NodeID, Log: f.Log,
 			HistoryFile: filepath.Join(c.LookupsDir(), "retention_history.json"),
 			Archive:     &retention.Archive{Dir: c.ArchiveDir()}}
 		var cl *store.Client
-		if t := ct.target.Load(); t != nil {
-			cl, o.Client, o.Prefix = t.cl, t.cl, t.prefix
+		if f.Client != nil {
+			cl, o.Prefix = f.Client()
+			if cl != nil {
+				o.Client = cl
+			}
 		}
 		return o, cl
 	}
@@ -316,10 +302,9 @@ func auditImporters(ct *sharedContent) []shared.Importer {
 		list[i].Run = func(ctx context.Context, by string) error {
 			o, cl := opts()
 			if cl == nil {
-				return fmt.Errorf("no OpenSearch to import into yet")
+				return errors.New("no OpenSearch to import into yet")
 			}
-			c := ct.cfg.Load()
-			if err := audit.EnsureTemplate(ctx, cl, o.Prefix, auditReplicas(c)); err != nil {
+			if err := audit.EnsureTemplate(ctx, cl, o.Prefix, auditReplicas(f.Config())); err != nil {
 				return err
 			}
 			return pick(o).Run(ctx, by)

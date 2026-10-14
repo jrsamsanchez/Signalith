@@ -23,14 +23,5 @@ const (
 // shared settings, the cluster is at LevelSharedAudit, and the history
 // and manifests were imported.
 func (rt *Runtime) SharedAudit() bool {
-	if !rt.SharedSettings() {
-		return false
-	}
-	b, ok := rt.Cluster().Get()
-	if !ok || b.Level < LevelSharedAudit {
-		return false
-	}
-	_, hist := b.Import.Done[ImportRetentionHistory]
-	_, arch := b.Import.Done[ImportArchives]
-	return hist && arch
+	return rt.SharedSettings() && rt.sharedAt(LevelSharedAudit, ImportRetentionHistory, ImportArchives)
 }

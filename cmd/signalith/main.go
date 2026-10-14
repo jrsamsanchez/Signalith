@@ -1541,7 +1541,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		}},
 	}
 	if r.shared != nil {
-		in.jobsList = append(in.jobsList, requestsJob(r.shared, r.withAuditHandlers(contentHandlers(feeds, ret), ret)))
+		in.jobsList = append(in.jobsList, requestsJob(r.shared, contentHandlers(feeds, ret, r.auditHandlers(ret))))
 		in.jobsList = append(in.jobsList, r.auditJobs(c, cl, ret)...)
 	}
 	if parts != nil {

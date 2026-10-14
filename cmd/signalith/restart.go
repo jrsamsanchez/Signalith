@@ -344,31 +344,49 @@ func (r *runner) followShared(ctx context.Context) {
 		case <-changed:
 		case <-time.After(sharedCheck()):
 		}
+		ct := r.sharedContent
 		want, wantUsers, wantSettings := r.shared.SharedContent(), r.shared.SharedUsers(), r.settingsShared()
-		settingsFlip := wantSettings != r.sharedContent.settingsOn.Load()
+		// Read once, so that the switch below agrees with settingsFlip.
+		settingsOn := ct.settingsOn.Load()
+		settingsFlip := wantSettings != settingsOn
 		if !settingsFlip {
 			tried = nil
 		} else if tried != nil && *tried == wantSettings {
 			settingsFlip = false
 		}
-		if want == r.sharedContent.on.Load() && wantUsers == r.sharedContent.users.on.Load() && !settingsFlip {
-			if flip, why := r.auditFlip(); flip {
-				_ = r.restartInPlace(why, false)
-			}
+		// A switch of the settings left undone counts as made until
+		// another restart decides once more.
+		if !settingsFlip {
+			settingsOn = wantSettings
+		}
+		// The parts of the components that switch between the shared
+		// settings and this server's own files, the first to switch
+		// giving the reason.
+		switches := []sharedSwitch{
+			{want, ct.on.Load(), switchWhy(want,
+				"this server now takes the threat intel feeds and retention policies from the shared settings",
+				"this server now takes the threat intel feeds and retention policies from its own files")},
+			{wantUsers, ct.users.on.Load(), switchWhy(wantUsers,
+				"the users and sign-in are now shared by every server of the cluster; everyone signs in once more",
+				"this server now keeps the users and sign-in in its own files")},
+			{wantSettings, settingsOn, switchWhy(wantSettings,
+				"this server now takes the settings of the Settings page from the shared settings",
+				"this server now takes the settings of the Settings page from its own files")},
+			// The audit records, the retention history and the archive
+			// list (sharedaudit.go).
+			{r.wantAudit(), r.auditOn(), switchWhy(r.wantAudit(),
+				"every server now keeps its audit records, the retention history and the archive list in OpenSearch",
+				"this server now keeps its retention history and archive list in its own files")},
+			// Append a new shared feature's switch here.
+		}
+		i := slices.IndexFunc(switches, func(s sharedSwitch) bool { return s.want != s.on })
+		if i < 0 {
 			continue
 		}
-		why := "this server now takes the threat intel feeds and retention policies from the shared settings"
-		switch {
-		case !want:
-			why = "this server now takes the threat intel feeds and retention policies from its own files"
-		case want == r.sharedContent.on.Load() && wantUsers != r.sharedContent.users.on.Load() && wantUsers:
-			why = "the users and sign-in are now shared by every server of the cluster; everyone signs in once more"
-		case want == r.sharedContent.on.Load() && wantUsers != r.sharedContent.users.on.Load():
-			why = "this server now keeps the users and sign-in in its own files"
-		case want == r.sharedContent.on.Load() && wantSettings:
-			why = "this server now takes the settings of the Settings page from the shared settings"
-		case want == r.sharedContent.on.Load():
-			why = "this server now takes the settings of the Settings page from its own files"
+		why := switches[i].why
+		if !want {
+			// Leaving the shared content says so, whatever switches with it.
+			why = switches[0].why
 		}
 		if err := r.restartInPlace(why, settingsFlip); err != nil {
 			// Another restart is going; it decides again, and so does the
@@ -379,6 +397,25 @@ func (r *runner) followShared(ctx context.Context) {
 			tried = &wantSettings
 		}
 	}
+}
+
+// sharedSwitch is a part of the components that takes its content from
+// the shared settings or from this server's own files (followShared):
+// want is where the shared configuration says it comes from now, on
+// whether the components running now take it from the shared settings,
+// and why the reason a restart in place gives for the switch.
+type sharedSwitch struct {
+	want, on bool
+	why      string
+}
+
+// switchWhy is the reason for a switch to the shared settings when want,
+// to this server's own files otherwise.
+func switchWhy(want bool, toShared, toOwn string) string {
+	if want {
+		return toShared
+	}
+	return toOwn
 }
 
 // RestartStatus implements api.Restarter.

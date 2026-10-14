@@ -7,6 +7,15 @@
 // were shared.
 'use strict';
 
+// serverPanels lists the parts of a server's side panel, in order: each
+// is a function of the panel's context ({ s, sh, view, name, list, part }:
+// the server, its shared block, its Settings page as api/settings?server=
+// has it, and helpers for a setting's name, a list of settings and a
+// titled part) that returns an element, an array of them, or null for
+// nothing. A page script loaded after this one appends its part with
+// serverPanels.push(fn).
+const serverPanels = [];
+
 (function () {
   const REFRESH_MS = 5000;
   // The upgrade note, once dismissed, stays hidden in this browser.
@@ -394,6 +403,46 @@
   // week after the settings became shared.
   const MIGRATED_DAYS = 7;
 
+  // The panel's own parts. A new part goes in its own file (serverPanels).
+  serverPanels.push(
+    // Why it reports nothing about the shared settings.
+    ({ s, sh }) => (!s.shared || sh.mode !== 'member' ? el('p', { class: 'sv-panel__text' }, s.shared
+      ? 'It doesn’t use the shared settings right now (' + ((CONFIG[sh.mode] || [sh.mode])[0] || '').toLowerCase() + '), so it reports nothing about them.'
+      : 'It keeps every setting in its own files.') : null),
+    ({ sh }) => (sh.restart && sh.restart.busy ? alertBox('info', 'Restarting to apply settings', '') : null),
+    ({ sh, part, list }) => {
+      const waiting = sh.restart_needed || [];
+      return part('Waiting for a restart', waiting.length ? list(waiting)
+        : el('p', { class: 'sv-panel__text' }, 'Nothing: it runs every setting saved for it.'));
+    },
+    ({ sh, part, list }) => {
+      const refused = sh.settings_refused || [];
+      if (!refused.length) return null;
+      return part('Shared values it couldn’t use', el('p', { class: 'sv-panel__text' }, 'It keeps its own value of each until the shared one changes, or until someone tries it again on its Settings page.'), list(refused));
+    },
+    ({ sh, part }) => {
+      const last = sh.restart && sh.restart.last;
+      if (!last) return null;
+      const when = el('span', { title: new Date(last.at).toLocaleString() }, ago(last.at));
+      return part('Last restart', el('p', { class: 'sv-panel__text' + (last.ok ? '' : ' sv-bad') }, last.ok ? 'Restarted with the saved settings, ' : (last.rolled_back ? 'Went back to its previous settings, ' : 'Failed, '), when,
+        last.ok ? '.' : ': ' + (last.error || 'no reason given')));
+    },
+    ({ sh, part, list }) => {
+      const drift = Object.entries(sh.settings_drift || {}).filter(([, keys]) => keys && keys.length);
+      if (!drift.length) return null;
+      return part('Differs in its own files', el('p', { class: 'sv-panel__text' }, 'The shared value is used: a change in its file or environment applies to every server when it is made.'),
+        ...drift.map(([src, keys]) => el('div', {}, el('b', {}, src === 'yaml' ? 'signalith.yaml' : src === 'env' ? 'Environment' : src), list(keys))));
+    },
+    ({ s, view, name, part }) => {
+      const recent = ((view && view.migrated) || []).filter((m) => !m.at || Date.now() - Date.parse(m.at) < MIGRATED_DAYS * 86400000);
+      if (!recent.length) return null;
+      const val = (v) => (v === undefined || v === null ? 'empty' : typeof v === 'object' && v.set ? 'a value of its own' : Array.isArray(v) ? v.join(', ') : String(v));
+      return part('Before the settings were shared', el('p', { class: 'sv-panel__text' }, `${s.name}’s Settings page had other values than the shared ones. The shared values are used; change them on the Settings page if ${s.name}’s were the right ones.`),
+        el('ul', { class: 'sv-panel__list', role: 'list' }, ...recent.map((m) => el('li', {}, el('span', {}, name(m.key)),
+          el('span', { class: 'sv-panel__was' }, 'had ', el('span', { class: 'mono' }, val(m.value)), m.shared !== undefined ? '; shared ' : '', m.shared !== undefined ? el('span', { class: 'mono' }, val(m.shared)) : null)))));
+    },
+  );
+
   function openPanel(id) {
     P.id = id;
     P.view = null;
@@ -432,37 +481,11 @@
     const name = (k) => labels[k] || k;
     const list = (keys) => el('ul', { class: 'sv-panel__list', role: 'list' }, ...keys.map((k) => el('li', {}, el('span', {}, name(k)), labels[k] ? el('span', { class: 'mono sv-panel__key' }, k) : null)));
     const part = (title, ...kids) => el('section', { class: 'sv-panel__part' }, el('h3', { class: 'section-title' }, title), ...kids);
+    const ctx = { s, sh, view: P.view, name, list, part };
     const parts = [];
-    const waiting = sh.restart_needed || [];
-    const refused = sh.settings_refused || [];
-    const last = sh.restart && sh.restart.last;
-    if (!s.shared || sh.mode !== 'member') {
-      parts.push(el('p', { class: 'sv-panel__text' }, s.shared
-        ? 'It doesn’t use the shared settings right now (' + ((CONFIG[sh.mode] || [sh.mode])[0] || '').toLowerCase() + '), so it reports nothing about them.'
-        : 'It keeps every setting in its own files.'));
-    }
-    if (sh.restart && sh.restart.busy) parts.push(alertBox('info', 'Restarting to apply settings', ''));
-    parts.push(part('Waiting for a restart', waiting.length ? list(waiting)
-      : el('p', { class: 'sv-panel__text' }, 'Nothing: it runs every setting saved for it.')));
-    if (refused.length) {
-      parts.push(part('Shared values it couldn’t use', el('p', { class: 'sv-panel__text' }, 'It keeps its own value of each until the shared one changes, or until someone tries it again on its Settings page.'), list(refused)));
-    }
-    if (last) {
-      const when = el('span', { title: new Date(last.at).toLocaleString() }, ago(last.at));
-      parts.push(part('Last restart', el('p', { class: 'sv-panel__text' + (last.ok ? '' : ' sv-bad') }, last.ok ? 'Restarted with the saved settings, ' : (last.rolled_back ? 'Went back to its previous settings, ' : 'Failed, '), when,
-        last.ok ? '.' : ': ' + (last.error || 'no reason given'))));
-    }
-    const drift = Object.entries(sh.settings_drift || {}).filter(([, keys]) => keys && keys.length);
-    if (drift.length) {
-      parts.push(part('Differs in its own files', el('p', { class: 'sv-panel__text' }, 'The shared value is used: a change in its file or environment applies to every server when it is made.'),
-        ...drift.map(([src, keys]) => el('div', {}, el('b', {}, src === 'yaml' ? 'signalith.yaml' : src === 'env' ? 'Environment' : src), list(keys)))));
-    }
-    const recent = ((P.view && P.view.migrated) || []).filter((m) => !m.at || Date.now() - Date.parse(m.at) < MIGRATED_DAYS * 86400000);
-    if (recent.length) {
-      const val = (v) => (v === undefined || v === null ? 'empty' : typeof v === 'object' && v.set ? 'a value of its own' : Array.isArray(v) ? v.join(', ') : String(v));
-      parts.push(part('Before the settings were shared', el('p', { class: 'sv-panel__text' }, `${s.name}’s Settings page had other values than the shared ones. The shared values are used; change them on the Settings page if ${s.name}’s were the right ones.`),
-        el('ul', { class: 'sv-panel__list', role: 'list' }, ...recent.map((m) => el('li', {}, el('span', {}, name(m.key)),
-          el('span', { class: 'sv-panel__was' }, 'had ', el('span', { class: 'mono' }, val(m.value)), m.shared !== undefined ? '; shared ' : '', m.shared !== undefined ? el('span', { class: 'mono' }, val(m.shared)) : null))))));
+    for (const panel of serverPanels) {
+      const out = panel(ctx);
+      if (Array.isArray(out)) parts.push(...out.filter(Boolean)); else if (out) parts.push(out);
     }
     if (P.view && P.view.failed) parts.push(el('p', { class: 'sv-panel__text' }, 'Its settings couldn’t be read now, so settings show by their names.'));
     const open = el('button', { type: 'button', class: 'btn btn--primary', 'data-focus': 'open', onclick: () => {

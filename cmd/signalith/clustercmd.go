@@ -172,10 +172,8 @@ func (x *clusterCLI) keyStore() shared.KeyStore {
 // runtime returns a runtime that has looked for the cluster once.
 // readOnly writes nothing to OpenSearch or the state folder.
 func (x *clusterCLI) runtime(readOnly bool, name string) *shared.Runtime {
-	docs := clustercfg.NewDocs()
-	x.docs = docs
-	x.auth = clusterauth.NewDocs()
-	docs.UseAuth(x.auth)
+	d := newSharedDocs(clusterauth.NewDocs())
+	x.docs, x.auth = d.docs, d.auth
 	files := x.files()
 	var made atomic.Pointer[shared.Runtime]
 	files.NodeCfg = func() *shared.Doc[shared.NodeCfg] {
@@ -193,11 +191,8 @@ func (x *clusterCLI) runtime(readOnly bool, name string) *shared.Runtime {
 		},
 		// A founding from the command line imports this server's feeds,
 		// retention policies and users, as the server's own would.
-		Content: func(h *shared.Hub) {
-			docs.Track(h)
-			x.auth.Track(h)
-		},
-		Importers: clustercfg.Importers(docs, files),
+		Content:   d.track,
+		Importers: sharedImporters(d, files),
 	})
 	made.Store(rt)
 	x.auth.Cluster = rt.Cluster
