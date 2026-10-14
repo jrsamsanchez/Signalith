@@ -915,6 +915,7 @@ function renderFindingDetail(box, data, opts = {}) {
     d ? { icon: 'crosshair', label: 'Open the detection', run: () => focusDetection(f.detection_id) } : null,
     d ? { icon: 'list-filter', label: 'Findings from this detection', run: () => { fnd.detection = f.detection_id; fnd.urgency.clear(); loadFindings(); } } : null,
     can('analyst') ? { icon: 'zap', label: 'Respond…', run: () => { const b = box.querySelector('[data-action="respond"]'); if (b) b.click(); } } : null,
+    can('analyst') ? { icon: 'sparkles', label: 'Investigate with AI…', run: () => openInvestigate(f) } : null,
     d && can('admin') ? 'sep' : null,
     d && can('admin') ? { icon: 'bell-off', label: 'Don’t alert on this again…', run: () => suppressFinding(f, d) } : null,
   ]);
@@ -962,6 +963,7 @@ function renderFindingDetail(box, data, opts = {}) {
         f.credit ? el('p', { class: 'dx-credit' }, f.credit) : null,
         d && d.guidance ? el('div', { class: 'callout' }, icon('lightbulb'), el('div', {}, el('b', {}, 'How to triage. '), d.guidance)) : null,
         (f.mitre || []).length ? techRow(f.mitre) : null,
+        can('analyst') && typeof findingInvestigate === 'function' ? findingInvestigate(f) : null,
         err,
         // Viewers see the triage state; analysts and admins change it.
         can('analyst') ? dxSection('Triage',
