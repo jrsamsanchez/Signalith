@@ -126,6 +126,13 @@ func TestSchedulerTurnedOffStartsNoJob(t *testing.T) {
 		defer mu.Unlock()
 		return len(started) > 0
 	})
+	// The server founds the cluster and restarts its components in place
+	// by itself; wait for that, or a setting saved while its settings move
+	// into OpenSearch lands in settings.yaml and is no longer read.
+	eventually(t, "the components take the shared content", func() bool {
+		ct := rs.r.sharedContent
+		return ct.on.Load() && ct.users.on.Load() == rs.r.shared.SharedUsers() && !rs.r.RestartStatus().InProgress
+	})
 	for range 3 {
 		rs.save(`{"detections.scheduler":false}`)
 		if _, res := rs.restart(); !res.OK {
