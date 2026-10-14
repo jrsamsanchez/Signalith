@@ -747,6 +747,34 @@ func parseSysmon(eventID string, kv map[string]string, ev *Event) {
 		if h := sysmonHash(kv["Hashes"], "SHA256"); h != "" {
 			f["file_hash"] = h
 		}
+	case "15":
+		// An alternate data stream written (FileCreateStreamHash), such as
+		// the Zone.Identifier a browser adds to a download: the stream's
+		// path (file:stream), its SHA-256, every hash Sysmon logs
+		// (SHA256=...,IMPHASH=...) and, for small text streams, its
+		// contents.
+		ev.Model = "Filesystem"
+		f["action"] = "created"
+		f["signature"] = "File stream created"
+		f["file_path"] = kv["TargetFilename"]
+		f["file_name"] = baseName(kv["TargetFilename"])
+		sysmonProcess(kv, f)
+		if h := sysmonHash(firstOf(kv["Hash"], kv["Hashes"]), "SHA256"); h != "" {
+			f["file_hash"] = h
+		}
+		f["file_hashes"] = firstOf(kv["Hash"], kv["Hashes"])
+		f["file_contents"] = kv["Contents"]
+	case "17", "18":
+		// A named pipe created (17) or connected to (18), by the process
+		// that did it.
+		ev.Model = "Endpoint"
+		f["signature"] = "Pipe Created"
+		if eventID == "18" {
+			f["signature"] = "Pipe Connected"
+		}
+		f["pipe_name"] = kv["PipeName"]
+		f["pipe_event_type"] = kv["EventType"]
+		sysmonProcess(kv, f)
 	case "12", "13", "14":
 		// Registry key or value created or deleted (12), value set (13),
 		// key or value renamed (14).

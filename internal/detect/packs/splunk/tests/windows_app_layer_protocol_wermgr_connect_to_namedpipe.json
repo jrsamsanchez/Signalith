@@ -1,0 +1,17 @@
+{"rule": "2f3a4092-548b-421c-9caa-84918e1787ef", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"17","data":{"EventType":"CreatePipe","Image":"x \\wermgr.exe","PipeName":"\\test_pipe","ProcessId":"4242"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"18","data":{"EventType":"ConnectPipe","Image":"x \\wermgr.exe","PipeName":"\\test_pipe","ProcessId":"4242"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"18","data":{"EventType":"CreatePipe","Image":"x \\wermgr.exe","PipeName":"\\test_pipe","ProcessId":"4242"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"17","data":{"EventType":"CreatePipe","Image":"x \\wermgr.exe","PipeName":"\\test_pipe","ProcessId":"4242"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"17","data":{"EventType":"CreatePipe","Image":"x \\wermgr.exe","PipeName":"\\test_pipe","ProcessId":"4242"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"18","data":{"EventType":"ConnectPipe","Image":"x \\wermgr.exe","PipeName":"\\test_pipe","ProcessId":"4242"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"18","data":{"EventType":"ConnectPipe","Image":"x \\wermgr.exe","PipeName":"\\test_pipe","ProcessId":"4242"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"18","data":{"EventType":"ConnectPipe","Image":"x \\wermgr.exe","PipeName":"\\test_pipe","ProcessId":"4242"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"17","data":{"EventType":"CreatePipe","Image":"x \\wermgr.exf","PipeName":"\\test_pipe","ProcessId":"4242"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"17","data":{"EventType":"CreatePipe","PipeName":"\\test_pipe","ProcessId":"4242"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"17","data":{"EventType":"CreatePipf","Image":"x \\wermgr.exe","PipeName":"\\test_pipe","ProcessId":"4242"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"18","data":{"EventType":"ConnectPipe","Image":"x \\wermgr.exf","PipeName":"\\test_pipe","ProcessId":"4242"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"18","data":{"EventType":"ConnectPipe","PipeName":"\\test_pipe","ProcessId":"4242"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"18","data":{"EventType":"ConnectPipf","Image":"x \\wermgr.exe","PipeName":"\\test_pipe","ProcessId":"4242"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"18","data":{"EventType":"ConnectPipe","Image":"C:\\Windows\\SysWOW64\\wermgr.exe","PipeName":"\\{B9B69BF3-D8F3-4010-A4F6-CB0E94E172D6}","ProcessGuid":"{3381F800-8D6E-635A-E505-000000008A02}","ProcessId":"6380","RuleName":"-","UtcTime":"2022-10-27 13:53:51.337"}}
+]}

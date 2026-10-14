@@ -1,0 +1,15 @@
+{"rule": "75e33ce3-ae32-4dcc-9aa8-a2a3029d6f84", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"Image":"\\wordview.exe","Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":".deploy.static.akamaitechnologies.com","DestinationPort":"443","Image":"\\wordview.exe","Initiated":"true","Protocol":"tcp"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationIp":"127.0.0.1","Image":"\\wordview.exe","Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationIp":"13.107.4.1","DestinationPort":"443","Image":"\\wordview.exe","Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationIp":"13.107.6.153","DestinationPort":"995","Image":"\\wordview.exe","Initiated":"true","Protocol":"tcp"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationIp":"2a01:111:f400::1","DestinationPort":"443","Image":"\\wordview.exe","Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationIp":"40.107.0.1","DestinationPort":"25","Image":"\\wordview.exe","Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationIp":"20.192.0.1","Image":"\\wordview.exe","Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationIp":"2a01:111:f100:2000::a83e:3019","DestinationPort":"80","Image":"\\wordview.exe","Initiated":"true","Protocol":"tcp"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationIp":"2603:1056:2000::1","DestinationPort":"443","Image":"\\wordview.exe","Initiated":"true","Protocol":"tcp"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationIp":"2620:1ec:4::192","DestinationPort":"443","Image":"\\wordview.exe","Initiated":"true","Protocol":"tcp"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationIp":"52.104.0.1","DestinationPort":"80","Image":"\\wordview.exe","Initiated":"true","Protocol":"tcp"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"Initiated":"true"}}
+]}

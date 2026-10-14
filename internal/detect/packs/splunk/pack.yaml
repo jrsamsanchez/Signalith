@@ -414,6 +414,10 @@ rules:
     rule_id: f0c9d62f-a232-4edd-b17e-bc409fb133d4
     file: domain_group_discovery_with_dsquery.yml
     path: detections/endpoint/domain_group_discovery_with_dsquery.yml
+  - id: splunk-download-files-using-telegram
+    rule_id: 58194e28-ae5e-11eb-8912-acde48001122
+    file: download_files_using_telegram.yml
+    path: detections/endpoint/download_files_using_telegram.yml
   - id: splunk-dsquery-domain-discovery
     rule_id: cc316032-924a-11eb-91a2-acde48001122
     file: dsquery_domain_discovery.yml
@@ -1642,6 +1646,10 @@ rules:
     rule_id: 5ba382c4-2105-11ec-8d8f-acde48001122
     file: time_provider_persistence_registry.yml
     path: detections/endpoint/time_provider_persistence_registry.yml
+  - id: splunk-trickbot-named-pipe
+    rule_id: 1804b0a4-a682-11eb-8f68-acde48001122
+    file: trickbot_named_pipe.yml
+    path: detections/endpoint/trickbot_named_pipe.yml
   - id: splunk-uac-bypass-mmc-load-unsigned-dll
     rule_id: 7f04349c-e30d-11eb-bc7f-acde48001122
     file: uac_bypass_mmc_load_unsigned_dll.yml
@@ -1718,6 +1726,14 @@ rules:
     rule_id: 894f48ea-8d85-4dcd-9132-c66cdb407c9b
     file: windows_apache_benchmark_binary.yml
     path: detections/endpoint/windows_apache_benchmark_binary.yml
+  - id: splunk-windows-app-layer-protocol-qakbot-namedpipe
+    rule_id: 63a2c15e-9448-43c5-a4a8-9852266aaada
+    file: windows_app_layer_protocol_qakbot_namedpipe.yml
+    path: detections/endpoint/windows_app_layer_protocol_qakbot_namedpipe.yml
+  - id: splunk-windows-app-layer-protocol-wermgr-connect-to-namedpipe
+    rule_id: 2f3a4092-548b-421c-9caa-84918e1787ef
+    file: windows_app_layer_protocol_wermgr_connect_to_namedpipe.yml
+    path: detections/endpoint/windows_app_layer_protocol_wermgr_connect_to_namedpipe.yml
   - id: splunk-windows-appcertdll-modification-via-command-line
     rule_id: 3ba73a2b-3396-47e4-bdef-c80e6a7895c0
     file: windows_appcertdll_modification_via_command_line.yml
@@ -1726,6 +1742,10 @@ rules:
     rule_id: 547d98dd-6d6e-4aa4-be91-a1a119f48df3
     file: windows_appcertdll_modification_via_registry.yml
     path: detections/endpoint/windows_appcertdll_modification_via_registry.yml
+  - id: splunk-windows-application-layer-protocol-rms-radmin-tool-namedp
+    rule_id: b62a6040-49f4-47c8-b3f6-fc1adb952a33
+    file: windows_application_layer_protocol_rms_radmin_tool_namedpipe.yml
+    path: detections/endpoint/windows_application_layer_protocol_rms_radmin_tool_namedpipe.yml
   - id: splunk-windows-application-whitelisting-bypass-attempt-via-rundl
     rule_id: 1ef5dab0-e1f1-495d-a272-d134583c10b1
     file: windows_application_whitelisting_bypass_attempt_via_rundll32.yml
@@ -3594,6 +3614,10 @@ rules:
     rule_id: 0175f0b7-728d-4038-bbf1-1c30d6ee3d31
     file: windows_wbadmin_file_recovery_from_backup.yml
     path: detections/endpoint/windows_wbadmin_file_recovery_from_backup.yml
+  - id: splunk-windows-wermgr-alternate-data-stream-in-temp-dir
+    rule_id: 65222e9b-9d0b-4bfe-8da1-199b98e1d44a
+    file: windows_wermgr_alternate_data_stream_in_temp_dir.yml
+    path: detections/endpoint/windows_wermgr_alternate_data_stream_in_temp_dir.yml
   - id: splunk-windows-wermgr-spawning-system-integrity-process
     rule_id: d39634c8-7ce7-4503-a5da-73ca3c758fb9
     file: windows_wermgr_spawning_system_integrity_process.yml

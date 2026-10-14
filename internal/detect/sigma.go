@@ -183,6 +183,8 @@ var sigmaEventFields = func() map[string]map[string]string {
 		"file_event": file, "file_delete": file,
 		"registry_add": registry, "registry_delete": registry, "registry_set": registry, "registry_event": registry,
 		"dns_query":            with(map[string]string{"queryname": "query", "queryresults": "answer"}),
+		"pipe_created":         with(map[string]string{"pipename": "pipe_name", "eventtype": "pipe_event_type"}),
+		"create_stream_hash":   with(map[string]string{"targetfilename": "file_path", "hash": "file_hashes", "contents": "file_contents"}),
 		"image_load":           load,
 		"driver_load":          with(map[string]string{"imageloaded": "loaded_file_path", "hashes": "loaded_file_hash", "signed": "signed", "signature": "signature", "signaturestatus": "signature_status", "image": "", "user": "", "processid": "", "processguid": ""}),
 		"process_access":       access,
@@ -272,6 +274,8 @@ var sigmaWindowsEvents = map[string][]string{
 	"registry_set":         {"13"},
 	"registry_event":       {"12", "13", "14"},
 	"dns_query":            {"22"},
+	"pipe_created":         {"17", "18"},
+	"create_stream_hash":   {"15"},
 	"image_load":           {"7"},
 	"driver_load":          {"6"},
 	"process_access":       {"10"},
@@ -567,7 +571,7 @@ func (c *sigmaConv) datamodel(ls map[string]any) string {
 		return "Authentication"
 	case "antivirus":
 		return "Malware"
-	case "file_event", "file_delete":
+	case "file_event", "file_delete", "create_stream_hash":
 		return "Filesystem"
 	case "registry_add", "registry_delete", "registry_set", "registry_event":
 		return "Registry"
@@ -575,7 +579,7 @@ func (c *sigmaConv) datamodel(ls map[string]any) string {
 		return "Network_Resolution"
 	case "image_load", "driver_load":
 		return "Image_Load"
-	case "process_access", "create_remote_thread":
+	case "process_access", "create_remote_thread", "pipe_created":
 		return "Endpoint"
 	case "ps_script":
 		return "Script"

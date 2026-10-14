@@ -216,7 +216,7 @@ var splunkTechnique = regexp.MustCompile(`^T\d{4}(\.\d{3})?$`)
 // task, a service per host and service, a directory change per object
 // and attribute, a share access per client, share and path, a Kerberos
 // ticket per account and service, an account change or group member
-// added per account or group.
+// added per account or group, a named pipe per host, program and pipe.
 func splunkThrottle(node, dm string) []string {
 	switch node {
 	case "ObjectAccess":
@@ -235,6 +235,8 @@ func splunkThrottle(node, dm string) []string {
 		return []string{"host", "object"}
 	case "GroupMemberAdded":
 		return []string{"host", "object", "member_sid"}
+	case "Pipe":
+		return []string{"host", "process_path", "pipe_name"}
 	}
 	return packThrottle("", dm)
 }

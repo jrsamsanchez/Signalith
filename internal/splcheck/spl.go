@@ -236,7 +236,7 @@ var (
 		"powershell": {"4104": "PowerShell"},
 		"sysmon": {
 			"1": "Processes", "3": "NetworkConnection", "7": "ImageLoad", "8": "ProcessAccess", "10": "ProcessAccess",
-			"22": "DnsQuery",
+			"22": "DnsQuery", "15": "FileStream", "17": "Pipe", "18": "Pipe",
 			"11": "Filesystem", "23": "Filesystem", "26": "Filesystem", "12": "Registry", "13": "Registry", "14": "Registry",
 		},
 		// Security events the Windows parser reads.
@@ -286,6 +286,18 @@ var (
 		},
 		"Filesystem": {
 			"TargetFilename": "file_path", "file_path": "file_path", "file_name": "file_name", "action": "action",
+			"Image": "process_path", "process_path": "process_path", "process_name": "process_name",
+		},
+		// An alternate data stream written (15): its path (file:stream)
+		// and, for small text streams, its contents.
+		"FileStream": {
+			"TargetFilename": "file_path", "file_path": "file_path", "file_name": "file_name", "Contents": "file_contents",
+			"Image": "process_path", "process_path": "process_path", "process_name": "process_name",
+		},
+		// A named pipe created (17) or connected to (18); EventType is
+		// CreatePipe or ConnectPipe.
+		"Pipe": {
+			"PipeName": "pipe_name", "pipe_name": "pipe_name", "EventType": "pipe_event_type",
 			"Image": "process_path", "process_path": "process_path", "process_name": "process_name",
 		},
 		"Registry": {

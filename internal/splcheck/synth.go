@@ -362,6 +362,37 @@ func records(node string, ev map[string]string) []sigmacheck.Case {
 			out = append(out, sigmacheck.Case{Channel: sigmacheck.SysmonChannel, EventID: id, Data: both})
 		}
 		return out
+	case "FileStream":
+		s := map[string]string{"ProcessId": "4242", "Hash": "SHA256=0000000000000000000000000000000000000000000000000000000000000000"}
+		set(s, "Image", imagePath(ev["process_path"], ev["process_name"]))
+		set(s, "User", ev["user"])
+		target := ev["file_path"]
+		if target == "" {
+			name := ev["file_name"]
+			if name == "" {
+				name = "download.zip:Zone.Identifier"
+			}
+			target = `C:\Users\Public\Downloads\` + name
+		}
+		set(s, "TargetFilename", target)
+		set(s, "Contents", ev["file_contents"])
+		return []sigmacheck.Case{{Channel: sigmacheck.SysmonChannel, EventID: "15", Data: s}}
+	case "Pipe":
+		s := map[string]string{"ProcessId": "4242", "EventType": "CreatePipe"}
+		set(s, "Image", imagePath(ev["process_path"], ev["process_name"]))
+		set(s, "User", ev["user"])
+		pipe := ev["pipe_name"]
+		if pipe == "" {
+			pipe = `\test_pipe`
+		}
+		s["PipeName"] = pipe
+		id := "17"
+		// A raw search names its event code, or the event type picks it.
+		if c := ev[eventCode]; c == "18" || c != "17" && ev["pipe_event_type"] == "ConnectPipe" {
+			id, s["EventType"] = "18", "ConnectPipe"
+		}
+		set(s, "EventType", ev["pipe_event_type"])
+		return []sigmacheck.Case{{Channel: sigmacheck.SysmonChannel, EventID: id, Data: s}}
 	case "Registry":
 		s := map[string]string{"ProcessId": "4242", "EventType": "SetValue"}
 		set(s, "Image", imagePath(ev["process_path"], ev["process_name"]))
@@ -775,7 +806,7 @@ func countable(t *Threshold, ev map[string]string) {
 }
 
 // NodeModel is the Signalith data model of each node ("" for any).
-var NodeModel = map[string]string{"Processes": "Endpoint", "Filesystem": "Filesystem", "Registry": "Registry", "PowerShell": "Script", "ImageLoad": "Image_Load", "ProcessAccess": "Endpoint", "NetworkConnection": "Network_Traffic", "All_Traffic": "Network_Traffic", "DnsQuery": "Network_Resolution", "Logon": "Authentication", "TaskCreated": "Change", "ObjectAccess": "", "ServiceInstalled": "Change", "DirectoryChange": "Change", "ShareAccess": "Filesystem", "KerberosTGT": "Authentication", "KerberosService": "Authentication", "UserChanged": "Change", "GroupMemberAdded": "Change"}
+var NodeModel = map[string]string{"Processes": "Endpoint", "Filesystem": "Filesystem", "Registry": "Registry", "FileStream": "Filesystem", "Pipe": "Endpoint", "PowerShell": "Script", "ImageLoad": "Image_Load", "ProcessAccess": "Endpoint", "NetworkConnection": "Network_Traffic", "All_Traffic": "Network_Traffic", "DnsQuery": "Network_Resolution", "Logon": "Authentication", "TaskCreated": "Change", "ObjectAccess": "", "ServiceInstalled": "Change", "DirectoryChange": "Change", "ShareAccess": "Filesystem", "KerberosTGT": "Authentication", "KerberosService": "Authentication", "UserChanged": "Change", "GroupMemberAdded": "Change"}
 
 // AttackDataSource marks a test event recorded in a real attack (Splunk's
 // attack_data, by internal/detect/attackgen).
@@ -794,6 +825,8 @@ var NodeEvents = map[string][]string{
 	"Processes":         {"1", "4688"},
 	"Filesystem":        {"11", "23", "26"},
 	"Registry":          {"12", "13", "14"},
+	"FileStream":        {"15"},
+	"Pipe":              {"17", "18"},
 	"PowerShell":        {"4104"},
 	"ImageLoad":         {"7"},
 	"ProcessAccess":     {"8", "10"},

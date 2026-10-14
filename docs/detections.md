@@ -242,8 +242,8 @@ Content packs are rule sets from other open source projects, shipped unchanged
 inside Signalith and converted when it starts. Every pack detection is **off** until
 an admin turns it on.
 
-**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,035 rules from
-[SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 1,921 Windows rules
+**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,060 rules from
+[SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 1,946 Windows rules
 for these Sysmon, Security, PowerShell and System log sources, and 114 Linux rules (see
 [Linux endpoints](#linux-endpoints-sysmon-for-linux)):
 
@@ -256,6 +256,8 @@ for these Sysmon, Security, PowerShell and System log sources, and 114 Linux rul
 | `file_event`, `file_delete` | Sysmon 11; 23 and 26 | Filesystem |
 | `registry_add`, `registry_delete`, `registry_set`, `registry_event` | Sysmon 12; 12; 13; 12, 13 and 14 | Registry |
 | `dns_query` | Sysmon 22 | Network_Resolution |
+| `pipe_created` | Sysmon 17 and 18 (named pipe created or connected to) | Endpoint |
+| `create_stream_hash` | Sysmon 15 (alternate data stream written, such as a download's `Zone.Identifier`) | Filesystem |
 | `ps_script` | PowerShell 4104 | Script |
 | `service: system` | System 7045 (service installed) | Change |
 | `service: security` | The Security log events in the next table | See the next table |
@@ -391,7 +393,7 @@ The generator keeps each rule's Signalith ID across runs, rewrites `rules/`,
 
 ### Splunk Security Content
 
-**Splunk Security Content** (`internal/detect/packs/splunk`) holds 923 Windows and
+**Splunk Security Content** (`internal/detect/packs/splunk`) holds 929 Windows and
 Linux detections from Splunk's Threat Research Team
 ([security_content](https://github.com/splunk/security_content)), pinned to one
 commit. They are the production TTP and anomaly rules that search the CIM
@@ -413,6 +415,8 @@ names, so each rule's `where` clause becomes a Signalith filter field for field:
 | `` `sysmon` EventCode=11 ``, `23` or `26` (raw search) | Sysmon 11, 23 and 26 | Filesystem |
 | `` `sysmon` EventCode=12 ``, `13` or `14` (raw search) | Sysmon 12, 13 and 14 | Registry |
 | `` `sysmon` EventCode=8 `` or `10` (raw search) | Sysmon 8 and 10 | Endpoint |
+| `` `sysmon` EventCode=17 `` or `18` (raw search) | Sysmon 17 and 18 (named pipe created or connected to; `PipeName` is `pipe_name`) | Endpoint |
+| `` `sysmon` EventCode=15 `` (raw search) | Sysmon 15 (alternate data stream written; `Contents` is `file_contents`) | Filesystem |
 | `` `wineventlog_security` EventCode=4624 `` or `4625` (raw search) | Security 4624 (successful logon) and 4625 (failed logon) | Authentication |
 | `` `wineventlog_security` EventCode=4698 `` (raw search) | Security 4698 (scheduled task created) | Change |
 | `` `wineventlog_security` EventCode=4663 `` (raw search) | Security 4663 (object access) | Filesystem for a file, Registry for a key |

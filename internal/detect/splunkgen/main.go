@@ -49,6 +49,7 @@ var windowsSources = []string{
 	"Windows Event Log Security 4768", "Windows Event Log Security 4769",
 	"Windows Event Log Security 4738", "Windows Event Log Security 4732",
 	"Sysmon EventID 3", "Sysmon EventID 22", "Windows Event Log Security 4624", "Windows Event Log Security 4625",
+	"Sysmon EventID 15", "Sysmon EventID 17", "Sysmon EventID 18",
 }
 
 // maxWildcardTerms keeps a rule's searches under

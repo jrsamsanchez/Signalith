@@ -1,0 +1,6 @@
+{"rule": "b69888d4-380c-45ce-9cf9-d9ce46e67821", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"15","data":{"Hash":"IMPHASH="}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"15","data":{"Hash":"IMPHASH= IMPHASH=00000000000000000000000000000000"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"15","data":{}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"15","data":{"Contents":"-","CreationUtcTime":"2026-08-30 10:31:50.612","Hash":"SHA1=F8F685D473BAD37C09D9D5EF324B18F08DA8EDBB,MD5=D336296CBEAD12CB996FDC08BFAD771A,SHA256=0C23904839121C7FDDFCC7D6F691F55C4BDDD944498202505B96CB4939AEF559,IMPHASH=9B917F937AF80C9F6F1631EE02B217DE","Image":"System","ProcessGuid":"570E49AA-027C-6A94-EB03-000000000000","ProcessId":"4","RuleName":"-","TargetFilename":"C:\\C:sigmacatchsigmacatch-check.exe","User":"AUTORITE NT\\Système","UtcTime":"2026-08-30 10:31:50.647"}}
+]}

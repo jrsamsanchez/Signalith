@@ -50,6 +50,8 @@ var categories = map[string]string{
 	"registry_set":         "rules/windows/registry/registry_set",
 	"registry_event":       "rules/windows/registry/registry_event",
 	"dns_query":            "rules/windows/dns_query",
+	"pipe_created":         "rules/windows/pipe_created",
+	"create_stream_hash":   "rules/windows/create_stream_hash",
 	"image_load":           "rules/windows/image_load",
 	"driver_load":          "rules/windows/driver_load",
 	"process_access":       "rules/windows/process_access",

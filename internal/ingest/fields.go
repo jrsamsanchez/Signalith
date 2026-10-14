@@ -107,6 +107,11 @@ var knownFields = func() map[string]string {
 		// Whether a Sysmon network connection's source is an IPv6 address,
 		// and the service name of its destination port (smtp, ftp).
 		"src_is_ipv6": kw, "dest_port_name": kw,
+		// A Sysmon named pipe event (17, 18): the pipe and whether it was
+		// created or connected to. An alternate data stream's (Sysmon 15)
+		// hashes as Sysmon lists them, and its contents, text that rules
+		// search for words inside.
+		"pipe_name": kw, "pipe_event_type": kw, "file_hashes": kw, "file_contents": "wildcard",
 		// A logon's (Security 4624 and 4625) logon process and account SID,
 		// and for a 4624 the SID of the account that asked for it, its key
 		// length, impersonation level, elevation and outbound account.

@@ -1,0 +1,4 @@
+{"rule": "493fb4ab-cdcc-4c4f-818c-0e363bd1e4bb", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"17","data":{"Image":"\\scrcons.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"17","data":{}}
+]}

@@ -770,8 +770,8 @@ changes and more, plus two risk incident rules); 19 are on by default.
 - **Import Sigma rule** converts a [Sigma](https://github.com/SigmaHQ/sigma) rule to a
   Signalith query and lists anything it had to approximate. Imported rules start
   disabled so you can test them first.
-- **Content packs** add community rules, off until you turn them on: 2,035 tested
-  [SigmaHQ](https://github.com/SigmaHQ/sigma) Windows and Linux rules and 923 Windows and Linux detections
+- **Content packs** add community rules, off until you turn them on: 2,060 tested
+  [SigmaHQ](https://github.com/SigmaHQ/sigma) Windows and Linux rules and 929 Windows and Linux detections
   from Splunk's open source
   [security_content](https://github.com/splunk/security_content) (Apache 2.0). With
   both packs on, detections cover 148 ATT&CK techniques. Newer tested rules arrive as

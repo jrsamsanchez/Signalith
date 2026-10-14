@@ -93,6 +93,42 @@ rules:
     rule_id: 4f6c43e2-f989-4ea5-bcd8-843b49a0317c
     file: proc_access_win_uac_bypass_wow64_logger.yml
     path: rules/windows/process_access/proc_access_win_uac_bypass_wow64_logger.yml
+  - id: sigma-create-stream-hash-ads-executable
+    rule_id: b69888d4-380c-45ce-9cf9-d9ce46e67821
+    file: create_stream_hash_ads_executable.yml
+    path: rules/windows/create_stream_hash/create_stream_hash_ads_executable.yml
+  - id: sigma-create-stream-hash-creation-internet-file
+    rule_id: 573df571-a223-43bc-846e-3f98da481eca
+    file: create_stream_hash_creation_internet_file.yml
+    path: rules/windows/create_stream_hash/create_stream_hash_creation_internet_file.yml
+  - id: sigma-create-stream-hash-file-sharing-domains-download-susp-exte
+    rule_id: 52182dfb-afb7-41db-b4bc-5336cb29b464
+    file: create_stream_hash_file_sharing_domains_download_susp_extension.yml
+    path: rules/windows/create_stream_hash/create_stream_hash_file_sharing_domains_download_susp_extension.yml
+  - id: sigma-create-stream-hash-file-sharing-domains-download-unusual-e
+    rule_id: ae02ed70-11aa-4a22-b397-c0d0e8f6ea99
+    file: create_stream_hash_file_sharing_domains_download_unusual_extension.yml
+    path: rules/windows/create_stream_hash/create_stream_hash_file_sharing_domains_download_unusual_extension.yml
+  - id: sigma-create-stream-hash-hktl-generic-download
+    rule_id: 19b041f6-e583-40dc-b842-d6fa8011493f
+    file: create_stream_hash_hktl_generic_download.yml
+    path: rules/windows/create_stream_hash/create_stream_hash_hktl_generic_download.yml
+  - id: sigma-create-stream-hash-regedit-export-to-ads
+    rule_id: 0d7a9363-af70-4e7b-a3b7-1a176b7fbe84
+    file: create_stream_hash_regedit_export_to_ads.yml
+    path: rules/windows/create_stream_hash/create_stream_hash_regedit_export_to_ads.yml
+  - id: sigma-create-stream-hash-susp-ip-domains
+    rule_id: 025bd229-fd1f-4fdb-97ab-20006e1a5368
+    file: create_stream_hash_susp_ip_domains.yml
+    path: rules/windows/create_stream_hash/create_stream_hash_susp_ip_domains.yml
+  - id: sigma-create-stream-hash-winget-susp-package-source
+    rule_id: a3f5c081-e75b-43a0-9f5b-51f26fe5dba2
+    file: create_stream_hash_winget_susp_package_source.yml
+    path: rules/windows/create_stream_hash/create_stream_hash_winget_susp_package_source.yml
+  - id: sigma-create-stream-hash-zip-tld-download
+    rule_id: 0bb4bbeb-fe52-4044-b40c-430a04577ebe
+    file: create_stream_hash_zip_tld_download.yml
+    path: rules/windows/create_stream_hash/create_stream_hash_zip_tld_download.yml
   - id: sigma-dns-anonymfiles-com
     rule_id: 065cceea-77ec-4030-9052-fc0affea7110
     file: dns_query_win_anonymfiles_com.yml
@@ -1721,6 +1757,10 @@ rules:
     rule_id: e81528db-fc02-45e8-8e98-4e84aba1f10b
     file: net_connection_win_notepad.yml
     path: rules/windows/network_connection/net_connection_win_notepad.yml
+  - id: sigma-net-office-outbound-non-local-ip
+    rule_id: 75e33ce3-ae32-4dcc-9aa8-a2a3029d6f84
+    file: net_connection_win_office_outbound_non_local_ip.yml
+    path: rules/windows/network_connection/net_connection_win_office_outbound_non_local_ip.yml
   - id: sigma-net-office-uncommon-ports
     rule_id: 3b5ba899-9842-4bc2-acc2-12308498bf42
     file: net_connection_win_office_uncommon_ports.yml
@@ -1793,6 +1833,66 @@ rules:
     rule_id: 992a6cae-db6a-43c8-9cec-76d7195c96fc
     file: net_connection_win_wscript_cscript_outbound_connection.yml
     path: rules/windows/network_connection/net_connection_win_wscript_cscript_outbound_connection.yml
+  - id: sigma-pipe-created-adfs-namedpipe-connection-uncommon-tool
+    rule_id: 1ea13e8c-03ea-409b-877d-ce5c3d2c1cb3
+    file: pipe_created_adfs_namedpipe_connection_uncommon_tool.yml
+    path: rules/windows/pipe_created/pipe_created_adfs_namedpipe_connection_uncommon_tool.yml
+  - id: sigma-pipe-created-hktl-cobaltstrike
+    rule_id: d5601f8c-b26f-4ab0-9035-69e11a8d4ad2
+    file: pipe_created_hktl_cobaltstrike.yml
+    path: rules/windows/pipe_created/pipe_created_hktl_cobaltstrike.yml
+  - id: sigma-pipe-created-hktl-cobaltstrike-re
+    rule_id: 0e7163d4-9e19-4fa7-9be6-000c61aad77a
+    file: pipe_created_hktl_cobaltstrike_re.yml
+    path: rules/windows/pipe_created/pipe_created_hktl_cobaltstrike_re.yml
+  - id: sigma-pipe-created-hktl-cobaltstrike-susp-pipe-patterns
+    rule_id: 85adeb13-4fc9-4e68-8a4a-c7cb2c336eb7
+    file: pipe_created_hktl_cobaltstrike_susp_pipe_patterns.yml
+    path: rules/windows/pipe_created/pipe_created_hktl_cobaltstrike_susp_pipe_patterns.yml
+  - id: sigma-pipe-created-hktl-coercedpotato
+    rule_id: 4d0083b3-580b-40da-9bba-626c19fe4033
+    file: pipe_created_hktl_coercedpotato.yml
+    path: rules/windows/pipe_created/pipe_created_hktl_coercedpotato.yml
+  - id: sigma-pipe-created-hktl-diagtrack-eop
+    rule_id: 1f7025a6-e747-4130-aac4-961eb47015f1
+    file: pipe_created_hktl_diagtrack_eop.yml
+    path: rules/windows/pipe_created/pipe_created_hktl_diagtrack_eop.yml
+  - id: sigma-pipe-created-hktl-generic-cred-dump-tools-pipes
+    rule_id: 961d0ba2-3eea-4303-a930-2cf78bbfcc5e
+    file: pipe_created_hktl_generic_cred_dump_tools_pipes.yml
+    path: rules/windows/pipe_created/pipe_created_hktl_generic_cred_dump_tools_pipes.yml
+  - id: sigma-pipe-created-hktl-koh-default-pipe
+    rule_id: 0adc67e0-a68f-4ffd-9c43-28905aad5d6a
+    file: pipe_created_hktl_koh_default_pipe.yml
+    path: rules/windows/pipe_created/pipe_created_hktl_koh_default_pipe.yml
+  - id: sigma-pipe-created-powershell-alternate-host-pipe
+    rule_id: 58cb02d5-78ce-4692-b3e1-dce850aae41a
+    file: pipe_created_powershell_alternate_host_pipe.yml
+    path: rules/windows/pipe_created/pipe_created_powershell_alternate_host_pipe.yml
+  - id: sigma-pipe-created-pua-csexec-default-pipe
+    rule_id: f318b911-ea88-43f4-9281-0de23ede628e
+    file: pipe_created_pua_csexec_default_pipe.yml
+    path: rules/windows/pipe_created/pipe_created_pua_csexec_default_pipe.yml
+  - id: sigma-pipe-created-pua-paexec-default-pipe
+    rule_id: f6451de4-df0a-41fa-8d72-b39f54a08db5
+    file: pipe_created_pua_paexec_default_pipe.yml
+    path: rules/windows/pipe_created/pipe_created_pua_paexec_default_pipe.yml
+  - id: sigma-pipe-created-pua-remcom-default-pipe
+    rule_id: d36f87ea-c403-44d2-aa79-1a0ac7c24456
+    file: pipe_created_pua_remcom_default_pipe.yml
+    path: rules/windows/pipe_created/pipe_created_pua_remcom_default_pipe.yml
+  - id: sigma-pipe-created-scrcons-wmi-consumer-namedpipe
+    rule_id: 493fb4ab-cdcc-4c4f-818c-0e363bd1e4bb
+    file: pipe_created_scrcons_wmi_consumer_namedpipe.yml
+    path: rules/windows/pipe_created/pipe_created_scrcons_wmi_consumer_namedpipe.yml
+  - id: sigma-pipe-created-susp-malicious-namedpipes
+    rule_id: fe3ac066-98bb-432a-b1e7-a5229cb39d4a
+    file: pipe_created_susp_malicious_namedpipes.yml
+    path: rules/windows/pipe_created/pipe_created_susp_malicious_namedpipes.yml
+  - id: sigma-pipe-created-sysinternals-psexec-default-pipe-susp-locatio
+    rule_id: 41504465-5e3a-4a5b-a5b4-2a0baadd4463
+    file: pipe_created_sysinternals_psexec_default_pipe_susp_location.yml
+    path: rules/windows/pipe_created/pipe_created_sysinternals_psexec_default_pipe_susp_location.yml
   - id: sigma-proc-7zip-exfil-dmp-files
     rule_id: ec570e53-4c76-45a9-804d-dc3f355ff7a7
     file: proc_creation_win_7zip_exfil_dmp_files.yml

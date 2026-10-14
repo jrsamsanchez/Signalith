@@ -264,6 +264,8 @@ func packThrottle(category, datamodel string) []string {
 	switch category {
 	case "process_access", "create_remote_thread":
 		return []string{"host", "process_path", "target_process_path"}
+	case "pipe_created":
+		return []string{"host", "process_path", "pipe_name"}
 	}
 	switch strings.ToLower(datamodel) {
 	case "network_traffic":

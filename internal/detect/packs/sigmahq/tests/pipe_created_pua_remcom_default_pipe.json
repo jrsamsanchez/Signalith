@@ -1,0 +1,5 @@
+{"rule": "d36f87ea-c403-44d2-aa79-1a0ac7c24456", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"17","data":{"PipeName":"\\RemCom"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"17","data":{}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"17","data":{"EventType":"CreatePipe","Image":"C:\\WINDOWS\\DOBOsAEp.exe","PipeName":"\\RemCom_communicaton","ProcessGuid":"570E49AA-33FA-6A94-FC0B-000000001800","ProcessId":"5344","RuleName":"-","User":"AUTORITE NT\\Système","UtcTime":"2026-08-30 13:45:30.657"}}
+]}

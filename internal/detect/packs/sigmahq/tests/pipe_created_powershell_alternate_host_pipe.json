@@ -1,0 +1,9 @@
+{"rule": "58cb02d5-78ce-4692-b3e1-dce850aae41a", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"17","data":{"EventType":"CreatePipe","Image":"D:\\apps\\launcher\\launcher.exe","PipeName":"\\PSHost","ProcessId":"4242","User":"CORP\\tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"17","data":{"EventType":"CreatePipe","Image":"\\pwsh.exe\\AppData\\Local\\Microsoft\\WindowsApps\\Microsoft.PowerShellPreview","PipeName":"\\PSHost","ProcessId":"4242","User":"CORP\\tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"17","data":{"EventType":"CreatePipe","Image":"C:\\Program Files\\AzureConnectedMachineAgent\\GCArcService\\GC\\gc_worker.exe","PipeName":"\\PSHost","ProcessId":"4242","User":"CORP\\tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"17","data":{"EventType":"CreatePipe","Image":"C:\\Program Files\\Citrix\\","PipeName":"\\PSHost","ProcessId":"4242","User":"CORP\\tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"17","data":{"EventType":"CreatePipe","Image":"C:\\Program Files\\Microsoft\\Exchange Server\\","PipeName":"\\PSHost","ProcessId":"4242","User":"CORP\\tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"17","data":{"EventType":"CreatePipe","Image":"C:\\Program Files (x86)\\\\Microsoft SQL Server\\\\Tools\\Binn\\SQLPS.exe","PipeName":"\\PSHost","ProcessId":"4242","User":"CORP\\tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"17","data":{"EventType":"CreatePipe","Image":"D:\\apps\\launcher\\launcher.exe","ProcessId":"4242","User":"CORP\\tester"}}
+]}

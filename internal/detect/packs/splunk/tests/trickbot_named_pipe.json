@@ -1,0 +1,11 @@
+{"rule": "1804b0a4-a682-11eb-8f68-acde48001122", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"17","data":{"EventType":"CreatePipe","PipeName":"\\pipe\\ lacesomepipe","ProcessId":"4242"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"18","data":{"EventType":"ConnectPipe","PipeName":"\\pipe\\ lacesomepipe","ProcessId":"4242"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"17","data":{"EventType":"CreatePipe","PipeName":"\\pipe\\ lacesomepipe","ProcessId":"4242"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"17","data":{"EventType":"CreatePipe","PipeName":"\\pipe\\ lacesomepipe","ProcessId":"4242"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"17","data":{"EventType":"CreatePipe","PipeName":"\\pipe\\ lacesomepipf","ProcessId":"4242"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"17","data":{"EventType":"CreatePipe","PipeName":"\\test_pipe","ProcessId":"4242"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"18","data":{"EventType":"ConnectPipe","PipeName":"\\pipe\\ lacesomepipf","ProcessId":"4242"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"18","data":{"EventType":"ConnectPipe","PipeName":"\\test_pipe","ProcessId":"4242"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"17","data":{"EventType":"CreatePipe","Image":"C:\\Windows\\system32\\WindowsPowerShell\\v1.0\\PowerShell_ISE.exe","PipeName":"\\pipe\\pidplacesomepipe","ProcessGuid":"{3A00444C-89E5-6086-0903-00000000BC01}","ProcessId":"1388","RuleName":"-","UtcTime":"2021-04-26 09:38:47.952"}}
+]}
