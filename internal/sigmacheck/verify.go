@@ -136,7 +136,7 @@ var sysmonEvents = map[string]string{
 // (service: security) are checked for; such a rule's category is
 // SecurityCategory of its one event, or of the events of one of
 // SecurityGroups.
-var SecurityEvents = []string{"4624", "4625", "4656", "4657", "4661", "4662", "4663", "4697", "4698", "4768", "4769", "5136", "5145"}
+var SecurityEvents = []string{"4624", "4625", "4648", "4656", "4657", "4661", "4662", "4663", "4697", "4698", "4768", "4769", "5136", "5145", "5156", "5157"}
 
 // SecurityGroups are Security events with the same data that a rule may
 // name together: a handle to an object requested (4656) and the access
@@ -285,6 +285,13 @@ var Bases = map[string]map[string]string{
 		"AuthenticationPackageName": "NTLM", "WorkstationName": "WS2", "KeyLength": "0", "ProcessId": "0x0",
 		"IpAddress": "192.0.2.10", "IpPort": "50123",
 	},
+	"security_4648": {
+		"SubjectUserSid": "S-1-5-21-1000-1104", "SubjectUserName": "tester", "SubjectDomainName": "CORP", "SubjectLogonId": "0x1a2b3c",
+		"LogonGuid": "{00000000-0000-0000-0000-000000000000}", "TargetUserName": "svc_report", "TargetDomainName": "CORP",
+		"TargetLogonGuid": "{00000000-0000-0000-0000-000000000000}", "TargetServerName": "fs1.corp.example.com",
+		"TargetInfo": "fs1.corp.example.com", "ProcessId": "0x1092", "ProcessName": `D:\apps\launcher\launcher.exe`,
+		"IpAddress": "-", "IpPort": "-",
+	},
 	"security_4656": {
 		"SubjectUserSid": "S-1-5-21-1000-1104", "SubjectUserName": "tester", "SubjectDomainName": "CORP", "SubjectLogonId": "0x1a2b3c",
 		"ObjectServer": "Security", "ObjectType": "File", "ObjectName": `D:\apps\work\output.txt`, "HandleId": "0x0",
@@ -323,6 +330,16 @@ var Bases = map[string]map[string]string{
 		"SubjectUserSid": "S-1-5-21-1000-1104", "SubjectUserName": "tester", "SubjectDomainName": "CORP", "SubjectLogonId": "0x1a2b3c",
 		"ObjectServer": "Security", "ObjectType": "File", "ObjectName": `D:\apps\work\output.txt`, "HandleId": "0x1f4",
 		"AccessList": "%%4416", "AccessMask": "0x1", "ProcessId": "0x1092", "ProcessName": `D:\apps\launcher\launcher.exe`,
+	},
+	"security_5156": {
+		"ProcessID": "4242", "Application": `\device\harddiskvolume2\apps\launcher\launcher.exe`, "Direction": "%%14593",
+		"SourceAddress": "192.0.2.10", "SourcePort": "50123", "DestAddress": "198.51.100.20", "DestPort": "8443", "Protocol": "6",
+		"FilterRTID": "70412", "LayerName": "%%14611", "LayerRTID": "48",
+	},
+	"security_5157": {
+		"ProcessID": "4242", "Application": `\device\harddiskvolume2\apps\launcher\launcher.exe`, "Direction": "%%14593",
+		"SourceAddress": "192.0.2.10", "SourcePort": "50123", "DestAddress": "198.51.100.20", "DestPort": "8443", "Protocol": "6",
+		"FilterRTID": "70413", "LayerName": "%%14611", "LayerRTID": "48",
 	},
 	"security_4697": {
 		"SubjectUserSid": "S-1-5-21-1000-1104", "SubjectUserName": "tester", "SubjectDomainName": "CORP", "SubjectLogonId": "0x1a2b3c",

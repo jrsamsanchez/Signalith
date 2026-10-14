@@ -7385,6 +7385,10 @@ rules:
     rule_id: 11d00fff-5dc3-428c-8184-801f292faec0
     file: win_security_registry_permissions_weakness_check.yml
     path: rules/windows/builtin/security/win_security_registry_permissions_weakness_check.yml
+  - id: sigma-win-security-remote-powershell-session
+    rule_id: 13acf386-b8c6-4fe0-9a6e-c4756b974698
+    file: win_security_remote_powershell_session.yml
+    path: rules/windows/builtin/security/win_security_remote_powershell_session.yml
   - id: sigma-win-security-sam-registry-hive-handle-request
     rule_id: f8748f2c-89dc-4d95-afb0-5a2dfdbad332
     file: win_security_sam_registry_hive_handle_request.yml
@@ -7409,6 +7413,10 @@ rules:
     rule_id: d00a9a72-2c09-4459-ad03-5e0a23351e36
     file: win_security_susp_ldap_dataexchange.yml
     path: rules/windows/builtin/security/win_security_susp_ldap_dataexchange.yml
+  - id: sigma-win-security-susp-logon-explicit-credentials
+    rule_id: 941e5c45-cda7-4864-8cea-bbb7458d194a
+    file: win_security_susp_logon_explicit_credentials.yml
+    path: rules/windows/builtin/security/win_security_susp_logon_explicit_credentials.yml
   - id: sigma-win-security-susp-logon-newcredentials
     rule_id: def8b624-e08f-4ae1-8612-1ba21190da6b
     file: win_security_susp_logon_newcredentials.yml
@@ -7425,6 +7433,10 @@ rules:
     rule_id: 968eef52-9cff-4454-8992-1e74b9cbad6c
     file: win_security_susp_net_recon_activity.yml
     path: rules/windows/builtin/security/win_security_susp_net_recon_activity.yml
+  - id: sigma-win-security-susp-outbound-kerberos-connection
+    rule_id: eca91c7c-9214-47b9-b4c5-cb1d7e4f2350
+    file: win_security_susp_outbound_kerberos_connection.yml
+    path: rules/windows/builtin/security/win_security_susp_outbound_kerberos_connection.yml
   - id: sigma-win-security-susp-possible-shadow-credentials-added
     rule_id: f598ea0c-c25a-4f72-a219-50c44411c791
     file: win_security_susp_possible_shadow_credentials_added.yml
@@ -7465,6 +7477,10 @@ rules:
     rule_id: 910ab938-668b-401b-b08c-b596e80fdca5
     file: win_security_transf_files_with_cred_data_via_network_shares.yml
     path: rules/windows/builtin/security/win_security_transf_files_with_cred_data_via_network_shares.yml
+  - id: sigma-win-security-wfp-endpoint-agent-blocked
+    rule_id: bacf58c6-e199-4040-a94f-95dea0f1e45a
+    file: win_security_wfp_endpoint_agent_blocked.yml
+    path: rules/windows/builtin/security/object_access/win_security_wfp_endpoint_agent_blocked.yml
   - id: sigma-win-security-windows-defender-exclusions-registry-modified
     rule_id: 46a68649-f218-4f86-aea1-16a759d81820
     file: win_security_windows_defender_exclusions_registry_modified.yml

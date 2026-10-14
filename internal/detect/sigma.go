@@ -139,6 +139,12 @@ var sigmaEventFields = func() map[string]map[string]string {
 		"subjectusersid": "user_sid", "objectserver": "object_server", "objectname": "object_path", "objecttype": "object_type",
 		"accesslist": "access_names", "accessmask": "access_mask", "processname": "process_path",
 	})
+	// A connection the filtering platform allowed or blocked.
+	wfp := map[string]string{
+		"processid": "process_id", "application": "process_path", "sourceaddress": "src", "sourceport": "src_port",
+		"destaddress": "dest", "destport": "dest_port", "filterrtid": "filter_rtid", "layername": "layer_name",
+		"layerrtid": "layer_rtid", "computer": "host", "computername": "host", "eventid": "signature_id",
+	}
 	kerberos := map[string]string{
 		"targetusername": "user", "targetdomainname": "user_domain", "targetsid": "user_sid",
 		"servicename": "kerberos_service", "servicesid": "kerberos_service_sid", "ticketoptions": "ticket_options",
@@ -175,6 +181,13 @@ var sigmaEventFields = func() map[string]map[string]string {
 			"subjectusersid": "user_sid", "objectserver": "object_server", "objectname": "object", "objecttype": "object_type",
 			"accesslist": "access_names", "accessmask": "access_mask", "properties": "object_properties",
 		}),
+		"security_4648": security(map[string]string{
+			"subjectusersid": "user_sid", "subjectusername": "src_user", "subjectdomainname": "src_user_domain",
+			"targetusername": "user", "targetdomainname": "user_domain", "targetservername": "dest", "targetinfo": "target_info",
+			"processname": "process_path", "ipaddress": "src", "ipport": "src_port",
+		}),
+		"security_5156": wfp,
+		"security_5157": wfp,
 		"security_4768": kerberos,
 		"security_4769": kerberos,
 		"security_4697": security(map[string]string{
@@ -224,6 +237,7 @@ var sigmaWindowsEvents = map[string][]string{
 	"system":               {"7045"},
 	"security_4624":        {"4624"},
 	"security_4625":        {"4625"},
+	"security_4648":        {"4648"},
 	"security_4656":        {"4656"},
 	"security_4657":        {"4657"},
 	"security_4661":        {"4661"},
@@ -236,6 +250,8 @@ var sigmaWindowsEvents = map[string][]string{
 	"security_4698":        {"4698"},
 	"security_5136":        {"5136"},
 	"security_5145":        {"5145"},
+	"security_5156":        {"5156"},
+	"security_5157":        {"5157"},
 }
 
 // sigmaSecurityModels are the Security log events Security log rules
@@ -245,7 +261,7 @@ var sigmaWindowsEvents = map[string][]string{
 var sigmaSecurityModels = map[string]string{
 	"4624": "Authentication", "4625": "Authentication", "4656": "", "4657": "Registry", "4661": "", "4662": "Change",
 	"4663": "", "4697": "Change", "4698": "Change", "4768": "Authentication", "4769": "Authentication",
-	"5136": "Change", "5145": "Filesystem",
+	"4648": "Authentication", "5136": "Change", "5145": "Filesystem", "5156": "Network_Traffic", "5157": "Network_Traffic",
 }
 
 // anyModel reports whether the rule's events land in more than one data

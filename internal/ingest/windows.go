@@ -156,6 +156,49 @@ func parseWindowsSecurity(eventID string, in []string, ev *Event) {
 				f["logon_type_name"] = name
 			}
 		}
+	case "4648":
+		// A logon with explicit credentials (runas, or a program passing
+		// another account's password): the account that acted is
+		// src_user, the one it used user, on the server it named.
+		ev.Model = "Authentication"
+		f["app"] = "win:local"
+		f["signature"] = "A logon was attempted using explicit credentials"
+		f["user_sid"] = at(in, 0)
+		f["src_user"] = at(in, 1)
+		f["src_user_domain"] = at(in, 2)
+		f["logon_id"] = at(in, 3)
+		f["user"] = at(in, 5)
+		f["user_domain"] = at(in, 6)
+		f["dest"] = at(in, 8)
+		f["target_info"] = at(in, 9)
+		f["process_id"] = atoi(at(in, 10))
+		f["process_path"] = at(in, 11)
+		f["process_name"] = baseName(at(in, 11))
+		f["src"] = at(in, 12)
+		f["src_port"] = atoi(at(in, 13))
+	case "5156", "5157":
+		// A connection the Windows Filtering Platform allowed (5156) or
+		// blocked (5157), with Audit Filtering Platform Connection on.
+		// The program is a device path (\device\harddiskvolume2\...).
+		ev.Model = "Network_Traffic"
+		f["action"] = map[string]string{"5156": "allowed", "5157": "blocked"}[eventID]
+		f["signature"] = map[string]string{
+			"5156": "The Windows Filtering Platform has permitted a connection",
+			"5157": "The Windows Filtering Platform has blocked a connection",
+		}[eventID]
+		f["process_id"] = atoi(at(in, 0))
+		f["process_path"] = at(in, 1)
+		f["process_name"] = baseName(at(in, 1))
+		// %%14592 is inbound, %%14593 outbound.
+		f["direction"] = map[string]string{"%%14592": "inbound", "%%14593": "outbound"}[at(in, 2)]
+		f["src"] = at(in, 3)
+		f["src_port"] = atoi(at(in, 4))
+		f["dest"] = at(in, 5)
+		f["dest_port"] = atoi(at(in, 6))
+		f["transport"] = map[string]string{"1": "icmp", "6": "tcp", "17": "udp", "58": "icmp"}[at(in, 7)]
+		f["filter_rtid"] = at(in, 8)
+		f["layer_name"] = at(in, 9)
+		f["layer_rtid"] = at(in, 10)
 	case "4688":
 		ev.Model = "Endpoint"
 		f["action"] = "allowed"

@@ -242,8 +242,8 @@ Content packs are rule sets from other open source projects, shipped unchanged
 inside Signalith and converted when it starts. Every pack detection is **off** until
 an admin turns it on.
 
-**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 1,905 rules from
-[SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 1,795 Windows rules
+**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 1,909 rules from
+[SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 1,799 Windows rules
 for these Sysmon, Security, PowerShell and System log sources, and 110 Linux rules (see
 [Linux endpoints](#linux-endpoints-sysmon-for-linux)):
 
@@ -258,14 +258,15 @@ for these Sysmon, Security, PowerShell and System log sources, and 110 Linux rul
 | `dns_query` | Sysmon 22 | Network_Resolution |
 | `ps_script` | PowerShell 4104 | Script |
 | `service: system` | System 7045 (service installed) | Change |
-| `service: security` | Security 4624 and 4625 (logons); 4768 and 4769 (Kerberos tickets); 4697 (service installed); 4698 (scheduled task created); 4656 and 4661 (handle to an object requested); 4663 (object access); 4657 (registry value modified); 5145 (network share access); 5136 (directory object changed); 4662 (operation on a directory object) | Authentication; Authentication; Change; Change; Filesystem, Registry or none; Filesystem or Registry; Registry; Filesystem; Change; Change |
+| `service: security` | Security 4624 and 4625 (logons); 4648 (logon with explicit credentials); 4768 and 4769 (Kerberos tickets); 5156 and 5157 (connection allowed or blocked); 4697 (service installed); 4698 (scheduled task created); 4656 and 4661 (handle to an object requested); 4663 (object access); 4657 (registry value modified); 5145 (network share access); 5136 (directory object changed); 4662 (operation on a directory object) | Authentication; Authentication; Authentication; Network_Traffic; Change; Change; Filesystem, Registry or none; Filesystem or Registry; Registry; Filesystem; Change; Change |
 
 A Security log rule names its event's own fields (`TargetUserName`, `LogonType`,
 `ServiceFileName`, `ObjectName`), so each one converts for the one Security event it
 is about, or for a handle request and the access made with it (4656 and 4663), which
 carry the same data; rules about other Security events, or other sets of events, are
 left out. Windows
-logs these events with **Audit Logon** (4624, 4625), **Audit Kerberos Authentication
+logs these events with **Audit Logon** (4624, 4625, 4648), **Audit Filtering
+Platform Connection** (5156, 5157), **Audit Kerberos Authentication
 Service** and **Audit Kerberos Service Ticket Operations** (4768, 4769, on domain
 controllers), **Audit Security System Extension** (4697), **Audit Other Object Access
 Events** (4698), **Audit Handle Manipulation** (4656), **Audit SAM** (4661), **Audit

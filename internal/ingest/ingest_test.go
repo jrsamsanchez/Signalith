@@ -202,6 +202,23 @@ func TestWindowsDirectoryAccessAndKerberos(t *testing.T) {
 	})
 }
 
+func TestWindowsExplicitCredentialsAndFilteringPlatform(t *testing.T) {
+	sec := func(id string, ins []string) map[string]any {
+		b, _ := json.Marshal(map[string]any{"Channel": "Security", "Computer": "WS1", "EventID": id, "StringInserts": ins})
+		return Normalize("win.security", decode(t, string(b)), now).Document()
+	}
+	expect(t, sec("4648", []string{"S-1-5-21-1", "bob", "CORP", "0x1a2b", "{0}", "admin", "CORP", "{0}", "fs1.corp.example.com",
+		"fs1.corp.example.com", "0x1a4", `C:\Windows\System32\cmd.exe`, "-", "-"}), map[string]any{
+		"datamodel": "Authentication", "src_user": "bob", "user": "admin", "dest": "fs1.corp.example.com",
+		"process_name": "cmd.exe", "signature": "A logon was attempted using explicit credentials",
+	})
+	expect(t, sec("5157", []string{"4242", `\device\harddiskvolume2\program files\vendor\agent.exe`, "%%14593", "10.0.0.5", "50123",
+		"203.0.113.9", "443", "6", "70413", "%%14611", "48"}), map[string]any{
+		"datamodel": "Network_Traffic", "action": "blocked", "direction": "outbound", "transport": "tcp", "process_name": "agent.exe",
+		"src": "10.0.0.5", "dest": "203.0.113.9", "dest_port": int64(443), "layer_rtid": "48",
+	})
+}
+
 func TestSysmonProcessHashes(t *testing.T) {
 	msg := "Process Create:\r\nImage: C:\\Users\\bob\\evil.exe\r\nCommandLine: evil.exe\r\nUser: CORP\\bob\r\nHashes: SHA1=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA,MD5=BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB,SHA256=CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC,IMPHASH=DD"
 	b, _ := json.Marshal(map[string]any{"Channel": "Microsoft-Windows-Sysmon/Operational", "Computer": "WS1", "EventID": 1, "Message": msg})

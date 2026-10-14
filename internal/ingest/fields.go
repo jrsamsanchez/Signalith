@@ -113,8 +113,10 @@ var knownFields = func() map[string]string {
 		// A handle asked for or an operation on an object (Security 4656,
 		// 4661 and 4662): the server that owns it and its properties; a
 		// registry value changed (4657); a Kerberos ticket asked for
-		// (4768 and 4769).
-		"object_server": kw, "object_properties": kw,
+		// (4768 and 4769); a logon with explicit credentials (4648); a
+		// connection the filtering platform allowed or blocked (5156, 5157).
+		"object_server": kw, "object_properties": kw, "src_user_domain": kw, "target_info": kw,
+		"filter_rtid": kw, "layer_name": kw, "layer_rtid": kw,
 		"registry_operation": kw, "registry_value_type": kw, "registry_old_value_data": kw,
 		"kerberos_service": kw, "kerberos_service_sid": kw, "kerberos_status": kw, "ticket_options": kw,
 		"ticket_encryption_type": kw, "pre_auth_type": kw, "cert_issuer": kw, "cert_serial": kw, "cert_thumbprint": kw,
