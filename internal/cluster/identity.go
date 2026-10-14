@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -157,6 +158,27 @@ func checkFolder(dir string) (warnings []string, shared string, err error) {
 		return []string{fmt.Sprintf("The state folder %s is on a %s mount, as Docker Desktop and WSL bind mounts are. That works, but a Docker volume or a folder on a local disk is safer, since locks on such mounts may not stop a second process.", abs, shared)}, shared, nil
 	}
 	return nil, "", nil
+}
+
+// InUse reports whether a Signalith process uses the state folder dir
+// now: whether another open file holds its cluster/lock. It changes
+// nothing, and is false where files cannot be locked.
+func InUse(dir string) (bool, error) {
+	path := filepath.Join(dir, "cluster", lockName)
+	if _, err := os.Lstat(path); errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	unlock, err := lockFile(path)
+	switch {
+	case errors.Is(err, errLocked):
+		return true, nil
+	case errors.Is(err, errLockUnsupported):
+		return false, nil
+	case err != nil:
+		return false, err
+	}
+	unlock()
+	return false, nil
 }
 
 // ReadIdentity reads node.id in the state folder dir without locking the

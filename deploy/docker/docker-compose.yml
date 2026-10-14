@@ -41,6 +41,7 @@ services:
   # Runs before the others on every "up", then stops. It makes the
   # certificates OpenSearch and Signalith use with each other, the first
   # admin password and the agents' ingest token, and keeps them after that.
+  # It also gives the snapshots volume to OpenSearch.
   setup:
     image: ghcr.io/jrsamsanchez/signalith:${SIGNALITH_VERSION:-main}
     pull_policy: always
@@ -56,10 +57,11 @@ services:
     security_opt:
       - no-new-privileges:true
     network_mode: none
-    command: ["bootstrap-docker", "-opensearch-dir", "/opensearch-certs", "-signalith-dir", "/signalith-secrets"]
+    command: ["bootstrap-docker", "-opensearch-dir", "/opensearch-certs", "-signalith-dir", "/signalith-secrets", "-snapshots-dir", "/opensearch-snapshots"]
     volumes:
       - opensearch-certs:/opensearch-certs
       - signalith-secrets:/signalith-secrets
+      - opensearch-snapshots:/opensearch-snapshots
     restart: "no"
 
   opensearch:
@@ -83,6 +85,10 @@ services:
     # and signed in with its own certificate.
     volumes:
       - opensearch-data:/usr/share/opensearch/data
+      # Where OpenSearch writes snapshots, and the script that takes and
+      # restores them (docs/backup.md).
+      - opensearch-snapshots:/usr/share/opensearch/snapshots
+      - ./opensearch/snapshot.sh:/usr/share/opensearch/snapshot.sh:ro
       - opensearch-certs:/usr/share/opensearch/config/certs:ro
       - ./opensearch/opensearch.yml:/usr/share/opensearch/config/opensearch.yml:ro
       - ./opensearch/security/config.yml:/usr/share/opensearch/config/opensearch-security/config.yml:ro
@@ -243,6 +249,8 @@ services:
 volumes:
   # Events, findings and investigations. Kept from earlier versions.
   opensearch-data:
+  # OpenSearch snapshots, the backups of opensearch-data (docs/backup.md).
+  opensearch-snapshots:
   # OpenSearch's certificates, made by the setup service.
   opensearch-certs:
   # A fingerprint of the security settings files opensearch-security loaded

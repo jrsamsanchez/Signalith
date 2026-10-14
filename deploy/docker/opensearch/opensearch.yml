@@ -7,6 +7,10 @@
 cluster.name: docker-cluster
 network.host: 0.0.0.0
 
+# Snapshots (backups of events, findings and cases) may be written to the
+# opensearch-snapshots volume. See docs/backup.md.
+path.repo: ["/usr/share/opensearch/snapshots"]
+
 # Do not depend on the host's vm.max_map_count, which Docker Desktop
 # resets on every restart.
 node.store.allow_mmap: false

@@ -79,7 +79,7 @@ func flagValue(args []string, name string) string {
 
 func TestDockerCompose(t *testing.T) {
 	svc, vols, raw := readCompose(t)
-	for _, name := range []string{"opensearch-data", "opensearch-certs", "signalith-data", "signalith-secrets"} {
+	for _, name := range []string{"opensearch-data", "opensearch-snapshots", "opensearch-certs", "signalith-data", "signalith-secrets"} {
 		if _, ok := vols[name]; !ok {
 			t.Errorf("volume %s is not declared", name)
 		}
@@ -98,6 +98,18 @@ func TestDockerCompose(t *testing.T) {
 	}
 	if !slices.Contains(setup.Volumes, "opensearch-certs:"+osDir) || !slices.Contains(setup.Volumes, "signalith-secrets:"+sigDir) {
 		t.Errorf("setup volumes %v", setup.Volumes)
+	}
+	// setup gives OpenSearch the snapshots volume, which OpenSearch's
+	// path.repo names (docs/backup.md).
+	snapDir := flagValue(setup.Command, "-snapshots-dir")
+	if snapDir == "" || !slices.Contains(setup.Volumes, "opensearch-snapshots:"+snapDir) {
+		t.Errorf("setup does not prepare the snapshots volume: %v %v", setup.Command, setup.Volumes)
+	}
+	if !slices.Contains(svc["opensearch"].Volumes, "opensearch-snapshots:/usr/share/opensearch/snapshots") {
+		t.Errorf("opensearch does not mount the snapshots volume: %v", svc["opensearch"].Volumes)
+	}
+	if b, err := os.ReadFile("../../deploy/docker/opensearch/opensearch.yml"); err != nil || !strings.Contains(string(b), `path.repo: ["/usr/share/opensearch/snapshots"]`) {
+		t.Errorf("opensearch.yml does not set path.repo to the snapshots volume (%v)", err)
 	}
 	if setup.User != "0:0" || setup.Restart != "no" || setup.NetworkMode != "none" {
 		t.Errorf("setup: user %q restart %q network %q", setup.User, setup.Restart, setup.NetworkMode)

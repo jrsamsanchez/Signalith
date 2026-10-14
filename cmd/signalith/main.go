@@ -81,6 +81,8 @@ Usage:
   signalith query     [-c file] [-explain] "<query>"   run a query from the shell
   signalith ask       [-c file] [-ai] "<question>"     turn a question into a query
   signalith archive   list|verify|restore [-c file] ...  list, check or restore archived days
+  signalith backup    [-c file] [-o file.zip] [-archive] [-no-master-key]  copy this server's files into one zip
+  signalith restore   [-c file] [-yes] file.zip   put a backup's files back (with the server stopped)
   signalith sample-data load|remove|status [-c file] [-size ...]  load or remove a week of sample data to try
   signalith tokens    list|create|rename|revoke|legacy [-c file] ...  the tokens agents send with
   signalith secrets   status|encrypt|set|rotate-master [-c file] ...  the master key and stored passwords
@@ -148,6 +150,10 @@ func main() {
 		err = cmdService(args)
 	case "archive":
 		err = cmdArchive(args)
+	case "backup":
+		err = cmdBackup(args)
+	case "restore":
+		err = cmdRestore(args)
 	case "sample-data":
 		err = cmdSampleData(args)
 	case "tokens":

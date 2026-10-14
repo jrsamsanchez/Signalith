@@ -38,11 +38,33 @@ func cmdBootstrapDocker(args []string) error {
 	sigDir := fs.String("signalith-dir", "", "folder for Signalith's secrets: OpenSearch's CA, Signalith's client certificate, the first admin password and the ingest token")
 	osUID := fs.Int("opensearch-uid", 1000, "user ID OpenSearch runs as; its files are given to it when this runs as root")
 	sigUID := fs.Int("signalith-uid", 65532, "user ID Signalith runs as; its files are given to it when this runs as root")
+	snapDir := fs.String("snapshots-dir", "", "folder OpenSearch writes snapshots to (path.repo); it is given to OpenSearch")
 	fs.Parse(args)
 	if *osDir == "" || *sigDir == "" {
-		return errors.New("usage: signalith bootstrap-docker -opensearch-dir DIR -signalith-dir DIR")
+		return errors.New("usage: signalith bootstrap-docker -opensearch-dir DIR -signalith-dir DIR [-snapshots-dir DIR]")
 	}
-	return bootstrapDocker(os.Stdout, *osDir, *sigDir, *osUID, *sigUID, time.Now())
+	if err := bootstrapDocker(os.Stdout, *osDir, *sigDir, *osUID, *sigUID, time.Now()); err != nil {
+		return err
+	}
+	if *snapDir != "" {
+		return snapshotsDir(*snapDir, *osUID)
+	}
+	return nil
+}
+
+// snapshotsDir makes the folder OpenSearch writes snapshots to and gives
+// it to OpenSearch's user: Docker makes a new volume's folder for root.
+// What OpenSearch wrote in it already stays as it is.
+func snapshotsDir(dir string, uid int) error {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return err
+	}
+	if os.Geteuid() == 0 {
+		if err := os.Chown(dir, uid, uid); err != nil {
+			return err
+		}
+	}
+	return os.Chmod(dir, 0o750)
 }
 
 // bootstrapDocker makes what the Docker quick start needs and nothing a

@@ -54,6 +54,7 @@ The first three phases are complete, and the fourth has started.
   keys.
 - [Users and roles](users.md), with Active Directory and LDAP sign-in.
 - [Data retention](retention.md) policies with archives and a disk guard.
+- [Backup and restore](backup.md) of a server's files and OpenSearch data.
 - A [security check](security.md) of how each server is set up.
 
 ## Being built now <span class="sg-pill sg-pill--now">In progress</span> { #now data-toc-label="Being built now" }
@@ -87,7 +88,8 @@ The first three phases are complete, and the fourth has started.
 
 **Load testing and an OpenSearch cluster guide**
 :   A load test run in CI with the numbers published, so you know what one server
-    handles, plus a guide to running OpenSearch as a cluster, and backup and restore.
+    handles, plus a guide to running OpenSearch as a cluster, and backups for several
+    servers.
 
 **Add a server**
 :   Adding a Signalith server to an existing install from the UI, with settings shared
