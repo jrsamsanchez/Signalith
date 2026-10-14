@@ -64,3 +64,21 @@ func must(s string, err error) string {
 	}
 	return s
 }
+
+// A search's clause estimate counts what it compiles to.
+func TestClauses(t *testing.T) {
+	for q, want := range map[string]int{
+		"a=1":                  1,
+		"a=1 b IN (x, y, z)":   4,
+		"src=10.0.0.0/7":       2,
+		"NOT (a=1 OR b=2) c=3": 3,
+	} {
+		e, err := query.Parse(q)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if n, err := Clauses(e.Search); err != nil || n != want {
+			t.Errorf("Clauses(%s) = %d %v, want %d", q, n, err, want)
+		}
+	}
+}

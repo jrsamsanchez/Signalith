@@ -1657,10 +1657,6 @@ rules:
     rule_id: e81528db-fc02-45e8-8e98-4e84aba1f10b
     file: net_connection_win_notepad.yml
     path: rules/windows/network_connection/net_connection_win_notepad.yml
-  - id: sigma-net-office-outbound-non-local-ip
-    rule_id: 75e33ce3-ae32-4dcc-9aa8-a2a3029d6f84
-    file: net_connection_win_office_outbound_non_local_ip.yml
-    path: rules/windows/network_connection/net_connection_win_office_outbound_non_local_ip.yml
   - id: sigma-net-office-uncommon-ports
     rule_id: 3b5ba899-9842-4bc2-acc2-12308498bf42
     file: net_connection_win_office_uncommon_ports.yml

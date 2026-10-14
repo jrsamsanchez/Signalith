@@ -419,3 +419,36 @@ func WildcardFieldTerms(e query.Expr) int {
 	}
 	return 0
 }
+
+// Clauses estimates the clauses OpenSearch counts against its limit of
+// 1024 (indices.query.bool.max_clause_count) for a search: each query the
+// search compiles to, plus the pieces a wildcard field's patterns are
+// split into (WildcardFieldTerms).
+func Clauses(e query.Expr) (int, error) {
+	q, err := compileExpr(e)
+	if err != nil {
+		return 0, err
+	}
+	var count func(v any) int
+	count = func(v any) int {
+		switch x := v.(type) {
+		case []any:
+			n := 0
+			for _, c := range x {
+				n += count(c)
+			}
+			return n
+		case map[string]any:
+			if b, ok := x["bool"].(map[string]any); ok {
+				n := 0
+				for _, k := range []string{"filter", "must", "should", "must_not"} {
+					n += count(b[k])
+				}
+				return n
+			}
+			return 1
+		}
+		return 0
+	}
+	return count(q) + WildcardFieldTerms(e), nil
+}

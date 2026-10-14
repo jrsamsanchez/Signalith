@@ -242,8 +242,8 @@ Content packs are rule sets from other open source projects, shipped unchanged
 inside Signalith and converted when it starts. Every pack detection is **off** until
 an admin turns it on.
 
-**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,005 rules from
-[SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 1,891 Windows rules
+**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,004 rules from
+[SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 1,890 Windows rules
 for these Sysmon, Security, PowerShell and System log sources, and 114 Linux rules (see
 [Linux endpoints](#linux-endpoints-sysmon-for-linux)):
 
