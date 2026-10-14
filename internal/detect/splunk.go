@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/splcheck"
 )
@@ -61,8 +62,12 @@ func SplunkFilter(r *splcheck.Rule) (query.Expr, error) {
 	if err != nil {
 		return nil, err
 	}
+	sourcetype := windowsSourcetypes
+	if r.Linux {
+		sourcetype = ingest.SysmonLinuxSourcetype
+	}
 	scope := and([]query.Expr{
-		&query.Compare{Field: "sourcetype", Op: "=", Value: windowsSourcetypes},
+		&query.Compare{Field: "sourcetype", Op: "=", Value: sourcetype},
 		&query.In{Field: "signature_id", Values: splunkEvents[r.Node]},
 	})
 	return and([]query.Expr{scope, e}), nil

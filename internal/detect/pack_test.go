@@ -172,8 +172,9 @@ func TestPackDetections(t *testing.T) {
 		if o.Author == "" || !strings.Contains(o.Credit(), o.Author) {
 			t.Errorf("%s: credit %q", d.ID, o.Credit())
 		}
-		if !strings.Contains(d.Query, "sourcetype=WinEventLog:*") {
-			t.Errorf("%s: not limited to Windows events: %s", d.ID, d.Query)
+		// Each rule reads only its own system's events.
+		if !strings.Contains(d.Query, "sourcetype=WinEventLog:*") && !strings.Contains(d.Query, "sourcetype=sysmon:linux") {
+			t.Errorf("%s: not limited to Windows or Sysmon for Linux events: %s", d.ID, d.Query)
 		}
 	}
 }

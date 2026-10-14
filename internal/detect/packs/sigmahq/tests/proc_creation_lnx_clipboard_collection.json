@@ -1,0 +1,5 @@
+{"rule": "ec127035-a636-4b9a-8555-0efd4e59f316", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"clip-o-sel","Image":"xclip"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"xclip"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"clip-o-sel"}}
+]}

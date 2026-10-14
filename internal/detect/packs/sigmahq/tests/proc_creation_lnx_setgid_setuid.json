@@ -1,0 +1,4 @@
+{"rule": "c21c4eaa-ba2e-419a-92b2-8371703cbe21", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"chown root  chmod u+s"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{}}
+]}

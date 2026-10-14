@@ -1,0 +1,5 @@
+{"rule": "b28e4eb3-8bbc-4f0c-819f-edfe8e2f25db", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"account  add  system x","Image":"/esxcli"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/esxcli"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"account  add  system x"}}
+]}

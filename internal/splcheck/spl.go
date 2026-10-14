@@ -60,6 +60,8 @@ type Rule struct {
 	Node string `yaml:"-"`
 	// Where selects the node's events.
 	Where Expr `yaml:"-"`
+	// Linux is set for a rule over Sysmon for Linux events only.
+	Linux bool `yaml:"-"`
 }
 
 // Score is the risk the rule assigns, 0 when it names none.
@@ -132,6 +134,9 @@ func Parse(src []byte, macros map[string]*Macro) (*Rule, error) {
 	if r.ID == "" || r.Name == "" || r.Search == "" {
 		return nil, errors.New("not a detection: name, id and search are required")
 	}
+	r.Linux = len(r.DataSource) > 0 && !slices.ContainsFunc(r.DataSource, func(s string) bool {
+		return !strings.HasPrefix(s, "Sysmon for Linux ")
+	})
 	// ```text``` is a comment in SPL.
 	stages := pipes(strings.TrimSpace(commentRe.ReplaceAllString(r.Search, " ")))
 	if len(stages) == 0 {

@@ -1,0 +1,5 @@
+{"rule": "0f79c4d2-4e1f-4683-9c36-b5469a665e06", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x /etc/sudoers","Image":"/more"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/more"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x /etc/sudoers"}}
+]}

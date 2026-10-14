@@ -1,0 +1,4 @@
+{"rule": "7692f583-bd30-4008-8615-75dab3f08a99", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/sys/kernel/debug/tracing/events/kprobes//myretprobe/enableecho 1 \u003e"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{}}
+]}

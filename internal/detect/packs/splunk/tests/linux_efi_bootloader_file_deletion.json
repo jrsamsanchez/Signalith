@@ -1,0 +1,9 @@
+{"rule": "818a63f8-f2e1-4d1b-ac95-3a4f2ec7f113", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"23","data":{"ProcessId":"4242","TargetFilename":"/boot/efi/EFI/BOOT/ x/x .efi x","User":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"23","data":{"ProcessId":"4242","TargetFilename":"/boot/efi/EFI/BOOT/ x/x .efi x","User":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"23","data":{"ProcessId":"4242","TargetFilename":"/boot/efi/EFI/BOOT/ y/x .efi x","User":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"23","data":{"ProcessId":"4242","TargetFilename":"/boot/efi/EFI/BOOT/ x/x .efi y","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"/boot/efi/EFI/BOOT/ x/x .efi x","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"23","data":{"ProcessId":"4242","TargetFilename":"/tmp/x .efi x","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"23","data":{"ProcessId":"4242","TargetFilename":"/boot/efi/EFI/BOOT/ x","User":"tester"}}
+]}

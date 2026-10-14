@@ -1,0 +1,4 @@
+{"rule": "08f26069-6f80-474b-8d1f-d971c6fedea0", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/userdel"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{}}
+]}

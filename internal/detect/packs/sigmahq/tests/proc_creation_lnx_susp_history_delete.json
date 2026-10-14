@@ -1,0 +1,5 @@
+{"rule": "1182f3b3-e716-4efa-99ab-d2685d04360f", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/.bash_history","Image":"/shred"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/shred"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/.bash_history"}}
+]}

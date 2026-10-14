@@ -1,0 +1,4 @@
+{"rule": "ea34fb97-e2c4-4afb-810f-785e4459b194", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/curl"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{}}
+]}

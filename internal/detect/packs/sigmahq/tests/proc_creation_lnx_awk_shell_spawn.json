@@ -1,0 +1,5 @@
+{"rule": "8c1a5675-cb85-452f-a298-b01b22a51856", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/bin/sh BEGIN {system","Image":"/gawk"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/gawk"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/bin/sh BEGIN {system"}}
+]}

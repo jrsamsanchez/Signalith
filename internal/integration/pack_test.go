@@ -48,7 +48,7 @@ func TestPackRulesAgainstOpenSearch(t *testing.T) {
 		positives map[string]bool
 	}
 	var rules []ruleCases
-	var records []map[string]any
+	records := map[string][]map[string]any{}
 	at := time.Now().Add(-5 * time.Minute)
 	i := 0
 	for _, name := range []string{"sigmahq", "splunk"} {
@@ -82,23 +82,28 @@ func TestPackRulesAgainstOpenSearch(t *testing.T) {
 				if c.Expect {
 					rc.positives[host] = true
 				}
-				records = append(records, ingest.WinEventRecord(c.Channel, c.EventID, host, at, c.Data))
+				tag, rec := c.Record(host, at)
+				records[tag] = append(records[tag], rec)
 			}
 			rules = append(rules, rc)
 		}
 	}
 	p := &ingest.Pipeline{Store: cl, Prefix: prefix}
-	for start := 0; start < len(records); start += 500 {
-		end := min(start+500, len(records))
-		res, err := p.Ingest(ctx, "win.events", records[start:end])
-		if err != nil || len(res.Errors) > 0 {
-			t.Fatalf("ingest: %v %+v", err, res)
+	total := 0
+	for tag, recs := range records {
+		total += len(recs)
+		for start := 0; start < len(recs); start += 500 {
+			end := min(start+500, len(recs))
+			res, err := p.Ingest(ctx, tag, recs[start:end])
+			if err != nil || len(res.Errors) > 0 {
+				t.Fatalf("ingest: %v %+v", err, res)
+			}
 		}
 	}
 	if err := cl.Do(ctx, http.MethodPost, "/"+prefix+"-*/_refresh", nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("%d rules, %d test events", len(rules), len(records))
+	t.Logf("%d rules, %d test events", len(rules), total)
 
 	failed := 0
 	for _, rc := range rules {

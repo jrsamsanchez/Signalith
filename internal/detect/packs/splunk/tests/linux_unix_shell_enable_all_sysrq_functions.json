@@ -1,0 +1,15 @@
+{"rule": "e7a96937-3b58-4962-8dce-538e4763cf15", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x  echo 1 \u0026gt;  x x /proc/sys/kernel/sysrq","Image":"/usr/bin/dash","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x  echo 1 \u0026gt;  x x /proc/sys/kernel/sysrq","Image":"/usr/bin/sudo","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x  echo 1 \u0026gt;  x x /proc/sys/kernel/sysrq","Image":"/usr/bin/bash","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x  echo 1 \u0026gt;  x x /proc/sys/kernel/sysrq","Image":"/usr/bin/dasi","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x  echo 1 \u0026gt;  x x /proc/sys/kernel/sysrq","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x  echo 1 \u0026gt;  x x /proc/sys/kernel/sysrr","Image":"/usr/bin/dash","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/usr/bin/dash","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x  echo 1 \u0026gt;  x x /proc/sys/kernel/sysrq","Image":"/usr/bin/sudp","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x  echo 1 \u0026gt;  x x /proc/sys/kernel/sysrr","Image":"/usr/bin/sudo","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/usr/bin/sudo","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x  echo 1 \u0026gt;  x x /proc/sys/kernel/sysrq","Image":"/usr/bin/basi","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x  echo 1 \u0026gt;  x x /proc/sys/kernel/sysrr","Image":"/usr/bin/bash","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/usr/bin/bash","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}}
+]}

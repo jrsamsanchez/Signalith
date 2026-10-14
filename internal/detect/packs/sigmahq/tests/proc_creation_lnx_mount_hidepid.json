@@ -1,0 +1,5 @@
+{"rule": "ec52985a-d024-41e3-8ff6-14169039a0b3", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x -o hidepid=2","Image":"/mount"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/mount"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x -o hidepid=2"}}
+]}

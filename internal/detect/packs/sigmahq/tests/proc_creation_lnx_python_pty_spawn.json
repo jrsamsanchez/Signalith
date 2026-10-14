@@ -1,0 +1,5 @@
+{"rule": "c4042d54-110d-45dd-a0e1-05c47822c937", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"from pty spawn","Image":"/python3"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/python3"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"from pty spawn"}}
+]}

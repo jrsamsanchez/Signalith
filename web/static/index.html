@@ -896,12 +896,15 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
                 <option value="darwin">macOS</option>
               </select>
             </label>
-            <label id="linux-opts" class="agent-opt"><span>Read from</span>
-              <select id="linux-source" class="select select--sm">
-                <option value="file">auth.log or secure</option>
-                <option value="journal">systemd journal</option>
-              </select>
-            </label>
+            <span id="linux-opts" class="agent-opts">
+              <label class="agent-opt"><span>Read from</span>
+                <select id="linux-source" class="select select--sm">
+                  <option value="file">auth.log or secure</option>
+                  <option value="journal">systemd journal</option>
+                </select>
+              </label>
+              <label class="switch" title="Process, network and file events from Sysmon for Linux, for the Linux endpoint detections"><input type="checkbox" id="sysmon-linux"> Include Sysmon for Linux</label>
+            </span>
             <span id="windows-opts" class="agent-opts hidden">
               <label class="switch"><input type="checkbox" id="sysmon" checked> Include Sysmon</label>
               <label class="switch" title="PowerShell script blocks: the scripts that run, for the PowerShell detections"><input type="checkbox" id="powershell" checked> Include PowerShell</label>

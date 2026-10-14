@@ -1,0 +1,11 @@
+{"rule": "2e954190-d547-447c-94d7-d8acac97873b", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/dev/shm/ x","ParentProcessId":"4000","ProcessId":"4242","User":"root"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/run/shm/ x","ParentProcessId":"4000","ProcessId":"4242","User":"root"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/dev/shm/ y","ParentProcessId":"4000","ProcessId":"4242","User":"root"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/run/shm/ y","ParentProcessId":"4000","ProcessId":"4242","User":"root"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"ParentProcessId":"4000","ProcessId":"4242","User":"root"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/dev/shm/ x","ParentProcessId":"4000","ProcessId":"4242","User":"roou"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/dev/shm/ x","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/run/shm/ x","ParentProcessId":"4000","ProcessId":"4242","User":"roou"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/run/shm/ x","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}}
+]}

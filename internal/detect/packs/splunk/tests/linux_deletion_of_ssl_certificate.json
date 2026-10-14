@@ -1,0 +1,11 @@
+{"rule": "839ab790-a60a-4f81-bfb3-02567063f615", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"23","data":{"ProcessId":"4242","TargetFilename":"/etc/ssl/certs/ x x .pem","User":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"23","data":{"ProcessId":"4242","TargetFilename":"/etc/ssl/certs/ x x .crt","User":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"23","data":{"ProcessId":"4242","TargetFilename":"/etc/ssl/certs/ x x .pem","User":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"23","data":{"ProcessId":"4242","TargetFilename":"/etc/ssl/certs/ x x .crt","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"/etc/ssl/certs/ x x .pem","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"23","data":{"ProcessId":"4242","TargetFilename":"/etc/ssl/certs/ x x .pen","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"23","data":{"ProcessId":"4242","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"/etc/ssl/certs/ x x .crt","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"23","data":{"ProcessId":"4242","TargetFilename":"/etc/ssl/certs/ x x .cru","User":"tester"}}
+]}

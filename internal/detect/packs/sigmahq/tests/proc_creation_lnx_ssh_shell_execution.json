@@ -1,0 +1,5 @@
+{"rule": "8737b7f6-8df3-4bb7-b1da-06019b99b687", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"sh 1\u003e\u00262 0\u003c\u00262ProxyCommand=;","Image":"/ssh"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/ssh"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"sh 1\u003e\u00262 0\u003c\u00262ProxyCommand=;"}}
+]}

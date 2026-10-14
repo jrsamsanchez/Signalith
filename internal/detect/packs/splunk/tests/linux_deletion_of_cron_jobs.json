@@ -1,0 +1,7 @@
+{"rule": "3b132a71-9335-4f33-9932-00bb4f6ac7e8", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"23","data":{"ProcessId":"4242","TargetFilename":"/etc/cron. x","User":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"23","data":{"ProcessId":"4242","TargetFilename":"/etc/cron. x","User":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"23","data":{"ProcessId":"4242","TargetFilename":"/etc/cron. y","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"/etc/cron. x","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"23","data":{"ProcessId":"4242","User":"tester"}}
+]}

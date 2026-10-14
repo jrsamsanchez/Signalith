@@ -1,0 +1,5 @@
+{"rule": "3be619f4-d9ec-4ea8-a173-18fdd01996ab", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"-Z ufw6-logging-deny","Image":"/ip6tables"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/ip6tables"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"-Z ufw6-logging-deny"}}
+]}
