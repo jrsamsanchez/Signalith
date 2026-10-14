@@ -242,9 +242,9 @@ Content packs are rule sets from other open source projects, shipped unchanged
 inside Signalith and converted when it starts. Every pack detection is **off** until
 an admin turns it on.
 
-**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 1,990 rules from
-[SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 1,877 Windows rules
-for these Sysmon, Security, PowerShell and System log sources, and 113 Linux rules (see
+**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,005 rules from
+[SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 1,891 Windows rules
+for these Sysmon, Security, PowerShell and System log sources, and 114 Linux rules (see
 [Linux endpoints](#linux-endpoints-sysmon-for-linux)):
 
 | Sigma log source | Windows events | Data model |
@@ -597,13 +597,13 @@ converts a rule and shows the result for review. Supported:
   `TargetUserName` to `user`; `IpAddress` to `src`; and so on). Unmapped fields are
   searched as-is and listed as warnings.
 - Modifiers `contains`, `startswith`, `endswith`, `all`, `windash`, `exists`,
-  `base64`, `base64offset`, `utf16le`, `utf16be`, `utf16`, `wide`, `cidr` (IPv4) and
+  `base64`, `base64offset`, `utf16le`, `utf16be`, `utf16`, `wide`, `cidr` (IPv4 and IPv6) and
   `re` (with `i`, `m` and `s`), searched as a regular expression (`field=~"..."`);
   escaped wildcards (`\*`, a literal asterisk) also become a regular expression;
   lists, `null` and empty values, keyword lists; conditions with `and`, `or`, `not`,
   parentheses, `1 of`, `all of`, `them` and `selection_*` patterns.
 
-Not supported, and reported as an error: IPv6 `cidr` and other modifiers, regular
+Not supported, and reported as an error: other modifiers, regular
 expressions with word boundaries (`\b`) or line anchors, and aggregation conditions
 (`| count() > 10`).
 

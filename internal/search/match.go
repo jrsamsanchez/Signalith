@@ -18,7 +18,7 @@ const keywordIgnoreAbove = 8191
 // Event.Document) matches a filter expression. It evaluates the same
 // OpenSearch query compileExpr builds, clause by clause, so it agrees with
 // a real search for keyword and numeric fields: case-insensitive terms and
-// wildcards, exists, IPv4 ranges, and number terms. Free text against the
+// wildcards, exists, IP ranges, and number terms. Free text against the
 // raw message is approximated as a case-insensitive substring match,
 // since OpenSearch analyzes that field. The detection content checks use
 // it to prove each shipped rule fires on its test events without a

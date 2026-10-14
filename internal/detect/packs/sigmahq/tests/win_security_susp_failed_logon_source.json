@@ -1,0 +1,4 @@
+{"rule": "f88e112a-21aa-44bd-9b01-6ee2a2bbbed1", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4625","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4625","data":{"IpAddress":"::1"}}
+]}

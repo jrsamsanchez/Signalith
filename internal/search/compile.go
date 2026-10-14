@@ -151,12 +151,15 @@ func equalsQuery(field, value string) map[string]any {
 
 // cidrQuery matches an IPv4 range such as 10.0.0.0/8 against a field that
 // stores addresses as text. The range becomes at most 128 prefix patterns
-// ("10.*", "10.0.4.*") or, below /24, exact addresses. IPv6 ranges are not
-// expanded and match as plain text.
+// ("10.*", "10.0.4.*") or, below /24, exact addresses. An IPv6 range is
+// a regular expression for its addresses' text (see ipv6RangePattern).
 func cidrQuery(field, value string) (map[string]any, bool) {
 	p, err := netip.ParsePrefix(value)
-	if err != nil || !p.Addr().Is4() {
+	if err != nil {
 		return nil, false
+	}
+	if !p.Addr().Is4() {
+		return ipv6Query(field, p)
 	}
 	p = p.Masked()
 	bits := p.Bits()
@@ -186,6 +189,24 @@ func cidrQuery(field, value string) (map[string]any, bool) {
 		return qs[0].(map[string]any), true
 	}
 	return map[string]any{"bool": map[string]any{"should": qs, "minimum_should_match": 1}}, true
+}
+
+// ipv6Query matches an IPv6 range against a field that stores addresses
+// as text.
+func ipv6Query(field string, p netip.Prefix) (map[string]any, bool) {
+	p = p.Masked()
+	if p.Bits() == 0 {
+		return map[string]any{"exists": map[string]any{"field": field}}, true
+	}
+	pat, err := ipv6RangePattern(p)
+	if err != nil {
+		return nil, false
+	}
+	re, err := ParseRegex(pat)
+	if err != nil {
+		return nil, false
+	}
+	return map[string]any{"regexp": map[string]any{field: map[string]any{"value": re.Lucene}}}, true
 }
 
 var queryStringReserved = regexp.MustCompile(`[+\-=&|><!(){}\[\]^"~:\\/]`)

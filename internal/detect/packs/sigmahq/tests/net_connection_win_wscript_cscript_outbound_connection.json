@@ -1,0 +1,8 @@
+{"rule": "992a6cae-db6a-43c8-9cec-76d7195c96fc", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"Image":"\\cscript.exe","Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationIp":"127.0.0.1","Image":"\\cscript.exe","Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationIp":"20.0.0.1","Image":"\\cscript.exe","Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"Image":"\\cscript.exe"}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":"-","DestinationIp":"185.199.111.133","DestinationIsIpv6":"false","DestinationPort":"443","DestinationPortName":"-","Image":"C:\\Windows\\System32\\wscript.exe","Initiated":"true","ProcessGuid":"570E49AA-C0A6-6A78-5505-000000001600","ProcessId":"11876","Protocol":"tcp","RuleName":"technique_id=T1202,technique_name=Indirect Command Execution","SourceHostname":"-","SourceIp":"192.168.122.157","SourceIsIpv6":"false","SourcePort":"22088","SourcePortName":"-","User":"SigmaCatchVm\\frack113","UtcTime":"2026-08-09 18:02:15.801"}}
+]}

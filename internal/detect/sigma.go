@@ -892,8 +892,8 @@ func (c *sigmaConv) fieldCond(key string, v any) (query.Expr, error) {
 		}
 		if how == "cidr" {
 			p, err := netip.ParsePrefix(s)
-			if err != nil || !p.Addr().Is4() {
-				return nil, fmt.Errorf("%s: only IPv4 ranges are supported, not %q", key, s)
+			if err != nil {
+				return nil, fmt.Errorf("%s: %q is not an address range", key, s)
 			}
 			kids = append(kids, &query.Compare{Field: field, Op: "=", Value: p.Masked().String()})
 			continue

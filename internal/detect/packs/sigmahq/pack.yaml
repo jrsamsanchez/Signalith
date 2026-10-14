@@ -837,6 +837,10 @@ rules:
     rule_id: 19bf6fdb-7721-4f3d-867f-53467f6a5db6
     file: net_connection_lnx_ngrok_tunnel.yml
     path: rules/linux/network_connection/net_connection_lnx_ngrok_tunnel.yml
+  - id: sigma-lnx-net-susp-malware-callback-port
+    rule_id: dbfc7c98-04ab-4ab7-aa94-c74d22aa7376
+    file: net_connection_lnx_susp_malware_callback_port.yml
+    path: rules/linux/network_connection/net_connection_lnx_susp_malware_callback_port.yml
   - id: sigma-lnx-proc-apt-shell-execution
     rule_id: bb382fd5-b454-47ea-a264-1828e4c766d6
     file: proc_creation_lnx_apt_shell_execution.yml
@@ -1577,6 +1581,14 @@ rules:
     rule_id: 0dba975d-a193-4ed1-a067-424df57570d1
     file: net_connection_win_certutil_initiated_connection.yml
     path: rules/windows/network_connection/net_connection_win_certutil_initiated_connection.yml
+  - id: sigma-net-cmstp-initiated-connection
+    rule_id: efafe0bf-4238-479e-af8f-797bd3490d2d
+    file: net_connection_win_cmstp_initiated_connection.yml
+    path: rules/windows/network_connection/net_connection_win_cmstp_initiated_connection.yml
+  - id: sigma-net-dialer-initiated-connection
+    rule_id: 37e4024a-6c80-4d8f-b95d-2e7e94f3a8d1
+    file: net_connection_win_dialer_initiated_connection.yml
+    path: rules/windows/network_connection/net_connection_win_dialer_initiated_connection.yml
   - id: sigma-net-domain-btunnels
     rule_id: 9e02c8ec-02b9-43e8-81eb-34a475ba7965
     file: net_connection_win_domain_btunnels.yml
@@ -1645,14 +1657,26 @@ rules:
     rule_id: e81528db-fc02-45e8-8e98-4e84aba1f10b
     file: net_connection_win_notepad.yml
     path: rules/windows/network_connection/net_connection_win_notepad.yml
+  - id: sigma-net-office-outbound-non-local-ip
+    rule_id: 75e33ce3-ae32-4dcc-9aa8-a2a3029d6f84
+    file: net_connection_win_office_outbound_non_local_ip.yml
+    path: rules/windows/network_connection/net_connection_win_office_outbound_non_local_ip.yml
   - id: sigma-net-office-uncommon-ports
     rule_id: 3b5ba899-9842-4bc2-acc2-12308498bf42
     file: net_connection_win_office_uncommon_ports.yml
     path: rules/windows/network_connection/net_connection_win_office_uncommon_ports.yml
+  - id: sigma-net-rdp-reverse-tunnel
+    rule_id: 5f699bc5-5446-4a4a-a0b7-5ef2885a3eb4
+    file: net_connection_win_rdp_reverse_tunnel.yml
+    path: rules/windows/network_connection/net_connection_win_rdp_reverse_tunnel.yml
   - id: sigma-net-rdp-to-http
     rule_id: b1e5da3b-ca8e-4adf-915c-9921f3d85481
     file: net_connection_win_rdp_to_http.yml
     path: rules/windows/network_connection/net_connection_win_rdp_to_http.yml
+  - id: sigma-net-regasm-network-activity
+    rule_id: 0531e43a-d77d-47c2-b89f-5fe50321c805
+    file: net_connection_win_regasm_network_activity.yml
+    path: rules/windows/network_connection/net_connection_win_regasm_network_activity.yml
   - id: sigma-net-regsvr32-network-activity
     rule_id: c7e91a02-d771-4a6d-a700-42587e0b1095
     file: net_connection_win_regsvr32_network_activity.yml
@@ -1669,18 +1693,42 @@ rules:
     rule_id: 7b434893-c57d-4f41-908d-6a17bf1ae98f
     file: net_connection_win_susp_initiated_uncommon_or_suspicious_locations.yml
     path: rules/windows/network_connection/net_connection_win_susp_initiated_uncommon_or_suspicious_locations.yml
+  - id: sigma-net-susp-malware-callback-port
+    rule_id: 4b89abaa-99fe-4232-afdd-8f9aa4d20382
+    file: net_connection_win_susp_malware_callback_port.yml
+    path: rules/windows/network_connection/net_connection_win_susp_malware_callback_port.yml
+  - id: sigma-net-susp-malware-callback-ports-uncommon
+    rule_id: 6d8c3d20-a5e1-494f-8412-4571d716cf5c
+    file: net_connection_win_susp_malware_callback_ports_uncommon.yml
+    path: rules/windows/network_connection/net_connection_win_susp_malware_callback_ports_uncommon.yml
   - id: sigma-net-susp-outbound-kerberos-connection
     rule_id: e54979bd-c5f9-4d6c-967b-a04b19ac4c74
     file: net_connection_win_susp_outbound_kerberos_connection.yml
     path: rules/windows/network_connection/net_connection_win_susp_outbound_kerberos_connection.yml
+  - id: sigma-net-susp-outbound-mobsync-connection
+    rule_id: 9f2cc74d-78af-4eb2-bb64-9cd1d292b87b
+    file: net_connection_win_susp_outbound_mobsync_connection.yml
+    path: rules/windows/network_connection/net_connection_win_susp_outbound_mobsync_connection.yml
   - id: sigma-net-susp-outbound-smtp-connections
     rule_id: 9976fa64-2804-423c-8a5b-646ade840773
     file: net_connection_win_susp_outbound_smtp_connections.yml
     path: rules/windows/network_connection/net_connection_win_susp_outbound_smtp_connections.yml
+  - id: sigma-net-winlogon-net-connections
+    rule_id: 7610a4ea-c06d-495f-a2ac-0a696abcfd3b
+    file: net_connection_win_winlogon_net_connections.yml
+    path: rules/windows/network_connection/net_connection_win_winlogon_net_connections.yml
   - id: sigma-net-wordpad-uncommon-ports
     rule_id: 786cdae8-fefb-4eb2-9227-04e34060db01
     file: net_connection_win_wordpad_uncommon_ports.yml
     path: rules/windows/network_connection/net_connection_win_wordpad_uncommon_ports.yml
+  - id: sigma-net-wscript-cscript-local-connection
+    rule_id: 08249dc0-a28d-4555-8ba5-9255a198e08c
+    file: net_connection_win_wscript_cscript_local_connection.yml
+    path: rules/windows/network_connection/net_connection_win_wscript_cscript_local_connection.yml
+  - id: sigma-net-wscript-cscript-outbound-connection
+    rule_id: 992a6cae-db6a-43c8-9cec-76d7195c96fc
+    file: net_connection_win_wscript_cscript_outbound_connection.yml
+    path: rules/windows/network_connection/net_connection_win_wscript_cscript_outbound_connection.yml
   - id: sigma-proc-7zip-exfil-dmp-files
     rule_id: ec570e53-4c76-45a9-804d-dc3f355ff7a7
     file: proc_creation_win_7zip_exfil_dmp_files.yml
@@ -7689,6 +7737,14 @@ rules:
     rule_id: b210394c-ba12-4f89-9117-44a2464b9511
     file: win_security_smb_file_creation_admin_shares.yml
     path: rules/windows/builtin/security/win_security_smb_file_creation_admin_shares.yml
+  - id: sigma-win-security-successful-external-remote-rdp-login
+    rule_id: 259a9cdf-c4dd-4fa2-b243-2269e5ab18a2
+    file: win_security_successful_external_remote_rdp_login.yml
+    path: rules/windows/builtin/security/account_management/win_security_successful_external_remote_rdp_login.yml
+  - id: sigma-win-security-successful-external-remote-smb-login
+    rule_id: 78d5cab4-557e-454f-9fb9-a222bd0d5edc
+    file: win_security_successful_external_remote_smb_login.yml
+    path: rules/windows/builtin/security/account_management/win_security_successful_external_remote_smb_login.yml
   - id: sigma-win-security-susp-add-domain-trust
     rule_id: 0255a820-e564-4e40-af2b-6ac61160335c
     file: win_security_susp_add_domain_trust.yml
@@ -7697,6 +7753,10 @@ rules:
     rule_id: 53ad8e36-f573-46bf-97e4-15ba5bf4bb51
     file: win_security_susp_dsrm_password_change.yml
     path: rules/windows/builtin/security/win_security_susp_dsrm_password_change.yml
+  - id: sigma-win-security-susp-failed-logon-source
+    rule_id: f88e112a-21aa-44bd-9b01-6ee2a2bbbed1
+    file: win_security_susp_failed_logon_source.yml
+    path: rules/windows/builtin/security/account_management/win_security_susp_failed_logon_source.yml
   - id: sigma-win-security-susp-group-policy-abuse-privilege-addition
     rule_id: 1c480e10-7ee1-46d4-8ed2-85f9789e3ce4
     file: win_security_susp_group_policy_abuse_privilege_addition.yml
