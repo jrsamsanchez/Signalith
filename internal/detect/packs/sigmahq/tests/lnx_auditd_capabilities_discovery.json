@@ -1,0 +1,6 @@
+{"rule": "fe10751f-1995-40a5-aaa2-c97ccb4123fe", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"getcap","a1":"-r","a2":"/","argc":"3"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"arg","a1":"-r","a2":"/","argc":"3"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"getcap","a1":"arg","a2":"/","argc":"3"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"getcap","a1":"-r","argc":"2"}}
+]}

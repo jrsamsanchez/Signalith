@@ -1,0 +1,9 @@
+{"rule": "91b8ca78-f205-4826-a3ef-cd8d6b24e97b", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{"comm":"doas"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{"comm":"doas"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALM","data":{"comm":"doas"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{"comm":"doat"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{}},
+  {"expect":true,"source":"attack_data","channel":"Linux-auditd","event_id":"SYSCALL","data":{"_raw":"type=SYSCALL msg=audit(04/16/2025 08:05:30.947:4451) : arch=x86_64 syscall=rename success=yes exit=0 a0=0x7ffc7773eb40 a1=0x7ffc7773ea40 a2=0x7ffc7773e970 a3=0x0 items=4 ppid=1300 pid=1962 auid=ubuntu uid=ubuntu gid=ubuntu euid=root suid=root fsuid=root egid=ubuntu sgid=ubuntu fsgid=ubuntu tty=pts0 ses=3 comm=doas exe=/usr/bin/doas subj=unconfined key=delete"}},
+  {"expect":true,"source":"attack_data","channel":"Linux-auditd","event_id":"SYSCALL","data":{"_raw":"type=SYSCALL msg=audit(04/16/2025 08:19:51.198:45402) : arch=x86_64 syscall=rename success=yes exit=0 a0=0x7ffcf4df0e90 a1=0x7ffcf4df0d90 a2=0x7ffcf4df0cc0 a3=0x0 items=4 ppid=2476 pid=5110 auid=ubuntu uid=ubuntu gid=ubuntu euid=root suid=root fsuid=root egid=ubuntu sgid=ubuntu fsgid=ubuntu tty=pts0 ses=3 comm=doas exe=/usr/bin/doas subj=unconfined key=delete"}}
+]}

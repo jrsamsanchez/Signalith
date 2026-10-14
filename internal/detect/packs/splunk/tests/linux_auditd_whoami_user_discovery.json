@@ -1,0 +1,13 @@
+{"rule": "d1ff2e22-310d-446a-80b3-faedaa7b3b52", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{"comm":"whoami"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{"exe":"x /whoami"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{"comm":"whoami"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{"exe":"x /whoami"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALM","data":{"comm":"whoami"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{"comm":"whoamj"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALM","data":{"exe":"x /whoami"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{"exe":"x /whoamj"}},
+  {"expect":true,"source":"attack_data","channel":"Linux-auditd","event_id":"SYSCALL","data":{"_raw":"type=SYSCALL msg=audit(04/16/2025 08:20:23.548:47370) : arch=x86_64 syscall=execve success=yes exit=0 a0=0x5f43d73edef0 a1=0x5f43a9a27818 a2=0x5f43d73ede18 a3=0x0 items=2 ppid=6322 pid=6323 auid=ubuntu uid=ubuntu gid=ubuntu euid=ubuntu suid=ubuntu fsuid=ubuntu egid=ubuntu sgid=ubuntu fsgid=ubuntu tty=pts0 ses=3 comm=whoami exe=/usr/bin/whoami subj=unconfined key=recon"}},
+  {"expect":true,"source":"attack_data","channel":"Linux-auditd","event_id":"SYSCALL","data":{"_raw":"type=SYSCALL msg=audit(04/16/2025 08:20:06.353:45562) : arch=x86_64 syscall=execve success=yes exit=0 a0=0x5f43d7373f90 a1=0x5f43d7373e88 a2=0x5f43d7373eb8 a3=0x0 items=2 ppid=5153 pid=5156 auid=ubuntu uid=ubuntu gid=ubuntu euid=ubuntu suid=ubuntu fsuid=ubuntu egid=ubuntu sgid=ubuntu fsgid=ubuntu tty=pts0 ses=3 comm=whoami exe=/usr/bin/whoami subj=unconfined key=recon"}}
+]}

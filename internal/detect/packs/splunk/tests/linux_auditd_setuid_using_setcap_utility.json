@@ -1,0 +1,15 @@
+{"rule": "1474459a-302b-4255-8add-d82f96d14cd9", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"x","a1":"setcap","a2":"","a3":"x","a4":"x","a5":"cap_setuid+ep","a6":"x","argc":"7"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"x","a1":"setcap","a2":"","a3":"x","a4":"x","a5":"cap_setuid=ep","a6":"x","argc":"7"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"x","a1":"setcap","a2":"","a3":"x","a4":"x","a5":"cap_net_bind_service+p","a6":"x","argc":"7"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"x","a1":"setcap","a2":"","a3":"x","a4":"x","a5":"cap_net_raw+ep","a6":"x","argc":"7"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"x","a1":"setcap","a2":"","a3":"x","a4":"x","a5":"cap_dac_read_search+ep","a6":"x","argc":"7"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"x","a1":"setcap","a2":"","a3":"x","a4":"x","a5":"cap_setuid+ep","a6":"y","argc":"7"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"x","a1":"setcap","a2":"","a3":"x","a4":"x","a5":"cap_setuid=ep","a6":"y","argc":"7"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"x","a1":"setcap","a2":"","a3":"x","a4":"x","a5":"cap_net_bind_service+p","a6":"y","argc":"7"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"x","a1":"setcap","a2":"","a3":"x","a4":"x","a5":"cap_net_raw+ep","a6":"y","argc":"7"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"x","a1":"setcap","a2":"","a3":"x","a4":"x","a5":"cap_dac_read_search+ep","a6":"y","argc":"7"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{}},
+  {"expect":true,"source":"attack_data","channel":"Linux-auditd","event_id":"EXECVE","data":{"_raw":"type=EXECVE msg=audit(02/20/2025 10:00:25.674:44681) : argc=3 a0=setcap a1=cap_setuid+ep a2=./escalate"}},
+  {"expect":true,"source":"attack_data","channel":"Linux-auditd","event_id":"EXECVE","data":{"_raw":"type=EXECVE msg=audit(02/20/2025 13:06:22.853:103562) : argc=3 a0=setcap a1=cap_setuid+ep a2=./escalate"}}
+]}

@@ -15,6 +15,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/search"
 )
@@ -413,6 +414,13 @@ func ConvertSigmaWith(src []byte, opt SigmaOptions) (*SigmaResult, error) {
 			}
 		}
 	}
+	if product, _ := r.Logsource["product"].(string); category == "" && strings.EqualFold(product, "linux") {
+		if service, _ := r.Logsource["service"].(string); strings.EqualFold(service, "auditd") {
+			// Linux audit records (service: auditd), each field named as
+			// auditd names it.
+			category = "auditd"
+		}
+	}
 	c := &sigmaConv{strict: opt.Strict, category: strings.ToLower(category)}
 	dm := c.datamodel(r.Logsource)
 	if c.category == "security" {
@@ -555,6 +563,9 @@ func productScope(ls map[string]any, category string) query.Expr {
 		}
 		return st
 	case "linux", "macos":
+		if category == "auditd" {
+			return &query.Compare{Field: "sourcetype", Op: "=", Value: ingest.AuditdSourcetype}
+		}
 		return &query.Not{Child: &query.Compare{Field: "sourcetype", Op: "=", Value: windowsSourcetypes}}
 	}
 	return nil
@@ -585,6 +596,8 @@ func (c *sigmaConv) datamodel(ls map[string]any) string {
 		return "Script"
 	case "system":
 		return "Change"
+	case "auditd":
+		return "Other"
 	}
 	if id, ok := strings.CutPrefix(c.category, "security_"); ok {
 		return sigmaSecurityModels[id]
@@ -596,6 +609,9 @@ func (c *sigmaConv) datamodel(ls map[string]any) string {
 }
 
 func (c *sigmaConv) field(name string) string {
+	if c.category == "auditd" {
+		return c.auditdField(name)
+	}
 	if m, ok := sigmaEventFields[c.category]; ok {
 		if f := m[strings.ToLower(name)]; f != "" {
 			return f
@@ -608,6 +624,17 @@ func (c *sigmaConv) field(name string) string {
 	}
 	c.approx("field %s has no Signalith mapping and is searched as-is", name)
 	return name
+}
+
+// auditdField is the stored field of an audit record's field (see
+// ingest.AuditdField).
+func (c *sigmaConv) auditdField(name string) string {
+	f, ok := ingest.AuditdField(name)
+	if !ok {
+		c.approx("field %s is not an audit record field", name)
+		return name
+	}
+	return f
 }
 
 // ---- condition expressions ----

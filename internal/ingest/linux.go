@@ -31,7 +31,10 @@ func parseSyslogLine(line, sourcetype string, now time.Time) Event {
 	}
 	ev := ParseProgram(m[3], m[4], m[5], m[6], sourcetype)
 	ev.Fields["message"] = line
-	ev.Time = ts
+	// An audit record has its own, more precise time.
+	if ev.Time.IsZero() {
+		ev.Time = ts
+	}
 	return ev
 }
 
@@ -85,11 +88,16 @@ var (
 
 // ParseProgram maps one syslog program's message onto a data model: sshd
 // (including OpenSSH 9.8+ sshd-session), sudo and su logons become Authentication events; useradd, userdel,
-// usermod and gpasswd become Change events; ClamAV's threats, definition
+// usermod and gpasswd become Change events; audit records (auditd's
+// syslog plugin) are read as from the audit log; ClamAV's threats, definition
 // updates and problems become Malware events; anything else is Other. Agent
 // logs and the syslog receiver both use it, so the built-in detections fire
 // whichever way Linux auth logs arrive.
 func ParseProgram(host, program, pid, msg, sourcetype string) Event {
+	// Audit records forwarded to syslog (auditd's syslog plugin).
+	if ev, ok := parseAuditdLine(msg, host); ok {
+		return ev
+	}
 	f := map[string]any{
 		"host":       host,
 		"dest":       host,

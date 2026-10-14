@@ -57,6 +57,10 @@ func SplunkFilter(r *splcheck.Rule) (query.Expr, error) {
 	if err != nil {
 		return nil, err
 	}
+	if r.Node == splcheck.AuditdNode {
+		// Every Linux audit record, of any type.
+		return and([]query.Expr{&query.Compare{Field: "sourcetype", Op: "=", Value: ingest.AuditdSourcetype}, e}), nil
+	}
 	sourcetype := windowsSourcetypes
 	if r.Linux {
 		sourcetype = ingest.SysmonLinuxSourcetype
@@ -216,7 +220,8 @@ var splunkTechnique = regexp.MustCompile(`^T\d{4}(\.\d{3})?$`)
 // task, a service per host and service, a directory change per object
 // and attribute, a share access per client, share and path, a Kerberos
 // ticket per account and service, an account change or group member
-// added per account or group, a named pipe per host, program and pipe.
+// added per account or group, a named pipe per host, program and pipe,
+// an audit record per host, type, program and what it ran or touched.
 func splunkThrottle(node, dm string) []string {
 	switch node {
 	case "ObjectAccess":
@@ -237,6 +242,8 @@ func splunkThrottle(node, dm string) []string {
 		return []string{"host", "object", "member_sid"}
 	case "Pipe":
 		return []string{"host", "process_path", "pipe_name"}
+	case splcheck.AuditdNode:
+		return []string{"host", "auditd_type", "auditd_exe", "process", "auditd_name"}
 	}
 	return packThrottle("", dm)
 }

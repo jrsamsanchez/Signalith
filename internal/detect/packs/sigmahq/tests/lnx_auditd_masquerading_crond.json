@@ -1,0 +1,6 @@
+{"rule": "9d4548fa-bba0-4e88-bd66-5d5bf516cda0", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"cp","a1":"/bin/sh","a2":"/crond","argc":"3"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"arg","a1":"/bin/sh","a2":"/crond","argc":"3"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"cp","a1":"arg","a2":"/crond","argc":"3"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"cp","a1":"/bin/sh","argc":"2"}}
+]}

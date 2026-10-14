@@ -9,6 +9,7 @@ package splcheck
 import (
 	"errors"
 	"fmt"
+	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"regexp"
 	"slices"
 	"strings"
@@ -230,7 +231,7 @@ func Parse(src []byte, macros map[string]*Macro) (*Rule, error) {
 // the node, and each node's fields map to the Signalith fields they are
 // stored as. The code stays in the clause as signature_id.
 var (
-	rawRe = regexp.MustCompile("(?s)^`(powershell|sysmon|wineventlog_security|wineventlog_system)`\\s+(.*)$")
+	rawRe = regexp.MustCompile("(?s)^`(powershell|sysmon|wineventlog_security|wineventlog_system|linux_auditd)`\\s+(.*)$")
 	// rawNodes are the nodes of each source by event code.
 	rawNodes = map[string]map[string]string{
 		"powershell": {"4104": "PowerShell"},
@@ -246,6 +247,9 @@ var (
 		},
 		// The Service Control Manager's service installed event.
 		"wineventlog_system": {"7045": "ServiceInstalled"},
+		// Linux audit records: every record type is one node, whose
+		// fields are auditd's own (AuditdNode).
+		"linux_auditd": {},
 	}
 	// RawFields are the event fields a raw search may name on each node,
 	// with the Signalith field each is stored as.
@@ -369,6 +373,11 @@ var (
 	renameRe    = regexp.MustCompile(`(?is)^rename\s`)
 )
 
+// AuditdNode is the node of Linux audit records (the linux_auditd
+// macro). A search names no event code: each record names its type, and
+// every field is stored by auditd's name (ingest.AuditdField).
+const AuditdNode = "Auditd"
+
 // RawUser is an event's own user field (SourceUser), DOMAIN\name as
 // Sysmon writes it; the CIM user field is the name alone (View). Both are
 // stored as user.
@@ -400,7 +409,13 @@ func resolveRaw(e Expr, node string) error {
 	case *Not:
 		return resolveRaw(x.Kid, node)
 	case *Cmp:
-		if name, ok := strings.CutPrefix(x.Field, rawFieldPrefix); ok {
+		if name, ok := strings.CutPrefix(x.Field, rawFieldPrefix); ok && node == AuditdNode {
+			f, ok := ingest.AuditdField(name)
+			if !ok {
+				return fmt.Errorf("field %s is not a field of %s events", name, node)
+			}
+			x.Field = f
+		} else if ok {
 			f, ok := RawFields[node][name]
 			if !ok {
 				return fmt.Errorf("field %s is not a field of %s events", name, node)
@@ -507,6 +522,9 @@ func parseRaw(r *Rule, source, terms string, later []string, macros map[string]*
 		where = top[0]
 	}
 	var code *Cmp
+	if source == "linux_auditd" {
+		r.Node = AuditdNode
+	}
 	for _, k := range top {
 		if c, ok := k.(*Cmp); ok && c.Field == eventCode {
 			if code != nil || c.Neg {
@@ -515,10 +533,14 @@ func parseRaw(r *Rule, source, terms string, later []string, macros map[string]*
 			code = c
 		}
 	}
-	if code == nil || countField(where, eventCode) != 1 {
+	if r.Node == AuditdNode {
+		if countField(where, eventCode) != 0 {
+			return nil, fmt.Errorf("a %s search names no event code", source)
+		}
+	} else if code == nil || countField(where, eventCode) != 1 {
 		return nil, fmt.Errorf("a %s search must name its event code (EventCode=...) once, at the top", source)
 	}
-	for _, v := range code.Values {
+	for _, v := range codeValues(code) {
 		n := rawNodes[source][v]
 		if n == "" || (r.Node != "" && n != r.Node) {
 			return nil, fmt.Errorf("%s event %s is not supported", source, v)
@@ -551,7 +573,7 @@ func parseRaw(r *Rule, source, terms string, later []string, macros map[string]*
 		top = append(top, e)
 	}
 	top = append(top, regexes...)
-	if len(top) < 2 {
+	if len(top) < 2 && r.Node != AuditdNode {
 		return nil, fmt.Errorf("a %s search must name a field besides its event code", source)
 	}
 	where = &And{Kids: top}
@@ -606,7 +628,7 @@ func fieldsOf(e Expr, node string, xml bool) error {
 	case *Not:
 		return fieldsOf(x.Kid, node, xml)
 	case *Cmp:
-		if x.Field == eventCode {
+		if x.Field == eventCode || node == AuditdNode && strings.HasPrefix(x.Field, "auditd_") {
 			return nil
 		}
 		for _, f := range RawFields[node] {
@@ -790,4 +812,12 @@ func splString(s string) string {
 		b.WriteByte(s[i])
 	}
 	return b.String()
+}
+
+// codeValues are an event code comparison's codes; none for no comparison.
+func codeValues(c *Cmp) []string {
+	if c == nil {
+		return nil
+	}
+	return c.Values
 }

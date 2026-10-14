@@ -23,6 +23,9 @@ const (
 	// LinuxSysmonChannel is Sysmon for Linux, whose events have Sysmon's
 	// event IDs and fields.
 	LinuxSysmonChannel = ingest.LinuxSysmonChannel
+	// AuditdChannel is Linux audit records, whose event ID is the record
+	// type (EXECVE) and whose data are its fields by auditd's names.
+	AuditdChannel = ingest.AuditdChannel
 )
 
 // TestFile holds a shipped rule's test events.
@@ -56,6 +59,21 @@ var security4688 = map[string]string{
 // the event's channel has no Sigma view here.
 func (c Case) SigmaView() (map[string]string, bool) {
 	switch {
+	case c.Channel == AuditdChannel:
+		// A recorded line's fields, or the fields a line is built from.
+		fields := c.Data
+		if raw, ok := c.Data["_raw"]; ok {
+			rec, ok := ingest.ReadAuditd(raw)
+			if !ok {
+				return nil, false
+			}
+			fields = rec.Fields
+		}
+		out := map[string]string{"type": c.EventID}
+		for k, v := range fields {
+			out[k] = v
+		}
+		return out, true
 	case strings.EqualFold(c.Channel, SysmonChannel), strings.EqualFold(c.Channel, LinuxSysmonChannel),
 		strings.EqualFold(c.Channel, PowerShellChannel) && c.EventID == "4104":
 		out := map[string]string{"EventID": c.EventID}
@@ -100,6 +118,9 @@ func (c Case) SigmaView() (map[string]string, bool) {
 func (c Case) Record(host string, t time.Time) (string, map[string]any) {
 	if strings.EqualFold(c.Channel, LinuxSysmonChannel) {
 		return "linux.journal", ingest.LinuxSysmonRecord(c.EventID, host, t, c.Data)
+	}
+	if c.Channel == AuditdChannel {
+		return "linux.audit", ingest.AuditdRecordFor(ingest.AuditdLine(c.EventID, t, c.Data), host)
 	}
 	return "win.events", ingest.WinEventRecord(c.Channel, c.EventID, host, t, c.Data)
 }
@@ -450,6 +471,8 @@ var LinuxBases = map[string]map[string]string{
 		"DestinationIp":   "198.51.100.20",
 		"DestinationPort": "8443",
 	},
+	// An audit record's fields are the rule's own.
+	"auditd": {},
 	"file_event": {
 		"Image":          "/opt/apps/launcher/launcher",
 		"ProcessId":      "4242",
@@ -496,6 +519,73 @@ func Cases(category string, syn *Synthesis, fields []string) []Case {
 // LinuxCases are Cases for a Linux rule: each as a Sysmon for Linux event.
 func LinuxCases(category string, syn *Synthesis, fields []string) []Case {
 	return CasesOn(LinuxSysmonChannel, category, syn, fields)
+}
+
+// AuditdCases are Cases for a Linux audit rule (service: auditd): each
+// event as an audit record of the type the rule names (EXECVE when it
+// names a program's arguments and no type, else SYSCALL). A program's
+// arguments come in order from a0, so ones the rule leaves out are
+// filled in, and argc counts them.
+func AuditdCases(_ string, syn *Synthesis, fields []string) []Case {
+	var out []Case
+	add := func(expect bool, ev map[string]string) {
+		data := map[string]string{}
+		typ := ""
+		top := -1
+		for k, v := range ev {
+			if k == "type" {
+				typ = strings.ToUpper(v)
+				continue
+			}
+			data[k] = v
+			if n, ok := auditArg(k); ok && n > top {
+				top = n
+			}
+		}
+		if typ == "" {
+			if !expect && slices.Contains(fields, "type") {
+				// A near miss without the type: every record has one.
+				return
+			}
+			typ = "SYSCALL"
+			if top >= 0 {
+				typ = "EXECVE"
+			}
+		}
+		if typ == "EXECVE" && top >= 0 {
+			for i := 0; i <= top; i++ {
+				if _, ok := data[fmt.Sprintf("a%d", i)]; !ok {
+					data[fmt.Sprintf("a%d", i)] = "arg"
+				}
+			}
+			if _, ok := data["argc"]; !ok {
+				data["argc"] = fmt.Sprint(top + 1)
+			}
+		}
+		out = append(out, Case{Expect: expect, Source: "synthesized", Channel: AuditdChannel, EventID: typ, Data: data})
+	}
+	for _, ev := range syn.Positive {
+		add(true, ev)
+	}
+	for _, ev := range syn.Negative {
+		add(false, ev)
+	}
+	return out
+}
+
+// auditArg reads an EXECVE argument field's index (a0 is 0).
+func auditArg(k string) (int, bool) {
+	if len(k) < 2 || k[0] != 'a' {
+		return 0, false
+	}
+	n := 0
+	for _, r := range k[1:] {
+		if r < '0' || r > '9' {
+			return 0, false
+		}
+		n = n*10 + int(r-'0')
+	}
+	return n, true
 }
 
 // CasesOn is Cases with the channel the events are written to.

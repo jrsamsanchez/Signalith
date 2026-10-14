@@ -1,0 +1,8 @@
+{"rule": "bc0ca53f-dea6-4906-9b12-09c396fdf1d3", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{"comm":"insmod"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{"comm":"insmod"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALM","data":{"comm":"insmod"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{"comm":"insmoe"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{}},
+  {"expect":true,"source":"attack_data","channel":"Linux-auditd","event_id":"SYSCALL","data":{"_raw":"type=SYSCALL msg=audit(04/16/2025 08:19:51.112:45328) : arch=x86_64 syscall=execve success=yes exit=0 a0=0x57f75f4c9758 a1=0x57f75f4b8ce0 a2=0x57f75f4ca790 a3=0x0 items=2 ppid=5099 pid=5100 auid=ubuntu uid=root gid=root euid=root suid=root fsuid=root egid=root sgid=root fsgid=root tty=pts1 ses=3 comm=insmod exe=/usr/bin/kmod subj=unconfined key=rootcmd"}}
+]}

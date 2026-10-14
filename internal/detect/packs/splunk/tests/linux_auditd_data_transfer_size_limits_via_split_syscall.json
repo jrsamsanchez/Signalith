@@ -1,0 +1,13 @@
+{"rule": "c03d4a49-cf9d-435b-86e9-c6f8c9b6c42e", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{"comm":"split"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{"exe":"x /split"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{"comm":"split"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{"exe":"x /split"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALM","data":{"comm":"split"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{"comm":"spliu"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALM","data":{"exe":"x /split"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{"exe":"x /spliu"}},
+  {"expect":true,"source":"attack_data","channel":"Linux-auditd","event_id":"SYSCALL","data":{"_raw":"type=SYSCALL msg=audit(04/16/2025 09:14:42.784:96444) : arch=x86_64 syscall=execve success=yes exit=0 a0=0x5bb5511644d0 a1=0x5bb551165220 a2=0x5bb55115e5d0 a3=0x8 items=2 ppid=38881 pid=38887 auid=ubuntu uid=root gid=root euid=root suid=root fsuid=root egid=root sgid=root fsgid=root tty=pts1 ses=3 comm=split exe=/usr/bin/split subj=unconfined key=rootcmd"}},
+  {"expect":true,"source":"attack_data","channel":"Linux-auditd","event_id":"SYSCALL","data":{"_raw":"type=SYSCALL msg=audit(04/16/2025 09:13:55.003:96364) : arch=x86_64 syscall=execve success=yes exit=0 a0=0x5c97a36e2858 a1=0x5c97a36d5ce0 a2=0x5c97a36e7820 a3=0x0 items=2 ppid=38840 pid=38841 auid=ubuntu uid=root gid=root euid=root suid=root fsuid=root egid=root sgid=root fsgid=root tty=pts1 ses=3 comm=split exe=/usr/bin/split subj=unconfined key=rootcmd"}}
+]}

@@ -1,0 +1,12 @@
+{"rule": "07052556-d4b5-4bae-89aa-cbdc1bb11250", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"SERVICE_STOP","data":{"unit":"firewalld"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"SERVICE_STOP","data":{"unit":"ufw"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"SERVICE_STOP","data":{"unit":"firewalld"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"SERVICE_STOP","data":{"unit":"ufw"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SERVICE_STOQ","data":{"unit":"firewalld"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SERVICE_STOP","data":{"unit":"firewalle"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SERVICE_STOP","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SERVICE_STOQ","data":{"unit":"ufw"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SERVICE_STOP","data":{"unit":"ufx"}},
+  {"expect":true,"source":"attack_data","channel":"Linux-auditd","event_id":"SERVICE_STOP","data":{"_raw":"type=SERVICE_STOP msg=audit(1722965483.442:15704): pid=1 uid=0 auid=4294967295 ses=4294967295 subj=unconfined msg='unit=firewalld comm=\"systemd\" exe=\"/usr/lib/systemd/systemd\" hostname=? addr=? terminal=? res=success'\u001dUID=\"root\" AUID=\"unset\""}}
+]}

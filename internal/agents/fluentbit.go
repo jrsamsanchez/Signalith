@@ -15,6 +15,13 @@ import (
 	"unicode"
 )
 
+// AuditLogPath is where auditd writes the Linux audit log.
+const AuditLogPath = "/var/log/audit/audit.log"
+
+// auditdStep says how to have auditd record the programs that run, which
+// the audit log rules of the detection packs read.
+const auditdStep = "Optional, for the Linux audit log rules: install auditd (sudo apt install auditd, or sudo dnf install audit) and have it record every program run, for example with sudo auditctl -a always,exit -F arch=b64 -S execve -k exec (add the same line to /etc/audit/rules.d/signalith.rules to keep it after a restart)"
+
 // TokenPlaceholder stands for the agent token in a configuration made for
 // the Add data page, which puts a new token in its place when the
 // configuration is copied or downloaded (see internal/agenttokens). It
@@ -348,6 +355,24 @@ func Generate(o Options) (*Agent, error) {
 				{"Exclude", "log SelfCheck"},
 			}))
 		}
+		if o.LinuxSource != "wazuh" {
+			// The Linux audit log, whichever source the auth logs come
+			// from: auditd writes it as a file. Its records carry no host
+			// name, so it is added. A host without auditd has no such file.
+			b.WriteString(section("INPUT", [][2]string{
+				{"Name", "tail"}, {"Tag", "linux.audit"},
+				{"Path", AuditLogPath},
+				{"DB", "/var/lib/fluent-bit/signalith-audit.db"},
+				{"Buffer_Chunk_Size", "64k"},
+				{"Buffer_Max_Size", "1M"},
+				{"Skip_Long_Lines", "On"},
+				{"storage.type", "filesystem"},
+			}))
+			b.WriteString(section("FILTER", [][2]string{
+				{"Name", "sysinfo"}, {"Match", "linux.audit"},
+				{"hostname_key", "hostname"},
+			}))
+		}
 		// Only root may read the config: it holds the agent token.
 		a.Steps = []string{"Install Fluent Bit (3.1 or later) from its signed package repository: " + fluentBitLinuxInstall}
 		if o.LinuxSource == "wazuh" {
@@ -376,6 +401,9 @@ func Generate(o Options) (*Agent, error) {
 		a.Steps = append(a.Steps,
 			"Restart the agent: sudo systemctl enable --now fluent-bit && sudo systemctl restart fluent-bit",
 			done)
+		if o.LinuxSource != "wazuh" {
+			a.Steps = append(a.Steps, auditdStep)
+		}
 	case "windows":
 		a.ConfigPath = `C:\Program Files\fluent-bit\conf\fluent-bit.conf`
 		// The System log (services installed, logs cleared) and Microsoft

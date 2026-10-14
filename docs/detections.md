@@ -242,10 +242,11 @@ Content packs are rule sets from other open source projects, shipped unchanged
 inside Signalith and converted when it starts. Every pack detection is **off** until
 an admin turns it on.
 
-**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,060 rules from
+**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,100 rules from
 [SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 1,946 Windows rules
-for these Sysmon, Security, PowerShell and System log sources, and 114 Linux rules (see
-[Linux endpoints](#linux-endpoints-sysmon-for-linux)):
+for these Sysmon, Security, PowerShell and System log sources, and 154 Linux rules (see
+[Linux endpoints](#linux-endpoints-sysmon-for-linux) and
+[the Linux audit log](#linux-audit-log-auditd)):
 
 | Sigma log source | Windows events | Data model |
 | --- | --- | --- |
@@ -315,6 +316,39 @@ Sysmon for Linux events. To collect them, install Sysmon for Linux with a
 configuration, then on **Add data** choose Linux, turn on **Include Sysmon for Linux**
 and use the new agent configuration: the agent reads Sysmon's events from the
 systemd journal.
+
+### Linux audit log (auditd)
+
+The Linux audit system (auditd, open source) records what its audit rules ask for:
+programs run, files opened, services stopped, accounts added. The Linux agent reads
+its log, `/var/log/audit/audit.log`, and the syslog receiver reads audit records
+forwarded by auditd's syslog plugin. Each record is one event in the Other data model,
+with sourcetype `linux:audit`. Every field is kept by auditd's own name with
+`auditd_` in front (`exe` is `auditd_exe`, `a0` is `auditd_a0`, the record type is
+`auditd_type`). The names an ENRICHED record gives numbers, which rules write in
+capitals (`UID`, `SYSCALL`), get `_name` at the end (`auditd_uid_name`,
+`auditd_syscall_name`). Text auditd writes in hex, such as a command line, is
+decoded. A program's arguments are also joined as `auditd_execve_command`, and the
+program, its process ID and the logged-in user are in the usual `process`,
+`process_path`, `process_name`, `process_id` and `user` fields. Records that
+`ausearch -i` printed are read too.
+
+40 SigmaHQ rules (`service: auditd`) and 46 Splunk rules (the `linux_auditd` macro)
+read these records, for example capabilities discovery, clipboard and screen capture,
+hidden files run, kernel modules loaded, firewalls turned off, `LD_PRELOAD` and
+`/etc/ld.so.preload` changes, SUID binaries made, and audit or Sysmon stopped. Each
+Splunk rule also fires on Splunk's own recording of its attack.
+
+Most of these rules need auditd to record each program run, which it does not do by
+default. Install auditd and add a rule such as:
+
+```sh
+sudo auditctl -a always,exit -F arch=b64 -S execve -k exec
+echo '-a always,exit -F arch=b64 -S execve -k exec' | sudo tee /etc/audit/rules.d/signalith.rules
+```
+
+The OpenTelemetry Collector runs as its own user and cannot read the audit log, so
+collect it with the Fluent Bit agent, or forward it with auditd's syslog plugin.
 
 ### PowerShell script blocks
 
@@ -393,7 +427,7 @@ The generator keeps each rule's Signalith ID across runs, rewrites `rules/`,
 
 ### Splunk Security Content
 
-**Splunk Security Content** (`internal/detect/packs/splunk`) holds 929 Windows and
+**Splunk Security Content** (`internal/detect/packs/splunk`) holds 975 Windows and
 Linux detections from Splunk's Threat Research Team
 ([security_content](https://github.com/splunk/security_content)), pinned to one
 commit. They are the production TTP and anomaly rules that search the CIM
@@ -427,6 +461,7 @@ names, so each rule's `where` clause becomes a Signalith filter field for field:
 | `` `wineventlog_security` EventCode=4738 `` or `4732` (raw search) | Security 4738 (user account changed) and 4732 (member added to a local group) | Change |
 | `Endpoint.Processes` (Sysmon for Linux rules) | Sysmon for Linux 1 | Endpoint |
 | `Endpoint.Filesystem` (Sysmon for Linux rules) | Sysmon for Linux 11 and 23 | Filesystem |
+| `` `linux_auditd` `` (raw search) | Linux audit records, each field by auditd's name (see [the Linux audit log](#linux-audit-log-auditd)) | Other |
 
 The rule files and the macros they use ship unchanged; Signalith converts them when
 it starts, reading the search the way Splunk does: `*` is the only wildcard (`?` is

@@ -1,0 +1,5 @@
+{"rule": "106d7cbd-80ff-4985-b682-a7043e5acb72", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{"comm":"insmod","exe":"/usr/bin/kmod"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{"exe":"/usr/bin/kmod"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{"comm":"insmod"}}
+]}

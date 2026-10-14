@@ -1,0 +1,7 @@
+{"rule": "a5a827d9-1bbe-4952-9293-c59d897eb41b", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"steghide","a1":"extract","a2":"-sf","a3":".jpg","argc":"4"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"arg","a1":"extract","a2":"-sf","a3":".jpg","argc":"4"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"steghide","a1":"arg","a2":"-sf","a3":".jpg","argc":"4"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"steghide","a1":"extract","a2":"arg","a3":".jpg","argc":"4"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"steghide","a1":"extract","a2":"-sf","argc":"3"}}
+]}

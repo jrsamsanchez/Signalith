@@ -1,0 +1,9 @@
+{"rule": "6cb9d0e1-eabe-41de-a11a-5efade354e9d", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"SERVICE_STOP","data":{"unit":"auditd"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"SERVICE_STOP","data":{"unit":"auditd"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SERVICE_STOQ","data":{"unit":"auditd"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SERVICE_STOP","data":{"unit":"audite"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SERVICE_STOP","data":{}},
+  {"expect":true,"source":"attack_data","channel":"Linux-auditd","event_id":"SERVICE_STOP","data":{"_raw":"type=SERVICE_STOP msg=audit(1722965459.146:15207): pid=1 uid=0 auid=4294967295 ses=4294967295 subj=unconfined msg='unit=auditd comm=\"systemd\" exe=\"/usr/lib/systemd/systemd\" hostname=? addr=? terminal=? res=success'\u001dUID=\"root\" AUID=\"unset\""}},
+  {"expect":true,"source":"attack_data","channel":"Linux-auditd","event_id":"SERVICE_STOP","data":{"_raw":"type=SERVICE_STOP msg=audit(1722964315.586:9899): pid=1 uid=0 auid=4294967295 ses=4294967295 subj=unconfined msg='unit= auditd comm=\"systemd\" exe=\"/usr/lib/systemd/systemd\" hostname=? addr=? terminal=? res=success'\u001dUID=\"root\" AUID=\"unset\""}}
+]}

@@ -266,6 +266,9 @@ func packThrottle(category, datamodel string) []string {
 		return []string{"host", "process_path", "target_process_path"}
 	case "pipe_created":
 		return []string{"host", "process_path", "pipe_name"}
+	case "auditd":
+		// An audit record: its type, program and what it ran or touched.
+		return []string{"host", "auditd_type", "auditd_exe", "process", "auditd_name"}
 	}
 	switch strings.ToLower(datamodel) {
 	case "network_traffic":
@@ -309,6 +312,7 @@ func PackDetection(p *Pack, r PackRule, src []byte) (*Detection, error) {
 		Logsource  struct {
 			Product  string `yaml:"product"`
 			Category string `yaml:"category"`
+			Service  string `yaml:"service"`
 		} `yaml:"logsource"`
 	}
 	if err := yaml.Unmarshal(src, &meta); err != nil {
@@ -323,7 +327,11 @@ func PackDetection(p *Pack, r PackRule, src []byte) (*Detection, error) {
 	if err != nil {
 		return nil, err
 	}
-	d.Throttle = Throttle{Window: "24h", Fields: packThrottle(strings.ToLower(meta.Logsource.Category), q.Datamodel)}
+	category := meta.Logsource.Category
+	if category == "" && strings.EqualFold(meta.Logsource.Service, "auditd") {
+		category = "auditd"
+	}
+	d.Throttle = Throttle{Window: "24h", Fields: packThrottle(strings.ToLower(category), q.Datamodel)}
 	score := sigmaRisk[strings.ToLower(meta.Level)]
 	if score == 0 {
 		score = 25

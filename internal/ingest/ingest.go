@@ -611,6 +611,8 @@ func Normalize(tag string, r map[string]any, now time.Time) Event {
 		ev = parseWindows(r)
 	case strings.HasPrefix(tag, "linux.clamav"):
 		ev = parseClamAVRecord(r)
+	case strings.HasPrefix(tag, "linux.audit"):
+		ev = parseAuditdRecord(r)
 	case strings.HasPrefix(tag, "linux.journal") || has(r, "MESSAGE"):
 		ev = parseJournal(r)
 	case strings.HasPrefix(tag, "linux.") || strings.HasPrefix(tag, "syslog") || has(r, "log"):

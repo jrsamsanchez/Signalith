@@ -1,0 +1,15 @@
+{"rule": "555cc358-bf16-4e05-9b3a-0f89c73b7261", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"x","a1":"touch","a2":"","a3":"x","a4":"x","a5":"","a6":"./.","a7":"x","argc":"8"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"x","a1":"mkdir","a2":"","a3":"x","a4":"x","a5":"","a6":".","a7":"x","argc":"8"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"x","a1":"vim","a2":"","a3":"x","a4":"x","a5":"/.","a6":"x","argc":"7"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"x","a1":"vi","a2":"","a3":"x","a4":"x","a5":"","a6":"./.","a7":"x","argc":"8"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"x","a1":"nano","a2":"","a3":"x","a4":"x","a5":"","a6":".","a7":"x","argc":"8"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"x","a1":"touch","a2":"","a3":"x","a4":"x","a5":"","a6":"./.","a7":"y","argc":"8"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"x","a1":"mkdir","a2":"","a3":"x","a4":"x","a5":"","a6":".","a7":"y","argc":"8"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"x","a1":"vim","a2":"","a3":"x","a4":"x","a5":"/.","a6":"y","argc":"7"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"x","a1":"vi","a2":"","a3":"x","a4":"x","a5":"","a6":"./.","a7":"y","argc":"8"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"x","a1":"nano","a2":"","a3":"x","a4":"x","a5":"","a6":".","a7":"y","argc":"8"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{}},
+  {"expect":true,"source":"attack_data","channel":"Linux-auditd","event_id":"EXECVE","data":{"_raw":"type=EXECVE msg=audit(02/20/2025 11:02:58.146:94942): argc=2 a0=touch a1=./.hide_this_data.txt"}},
+  {"expect":true,"source":"attack_data","channel":"Linux-auditd","event_id":"EXECVE","data":{"_raw":"type=EXECVE msg=audit(02/20/2025 11:02:58.146:94942): argc=3 a0=sudo a1=touch a2=./.hide_this_data.txt"}}
+]}

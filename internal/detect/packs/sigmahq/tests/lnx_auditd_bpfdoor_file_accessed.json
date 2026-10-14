@@ -1,0 +1,4 @@
+{"rule": "808146b2-9332-4d78-9416-d7e47012d83d", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"PATH","data":{"name":"/var/run/hald-smartd.pid"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"PATH","data":{}}
+]}

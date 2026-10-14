@@ -71,6 +71,9 @@ var linuxCategories = map[string]string{
 	"process_creation":   "rules/linux/process_creation",
 	"network_connection": "rules/linux/network_connection",
 	"file_event":         "rules/linux/file_event",
+	// Not a Sigma category: Linux audit records (service: auditd), in
+	// folders by record type.
+	"auditd": "rules/linux/auditd",
 }
 
 // maxWildcardTerms keeps a rule's searches under
@@ -106,7 +109,7 @@ func main() {
 	pack := &detect.Pack{
 		Name:  "sigmahq",
 		Title: "SigmaHQ community rules",
-		Description: "Windows rules for Sysmon, Security and System events (processes, network connections, files, registry, DNS, DLL loads, process access, logons, scheduled tasks and services installed) from the SigmaHQ project, converted to Signalith detections. " +
+		Description: "Windows rules for Sysmon, Security and System events (processes, network connections, files, registry, DNS, DLL loads, process access, logons, scheduled tasks and services installed), and Linux rules for Sysmon for Linux and the Linux audit log, from the SigmaHQ project, converted to Signalith detections. " +
 			"Each rule shipped here fires on its test events and stays quiet on its exclusions, checked in CI.",
 		Source:     "https://github.com/SigmaHQ/sigma",
 		Version:    commit,
@@ -143,8 +146,11 @@ func main() {
 		if product == "linux" {
 			bases, cases = sigmacheck.LinuxBases[cat], sigmacheck.LinuxCases
 		}
+		if cat == "auditd" {
+			cases = sigmacheck.AuditdCases
+		}
 		files, _ := filepath.Glob(filepath.Join(*sigmaDir, src.dir, "*.yml"))
-		if cat == "security" {
+		if cat == "security" || cat == "auditd" {
 			more, _ := filepath.Glob(filepath.Join(*sigmaDir, src.dir, "*", "*.yml"))
 			files = append(files, more...)
 		}
@@ -172,7 +178,7 @@ func main() {
 				continue
 			}
 			want := map[string]string{"product": product, "category": cat, "service": ""}
-			if cat == "system" || cat == "security" {
+			if cat == "system" || cat == "security" || cat == "auditd" {
 				want["category"], want["service"] = "", cat
 			}
 			if rule.Logsource["product"] != want["product"] || rule.Logsource["category"] != want["category"] || rule.Logsource["service"] != want["service"] {
@@ -280,6 +286,7 @@ var prefixes = []struct{ from, to string }{
 	{"proc_creation_lnx_", "sigma-lnx-proc-"},
 	{"net_connection_lnx_", "sigma-lnx-net-"},
 	{"file_event_lnx_", "sigma-lnx-file-"},
+	{"lnx_auditd_", "sigma-lnx-auditd-"},
 	{"net_connection_win_", "sigma-net-"},
 	{"file_event_win_", "sigma-file-"},
 	{"file_delete_win_", "sigma-file-delete-"},

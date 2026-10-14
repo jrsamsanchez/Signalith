@@ -1,0 +1,11 @@
+{"rule": "737e8baa-d44e-4fa9-8281-24056ed424c0", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"PROCTITLE","data":{"proctitle":"x gemini x x --yolo x"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"PROCTITLE","data":{"proctitle":"x gemini x x -y  x"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"PROCTITLE","data":{"proctitle":"x claude x x --dangerously-skip-permissions x"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"PROCTITLE","data":{"proctitle":"x gemini x x --yolo y"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"PROCTITLE","data":{"proctitle":"x gemini x x -y  y"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"PROCTITLE","data":{"proctitle":"x claude x x --dangerously-skip-permissions y"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{}},
+  {"expect":true,"source":"attack_data","channel":"Linux-auditd","event_id":"PROCTITLE","data":{"_raw":"type=PROCTITLE msg=audit(03/12/2026 13:47:00.893:69676) : proctitle=node --no-warnings=DEP0040 /home/ubuntu/.nvm/versions/node/v20.20.1/bin/gemini --yolo"}},
+  {"expect":true,"source":"attack_data","channel":"Linux-auditd","event_id":"PROCTITLE","data":{"_raw":"type=PROCTITLE msg=audit(03/12/2026 13:47:00.793:69675) : proctitle=node --no-warnings=DEP0040 /home/ubuntu/.nvm/versions/node/v20.20.1/bin/gemini --yolo"}}
+]}

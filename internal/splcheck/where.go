@@ -3,6 +3,7 @@ package splcheck
 import (
 	"errors"
 	"fmt"
+	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"net/netip"
 	"regexp"
 	"slices"
@@ -330,6 +331,11 @@ func (p *parser) field(name string) (string, error) {
 		if source, ok = strings.CutSuffix(source, xmlkvSuffix); ok {
 			if f, ok := XMLKVFields[name]; ok {
 				return f, nil
+			}
+		}
+		if source == "linux_auditd" {
+			if _, ok := ingest.AuditdField(name); ok {
+				return rawFieldPrefix + name, nil
 			}
 		}
 		// The stored field depends on the node, which the event code

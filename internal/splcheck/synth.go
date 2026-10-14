@@ -303,6 +303,8 @@ func records(node string, ev map[string]string) []sigmacheck.Case {
 		}
 	}
 	switch node {
+	case AuditdNode:
+		return []sigmacheck.Case{auditdRecord(ev)}
 	case "Processes":
 		s := map[string]string{"ProcessId": "4242", "ParentProcessId": "4000"}
 		set(s, "Image", imagePath(ev["process_path"], ev["process_name"]))
@@ -805,8 +807,53 @@ func countable(t *Threshold, ev map[string]string) {
 	}
 }
 
+// auditdRecord turns a field-level event into the audit record that
+// carries it: stored fields back to auditd's names (auditd_uid_name is an
+// ENRICHED record's UID), of the type the event names, or the one whose
+// fields it has. A program's arguments, joined (execve_command), are the
+// EXECVE record's a0, a1...
+func auditdRecord(ev map[string]string) sigmacheck.Case {
+	data := map[string]string{}
+	typ := ""
+	for k, v := range ev {
+		name, ok := strings.CutPrefix(k, "auditd_")
+		if !ok {
+			continue
+		}
+		switch {
+		case name == "type":
+			typ = strings.ToUpper(v)
+		case name == "execve_command":
+			args := strings.Split(v, " ")
+			for i, a := range args {
+				data[fmt.Sprintf("a%d", i)] = a
+			}
+			data["argc"] = fmt.Sprint(len(args))
+		case strings.HasSuffix(name, "_name"):
+			data[strings.ToUpper(strings.TrimSuffix(name, "_name"))] = v
+		default:
+			data[name] = v
+		}
+	}
+	if typ == "" {
+		switch {
+		case data["argc"] != "":
+			typ = "EXECVE"
+		case data["proctitle"] != "":
+			typ = "PROCTITLE"
+		case data["unit"] != "":
+			typ = "SERVICE_STOP"
+		case data["nametype"] != "":
+			typ = "PATH"
+		default:
+			typ = "SYSCALL"
+		}
+	}
+	return sigmacheck.Case{Channel: sigmacheck.AuditdChannel, EventID: typ, Data: data}
+}
+
 // NodeModel is the Signalith data model of each node ("" for any).
-var NodeModel = map[string]string{"Processes": "Endpoint", "Filesystem": "Filesystem", "Registry": "Registry", "FileStream": "Filesystem", "Pipe": "Endpoint", "PowerShell": "Script", "ImageLoad": "Image_Load", "ProcessAccess": "Endpoint", "NetworkConnection": "Network_Traffic", "All_Traffic": "Network_Traffic", "DnsQuery": "Network_Resolution", "Logon": "Authentication", "TaskCreated": "Change", "ObjectAccess": "", "ServiceInstalled": "Change", "DirectoryChange": "Change", "ShareAccess": "Filesystem", "KerberosTGT": "Authentication", "KerberosService": "Authentication", "UserChanged": "Change", "GroupMemberAdded": "Change"}
+var NodeModel = map[string]string{"Processes": "Endpoint", "Filesystem": "Filesystem", "Registry": "Registry", "FileStream": "Filesystem", "Pipe": "Endpoint", "PowerShell": "Script", "ImageLoad": "Image_Load", "ProcessAccess": "Endpoint", "NetworkConnection": "Network_Traffic", "All_Traffic": "Network_Traffic", "DnsQuery": "Network_Resolution", "Logon": "Authentication", "TaskCreated": "Change", "ObjectAccess": "", "ServiceInstalled": "Change", "DirectoryChange": "Change", "ShareAccess": "Filesystem", "KerberosTGT": "Authentication", "KerberosService": "Authentication", "UserChanged": "Change", "GroupMemberAdded": "Change", AuditdNode: "Other"}
 
 // AttackDataSource marks a test event recorded in a real attack (Splunk's
 // attack_data, by internal/detect/attackgen).
@@ -816,6 +863,10 @@ const AttackDataSource = "attack_data"
 // events whose stored fields match the where clause.
 func Reads(r *Rule, c sigmacheck.Case) bool {
 	doc, model := Stored(c)
+	if r.Node == AuditdNode {
+		// Every audit record type.
+		return c.Channel == sigmacheck.AuditdChannel && Eval(r.Where, View(doc))
+	}
 	return InModel(r.Node, model) && slices.Contains(NodeEvents[r.Node], c.EventID) && Eval(r.Where, View(doc))
 }
 

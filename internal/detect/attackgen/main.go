@@ -26,6 +26,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/jrsamsanchez/signalith/internal/detect"
+	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"github.com/jrsamsanchez/signalith/internal/search"
 	"github.com/jrsamsanchez/signalith/internal/sigmacheck"
 	"github.com/jrsamsanchez/signalith/internal/splcheck"
@@ -131,10 +132,15 @@ func main() {
 		var cases []sigmacheck.Case
 		for _, t := range rt.Tests {
 			for _, a := range t.AttackData {
-				if !strings.HasPrefix(a.Sourcetype, "XmlWinEventLog") {
+				read := recording
+				switch {
+				case strings.HasPrefix(a.Sourcetype, "XmlWinEventLog"):
+				case a.Sourcetype == "auditd":
+					read = auditdRecording
+				default:
 					continue
 				}
-				evs, err := recording(a.Data)
+				evs, err := read(a.Data)
 				if err != nil {
 					log.Printf("%s: %v", r.File, err)
 					continue
@@ -276,6 +282,34 @@ func recording(url string) ([]sigmacheck.Case, error) {
 			data["Provider_Name"] = e.System.Provider.Name
 		}
 		out = append(out, sigmacheck.Case{Source: "attack_data", Channel: e.System.Channel, EventID: e.System.EventID, Data: data})
+	}
+	return out, nil
+}
+
+// auditdRecording reads a recorded Linux audit log (one record a line,
+// as auditd or ausearch -i writes them). Each line is kept as it is.
+func auditdRecording(url string) ([]sigmacheck.Case, error) {
+	path := filepath.Join(*cacheDir, strings.NewReplacer("https://", "", "/", "_").Replace(url))
+	if _, err := os.Stat(path); err != nil {
+		if err := download(url, path); err != nil {
+			return nil, err
+		}
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(b)) > *maxBytes {
+		b = b[:*maxBytes]
+	}
+	var out []sigmacheck.Case
+	for _, line := range strings.Split(string(b), "\n") {
+		line = strings.TrimRight(line, "\r ")
+		rec, ok := ingest.ReadAuditd(line)
+		if !ok {
+			continue
+		}
+		out = append(out, sigmacheck.Case{Source: "attack_data", Channel: sigmacheck.AuditdChannel, EventID: rec.Type, Data: map[string]string{"_raw": line}})
 	}
 	return out, nil
 }

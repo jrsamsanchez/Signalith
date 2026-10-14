@@ -1,0 +1,6 @@
+{"rule": "651df959-ad17-4b73-a323-90cb96d5fa1b", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"PROCTITLE","data":{"proctitle":"x NOPASSWD x"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"PROCTITLE","data":{"proctitle":"x NOPASSWD y"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{}},
+  {"expect":true,"source":"attack_data","channel":"Linux-auditd","event_id":"PROCTITLE","data":{"_raw":"type=PROCTITLE msg=audit(02/20/2025 10:42:55.725:93710): proctitle=echo malware_user ALL=(ALL) NOPASSWD: ALL"}}
+]}

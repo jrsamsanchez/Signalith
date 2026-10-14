@@ -1,0 +1,5 @@
+{"rule": "759d0d51-bc99-4b5e-9add-8f5b2c8e7512", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"ADD_USER","data":{}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{"exe":"/useradd"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{}}
+]}

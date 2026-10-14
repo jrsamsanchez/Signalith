@@ -144,6 +144,19 @@ var knownFields = func() map[string]string {
 		"registry_operation": kw, "registry_value_type": kw, "registry_old_value_data": kw,
 		"kerberos_service": kw, "kerberos_service_sid": kw, "kerberos_status": kw, "ticket_options": kw,
 		"ticket_encryption_type": kw, "pre_auth_type": kw, "cert_issuer": kw, "cert_serial": kw, "cert_thumbprint": kw,
+		// Linux audit records (auditd.go): each field as auditd names it,
+		// the names of an ENRICHED record's numbers (auditd_uid_name), and
+		// a program's arguments one by one and joined, which rules search
+		// for words inside, as they do its command line (proctitle).
+		"auditd_type": kw, "auditd_id": kw, "auditd_argc": kw, "auditd_execve_command": "wildcard", "auditd_proctitle": "wildcard",
+		"auditd_syscall": kw, "auditd_syscall_name": kw, "auditd_arch": kw, "auditd_arch_name": kw, "auditd_success": kw,
+		"auditd_exit": kw, "auditd_exe": kw, "auditd_comm": kw, "auditd_key": kw, "auditd_name": kw, "auditd_nametype": kw,
+		"auditd_cwd": kw, "auditd_unit": kw, "auditd_op": kw, "auditd_res": kw, "auditd_acct": kw, "auditd_pid": kw,
+		"auditd_ppid": kw, "auditd_uid": kw, "auditd_euid": kw, "auditd_auid": kw, "auditd_gid": kw, "auditd_uid_name": kw,
+		"auditd_euid_name": kw, "auditd_auid_name": kw, "auditd_gid_name": kw, "auditd_tty": kw, "auditd_ses": kw,
+		"auditd_hostname": kw, "auditd_addr": kw, "auditd_terminal": kw, "auditd_data": "wildcard", "auditd_items": kw,
+		"auditd_mode": kw, "auditd_ouid": kw, "auditd_ouid_name": kw, "auditd_subj": kw,
+		"auditd_a0": kw, "auditd_a1": kw, "auditd_a2": kw, "auditd_a3": kw, "auditd_a4": kw, "auditd_a5": kw, "auditd_a6": kw, "auditd_a7": kw, "auditd_a8": kw, "auditd_a9": kw, "auditd_a10": kw, "auditd_a11": kw, "auditd_a12": kw, "auditd_a13": kw, "auditd_a14": kw, "auditd_a15": kw, "auditd_a16": kw, "auditd_a17": kw, "auditd_a18": kw, "auditd_a19": kw, "auditd_a20": kw, "auditd_a21": kw, "auditd_a22": kw, "auditd_a23": kw, "auditd_a24": kw, "auditd_a25": kw, "auditd_a26": kw, "auditd_a27": kw, "auditd_a28": kw, "auditd_a29": kw, "auditd_a30": kw, "auditd_a31": kw,
 		// An sshd line whose client address cannot be told from text the
 		// client sent (see ambiguousSSH).
 		"src_ambiguous": kw,

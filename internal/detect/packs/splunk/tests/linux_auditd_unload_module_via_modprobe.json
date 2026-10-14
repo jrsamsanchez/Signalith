@@ -1,0 +1,7 @@
+{"rule": "90964d6a-4b5f-409a-85bd-95e261e03fe9", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"x","a1":"modprobe","a2":"x","a3":"x","a4":"-r","a5":"","a6":"x","argc":"7"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"x","a1":"modprobe","a2":"x","a3":"x","a4":"-r","a5":"","a6":"y","argc":"7"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{}},
+  {"expect":true,"source":"attack_data","channel":"Linux-auditd","event_id":"EXECVE","data":{"_raw":"type=EXECVE msg=audit(02/20/2025 10:00:26.469:44962) : argc=3 a0=modprobe a1=-r a2=rootkit"}},
+  {"expect":true,"source":"attack_data","channel":"Linux-auditd","event_id":"EXECVE","data":{"_raw":"type=EXECVE msg=audit(02/20/2025 13:31:41.670:153632) : argc=3 a0=modprobe a1=-r a2=rootkit"}}
+]}

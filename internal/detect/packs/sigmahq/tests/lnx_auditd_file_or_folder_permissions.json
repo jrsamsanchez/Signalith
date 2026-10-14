@@ -1,0 +1,4 @@
+{"rule": "74c01ace-0152-4094-8ae2-6fd776dd43e5", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"chmod","argc":"1"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{}}
+]}

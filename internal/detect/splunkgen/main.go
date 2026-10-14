@@ -50,6 +50,10 @@ var windowsSources = []string{
 	"Windows Event Log Security 4738", "Windows Event Log Security 4732",
 	"Sysmon EventID 3", "Sysmon EventID 22", "Windows Event Log Security 4624", "Windows Event Log Security 4625",
 	"Sysmon EventID 15", "Sysmon EventID 17", "Sysmon EventID 18",
+	// Linux audit records, which Signalith reads from the audit log.
+	"Linux Auditd Execve", "Linux Auditd Proctitle", "Linux Auditd Syscall", "Linux Auditd Path", "Linux Auditd Cwd",
+	"Linux Auditd Service Stop", "Linux Auditd Add User", "Linux Auditd Daemon Start", "Linux Auditd Daemon End",
+	"Linux Auditd Daemon Abort",
 }
 
 // maxWildcardTerms keeps a rule's searches under

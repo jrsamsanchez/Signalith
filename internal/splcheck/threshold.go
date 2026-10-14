@@ -2,6 +2,7 @@ package splcheck
 
 import (
 	"fmt"
+	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"regexp"
 	"slices"
 	"strconv"
@@ -185,6 +186,14 @@ var sameAsEvent = map[string]bool{
 func rawGroupField(node, f string) (string, bool, error) {
 	if sameAsEvent[f] {
 		return "", false, nil
+	}
+	if node == AuditdNode {
+		if f == "dest" || f == "host" {
+			return "host", true, nil
+		}
+		if name, ok := ingest.AuditdField(f); ok {
+			return name, true, nil
+		}
 	}
 	// An event's IpAddress is stored as src without its ::ffff: prefix,
 	// which groups the same events.

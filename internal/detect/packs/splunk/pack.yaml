@@ -682,6 +682,190 @@ rules:
     rule_id: bf0a378e-5f3c-11ec-a6de-acde48001122
     file: linux_at_application_execution.yml
     path: detections/endpoint/linux_at_application_execution.yml
+  - id: splunk-linux-auditd-add-user-account
+    rule_id: aae66dc0-74b4-4807-b480-b35f8027abb4
+    file: linux_auditd_add_user_account.yml
+    path: detections/endpoint/linux_auditd_add_user_account.yml
+  - id: splunk-linux-auditd-add-user-account-type
+    rule_id: f8c325ea-506e-4105-8ccf-da1492e90115
+    file: linux_auditd_add_user_account_type.yml
+    path: detections/endpoint/linux_auditd_add_user_account_type.yml
+  - id: splunk-linux-auditd-ai-cli-permission-override-activated
+    rule_id: 737e8baa-d44e-4fa9-8281-24056ed424c0
+    file: linux_auditd_ai_cli_permission_override_activated.yml
+    path: detections/endpoint/linux_auditd_ai_cli_permission_override_activated.yml
+  - id: splunk-linux-auditd-at-application-execution
+    rule_id: 9f306e0a-1c36-469e-8892-968ca12470dd
+    file: linux_auditd_at_application_execution.yml
+    path: detections/endpoint/linux_auditd_at_application_execution.yml
+  - id: splunk-linux-auditd-auditd-daemon-abort
+    rule_id: 76d6573f-c4ab-4fa1-8390-c036416d4add
+    file: linux_auditd_auditd_daemon_abort.yml
+    path: detections/endpoint/linux_auditd_auditd_daemon_abort.yml
+  - id: splunk-linux-auditd-auditd-daemon-shutdown
+    rule_id: 6e2574b3-e24b-4321-ae3c-ba83a75bb714
+    file: linux_auditd_auditd_daemon_shutdown.yml
+    path: detections/endpoint/linux_auditd_auditd_daemon_shutdown.yml
+  - id: splunk-linux-auditd-auditd-daemon-start
+    rule_id: 6b0cb0ff-9a7e-4475-a687-43827fdb31d6
+    file: linux_auditd_auditd_daemon_start.yml
+    path: detections/endpoint/linux_auditd_auditd_daemon_start.yml
+  - id: splunk-linux-auditd-auditd-service-stop
+    rule_id: 6cb9d0e1-eabe-41de-a11a-5efade354e9d
+    file: linux_auditd_auditd_service_stop.yml
+    path: detections/endpoint/linux_auditd_auditd_service_stop.yml
+  - id: splunk-linux-auditd-base64-decode-files
+    rule_id: 5890ba10-4e48-4dc0-8a40-3e1ebe75e737
+    file: linux_auditd_base64_decode_files.yml
+    path: detections/endpoint/linux_auditd_base64_decode_files.yml
+  - id: splunk-linux-auditd-change-file-owner-to-root
+    rule_id: 7b87c556-0ca4-47e0-b84c-6cd62a0a3e90
+    file: linux_auditd_change_file_owner_to_root.yml
+    path: detections/endpoint/linux_auditd_change_file_owner_to_root.yml
+  - id: splunk-linux-auditd-clipboard-data-copy
+    rule_id: 9ddfe470-c4d0-4e60-8668-7337bd699edd
+    file: linux_auditd_clipboard_data_copy.yml
+    path: detections/endpoint/linux_auditd_clipboard_data_copy.yml
+  - id: splunk-linux-auditd-data-destruction-command
+    rule_id: 4da5ce1a-f71b-4e71-bb73-c0a3c73f3c3c
+    file: linux_auditd_data_destruction_command.yml
+    path: detections/endpoint/linux_auditd_data_destruction_command.yml
+  - id: splunk-linux-auditd-data-transfer-size-limits-via-split
+    rule_id: 4669561d-3bbd-44e3-857c-0e3c6ef2120c
+    file: linux_auditd_data_transfer_size_limits_via_split.yml
+    path: detections/endpoint/linux_auditd_data_transfer_size_limits_via_split.yml
+  - id: splunk-linux-auditd-data-transfer-size-limits-via-split-syscall
+    rule_id: c03d4a49-cf9d-435b-86e9-c6f8c9b6c42e
+    file: linux_auditd_data_transfer_size_limits_via_split_syscall.yml
+    path: detections/endpoint/linux_auditd_data_transfer_size_limits_via_split_syscall.yml
+  - id: splunk-linux-auditd-database-file-and-directory-discovery
+    rule_id: f616c4f3-bde9-41cf-856c-019b65f668bb
+    file: linux_auditd_database_file_and_directory_discovery.yml
+    path: detections/endpoint/linux_auditd_database_file_and_directory_discovery.yml
+  - id: splunk-linux-auditd-dd-file-overwrite
+    rule_id: d1b74420-4cea-4752-a123-9b40dfcca49a
+    file: linux_auditd_dd_file_overwrite.yml
+    path: detections/endpoint/linux_auditd_dd_file_overwrite.yml
+  - id: splunk-linux-auditd-disable-or-modify-system-firewall
+    rule_id: 07052556-d4b5-4bae-89aa-cbdc1bb11250
+    file: linux_auditd_disable_or_modify_system_firewall.yml
+    path: detections/endpoint/linux_auditd_disable_or_modify_system_firewall.yml
+  - id: splunk-linux-auditd-doas-tool-execution
+    rule_id: 91b8ca78-f205-4826-a3ef-cd8d6b24e97b
+    file: linux_auditd_doas_tool_execution.yml
+    path: detections/endpoint/linux_auditd_doas_tool_execution.yml
+  - id: splunk-linux-auditd-edit-cron-table-parameter
+    rule_id: f4bb7321-7e64-4d1e-b1aa-21f8b019a91f
+    file: linux_auditd_edit_cron_table_parameter.yml
+    path: detections/endpoint/linux_auditd_edit_cron_table_parameter.yml
+  - id: splunk-linux-auditd-file-and-directory-discovery
+    rule_id: 0bbfb79c-a755-49a5-a38a-1128d0a452f1
+    file: linux_auditd_file_and_directory_discovery.yml
+    path: detections/endpoint/linux_auditd_file_and_directory_discovery.yml
+  - id: splunk-linux-auditd-file-permission-modification-via-chmod
+    rule_id: 5f1d2ea7-eec0-4790-8b24-6875312ad492
+    file: linux_auditd_file_permission_modification_via_chmod.yml
+    path: detections/endpoint/linux_auditd_file_permission_modification_via_chmod.yml
+  - id: splunk-linux-auditd-file-permissions-modification-via-chattr
+    rule_id: f2d1110d-b01c-4a58-9975-90a9edeb083a
+    file: linux_auditd_file_permissions_modification_via_chattr.yml
+    path: detections/endpoint/linux_auditd_file_permissions_modification_via_chattr.yml
+  - id: splunk-linux-auditd-find-credentials-from-password-managers
+    rule_id: 784241aa-85a5-4782-a503-d071bd3446f9
+    file: linux_auditd_find_credentials_from_password_managers.yml
+    path: detections/endpoint/linux_auditd_find_credentials_from_password_managers.yml
+  - id: splunk-linux-auditd-find-credentials-from-password-stores
+    rule_id: 4de73044-9a1d-4a51-a1c2-85267d8dcab3
+    file: linux_auditd_find_credentials_from_password_stores.yml
+    path: detections/endpoint/linux_auditd_find_credentials_from_password_stores.yml
+  - id: splunk-linux-auditd-find-ssh-private-keys
+    rule_id: e2d2bd10-dcd1-4b2f-8a76-0198eab32ba5
+    file: linux_auditd_find_ssh_private_keys.yml
+    path: detections/endpoint/linux_auditd_find_ssh_private_keys.yml
+  - id: splunk-linux-auditd-hardware-addition-swapoff
+    rule_id: 5728bb16-1a0b-4b66-bce2-0074ac839770
+    file: linux_auditd_hardware_addition_swapoff.yml
+    path: detections/endpoint/linux_auditd_hardware_addition_swapoff.yml
+  - id: splunk-linux-auditd-hidden-files-and-directories-creation
+    rule_id: 555cc358-bf16-4e05-9b3a-0f89c73b7261
+    file: linux_auditd_hidden_files_and_directories_creation.yml
+    path: detections/endpoint/linux_auditd_hidden_files_and_directories_creation.yml
+  - id: splunk-linux-auditd-insert-kernel-module-using-insmod-utility
+    rule_id: bc0ca53f-dea6-4906-9b12-09c396fdf1d3
+    file: linux_auditd_insert_kernel_module_using_insmod_utility.yml
+    path: detections/endpoint/linux_auditd_insert_kernel_module_using_insmod_utility.yml
+  - id: splunk-linux-auditd-install-kernel-module-using-modprobe-utility
+    rule_id: 95165985-ace5-4d42-9c42-93a89a5af901
+    file: linux_auditd_install_kernel_module_using_modprobe_utility.yml
+    path: detections/endpoint/linux_auditd_install_kernel_module_using_modprobe_utility.yml
+  - id: splunk-linux-auditd-kernel-module-enumeration
+    rule_id: d1b088de-c47a-4572-9339-bdcc26493b32
+    file: linux_auditd_kernel_module_enumeration.yml
+    path: detections/endpoint/linux_auditd_kernel_module_enumeration.yml
+  - id: splunk-linux-auditd-kernel-module-using-rmmod-utility
+    rule_id: 31810b7a-0abe-42be-a210-0dec8106afee
+    file: linux_auditd_kernel_module_using_rmmod_utility.yml
+    path: detections/endpoint/linux_auditd_kernel_module_using_rmmod_utility.yml
+  - id: splunk-linux-auditd-nopasswd-entry-in-sudoers-file
+    rule_id: 651df959-ad17-4b73-a323-90cb96d5fa1b
+    file: linux_auditd_nopasswd_entry_in_sudoers_file.yml
+    path: detections/endpoint/linux_auditd_nopasswd_entry_in_sudoers_file.yml
+  - id: splunk-linux-auditd-osquery-service-stop
+    rule_id: 0c320fea-6e87-4b99-a884-74d09d4b655d
+    file: linux_auditd_osquery_service_stop.yml
+    path: detections/endpoint/linux_auditd_osquery_service_stop.yml
+  - id: splunk-linux-auditd-possible-access-to-credential-files
+    rule_id: 0419cb7a-57ea-467b-974f-77c303dfe2a3
+    file: linux_auditd_possible_access_to_credential_files.yml
+    path: detections/endpoint/linux_auditd_possible_access_to_credential_files.yml
+  - id: splunk-linux-auditd-preload-hijack-library-calls
+    rule_id: 35c50572-a70b-452f-afa9-bebdf3c3ce36
+    file: linux_auditd_preload_hijack_library_calls.yml
+    path: detections/endpoint/linux_auditd_preload_hijack_library_calls.yml
+  - id: splunk-linux-auditd-private-keys-and-certificate-enumeration
+    rule_id: 892eb674-3344-4143-8e52-4775b1daf3f1
+    file: linux_auditd_private_keys_and_certificate_enumeration.yml
+    path: detections/endpoint/linux_auditd_private_keys_and_certificate_enumeration.yml
+  - id: splunk-linux-auditd-service-restarted
+    rule_id: 8eb3e858-18d3-44a4-a514-52cfa39f154a
+    file: linux_auditd_service_restarted.yml
+    path: detections/endpoint/linux_auditd_service_restarted.yml
+  - id: splunk-linux-auditd-service-started
+    rule_id: b5eed06d-5c97-4092-a3a1-fa4b7e77c71a
+    file: linux_auditd_service_started.yml
+    path: detections/endpoint/linux_auditd_service_started.yml
+  - id: splunk-linux-auditd-setuid-using-chmod-utility
+    rule_id: 8230c407-1b47-4d95-ac2e-718bd6381386
+    file: linux_auditd_setuid_using_chmod_utility.yml
+    path: detections/endpoint/linux_auditd_setuid_using_chmod_utility.yml
+  - id: splunk-linux-auditd-setuid-using-setcap-utility
+    rule_id: 1474459a-302b-4255-8add-d82f96d14cd9
+    file: linux_auditd_setuid_using_setcap_utility.yml
+    path: detections/endpoint/linux_auditd_setuid_using_setcap_utility.yml
+  - id: splunk-linux-auditd-shred-overwrite-command
+    rule_id: ce2bde4d-a1d4-4452-8c87-98440e5adfb3
+    file: linux_auditd_shred_overwrite_command.yml
+    path: detections/endpoint/linux_auditd_shred_overwrite_command.yml
+  - id: splunk-linux-auditd-sudo-or-su-execution
+    rule_id: 817a5c89-5b92-4818-a22d-aa35e1361afe
+    file: linux_auditd_sudo_or_su_execution.yml
+    path: detections/endpoint/linux_auditd_sudo_or_su_execution.yml
+  - id: splunk-linux-auditd-sysmon-service-stop
+    rule_id: 20901256-633a-40de-8753-7b88811a460f
+    file: linux_auditd_sysmon_service_stop.yml
+    path: detections/endpoint/linux_auditd_sysmon_service_stop.yml
+  - id: splunk-linux-auditd-unload-module-via-modprobe
+    rule_id: 90964d6a-4b5f-409a-85bd-95e261e03fe9
+    file: linux_auditd_unload_module_via_modprobe.yml
+    path: detections/endpoint/linux_auditd_unload_module_via_modprobe.yml
+  - id: splunk-linux-auditd-virtual-disk-file-and-directory-discovery
+    rule_id: eec78cef-d4c8-4b35-8f5b-6922102a4a41
+    file: linux_auditd_virtual_disk_file_and_directory_discovery.yml
+    path: detections/endpoint/linux_auditd_virtual_disk_file_and_directory_discovery.yml
+  - id: splunk-linux-auditd-whoami-user-discovery
+    rule_id: d1ff2e22-310d-446a-80b3-faedaa7b3b52
+    file: linux_auditd_whoami_user_discovery.yml
+    path: detections/endpoint/linux_auditd_whoami_user_discovery.yml
   - id: splunk-linux-awk-privilege-escalation
     rule_id: 4510cae0-96a2-4840-9919-91d262db210a
     file: linux_awk_privilege_escalation.yml

@@ -1,0 +1,8 @@
+{"rule": "95165985-ace5-4d42-9c42-93a89a5af901", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{"comm":"modprobe"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{"comm":"modprobe"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALM","data":{"comm":"modprobe"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{"comm":"modprobf"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{}},
+  {"expect":true,"source":"attack_data","channel":"Linux-auditd","event_id":"SYSCALL","data":{"_raw":"type=SYSCALL msg=audit(04/16/2025 08:19:51.187:45397) : arch=x86_64 syscall=execve success=yes exit=0 a0=0x6042f03f6758 a1=0x6042f03e5ce0 a2=0x6042f03f77a0 a3=0x0 items=2 ppid=5108 pid=5109 auid=ubuntu uid=root gid=root euid=root suid=root fsuid=root egid=root sgid=root fsgid=root tty=pts1 ses=3 comm=modprobe exe=/usr/bin/kmod subj=unconfined key=rootcmd"}}
+]}

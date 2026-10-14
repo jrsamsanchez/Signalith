@@ -1,0 +1,4 @@
+{"rule": "a94cdd87-6c54-4678-a6cc-2814ffe5a13d", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"PATH","data":{"name":"/etc/zsh/zlogout"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"PATH","data":{}}
+]}

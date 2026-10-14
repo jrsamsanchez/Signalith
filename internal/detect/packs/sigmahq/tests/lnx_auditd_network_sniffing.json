@@ -1,0 +1,9 @@
+{"rule": "f4d3748a-65d1-4806-bd23-e25728081d01", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"tcpdump","a1":"-c","a2":"arg","a3":"-i","argc":"4"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"tshark","a1":"-c","a2":"arg","a3":"-i","argc":"4"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"arg","a1":"-c","a2":"arg","a3":"-i","argc":"4"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"tcpdump","a1":"arg","a2":"arg","a3":"-i","argc":"4"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"tcpdump","a1":"-c","argc":"2"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"tshark","a1":"arg","a2":"arg","a3":"-i","argc":"4"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"tshark","a1":"-c","argc":"2"}}
+]}
