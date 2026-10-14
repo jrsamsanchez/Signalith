@@ -295,6 +295,9 @@ func (m *Manager) Prepare(scope string) error {
 	if !m.LocalCA() {
 		return ErrNotAuto
 	}
+	if m.clusterCA() {
+		return ErrClusterCA
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if exists(m.path(previousDir)) {
@@ -346,6 +349,9 @@ func (m *Manager) Discard() error {
 	if !m.LocalCA() {
 		return ErrNotAuto
 	}
+	if m.clusterCA() {
+		return ErrClusterCA
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if !exists(m.path(nextDir)) {
@@ -363,6 +369,9 @@ func (m *Manager) Discard() error {
 func (m *Manager) Prune() error {
 	if !m.LocalCA() {
 		return ErrNotAuto
+	}
+	if m.clusterCA() {
+		return ErrClusterCA
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -387,6 +396,9 @@ func (m *Manager) Prune() error {
 func (m *Manager) Switch() error {
 	if !m.LocalCA() {
 		return ErrNotAuto
+	}
+	if m.clusterCA() {
+		return ErrClusterCA
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -458,6 +470,9 @@ func (m *Manager) Switch() error {
 func (m *Manager) Rollback() error {
 	if !m.LocalCA() {
 		return ErrNotAuto
+	}
+	if m.clusterCA() {
+		return ErrClusterCA
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()

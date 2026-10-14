@@ -19,7 +19,6 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"io/fs"
 	"log/slog"
 	"math/big"
 	"net"
@@ -78,7 +77,22 @@ type Options struct {
 	Log *slog.Logger
 	// Now is the clock; nil uses time.Now.
 	Now func() time.Time
+	// Store keeps the certificate authority; nil is ca.pem and ca.key in
+	// Dir (see UseStore for the cluster's).
+	Store CAStore
+	// SharedNames, when set, lists names every server of the cluster
+	// covers (the cluster's shared address and names); the certificate
+	// covers them after Names.
+	SharedNames func() []string
+	// PersistName, when set, keeps a name EnsureName adds while the
+	// cluster's certificate authority is in use, instead of the store's
+	// AddName. It is called without the Manager's lock held: it may wait
+	// on the network.
+	PersistName func(ctx context.Context, name string) error
 }
+
+// persistTimeout bounds how long EnsureName waits for PersistName.
+const persistTimeout = 15 * time.Second
 
 // Manager serves the current certificate and keeps it fresh.
 type Manager struct {
@@ -87,7 +101,8 @@ type Manager struct {
 
 	mu    sync.Mutex
 	ca    *x509.Certificate // the CA agents should trust; nil when none is known
-	caKey crypto.Signer     // auto mode only
+	caKey crypto.Signer     // auto mode only; nil when the cluster's is not available
+	store CAStore           // auto mode only: where ca and caKey come from
 	added []string          // names from EnsureName, oldest first
 	// outside are names the certificate should cover but the CA may not
 	// sign (see allowed), as of the last wantNames.
@@ -129,8 +144,16 @@ func New(o Options) (*Manager, error) {
 	if err := securefile.MkdirPrivate(o.Dir); err != nil {
 		return nil, fmt.Errorf("cannot create %s for the HTTPS certificate: %w. Set SIGNALITH_STATE_DIR to a folder Signalith can write, or use your own certificate (server.tls.mode: files)", o.Dir, err)
 	}
+	switch {
+	case o.Store != nil:
+		m.store = o.Store
+	case readMark(o.Dir) != "":
+		m.store = detachedStore{fileStore{o.Dir}}
+	default:
+		m.store = fileStore{o.Dir}
+	}
 	// The names first: a new CA is made for them.
-	m.added = m.readNames()
+	m.added = m.store.Names()
 	// A switch of certificate authority that a crash cut short is
 	// finished or undone before anything is read.
 	if err := m.recoverSwitch(); err != nil {
@@ -142,6 +165,14 @@ func New(o Options) (*Manager, error) {
 	m.switchedAt = readStamp(m.path(previousDir, stampSwitched))
 	if err := m.loadOrIssue(); err != nil {
 		return nil, err
+	}
+	if o.Store != nil {
+		m.mu.Lock()
+		err := m.adoptLocked(m.ca)
+		m.mu.Unlock()
+		if err != nil {
+			return nil, err
+		}
 	}
 	return m, nil
 }
@@ -314,6 +345,17 @@ func (m *Manager) EnsureName(host string) error {
 	if err != nil || name == "" {
 		return err
 	}
+	// The cluster keeps the names of its certificate authority: they are
+	// saved there first, over the network, without the lock.
+	persist := m.persister()
+	if persist != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), persistTimeout)
+		err := persist(ctx, name)
+		cancel()
+		if err != nil {
+			return err
+		}
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.Covers(name) {
@@ -324,14 +366,33 @@ func (m *Manager) EnsureName(host string) error {
 	if len(m.added) > maxAddedNames {
 		m.added = m.added[len(m.added)-maxAddedNames:]
 	}
-	if err := m.writeNames(); err != nil {
-		return err
+	if persist == nil {
+		if err := m.writeNames(); err != nil {
+			return err
+		}
 	}
 	if err := m.issue(); err != nil {
 		return err
 	}
 	m.log().Info("HTTPS certificate now also covers "+name, "names", strings.Join(certNames(m.Leaf()), ", "))
 	return nil
+}
+
+// persister returns how EnsureName keeps a name with the cluster's
+// certificate authority, or nil to keep it in names.txt.
+func (m *Manager) persister() func(context.Context, string) error {
+	if !m.LocalCA() {
+		return nil
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if !m.inCluster() {
+		return nil
+	}
+	if m.opts.PersistName != nil {
+		return m.opts.PersistName
+	}
+	return m.store.AddName
 }
 
 // Refresh takes in the names another Manager for the same folder added
@@ -345,7 +406,7 @@ func (m *Manager) Refresh() error {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	saved := m.readNames()
+	saved := m.store.Names()
 	if slices.Equal(saved, m.added) {
 		return nil
 	}
@@ -406,29 +467,24 @@ func (m *Manager) path(name ...string) string {
 	return filepath.Join(append([]string{m.opts.Dir}, name...)...)
 }
 
-// loadCA reads the CA, or makes one on first start.
+// loadCA reads the CA from the store, or makes one on first start (only
+// the file store can).
 func (m *Manager) loadCA() error {
-	certPEM, err := os.ReadFile(m.path(CAFile))
-	if errors.Is(err, fs.ErrNotExist) {
-		if _, kerr := os.Stat(m.path(caKeyFile)); kerr == nil {
-			return fmt.Errorf("%s is missing but its key %s is there; restore %s, or delete the tls folder to start over (agents then need the new CA)",
-				m.path(CAFile), m.path(caKeyFile), CAFile)
-		}
-		return m.makeCA()
-	}
-	if err != nil {
-		return fmt.Errorf("cannot read Signalith's CA certificate: %w", err)
-	}
-	ca, err := parseCert(certPEM)
-	if err != nil {
-		return fmt.Errorf("%s: %w", m.path(CAFile), err)
-	}
-	key, err := readCAKey(m.path(caKeyFile))
+	ca, key, err := m.store.Load()
 	if err != nil {
 		return err
 	}
-	if !samePublicKey(ca.PublicKey, key.Public()) {
-		return fmt.Errorf("%s does not belong to %s; restore the pair, or delete the tls folder to start over (agents then need the new CA)", caKeyFile, CAFile)
+	if ca == nil {
+		if err := m.makeCA(); err != nil {
+			return err
+		}
+		if ca, key, err = m.store.Load(); err != nil {
+			return err
+		}
+		if ca == nil {
+			return errors.New("the certificate authority just made cannot be read back")
+		}
+		m.log().Info("made Signalith's own certificate authority for HTTPS", "ca_file", m.path(CAFile), "ca_sha256", Fingerprint(ca.Raw))
 	}
 	m.ca, m.caKey = ca, key
 	return nil
@@ -440,31 +496,12 @@ func (m *Manager) loadCA() error {
 // network (see constraints): computers trust it for every site, so this
 // keeps a stolen ca.key from vouching for anyone else's.
 func (m *Manager) makeCA() error {
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		return err
-	}
 	host, _ := os.Hostname()
 	if host == "" {
 		host = "signalith"
 	}
-	now := m.now()
 	dns, excluded, ips := constraints(m.candidateNames(), normScope(m.opts.Scope) == ScopeStrict)
-	tmpl := caTemplate("Signalith Local CA ("+host+")", now, dns, excluded, ips)
-	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, key.Public(), key)
-	if err != nil {
-		return err
-	}
-	ca, _ := x509.ParseCertificate(der)
-	if err := writeCAKey(m.path(caKeyFile), key); err != nil {
-		return err
-	}
-	if err := writeFile(m.path(CAFile), pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o644); err != nil {
-		return err
-	}
-	m.ca, m.caKey = ca, key
-	m.log().Info("made Signalith's own certificate authority for HTTPS", "ca_file", m.path(CAFile), "ca_sha256", Fingerprint(der))
-	return nil
+	return m.store.Make(caTemplate("Signalith Local CA ("+host+")", m.now(), dns, excluded, ips))
 }
 
 // caTemplate is a new CA, valid from an hour before now (for clocks a
@@ -546,7 +583,11 @@ func (m *Manager) wantNames() []string {
 func (m *Manager) candidateNames() []string {
 	var out []string
 	seen := map[string]bool{}
-	for _, list := range [][]string{m.opts.Names, localNames(), m.added} {
+	var shared []string
+	if m.opts.SharedNames != nil {
+		shared = m.opts.SharedNames()
+	}
+	for _, list := range [][]string{m.opts.Names, shared, localNames(), m.added} {
 		for _, n := range list {
 			if n, ok := normalizeName(n); ok && !seen[n] {
 				seen[n] = true
@@ -732,6 +773,16 @@ func (m *Manager) loadOrIssue() error {
 		m.cert.Store(&pair)
 		return nil
 	}
+	if m.caKey == nil {
+		// The cluster's CA, without its key for now: serve what there is.
+		kept, err := m.keptLeaf()
+		if err != nil {
+			return errNoCAKey
+		}
+		m.log().Error("HTTPS: " + errNoCAKey.Error())
+		m.cert.Store(kept)
+		return nil
+	}
 	return m.issue()
 }
 
@@ -770,6 +821,9 @@ func (m *Manager) issue() error {
 // issueLeaf makes a new server certificate from the CA for wantNames and
 // writes it, without serving it yet. The caller holds m.mu.
 func (m *Manager) issueLeaf() (*tls.Certificate, error) {
+	if m.caKey == nil {
+		return nil, errNoCAKey
+	}
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return nil, err
@@ -807,31 +861,11 @@ func (m *Manager) issueLeaf() (*tls.Certificate, error) {
 	return &tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key, Leaf: leaf}, nil
 }
 
-// readNames reads the names EnsureName added, one per line.
-func (m *Manager) readNames() []string {
-	b, err := os.ReadFile(m.path(namesFile))
-	if err != nil {
-		return nil
-	}
-	var out []string
-	for _, line := range strings.Split(string(b), "\n") {
-		line = strings.TrimSpace(line)
-		if n, ok := normalizeName(line); ok && !strings.HasPrefix(line, "#") && !slices.Contains(out, n) {
-			out = append(out, n)
-		}
-	}
-	if len(out) > maxAddedNames {
-		out = out[len(out)-maxAddedNames:]
-	}
-	return out
-}
+// readNames reads the names EnsureName added, one per line, from
+// names.txt.
+func (m *Manager) readNames() []string { return fileStore{m.opts.Dir}.Names() }
 
-func (m *Manager) writeNames() error {
-	text := "# Addresses agents were set up with on the Add data page. Signalith keeps them\n" +
-		"# in its HTTPS certificate. For names of your own, use server.tls.names instead.\n" +
-		strings.Join(m.added, "\n") + "\n"
-	return writeFile(m.path(namesFile), []byte(text), 0o644)
-}
+func (m *Manager) writeNames() error { return fileStore{m.opts.Dir}.writeNames(m.added) }
 
 // ---- files mode ----
 
