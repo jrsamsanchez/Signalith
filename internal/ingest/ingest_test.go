@@ -162,6 +162,14 @@ func TestWindowsApplicationEvents(t *testing.T) {
 		"datamodel": "Other", "provider": "MSSQLSERVER", "signature_id": "33205", "sourcetype": "WinEventLog:Application",
 		"event_data": "audit_schema_version:1\nobject_name:xp_cmdshell\nstatement:EXEC xp_cmdshell 'whoami'",
 	})
+	// Code Integrity's events the same way.
+	rec = map[string]any{"Channel": "Microsoft-Windows-CodeIntegrity/Operational", "Computer": "WS1", "EventID": "3001",
+		"ProviderName": "Microsoft-Windows-CodeIntegrity", "StringInserts": []string{"21", `\Device\HarddiskVolume3\x.sys`}}
+	b, _ = json.Marshal(rec)
+	expect(t, Normalize("win.events", decode(t, string(b)), now).Document(), map[string]any{
+		"datamodel": "Other", "provider": "Microsoft-Windows-CodeIntegrity", "signature_id": "3001",
+		"event_data": "21\n\\Device\\HarddiskVolume3\\x.sys",
+	})
 	// The OpenTelemetry Collector's named values go in by name.
 	ev := otlpWindows(map[string]any{"channel": "Application", "computer": "WS1", "event_id": map[string]any{"id": "1040"},
 		"provider": map[string]any{"name": "MsiInstaller"}, "event_data": map[string]any{"param1": `C:\Users\Public\x.msi`, "param2": "(NULL)"}})

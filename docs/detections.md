@@ -242,9 +242,9 @@ Content packs are rule sets from other open source projects, shipped unchanged
 inside Signalith and converted when it starts. Every pack detection is **off** until
 an admin turns it on.
 
-**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,156 rules from
-[SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 2,002 Windows rules
-for these Sysmon, Security, PowerShell, System, Application and Defender log sources, and 154 Linux rules (see
+**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,164 rules from
+[SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 2,010 Windows rules
+for these Sysmon, Security, PowerShell, System, Application, Code Integrity and Defender log sources, and 154 Linux rules (see
 [Linux endpoints](#linux-endpoints-sysmon-for-linux) and
 [the Linux audit log](#linux-audit-log-auditd)):
 
@@ -264,6 +264,7 @@ for these Sysmon, Security, PowerShell, System, Application and Defender log sou
 | `service: system` | System 7045 (service installed) | Change |
 | `service: system` | Other System events, by provider and event ID (see below) | Other |
 | `service: application` | Application events, by provider and event ID (see below) | Other |
+| `service: codeintegrity-operational` | Code Integrity events (unsigned, revoked and blocked drivers and images), by event ID | Other |
 | `service: windefend` | Microsoft Defender Antivirus events (threats, attack surface reduction blocks, protection turned off, settings changed; `Path` is `file_path`, `ProcessName` `process_path`, `NewValue` `new_value`, `SourceName` `detection_source`, a 5013's `Value` `setting`) | Malware |
 | `service: security` | The Security log events in the next table | See the next table |
 
@@ -581,6 +582,10 @@ ScreenConnect, application crashes) find their events in Other by provider and e
 and search the event's data values (`Data` is `event_data`, the values one per line).
 The Windows agent collects the Application log. A rule about the rendered message
 (`Message`) is left out of the pack.
+
+Code Integrity rules (`Microsoft-Windows-CodeIntegrity/Operational`, which the Windows
+agent collects) find their events the same way, with the event's data values as
+`event_data`; a rule about a named value (`FileNameBuffer`) is left out of the pack.
 
 Registry values that Sysmon writes as `DWORD (0x00000001)` compare as `0x00000001`,
 the way Splunk's Sysmon add-on reads them.

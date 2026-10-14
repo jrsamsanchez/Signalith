@@ -64,6 +64,9 @@ var categories = map[string]string{
 	// Nor this: Windows Application log rules (service: application), in
 	// folders by provider.
 	"application": "rules/windows/builtin/application",
+	// Nor this: Code Integrity log rules (service:
+	// codeintegrity-operational).
+	"code_integrity": "rules/windows/builtin/code_integrity",
 	// Nor this: Microsoft Defender Antivirus log rules (service:
 	// windefend).
 	"windefend": "rules/windows/builtin/windefend",
@@ -187,6 +190,9 @@ func main() {
 			want := map[string]string{"product": product, "category": cat, "service": ""}
 			if cat == "system" || cat == "security" || cat == "auditd" || cat == "windefend" || cat == "application" {
 				want["category"], want["service"] = "", cat
+			}
+			if cat == "code_integrity" {
+				want["category"], want["service"] = "", "codeintegrity-operational"
 			}
 			if rule.Logsource["product"] != want["product"] || rule.Logsource["category"] != want["category"] || rule.Logsource["service"] != want["service"] {
 				skip("log source is not plain "+product+" "+cat, rel)

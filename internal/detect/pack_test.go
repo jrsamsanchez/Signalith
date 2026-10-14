@@ -173,8 +173,7 @@ func TestPackDetections(t *testing.T) {
 			t.Errorf("%s: credit %q", d.ID, o.Credit())
 		}
 		// Each rule reads only its own system's events.
-		if !strings.Contains(d.Query, "sourcetype=WinEventLog:*") && !strings.Contains(d.Query, "sourcetype=WinEventLog:System") &&
-			!strings.Contains(d.Query, "sourcetype=WinEventLog:Application") &&
+		if !strings.Contains(d.Query, "sourcetype=WinEventLog:") && !strings.Contains(d.Query, `sourcetype="WinEventLog:`) &&
 			!strings.Contains(d.Query, "sourcetype=sysmon:linux") && !strings.Contains(d.Query, "sourcetype=linux:audit") {
 			t.Errorf("%s: not limited to Windows, Sysmon for Linux or Linux audit events: %s", d.ID, d.Query)
 		}

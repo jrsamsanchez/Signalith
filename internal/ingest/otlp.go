@@ -372,9 +372,9 @@ func otlpWindows(b map[string]any) Event {
 			for _, name := range schema {
 				ordered = append(ordered, values[name])
 			}
-		} else if channel == ApplicationChannel {
-			// An Application event's data is searched as a whole, so
-			// its values go in by name.
+		} else if channel == ApplicationChannel || strings.EqualFold(channel, CodeIntegrityChannel) {
+			// An Application or Code Integrity event's data is searched
+			// as a whole, so its values go in by name.
 			for _, k := range slices.Sorted(maps.Keys(values)) {
 				ordered = append(ordered, values[k])
 			}

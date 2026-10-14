@@ -471,6 +471,9 @@ func ConvertSigmaWith(src []byte, opt SigmaOptions) (*SigmaResult, error) {
 			// The Application log, each rule naming its provider and
 			// events, and searching their data (Data).
 			category = "application"
+		case "codeintegrity-operational":
+			// Code Integrity's log, each rule naming its events.
+			category = "code_integrity"
 		case "security":
 			// A Security log rule's fields are its event's own, so it
 			// converts for one event, or events with the same data.
@@ -630,6 +633,8 @@ func productScope(ls map[string]any, category string) query.Expr {
 			return &query.Compare{Field: "sourcetype", Op: "=", Value: "WinEventLog:" + ingest.SystemChannel}
 		case "application":
 			return &query.Compare{Field: "sourcetype", Op: "=", Value: "WinEventLog:" + ingest.ApplicationChannel}
+		case "code_integrity":
+			return &query.Compare{Field: "sourcetype", Op: "=", Value: "WinEventLog:" + ingest.CodeIntegrityChannel}
 		}
 		st := &query.Compare{Field: "sourcetype", Op: "=", Value: windowsSourcetypes}
 		if ids := sigmaWindowsEvents[category]; len(ids) > 0 {
@@ -670,7 +675,7 @@ func (c *sigmaConv) datamodel(ls map[string]any) string {
 		return "Script"
 	case "system":
 		return "Change"
-	case "system_event", "application":
+	case "system_event", "application", "code_integrity":
 		return "Other"
 	case "auditd":
 		return "Other"
@@ -693,8 +698,8 @@ func (c *sigmaConv) field(name string) string {
 	if c.category == "system_event" {
 		return c.systemField(name)
 	}
-	if c.category == "application" {
-		return c.applicationField(name)
+	if c.category == "application" || c.category == "code_integrity" {
+		return c.eventDataField(name)
 	}
 	if m, ok := sigmaEventFields[c.category]; ok {
 		if f := m[strings.ToLower(name)]; f != "" {
@@ -729,9 +734,10 @@ func (c *sigmaConv) systemField(name string) string {
 	return f
 }
 
-// applicationField is the stored field of an Application log event's
-// field: its provider, ID and host, or its data values (Data).
-func (c *sigmaConv) applicationField(name string) string {
+// eventDataField is the stored field of an Application or Code Integrity
+// log event's field: its provider, ID and host, or its data values
+// (Data).
+func (c *sigmaConv) eventDataField(name string) string {
 	switch strings.ToLower(name) {
 	case "provider_name":
 		return "provider"
@@ -742,7 +748,7 @@ func (c *sigmaConv) applicationField(name string) string {
 	case "data":
 		return "event_data"
 	}
-	c.approx("field %s is not data Signalith reads from Application log events", name)
+	c.approx("field %s is not data Signalith reads by name from these log events", name)
 	return name
 }
 

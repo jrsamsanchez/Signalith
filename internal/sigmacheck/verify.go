@@ -17,12 +17,13 @@ import (
 
 // Windows channels the test events come from.
 const (
-	SysmonChannel      = "Microsoft-Windows-Sysmon/Operational"
-	SecurityChannel    = "Security"
-	SystemChannel      = ingest.SystemChannel
-	ApplicationChannel = ingest.ApplicationChannel
-	PowerShellChannel  = ingest.PowerShellChannel
-	DefenderChannel    = ingest.DefenderChannel
+	SysmonChannel        = "Microsoft-Windows-Sysmon/Operational"
+	SecurityChannel      = "Security"
+	SystemChannel        = ingest.SystemChannel
+	ApplicationChannel   = ingest.ApplicationChannel
+	CodeIntegrityChannel = ingest.CodeIntegrityChannel
+	PowerShellChannel    = ingest.PowerShellChannel
+	DefenderChannel      = ingest.DefenderChannel
 	// LinuxSysmonChannel is Sysmon for Linux, whose events have Sysmon's
 	// event IDs and fields.
 	LinuxSysmonChannel = ingest.LinuxSysmonChannel
@@ -92,9 +93,9 @@ func (c Case) SigmaView() (map[string]string, bool) {
 			out[k] = v
 		}
 		return out, true
-	case c.Channel == ApplicationChannel:
-		// Application log rules name the provider and the event's data
-		// values (Data).
+	case c.Channel == ApplicationChannel || c.Channel == CodeIntegrityChannel:
+		// Application and Code Integrity log rules name the provider and
+		// the event's data values (Data).
 		out := map[string]string{"EventID": c.EventID}
 		for k, v := range c.Data {
 			out[k] = v
@@ -178,6 +179,9 @@ var sysmonEvents = map[string]string{
 	// Application log rules (service: application) name their events;
 	// an application crash is the first.
 	"application": "1000",
+	// Code Integrity log rules name their events; an unsigned driver
+	// loaded is the first.
+	"code_integrity": "3001",
 	// Defender log rules (service: windefend) name their events; a
 	// threat detected is the first.
 	"windefend": "1116",
@@ -216,6 +220,7 @@ func init() {
 	// event's.
 	Bases["system_event"] = map[string]string{}
 	Bases["application"] = map[string]string{}
+	Bases["code_integrity"] = map[string]string{}
 	// A task disabled has the data of a task deleted.
 	Bases[SecurityCategory("4701")] = Bases[SecurityCategory("4699")]
 	for _, id := range SecurityEvents {
@@ -238,6 +243,8 @@ func Channel(category string) string {
 		return SystemChannel
 	case "application":
 		return ApplicationChannel
+	case "code_integrity":
+		return CodeIntegrityChannel
 	case "windefend":
 		return DefenderChannel
 	}

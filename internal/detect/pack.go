@@ -271,8 +271,9 @@ func packThrottle(category, datamodel string) []string {
 	case "windefend":
 		// A Defender event: which one, and the threat, file or setting.
 		return []string{"host", "signature_id", "signature", "file_path", "setting"}
-	case "application":
-		// An Application log event: which program logged which one.
+	case "application", "code_integrity":
+		// An Application or Code Integrity event: which program logged
+		// which one.
 		return []string{"host", "provider", "signature_id"}
 	case "system_event":
 		// A System log event: which one, and what it names first (the
@@ -344,6 +345,8 @@ func PackDetection(p *Pack, r PackRule, src []byte) (*Detection, error) {
 		switch {
 		case service == "auditd", service == "windefend", service == "application":
 			category = service
+		case service == "codeintegrity-operational":
+			category = "code_integrity"
 		case service == "system" && q.Datamodel == "Other":
 			category = "system_event"
 		}
