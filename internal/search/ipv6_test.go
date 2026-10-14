@@ -70,7 +70,7 @@ func TestClauses(t *testing.T) {
 	for q, want := range map[string]int{
 		"a=1":                  1,
 		"a=1 b IN (x, y, z)":   4,
-		"src=10.0.0.0/7":       2,
+		"src=10.0.0.0/7":       1,
 		"NOT (a=1 OR b=2) c=3": 3,
 	} {
 		e, err := query.Parse(q)

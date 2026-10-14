@@ -321,9 +321,9 @@ func TestCIDRValues(t *testing.T) {
 	cases := map[string]string{
 		"src=10.0.0.0/8":     `{"prefix":{"src":{"value":"10."}}}`,
 		"src=203.0.113.0/24": `{"prefix":{"src":{"value":"203.0.113."}}}`,
-		"src=192.168.4.0/23": `{"bool":{"minimum_should_match":1,"should":[{"prefix":{"src":{"value":"192.168.4."}}},{"prefix":{"src":{"value":"192.168.5."}}}]}}`,
-		"src=10.0.0.9/31":    `{"bool":{"minimum_should_match":1,"should":[{"term":{"src":{"value":"10.0.0.8"}}},{"term":{"src":{"value":"10.0.0.9"}}}]}}`,
-		"src=172.16.0.0/12":  "16 patterns",
+		"src=192.168.4.0/23": `{"regexp":{"src":{"value":"192\\.168\\.(4|5)\\..*"}}}`,
+		"src=10.0.0.9/31":    `{"regexp":{"src":{"value":"10\\.0\\.0\\.(8|9)"}}}`,
+		"src=172.16.0.0/12":  `{"regexp":{"src":{"value":"172\\.(16|17|18|19|20|21|22|23|24|25|26|27|28|29|30|31)\\..*"}}}`,
 		"src=10.1.2.3/32":    `{"term":{"src":{"value":"10.1.2.3"}}}`,
 	}
 	for in, want := range cases {
@@ -333,12 +333,6 @@ func TestCIDRValues(t *testing.T) {
 			t.Fatal(err)
 		}
 		b, _ := json.Marshal(got)
-		if want == "16 patterns" {
-			if n := strings.Count(string(b), `"prefix"`); n != 16 || !strings.Contains(string(b), `"172.31."`) {
-				t.Errorf("%s: %d patterns: %s", in, n, b)
-			}
-			continue
-		}
 		if string(b) != want {
 			t.Errorf("%s\n got %s\nwant %s", in, b, want)
 		}

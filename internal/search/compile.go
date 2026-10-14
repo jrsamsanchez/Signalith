@@ -167,28 +167,34 @@ func cidrQuery(field, value string) (map[string]any, bool) {
 	if bits == 0 {
 		return map[string]any{"exists": map[string]any{"field": field}}, true
 	}
-	// Round the prefix up to the next octet and list every value of the
-	// partial octet.
+	// Round the prefix up to the next octet; the partial octet takes any
+	// of its values. More than one value is one regular expression, not a
+	// prefix query each: OpenSearch expands each into the terms it
+	// matches, and a few wide ranges in one search could pass its limit
+	// of 1,024 clauses.
 	octets := (bits + 7) / 8
 	free := octets*8 - bits
 	base := int(a[octets-1])
-	var qs []any
-	for i := 0; i < 1<<free; i++ {
-		parts := make([]string, 0, 4)
-		for k := 0; k < octets-1; k++ {
-			parts = append(parts, strconv.Itoa(int(a[k])))
-		}
-		parts = append(parts, strconv.Itoa(base+i))
+	parts := make([]string, 0, 4)
+	for k := 0; k < octets-1; k++ {
+		parts = append(parts, strconv.Itoa(int(a[k])))
+	}
+	if free == 0 {
+		v := strings.Join(append(parts, strconv.Itoa(base)), ".")
 		if octets == 4 {
-			qs = append(qs, map[string]any{"term": map[string]any{field: map[string]any{"value": strings.Join(parts, ".")}}})
-		} else {
-			qs = append(qs, map[string]any{"prefix": map[string]any{field: map[string]any{"value": strings.Join(parts, ".") + "."}}})
+			return map[string]any{"term": map[string]any{field: map[string]any{"value": v}}}, true
 		}
+		return map[string]any{"prefix": map[string]any{field: map[string]any{"value": v + "."}}}, true
 	}
-	if len(qs) == 1 {
-		return qs[0].(map[string]any), true
+	values := make([]string, 0, 1<<free)
+	for i := 0; i < 1<<free; i++ {
+		values = append(values, strconv.Itoa(base+i))
 	}
-	return map[string]any{"bool": map[string]any{"should": qs, "minimum_should_match": 1}}, true
+	re := strings.Join(append(parts, "("+strings.Join(values, "|")+")"), `\.`)
+	if octets < 4 {
+		re += `\..*`
+	}
+	return map[string]any{"regexp": map[string]any{field: map[string]any{"value": re}}}, true
 }
 
 // ipv6Query matches an IPv6 range against a field that stores addresses
