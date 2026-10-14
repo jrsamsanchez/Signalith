@@ -453,6 +453,31 @@ type BulkItemError struct {
 	Status int    `json:"-"`
 }
 
+// Conflict reports whether OpenSearch refused the document because one
+// with its ID is already stored.
+func (e BulkItemError) Conflict() bool {
+	return e.Status == http.StatusConflict || e.Type == "version_conflict_engine_exception"
+}
+
+// WithoutConflicts drops the errors saying a document sent with an
+// explicit ID is already stored, and reports how many there were. Such a
+// document is "already there" because an earlier send of the same write
+// got it in (a retry after a lost answer, or another server writing the
+// same thing), so the write succeeded. A conflict on a document without
+// an ID, and every other error, is kept.
+func WithoutConflicts(errs []BulkItemError, docs []IndexedDoc) ([]BulkItemError, int) {
+	var out []BulkItemError
+	n := 0
+	for _, e := range errs {
+		if e.Conflict() && e.Pos >= 0 && e.Pos < len(docs) && docs[e.Pos].ID != "" {
+			n++
+			continue
+		}
+		out = append(out, e)
+	}
+	return out, n
+}
+
 // Bulk indexes documents. docs maps each document to its target index.
 func (c *Client) Bulk(ctx context.Context, docs []IndexedDoc) ([]BulkItemError, error) {
 	if len(docs) == 0 {

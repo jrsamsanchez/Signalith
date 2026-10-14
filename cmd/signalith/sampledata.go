@@ -108,7 +108,7 @@ func buildSampleLoader(ctx context.Context, c *config.Config, log *slog.Logger) 
 		return nil, err
 	}
 	tctx, tcancel := context.WithTimeout(ctx, 30*time.Second)
-	terr := ingest.PutIndexTemplate(tctx, cl, c.OpenSearch.IndexPrefix, c.OpenSearch.Replicas)
+	terr := ingest.PutIndexTemplate(tctx, cl, c.OpenSearch.IndexPrefix, c.OpenSearch.Replicas.IndexSettings(), log)
 	tcancel()
 	if terr != nil {
 		return nil, fmt.Errorf("could not install the index template: %w", terr)
@@ -126,8 +126,11 @@ func buildSampleLoader(ctx context.Context, c *config.Config, log *slog.Logger) 
 		return nil, fmt.Errorf("detections: %w", err)
 	}
 	fstore := findings.NewOpenSearch(cl, c.OpenSearch.IndexPrefix)
+	fstore.Replicas = c.OpenSearch.Replicas.IndexSettings()
 	cstore := cases.NewOpenSearch(cl, c.OpenSearch.IndexPrefix)
+	cstore.Replicas = c.OpenSearch.Replicas.IndexSettings()
 	ibackend := intel.NewOpenSearch(cl, c.OpenSearch.IndexPrefix)
+	ibackend.Replicas = c.OpenSearch.Replicas.IndexSettings()
 	indicators := intel.NewStore(ibackend)
 
 	ectx, ecancel := context.WithTimeout(ctx, time.Minute)

@@ -516,3 +516,10 @@ Imported rules start disabled with a 5 minute schedule and 10 minute lookback.
 | `GET`, `PUT /api/lookups/assets`, `/api/lookups/identities` | List or replace a list (CSV body of up to 16 MB and 1,000,000 rows; 400 lists every bad line) |
 | `GET /api/lookups/assets.csv`, `/api/lookups/identities.csv` | Download the current CSV |
 | `GET /api/lookups/context?field=&value=` | Context for one value |
+
+Changes to findings and cases are saved only over the version they were made on, and
+made again on a newer one when someone changed the item meanwhile (on any server), so
+nothing is lost. When other changes keep getting in first, `PATCH /api/findings/{id}`
+and the case changes answer 409 with "Someone else changed this ... at the same moment.
+Try again."; nothing was changed. In `POST /api/findings/bulk` such a finding is listed
+under `failed` and the others are still updated.

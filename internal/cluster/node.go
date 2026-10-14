@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -41,6 +42,11 @@ type Settings struct {
 	Syslog   Syslog
 	// Fingerprints works out the files fingerprints; nil has none.
 	Fingerprints func() Fingerprints
+	// Indexed returns the last time this server stored an event (zero
+	// before the first); nil never has. Heartbeats carry it, so each
+	// server can tell how many share the day's field-name budgets (see
+	// IndexingServers).
+	Indexed func() time.Time
 }
 
 // Node is this server in the cluster. It lives as long as the process:
@@ -700,6 +706,12 @@ func (n *Node) heartbeatDoc(state string) Heartbeat {
 		ms := n.offset.Milliseconds()
 		hb.ClockOffsetMS = &ms
 	}
+	if f := n.settings.Indexed; f != nil {
+		if t := f(); !t.IsZero() {
+			t = t.UTC()
+			hb.IndexedAt = &t
+		}
+	}
 	sec := n.security
 	hb.Security = &sec
 	hb.Problems = append(hb.Problems, n.local.Warnings...)
@@ -1256,6 +1268,39 @@ func (n *Node) goneLocked(m *member) bool {
 		return true
 	}
 	return n.clock.Mono()-m.since >= n.timing.Offline && !n.writesRefused && !n.blindLocked()
+}
+
+// IndexingServers returns how many servers stored events within the last
+// within: this one, when it did, and every other server not offline or
+// stopped whose heartbeat says it did, by its own clock (the windows used
+// are minutes, far more than the clock difference servers may have). A
+// server of a version whose heartbeat cannot say (no FeatureIndexedAt)
+// counts, to be safe. It is never less than 1, and 1 without a node:
+// daily field-name budgets are shared out by it, so a server about to
+// store its first event counts itself.
+func (n *Node) IndexingServers(within time.Duration) int {
+	if n == nil {
+		return 1
+	}
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	now := n.clock.Now()
+	count := 0
+	if f := n.settings.Indexed; f != nil {
+		if t := f(); !t.IsZero() && now.Sub(t) < within {
+			count++
+		}
+	}
+	for id, m := range n.members {
+		if id == n.ID() || n.goneLocked(m) {
+			continue
+		}
+		at := m.hb.IndexedAt
+		if at == nil && !slices.Contains(m.hb.Features, FeatureIndexedAt) || at != nil && now.Sub(*at) < within {
+			count++
+		}
+	}
+	return max(count, 1)
 }
 
 // Readiness reasons.

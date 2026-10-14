@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/url"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode"
@@ -58,6 +59,29 @@ type Options struct {
 	// any other CA, an agent that reaches the server by IP address checks
 	// the certificate against the first one it can use (see VerifyName).
 	CertNames []string
+	// Version is the Signalith version that made the configuration, and
+	// CAPin the first 16 hex digits (lower case) of the SHA-256 of the
+	// certificate authority it pins, "" when it pins none. NextCAPin is
+	// the one prepared to replace it, when CA has both. The agent sends
+	// them with every batch (X-Signalith-Config), so the Endpoints page
+	// can tell which agents need a new configuration.
+	Version   string
+	CAPin     string
+	NextCAPin string
+}
+
+// ConfigHeader is the value of the X-Signalith-Config header for a
+// configuration made by version that pins the CAs pins (none, or "" for
+// none): "ca=<pin>,<pin>;v=<version>", or "v=<version>" alone.
+func ConfigHeader(version string, pins ...string) string {
+	if version == "" {
+		version = "dev"
+	}
+	pins = slices.DeleteFunc(slices.Clone(pins), func(p string) bool { return p == "" })
+	if len(pins) == 0 {
+		return "v=" + version
+	}
+	return "ca=" + strings.Join(pins, ",") + ";v=" + version
 }
 
 // ErrNoNameToCheck is returned when an agent would reach the server by IP
@@ -414,6 +438,16 @@ func Generate(o Options) (*Agent, error) {
 		{"Format", "json"},
 		{"Header", "Authorization Bearer " + o.Token},
 		{"Header_Tag", "X-Signalith-Tag"},
+		// The computer's name, and what this configuration expects, so
+		// the Endpoints page lists each agent once and can say when one
+		// needs a new configuration. Only labels: never used to let
+		// anyone in. Fluent Bit fills in ${HOSTNAME} itself when it is
+		// not set (env_preset in src/flb_env.c calls gethostname). On
+		// Windows, where services have no HOSTNAME, that works too:
+		// flb_create (src/flb_lib.c) starts Winsock before
+		// flb_config_init makes the environment.
+		{"Header", "X-Signalith-Agent ${HOSTNAME}"},
+		{"Header", "X-Signalith-Config " + ConfigHeader(o.Version, o.CAPin, o.NextCAPin)},
 		{"tls", tls}, {"tls.verify", "On"},
 	}
 	if a.CAPath != "" {

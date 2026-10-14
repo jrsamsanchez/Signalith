@@ -44,12 +44,17 @@ const (
 	// maxSenders is how many recent senders the stats keep.
 	maxSenders = 50
 	// maxExtraNamesPerIndex caps the distinct cef_* and sd_* field names
-	// one daily index gets per run, and maxExtraNamesPerSender one
-	// sender's share of that, so one device cannot use up the budget of
-	// the others. Together with the data model fields this stays well
-	// under the 2000 fields the index template allows.
+	// one daily index gets per run, for all servers together, and
+	// maxExtraNamesPerSender one sender's share of that, so one device
+	// cannot use up the budget of the others. Each server that stored
+	// events in the last 10 minutes gets an equal share of the index's
+	// budget, at least minExtraNamesPerServer (see Config.Servers).
+	// Together with the data model fields this stays well under the 2000
+	// fields the index template allows; the ingest pipeline's own budget
+	// and mapping guard apply after these.
 	maxExtraNamesPerIndex  = 600
 	maxExtraNamesPerSender = 150
+	minExtraNamesPerServer = 100
 	// evictAfter is how long a TCP connection must have been quiet before
 	// it is closed to make room for a new one when the limit is reached.
 	evictAfter       = 30 * time.Second
@@ -88,6 +93,10 @@ type Config struct {
 	// syslog indices are created after the index template is in place and
 	// get the right field types. Messages wait in the queue meanwhile.
 	Ready <-chan struct{}
+
+	// Servers returns how many servers share each day's field-name budget
+	// (see cluster.Node.IndexingServers); nil is this server alone.
+	Servers func() int
 
 	// MaxAge is how old a message's own timestamp may be and still be the
 	// event time (zero: DefaultMaxAge). Older ones use the receive time
@@ -262,7 +271,7 @@ func New(cfg Config, sink Sink, log *slog.Logger) *Receiver {
 		log = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
 	drain, drainCancel := context.WithCancel(context.Background())
-	return &Receiver{
+	r := &Receiver{
 		cfg:         cfg,
 		sink:        sink,
 		log:         log,
@@ -279,6 +288,8 @@ func New(cfg Config, sink Sink, log *slog.Logger) *Receiver {
 		names:       newNameBudget(maxExtraNamesPerIndex, maxExtraNamesPerSender),
 		warned:      map[string]time.Time{},
 	}
+	r.names.servers = cfg.Servers
+	return r
 }
 
 // Start opens every configured listener and starts receiving. It returns
@@ -961,7 +972,24 @@ type nameBudget struct {
 	mu        sync.Mutex
 	perIndex  int
 	perSender int
-	indices   map[string]*indexNames // by model and day
+	// servers is how many servers share the budget; nil is one.
+	servers func() int
+	indices map[string]*indexNames // by model and day
+}
+
+// shares returns this server's share of the per-index budget, and the most
+// one sender may take of it: an equal part for each server, at least
+// minExtraNamesPerServer, and a sender never more than the index's share.
+func (b *nameBudget) shares() (perIndex, perSender int) {
+	n := 1
+	if b.servers != nil {
+		n = b.servers()
+	}
+	if n <= 1 {
+		return b.perIndex, b.perSender
+	}
+	perIndex = max(minExtraNamesPerServer, b.perIndex/n)
+	return perIndex, min(b.perSender, perIndex)
 }
 
 type indexNames struct {
@@ -978,6 +1006,7 @@ func (b *nameBudget) limit(ev ingest.Event, from netip.Addr, now time.Time, maxA
 	day := ev.Time.UTC().Format("2006.01.02")
 	key := ev.Model + "/" + day
 	sender := clientaddr.Key(from)
+	perIndex, perSender := b.shares()
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	ix := b.indices[key]
@@ -991,7 +1020,7 @@ func (b *nameBudget) limit(ev ingest.Event, from netip.Addr, now time.Time, maxA
 		if _, ok := ix.names[k]; ok {
 			continue
 		}
-		if len(ix.names) >= b.perIndex || ix.senders[sender] >= b.perSender {
+		if len(ix.names) >= perIndex || ix.senders[sender] >= perSender {
 			delete(ev.Fields, k)
 			continue
 		}

@@ -244,3 +244,29 @@ func TestConfigHidesPassword(t *testing.T) {
 		t.Errorf("credentials from the URL: %q", c.cfg.Username)
 	}
 }
+
+// Replicate leaves a missing index alone and reports other errors.
+func TestReplicateMissingIndex(t *testing.T) {
+	var paths []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.Method+" "+r.URL.Path)
+		if strings.HasPrefix(r.URL.Path, "/gone/") {
+			w.WriteHeader(http.StatusNotFound)
+			io.WriteString(w, `{"error":{"type":"index_not_found_exception","reason":"no such index [gone]"},"status":404}`)
+			return
+		}
+		w.WriteHeader(http.StatusTooManyRequests)
+		io.WriteString(w, `{"error":{"type":"cluster_block_exception","reason":"blocked"},"status":429}`)
+	}))
+	defer srv.Close()
+	cl := New(Config{URL: srv.URL})
+	if err := Replicate(context.Background(), cl, "gone", nil); err != nil {
+		t.Errorf("missing index: %v", err)
+	}
+	if err := Replicate(context.Background(), cl, "full", nil); err == nil {
+		t.Error("a blocked index was taken as done")
+	}
+	if len(paths) == 0 || paths[0] != "GET /gone/_settings" {
+		t.Errorf("requests %v", paths)
+	}
+}

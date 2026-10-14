@@ -427,18 +427,19 @@ func (s *Server) handleGetFinding(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
+// updateFinding applies a triage change. The store writes only over the
+// version it read and applies the change again to a newer copy when
+// someone else changed the finding meanwhile, so no comment or status
+// change made at the same moment is lost.
 func (s *Server) updateFinding(ctx context.Context, id string, u findings.Update, author string) (*findings.Finding, error) {
-	f, err := s.Findings.Get(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-	if f.Apply(u, author, time.Now().UTC()) {
-		if err := s.Findings.Save(ctx, f); err != nil {
-			return nil, err
-		}
-	}
-	return f, nil
+	return s.Findings.Modify(ctx, id, func(f *findings.Finding) (bool, error) {
+		return f.Apply(u, author, time.Now().UTC()), nil
+	})
 }
+
+// errFindingBusy is what an analyst sees when other changes to the same
+// finding kept getting in first.
+var errFindingBusy = errors.New("Someone else changed this finding at the same moment. Try again.")
 
 func (s *Server) handleUpdateFinding(w http.ResponseWriter, r *http.Request) {
 	if !s.detectionsReady(w) {
@@ -456,6 +457,10 @@ func (s *Server) handleUpdateFinding(w http.ResponseWriter, r *http.Request) {
 	f, err := s.updateFinding(r.Context(), r.PathValue("id"), u, userOf(r))
 	if errors.Is(err, findings.ErrNotFound) {
 		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	if errors.Is(err, findings.ErrBusy) {
+		writeError(w, http.StatusConflict, errFindingBusy)
 		return
 	}
 	if err != nil {
@@ -545,7 +550,12 @@ func (s *Server) handleCreateFinding(w http.ResponseWriter, r *http.Request) {
 	}
 	f.Context = detect.EntityContext(s.Assets, f.Entities)
 	f.Urgency = detect.Urgency(f.Severity, f.Context)
-	if err := s.Findings.Create(r.Context(), f); err != nil {
+	err := s.Findings.Create(r.Context(), f)
+	for try := 0; errors.Is(err, findings.ErrExists) && try < 3; try++ {
+		f.ID = detect.NewID(now) // practically never needed
+		err = s.Findings.Create(r.Context(), f)
+	}
+	if err != nil {
 		writeError(w, http.StatusBadGateway, err)
 		return
 	}

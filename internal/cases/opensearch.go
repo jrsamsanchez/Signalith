@@ -2,6 +2,7 @@ package cases
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/url"
@@ -20,6 +21,9 @@ type Doer interface {
 type OpenSearch struct {
 	Client Doer
 	Index  string
+	// Replicas are the index's replicas settings (opensearch.replicas,
+	// see config.Replicas.IndexSettings); nil is auto.
+	Replicas map[string]any
 }
 
 // NewOpenSearch returns a store using index "<prefix>_cases".
@@ -46,7 +50,7 @@ func properties() map[string]any {
 // may, at any time; changes to an index that exists are Upgrade's.
 func (s *OpenSearch) EnsureIndex(ctx context.Context) error {
 	body := map[string]any{
-		"settings": map[string]any{"number_of_shards": 1, "number_of_replicas": 0},
+		"settings": store.SmallIndexSettings(s.Replicas),
 		"mappings": map[string]any{"dynamic": "false", "properties": properties()},
 	}
 	err := s.Client.Do(ctx, http.MethodPut, "/"+url.PathEscape(s.Index), body, nil)
@@ -55,6 +59,14 @@ func (s *OpenSearch) EnsureIndex(ctx context.Context) error {
 		return nil
 	}
 	return err
+}
+
+// Replicate gives the cases index, when it was made with no copy on
+// another node, the replicas settings new indices get (see
+// store.Replicate). Only the server that runs the background jobs does,
+// when it starts running them; doing it again changes nothing.
+func (s *OpenSearch) Replicate(ctx context.Context) error {
+	return store.Replicate(ctx, s.Client, s.Index, s.Replicas)
 }
 
 // Upgrade adds fields introduced since the index was created. Only the
@@ -99,6 +111,68 @@ func (s *OpenSearch) Create(ctx context.Context, c *Case) error {
 }
 
 func (s *OpenSearch) Save(ctx context.Context, c *Case) error { return s.put(ctx, c, "_doc") }
+
+// versioned is the part of *store.Client that reads and writes documents
+// with their versions. Production always passes a *store.Client; a test
+// may pass a plain Doer, and Modify then writes without a version.
+type versioned interface {
+	Get(ctx context.Context, index, id string) (json.RawMessage, store.Version, bool, error)
+	PutIf(ctx context.Context, index, id string, body any, v store.Version, refresh bool) (store.Version, error)
+}
+
+// Modify writes the case back only if it is still at the version read
+// (if_seq_no and if_primary_term), so a change made meanwhile on another
+// server, or in another tab, is never overwritten: change runs again on
+// the newer copy. A write whose answer was lost is settled by the store's
+// write_id check, never by writing again blindly.
+func (s *OpenSearch) Modify(ctx context.Context, id string, change func(c *Case) (bool, error)) (*Case, error) {
+	vc, ok := s.Client.(versioned)
+	if !ok {
+		c, err := s.Get(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		changed, err := change(c)
+		if err != nil {
+			return nil, err
+		}
+		if changed {
+			if err := s.Save(ctx, c); err != nil {
+				return nil, err
+			}
+		}
+		return c, nil
+	}
+	var out *Case
+	err := store.RetryConflicts(ctx, func() error {
+		src, v, found, err := vc.Get(ctx, s.Index, id)
+		if err != nil {
+			return err
+		}
+		if !found {
+			return ErrNotFound
+		}
+		var c Case
+		if err := json.Unmarshal(src, &c); err != nil {
+			return err
+		}
+		changed, err := change(&c)
+		if err != nil {
+			return changeError{err}
+		}
+		if changed {
+			if _, err := vc.PutIf(ctx, s.Index, id, doc{Case: &c, EntityValues: c.EntityValues()}, v, true); err != nil {
+				return err
+			}
+		}
+		out = &c
+		return nil
+	})
+	if err != nil {
+		return nil, modifyResult(err)
+	}
+	return out, nil
+}
 
 // Delete removes one case; a missing one is not an error.
 func (s *OpenSearch) Delete(ctx context.Context, id string) error {

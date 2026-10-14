@@ -34,6 +34,9 @@ type Store struct {
 	nets    []netEntry
 	version string
 	loaded  bool
+	// stale marks a copy changed by this server's own writes since it was
+	// last loaded, which the next Sync reloads.
+	stale bool
 }
 
 type netEntry struct {
@@ -94,7 +97,7 @@ func (s *Store) Load(ctx context.Context) error {
 	}
 	s.index(ptrs)
 	s.mu.Lock()
-	s.version, s.loaded = ver, true
+	s.version, s.loaded, s.stale = ver, true, false
 	s.mu.Unlock()
 	return nil
 }
@@ -107,7 +110,7 @@ func (s *Store) Sync(ctx context.Context) (bool, error) {
 		return false, err
 	}
 	s.mu.RLock()
-	same := s.loaded && ver == s.version
+	same := s.loaded && !s.stale && ver == s.version
 	s.mu.RUnlock()
 	if same {
 		return false, nil
@@ -132,9 +135,14 @@ func (s *Store) snapshot() []*Indicator {
 	return out
 }
 
-// afterWrite updates the in-memory copy with what was just written, and
-// remembers the backend version so Sync does not reload our own change.
-func (s *Store) afterWrite(ctx context.Context, put []Indicator, deleted []string) {
+// afterWrite updates the in-memory copy with what was just written, so
+// this server sees its own change at once, and marks the copy stale, so
+// the next Sync reloads everything. It does not adopt the backend's
+// version after the write: another server may have changed indicators
+// between this write and that read, and adopting the version would make
+// Sync skip that change for good. The cost is one extra reload after each
+// of this server's own writes.
+func (s *Store) afterWrite(put []Indicator, deleted []string) {
 	s.mu.RLock()
 	list := make(map[string]*Indicator, len(s.all)+len(put))
 	for id, ind := range s.all {
@@ -153,11 +161,9 @@ func (s *Store) afterWrite(ctx context.Context, put []Indicator, deleted []strin
 		ptrs = append(ptrs, ind)
 	}
 	s.index(ptrs)
-	if ver, err := s.Backend.Version(ctx); err == nil {
-		s.mu.Lock()
-		s.version = ver
-		s.mu.Unlock()
-	}
+	s.mu.Lock()
+	s.stale = true
+	s.mu.Unlock()
 }
 
 // prepare fills IDs and times, keeping first_seen of existing indicators.
@@ -192,7 +198,7 @@ func (s *Store) Add(ctx context.Context, inds []Indicator) error {
 	if err := s.Backend.Put(ctx, inds); err != nil {
 		return err
 	}
-	s.afterWrite(ctx, inds, nil)
+	s.afterWrite(inds, nil)
 	return nil
 }
 
@@ -215,7 +221,7 @@ func (s *Store) Delete(ctx context.Context, ids []string) error {
 	if err := s.Backend.Delete(ctx, ids); err != nil {
 		return err
 	}
-	s.afterWrite(ctx, nil, ids)
+	s.afterWrite(nil, ids)
 	return nil
 }
 
@@ -254,7 +260,7 @@ func (s *Store) ReplaceSource(ctx context.Context, source string, inds []Indicat
 	if err := s.Backend.Delete(ctx, gone); err != nil {
 		return 0, 0, err
 	}
-	s.afterWrite(ctx, inds, gone)
+	s.afterWrite(inds, gone)
 	return len(inds) - existing, len(gone), nil
 }
 
@@ -279,7 +285,7 @@ func (s *Store) MergeSource(ctx context.Context, source string, inds []Indicator
 	if err := s.Backend.Put(ctx, inds); err != nil {
 		return 0, err
 	}
-	s.afterWrite(ctx, inds, nil)
+	s.afterWrite(inds, nil)
 	return added, nil
 }
 

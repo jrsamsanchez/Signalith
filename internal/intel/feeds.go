@@ -275,13 +275,38 @@ func (f *Feeds) saveStatus() {
 		f.log().Warn("could not save threat intel feed status", "file", f.StatusFile, "err", err)
 		return
 	}
-	tmp := f.StatusFile + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o640); err == nil {
-		err = os.Rename(tmp, f.StatusFile)
-		if err != nil {
-			f.log().Warn("could not save threat intel feed status", "file", f.StatusFile, "err", err)
-		}
+	if err := replaceFile(f.StatusFile, data); err != nil {
+		f.log().Warn("could not save threat intel feed status", "file", f.StatusFile, "err", err)
 	}
+}
+
+// replaceFile writes data to path through a temporary file of its own
+// (a unique name, so two servers or two requests writing the same file
+// never write into each other's), then renames it over path. The
+// temporary file is removed on any failure. os.Rename replaces an
+// existing file on Windows too.
+func replaceFile(path string, data []byte) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+"-*.tmp")
+	if err != nil {
+		return err
+	}
+	name := tmp.Name()
+	_, err = tmp.Write(data)
+	if cerr := tmp.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil {
+		// CreateTemp makes the file readable by its owner only; on Windows
+		// Chmod only sets or clears read-only, which is fine.
+		err = os.Chmod(name, 0o640)
+	}
+	if err == nil {
+		err = os.Rename(name, path)
+	}
+	if err != nil {
+		_ = os.Remove(name)
+	}
+	return err
 }
 
 // stateFor returns a feed's status; the caller holds f.mu.

@@ -31,12 +31,25 @@ const (
 	// always kept.
 	maxFieldsPerEvent = 200
 	// maxNewNamesPerIndex caps the field names (counting each dotted
-	// prefix, as OpenSearch does) that events from this server may add to
-	// one daily index beyond the known fields. With the known fields it
-	// stays well under the template's limit of 2000, which leaves room for
-	// names added before a restart.
+	// prefix, as OpenSearch does) that events may add to one daily index
+	// beyond the known fields, for all servers together: each server that
+	// stored events in the last 10 minutes gets an equal share, and at
+	// least minNamesPerServer (see Pipeline.Servers). With the known
+	// fields it stays well under the template's limit of 2000, which
+	// leaves room for names added before a restart.
 	maxNewNamesPerIndex = 1000
+	// minNamesPerServer is the smallest share of maxNewNamesPerIndex one
+	// server gets, however many share it. Past a handful of servers the
+	// shares add up to more than the budget, and the mapping guard
+	// (mappingStop) keeps the index under OpenSearch's limit.
+	minNamesPerServer = 100
 )
+
+// namesBudget is one server's share of maxNewNamesPerIndex when servers
+// store events.
+func namesBudget(servers int) int {
+	return max(minNamesPerServer, maxNewNamesPerIndex/max(servers, 1))
+}
 
 // knownFields maps the field names Signalith itself produces to their
 // OpenSearch types. The index template maps every one of them up front, so
@@ -179,8 +192,8 @@ func validFieldName(name string) bool {
 	return !partStart && depth <= maxFieldDepth
 }
 
-// fieldBudget keeps the names each daily index has been given, for
-// maxNewNamesPerIndex. It is per server run; the template's field limit
+// fieldBudget keeps the names each daily index has been given on this
+// server, for its share of maxNewNamesPerIndex. It is per server run; the template's field limit
 // leaves room for what earlier runs added, and write retries an event with
 // only its known fields if OpenSearch still turns it away.
 type fieldBudget struct {
@@ -195,12 +208,31 @@ type indexNames struct {
 	paths map[string]bool
 }
 
-// limit drops the fields of an event (going to index, on day) that are
-// invalid, over the per-event cap, clash with a known field or with how
-// the index already maps the name, or do not fit the index's budget. It
-// returns how many it dropped. oldest is the first day an event can still
-// be written to; budgets of earlier days are forgotten.
+// limit is limitTo with the whole budget, as on a server alone.
 func (b *fieldBudget) limit(index, day, oldest string, f map[string]any) int {
+	return b.limitTo(index, day, oldest, f, maxNewNamesPerIndex, false)
+}
+
+// hasUnknown reports whether an event has a field Signalith does not
+// produce itself.
+func hasUnknown(f map[string]any) bool {
+	for k := range f {
+		if !KnownField(k) {
+			return true
+		}
+	}
+	return false
+}
+
+// limitTo drops the fields of an event (going to index, on day) that are
+// invalid, over the per-event cap, clash with a known field or with how
+// the index already maps the name, or do not fit the index's budget of
+// budget names (this server's share). With full, the index's mapping is
+// near OpenSearch's limit (mappingStop), and no new name is granted;
+// names granted before still pass. It returns how many it dropped. oldest
+// is the first day an event can still be written to; budgets of earlier
+// days are forgotten.
+func (b *fieldBudget) limitTo(index, day, oldest string, f map[string]any, budget int, full bool) int {
 	var unknown []string
 	for k := range f {
 		if !KnownField(k) {
@@ -267,7 +299,7 @@ func (b *fieldBudget) limit(index, day, oldest string, f map[string]any) int {
 				break
 			}
 		}
-		if clash || len(ix.paths)+added > maxNewNamesPerIndex {
+		if clash || full || len(ix.paths)+added > budget {
 			drop(k)
 			continue
 		}

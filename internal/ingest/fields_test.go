@@ -235,7 +235,7 @@ func TestRejectedEventsAreRetriedWithKnownFields(t *testing.T) {
 }
 
 func TestIndexTemplate(t *testing.T) {
-	tpl := IndexTemplate("sig", 0)
+	tpl := IndexTemplate("sig", map[string]any{"number_of_replicas": 0})
 	inner := tpl["template"].(map[string]any)
 	mapping := inner["settings"].(map[string]any)["mapping"].(map[string]any)
 	limit := mapping["total_fields"].(map[string]any)["limit"].(int)
@@ -314,6 +314,11 @@ func TestParsersEmitKnownFields(t *testing.T) {
 func TestPutIndexTemplateWithoutWildcard(t *testing.T) {
 	var got []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.WriteHeader(http.StatusNotFound)
+			io.WriteString(w, `{"error":{"type":"resource_not_found_exception","reason":"index template matching [sig] not found"},"status":404}`)
+			return
+		}
 		var tmpl map[string]any
 		json.NewDecoder(r.Body).Decode(&tmpl)
 		props := tmpl["template"].(map[string]any)["mappings"].(map[string]any)["properties"].(map[string]any)
@@ -328,7 +333,7 @@ func TestPutIndexTemplateWithoutWildcard(t *testing.T) {
 	}))
 	defer srv.Close()
 	cl := store.New(store.Config{URL: srv.URL})
-	if err := PutIndexTemplate(context.Background(), cl, "sig", 0); err != nil {
+	if err := PutIndexTemplate(context.Background(), cl, "sig", map[string]any{"number_of_replicas": 0}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Join(got, ",") != "wildcard,keyword" {

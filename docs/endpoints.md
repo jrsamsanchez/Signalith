@@ -51,7 +51,9 @@ Each host is one row, keyed by its hardware UUID, even when osquery is reinstall
 Analysts and admins can open **Endpoints**:
 
 - **Hosts** lists every host with its status (online when seen in the last three minutes),
-  failing checks, address and osquery version. Open one for its hardware, addresses,
+  failing checks, address and osquery version, plus the log agents sending from each
+  computer (a **Log agent** column, and rows of their own for computers without osquery;
+  see [Log agents](#log-agents)). Open one for its hardware, addresses,
   configuration fetch, osquery's own errors, and every check result with how to fix it.
   Links there open the host's file changes and inventory changes in Search.
 - **Configuration checks** lists every check with how many hosts pass and fail, and which
@@ -83,6 +85,44 @@ Admins also have:
 
 These are the places attackers change to stay on a host or gain rights. Watching large,
 busy folders makes osquery work harder; add only what you need.
+
+## Log agents
+
+The **Hosts** list also shows the log agents (Fluent Bit and OpenTelemetry Collectors)
+that send events to Signalith, from every server that shares this OpenSearch. There is no
+separate list: an agent on a computer that also runs osquery is shown on that host's row,
+matched by computer name (the part before the first dot, ignoring capitals), and an agent
+on a computer without osquery gets a row of its own marked **Log agent only**.
+
+The **Log agent** column says one of:
+
+- **Sending, 2m ago**: events arrived recently.
+- **Silent since 10:42**: nothing for more than an hour. Check that the agent runs and
+  can reach Signalith.
+- **Needs a new configuration**: open the row to see why, in plain words:
+  - it trusts a different certificate authority than this server uses, so its
+    connections fail (this also shows for a computer that keeps refusing this server's
+    certificate, even though none of its events got through);
+  - it sends without encryption (plain HTTP) from another computer (plain HTTP from the
+    Signalith computer itself never crosses the network, so it is fine);
+  - its [agent token](agent-tokens.md) was revoked.
+
+Use the **All / Silent / Needs a new configuration** buttons to narrow the list. Opening
+an agent shows its addresses, the servers it sends to, HTTPS or plain HTTP, its agent
+token, its events in the last hour, and when it was first and last seen. Admins get
+**Get a new configuration**, which opens **Add data** on the agent's system: make the new
+configuration there (it comes with a new agent token) and put it on the computer.
+
+Fluent Bit configurations made on **Add data** from this version on tell Signalith the
+computer's name. An agent set up before that is listed by its address and agent token,
+with a note that a new configuration would show its computer name; it keeps working as it
+is. An OpenTelemetry Collector is named by the computer name on its events; one that
+passes on events from several computers is listed by its address and agent token. A
+configuration made while a new certificate authority is being prepared trusts both, so
+the agent is still fine after the switch. Two
+computers with the same name are shown as one row with both addresses. An agent not heard
+from for 30 days is removed from the list. The computer name an agent sends is only a
+label: it never lets anyone in.
 
 ## Configuration checks
 

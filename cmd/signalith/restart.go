@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/jrsamsanchez/signalith/internal/agentinv"
 	"github.com/jrsamsanchez/signalith/internal/api"
 	"github.com/jrsamsanchez/signalith/internal/auth"
 	"github.com/jrsamsanchez/signalith/internal/cluster"
@@ -97,6 +98,9 @@ type runner struct {
 	// security runs the Security page's checks and keeps the last
 	// report, which a restart keeps.
 	security *api.SecurityChecker
+	// agents is the agent inventory of the instance running now, which
+	// hears of the agents that refuse the certificate.
+	agents atomic.Pointer[agentinv.Inventory]
 
 	front *front
 	// prepared is the HTTPS certificate a restart's checks loaded or made
@@ -1139,6 +1143,12 @@ func (r *runner) serveWeb(c *config.Config, ln net.Listener, certs *tlsauto.Mana
 		httpserver.OnRefusal(w.hs, func(addr string) {
 			if m := w.certs.Load(); m != nil {
 				m.NoteRefusal(addr, "https")
+			}
+			// An agent pinned to a certificate authority this server does
+			// not use never gets a batch through: the Endpoints page says
+			// it needs a new configuration.
+			if v := r.agents.Load(); v != nil {
+				v.NoteRefusedCA(addr)
 			}
 		})
 		w.hs.TLSConfig.GetCertificate = func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {

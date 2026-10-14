@@ -23,6 +23,9 @@ type Doer interface {
 type OpenSearch struct {
 	Client Doer
 	Index  string
+	// Replicas are the index's replicas settings (opensearch.replicas,
+	// see config.Replicas.IndexSettings); nil is auto.
+	Replicas map[string]any
 }
 
 // NewOpenSearch returns a backend using index "<prefix>_intel".
@@ -49,7 +52,7 @@ func properties() map[string]any {
 // any time; changes to an index that exists are Upgrade's.
 func (o *OpenSearch) EnsureIndex(ctx context.Context) error {
 	body := map[string]any{
-		"settings": map[string]any{"number_of_shards": 1, "number_of_replicas": 0},
+		"settings": store.SmallIndexSettings(o.Replicas),
 		"mappings": map[string]any{"dynamic": "false", "properties": properties()},
 	}
 	err := o.Client.Do(ctx, http.MethodPut, "/"+url.PathEscape(o.Index), body, nil)
@@ -58,6 +61,14 @@ func (o *OpenSearch) EnsureIndex(ctx context.Context) error {
 		return nil
 	}
 	return err
+}
+
+// Replicate gives the threat intel index, when it was made with no copy on
+// another node, the replicas settings new indices get (see
+// store.Replicate). Only the server that runs the background jobs does,
+// when it starts running them; doing it again changes nothing.
+func (o *OpenSearch) Replicate(ctx context.Context) error {
+	return store.Replicate(ctx, o.Client, o.Index, o.Replicas)
 }
 
 // Upgrade adds fields introduced since the index was created. Only the

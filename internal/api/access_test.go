@@ -75,6 +75,7 @@ func TestEveryRouteHasARole(t *testing.T) {
 	// A few routes whose role matters most.
 	for pattern, want := range map[string]users.Role{
 		"GET /api/agents/config":     users.Admin,
+		"GET /api/agents":            users.Analyst,
 		"POST /api/users":            users.Admin,
 		"PUT /api/auth/directory":    users.Admin,
 		"PATCH /api/findings/{id}":   users.Analyst,
