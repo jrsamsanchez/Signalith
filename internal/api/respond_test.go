@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -39,7 +40,7 @@ func newRespondServer(t *testing.T) (*httptest.Server, *Server, *respond.Memory,
 		srv = s
 		s.Users = users.NewMemory()
 		for name, role := range map[string]users.Role{"vera": users.Viewer, "andy": users.Analyst} {
-			if _, err := s.Users.Create(users.NewUser{Username: name, Role: role, Password: "role-password"}); err != nil {
+			if _, err := s.Users.Create(context.Background(), users.NewUser{Username: name, Role: role, Password: "role-password"}); err != nil {
 				t.Fatal(err)
 			}
 		}

@@ -29,8 +29,10 @@ type Collection[T any] struct {
 	watch  string
 	format int
 	// Validate, when set, checks an item's body read or about to be
-	// written; an item it refuses is not used.
-	Validate func(*T) error
+	// written; an item it refuses is not used. ValidateItem does the same
+	// with the item's name, for a body that must agree with its id.
+	Validate     func(*T) error
+	ValidateItem func(name string, v *T) error
 
 	// wmu lets one write of this server's run at a time (see Doc).
 	wmu   sync.Mutex
@@ -116,13 +118,27 @@ func (c *Collection[T]) notify() {
 	}
 }
 
+// validate runs Validate and ValidateItem on the body of item id.
+func (c *Collection[T]) validate(id string, v *T) error {
+	if c.Validate != nil {
+		if err := c.Validate(v); err != nil {
+			return err
+		}
+	}
+	if c.ValidateItem != nil {
+		name, _ := itemName(c.kind, id)
+		return c.ValidateItem(name, v)
+	}
+	return nil
+}
+
 // check checks a copy of item id read from OpenSearch.
 func (c *Collection[T]) check(id string, src json.RawMessage) (*Envelope, *Problem) {
 	e, p := c.h.open(id, c.kind, c.format, src)
 	if p == nil && !e.Deleted {
 		v, err := decodeBody[T](e.Body)
-		if err == nil && c.Validate != nil {
-			err = c.Validate(v)
+		if err == nil {
+			err = c.validate(id, v)
 		}
 		if err != nil {
 			p = &Problem{Kind: ProblemInvalid, Reason: err.Error()}
@@ -275,10 +291,8 @@ func (c *Collection[T]) envelope(id string, base *entry, by string, v *T) (*Enve
 	if v == nil {
 		e.Deleted = true
 	} else {
-		if c.Validate != nil {
-			if err := c.Validate(v); err != nil {
-				return nil, err
-			}
+		if err := c.validate(id, v); err != nil {
+			return nil, err
 		}
 		body, err := encodeBody(v)
 		if err != nil {
@@ -316,7 +330,7 @@ func (c *Collection[T]) write(ctx context.Context, id string, base *entry, e *En
 	src, _ := json.Marshal(e)
 	c.set(id, &entry{env: *e, src: src, ver: ver, uuid: uuid})
 	c.notify()
-	seq, err := c.h.bump(ctx, c.watch)
+	seq, err := c.h.bump(ctx, c.watch, nil)
 	if err != nil {
 		// Saved: the others find it at their next full listing.
 		c.h.log.Warn("saved, but the other servers may not see it for up to 5 minutes", "doc", id, "err", err)
@@ -370,6 +384,12 @@ func (c *Collection[T]) Create(ctx context.Context, by, name string, v *T) (int6
 	return seq, err
 }
 
+// Refresh reads the item name from OpenSearch now, so Get returns what
+// is there rather than what the last poll found.
+func (c *Collection[T]) Refresh(ctx context.Context, name string) error {
+	return c.readOne(ctx, c.ItemID(name))
+}
+
 // readOne reads item id now.
 func (c *Collection[T]) readOne(ctx context.Context, id string) error {
 	cl, _ := c.h.target()
@@ -393,16 +413,87 @@ func (c *Collection[T]) readOne(ctx context.Context, id string) error {
 // SaveIf replaces the item name, read at etag: a *StaleError when it
 // changed since, store.ErrNotFound when it is not there.
 func (c *Collection[T]) SaveIf(ctx context.Context, by, name string, v *T, etag string) (int64, error) {
-	return c.replace(ctx, by, name, v, etag)
+	return c.replace(ctx, by, name, etag, func(*Envelope) (*T, error) { return v, nil })
 }
 
 // Delete deletes the item name, read at etag, leaving a signed
 // tombstone.
 func (c *Collection[T]) Delete(ctx context.Context, by, name, etag string) (int64, error) {
-	return c.replace(ctx, by, name, nil, etag)
+	return c.replace(ctx, by, name, etag, func(*Envelope) (*T, error) { return nil, nil })
 }
 
-func (c *Collection[T]) replace(ctx context.Context, by, name string, v *T, etag string) (int64, error) {
+// MutateIf changes the item name with fn, for a page that read it at
+// etag. fn gets a copy of the revision etag names and may return an error
+// to change nothing. Another change since gives a *StaleError naming who
+// made it; a missing or deleted item gives store.ErrNotFound.
+func (c *Collection[T]) MutateIf(ctx context.Context, by, name, etag string, fn func(*T) error) (int64, error) {
+	return c.replace(ctx, by, name, etag, func(base *Envelope) (*T, error) {
+		v, err := decodeBody[T](base.Body)
+		if err != nil {
+			return nil, err
+		}
+		return v, fn(v)
+	})
+}
+
+// Mutate changes the item name with fn, which checks what must hold and
+// may return an error to change nothing. fn gets a copy of the latest
+// body and runs again on the newer copy when another server changed it in
+// between, up to store.ModifyTries times. A missing or deleted item gives
+// store.ErrNotFound.
+func (c *Collection[T]) Mutate(ctx context.Context, by, name string, fn func(*T) error) (int64, error) {
+	c.wmu.Lock()
+	defer c.wmu.Unlock()
+	id := c.ItemID(name)
+	var last error
+	for try := range store.ModifyTries {
+		if try > 0 {
+			if err := retryWait(ctx, try); err != nil {
+				return 0, err
+			}
+		}
+		base, err := c.usable(id)
+		if err != nil {
+			return 0, err
+		}
+		if base == nil || base.env.Deleted {
+			// Not read yet, or deleted: read it to be sure.
+			if err := c.readOne(ctx, id); err != nil {
+				return 0, err
+			}
+			if base, err = c.usable(id); err != nil {
+				return 0, err
+			}
+		}
+		if base == nil || base.env.Deleted {
+			return 0, store.ErrNotFound
+		}
+		v, err := decodeBody[T](base.env.Body)
+		if err != nil {
+			return 0, err
+		}
+		if err := fn(v); err != nil {
+			return 0, err
+		}
+		e, err := c.envelope(id, base, by, v)
+		if err != nil {
+			return 0, err
+		}
+		seq, err := c.write(ctx, id, base, e)
+		if !errors.Is(err, store.ErrConflict) {
+			return seq, err
+		}
+		last = err
+		if err := c.readOne(ctx, id); err != nil {
+			return 0, err
+		}
+	}
+	return 0, last
+}
+
+// replace writes over the item name, read at etag, the body change
+// returns for it (nil for a tombstone).
+func (c *Collection[T]) replace(ctx context.Context, by, name, etag string, change func(*Envelope) (*T, error)) (int64, error) {
 	c.wmu.Lock()
 	defer c.wmu.Unlock()
 	id := c.ItemID(name)
@@ -423,6 +514,10 @@ func (c *Collection[T]) replace(ctx context.Context, by, name string, v *T, etag
 	}
 	if base.etag() != etag {
 		return 0, &StaleError{By: base.env.UpdatedBy.User, Node: base.env.UpdatedBy.Node, At: base.env.UpdatedAt}
+	}
+	v, err := change(&base.env)
+	if err != nil {
+		return 0, err
 	}
 	e, err := c.envelope(id, base, by, v)
 	if err != nil {
@@ -483,7 +578,7 @@ func (c *Collection[T]) Housekeep(ctx context.Context, now time.Time) (int, int6
 	if n == 0 {
 		return 0, 0, errors.Join(errs...)
 	}
-	seq, err := c.h.bump(ctx, c.watch)
+	seq, err := c.h.bump(ctx, c.watch, nil)
 	return n, seq, errors.Join(append(errs, err)...)
 }
 

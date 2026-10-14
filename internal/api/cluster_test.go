@@ -76,7 +76,7 @@ func TestClusterIsForAdmins(t *testing.T) {
 	ts, _ := newTestServerWith(t, func(s *Server) {
 		s.Cluster = cl
 		s.Users = users.NewMemory()
-		if _, err := s.Users.Create(users.NewUser{Username: "vera", Role: users.Viewer, Password: "role-password"}); err != nil {
+		if _, err := s.Users.Create(context.Background(), users.NewUser{Username: "vera", Role: users.Viewer, Password: "role-password"}); err != nil {
 			t.Fatal(err)
 		}
 	})
@@ -185,7 +185,7 @@ func TestOpenSearchRefusalsInHealth(t *testing.T) {
 	ts, fos := newTestServerWith(t, func(s *Server) {
 		s.Cluster = cl
 		s.Users = users.NewMemory()
-		if _, err := s.Users.Create(users.NewUser{Username: "vera", Role: users.Viewer, Password: "role-password"}); err != nil {
+		if _, err := s.Users.Create(context.Background(), users.NewUser{Username: "vera", Role: users.Viewer, Password: "role-password"}); err != nil {
 			t.Fatal(err)
 		}
 	})

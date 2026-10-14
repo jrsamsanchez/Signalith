@@ -174,6 +174,9 @@ type Hub struct {
 	resyncAt time.Duration
 	// changed is called after anything new was applied (cache.enc).
 	changed func()
+	// confirmed is when a cycle last read everything it found, on the
+	// wall clock, or when the cache.enc restored was written.
+	confirmed time.Time
 }
 
 // NewHub returns a hub; Use points it at OpenSearch.
@@ -437,6 +440,16 @@ func (h *Hub) firstRev(id string, all bool) int64 {
 	return r + 1
 }
 
+// Confirmed returns when this server last read the shared settings in
+// full from OpenSearch (or when the cache.enc it started from was
+// written), so a copy kept while OpenSearch cannot be used can be judged
+// by its age; zero before either.
+func (h *Hub) Confirmed() time.Time {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.confirmed
+}
+
 // Applied returns how far this server has read the config index, as a
 // _seq_no (see Token); -1 before it has read anything.
 func (h *Hub) Applied() int64 {
@@ -492,8 +505,9 @@ func (h *Hub) ownWrite(id string, v store.Version) {
 // bump rewrites the watch document id, so every server reloads what it
 // watches. When nobody else bumped it since this server last read it,
 // this server, which applied its own change already, has nothing to
-// reload. It returns the bump's _seq_no.
-func (h *Hub) bump(ctx context.Context, id string) (int64, error) {
+// reload. fields, when set, are added to the body. It returns the bump's
+// _seq_no.
+func (h *Hub) bump(ctx context.Context, id string, fields map[string]any) (int64, error) {
 	c, prefix := h.target()
 	var out struct {
 		SeqNo       int64 `json:"_seq_no"`
@@ -501,8 +515,10 @@ func (h *Hub) bump(ctx context.Context, id string) (int64, error) {
 		Version     int64 `json:"_version"`
 	}
 	index := ConfigIndex(prefix)
-	err := c.Do(ctx, http.MethodPut, "/"+url.PathEscape(index)+"/_doc/"+url.PathEscape(id),
-		map[string]any{"kind": "watch", "id": id, "at": h.now()}, &out)
+	body := map[string]any{}
+	maps.Copy(body, fields)
+	body["kind"], body["id"], body["at"] = "watch", id, h.now()
+	err := c.Do(ctx, http.MethodPut, "/"+url.PathEscape(index)+"/_doc/"+url.PathEscape(id), body, &out)
 	if err != nil {
 		return 0, fmt.Errorf("could not tell the other servers about the change (%s): %w", id, err)
 	}
@@ -671,6 +687,7 @@ func (h *Hub) Cycle(ctx context.Context) error {
 		if h.uuid == uuid {
 			h.applied = max(h.applied, top)
 		}
+		h.confirmed = h.clock.Now()
 		h.mu.Unlock()
 	}
 	return errors.Join(errs...)
@@ -708,6 +725,9 @@ func (h *Hub) Restore(d CacheData) {
 	h.mu.Lock()
 	for id, r := range d.Floors {
 		h.floors[id] = max(h.floors[id], r)
+	}
+	if d.WrittenAt.After(h.confirmed) {
+		h.confirmed = d.WrittenAt
 	}
 	singles := maps.Clone(h.singles)
 	cols := slices.Clone(h.colls)
@@ -796,7 +816,7 @@ func (h *Hub) AcceptRestore(ctx context.Context, by string, peerMaxRev int64) er
 		errs = append(errs, err)
 	}
 	for _, w := range watches {
-		if _, err := h.bump(ctx, w.ID); err != nil {
+		if _, err := h.bump(ctx, w.ID, nil); err != nil {
 			errs = append(errs, err)
 		}
 	}

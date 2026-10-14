@@ -189,7 +189,9 @@ docker compose -f deploy/docker/docker-compose.yml up -d
 
 **The state folder.** Signalith keeps the files it makes for itself in one folder:
 its master key (`keys`), its HTTPS certificate and certificate authority (`tls`),
-`admin-password-hash` when the admin password was changed with `signalith passwd`,
+`admin-password-hash` when the admin password was changed with `signalith passwd`
+(not used while the server shares the users of its cluster), `admin-password-local`
+with the break-glass password `signalith passwd -local` sets on a member of a cluster,
 the key for the cookie that recognizes browsers that signed in before
 (`signin.key`, see [failed sign-in limits](users.md#signing-in)), and this server's
 identity (`node.id`, and `cluster/lock` while it runs). The
@@ -294,8 +296,9 @@ The servers that share one OpenSearch also share settings there, in the
 server keeps in its state folder (`keys/cluster-<id>.key`, encrypted with that
 server's master key) and never in OpenSearch, so someone who can write to OpenSearch
 cannot change them unnoticed. They share what makes them one cluster (its name, the
-list of servers and their keys), the threat intel feeds and the retention policies;
-see [Shared feeds and retention policies](#shared-feeds-and-retention-policies).
+list of servers and their keys), the threat intel feeds and the retention policies
+(see [Shared feeds and retention policies](#shared-feeds-and-retention-policies)), and
+the users and sign-in (see [Shared users and sign-in](#shared-users-and-sign-in)).
 
 The server that runs the background jobs makes the cluster by itself, the first
 time it runs this version: it makes the cluster key and writes the shared settings.
@@ -385,6 +388,24 @@ admins) give each item's version (`ETag`, and `etags` for the feeds). A change s
 While a server cannot use the shared settings (OpenSearch cannot be reached, or it misses
 the cluster key), changes there answer `503`.
 
+## Shared users and sign-in
+
+Once every server runs this version, the servers also share their users, the built-in
+admin's password, the directory sign-in settings and the sign-in sessions, in
+OpenSearch (`<prefix>_config` and `<prefix>_sessions`; give the OpenSearch user the
+right to create, read and write those too). A user added or changed on any server's
+Users page is the same everywhere within a couple of seconds, and a session made on
+one server works on every server: a load balancer needs no sticky sessions, and when a
+server stops, the people it served carry on on the others without signing in again.
+`signalith passwd` on any server changes the built-in admin's password for all of
+them, with no restart. See [Users on several servers](users.md#users-on-several-servers)
+for how the users are brought in, the built-in admin, directory settings and
+failed sign-in limits across servers, and what works while OpenSearch cannot be used.
+
+While some servers still run an earlier version, each server keeps its own users and
+sessions as before, and the Servers page and the Users page name the servers to
+upgrade.
+
 ## Field names when several servers receive events
 
 Each day's events go to one index per data model, and OpenSearch allows at most 2,000
@@ -450,6 +471,20 @@ searched. Findings and risk events the old version raised keep holding back repe
 for each detection's throttle window. See
 [Schedules and missed runs](detections.md#schedules-and-missed-runs).
 
+**Users and sign-in.** The servers start sharing their users once every server that
+ran in the last 24 hours runs this version (see
+[When the users become shared](users.md#when-the-users-become-shared)). Until then
+nothing changes for users; the Servers page names the servers still to upgrade. When
+the users become shared, each server restarts in place by itself and **everyone signs
+in once more**, on a single server too. From then on:
+
+- The directory sign-in settings can be changed on the Users page even when they come
+  from `auth.ldap` in signalith.yaml; the file applies again only when it changes.
+- `signalith passwd` changes the built-in admin's password for every server, with no
+  restart. `signalith passwd -local` is the break-glass password of one server, used
+  only while OpenSearch cannot be used.
+- A server of an earlier version can no longer start on this OpenSearch.
+
 ## Load balancers: /readyz and /livez
 
 Every server answers two addresses without signing in. They say nothing else about
@@ -477,7 +512,8 @@ The reasons `/readyz` gives:
 Do not use `/readyz` to restart a server: a server that waits for OpenSearch is
 fine, and restarting it does not help. Use `/livez` for that.
 
-HAProxy, for example, with each person kept on one server (see below):
+HAProxy, for example (with source address affinity, which only servers that do not
+share their users yet need; see below):
 
 ```
 backend signalith
@@ -512,11 +548,19 @@ certificate for all of them, give every server the same certificate with
 `server.tls.mode: files` (see [docs/https.md](https.md)), or let the load balancer
 add HTTPS and pass the connection on to Signalith.
 
-**Keep each person on one server.** A sign-in to the web pages is kept by the
-server it was made on, so set the load balancer to send each person to the same
-server (sticky sessions, or source address affinity). If that server stops, people
-sign in again on the other one. Agents and syslog need no such setting: any server
-takes any agent's data.
+**No sticky sessions needed.** Once the servers share their users (see
+[Shared users and sign-in](#shared-users-and-sign-in)), a sign-in made on one server
+works on every server, so the load balancer may send each request anywhere, and a
+server that stops loses nobody's session. Until then, while some servers still run an
+earlier version, a sign-in is kept by the server it was made on: set the load balancer
+to send each person to the same server (sticky sessions, or source address affinity),
+and people sign in again on another server when theirs stops. Agents and syslog need
+no such setting: any server takes any agent's data.
+
+**Sign in once per address.** The session cookie is a `__Host-` cookie, which a
+browser keeps for exactly the address it used. Through one load balancer address,
+people sign in once; opening `siem-a.example.com` and `siem-b.example.com` directly
+takes a sign-in on each.
 
 ## Several servers behind one address
 

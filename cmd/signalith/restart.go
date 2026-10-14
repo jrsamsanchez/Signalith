@@ -178,6 +178,11 @@ func newRunner(path string, log *slog.Logger) *runner {
 		front: &front{}, requests: make(chan restartRequest, 1), confirmed: make(chan *move, 1),
 	}
 	r.front.ready = r.ready
+	// While the users are shared, the limits are shared out among the
+	// servers that take sign-ins, and a lock tripped here is reported to
+	// the others; otherwise these change nothing. Set once, as the limiter
+	// carries over a restart.
+	r.limiter.Divisor, r.limiter.OnLock = r.signInServers, r.reportLock
 	r.security = api.NewSecurityChecker(log)
 	r.security.Started = r.started
 	r.security.OnReport = func(rep *security.Report) {
@@ -187,6 +192,21 @@ func newRunner(path string, log *slog.Logger) *runner {
 		}
 	}
 	return r
+}
+
+// signInServers is the limiter's Divisor (see sharedUsers).
+func (r *runner) signInServers() int {
+	if r.sharedContent == nil {
+		return 1
+	}
+	return r.sharedContent.users.signInServers()
+}
+
+// reportLock is the limiter's OnLock (see sharedUsers).
+func (r *runner) reportLock(scope, key string, until time.Time) {
+	if r.sharedContent != nil {
+		r.sharedContent.users.reportLock(scope, key, until)
+	}
 }
 
 // ready answers /readyz: whether a load balancer should send this server
@@ -255,32 +275,53 @@ var sharedCheck = 30 * time.Second
 // followShared restarts the components in place when the shared
 // configuration changes where their content comes from: this server
 // founded or joined the cluster (its files to the shared settings), or
-// left it. Each start decides once, so the switch takes a restart.
+// left it; or the users, the directory sign-in settings and the sessions
+// moved to the shared settings (or back). Each start decides once, so the
+// switch takes a restart.
 func (r *runner) followShared(ctx context.Context) {
 	if r.shared == nil || r.sharedContent == nil {
 		return
 	}
 	changed := make(chan struct{}, 1)
-	r.shared.OnMode(func(_, _ shared.Mode) {
+	kick := func() {
 		select {
 		case changed <- struct{}{}:
 		default:
 		}
-	})
+	}
+	r.shared.OnMode(func(_, _ shared.Mode) { kick() })
+	// A server that joins while the founder still moves its files into
+	// OpenSearch is a member before the shared content may be used: that
+	// waits for the cluster document to say the import is done, which
+	// changes no mode. So the cluster document is followed too, the one
+	// of the runtime's index prefix of the moment.
+	var watched *shared.Doc[shared.ClusterBody]
+	watch := func() {
+		if d := r.shared.Cluster(); d != nil && d != watched {
+			watched = d
+			d.OnChange(func(_, _ *shared.ClusterBody) { kick() })
+		}
+	}
 	for {
+		watch()
 		select {
 		case <-ctx.Done():
 			return
 		case <-changed:
 		case <-time.After(sharedCheck):
 		}
-		want := r.shared.SharedContent()
-		if want == r.sharedContent.on.Load() {
+		want, wantUsers := r.shared.SharedContent(), r.shared.SharedUsers()
+		if want == r.sharedContent.on.Load() && wantUsers == r.sharedContent.users.on.Load() {
 			continue
 		}
 		why := "this server now takes the threat intel feeds and retention policies from the shared settings"
-		if !want {
+		switch {
+		case !want:
 			why = "this server now takes the threat intel feeds and retention policies from its own files"
+		case want == r.sharedContent.on.Load() && wantUsers:
+			why = "the users and sign-in are now shared by every server of the cluster; everyone signs in once more"
+		case want == r.sharedContent.on.Load():
+			why = "this server now keeps the users and sign-in in its own files"
 		}
 		if err := r.restartInPlace(why); err != nil {
 			// Another restart is going; it decides again, and so does the

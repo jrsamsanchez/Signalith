@@ -1,6 +1,7 @@
 package users
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -22,37 +23,37 @@ func TestStorePersistsAndIgnoresCase(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.BuiltinAdmin = "admin"
-	u, err := s.Create(NewUser{Username: " JDoe ", Name: "Jane Doe", Email: "jdoe@example.com", Role: Analyst, Password: "first-password", MustChangePassword: true})
+	u, err := s.Create(context.Background(), NewUser{Username: " JDoe ", Name: "Jane Doe", Email: "jdoe@example.com", Role: Analyst, Password: "first-password", MustChangePassword: true})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if u.Username != "jdoe" || u.Source != SourceLocal || !u.MustChangePassword || u.Created.IsZero() {
 		t.Errorf("created %+v", u)
 	}
-	if _, err := s.Create(newUser("JDOE", Viewer)); !errors.Is(err, ErrExists) {
+	if _, err := s.Create(context.Background(), newUser("JDOE", Viewer)); !errors.Is(err, ErrExists) {
 		t.Errorf("same name, other case: %v", err)
 	}
-	if _, err := s.Create(newUser("Admin", Viewer)); !errors.Is(err, ErrReserved) {
+	if _, err := s.Create(context.Background(), newUser("Admin", Viewer)); !errors.Is(err, ErrReserved) {
 		t.Errorf("built-in admin's name: %v", err)
 	}
 	for _, bad := range []string{"", "-x", "has space", "a/b", "x!y", strings.Repeat("a", 65)} {
 		in := newUser("x", Viewer)
 		in.Username = bad
-		if _, err := s.Create(in); err == nil {
+		if _, err := s.Create(context.Background(), in); err == nil {
 			t.Errorf("username %q accepted", bad)
 		}
 	}
-	if _, err := s.Create(NewUser{Username: "short", Role: Viewer, Password: "1234567"}); err == nil || !strings.Contains(err.Error(), "at least 8") {
+	if _, err := s.Create(context.Background(), NewUser{Username: "short", Role: Viewer, Password: "1234567"}); err == nil || !strings.Contains(err.Error(), "at least 8") {
 		t.Errorf("short password: %v", err)
 	}
-	if _, err := s.Create(NewUser{Username: "mail", Role: Viewer, Password: "long-enough", Email: "not an email"}); err == nil {
+	if _, err := s.Create(context.Background(), NewUser{Username: "mail", Role: Viewer, Password: "long-enough", Email: "not an email"}); err == nil {
 		t.Error("bad email accepted")
 	}
 	if !s.CheckPassword("JDOE", "first-password") || s.CheckPassword("jdoe", "wrong-password") || s.CheckPassword("nobody", "first-password") {
 		t.Error("password checks")
 	}
-	s.RecordSignIn("jdoe")
-	s.RecordBuiltinSignIn()
+	s.RecordSignIn(context.Background(), "jdoe")
+	s.RecordBuiltinSignIn(context.Background())
 
 	// The file is written owner-only, and holds the hash but never the password.
 	if runtime.GOOS != "windows" {
@@ -84,28 +85,28 @@ func TestStorePersistsAndIgnoresCase(t *testing.T) {
 
 func TestStoreLastAdminGuard(t *testing.T) {
 	s := NewMemory() // no built-in admin, so local admins are all there is
-	s.Create(newUser("ann", Admin))
-	s.Create(newUser("ben", Analyst))
+	s.Create(context.Background(), newUser("ann", Admin))
+	s.Create(context.Background(), newUser("ben", Analyst))
 	viewer, off := Viewer, true
-	if _, err := s.Update("ann", Change{Role: &viewer}); !errors.Is(err, ErrLastAdmin) {
+	if _, err := s.Update(context.Background(), "ann", Change{Role: &viewer}); !errors.Is(err, ErrLastAdmin) {
 		t.Errorf("demote last admin: %v", err)
 	}
-	if _, err := s.Update("ann", Change{Disabled: &off}); !errors.Is(err, ErrLastAdmin) {
+	if _, err := s.Update(context.Background(), "ann", Change{Disabled: &off}); !errors.Is(err, ErrLastAdmin) {
 		t.Errorf("disable last admin: %v", err)
 	}
-	if _, err := s.Delete("ann"); !errors.Is(err, ErrLastAdmin) {
+	if _, err := s.Delete(context.Background(), "ann"); !errors.Is(err, ErrLastAdmin) {
 		t.Errorf("delete last admin: %v", err)
 	}
 	admin := Admin
-	if _, err := s.Update("ben", Change{Role: &admin}); err != nil {
+	if _, err := s.Update(context.Background(), "ben", Change{Role: &admin}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Delete("ann"); err != nil {
+	if _, err := s.Delete(context.Background(), "ann"); err != nil {
 		t.Errorf("delete with another admin left: %v", err)
 	}
 	// The built-in admin always counts.
 	s.BuiltinAdmin = "admin"
-	if _, err := s.Update("ben", Change{Disabled: &off}); err != nil {
+	if _, err := s.Update(context.Background(), "ben", Change{Disabled: &off}); err != nil {
 		t.Errorf("built-in admin should count: %v", err)
 	}
 }
@@ -113,33 +114,33 @@ func TestStoreLastAdminGuard(t *testing.T) {
 func TestStoreDirectoryUsers(t *testing.T) {
 	s := NewMemory()
 	s.Now = func() time.Time { return time.Date(2026, 10, 12, 9, 0, 0, 0, time.UTC) }
-	u, err := s.SeeDirectoryUser(DirectoryUser{Username: "Bob", DN: "CN=Bob,DC=x", Name: "Bob A", Role: Analyst})
+	u, err := s.SeeDirectoryUser(context.Background(), DirectoryUser{Username: "Bob", DN: "CN=Bob,DC=x", Name: "Bob A", Role: Analyst})
 	if err != nil || u.Username != "bob" || u.Source != SourceDirectory || u.LastSignIn == nil {
 		t.Fatalf("first sign-in %+v %v", u, err)
 	}
 	// Role and details follow the directory at each sign-in.
-	u, _ = s.SeeDirectoryUser(DirectoryUser{Username: "bob", DN: "CN=Bob,DC=x", Name: "Bob B", Role: Viewer})
+	u, _ = s.SeeDirectoryUser(context.Background(), DirectoryUser{Username: "bob", DN: "CN=Bob,DC=x", Name: "Bob B", Role: Viewer})
 	if u.Role != Viewer || u.Name != "Bob B" {
 		t.Errorf("second sign-in %+v", u)
 	}
 	// Only disabling is allowed here.
 	admin, off := Admin, true
-	if _, err := s.Update("bob", Change{Role: &admin}); !errors.Is(err, ErrManaged) {
+	if _, err := s.Update(context.Background(), "bob", Change{Role: &admin}); !errors.Is(err, ErrManaged) {
 		t.Errorf("role change on a directory user: %v", err)
 	}
-	if _, err := s.SetPassword("bob", "new-password", false); !errors.Is(err, ErrManaged) {
+	if _, err := s.SetPassword(context.Background(), "bob", "new-password", false); !errors.Is(err, ErrManaged) {
 		t.Errorf("password on a directory user: %v", err)
 	}
-	if u, err := s.Update("bob", Change{Disabled: &off}); err != nil || !u.Disabled {
+	if u, err := s.Update(context.Background(), "bob", Change{Disabled: &off}); err != nil || !u.Disabled {
 		t.Errorf("disable %+v %v", u, err)
 	}
 	// A disabled directory user stays disabled at sign-in.
-	if u, _ := s.SeeDirectoryUser(DirectoryUser{Username: "bob", Role: Admin}); !u.Disabled || u.Role != Viewer {
+	if u, _ := s.SeeDirectoryUser(context.Background(), DirectoryUser{Username: "bob", Role: Admin}); !u.Disabled || u.Role != Viewer {
 		t.Errorf("disabled sign-in %+v", u)
 	}
 	// A local user's name cannot be taken over from the directory.
-	s.Create(newUser("carol", Viewer))
-	if _, err := s.SeeDirectoryUser(DirectoryUser{Username: "carol", Role: Admin}); !errors.Is(err, ErrExists) {
+	s.Create(context.Background(), newUser("carol", Viewer))
+	if _, err := s.SeeDirectoryUser(context.Background(), DirectoryUser{Username: "carol", Role: Admin}); !errors.Is(err, ErrExists) {
 		t.Errorf("takeover of a local name: %v", err)
 	}
 }

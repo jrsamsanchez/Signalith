@@ -6,7 +6,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
+	"log/slog"
 	"maps"
 	"os"
 	"path/filepath"
@@ -15,11 +17,13 @@ import (
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/cluster"
+	"github.com/jrsamsanchez/signalith/internal/clusterauth"
 	"github.com/jrsamsanchez/signalith/internal/config"
 	"github.com/jrsamsanchez/signalith/internal/intel"
 	"github.com/jrsamsanchez/signalith/internal/retention"
 	"github.com/jrsamsanchez/signalith/internal/shared"
 	"github.com/jrsamsanchez/signalith/internal/store"
+	"github.com/jrsamsanchez/signalith/internal/users"
 )
 
 // Files is this server's own files and settings, which the founder
@@ -38,7 +42,19 @@ type Files struct {
 	// heartbeats' files_fingerprint.retention) from the last 7 days, by
 	// server name.
 	Peers func() map[string]string
-	Now   func() time.Time
+	// NodeCfg returns this server's nodecfg document, where the users and
+	// directory importers record what this server's files say of auth.*,
+	// so only later changes apply (see Apply).
+	NodeCfg func() *shared.Doc[shared.NodeCfg]
+	Log     *slog.Logger
+	Now     func() time.Time
+}
+
+func (f Files) log() *slog.Logger {
+	if f.Log != nil {
+		return f.Log
+	}
+	return slog.New(slog.DiscardHandler)
 }
 
 func (f Files) now() time.Time {
@@ -84,14 +100,16 @@ func hashOf(files []string, values ...any) (string, error) {
 	return "sha256:" + hex.EncodeToString(h.Sum(nil)), nil
 }
 
-// Importers returns the importers of this step: the feed list (the
-// feeds added on the page and intel.feeds in signalith.yaml), the feeds'
-// status (so downloads stay on their schedules) and the retention
+// Importers returns the importers of the shared settings: the feed list
+// (the feeds added on the page and intel.feeds in signalith.yaml), the
+// feeds' status (so downloads stay on their schedules) and the retention
 // policies (with the confirmation hold when other servers' policies
-// differed). The feed list and the policies are always written, even
-// empty, so every member finds them.
+// differed), which are always written, even empty, so every member finds
+// them; then, once the cluster's level keeps users in the shared settings
+// and when d has the users' documents (UseAuth), the users and the
+// directory sign-in settings.
 func Importers(d *Docs, f Files) []shared.Importer {
-	return []shared.Importer{
+	out := []shared.Importer{
 		{Name: "feeds", Source: func() (string, error) {
 			c := f.Config()
 			return hashOf([]string{c.IntelFeedsFile()}, c.Intel.Feeds)
@@ -108,6 +126,16 @@ func Importers(d *Docs, f Files) []shared.Importer {
 			return hashOf([]string{RetentionFile(c)}, c.RetentionPolicies())
 		}, Run: func(ctx context.Context, by string) error { return importRetention(ctx, d, f, by) }},
 	}
+	if a := d.Auth(); a != nil {
+		out = append(out, shared.Importer{Name: shared.ImportUsers, MinLevel: shared.LevelSharedUsers, Source: func() (string, error) {
+			c := f.Config()
+			return hashOf([]string{c.UsersFile()}, c.Auth.AdminUser, c.AdminPasswordVersion())
+		}, Run: func(ctx context.Context, by string) error { return importUsers(ctx, a, f, by) }},
+			shared.Importer{Name: shared.ImportDirectory, MinLevel: shared.LevelSharedUsers, Source: func() (string, error) {
+				return directorySource(f.Config())
+			}, Run: func(ctx context.Context, by string) error { return importDirectory(ctx, a, f, by) }})
+	}
+	return out
 }
 
 // yamlFeeds returns the feeds in signalith.yaml, with ${ENV} references
@@ -259,4 +287,103 @@ func importRetention(ctx context.Context, d *Docs, f Files, by string) error {
 		return nil
 	})
 	return err
+}
+
+// importUsers moves this server's users into the shared settings, each
+// step safe to run again (what is there counts as done): the built-in
+// admin with the password in use here (the one signalith passwd wrote to
+// the state folder included); every user of users.json with their
+// password hash, flags and session epoch 1 (one with the built-in admin's
+// name is left out: it could never sign in); and their last sign-ins.
+// It records what this server's files say of auth.*.
+func importUsers(ctx context.Context, a *clusterauth.Docs, f Files, by string) error {
+	c := f.Config()
+	now := f.now()
+	builtin, err := a.CreateBuiltin(ctx, by, c.Auth.AdminUser, c.Auth.AdminPasswordHash, now)
+	if err != nil {
+		return err
+	}
+	if !strings.EqualFold(builtin, c.Auth.AdminUser) {
+		f.log().Warn("the cluster's built-in admin has another name than auth.admin_user on this server; the cluster's name is used",
+			"builtin", builtin, "admin_user", c.Auth.AdminUser)
+	}
+	recs, builtinLast, err := users.ReadFile(c.UsersFile())
+	if err != nil {
+		return err
+	}
+	ub := &clusterauth.UsersBackend{Docs: a}
+	seen := &clusterauth.LastSeen{Client: f.Client, Node: f.Node}
+	for _, name := range slices.Sorted(maps.Keys(recs)) {
+		r := recs[name]
+		if strings.EqualFold(name, builtin) {
+			f.log().Warn("users.json has a user with the built-in admin's name; it is not imported", "user", name)
+			continue
+		}
+		last := r.LastSignIn
+		r.LastSignIn, r.Epoch = nil, 1
+		if _, err := ub.Create(ctx, by, r); err != nil && !errors.Is(err, users.ErrExists) {
+			return fmt.Errorf("user %s: %w", name, err)
+		}
+		if last != nil {
+			if err := seen.Import(ctx, clusterauth.Seen{User: name, At: last.UTC(), Node: f.Node, Method: clusterauth.MethodSession}); err != nil {
+				return err
+			}
+		}
+	}
+	if builtinLast != nil {
+		if err := seen.Import(ctx, clusterauth.Seen{User: builtin, At: builtinLast.UTC(), Node: f.Node, Method: clusterauth.MethodSession}); err != nil {
+			return err
+		}
+	}
+	return recordAuth(ctx, f, a)
+}
+
+// directorySource hashes the directory sign-in settings a server's files
+// hold (auth.ldap in signalith.yaml, else directory.json), "" when there
+// are none.
+func directorySource(c *config.Config) (string, error) {
+	p := c.DirectoryFile()
+	_, err := os.Stat(p)
+	if c.Auth.LDAP == nil && errors.Is(err, fs.ErrNotExist) {
+		return "", nil
+	}
+	s, err := c.LDAPFromFile()
+	if err != nil {
+		return "", err
+	}
+	return hashOf([]string{p}, s)
+}
+
+// importDirectory moves this server's directory sign-in settings into
+// the shared settings: auth.ldap from signalith.yaml (with
+// SIGNALITH_LDAP_BIND_PASSWORD) when set, else those saved on its Users
+// page, the service account password sealed again with the cluster key.
+// A password that cannot be opened here is left out, and the Users page
+// asks for it.
+func importDirectory(ctx context.Context, a *clusterauth.Docs, f Files, by string) error {
+	c := f.Config()
+	var s users.LDAPSettings
+	switch y, err := c.LDAP(); {
+	case err != nil:
+		return err
+	case y != nil:
+		s = *y
+	default:
+		d, err := users.OpenDirectory(c.DirectoryFile(), nil)
+		if err != nil {
+			return err
+		}
+		if !d.Saved() {
+			return recordAuth(ctx, f, a)
+		}
+		if p := d.Problem(); p != "" {
+			f.log().Warn("the directory sign-in service account password could not be opened, so it is not imported; enter it again on the Users page", "problem", p)
+		}
+		s = d.Settings()
+	}
+	b := &clusterauth.DirectoryBackend{Docs: a, Node: f.Node, Now: f.Now}
+	if err := b.SaveFrom(ctx, by, s, clusterauth.FromImport); err != nil {
+		return err
+	}
+	return recordAuth(ctx, f, a)
 }

@@ -83,6 +83,54 @@ func EnsureConfigTemplate(ctx context.Context, c Doer, prefix string) error {
 	}, nil)
 }
 
+// SessionsIndex is the index of the sign-in sessions every member
+// accepts.
+func SessionsIndex(prefix string) string { return prefix + "_sessions" }
+
+// sessionsSettings and sessionsMappings are the sessions index's. The MAC
+// is kept but not indexed.
+func sessionsSettings() map[string]any {
+	return map[string]any{"number_of_shards": 1, "auto_expand_replicas": "0-1", "refresh_interval": "1s"}
+}
+
+func sessionsMappings() map[string]any {
+	kw := map[string]any{"type": "keyword"}
+	date := map[string]any{"type": "date"}
+	boolean := map[string]any{"type": "boolean"}
+	return map[string]any{
+		"dynamic": "false",
+		"properties": map[string]any{
+			"user": kw, "node": kw, "client": kw, "method": kw,
+			"epoch":   map[string]any{"type": "long"},
+			"created": date, "last_seen": date,
+			"remember": boolean, "degraded": boolean,
+		},
+	}
+}
+
+// EnsureSessions creates the sessions index if it is missing. Any server
+// may, at any time; one that finds it already made carries on.
+func EnsureSessions(ctx context.Context, c Doer, prefix string) error {
+	err := c.Do(ctx, http.MethodPut, "/"+url.PathEscape(SessionsIndex(prefix)), map[string]any{"settings": sessionsSettings(), "mappings": sessionsMappings()}, nil)
+	var oe *store.Error
+	if errors.As(err, &oe) && oe.Status == http.StatusBadRequest && strings.Contains(oe.Body, "resource_already_exists_exception") {
+		return nil
+	}
+	return err
+}
+
+// EnsureSessionsTemplate saves an index template with the sessions
+// index's settings, as EnsureConfigTemplate does for the config index.
+func EnsureSessionsTemplate(ctx context.Context, c Doer, prefix string) error {
+	name := SessionsIndex(prefix)
+	return c.Do(ctx, http.MethodPut, "/_index_template/"+url.PathEscape(name), map[string]any{
+		"index_patterns": []string{name},
+		"priority":       500,
+		"template":       map[string]any{"settings": sessionsSettings(), "mappings": sessionsMappings()},
+		"_meta":          map[string]any{"managed_by": "signalith"},
+	}, nil)
+}
+
 // IndexUUID returns the uuid OpenSearch gave the config index when it
 // was created; an index deleted and created again has another. It is ""
 // with no error when the index does not exist.

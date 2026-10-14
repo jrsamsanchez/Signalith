@@ -41,7 +41,7 @@ func TestPlaybooksFlow(t *testing.T) {
 		srv = s
 		s.Users = users.NewMemory()
 		for name, role := range map[string]users.Role{"vera": users.Viewer, "andy": users.Analyst, "bea": users.Analyst} {
-			if _, err := s.Users.Create(users.NewUser{Username: name, Role: role, Password: "role-password"}); err != nil {
+			if _, err := s.Users.Create(context.Background(), users.NewUser{Username: name, Role: role, Password: "role-password"}); err != nil {
 				t.Fatal(err)
 			}
 		}

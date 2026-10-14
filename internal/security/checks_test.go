@@ -1,6 +1,7 @@
 package security
 
 import (
+	"context"
 	"crypto/x509"
 	"encoding/json"
 	"errors"
@@ -1035,7 +1036,7 @@ func TestUserFactsFrom(t *testing.T) {
 	st := users.NewMemory()
 	st.Now = func() time.Time { return now.AddDate(0, 0, -10) }
 	mk := func(name string, role users.Role, must bool) {
-		if _, err := st.Create(users.NewUser{Username: name, Role: role, Password: "a-long-password-1", MustChangePassword: must}); err != nil {
+		if _, err := st.Create(context.Background(), users.NewUser{Username: name, Role: role, Password: "a-long-password-1", MustChangePassword: must}); err != nil {
 			t.Fatal(err)
 		}
 	}

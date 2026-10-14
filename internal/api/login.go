@@ -54,10 +54,13 @@ func (s *Server) routeLogin(mux *http.ServeMux) {
 // sessions sets up everything sign-in needs on first use: sessions, the
 // failed sign-in limit, and in-memory users and directory settings when
 // none were given.
-func (s *Server) sessions() *auth.Sessions {
+func (s *Server) sessions() SessionStore {
 	s.authOnce.Do(func() {
-		if s.Sessions == nil {
-			s.Sessions = auth.NewSessions(s.conf().SessionIdle())
+		if s.SessionStore == nil {
+			if s.Sessions == nil {
+				s.Sessions = auth.NewSessions(s.conf().SessionIdle())
+			}
+			s.SessionStore = MemorySessions(s.Sessions)
 		}
 		if s.Limiter == nil {
 			s.Limiter = auth.NewLimiter()
@@ -75,7 +78,7 @@ func (s *Server) sessions() *auth.Sessions {
 			s.Directory, _ = users.OpenDirectory("", nil)
 		}
 	})
-	return s.Sessions
+	return s.SessionStore
 }
 
 func (s *Server) limiter() *auth.Limiter {
@@ -173,21 +176,31 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeSignInError(w, err)
 		return
 	}
-	token := s.sessions().Create(p.Username, req.Remember)
-	if p.Source == users.SourceLocal {
-		s.sessions().SetVersion(token, s.passwordStamp(p.Username))
+	token, err := s.startSession(r, p, req.Remember)
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, err)
+		return
 	}
-	c := &http.Cookie{Name: s.cookieName(r), Value: token, Path: "/", HttpOnly: true,
-		SameSite: http.SameSiteStrictMode, Secure: s.secureCookie(r)}
-	if req.Remember {
-		c.MaxAge = int(s.sessions().MaxAge.Seconds())
-	}
-	http.SetCookie(w, c)
+	s.setSessionCookie(w, r, token, req.Remember)
 	// From now on this browser can sign in to the account even while
 	// someone elsewhere is guessing its password.
 	s.rememberBrowser(w, r, req.Username, p.Username)
 	p.Method = "session"
 	writeJSON(w, http.StatusOK, meView(p))
+}
+
+// startSession starts a session for p, signing in from r: with shared
+// users, in the user's session epoch as it is now, so a password changed
+// or an account disabled since ends it.
+func (s *Server) startSession(r *http.Request, p *principal, remember bool) (string, error) {
+	n := auth.NewSession{User: p.Username, Remember: remember, Method: p.Source, Epoch: p.epoch}
+	if a := s.client(r).Addr; a.IsValid() {
+		n.Client = a.String()
+	}
+	if p.Source == users.SourceLocal && s.SharedUsers == nil {
+		n.Version = s.passwordStamp(p.Username)
+	}
+	return s.sessions().Create(r.Context(), n)
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
@@ -196,10 +209,10 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if c, err := r.Cookie(s.cookieName(r)); err == nil {
-		if ss, ok := s.sessions().Lookup(c.Value); ok {
+		if ss, ok := s.sessions().Lookup(r.Context(), c.Value, true); ok {
 			s.Log.Info("signed out", append([]any{"audit", true, "user", ss.User}, s.client(r).logAttrs()...)...)
 		}
-		s.sessions().Delete(c.Value)
+		s.sessions().Delete(r.Context(), c.Value)
 	}
 	http.SetCookie(w, &http.Cookie{Name: s.cookieName(r), Value: "", Path: "/", MaxAge: -1, HttpOnly: true,
 		SameSite: http.SameSiteStrictMode, Secure: s.secureCookie(r)})
@@ -211,7 +224,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 // page asks for it.
 func (s *Server) handleLoginPage(w http.ResponseWriter, r *http.Request) {
 	if c, err := r.Cookie(s.cookieName(r)); err == nil {
-		if ss, ok := s.sessions().Lookup(c.Value); ok {
+		if ss, ok := s.sessions().Lookup(r.Context(), c.Value, true); ok {
 			if p := s.principalFor(ss.User); p != nil && !p.MustChangePassword {
 				http.Redirect(w, r, "/", http.StatusSeeOther)
 				return

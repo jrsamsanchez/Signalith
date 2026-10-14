@@ -51,8 +51,9 @@ func meView(p *principal) map[string]any {
 		"role_label":           p.Role.Label(),
 		"source":               p.Source,
 		"must_change_password": p.MustChangePassword,
-		// Only local users' passwords are kept by Signalith.
-		"can_change_password": p.Source == users.SourceLocal,
+		// Only local users' passwords are kept by Signalith, and the
+		// built-in admin's once it is shared by the servers of a cluster.
+		"can_change_password": p.Source == users.SourceLocal || (p.Source == users.SourceBuiltin && p.shared),
 		"auth":                p.Method,
 	}
 }
@@ -83,18 +84,22 @@ func (s *Server) handleChangeOwnPassword(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	switch p.Source {
-	case users.SourceBuiltin:
+	switch {
+	case p.Source == users.SourceBuiltin && s.SharedUsers == nil:
 		writeJSON(w, http.StatusBadRequest, map[string]any{"code": "builtin",
 			"error": "The built-in admin's password is kept on the server. Change it there with signalith passwd, then restart Signalith. " +
 				"With the Docker quick start, from the Signalith folder: docker compose -f deploy/docker/docker-compose.yml exec signalith signalith passwd, " +
 				"then docker compose -f deploy/docker/docker-compose.yml restart signalith"})
 		return
-	case users.SourceDirectory:
+	case p.Source == users.SourceDirectory:
 		writeJSON(w, http.StatusBadRequest, map[string]any{"code": "directory",
 			"error": "Your password belongs to your directory (Active Directory or LDAP). Change it there."})
 		return
 	}
+	if !s.usersWritable(w) {
+		return
+	}
+	builtin := p.Source == users.SourceBuiltin
 	from := s.client(r)
 	// A signed-in session counts as a browser of its own: the account's
 	// slow-down for strangers does not apply to it.
@@ -108,7 +113,13 @@ func (s *Server) handleChangeOwnPassword(w http.ResponseWriter, r *http.Request)
 		writeSignInError(w, err)
 		return
 	}
-	if !s.userStore().CheckPassword(p.Username, req.Current) {
+	right := false
+	if builtin {
+		right, _ = s.checkBuiltinPassword(req.Current, false)
+	} else {
+		right = s.userStore().CheckPassword(p.Username, req.Current)
+	}
+	if !right {
 		f := attempt.Fail()
 		s.Log.Warn("password change refused", slices.Concat([]any{"audit", true, "user", p.Username}, from.logAttrs(),
 			[]any{"reason", "wrong current password", "locked_out", f.LockedOut()})...)
@@ -123,9 +134,12 @@ func (s *Server) handleChangeOwnPassword(w http.ResponseWriter, r *http.Request)
 			"error": "Choose a new password that is different from the current one."})
 		return
 	}
-	u, err := s.userStore().SetPassword(p.Username, req.New, false)
+	np, err := s.setOwnPassword(changeContext(r), p, req.New)
 	if errors.Is(err, users.ErrBusy) {
 		writeUserError(w, err)
+		return
+	}
+	if err != nil && sharedError(w, err) {
 		return
 	}
 	if err != nil {
@@ -136,15 +150,53 @@ func (s *Server) handleChangeOwnPassword(w http.ResponseWriter, r *http.Request)
 	// that share the users file, when they next make a request), and are
 	// strangers to the account until they sign in with the new password;
 	// this one stays known.
-	ended := s.sessions().EndUser(p.Username, p.token)
-	s.sessions().SetVersion(p.token, s.passwordStamp(p.Username))
+	keep := p.token
+	if s.SharedUsers != nil && p.Method == "session" && p.token != "" {
+		// The new password moved the user's session epoch on, which ends
+		// every session of theirs on every server, this one's too: it
+		// gets a new session in the new epoch instead.
+		token, err := s.startSession(r, np, p.remember)
+		if err != nil {
+			s.Log.Warn("password changed, but no new session could be started; sign in again with the new password", "user", p.Username, "err", err)
+		} else {
+			s.setSessionCookie(w, r, token, p.remember)
+			s.sessions().Delete(r.Context(), p.token)
+			keep = token
+		}
+	}
+	ended := s.sessions().EndUser(r.Context(), p.Username, keep)
+	if s.SharedUsers == nil {
+		s.sessions().SetVersion(r.Context(), p.token, s.passwordStamp(p.Username))
+	}
 	if p.Method == "session" {
 		s.rememberBrowser(w, r, p.Username)
 	}
 	s.audit(r, "password changed", "user", p.Username, "other_sessions_ended", ended)
-	np := principalFromUser(u)
 	np.Method = p.Method
 	writeJSON(w, http.StatusOK, meView(np))
+}
+
+// setOwnPassword gives the signed-in user p the new password and returns
+// them as they are then: a local user, or the built-in admin when the
+// servers of a cluster share it.
+func (s *Server) setOwnPassword(ctx context.Context, p *principal, password string) (*principal, error) {
+	if p.Source == users.SourceBuiltin {
+		hash, err := users.HashPassword(password)
+		if err != nil {
+			return nil, err
+		}
+		if err := s.SharedUsers.Docs.SetBuiltinHash(ctx, p.Username, hash); err != nil {
+			return nil, err
+		}
+		return s.builtinPrincipal(), nil
+	}
+	u, err := s.userStore().SetPassword(ctx, p.Username, password, false)
+	if err != nil {
+		return nil, err
+	}
+	np := principalFromUser(u)
+	np.shared = s.SharedUsers != nil
+	return np, nil
 }
 
 // ---- managing users ----
@@ -167,15 +219,21 @@ type userView struct {
 	Created    *time.Time `json:"created"`
 	Updated    *time.Time `json:"updated"`
 	LastSignIn *time.Time `json:"last_sign_in"`
-	You        bool       `json:"you"`
-	Actions    []string   `json:"actions"`
+	// LastSignInServer names the server of the last sign-in, when the
+	// servers of a cluster share the users.
+	LastSignInServer string   `json:"last_sign_in_server,omitempty"`
+	You              bool     `json:"you"`
+	Actions          []string `json:"actions"`
+	// ETag is the version of the user listed, for If-Match on a change.
+	ETag string `json:"etag,omitempty"`
 }
 
 func (s *Server) viewUser(u users.User, me string) userView {
 	created, updated := u.Created, u.Updated
 	v := userView{Username: u.Username, Name: u.Name, Email: u.Email, Role: u.Role, Source: u.Source,
 		Disabled: u.Disabled, MustChangePassword: u.MustChangePassword, DN: u.DN,
-		Refused: u.Refused, Created: &created, Updated: &updated, LastSignIn: u.LastSignIn, You: strings.EqualFold(u.Username, me)}
+		Refused: u.Refused, Created: &created, Updated: &updated, LastSignIn: u.LastSignIn, You: strings.EqualFold(u.Username, me),
+		ETag: s.userStore().ETag(u.Username)}
 	if u.Refused != "" {
 		v.Role = ""
 	}
@@ -197,8 +255,21 @@ func (s *Server) viewUser(u users.User, me string) userView {
 }
 
 func (s *Server) builtinView(me string) userView {
-	return userView{Username: s.conf().Auth.AdminUser, Role: users.Admin, Source: users.SourceBuiltin,
-		LastSignIn: s.userStore().BuiltinLastSignIn(), You: strings.EqualFold(s.conf().Auth.AdminUser, me), Actions: []string{}}
+	name := s.builtinName()
+	v := userView{Username: name, Role: users.Admin, Source: users.SourceBuiltin,
+		LastSignIn: s.userStore().BuiltinLastSignIn(), You: strings.EqualFold(name, me), Actions: []string{}}
+	if s.SharedUsers != nil {
+		if b, etag, ok := s.SharedUsers.Docs.BuiltinUser(); ok {
+			created, updated := b.Created, b.Updated
+			v.Created, v.Updated, v.ETag = &created, &updated, etag
+		}
+		if v.You {
+			// The servers of a cluster share the built-in admin's
+			// password, which its user may change here.
+			v.Actions = []string{"change_password"}
+		}
+	}
+	return v
 }
 
 func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
@@ -209,9 +280,28 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 	for _, u := range list {
 		out = append(out, s.viewUser(u, me))
 	}
+	if s.SharedUsers != nil && s.SharedUsers.Seen != nil {
+		// Last sign-ins are kept apart from the users, one per server: the
+		// newest, and where it was.
+		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+		seen, err := s.SharedUsers.Seen.All(ctx)
+		cancel()
+		if err != nil {
+			s.Log.Debug("could not read the last sign-ins", "err", err)
+		}
+		for i := range out {
+			if v, ok := seen[strings.ToLower(out[i].Username)]; ok {
+				at := v.At
+				out[i].LastSignIn, out[i].LastSignInServer = &at, v.Node
+			}
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"users": out,
-		"roles": users.RoleInfos,
+		"users":  out,
+		"roles":  users.RoleInfos,
+		"shared": s.SharedUsers != nil,
+		// Set on a member of a cluster whose users are not shared yet.
+		"shared_pending": s.usersPending(),
 		"directory": map[string]any{
 			"enabled":     s.dir().Enabled(),
 			"from_config": s.dir().FromConfig(),
@@ -222,8 +312,15 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 // writeUserError maps store errors to status codes. A value the form
 // should mark also names its field.
 func writeUserError(w http.ResponseWriter, err error) {
+	// A change someone made since the page read the user (412), or users
+	// kept in the shared settings that cannot be changed now (503).
+	if sharedError(w, err) {
+		return
+	}
 	status := http.StatusBadRequest
 	switch {
+	case errors.Is(err, users.ErrStale):
+		status = http.StatusPreconditionFailed
 	case errors.Is(err, users.ErrNotFound):
 		status = http.StatusNotFound
 	case errors.Is(err, users.ErrExists), errors.Is(err, users.ErrLastAdmin), errors.Is(err, users.ErrManaged), errors.Is(err, users.ErrReserved):
@@ -240,13 +337,19 @@ func writeUserError(w http.ResponseWriter, err error) {
 }
 
 // builtinTarget refuses changes to the built-in admin, which lives in
-// signalith.yaml.
+// signalith.yaml, or, on the servers of a cluster, in the shared
+// settings, where only its own user may change its password.
 func (s *Server) builtinTarget(w http.ResponseWriter, name string) bool {
-	if strings.EqualFold(name, s.conf().Auth.AdminUser) {
-		writeError(w, http.StatusConflict, errors.New("the built-in admin is set in signalith.yaml and cannot be changed here; use signalith passwd on the server to change its password"))
+	if !s.isBuiltin(name) {
+		return false
+	}
+	if s.SharedUsers != nil {
+		writeError(w, http.StatusConflict, errors.New("the built-in admin cannot be changed here: its own user changes its password with Change password in the user menu, "+
+			"or anyone with access to a server with signalith passwd"))
 		return true
 	}
-	return false
+	writeError(w, http.StatusConflict, errors.New("the built-in admin is set in signalith.yaml and cannot be changed here; use signalith passwd on the server to change its password"))
+	return true
 }
 
 func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
@@ -273,10 +376,10 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		req.Password = generated
 	}
 	mustChange := req.MustChangePassword == nil || *req.MustChangePassword
-	if s.builtinTarget(w, req.Username) {
+	if s.builtinTarget(w, req.Username) || !s.usersWritable(w) {
 		return
 	}
-	u, err := s.userStore().Create(users.NewUser{Username: req.Username, Name: req.Name, Email: req.Email, Role: req.Role,
+	u, err := s.userStore().Create(changeContext(r), users.NewUser{Username: req.Username, Name: req.Name, Email: req.Email, Role: req.Role,
 		Password: req.Password, MustChangePassword: mustChange})
 	if err != nil {
 		writeUserError(w, err)
@@ -307,7 +410,7 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	if s.builtinTarget(w, name) {
+	if s.builtinTarget(w, name) || !s.usersWritable(w) {
 		return
 	}
 	cur, ok := s.userStore().Get(name)
@@ -325,7 +428,11 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	u, err := s.userStore().Update(name, users.Change{Name: req.Name, Email: req.Email, Role: req.Role, Disabled: req.Disabled})
+	// With If-Match, a change made since the page read the user is not
+	// undone (412); without, the change applies to the user as they are
+	// now.
+	u, err := s.userStore().UpdateIf(changeContext(r), name, r.Header.Get("If-Match"),
+		users.Change{Name: req.Name, Email: req.Email, Role: req.Role, Disabled: req.Disabled})
 	if err != nil {
 		writeUserError(w, err)
 		return
@@ -345,7 +452,7 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 	}
 	if u.Disabled != cur.Disabled {
 		if u.Disabled {
-			ended := s.sessions().EndUser(u.Username, "")
+			ended := s.sessions().EndUser(r.Context(), u.Username, "")
 			s.audit(r, "user disabled", "user", u.Username, "sessions_ended", ended)
 		} else {
 			s.audit(r, "user enabled", "user", u.Username)
@@ -356,7 +463,7 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 	name := targetName(r)
-	if s.builtinTarget(w, name) {
+	if s.builtinTarget(w, name) || !s.usersWritable(w) {
 		return
 	}
 	cur, ok := s.userStore().Get(name)
@@ -368,12 +475,12 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, errors.New("you cannot delete your own account; ask another admin"))
 		return
 	}
-	u, err := s.userStore().Delete(cur.Username)
+	u, err := s.userStore().DeleteIf(changeContext(r), cur.Username, r.Header.Get("If-Match"))
 	if err != nil {
 		writeUserError(w, err)
 		return
 	}
-	ended := s.sessions().EndUser(u.Username, "")
+	ended := s.sessions().EndUser(r.Context(), u.Username, "")
 	s.audit(r, "user deleted", "user", u.Username, "source", u.Source, "role", u.Role, "sessions_ended", ended)
 	writeJSON(w, http.StatusOK, map[string]any{"deleted": u.Username})
 }
@@ -391,7 +498,7 @@ func (s *Server) handleResetPassword(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if s.builtinTarget(w, name) {
+	if s.builtinTarget(w, name) || !s.usersWritable(w) {
 		return
 	}
 	cur, ok := s.userStore().Get(name)
@@ -409,12 +516,12 @@ func (s *Server) handleResetPassword(w http.ResponseWriter, r *http.Request) {
 		generated = users.GeneratePassword()
 		req.Password = generated
 	}
-	u, err := s.userStore().SetPassword(name, req.Password, true)
+	u, err := s.userStore().SetPasswordIf(changeContext(r), name, r.Header.Get("If-Match"), req.Password, true)
 	if err != nil {
 		writeUserError(w, err)
 		return
 	}
-	ended := s.sessions().EndUser(u.Username, "")
+	ended := s.sessions().EndUser(r.Context(), u.Username, "")
 	s.audit(r, "password reset", "user", u.Username, "sessions_ended", ended)
 	resp := map[string]any{"user": s.viewUser(u, userOf(r))}
 	if generated != "" {
@@ -467,6 +574,14 @@ func (s *Server) directoryView() map[string]any {
 	if d.FromConfig() {
 		view["config_file"] = s.conf().Path()
 	}
+	// The version, for If-Match on a change, and where the settings came
+	// from: the Users page, a server's signalith.yaml or the founder's
+	// files.
+	view["etag"] = d.ETag()
+	if f := d.From(); f.Source != "" {
+		view["from"] = f
+	}
+	view["shared"] = s.SharedUsers != nil
 	return view
 }
 
@@ -542,6 +657,9 @@ func (s *Server) handlePutDirectory(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, users.ErrReadOnly)
 		return
 	}
+	if !s.usersWritable(w) {
+		return
+	}
 	var in settingsInput
 	if err := readJSON(r, &in); err != nil {
 		writeError(w, http.StatusBadRequest, err)
@@ -549,11 +667,16 @@ func (s *Server) handlePutDirectory(w http.ResponseWriter, r *http.Request) {
 	}
 	before := d.Settings()
 	next, again := s.mergeSettings(&in)
-	err := d.Save(next)
+	err := d.SaveIf(changeContext(r), r.Header.Get("If-Match"), next)
 	var se *users.SettingsError
 	switch {
 	case errors.As(err, &se):
 		writeProblems(w, explainAgain(se.Problems, again))
+		return
+	case errors.Is(err, users.ErrStale):
+		writeError(w, http.StatusPreconditionFailed, err)
+		return
+	case err != nil && sharedError(w, err):
 		return
 	case err != nil:
 		writeError(w, http.StatusInternalServerError, fmt.Errorf("could not save the directory settings: %w", err))
@@ -561,8 +684,9 @@ func (s *Server) handlePutDirectory(w http.ResponseWriter, r *http.Request) {
 	}
 	after := d.Settings()
 	// Check signed-in directory users against the new settings now, rather
-	// than at their next request.
-	for _, name := range s.sessions().Users() {
+	// than at their next request. With shared users, the server that runs
+	// the background jobs does that when the settings change.
+	for _, name := range s.legacySessionUsers(r.Context()) {
 		if u, ok := s.userStore().Get(name); ok && u.Source == users.SourceDirectory && !u.Disabled && u.Refused == "" && after.IsEnabled() {
 			s.recheckDirectoryUser(u.Username)
 		}
@@ -570,6 +694,15 @@ func (s *Server) handlePutDirectory(w http.ResponseWriter, r *http.Request) {
 	s.audit(r, "directory settings changed", "enabled", after.IsEnabled(), "servers", serversOf(after),
 		"fields", strings.Join(changedSettings(before, after), ","))
 	writeJSON(w, http.StatusOK, s.directoryView())
+}
+
+// legacySessionUsers lists the users with a session, on a server that
+// checks its directory users itself; none with shared users.
+func (s *Server) legacySessionUsers(ctx context.Context) []string {
+	if s.SharedUsers != nil {
+		return nil
+	}
+	return s.sessions().Users(ctx)
 }
 
 // changedSettings names the settings that differ, by their keys. The bind
@@ -685,7 +818,7 @@ func (s *Server) handleTestDirectoryUser(w http.ResponseWriter, r *http.Request)
 	}
 	warning := ""
 	login := users.LoginName(req.Username)
-	if strings.EqualFold(login, s.conf().Auth.AdminUser) {
+	if s.isBuiltin(login) {
 		warning = "This is the built-in admin's name, so sign-in never asks the directory about it."
 	} else if u, ok := s.userStore().Get(login); ok && u.Source == users.SourceLocal {
 		warning = "A local Signalith user has this name, so sign-in uses the local password and never asks the directory."

@@ -326,7 +326,7 @@ func TestSettingsChecksAndSaving(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := d.Save(off); err != nil {
+	if err := d.Save(context.Background(), off); err != nil {
 		t.Fatalf("save switched off: %v", err)
 	}
 	if d.Enabled() || d.Revision() != 1 {
@@ -334,12 +334,12 @@ func TestSettingsChecksAndSaving(t *testing.T) {
 	}
 	off.Enabled = on()
 	var se *SettingsError
-	if err := d.Save(off); !errors.As(err, &se) {
+	if err := d.Save(context.Background(), off); !errors.As(err, &se) {
 		t.Errorf("enabling incomplete settings: %v", err)
 	}
 	off.UserBaseDN, off.BindDN, off.BindPassword = "dc=example,dc=org", "cn=svc,dc=example,dc=org", "secret-bind"
 	off.ViewerGroups = []string{"cn=staff,dc=example,dc=org"}
-	if err := d.Save(off); err != nil {
+	if err := d.Save(context.Background(), off); err != nil {
 		t.Fatal(err)
 	}
 	raw, _ := os.ReadFile(path)
@@ -352,7 +352,7 @@ func TestSettingsChecksAndSaving(t *testing.T) {
 	}
 	// Settings from signalith.yaml cannot be changed here.
 	fromFile, _ := OpenDirectory(path, &off)
-	if err := fromFile.Save(off); !errors.Is(err, ErrReadOnly) {
+	if err := fromFile.Save(context.Background(), off); !errors.Is(err, ErrReadOnly) {
 		t.Errorf("save over config: %v", err)
 	}
 }
@@ -416,7 +416,7 @@ func TestDirectoryBindPasswordEncrypted(t *testing.T) {
 	// Entering it again clears the problem.
 	set := d.Settings()
 	set.BindPassword = "new-bind-pw"
-	if err := d.Save(set); err != nil {
+	if err := d.Save(context.Background(), set); err != nil {
 		t.Fatal(err)
 	}
 	if d.Problem() != "" {
@@ -441,11 +441,11 @@ func TestBindPasswordLookingEncrypted(t *testing.T) {
 	s.AdminGroups = []string{"CN=Admins,DC=example,DC=com"}
 	s.BindPassword = "enc:v1:0011aabb:AAAA"
 	var se *SettingsError
-	if err := d.Save(s); !errors.As(err, &se) || !strings.Contains(err.Error(), "how encrypted values look") {
+	if err := d.Save(context.Background(), s); !errors.As(err, &se) || !strings.Contains(err.Error(), "how encrypted values look") {
 		t.Errorf("Save = %v", err)
 	}
 	s.BindPassword = "enc:plain-password"
-	if err := d.Save(s); err != nil {
+	if err := d.Save(context.Background(), s); err != nil {
 		t.Errorf("a password starting with enc: refused: %v", err)
 	}
 }

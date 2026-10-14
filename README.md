@@ -690,8 +690,15 @@ runs). Both answer without signing in and say nothing else, over HTTPS and also 
 plain `http://` on the same port, where everything else is sent to HTTPS, so a
 health check works either way.
 
-Until sessions are shared, a web sign-in is kept by the server it was made on: set
-the load balancer to keep each person on one server (sticky sessions). The pages
+The servers also share their users, the built-in admin's password, the directory
+sign-in settings and the sign-in sessions, once every server runs this version: a user
+added on any server's Users page can sign in on all of them, a session made on one
+server works on every server, so the load balancer needs no sticky sessions, and
+`signalith passwd` on any server changes the built-in admin's password everywhere with
+no restart (see [Users on several servers](docs/users.md#users-on-several-servers)).
+Everyone signs in once more when the servers start sharing their users. Until then,
+a web sign-in is kept by the server it was made on: set the load balancer to keep each
+person on one server (sticky sessions). The pages
 still see their own changes when a request reaches another server, and keep working
 while servers of two versions share one address during an upgrade (see
 [Several servers behind one address](docs/servers.md#several-servers-behind-one-address)).
@@ -700,7 +707,8 @@ while servers of two versions share one address during an upgrade (see
 job lease, so upgrade them all together, or first set `detections.scheduler: false`
 on every server but one and turn it back on once all of them run this version. Give
 every server the cluster key once the first one has made it, and upgrade them all:
-an older version keeps using its own feed and retention files (see
+an older version keeps using its own feed and retention files, and the users are
+shared only once no server of an older version has run for 24 hours (see
 [Upgrading servers you set up by hand](docs/servers.md#upgrading-servers-you-set-up-by-hand)).
 
 See [docs/servers.md](docs/servers.md) for the Servers page, how the jobs move,

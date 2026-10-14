@@ -1155,6 +1155,10 @@ func (n *Node) refusingWrites() bool {
 	return n.writesRefused
 }
 
+// WritesRefused reports whether OpenSearch refused this server's last
+// heartbeat because it takes no writes (a full disk).
+func (n *Node) WritesRefused() bool { return n.refusingWrites() }
+
 // tookOver is told that this server took the jobs over from server from,
 // because that one stopped renewing the lease: it counts as offline from
 // now on unless its heartbeat changes again.

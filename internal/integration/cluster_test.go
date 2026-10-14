@@ -104,6 +104,8 @@ type clusterHarness struct {
 	os     *store.Client
 	// keyFile holds the cluster key every server is given.
 	keyFile string
+	// fake is the in-memory OpenSearch, nil with a real one.
+	fake *ostest.Server
 }
 
 // newClusterHarness gives a test its own index prefix on the OpenSearch of
@@ -118,7 +120,8 @@ func newClusterHarness(t *testing.T) *clusterHarness {
 		if os.Getenv("CI") != "" {
 			t.Fatal("SIGNALITH_TEST_OPENSEARCH is not set: in CI these tests must run against a real OpenSearch")
 		}
-		h.url = ostest.New(t).URL
+		h.fake = ostest.New(t)
+		h.url = h.fake.URL
 	}
 	h.os = store.New(storeConfig(h.url))
 	h.keyFile = filepath.Join(h.root, "cluster.key")

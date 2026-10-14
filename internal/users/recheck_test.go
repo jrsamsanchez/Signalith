@@ -110,21 +110,21 @@ func TestStoreRefusedDirectoryUsers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.SeeDirectoryUser(DirectoryUser{Username: "bob", DN: "CN=Bob,DC=x", Role: Analyst}); err != nil {
+	if _, err := s.SeeDirectoryUser(context.Background(), DirectoryUser{Username: "bob", DN: "CN=Bob,DC=x", Role: Analyst}); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := s.RefuseDirectoryUser("carol", "gone"); !errors.Is(err, ErrNotFound) {
+	if _, _, err := s.RefuseDirectoryUser(context.Background(), "carol", "gone"); !errors.Is(err, ErrNotFound) {
 		t.Errorf("refuse unknown = %v", err)
 	}
-	s.Create(newUser("lena", Viewer))
-	if _, _, err := s.RefuseDirectoryUser("lena", "gone"); !errors.Is(err, ErrNotFound) {
+	s.Create(context.Background(), newUser("lena", Viewer))
+	if _, _, err := s.RefuseDirectoryUser(context.Background(), "lena", "gone"); !errors.Is(err, ErrNotFound) {
 		t.Errorf("refuse a local user = %v", err)
 	}
-	u, changed, err := s.RefuseDirectoryUser("BOB", "in no group mapped to a role")
+	u, changed, err := s.RefuseDirectoryUser(context.Background(), "BOB", "in no group mapped to a role")
 	if err != nil || !changed || u.Refused == "" {
 		t.Fatalf("refuse bob = %+v %v %v", u, changed, err)
 	}
-	if _, changed, _ := s.RefuseDirectoryUser("bob", "in no group mapped to a role"); changed {
+	if _, changed, _ := s.RefuseDirectoryUser(context.Background(), "bob", "in no group mapped to a role"); changed {
 		t.Error("refusing again for the same reason counted as news")
 	}
 	// It is kept across restarts.
@@ -136,12 +136,12 @@ func TestStoreRefusedDirectoryUsers(t *testing.T) {
 		t.Errorf("after reopening: %+v", u)
 	}
 	// A new look at the directory, or a sign-in, gives access back.
-	u, changed, err = s2.RefreshDirectoryUser("bob", DirectoryUser{Username: "bob", DN: "CN=Bob,DC=x", Role: Viewer})
+	u, changed, err = s2.RefreshDirectoryUser(context.Background(), "bob", DirectoryUser{Username: "bob", DN: "CN=Bob,DC=x", Role: Viewer})
 	if err != nil || !changed || u.Refused != "" || u.Role != Viewer || u.LastSignIn == nil {
 		t.Errorf("refresh = %+v %v %v", u, changed, err)
 	}
-	s2.RefuseDirectoryUser("bob", "gone")
-	if u, _ := s2.SeeDirectoryUser(DirectoryUser{Username: "bob", Role: Admin}); u.Refused != "" || u.Role != Admin {
+	s2.RefuseDirectoryUser(context.Background(), "bob", "gone")
+	if u, _ := s2.SeeDirectoryUser(context.Background(), DirectoryUser{Username: "bob", Role: Admin}); u.Refused != "" || u.Role != Admin {
 		t.Errorf("sign-in after refusal = %+v", u)
 	}
 }

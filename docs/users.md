@@ -9,6 +9,9 @@ three ways:
 | **Local users** | `users.json` in the lookups folder | The **Users** page |
 | **Directory users** | Your Active Directory or LDAP server; Signalith keeps a record after their first sign-in | The directory; on the **Users** page you can only disable or delete them |
 
+Servers that share one OpenSearch keep all of this in OpenSearch instead, once every
+one of them runs this version: see [Users on several servers](#users-on-several-servers).
+
 ## Roles
 
 Each role can do everything the roles above it can.
@@ -66,7 +69,8 @@ allow, the page reloads to match the new role and says why.
 The account in `auth.admin_user` (`admin` unless you changed it) always works, even
 when the directory server is down or every other admin has been removed, so you can
 always get back in. It shows on the Users page as **Built-in** and cannot be edited,
-disabled or deleted there. Change its password on the server:
+disabled or deleted there. Change its password on the server (on servers that share
+their users, see [The built-in admin on several servers](#the-built-in-admin-on-several-servers)):
 
 ```sh
 signalith passwd -c /etc/signalith/signalith.yaml
@@ -117,7 +121,9 @@ once.
 
 Directory users change their password in the directory (for example with
 Ctrl+Alt+Del on Windows). The built-in admin's password is changed with
-`signalith passwd`.
+`signalith passwd`; on servers that share their users, the built-in admin can also
+change it here, from the user menu or **Change password** on its own row of the
+Users page.
 
 ## Signing in
 
@@ -157,6 +163,8 @@ limit. Wrong directory passwords count; an unreachable directory does not. Basic
 auth, **Test a user** with a password, and **Change password** share these limits.
 An IPv6 address is counted with the rest of its /64 network, since one computer can
 usually use any address in it.
+Servers that share their users share these limits too (see
+[Failed sign-in limits on several servers](#failed-sign-in-limits-on-several-servers)).
 
 **Browsers you signed in with keep working.** When you sign in, Signalith gives your
 browser a cookie that says it has signed in to that account before. The cookie is
@@ -180,7 +188,8 @@ stays the same.
 else is guessing your password. The cookie needs HTTPS: over plain HTTP no browser
 is remembered. Each server keeps its own key for these cookies, `signin.key` in its
 state folder; deleting it only means every browser signs in once more before it is
-recognized.
+recognized. Servers that share their users use one key instead, made from the cluster
+key, so a browser recognized by one server is recognized by every one.
 
 **Many people behind one address.** When people reach Signalith through one address,
 such as a reverse proxy, a load balancer, a NAT gateway or Docker Desktop's port
@@ -212,7 +221,9 @@ The web UI keeps you signed in with a session cookie. Sessions end after
 `auth.session_timeout` without activity (12 hours by default), after 7 days with
 **Keep me signed in**, when you sign out, when your password is changed, or when an
 admin disables, deletes or resets your account. Servers that share the users file end
-them too, within a second or so.
+them too, within a second or so. Servers that share their users in OpenSearch keep the
+sessions there, so a session works on every server at once (see
+[Sessions on every server](#sessions-on-every-server)).
 
 Scripts and API clients can use HTTP Basic auth with the same username and password.
 Signalith remembers a correct username and password briefly so it does not check
@@ -406,6 +417,10 @@ variable only applies to `auth.ldap` in `signalith.yaml`: settings made on the U
 page keep their own password in `directory.json`, and Signalith logs a warning at
 start-up when the variable is set without `auth.ldap`.
 
+On servers that share their users, `auth.ldap` no longer makes the page read-only:
+the settings in signalith.yaml are applied to the shared ones only when they change
+(see [Directory settings on several servers](#directory-settings-on-several-servers)).
+
 `signalith validate` checks the settings, so run it with the same environment as the
 service. `signalith passwd` works without the variable, so the built-in admin's
 password can always be reset from a shell.
@@ -518,6 +533,164 @@ the Users page to stop them at once.
 not have the service's environment. Load the service's environment file first, for
 example `sudo sh -c 'set -a; . /etc/signalith/signalith.env; signalith validate -c /etc/signalith/signalith.yaml'`.
 
+## Users on several servers
+
+Servers that share one OpenSearch as a cluster (see [servers.md](servers.md)) share
+their users too, once every one of them runs this version: the local users, the
+directory users seen so far, their roles and password hashes, the built-in admin's
+password, the directory sign-in settings and the sign-in sessions. A user added,
+changed, disabled or deleted on any server's Users page is the same on every server
+within a couple of seconds, and a session made on one server works on all of them.
+Give the OpenSearch user the right to create, read and write `<prefix>_sessions` too
+(or `<prefix>_*`).
+
+### When the users become shared
+
+- **A new cluster** shares them from the start.
+- **Servers upgraded from an earlier version** share them once every server that ran
+  in the last 24 hours runs this version: a server of an earlier version would not see
+  them. Until then each server keeps its own `users.json`, `directory.json` and
+  sessions, as before, and the Users page and the Servers page say which servers still
+  need the upgrade. A server removed for good stops counting 24 hours after it was last
+  seen. Once the users are shared, a server of an earlier version refuses to start on
+  this OpenSearch and says it needs a newer version.
+- **Where they come from.** The server that founded the cluster brings in its users,
+  its directory settings and the built-in admin's password in use there (an
+  `admin-password-hash` file from `signalith passwd` included), as soon as every
+  server runs this version, whether or not it runs the background jobs. While it is
+  down, the Servers page says the users wait for it. If it has not been seen for 7
+  days, the server that runs the jobs does it instead, and the Servers page names the
+  servers whose users differed from its own. Users that only another server had are not brought in: add them again on
+  the Users page. `users.json` and `directory.json` stay as they were, unused.
+- **Everyone signs in once more** when the users become shared, since the sessions
+  each server kept are not carried over.
+
+What stays per server: `auth.session_timeout` (each server ends idle sessions after its
+own value) and the Basic auth cache. `auth.admin_user` is taken from the server that
+brought the users in; a server whose `auth.admin_user` differs logs a warning and uses
+the shared name.
+
+**Password hashes in OpenSearch.** Users are kept in the `<prefix>_config` index,
+signed with the cluster key, so a user changed or added in OpenSearch outside
+Signalith is refused. Their bcrypt password hashes are stored as they are, not
+encrypted: encrypting them with the cluster key would lock everyone out after
+`signalith cluster reset-key`. Anyone who can read `<prefix>_config` can read the
+hashes, as anyone who can read Signalith's indices can read your events: give that
+right only to Signalith's own OpenSearch user. The directory's service account
+password is encrypted with the cluster key.
+
+### Sessions on every server
+
+A session cookie made by one server works on every server at once, so a load balancer
+needs no sticky sessions, and when a server stops, the people it served keep working
+on the others. Signing out, a password change or reset, disabling or deleting a user
+ends their sessions on every server within about 2 seconds (at most 15 seconds if a
+server cannot read OpenSearch meanwhile). A user has at most 50 sessions; a 51st ends
+the oldest.
+
+The session cookie is a `__Host-` cookie, which browsers keep for exactly the address
+they used. Through one load balancer address, people sign in once; reaching
+`siem-a.example.com` and `siem-b.example.com` directly takes a sign-in on each.
+
+### The built-in admin on several servers
+
+The built-in admin has one password for every server.
+
+- **`signalith passwd`** on any server of the cluster changes it for every server
+  within a few seconds, with no restart. When OpenSearch cannot be reached, or the
+  users are not shared yet, it changes this server's files as before and says what
+  that does on a member: a password it keeps in `admin-password-hash` in the state
+  folder (the Docker quick start, or a service given the password) is used only while
+  this server keeps its users in its own files, not as the cluster's password and not
+  while OpenSearch is down; one it writes to `auth.admin_password_hash` in
+  signalith.yaml becomes the password of every server the next time this server starts
+  with OpenSearch available, since the file changed. Run it again once OpenSearch
+  answers to change the cluster's password at once.
+- **On the page.** Signed in as the built-in admin, use **Change password** in the user
+  menu, or on the built-in admin's row on the Users page. Other admins cannot change
+  it there.
+- **`signalith passwd -local`** keeps a password on this server only. On a server
+  that was ever a member of a cluster it is kept in `admin-password-local` in its state
+  folder and works only while the shared settings cannot be used (OpenSearch down or
+  refusing writes), within a few seconds and with no restart, so you can always sign in
+  to fix that. It is the only break-glass password: an `admin-password-hash` an earlier
+  `signalith passwd` wrote (as on Docker and service installs) is not used once the
+  users are shared, so a password that leaked before does not come back while
+  OpenSearch is down. Change or delete `admin-password-local` when the person who knew
+  it should no longer have it. On a server that was never a member, `-local` writes
+  `admin-password-hash`, which replaces the configured password at the next restart, as
+  `signalith passwd` does there.
+- **`auth.admin_password_hash`, `SIGNALITH_ADMIN_PASSWORD` and
+  `SIGNALITH_ADMIN_PASSWORD_FILE`** apply only when they change: a server that starts
+  with a changed value sets it as the shared password and logs
+  `auth.admin_password_hash applied from the environment on siem-b`. An unchanged
+  value, such as the Docker quick start's password file, never undoes a later
+  `signalith passwd`.
+
+### Directory settings on several servers
+
+The servers share one set of directory sign-in settings, which an admin can change on
+the Users page of any server, also when they came from `auth.ldap` in signalith.yaml.
+The page says where the settings in use came from: applied from signalith.yaml, saved
+on the page, brought in, or the service account password set from
+`SIGNALITH_LDAP_BIND_PASSWORD`, with the server and the time.
+
+`auth.ldap` and `SIGNALITH_LDAP_BIND_PASSWORD` apply only when they change, like the
+admin password above: an unchanged signalith.yaml never undoes a change made on the
+page, and a server whose file differs without having changed only notes it in its
+heartbeat (`settings_drift`). `SIGNALITH_LDAP_BIND_PASSWORD` is used only on a server
+whose signalith.yaml has `auth.ldap`, and only while the shared settings connect to the
+same servers, as the same bind DN and with the same TLS settings as that file: when
+someone changed them on the page, a new password from the environment is not used with
+them, and the server logs a warning instead.
+
+The service account's password is encrypted with the cluster key for the saved
+servers, bind DN and TLS settings: change any of them and it must be typed again, so
+it can never be sent to a server someone else chose, even by editing OpenSearch.
+
+Signed-in directory users are looked up again every 5 minutes, and right after the
+settings change, by the server that runs the background jobs, for every server. The
+other servers ask the directory only to sign people in.
+
+### Failed sign-in limits on several servers
+
+Each server counts wrong passwords, with the limits divided by the number of servers
+that are up, but never below 3: with two servers, 5 wrong passwords for one account
+from one address pause it, and 15 from one address pause the address. A pause on one
+server applies on every server within seconds. As on one server, an account is never
+locked, only slowed down for strangers, and an address under **Proxies and gateways**
+is never paused as a whole. While OpenSearch cannot be used, each server applies its
+own limits only.
+
+### Changes at the same moment
+
+`GET /api/users` gives each user's version (`etag`), and `GET /api/auth/directory` the
+settings'. A change sent with `If-Match` and that version is refused with `412` when
+someone changed the user or the settings meanwhile; the answer says who, on which
+server and when, and the page says so and shows their change. Without `If-Match`, a
+change applies to the user as they are now, so a change made on another server at the
+same moment is kept. While a server cannot write the shared settings, changes there
+answer `503`.
+
+### When OpenSearch cannot be used
+
+When a server cannot reach OpenSearch, or OpenSearch refuses writes because its disk is
+full:
+
+- Sessions it has already checked keep working for 5 minutes after it last confirmed
+  them with OpenSearch.
+- Only admins can sign in, with a session or with HTTP Basic credentials: the
+  built-in admin (with the password this server last read, or the one
+  `signalith passwd -local` set), and local admins when this server's copy of the users
+  is at most 24 hours old. Everyone else gets `503` with the code `degraded`, which does
+  not count as a failed sign-in. Their session works on this server only,
+  for at most an hour, and the log says so. Once OpenSearch takes writes again, it is
+  stored for every server if the user is still an enabled admin whose password did not
+  change meanwhile; otherwise it ends. Directory users and everyone else sign in again
+  once OpenSearch is back.
+- Changes on the Users page answer `503`. Last sign-ins and pauses of addresses are not
+  shared meanwhile.
+
 ## Where user data is stored
 
 | File | Holds | Default place |
@@ -545,6 +718,9 @@ runs, because servers that share a lookups folder share that file (see
 otherwise it checks for changes about once a second. While a server changes
 `users.json` it keeps a small `users.json.lock` file next to it; leave that file
 alone, it goes away by itself.
+
+On servers that share their users, these files are only what the users were
+brought in from: see [Users on several servers](#users-on-several-servers).
 
 If `users.json` is damaged, Signalith refuses to start and says so. If it becomes
 damaged while Signalith runs, everyone signed in keeps working, but every change on
@@ -579,6 +755,17 @@ the Settings page and restarts are logged the same way; see
 | `directory user looked up` | `by`, `user`, `servers`, `ok`, `code`, `password_checked` |
 | `directory user lost access` | `by=directory`, `user`, `reason`, `sessions_ended` |
 | `directory user's role changed` | `by=directory`, `user`, `from`, `to` |
+
+Servers that share their users also log these:
+
+| Message | Fields |
+| --- | --- |
+| `signed in while OpenSearch cannot be written; …` | `user`, `method`, `client`: a session kept on this server only (see [When OpenSearch cannot be used](#when-opensearch-cannot-be-used)) |
+| `wrote through a session made while OpenSearch could not be written` | `user` |
+| `a session made while OpenSearch could not be written ended: …` | `user` |
+| `session.tamper: …` | `session`, `user`, `node`: a session in OpenSearch was changed or made outside Signalith, and is refused |
+| `changed the built-in admin's password for every server of the cluster` | `by`, `user` (from `signalith passwd`) |
+| `auth.admin_password_hash applied from the environment on siem-b`, `auth.ldap applied from signalith.yaml on siem-b` | `setting`, `server` |
 
 `client` is the address the request came from. Behind a reverse proxy listed under
 **Trusted reverse proxies**, with **Client address header** chosen, it is the address
@@ -703,7 +890,10 @@ A refused request:
 `POST /api/me/password` with `{"current_password": "...", "new_password": "..."}`
 returns the same object. Errors are `400` with a `code`: `wrong_password` (field
 `current_password`), `same_password`, `invalid_password` (field `new_password`),
-`builtin` or `directory` (those passwords are changed elsewhere).
+`builtin` or `directory` (those passwords are changed elsewhere). On servers that
+share their users, the built-in admin may change its own password here too
+(`can_change_password` says so), and the answer sets a new session cookie: the
+password change ended every session of the user, this one's too.
 
 ### Users (admin)
 
@@ -722,12 +912,24 @@ returns the same object. Errors are `400` with a `code`: `wrong_password` (field
      "last_sign_in": "2026-10-12T15:35:11Z", "you": false, "actions": ["disable", "delete"]}
   ],
   "roles": [{"id": "viewer", "label": "Viewer", "description": "..."}, ...],
-  "directory": {"enabled": true, "from_config": false}
+  "directory": {"enabled": true, "from_config": false},
+  "shared": false,
+  "shared_pending": null
 }
 ```
 
+Each user also has `etag`, its version for `If-Match`. On servers that share their
+users, `shared` is `true` and `last_sign_in_server` names the server of the last
+sign-in. On a server of a cluster whose users are not shared yet, `shared_pending`
+says why: `{"version": "1.6.0", "servers": [{"name": "siem-b", "version": "1.5.0"}]}`
+lists the servers whose version must be upgraded first, and an empty `servers` means
+the users wait to be brought in (see
+[When the users become shared](#when-the-users-become-shared)).
+
 `actions` lists what the signed-in admin may do to that user: `edit` (name and
-email), `role`, `reset_password`, `disable` or `enable`, and `delete`. A directory
+email), `role`, `reset_password`, `disable` or `enable`, and `delete`; and, on the
+built-in admin's own row when the users are shared, `change_password` (with
+`POST /api/me/password`). A directory
 user the directory no longer lets in has `"role": ""` and `"refused"` saying why, for
 example `"in no group mapped to a role"`.
 
@@ -743,6 +945,18 @@ the problem (`username`, `name`, `email`, `role`, `password`): `400` for a bad v
 `404` for an unknown user, `409` for a taken name, the built-in admin, a change to
 your own account, the last admin, or a directory user's name, email, role or
 password.
+
+`PUT` and `DELETE /api/users/{username}` and `POST /api/users/{username}/password`
+take an optional `If-Match` header with the user's `etag`. When the user changed
+since, they answer `412`; on servers that share their users the answer says who
+changed it, where and when:
+
+```json
+{"error": "it was changed on siem-b by ann at 2026-10-14T09:12:03Z; reload it", "code": "stale",
+ "changed_by": "ann", "changed_on": "siem-b", "changed_at": "2026-10-14T09:12:03Z"}
+```
+
+While a server cannot write the shared settings, changes answer `503`.
 
 ### Directory sign-in (admin)
 
@@ -768,8 +982,14 @@ password.
 }
 ```
 
-`from_config` is `true` when the settings come from `signalith.yaml`; `config_file`
-then names the file, and `PUT` answers `409`.
+`from_config` is `true` when the settings come from `signalith.yaml` on a server that
+keeps them in its own files; `config_file` then names the file, and `PUT` answers
+`409`. `etag` is the settings' version for `If-Match` on `PUT` (`412` when they changed
+since). `from` says where the settings in use came from:
+`{"source": "yaml", "node": "siem-a", "at": "..."}`, with `source` `yaml`, `page`,
+`import` (the first server's files, when the servers began sharing users) or `env`
+(the service account password from `SIGNALITH_LDAP_BIND_PASSWORD` changed); `node` and
+`at` are given on servers that share their users, where `shared` is `true`.
 
 `PUT /api/auth/directory` takes the `settings` object (with `bind_password` instead
 of `bind_password_set`; leave it empty to keep the saved one). Settings that need

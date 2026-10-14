@@ -179,6 +179,14 @@ func TestDownServerSaysSoInItsHeartbeat(t *testing.T) {
 	}
 	eventually(t, "this server runs the jobs", node.RunsJobs)
 	eventually(t, "the heartbeat lists the syslog listener", func() bool { return listed(heartbeat()) == syslogAddr })
+	// The server founds the cluster and restarts its components in place
+	// by itself; that restart is over before the next one is made to fail,
+	// or it would be the one that fails and the server would be down
+	// before the restart below is asked for.
+	eventually(t, "the components take the shared content", func() bool {
+		ct := rs.r.sharedContent
+		return ct.on.Load() && ct.users.on.Load() == rs.r.shared.SharedUsers() && !rs.r.RestartStatus().InProgress
+	})
 	broken.Store(true)
 	if _, res := rs.restart(); res.OK {
 		t.Fatalf("restart worked: %+v", res)
@@ -364,5 +372,26 @@ func TestRestartKeepsTheSharedSettings(t *testing.T) {
 	}
 	if !node.RunsJobs() {
 		t.Error("the member does not run the jobs")
+	}
+}
+
+// A member whose components still take their content from its own files
+// (the restart in place that switches them has not run yet) does not say
+// it is a member in its heartbeat: its API would still refuse what a
+// member allows, such as a feed added on a server that does not run the
+// background jobs.
+func TestHeartbeatSaysMemberOnceTheComponentsSwitched(t *testing.T) {
+	rs := startRunnerWith(t, runOptions{scheduler: true, server: plainHTTP})
+	rt := rs.r.shared
+	eventually(t, "the components take the shared content", func() bool {
+		m, _ := rt.Mode()
+		return m == shared.ModeMember && rs.r.sharedContent.on.Load()
+	})
+	if got := sharedStatus(rt, rs.r.sharedContent).Mode; got != string(shared.ModeMember) {
+		t.Errorf("switched: %q, want member", got)
+	}
+	// The same runtime, with components that have not switched yet.
+	if got := sharedStatus(rt, &sharedContent{}).Mode; got != string(shared.ModeStarting) {
+		t.Errorf("not switched yet: %q, want starting", got)
 	}
 }

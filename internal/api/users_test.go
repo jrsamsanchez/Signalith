@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -242,8 +243,8 @@ func TestManagingLocalUsers(t *testing.T) {
 
 func TestAdminsCannotLockThemselvesOut(t *testing.T) {
 	ts, _ := newUsersServer(t, func(s *Server) {
-		s.Users.Create(users.NewUser{Username: "ann", Role: users.Admin, Password: "ann-password"})
-		s.Users.Create(users.NewUser{Username: "ben", Role: users.Viewer, Password: "ben-password"})
+		s.Users.Create(context.Background(), users.NewUser{Username: "ann", Role: users.Admin, Password: "ann-password"})
+		s.Users.Create(context.Background(), users.NewUser{Username: "ben", Role: users.Viewer, Password: "ben-password"})
 	})
 	ann := func(method, path, body string) (int, map[string]any) {
 		return doAs(t, ts, "ann", "ann-password", method, path, body)
@@ -302,7 +303,7 @@ func TestDirectorySignIn(t *testing.T) {
 	ldaptest.LoadActiveDirectory(srv)
 	ts, _ := newUsersServer(t, func(s *Server) {
 		// carol is also a local user, so the directory is never asked about her.
-		s.Users.Create(users.NewUser{Username: "carol", Role: users.Viewer, Password: "local-carol"})
+		s.Users.Create(context.Background(), users.NewUser{Username: "carol", Role: users.Viewer, Password: "local-carol"})
 	})
 	admin := func(method, path, body string) (int, map[string]any, string) {
 		return call(t, ts, method, path, body, "admin", adminPass, nil)
@@ -484,7 +485,7 @@ func TestPasswordChangeEndsSessionsOnOtherServers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := first.Create(users.NewUser{Username: "jane", Role: users.Analyst, Password: "jane-old-pass"}); err != nil {
+	if _, err := first.Create(context.Background(), users.NewUser{Username: "jane", Role: users.Analyst, Password: "jane-old-pass"}); err != nil {
 		t.Fatal(err)
 	}
 	server := func() *httptest.Server {

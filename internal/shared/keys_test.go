@@ -26,7 +26,7 @@ func TestClusterKey(t *testing.T) {
 		t.Errorf("id %q", k.ID())
 	}
 	// Each use has its own key.
-	subs := [][]byte{k.MACKey(), k.CookieKey(), k.ArchiveKey()}
+	subs := [][]byte{k.MACKey(), k.CookieKey(), k.ArchiveKey(), k.KnownBrowserKey()}
 	for i := range subs {
 		for j := range i {
 			if bytes.Equal(subs[i], subs[j]) {

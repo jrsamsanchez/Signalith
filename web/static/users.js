@@ -74,6 +74,53 @@
     }
   }
 
+  // ifMatch makes a change apply only to the user (or the directory
+  // settings) as the page shows them, on servers that share their users:
+  // the server answers 412 when someone changed them meanwhile, on this
+  // server or another. A server that keeps its users in its own files
+  // works as it always did.
+  const ifMatch = (v, shared) => (shared && v && v.etag ? { 'If-Match': v.etag } : undefined);
+  const usersShared = () => !!(U.data && U.data.shared);
+  // changedBy says who changed something meanwhile, where and when, from
+  // a 412 answer.
+  function changedBy(e) {
+    const d = e.data || {};
+    let t = 'Changed';
+    if (d.changed_on) t += ` on ${d.changed_on}`;
+    if (d.changed_by) t += ` by ${d.changed_by}`;
+    if (d.changed_at) t += ` ${ago(d.changed_at)}`;
+    return t === 'Changed' ? 'Someone else changed it since the page read it.' : t + '.';
+  }
+  // reread loads the list again and gives u the version now listed, so
+  // saving again applies on top of the other change.
+  async function reread(u) {
+    await loadUsers({ quiet: true });
+    const now = U.data && U.data.users.find((x) => x.username === u.username);
+    if (now) u.etag = now.etag;
+  }
+  // changeFailed shows why a change of u was not made in a dialog's alert
+  // box: someone changed u meanwhile (412), the shared settings can't be
+  // changed now (503), or anything else, under title.
+  function changeFailed(box, u, e, title) {
+    if (e.status === 412) {
+      showAlert(box, `Someone else changed ${u.username} meanwhile.`, `${changedBy(e)} The list now shows their change. Save again to apply yours on top of it.`);
+      reread(u);
+    } else if (e.status === 503) {
+      showAlert(box, 'Users can’t be changed right now.', sentence(e.message));
+    } else {
+      showAlert(box, title, sentence(e.message));
+    }
+  }
+  // toastChangeFailed is changeFailed for a change made from the row menu.
+  function toastChangeFailed(u, e, title) {
+    if (e.status === 412) {
+      toast(`${changedBy(e)} Check ${u.username} in the list, then try again.`, null, { tone: 'warning', title: `Someone else changed ${u.username}` });
+      reread(u);
+    } else if (e.code !== 'forbidden') {
+      toastError(e.status === 503 ? 'Users can’t be changed right now' : title, e);
+    }
+  }
+
   // roleCards is the role picker: one card per role, each with a line on
   // what the role can do.
   function roleCards(name, current) {
@@ -220,7 +267,8 @@
 
   function userRow(u) {
     const [state, stateLabel, stateTitle] = statusOf(u);
-    const sub = u.source === 'builtin' ? ['Set on the server (signalith passwd)'] : [u.name ? u.username : '', u.email].filter(Boolean);
+    const sub = u.source === 'builtin' ? [U.data && U.data.shared ? 'The same on every server' : 'Set on the server (signalith passwd)']
+      : [u.name ? u.username : '', u.email].filter(Boolean);
     const roleBadge = el('span', { class: 'badge u-role', 'data-role': u.role }, roleLabel(u.role));
     if (u.source === 'directory') roleBadge.title = 'From their directory groups at their last sign-in';
     const nameAttrs = { class: 'u-user__name' };
@@ -237,7 +285,9 @@
       el('td', { 'data-col': 'source' }, el('span', { class: 'u-source' }, SOURCE_LABEL[u.source] || u.source)),
       el('td', { 'data-col': 'status' }, el('span', { class: 'u-status', 'data-state': state, title: stateTitle }, stateLabel)),
       el('td', { 'data-col': 'last' }, u.last_sign_in
-        ? el('span', { class: 'age', title: new Date(u.last_sign_in).toLocaleString() }, ago(u.last_sign_in))
+        // With shared users, the server they signed in on last, too.
+        ? el('div', {}, el('span', { class: 'age', title: new Date(u.last_sign_in).toLocaleString() + (u.last_sign_in_server ? ` on ${u.last_sign_in_server}` : '') }, ago(u.last_sign_in)),
+          u.last_sign_in_server ? el('div', { class: 'u-last__on' }, 'on ' + u.last_sign_in_server) : null)
         : el('span', { class: 'u-never' }, 'Never')),
       el('td', { 'data-col': 'act' }, rowMenu(u)));
   }
@@ -246,6 +296,8 @@
     const has = (a) => (u.actions || []).includes(a);
     const items = [];
     if (has('edit')) items.push({ icon: 'pencil', label: 'Edit', run: () => openEditUser(u) });
+    // The built-in admin's own row, once every server shares its password.
+    if (has('change_password')) items.push({ icon: 'key-round', label: 'Change password', run: () => openChangePassword() });
     if (has('reset_password')) items.push({ icon: 'key-round', label: 'Reset password', run: () => openResetPassword(u) });
     if (has('disable')) items.push({ icon: 'user-x', label: 'Disable', run: () => setDisabled(u, true) });
     if (has('enable')) items.push({ icon: 'user-check', label: 'Enable', run: () => setDisabled(u, false) });
@@ -295,8 +347,23 @@
     } else if (directory.enabled) {
       note = el('span', {}, 'Directory users appear after their first sign-in.');
     }
+    if (U.data.shared) bits.push('the same on every server');
     fill(foot, el('span', {}, bits.join(' · ')), el('span', { class: 'spacer' }), note);
     foot.classList.remove('hidden');
+    renderPending(U.data.shared_pending);
+  }
+
+  // renderPending says, on a server of a cluster that does not share the
+  // users yet, why: a server whose version can't, or the users not
+  // brought in yet.
+  function renderPending(p) {
+    const box = $('u-note');
+    if (!p) { box.classList.add('hidden'); fill(box); return; }
+    const old = (p.servers || []).map((s) => (s.version ? `${s.name} (${s.version})` : s.name));
+    fill(box, dxAlert('info', 'Each server keeps its own users for now.', old.length
+      ? `Users and sign-in become shared by every server once every server runs ${p.version || 'this version'} or later. Still on an older version: ${old.join(', ')}. Until then, a user added here signs in on this server only.`
+      : 'Users and sign-in become shared by every server once the server that founded the cluster brings its users in. Until then, a user added here signs in on this server only.'));
+    box.classList.remove('hidden');
   }
   $('u-find').addEventListener('input', () => { if (U.data) renderUsers(); });
 
@@ -394,11 +461,11 @@
       const restore = busy(submit, 'Saving…');
       let res;
       try {
-        res = await api('api/users/' + encodeURIComponent(u.username), body, 'PUT');
+        res = await api('api/users/' + encodeURIComponent(u.username), body, 'PUT', ifMatch(u, usersShared()));
       } catch (e) {
         restore();
         if (e.field && fields[e.field]) markField(fields[e.field], e.message);
-        else showAlert(err, 'Nothing was changed.', sentence(e.message));
+        else changeFailed(err, u, e, 'Nothing was changed.');
         return;
       }
       close();
@@ -431,11 +498,11 @@
       const restore = busy(submit, 'Resetting…');
       let res;
       try {
-        res = await api('api/users/' + encodeURIComponent(u.username) + '/password', pw.value() ? { password: pw.value() } : {});
+        res = await api('api/users/' + encodeURIComponent(u.username) + '/password', pw.value() ? { password: pw.value() } : {}, 'POST', ifMatch(u, usersShared()));
       } catch (e) {
         restore();
         if (e.field === 'password') markField(pw.input, e.message);
-        else showAlert(err, 'The password was not changed.', sentence(e.message));
+        else changeFailed(err, u, e, 'The password was not changed.');
         return;
       }
       loadUsers({ quiet: true }).then(() => { if (!d.open) focusRow(u.username); });
@@ -464,9 +531,9 @@
       if (!ok) { focusRow(u.username); return; }
     }
     try {
-      await api('api/users/' + encodeURIComponent(u.username), { disabled: off }, 'PUT');
+      await api('api/users/' + encodeURIComponent(u.username), { disabled: off }, 'PUT', ifMatch(u, usersShared()));
     } catch (e) {
-      if (e.code !== 'forbidden') toastError(off ? 'Couldn’t disable ' + u.username : 'Couldn’t enable ' + u.username, e);
+      toastChangeFailed(u, e, off ? 'Couldn’t disable ' + u.username : 'Couldn’t enable ' + u.username);
       focusRow(u.username);
       return;
     }
@@ -485,9 +552,9 @@
     });
     if (!ok) { focusRow(u.username); return; }
     try {
-      await api('api/users/' + encodeURIComponent(u.username), undefined, 'DELETE');
+      await api('api/users/' + encodeURIComponent(u.username), undefined, 'DELETE', ifMatch(u, usersShared()));
     } catch (e) {
-      if (e.code !== 'forbidden') toastError('Couldn’t delete ' + u.username, e);
+      toastChangeFailed(u, e, 'Couldn’t delete ' + u.username);
       focusRow(u.username);
       return;
     }
@@ -712,6 +779,7 @@
       out.push(dxAlert('info', 'From signalith.yaml', null, el('p', {}, 'These settings are in auth.ldap in ', el('code', {}, v.config_file || 'signalith.yaml'),
         '. Change them there, run ', el('code', {}, 'signalith validate'), ' and restart Signalith. The tests use these settings.')));
     }
+    if (v.shared) out.push(provenance(v));
     for (const w of v.warnings || []) out.push(dxAlert('warning', w));
 
     // On or off, and the directory type.
@@ -781,6 +849,22 @@
 
     out.push(el('div', { class: 'card u-dir-form' }, head, server, account, usersSec, groupsSec, moreSettings(), ro ? null : saveBar()));
     return out;
+  }
+
+  // provenance says, when every server shares the settings, where the
+  // ones in use came from.
+  function provenance(v) {
+    const f = v.from || {};
+    const on = f.node ? ` on ${f.node}` : '';
+    const when = f.at ? `, ${new Date(f.at).toLocaleString()}` : '';
+    const from = {
+      yaml: `Applied from signalith.yaml${on}${when}.`,
+      page: `Saved on this page${on}${when}.`,
+      import: `Brought in from ${f.node ? f.node + '’s' : 'the first server’s'} settings when the servers began sharing users${when}.`,
+      env: `Service account password last set from SIGNALITH_LDAP_BIND_PASSWORD${on}${when}.`,
+    }[f.source];
+    return dxAlert('info', 'These settings apply on every server.', (from ? from + ' ' : '') +
+      'A change saved here applies on every server at once. A later change to auth.ldap in a server’s signalith.yaml applies too, when that server starts.');
   }
 
   function groupBlock(role, example) {
@@ -933,10 +1017,16 @@
     const wasOn = !!D.view.settings.enabled;
     let v;
     try {
-      v = await api('api/auth/directory', D.form, 'PUT');
+      v = await api('api/auth/directory', D.form, 'PUT', ifMatch(D.view, D.view.shared));
     } catch (e) {
       restore();
-      if (e.status === 400 && e.problems) {
+      if (e.status === 412) {
+        // Someone changed the settings since the page read them. The form
+        // keeps these changes; saving again replaces theirs.
+        toast(`${changedBy(e)} Your changes are still in the form: save again to replace theirs, or Discard changes to see them.`, null,
+          { tone: 'warning', title: 'Someone else changed the directory settings' });
+        loadDirectory();
+      } else if (e.status === 400 && e.problems) {
         D.problems = e.problems;
         renderDirectory();
         const keys = Object.keys(e.fields || {});
@@ -945,7 +1035,7 @@
         const first = Object.keys(D.inputs).find((k) => keys.includes(k));
         if (first) focusSetting(first);
       } else if (e.code !== 'forbidden') {
-        toastError('The settings were not saved', e);
+        toastError(e.status === 503 ? 'The settings can’t be changed right now' : 'The settings were not saved', e);
       }
       return;
     }

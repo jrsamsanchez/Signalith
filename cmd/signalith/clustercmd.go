@@ -14,6 +14,7 @@ import (
 	"os/signal"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"text/tabwriter"
 	"time"
 
@@ -21,6 +22,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/jrsamsanchez/signalith/internal/cluster"
+	"github.com/jrsamsanchez/signalith/internal/clusterauth"
 	"github.com/jrsamsanchez/signalith/internal/clustercfg"
 	"github.com/jrsamsanchez/signalith/internal/config"
 	"github.com/jrsamsanchez/signalith/internal/securefile"
@@ -59,6 +61,8 @@ type clusterCLI struct {
 	out    io.Writer
 	errOut io.Writer
 	by     string
+	// auth holds the users' documents of the runtime made last.
+	auth *clusterauth.Docs
 }
 
 // runCluster is cmdCluster with its input and output.
@@ -152,6 +156,16 @@ func (x *clusterCLI) keyStore() shared.KeyStore {
 // readOnly writes nothing to OpenSearch or the state folder.
 func (x *clusterCLI) runtime(readOnly bool, name string) *shared.Runtime {
 	docs := clustercfg.NewDocs()
+	x.auth = clusterauth.NewDocs()
+	docs.UseAuth(x.auth)
+	files := x.files()
+	var made atomic.Pointer[shared.Runtime]
+	files.NodeCfg = func() *shared.Doc[shared.NodeCfg] {
+		if rt := made.Load(); rt != nil {
+			return rt.NodeCfg()
+		}
+		return nil
+	}
 	rt := shared.NewRuntime(shared.RuntimeOptions{
 		StateDir: x.c.StateDir(), Self: shared.Self{NodeID: x.self.NodeID, Name: x.self.Name},
 		KeyFile: os.Getenv(clusterKeyFileEnv), ClusterName: name, ReadOnly: readOnly, Log: x.log,
@@ -159,11 +173,16 @@ func (x *clusterCLI) runtime(readOnly bool, name string) *shared.Runtime {
 			peers, _ := x.peers(context.Background(), 0)
 			return peers
 		},
-		// A founding from the command line imports this server's feeds
-		// and retention policies, as the server's own would.
-		Content:   docs.Track,
-		Importers: clustercfg.Importers(docs, x.files()),
+		// A founding from the command line imports this server's feeds,
+		// retention policies and users, as the server's own would.
+		Content: func(h *shared.Hub) {
+			docs.Track(h)
+			x.auth.Track(h)
+		},
+		Importers: clustercfg.Importers(docs, files),
 	})
+	made.Store(rt)
+	x.auth.Cluster = rt.Cluster
 	rt.Use(x.cl, x.prefix(), x.c.Keyring())
 	return rt
 }
@@ -178,6 +197,7 @@ func (x *clusterCLI) files() clustercfg.Files {
 		Peers: func() map[string]string {
 			return heartbeatRetention(context.Background(), x.cl, x.prefix(), x.self.NodeID)
 		},
+		Log: x.log,
 	}
 }
 
@@ -232,8 +252,12 @@ func (x *clusterCLI) peers(ctx context.Context, watch time.Duration) ([]shared.P
 		} else {
 			live = live && time.Since(hb.HeartbeatAt) < cliHeartbeatAge
 		}
-		out = append(out, shared.Peer{NodeID: hb.NodeID, Name: hb.Name, Live: live, Eligible: hb.LeaderEligible,
-			Leader: hb.Leader, MaxRev: hb.MaxRev})
+		p := shared.Peer{NodeID: hb.NodeID, Name: hb.Name, Live: live, Eligible: hb.LeaderEligible,
+			Leader: hb.Leader, MaxRev: hb.MaxRev, LevelMax: hb.LevelMax, Users: hb.FilesFingerprint.Users}
+		if !live {
+			p.SeenAgo = max(time.Since(hb.HeartbeatAt), 0)
+		}
+		out = append(out, p)
 	}
 	slices.SortFunc(out, func(a, b shared.Peer) int { return strings.Compare(a.Name, b.Name) })
 	return out, nil

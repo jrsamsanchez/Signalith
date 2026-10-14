@@ -77,11 +77,12 @@ func TestSharedContentAcrossServers(t *testing.T) {
 		t.Fatal("B runs the jobs")
 	}
 	// B's signalith.yaml says 45 at its first start as a member: that is
-	// drift, not a change.
+	// drift, not a change. So is its admin password hash, made for the
+	// same password with another salt than A's, which the cluster uses.
 	eventually(t, "B's heartbeat names the drift", func() bool {
 		hb := fos.Source("signalith_runtime", "node:"+b.r.node.ID())
 		d, _ := hb["settings_drift"].(map[string]any)
-		return fmt.Sprint(d["yaml"]) == "[retention.days]"
+		return fmt.Sprint(d["yaml"]) == "[retention.days auth.admin_password_hash]"
 	})
 
 	b.signIn()

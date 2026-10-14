@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jrsamsanchez/signalith/internal/clusterauth"
 	"github.com/jrsamsanchez/signalith/internal/shared"
 )
 
@@ -49,6 +50,9 @@ type Docs struct {
 	feeds     *shared.Doc[FeedsBody]
 	retention *shared.Doc[RetentionBody]
 	subs      map[string][]func()
+	// auth holds the users and directory sign-in documents, for their
+	// import and the settings of signalith.yaml applied to them.
+	auth *clusterauth.Docs
 }
 
 // Kinds of change subscribers hear of.
@@ -107,6 +111,23 @@ func (d *Docs) OnRetention(fn func()) { d.on(changeRetention, fn) }
 // OnIntel adds a function called when another server says it changed the
 // threat intel indicators. It must not block.
 func (d *Docs) OnIntel(fn func()) { d.on(changeIntel, fn) }
+
+// UseAuth sets the documents of the users and the directory sign-in
+// settings, which the users and directory importers fill and to which
+// auth.* in signalith.yaml is applied. Set it before Importers.
+func (d *Docs) UseAuth(a *clusterauth.Docs) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.auth = a
+}
+
+// Auth returns the documents of the users and the directory sign-in
+// settings, or nil.
+func (d *Docs) Auth() *clusterauth.Docs {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.auth
+}
 
 // Hub returns the hub the documents are on.
 func (d *Docs) Hub() *shared.Hub {

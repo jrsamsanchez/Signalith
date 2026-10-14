@@ -162,7 +162,7 @@ func (r *Requests) submit(ctx context.Context, req *Request, args any, by string
 		return nil, err
 	}
 	req.ver = ver
-	if _, err := r.h.bump(ctx, requestsWatch); err != nil {
+	if _, err := r.h.bump(ctx, requestsWatch, nil); err != nil {
 		// The runner also looks for requests on its own.
 		r.h.log.Warn("made a request, but could not tell the other servers; it starts within a minute", "request", req.ID, "err", err)
 	}
@@ -492,9 +492,36 @@ func (w watchFunc) owns(string) bool                         { return false }
 func (w watchFunc) restore(store.Doc, string)                {}
 func (w watchFunc) cached() []CacheDoc                       { return nil }
 
+// WatchDoc calls fn, as Watch does, with the watch document watch:<name>
+// it read for the call (nil and a zero version when there is none), so a
+// subscriber can use what BumpWith wrote and tell one change from several
+// by its _version. A full resync calls fn with a version it may have seen
+// already.
+func (h *Hub) WatchDoc(name string, fn func(ctx context.Context, raw json.RawMessage, v store.Version) error) {
+	id := "watch:" + name
+	h.trackCollection(watchFunc{id: id, fn: func(ctx context.Context) error {
+		c, prefix := h.target()
+		raw, v, found, err := c.Get(ctx, ConfigIndex(prefix), id)
+		if err != nil {
+			return err
+		}
+		if !found {
+			raw, v = nil, store.Version{}
+		}
+		return fn(ctx, raw, v)
+	}})
+}
+
 // Bump bumps the watch document watch:<name>, for a write outside the
 // config index that other servers follow (a downloaded feed). It returns
 // the bump's _seq_no.
 func (h *Hub) Bump(ctx context.Context, name string) (int64, error) {
-	return h.bump(ctx, "watch:"+name)
+	return h.bump(ctx, "watch:"+name, nil)
+}
+
+// BumpWith bumps the watch document watch:<name> as Bump does, adding
+// fields to its body (unsigned, as the rest of it), such as the id of the
+// session ended for a WatchDoc subscriber. It returns the bump's _seq_no.
+func (h *Hub) BumpWith(ctx context.Context, name string, fields map[string]any) (int64, error) {
+	return h.bump(ctx, "watch:"+name, fields)
 }

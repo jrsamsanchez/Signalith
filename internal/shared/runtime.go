@@ -1,6 +1,7 @@
 package shared
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -139,6 +140,24 @@ func (rt *Runtime) SharedContent() bool {
 	return ok && b.Import.State != ImportImporting
 }
 
+// SharedUsers reports whether this server keeps the users, the directory
+// sign-in settings and the sessions in the shared settings rather than in
+// its own files: it takes the shared content, the cluster is at level 2
+// (every server reads them), and the users and the directory settings
+// were imported.
+func (rt *Runtime) SharedUsers() bool {
+	if !rt.SharedContent() {
+		return false
+	}
+	b, ok := rt.Cluster().Get()
+	if !ok || b.Level < LevelSharedUsers {
+		return false
+	}
+	_, users := b.Import.Done[ImportUsers]
+	_, dir := b.Import.Done[ImportDirectory]
+	return users && dir
+}
+
 // ImportStalled is how long the founder may take to move its files into
 // OpenSearch before the other servers report it.
 const ImportStalled = 30 * time.Minute
@@ -161,6 +180,51 @@ func (rt *Runtime) importWarning() *Warning {
 			Banner: "The shared settings are not ready yet; this server uses its own files."}
 	}
 	return &Warning{Level: "amber", Text: fmt.Sprintf("Waiting for %s to finish moving its files into the shared settings; until then this server uses its own files.", who)}
+}
+
+// lateWarning is the warning of a late import from a server other than
+// the founder, while servers whose users differ are named; nil otherwise.
+func (rt *Runtime) lateWarning() *Warning {
+	b, ok := rt.Cluster().Get()
+	if !ok || b.Import.Late == nil || len(b.Import.Late.Differ) == 0 {
+		return nil
+	}
+	l := b.Import.Late
+	founder := cmp.Or(b.CreatedBy, b.CreatedByID)
+	return &Warning{Level: "amber", Text: fmt.Sprintf("%s, which founded the cluster, had not been seen for 7 days, so %s put its own users and directory sign-in settings into the shared settings on %s. "+
+		"Those of %s differ: their own users are kept only in their files.", founder, l.By, l.At, strings.Join(l.Differ, ", "))}
+}
+
+// founderWarning is the warning while imports a newer version added wait
+// for the server that founded the cluster, which is down: it runs them
+// once it is back, or the server that runs the background jobs does once
+// it has not been seen for FounderGone. nil otherwise.
+func (rt *Runtime) founderWarning() *Warning {
+	b, ok := rt.Cluster().Get()
+	if !ok || b.Import.State != ImportReady || b.CreatedByID == rt.opts.Self.NodeID {
+		return nil
+	}
+	waiting := false
+	for _, im := range rt.opts.Importers {
+		if _, done := b.Import.Done[im.Name]; !done && im.MinLevel <= b.Level {
+			waiting = true
+		}
+	}
+	if !waiting {
+		return nil
+	}
+	peers, known := rt.peersSeen()
+	if !known || founderGone(peers, b.CreatedByID) {
+		return nil
+	}
+	for _, p := range peers {
+		if p.NodeID == b.CreatedByID && p.Live {
+			return nil
+		}
+	}
+	founder := cmp.Or(b.CreatedBy, b.CreatedByID)
+	return &Warning{Level: "amber", Text: fmt.Sprintf("Users and sign-in become shared once %s, which founded the cluster, is back: it brings in its users and directory sign-in settings. "+
+		"Until then each server keeps its own. If %s is gone for good, the server that runs the background jobs brings in its own once %s has not been seen for 7 days.", founder, founder, founder)}
 }
 
 // Writable says why the shared settings cannot be changed on this server
@@ -211,6 +275,14 @@ type Peer struct {
 	Leader   bool
 	// MaxRev is the highest revision of a shared document it applied.
 	MaxRev int64
+	// LevelMax is the highest level its version reads, 0 for a version
+	// that does not say (it reads level 1).
+	LevelMax int
+	// SeenAgo is how long ago its heartbeat stopped, 0 while it is live.
+	SeenAgo time.Duration
+	// Users is the fingerprint of its users and directory sign-in
+	// settings, "" from versions without one.
+	Users string
 }
 
 // RuntimeOptions are what a Runtime needs.
@@ -247,6 +319,10 @@ type RuntimeOptions struct {
 	Clock         Clock
 	Timing        Timing
 	Log           *slog.Logger
+
+	// levelMax stands in for LevelMax, so tests can run a runtime of an
+	// older version; 0 is LevelMax.
+	levelMax int
 }
 
 // NoHolderWait is how long legacy mode waits for a server that may run
@@ -702,6 +778,15 @@ func (rt *Runtime) evaluate(ctx context.Context, mayFound bool) {
 			rt.unreachable(err)
 			return
 		}
+		// The sessions index is made here with its own mappings, before
+		// the first sign-in: a session write must not make OpenSearch
+		// create it with dynamic defaults, nor create it while writes to
+		// the existing indices are refused. A sign-in still works without
+		// it (Sessions.Create falls back as for any refused write), so a
+		// failure is only logged.
+		if err := EnsureSessions(ectx, c, prefix); err != nil {
+			rt.log.Debug("could not make the sessions index", "index", SessionsIndex(prefix), "err", err)
+		}
 	}
 	src, _, found, err := c.Get(ectx, ConfigIndex(prefix), ClusterDocID)
 	if err != nil {
@@ -974,7 +1059,7 @@ func (rt *Runtime) afterCycle(ctx context.Context) {
 		}
 		return
 	}
-	if err := CheckLevel(body.Level); err != nil {
+	if err := checkLevel(body.Level, rt.maxLevel()); err != nil {
 		rt.fail(err)
 		return
 	}
@@ -1014,6 +1099,20 @@ func (rt *Runtime) afterCycle(ctx context.Context) {
 		return
 	}
 	rt.setMode(ModeMember, "")
+	if !rt.opts.ReadOnly {
+		// The founder brings in its own files whether or not it runs the
+		// background jobs: after a rolling upgrade another server may
+		// keep them for good.
+		lease := rt.holdsLease()
+		if lease {
+			rt.RaiseLevel(ctx)
+		}
+		if lease || body.CreatedByID == rt.opts.Self.NodeID {
+			if err := rt.lateImports(ctx, lease); err != nil && ctx.Err() == nil {
+				rt.log.Warn("could not finish importing into the shared settings; trying again", "err", err)
+			}
+		}
+	}
 }
 
 func (rt *Runtime) holdsLease() bool { return rt.opts.HoldsLease != nil && rt.opts.HoldsLease() }
@@ -1164,7 +1263,7 @@ func (rt *Runtime) found(ctx context.Context, by string, manual bool) error {
 	h.SetKeys(NewKeySet(k))
 	now := h.now()
 	body := &ClusterBody{ClusterID: newClusterID(), Name: rt.opts.ClusterName, CreatedAt: now,
-		CreatedBy: rt.opts.Self.Name, CreatedByID: rt.opts.Self.NodeID, IndexPrefix: prefix, Level: LevelMax,
+		CreatedBy: rt.opts.Self.Name, CreatedByID: rt.opts.Self.NodeID, IndexPrefix: prefix, Level: rt.foundLevel(),
 		Import: ImportState{State: ImportImporting, By: rt.opts.Self.NodeID, At: now, Done: map[string]string{}}}
 	if _, err := cdoc.Create(ctx, by, body); err != nil {
 		// An answer lost on the way may hide a document that was made:
@@ -1315,6 +1414,99 @@ func (rt *Runtime) Housekeep(ctx context.Context) {
 	} else if n > 0 {
 		rt.log.Info("removed the records of items deleted more than 30 days ago", "items", n)
 	}
+	if rt.holdsLease() && rt.RaiseLevel(ctx) {
+		// The loop runs the imports the new level allows.
+		rt.Kick()
+	}
+}
+
+// maxLevel is the highest level this version reads.
+func (rt *Runtime) maxLevel() int { return cmp.Or(rt.opts.levelMax, LevelMax) }
+
+// LevelSeen is how lately a server must have been seen for its version to
+// count for the cluster's level: a server stopped for longer is expected
+// to be upgraded before it comes back, and an older version then refuses
+// to start.
+const LevelSeen = 24 * time.Hour
+
+// peersSeen lists the servers, this one included, as their heartbeats
+// show them; known is false when there is no list yet (no heartbeat of
+// this server among them), so nothing is decided from it.
+func (rt *Runtime) peersSeen() (peers []Peer, known bool) {
+	if rt.opts.Peers == nil {
+		return nil, false
+	}
+	peers = rt.opts.Peers()
+	return peers, slices.ContainsFunc(peers, func(p Peer) bool { return p.NodeID == rt.opts.Self.NodeID })
+}
+
+// lowestLevel is the highest level every server seen within LevelSeen
+// reads, this one included; a server that does not say reads level 1.
+func (rt *Runtime) lowestLevel(peers []Peer) int {
+	low := rt.maxLevel()
+	for _, p := range peers {
+		if p.NodeID == rt.opts.Self.NodeID || !p.Live && p.SeenAgo >= LevelSeen {
+			continue
+		}
+		low = min(low, max(p.LevelMax, LevelMin))
+	}
+	return low
+}
+
+// foundLevel is the level a cluster founded now starts at: the lowest
+// that every server seen lately reads, so none of them stops.
+func (rt *Runtime) foundLevel() int {
+	var peers []Peer
+	if rt.opts.Peers != nil {
+		peers = rt.opts.Peers()
+	}
+	return rt.lowestLevel(peers)
+}
+
+// RaiseLevel raises the cluster's level by one when every server seen
+// within LevelSeen reads the next level, and reports whether it did. The
+// server that runs the background jobs calls it after each watch cycle
+// and at housekeeping; the change is a compare-and-set, so two servers
+// never raise it twice. The level's work (the late imports) runs after.
+func (rt *Runtime) RaiseLevel(ctx context.Context) bool {
+	if m, _ := rt.Mode(); m != ModeMember || rt.opts.ReadOnly {
+		return false
+	}
+	cdoc := rt.Cluster()
+	body, ok := cdoc.Get()
+	if !ok || body.Level >= rt.maxLevel() {
+		return false
+	}
+	peers, known := rt.peersSeen()
+	if !known || rt.lowestLevel(peers) <= body.Level {
+		return false
+	}
+	if check := rt.opts.LeaseCheck; check != nil {
+		if err := check(ctx); err != nil {
+			return false
+		}
+	}
+	from := body.Level
+	errRaised := errors.New("raised already")
+	_, err := cdoc.Mutate(ctx, "signalith", func(b *ClusterBody) error {
+		if b.Level != from {
+			return errRaised
+		}
+		b.Level = from + 1
+		return nil
+	})
+	if err != nil {
+		if !errors.Is(err, errRaised) {
+			rt.log.Warn("could not raise the level of the shared settings; trying again", "err", err)
+		}
+		return false
+	}
+	rt.mu.Lock()
+	rt.level = from + 1
+	rt.mu.Unlock()
+	rt.log.Info("raised the level of the shared settings: every server seen in the last 24 hours reads it, and older versions no longer start",
+		"audit", true, "from", from, "to", from+1)
+	return true
 }
 
 // RunRequests runs the requests for this server until ctx ends: when
@@ -1422,7 +1614,7 @@ type Status struct {
 func (rt *Runtime) Status() Status {
 	rt.mu.Lock()
 	st := Status{Mode: rt.mode, Why: rt.why, ClusterID: rt.clusterID, ClusterName: rt.clusterName, Level: rt.level,
-		LevelMin: LevelMin, LevelMax: LevelMax, Provisional: rt.provisional}
+		LevelMin: LevelMin, LevelMax: rt.maxLevel(), Provisional: rt.provisional}
 	h, joined, master, fp := rt.hub, rt.joined, rt.master, rt.fingerprint
 	rt.mu.Unlock()
 	st.NotEligible = rt.NotEligible()
@@ -1512,6 +1704,12 @@ func (rt *Runtime) Warnings() []Warning {
 	if st.Mode == ModeMember {
 		if iw := rt.importWarning(); iw != nil {
 			w = append(w, *iw)
+		}
+		if lw := rt.lateWarning(); lw != nil {
+			w = append(w, *lw)
+		}
+		if fw := rt.founderWarning(); fw != nil {
+			w = append(w, *fw)
 		}
 	}
 	if len(st.Tamper) > 0 {

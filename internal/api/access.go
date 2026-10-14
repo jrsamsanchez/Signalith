@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/auth"
+	"github.com/jrsamsanchez/signalith/internal/clusterauth"
 	"github.com/jrsamsanchez/signalith/internal/search"
 	"github.com/jrsamsanchez/signalith/internal/users"
 )
@@ -86,6 +87,16 @@ type principal struct {
 	// Method is how the request signed in: session or basic.
 	Method string
 	token  string // the session's token, to keep it when others end
+	// remember is whether that session was kept through idle periods.
+	remember bool
+	// epoch is the user's session epoch, which a session made for them
+	// starts in (shared users only).
+	epoch int64
+	// shared is set when the users are kept in the shared settings.
+	shared bool
+	// breakGlass is set when the built-in admin signed in with the
+	// password signalith passwd -local wrote on this server.
+	breakGlass bool
 }
 
 type userKey struct{}
@@ -173,19 +184,20 @@ func background(r *http.Request) bool { return r.Header.Get(backgroundHeader) ==
 // returns nil without an error when the request is not signed in.
 func (s *Server) authenticate(r *http.Request) (*principal, error) {
 	if c, err := r.Cookie(s.cookieName(r)); err == nil {
-		lookup := s.sessions().Lookup
-		if background(r) {
-			lookup = s.sessions().Peek
-		}
-		if ss, ok := lookup(c.Value); ok {
+		if ss, ok := s.sessions().Lookup(r.Context(), c.Value, !background(r)); ok {
 			// A password changed since signing in (perhaps on another
 			// server sharing the users file) ends the session too.
 			if p := s.principalFor(ss.User); p != nil && (ss.Version == "" || ss.Version == s.passwordStamp(ss.User)) {
-				p.Method, p.token = "session", c.Value
+				p.Method, p.token, p.remember = "session", c.Value, ss.Remember
 				return p, nil
 			}
 			// Deleted, disabled or given a new password since signing in.
-			s.sessions().Delete(c.Value)
+			// Shared sessions are not deleted for that: this server may
+			// not have read the user yet, and the user's session epoch or
+			// housekeeping ends them.
+			if s.SharedUsers == nil {
+				s.sessions().Delete(r.Context(), c.Value)
+			}
 		}
 	}
 	user, pass, ok := r.BasicAuth()
@@ -204,9 +216,14 @@ func (s *Server) authenticate(r *http.Request) (*principal, error) {
 
 // principalFor looks up a signed-in user's current role and state, or
 // returns nil if they may no longer sign in. Directory users are checked
-// with the directory again every few minutes (see recheckDirectoryUser).
+// with the directory again every few minutes (see recheckDirectoryUser);
+// with shared users, the server that runs the background jobs does that
+// for every server.
 func (s *Server) principalFor(name string) *principal {
-	if strings.EqualFold(name, s.conf().Auth.AdminUser) {
+	if s.isBuiltin(name) {
+		if !s.builtinReadable() {
+			return nil
+		}
 		return s.builtinPrincipal()
 	}
 	u, ok := s.userStore().Get(name)
@@ -217,9 +234,13 @@ func (s *Server) principalFor(name string) *principal {
 		if !s.dir().Enabled() || u.Refused != "" {
 			return nil
 		}
-		s.recheckDirectoryUser(u.Username)
+		if s.SharedUsers == nil {
+			s.recheckDirectoryUser(u.Username)
+		}
 	}
-	return principalFromUser(u)
+	p := principalFromUser(u)
+	p.shared = s.SharedUsers != nil
+	return p
 }
 
 // passwordStamp identifies a local user's current password without
@@ -235,12 +256,13 @@ func (s *Server) passwordStamp(name string) string {
 }
 
 func (s *Server) builtinPrincipal() *principal {
-	return &principal{Username: s.conf().Auth.AdminUser, Role: users.Admin, Source: users.SourceBuiltin}
+	return &principal{Username: s.builtinName(), Role: users.Admin, Source: users.SourceBuiltin,
+		epoch: s.builtinEpoch(), shared: s.SharedUsers != nil}
 }
 
 func principalFromUser(u users.User) *principal {
 	return &principal{Username: u.Username, Name: u.Name, Email: u.Email, Role: u.Role, Source: u.Source,
-		MustChangePassword: u.MustChangePassword}
+		MustChangePassword: u.MustChangePassword, epoch: u.SessionEpoch}
 }
 
 // signInError is a refused sign-in, with the status and words to send.
@@ -264,6 +286,8 @@ var (
 		msg: "Your directory account is not in a group that can use Signalith. Ask an admin to add you to one."}
 	errDirectoryDown = &signInError{status: http.StatusServiceUnavailable, code: "directory_unavailable",
 		msg: "Signalith could not reach the directory server to check your password. Try again in a minute, or ask an admin."}
+	errDegraded = &signInError{status: http.StatusServiceUnavailable, code: "degraded", retryAfter: time.Minute,
+		msg: "OpenSearch cannot be used right now, so only admins can sign in. Try again later."}
 	errDirectoryBusy = &signInError{status: http.StatusServiceUnavailable, code: "directory_unavailable", retryAfter: 30 * time.Second,
 		msg: "Signalith is checking many directory sign-ins right now. Try again in a minute."}
 )
@@ -332,7 +356,11 @@ func (s *Server) browserKey() *auth.BrowserKey {
 // the account again. Directory passwords are not seen here.
 func (s *Server) passwordVersion(account string) string {
 	login := users.LoginName(account)
-	if strings.EqualFold(login, s.conf().Auth.AdminUser) {
+	if s.isBuiltin(login) {
+		if s.SharedUsers != nil {
+			// The same on every server.
+			return "builtin:" + s.builtinHash()
+		}
 		return "builtin:" + s.conf().AdminPasswordVersion()
 	}
 	if v := s.userStore().PasswordVersion(login); v != "" {
@@ -427,7 +455,9 @@ func (s *Server) signIn(r *http.Request, name, password, method string) (*princi
 	if err != nil {
 		return nil, err
 	}
-	p, reason, err := s.checkCredentials(r.Context(), name, password)
+	// The Users page shows how each user last signed in.
+	ctx := clusterauth.WithMethod(r.Context(), method)
+	p, reason, err := s.checkCredentials(ctx, name, password)
 	if err != nil {
 		var f auth.Failure
 		if errors.Is(err, errWrongCredentials) {
@@ -457,12 +487,15 @@ func (s *Server) checkCredentials(ctx context.Context, name, password string) (*
 		return nil, "empty username or password", errWrongCredentials
 	}
 	store := s.userStore()
-	if strings.EqualFold(name, s.conf().Auth.AdminUser) {
-		if !s.conf().CheckPassword(name, password) {
+	if s.isBuiltin(name) {
+		ok, local := s.checkBuiltinPassword(password, true)
+		if !ok {
 			return nil, "wrong password", errWrongCredentials
 		}
-		store.RecordBuiltinSignIn()
-		return s.builtinPrincipal(), "", nil
+		store.RecordBuiltinSignIn(ctx)
+		p := s.builtinPrincipal()
+		p.breakGlass = local
+		return p, "", nil
 	}
 	if u, ok := store.Get(name); ok && u.Source == users.SourceLocal {
 		if !store.CheckPassword(u.Username, password) {
@@ -471,8 +504,12 @@ func (s *Server) checkCredentials(ctx context.Context, name, password string) (*
 		if u.Disabled {
 			return nil, "account disabled", errDisabled
 		}
-		store.RecordSignIn(u.Username)
-		return principalFromUser(u), "", nil
+		p := principalFromUser(u)
+		if err := s.degradedRefusal(p); err != nil {
+			return nil, "OpenSearch cannot be used, and only admins may sign in then", err
+		}
+		store.RecordSignIn(ctx, u.Username)
+		return p, "", nil
 	}
 	d := s.dir()
 	if !d.Enabled() {
@@ -483,7 +520,7 @@ func (s *Server) checkCredentials(ctx context.Context, name, password string) (*
 	// domain in front is refused without asking the directory.
 	login := users.LoginName(name)
 	if !strings.EqualFold(login, name) {
-		if u, ok := store.Get(login); strings.EqualFold(login, s.conf().Auth.AdminUser) || (ok && u.Source == users.SourceLocal) {
+		if u, ok := store.Get(login); s.isBuiltin(login) || (ok && u.Source == users.SourceLocal) {
 			users.WasteTime(password)
 			return nil, "a domain in front of a local user's or the built-in admin's name", errWrongCredentials
 		}
@@ -514,7 +551,7 @@ func (s *Server) checkCredentials(ctx context.Context, name, password string) (*
 		if du != nil && du.Username != "" {
 			who = du.Username
 		}
-		s.revokeDirectoryUser(who, sie.Revoke)
+		s.revokeDirectoryUser(ctx, who, sie.Revoke)
 	}
 	switch {
 	case errors.As(err, &sie) && errors.Is(err, users.ErrNoRole):
@@ -528,7 +565,10 @@ func (s *Server) checkCredentials(ctx context.Context, name, password string) (*
 	case err != nil:
 		return nil, "directory: " + err.Error(), errDirectoryDown
 	}
-	u, err := store.SeeDirectoryUser(*du)
+	if err := s.degradedRefusal(&principal{Username: du.Username, Source: users.SourceDirectory}); err != nil {
+		return nil, "OpenSearch cannot be used, and only admins may sign in then", err
+	}
+	u, err := store.SeeDirectoryUser(ctx, *du)
 	if errors.Is(err, users.ErrExists) || errors.Is(err, users.ErrReserved) {
 		return nil, fmt.Sprintf("directory user %s has the name of a local user or the built-in admin", du.Username), errWrongCredentials
 	}
@@ -634,15 +674,15 @@ func (s *Server) runDirectoryRecheck(name string, rev uint64, settingsChanged bo
 	var sie *users.SignInError
 	switch {
 	case err == nil && users.NormalizeUsername(du.Username) != name:
-		s.revokeDirectoryUser(name, "renamed in the directory to "+du.Username)
+		s.revokeDirectoryUser(ctx, name, "renamed in the directory to "+du.Username)
 	case err == nil:
 		before, _ := s.userStore().Get(name)
-		u, changed, err := s.userStore().RefreshDirectoryUser(name, *du)
+		u, changed, err := s.userStore().RefreshDirectoryUser(ctx, name, *du)
 		if err == nil && changed && u.Role != before.Role {
 			s.Log.Info("directory user's role changed", "audit", true, "user", name, "from", before.Role, "to", u.Role, "by", "directory")
 		}
 	case errors.As(err, &sie) && sie.Revoke != "":
-		s.revokeDirectoryUser(name, sie.Revoke)
+		s.revokeDirectoryUser(ctx, name, sie.Revoke)
 	case errors.Is(err, users.ErrDirectoryOff):
 		// Directory users cannot use Signalith while it is off.
 	default:
@@ -652,7 +692,7 @@ func (s *Server) runDirectoryRecheck(name string, rev uint64, settingsChanged bo
 		// sessions end.
 		ended := 0
 		if settingsChanged {
-			ended = s.sessions().EndUser(name, "")
+			ended = s.sessions().EndUser(ctx, name, "")
 		}
 		s.Log.Warn("could not check a directory user with the directory", "user", name, "err", err, "sessions_ended", ended)
 	}
@@ -661,12 +701,12 @@ func (s *Server) runDirectoryRecheck(name string, rev uint64, settingsChanged bo
 // revokeDirectoryUser takes away a directory user's access after the
 // directory refused them, and ends their sessions. Names that are not
 // directory users are ignored.
-func (s *Server) revokeDirectoryUser(name, reason string) {
-	u, changed, err := s.userStore().RefuseDirectoryUser(name, reason)
+func (s *Server) revokeDirectoryUser(ctx context.Context, name, reason string) {
+	u, changed, err := s.userStore().RefuseDirectoryUser(ctx, name, reason)
 	if err != nil {
 		return
 	}
-	ended := s.sessions().EndUser(u.Username, "")
+	ended := s.sessions().EndUser(ctx, u.Username, "")
 	if changed || ended > 0 {
 		s.Log.Warn("directory user lost access", "audit", true, "user", u.Username, "reason", reason, "sessions_ended", ended, "by", "directory")
 	}
@@ -734,8 +774,8 @@ func (c *credCache) put(key [32]byte, user string, ttl time.Duration) {
 func (s *Server) credentialKey(user, pass string) ([32]byte, time.Duration) {
 	version, ttl := "", basicCacheLocal
 	switch {
-	case strings.EqualFold(strings.TrimSpace(user), s.conf().Auth.AdminUser):
-		version = "builtin:" + s.conf().Auth.AdminPasswordHash
+	case s.isBuiltin(user):
+		version = "builtin:" + s.builtinHash()
 	case s.userStore().PasswordVersion(user) != "":
 		version = "local:" + s.userStore().PasswordVersion(user)
 	default:
@@ -749,6 +789,9 @@ func (s *Server) checkBasic(r *http.Request, user, pass string) (*principal, err
 	key, ttl := s.credentialKey(user, pass)
 	if name, ok := s.creds.get(key); ok {
 		if p := s.principalFor(name); p != nil {
+			if err := s.degradedRefusal(p); err != nil {
+				return nil, err
+			}
 			return p, nil
 		}
 	}
@@ -756,6 +799,10 @@ func (s *Server) checkBasic(r *http.Request, user, pass string) (*principal, err
 	if err != nil {
 		return nil, err
 	}
-	s.creds.put(key, p.Username, ttl)
+	// The break-glass password works only while the shared settings
+	// cannot be used: it is checked again each time.
+	if !p.breakGlass {
+		s.creds.put(key, p.Username, ttl)
+	}
 	return p, nil
 }

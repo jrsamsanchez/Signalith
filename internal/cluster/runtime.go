@@ -277,6 +277,11 @@ type Fingerprints struct {
 	// Archives names the archive folder (its id file), only while some
 	// retention policy archives: servers that share one folder share it.
 	Archives string `json:"archives,omitempty"`
+	// Users is the users and the directory sign-in settings in the
+	// server's own files. The background jobs do not use them, so it is
+	// not part of Combined or Differ: it names the servers whose users a
+	// late import of the users leaves out (shared.LateImport).
+	Users string `json:"users,omitempty"`
 	// Unknown is true when they could not be worked out in time: the
 	// archive folder's share may not answer.
 	Unknown bool `json:"-"`

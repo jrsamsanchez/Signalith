@@ -62,3 +62,41 @@ func TestEnsureConfig(t *testing.T) {
 		t.Errorf("uuid after making it again: %q, before %q", u2, u1)
 	}
 }
+
+func TestEnsureSessions(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	for range 2 {
+		if err := EnsureSessions(ctx, e.c, testPrefix); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var body struct {
+		Settings map[string]any `json:"settings"`
+		Mappings struct {
+			Dynamic    string                    `json:"dynamic"`
+			Properties map[string]map[string]any `json:"properties"`
+		} `json:"mappings"`
+	}
+	if err := json.Unmarshal(e.os.IndexBody("s_sessions"), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Settings["number_of_shards"] != 1.0 || body.Settings["auto_expand_replicas"] != "0-1" || body.Settings["refresh_interval"] != "1s" || body.Mappings.Dynamic != "false" {
+		t.Errorf("index %+v", body)
+	}
+	for f, typ := range map[string]string{"user": "keyword", "epoch": "long", "created": "date", "last_seen": "date",
+		"remember": "boolean", "degraded": "boolean", "node": "keyword", "client": "keyword", "method": "keyword"} {
+		if body.Mappings.Properties[f]["type"] != typ {
+			t.Errorf("%s is mapped as %v", f, body.Mappings.Properties[f])
+		}
+	}
+	if body.Mappings.Properties["mac"] != nil {
+		t.Error("mac is mapped")
+	}
+	if err := EnsureSessionsTemplate(ctx, e.c, testPrefix); err != nil {
+		t.Fatal(err)
+	}
+	if tpl := string(e.os.Template("s_sessions")); !strings.Contains(tpl, `"priority":500`) || !strings.Contains(tpl, `"s_sessions"`) {
+		t.Errorf("template %s", tpl)
+	}
+}

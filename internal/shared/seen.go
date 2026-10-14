@@ -38,7 +38,11 @@ type NodeCfg struct {
 	// files' values as a member; until then every value is only
 	// recorded.
 	Applied string `json:"applied,omitempty"`
-	Extra   `json:"-"`
+	// UsersApplied is the same for the settings of the users and
+	// directory sign-in (auth.*), which apply only once users are shared:
+	// until then they are only recorded.
+	UsersApplied string `json:"users_applied,omitempty"`
+	Extra        `json:"-"`
 }
 
 // SeenHash returns the hash of a setting's value as nodecfg records it:

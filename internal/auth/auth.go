@@ -26,6 +26,26 @@ type Session struct {
 	// there is none to follow), so a session can end when the password
 	// changes on another server that shares the users file.
 	Version string
+	// Epoch is the user's session epoch at sign-in (users.User.
+	// SessionEpoch): a session made in an older epoch has ended.
+	Epoch int64
+	// Method is how the user signed in: local, directory or builtin.
+	Method string
+	// Degraded marks a session made while OpenSearch could not be
+	// reached, kept by one server only until it can be written through.
+	Degraded bool
+}
+
+// NewSession is what a session starts with.
+type NewSession struct {
+	User     string
+	Remember bool
+	// Version, Epoch and Method are as in Session.
+	Version string
+	Epoch   int64
+	Method  string
+	// Client is the address the user signed in from.
+	Client string
 }
 
 // Sessions stores sessions by a hash of their token, so the tokens
@@ -54,6 +74,11 @@ func hash(token string) [32]byte { return sha256.Sum256([]byte(token)) }
 
 // Create starts a session and returns its token.
 func (s *Sessions) Create(user string, remember bool) string {
+	return s.Start(NewSession{User: user, Remember: remember})
+}
+
+// Start starts the session n and returns its token.
+func (s *Sessions) Start(n NewSession) string {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
 		panic(err)
@@ -66,7 +91,7 @@ func (s *Sessions) Create(user string, remember bool) string {
 	if len(s.byID) >= s.Limit {
 		s.evictLocked(len(s.byID) - s.Limit + 1)
 	}
-	s.byID[hash(token)] = &Session{User: user, Created: now, LastSeen: now, Remember: remember}
+	s.byID[hash(token)] = &Session{User: n.User, Created: now, LastSeen: now, Remember: n.Remember, Version: n.Version, Epoch: n.Epoch, Method: n.Method}
 	return token
 }
 

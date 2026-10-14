@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -68,7 +69,7 @@ func newLockoutServer(t *testing.T, change func(*Server)) (*Server, string, *htt
 		now := time.Now()
 		s.Limiter.Now = func() time.Time { return now }
 		for _, u := range []string{"vera", "walt"} {
-			if _, err := s.Users.Create(users.NewUser{Username: u, Role: users.Analyst, Password: u + "-password"}); err != nil {
+			if _, err := s.Users.Create(context.Background(), users.NewUser{Username: u, Role: users.Analyst, Password: u + "-password"}); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -328,7 +329,7 @@ func TestKnownBrowserCookieEndsWithThePassword(t *testing.T) {
 		t.Error("the renewed cookie is not recognized")
 	}
 	// An admin's reset ends it too.
-	if _, err := s.Users.SetPassword("vera", "vera-reset-password", true); err != nil {
+	if _, err := s.Users.SetPassword(context.Background(), "vera", "vera-reset-password", true); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := s.knownBrowser(cookieRequest(renewed), "vera"); ok {

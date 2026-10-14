@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -154,7 +155,7 @@ func newRoleServer(t *testing.T) (*httptest.Server, *Server) {
 		srv = s
 		s.Users = users.NewMemory()
 		for name, role := range map[string]users.Role{"vera": users.Viewer, "andy": users.Analyst} {
-			if _, err := s.Users.Create(users.NewUser{Username: name, Role: role, Password: "role-password"}); err != nil {
+			if _, err := s.Users.Create(context.Background(), users.NewUser{Username: name, Role: role, Password: "role-password"}); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -204,7 +205,7 @@ func TestUnclassifiedRoutesAreAdminOnly(t *testing.T) {
 	h, _ := config.HashPassword("s3cret-pass")
 	cfg.Auth.AdminPasswordHash = h
 	s := &Server{Config: cfg, Log: slog.New(slog.NewTextHandler(io.Discard, nil)), Users: users.NewMemory()}
-	s.Users.Create(users.NewUser{Username: "andy", Role: users.Analyst, Password: "role-password"})
+	s.Users.Create(context.Background(), users.NewUser{Username: "andy", Role: users.Analyst, Password: "role-password"})
 	rt := &router{s: s, mux: http.NewServeMux()}
 	rt.HandleFunc("POST /api/new-thing", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusTeapot) })
 	if len(rt.routes) != 1 || !rt.routes[0].Unclassified || rt.routes[0].Role != users.Admin {

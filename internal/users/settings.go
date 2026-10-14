@@ -1,7 +1,9 @@
 package users
 
 import (
+	"crypto/sha256"
 	"crypto/x509"
+	"encoding/hex"
 	"encoding/pem"
 	"fmt"
 	"net/url"
@@ -187,6 +189,43 @@ func SameConnection(a, b LDAPSettings) bool {
 	return strings.EqualFold(a.URL, b.URL) && strings.EqualFold(a.FailoverURL, b.FailoverURL) &&
 		sameDN(a.BindDN, b.BindDN) && a.StartTLS == b.StartTLS && a.TLSSkipVerify == b.TLSSkipVerify &&
 		a.CACert == b.CACert
+}
+
+// BindField is the setting the service account password of settings s is
+// encrypted for in the shared settings of a cluster. It names everything
+// SameConnection compares (the server addresses, the bind DN and the TLS
+// settings), so a password moved to settings that would send it
+// elsewhere cannot be opened:
+// directory.bind_password@ldaps://dc1:636,;<16 hex digits>.
+func BindField(s LDAPSettings) string {
+	s = s.Clone()
+	s.Normalize()
+	h := sha256.New()
+	for _, part := range []string{normDN(s.BindDN), strconv.FormatBool(s.StartTLS), strconv.FormatBool(s.TLSSkipVerify), s.CACert} {
+		h.Write([]byte(part))
+		h.Write([]byte{0})
+	}
+	return BindPasswordField + "@" + strings.ToLower(s.URL) + "," + strings.ToLower(s.FailoverURL) + ";" + hex.EncodeToString(h.Sum(nil))[:16]
+}
+
+// normDN writes a DN the same way however it was spelled, as sameDN
+// compares them: attribute names and values in lower case, without
+// spacing around separators.
+func normDN(dn string) string {
+	d, err := ldap.ParseDN(dn)
+	if err != nil {
+		return strings.ToLower(strings.TrimSpace(dn))
+	}
+	rdns := make([]string, 0, len(d.RDNs))
+	for _, r := range d.RDNs {
+		parts := make([]string, 0, len(r.Attributes))
+		for _, a := range r.Attributes {
+			parts = append(parts, strings.ToLower(strings.TrimSpace(a.Type))+"="+ldap.EscapeDN(strings.ToLower(strings.TrimSpace(a.Value))))
+		}
+		slices.Sort(parts)
+		rdns = append(rdns, strings.Join(parts, "+"))
+	}
+	return strings.Join(rdns, ",")
 }
 
 // IsEnabled reports whether directory sign-in is on.

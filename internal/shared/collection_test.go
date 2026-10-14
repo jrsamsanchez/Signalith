@@ -2,8 +2,11 @@ package shared
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"slices"
+	"sync"
 	"testing"
 	"time"
 
@@ -201,5 +204,106 @@ func TestCollectionItemMadeAgainAfterHousekeeping(t *testing.T) {
 	cycle(t, a2)
 	if v, _, ok := ca2.Get("jlee"); !ok || v.Name != "another J. Lee" || len(a2.Problems()) != 0 {
 		t.Errorf("a after a restart: %+v %v, problems %+v", v, ok, a2.Problems())
+	}
+}
+
+// V1: Mutate on two servers at once keeps every change, one revision
+// each; MutateIf from an old ETag is refused naming who changed it; a
+// missing or deleted item is not found.
+func TestCollectionMutateUnderContention(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	a, _ := e.hub("siem-a")
+	b, _ := e.hub("siem-b")
+	ca := NewCollection[testBody](a, "user", "users", 1)
+	cb := NewCollection[testBody](b, "user", "users", 1)
+	if _, err := ca.Create(ctx, "sam", "jlee", &testBody{Name: "J. Lee"}); err != nil {
+		t.Fatal(err)
+	}
+	_, old, _ := ca.Get("jlee")
+	const each = 50
+	var wg sync.WaitGroup
+	errs := make(chan error, 2*each)
+	for i, c := range []*Collection[testBody]{ca, cb} {
+		for n := range each {
+			wg.Go(func() {
+				_, err := c.Mutate(ctx, "sam", "jlee", func(v *testBody) error {
+					v.Items = append(v.Items, fmt.Sprintf("%d-%d", i, n))
+					return nil
+				})
+				if err != nil {
+					errs <- err
+				}
+			})
+		}
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Error(err)
+	}
+	cycle(t, a)
+	cycle(t, b)
+	for _, c := range []*Collection[testBody]{ca, cb} {
+		v, _, ok := c.Get("jlee")
+		if !ok || len(v.Items) != 2*each || v.Name != "J. Lee" {
+			t.Errorf("%d items, %v", len(v.Items), ok)
+		}
+		seen := map[string]bool{}
+		for _, it := range v.Items {
+			seen[it] = true
+		}
+		if len(seen) != 2*each {
+			t.Errorf("%d distinct items", len(seen))
+		}
+	}
+	src := e.os.Source(testIndex, "user:jlee")
+	if rev, _ := src["rev"].(json.Number).Int64(); rev != 1+2*each {
+		t.Errorf("stored rev %v", src["rev"])
+	}
+
+	// A page that read the item before all of that.
+	_, err := cb.MutateIf(ctx, "bob", "jlee", old, func(v *testBody) error {
+		v.Name = "stale"
+		return nil
+	})
+	var se *StaleError
+	if !errors.As(err, &se) || se.By != "sam" || se.Node == "" {
+		t.Errorf("stale MutateIf: %v", err)
+	}
+	_, etag, _ := cb.Get("jlee")
+	if _, err := cb.MutateIf(ctx, "bob", "jlee", etag, func(v *testBody) error {
+		v.Name = "Jo Lee"
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// fn refusing changes nothing.
+	refused := errors.New("no")
+	_, etag, _ = cb.Get("jlee")
+	if _, err := cb.MutateIf(ctx, "bob", "jlee", etag, func(*testBody) error { return refused }); !errors.Is(err, refused) {
+		t.Errorf("refused MutateIf: %v", err)
+	}
+	if _, err := ca.Mutate(ctx, "sam", "jlee", func(*testBody) error { return refused }); !errors.Is(err, refused) {
+		t.Errorf("refused Mutate: %v", err)
+	}
+	cycle(t, a)
+	if v, _, _ := ca.Get("jlee"); v.Name != "Jo Lee" || len(v.Items) != 2*each {
+		t.Errorf("a: %q, %d items", v.Name, len(v.Items))
+	}
+
+	// Missing, and deleted on the other server.
+	if _, err := ca.Mutate(ctx, "sam", "nobody", func(*testBody) error { return nil }); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("Mutate of a missing item: %v", err)
+	}
+	if _, err := ca.MutateIf(ctx, "sam", "nobody", "", func(*testBody) error { return nil }); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("MutateIf of a missing item: %v", err)
+	}
+	_, etag, _ = cb.Get("jlee")
+	if _, err := cb.Delete(ctx, "bob", "jlee", etag); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ca.Mutate(ctx, "sam", "jlee", func(*testBody) error { return nil }); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("Mutate of a deleted item: %v", err)
 	}
 }

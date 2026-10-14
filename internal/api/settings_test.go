@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -97,7 +98,7 @@ func newSettingsServer(t *testing.T, extra string, change func(*Server)) (*httpt
 		s.Engine.Opt.DefaultEarliest, s.Engine.Opt.MaxEvents = cfg.Search.DefaultEarliest, cfg.Search.MaxEvents
 		s.Log = slog.New(slog.NewTextHandler(logs, nil))
 		s.Users = users.NewMemory()
-		s.Users.Create(users.NewUser{Username: "andy", Role: users.Analyst, Password: "role-password"})
+		s.Users.Create(context.Background(), users.NewUser{Username: "andy", Role: users.Analyst, Password: "role-password"})
 		srv = s
 		if change != nil {
 			change(s)
@@ -218,9 +219,9 @@ func TestSaveSettings(t *testing.T) {
 	if got := out["applied"].([]any); len(got) != 5 || len(out["after_restart"].([]any)) != 0 {
 		t.Errorf("applied %v after restart %v", got, out["after_restart"])
 	}
-	if srv.sessions().Idle != 30*time.Minute || srv.Engine.Opt.MaxEvents != 1234 || srv.Engine.Opt.DefaultEarliest != "-7d" ||
+	if srv.Sessions.Idle != 30*time.Minute || srv.Engine.Opt.MaxEvents != 1234 || srv.Engine.Opt.DefaultEarliest != "-7d" ||
 		srv.Scheduler.MaxFindingsPerRun != 7 || srv.conf().Server.PublicURL != "https://siem.example.com:8443" {
-		t.Errorf("not live: idle %v engine %+v cap %d url %s", srv.sessions().Idle, srv.Engine.Opt, srv.Scheduler.MaxFindingsPerRun, srv.conf().Server.PublicURL)
+		t.Errorf("not live: idle %v engine %+v cap %d url %s", srv.Sessions.Idle, srv.Engine.Opt, srv.Scheduler.MaxFindingsPerRun, srv.conf().Server.PublicURL)
 	}
 	// The agent setup uses the new public address right away.
 	if code, cfg := do(t, ts, "GET", "/api/agents/config?os=linux", "", true); code != 200 || !strings.Contains(cfg["config"].(string), "siem.example.com") {
@@ -263,8 +264,8 @@ func TestSaveSettings(t *testing.T) {
 	}
 	// Reset goes back to signalith.yaml.
 	code, out = put(`{"reset":["server.listen","auth.session_timeout"]}`)
-	if code != 200 || field(t, out, "server.listen")["source"].(map[string]any)["kind"] != "file" || srv.sessions().Idle != 12*time.Hour {
-		t.Errorf("reset %d %v idle %v", code, field(t, out, "server.listen"), srv.sessions().Idle)
+	if code != 200 || field(t, out, "server.listen")["source"].(map[string]any)["kind"] != "file" || srv.Sessions.Idle != 12*time.Hour {
+		t.Errorf("reset %d %v idle %v", code, field(t, out, "server.listen"), srv.Sessions.Idle)
 	}
 	// The listen address is back to the one in use, so it needs no restart.
 	if got := out["after_restart"].([]any); len(got) != 0 || out["applied"].([]any)[0] != "auth.session_timeout" {

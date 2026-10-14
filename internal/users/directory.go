@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -104,8 +105,49 @@ func (e *SettingsError) Error() string {
 	return "fix these settings: " + strings.Join(msgs, "; ")
 }
 
-// Directory holds the directory sign-in settings and signs users in.
+// Directory holds the directory sign-in settings and signs users in. The
+// settings are kept in a DirectoryBackend: directory.json or
+// signalith.yaml (OpenDirectory), or the shared configuration of a
+// cluster.
 type Directory struct {
+	b DirectoryBackend
+}
+
+// DirectoryBackend keeps the directory sign-in settings.
+type DirectoryBackend interface {
+	// Load returns the settings in use, with the service account
+	// password; saved is false for the untouched defaults, and problem
+	// says why saved settings cannot be used as they are ("" when they
+	// can), such as a password that cannot be decrypted.
+	Load() (s LDAPSettings, saved bool, problem string)
+	// Save stores checked settings, read at etag when it is set
+	// (ErrStale, or an error naming who changed them, when they changed
+	// since).
+	Save(ctx context.Context, by, etag string, s LDAPSettings) error
+	// Revision changes whenever the settings do.
+	Revision() uint64
+	// ETag is the version of the settings in use.
+	ETag() string
+	// From says where the settings in use came from.
+	From() DirectoryFrom
+}
+
+// DirectoryFrom says where directory settings came from: Source is
+// "yaml" (auth.ldap in signalith.yaml), "page" (saved on the Users page),
+// "import", or "" for the untouched defaults; Node and At, when known,
+// say on which server and when.
+type DirectoryFrom struct {
+	Source string    `json:"source"`
+	Node   string    `json:"node,omitempty"`
+	At     time.Time `json:"at,omitzero"`
+}
+
+// NewDirectory returns the directory sign-in kept in b.
+func NewDirectory(b DirectoryBackend) *Directory { return &Directory{b: b} }
+
+// fileDirectory keeps the settings in directory.json, or uses those of
+// signalith.yaml as they are.
+type fileDirectory struct {
 	path       string
 	fromConfig bool
 	mu         sync.RWMutex
@@ -133,23 +175,23 @@ const BindPasswordField = "directory.bind_password"
 // from the UI; otherwise settings come from the file at path, which Save
 // writes. An empty path keeps settings in memory only.
 func OpenDirectory(path string, fromConfig *LDAPSettings) (*Directory, error) {
-	d := &Directory{path: path}
+	d := &fileDirectory{path: path}
 	if fromConfig != nil {
 		d.fromConfig = true
 		d.settings = fromConfig.Clone()
 		d.settings.Normalize()
-		return d, nil
+		return NewDirectory(d), nil
 	}
 	off := false
 	d.settings = Preset(TypeActiveDirectory)
 	d.settings.Enabled = &off
 	d.settings.Normalize()
 	if path == "" {
-		return d, nil
+		return NewDirectory(d), nil
 	}
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return d, nil
+		return NewDirectory(d), nil
 	}
 	if err != nil {
 		return nil, err
@@ -170,15 +212,69 @@ func OpenDirectory(path string, fromConfig *LDAPSettings) (*Directory, error) {
 	f.Settings.Normalize()
 	d.settings = f.Settings
 	d.saved = true
-	return d, nil
+	return NewDirectory(d), nil
+}
+
+func (d *fileDirectory) Load() (LDAPSettings, bool, string) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	return d.settings.Clone(), d.saved || d.fromConfig, d.problem
+}
+
+func (d *fileDirectory) Revision() uint64 {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	return d.rev
+}
+
+func (d *fileDirectory) ETag() string { return strconv.FormatUint(d.Revision(), 10) }
+
+func (d *fileDirectory) From() DirectoryFrom {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	switch {
+	case d.fromConfig:
+		return DirectoryFrom{Source: "yaml"}
+	case d.saved:
+		return DirectoryFrom{Source: "page"}
+	}
+	return DirectoryFrom{}
+}
+
+func (d *fileDirectory) Save(_ context.Context, _, etag string, s LDAPSettings) error {
+	if d.fromConfig {
+		return ErrReadOnly
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if etag != "" && etag != strconv.FormatUint(d.rev, 10) {
+		return ErrStale
+	}
+	if d.path != "" {
+		sealed, err := secrets.Seal(BindPasswordField, s.BindPassword)
+		if err != nil {
+			return err
+		}
+		data, err := json.MarshalIndent(directoryFile{Version: 1, Settings: s, BindPassword: sealed}, "", "  ")
+		if err != nil {
+			return err
+		}
+		if err := WriteFileAtomic(d.path, append(data, '\n')); err != nil {
+			return err
+		}
+	}
+	d.settings = s
+	d.rev++
+	d.saved = true
+	d.problem = ""
+	return nil
 }
 
 // Problem says why saved settings cannot be used as they are, such as a
 // service account password that cannot be decrypted; "" when they can.
 func (d *Directory) Problem() string {
-	d.mu.RLock()
-	defer d.mu.RUnlock()
-	return d.problem
+	_, _, p := d.b.Load()
+	return p
 }
 
 // ResealDirectoryFile passes the service account password in the
@@ -206,43 +302,59 @@ func ResealDirectoryFile(data []byte, fn secrets.Reseal) ([]byte, int, error) {
 
 // Settings returns a copy of the current settings, with the password.
 func (d *Directory) Settings() LDAPSettings {
-	d.mu.RLock()
-	defer d.mu.RUnlock()
-	return d.settings.Clone()
+	s, _, _ := d.b.Load()
+	return s
 }
 
 // Saved reports whether settings were ever saved, or come from
 // signalith.yaml, rather than being the untouched defaults.
 func (d *Directory) Saved() bool {
-	d.mu.RLock()
-	defer d.mu.RUnlock()
-	return d.saved || d.fromConfig
+	_, saved, _ := d.b.Load()
+	return saved
 }
 
-// FromConfig reports whether the settings come from signalith.yaml.
-func (d *Directory) FromConfig() bool { return d.fromConfig }
+// FromConfig reports whether the settings come from signalith.yaml and
+// cannot be changed from the UI.
+func (d *Directory) FromConfig() bool {
+	f, ok := d.b.(*fileDirectory)
+	return ok && f.fromConfig
+}
 
-// Path returns the settings file the UI saves to.
-func (d *Directory) Path() string { return d.path }
+// Path returns the settings file the UI saves to, or "" when there is
+// none.
+func (d *Directory) Path() string {
+	if f, ok := d.b.(*fileDirectory); ok {
+		return f.path
+	}
+	return ""
+}
 
 // Enabled reports whether directory sign-in is on.
 func (d *Directory) Enabled() bool {
-	d.mu.RLock()
-	defer d.mu.RUnlock()
-	return d.settings.IsEnabled()
+	s, _, _ := d.b.Load()
+	return s.IsEnabled()
 }
 
 // Revision changes whenever the settings do, so a cache of checked
 // passwords can include it in its keys.
-func (d *Directory) Revision() uint64 {
-	d.mu.RLock()
-	defer d.mu.RUnlock()
-	return d.rev
-}
+func (d *Directory) Revision() uint64 { return d.b.Revision() }
+
+// ETag returns the version of the settings in use, for SaveIf.
+func (d *Directory) ETag() string { return d.b.ETag() }
+
+// From says where the settings in use came from.
+func (d *Directory) From() DirectoryFrom { return d.b.From() }
 
 // Save checks and stores new settings.
-func (d *Directory) Save(s LDAPSettings) error {
-	if d.fromConfig {
+func (d *Directory) Save(ctx context.Context, s LDAPSettings) error {
+	return d.SaveIf(ctx, "", s)
+}
+
+// SaveIf is Save for settings read at etag (ETag): ErrStale, or an error
+// naming who changed them, when they changed since. An empty etag saves
+// over whatever is there.
+func (d *Directory) SaveIf(ctx context.Context, etag string, s LDAPSettings) error {
+	if d.FromConfig() {
 		return ErrReadOnly
 	}
 	s = s.Clone()
@@ -254,26 +366,7 @@ func (d *Directory) Save(s LDAPSettings) error {
 	if p := s.Problems(); len(p) > 0 {
 		return &SettingsError{Problems: p}
 	}
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	if d.path != "" {
-		sealed, err := secrets.Seal(BindPasswordField, s.BindPassword)
-		if err != nil {
-			return err
-		}
-		data, err := json.MarshalIndent(directoryFile{Version: 1, Settings: s, BindPassword: sealed}, "", "  ")
-		if err != nil {
-			return err
-		}
-		if err := WriteFileAtomic(d.path, append(data, '\n')); err != nil {
-			return err
-		}
-	}
-	d.settings = s
-	d.rev++
-	d.saved = true
-	d.problem = ""
-	return nil
+	return d.b.Save(ctx, Actor(ctx), etag, s)
 }
 
 // Authenticate checks a username and password with the directory and

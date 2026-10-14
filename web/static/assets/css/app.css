@@ -2950,6 +2950,8 @@ body:has(.page.active .inspector:not([hidden], .hidden)) #toast { bottom: 88px; 
 #page-users .u-skel-gap { height: 8px; }
 #page-users .u-source { color: var(--text-2); }
 #page-users .u-never { color: var(--text-3); }
+#page-users .u-last__on { margin-top: 2px; font-size: var(--fs-sm); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#page-users .u-note { margin-bottom: var(--sp-4); }
 #page-users tr.u-off .u-user__name { color: var(--text-2); }
 /* status: a dot carries the state; only "needs something" gets colour */
 #page-users .u-status { --st: var(--success); display: inline-flex; align-items: center; gap: 8px; color: var(--text-2); white-space: nowrap; }

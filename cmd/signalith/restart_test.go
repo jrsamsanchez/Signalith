@@ -294,6 +294,13 @@ func (rs *running) call(addr, method, path, body string) (int, map[string]any, e
 func (rs *running) save(values string) {
 	rs.t.Helper()
 	code, out, err := rs.call("", "PUT", "/api/settings", `{"values":`+values+`}`)
+	// A server that just founded the cluster shares its users from then
+	// on, and everyone signs in once more.
+	for deadline := time.Now().Add(20 * time.Second); err == nil && code == 401 && time.Now().Before(deadline); {
+		time.Sleep(20 * time.Millisecond)
+		rs.signIn()
+		code, out, err = rs.call("", "PUT", "/api/settings", `{"values":`+values+`}`)
+	}
 	if err != nil || code != 200 {
 		rs.t.Fatalf("save %s: %d %v %v", values, code, out, err)
 	}
@@ -304,9 +311,13 @@ func (rs *running) restart() (map[string]any, *api.RestartResult) {
 	rs.t.Helper()
 	code, out, err := rs.call("", "POST", "/api/settings/restart", "")
 	// A server that just founded the cluster restarts its components in
-	// place by itself: wait for that one to end.
-	for deadline := time.Now().Add(20 * time.Second); err == nil && code == 409 && out["code"] == "restarting" && time.Now().Before(deadline); {
+	// place by itself: wait for that one to end. Its users are then shared,
+	// and everyone signs in once more.
+	for deadline := time.Now().Add(20 * time.Second); err == nil && (code == 401 || code == 409 && out["code"] == "restarting") && time.Now().Before(deadline); {
 		time.Sleep(20 * time.Millisecond)
+		if code == 401 {
+			rs.signIn()
+		}
 		code, out, err = rs.call("", "POST", "/api/settings/restart", "")
 	}
 	if err != nil || code != 202 {

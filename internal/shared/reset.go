@@ -118,7 +118,7 @@ func Resign(ctx context.Context, c *store.Client, prefix string, docs []StoredDo
 		errs = append(errs, err)
 	}
 	for _, w := range watches {
-		if _, err := h.bump(ctx, w.ID); err != nil {
+		if _, err := h.bump(ctx, w.ID, nil); err != nil {
 			errs = append(errs, err)
 		}
 	}

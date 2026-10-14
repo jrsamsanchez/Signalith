@@ -92,7 +92,21 @@ func sharedError(w http.ResponseWriter, err error) bool {
 	var stale *shared.StaleError
 	var paused *shared.PausedError
 	switch {
-	case errors.As(err, &stale), errors.Is(err, intel.ErrFeedStale):
+	case errors.As(err, &stale):
+		// Who changed it, where and when, so a page can say so in its
+		// own words.
+		body := map[string]any{"error": err.Error(), "code": "stale"}
+		if stale.By != "" {
+			body["changed_by"] = stale.By
+		}
+		if stale.Node != "" {
+			body["changed_on"] = stale.Node
+		}
+		if stale.At != "" {
+			body["changed_at"] = stale.At
+		}
+		writeJSON(w, http.StatusPreconditionFailed, body)
+	case errors.Is(err, intel.ErrFeedStale):
 		writeError(w, http.StatusPreconditionFailed, err)
 	case errors.As(err, &paused), errors.Is(err, intel.ErrFeedsUnavailable), errors.Is(err, clustercfg.ErrPoliciesUnavailable):
 		writeError(w, http.StatusServiceUnavailable, err)
