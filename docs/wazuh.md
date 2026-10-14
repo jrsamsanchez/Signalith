@@ -31,8 +31,8 @@ manager.
 Open **Add data**, pick **Wazuh** and follow the steps. In short, on the machine that runs the
 Wazuh manager:
 
-1. Install Fluent Bit 3.1 or later:
-   `curl https://raw.githubusercontent.com/fluent/fluent-bit/master/install.sh | sh`
+1. Install Fluent Bit 3.1 or later from its signed package repository, following the steps
+   for your distribution at <https://docs.fluentbit.io/manual/installation/linux>.
 2. Save Signalith's CA certificate as `signalith-ca.pem` (when Signalith uses HTTPS).
 3. Save the generated configuration as `fluent-bit.conf`.
 4. Put both in place:

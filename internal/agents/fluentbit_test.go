@@ -427,3 +427,18 @@ func TestFluentBitLinuxSysmon(t *testing.T) {
 		t.Errorf("wazuh config reads Sysmon:\n%s", a.Config)
 	}
 }
+
+// Linux agents install Fluent Bit from its signed packages, never by piping
+// a script into a shell.
+func TestFluentBitLinuxInstallStep(t *testing.T) {
+	for _, source := range []string{"file", "journal", "wazuh"} {
+		a, err := Generate(Options{OS: "linux", LinuxSource: source, ServerURL: "http://192.168.1.20:8080", Token: "tok-0123456789abcdef"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		steps := strings.Join(a.Steps, "\n")
+		if strings.Contains(steps, "| sh") || !strings.Contains(steps, "docs.fluentbit.io/manual/installation/linux") {
+			t.Errorf("%s: install step %q", source, a.Steps[0])
+		}
+	}
+}

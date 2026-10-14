@@ -88,6 +88,12 @@ func ConfigHeader(version string, pins ...string) string {
 // address with nothing to tie the certificate to this server.
 var ErrNoNameToCheck = errors.New("agents can't check that the certificate belongs to this server")
 
+// fluentBitLinuxInstall says where to install Fluent Bit on Linux from:
+// its packages are signed, while piping a script from a moving branch
+// into a root shell runs whatever that branch holds at the time.
+const fluentBitLinuxInstall = "follow the steps for your distribution at https://docs.fluentbit.io/manual/installation/linux " +
+	"(they add packages.fluentbit.io with its signing key, then install the fluent-bit package)"
+
 // Where the agent keeps the CA certificate it checks the server with.
 const (
 	LinuxCAPath   = "/etc/fluent-bit/signalith-ca.pem"
@@ -343,9 +349,9 @@ func Generate(o Options) (*Agent, error) {
 			}))
 		}
 		// Only root may read the config: it holds the agent token.
-		a.Steps = []string{"Install Fluent Bit (3.1 or later): curl https://raw.githubusercontent.com/fluent/fluent-bit/master/install.sh | sh"}
+		a.Steps = []string{"Install Fluent Bit (3.1 or later) from its signed package repository: " + fluentBitLinuxInstall}
 		if o.LinuxSource == "wazuh" {
-			a.Steps = []string{"On the Wazuh manager (not on each Wazuh agent), install Fluent Bit (3.1 or later): curl https://raw.githubusercontent.com/fluent/fluent-bit/master/install.sh | sh"}
+			a.Steps = []string{"On the Wazuh manager (not on each Wazuh agent), install Fluent Bit (3.1 or later) from its signed package repository: " + fluentBitLinuxInstall}
 		}
 		if o.Sysmon && o.LinuxSource != "wazuh" {
 			a.Steps = append(a.Steps, "Install Sysmon for Linux (open source, github.com/Sysinternals/SysmonForLinux) and start it with a configuration (sudo sysmon -accepteula -i config.xml), so process, network and file events are recorded")
