@@ -86,6 +86,11 @@ func parseWindowsWith(r map[string]any, named map[string]string) Event {
 		for k, v := range named {
 			kv[k] = v
 		}
+		// The provider that wrote it (Microsoft-Windows-Sysmon), which
+		// rules use to tell Sysmon's events from other sources'.
+		if p := str(r, "ProviderName"); p != "" {
+			f["provider"] = p
+		}
 		parseSysmon(eventID, kv, &ev)
 	case strings.EqualFold(channel, DefenderChannel):
 		parseDefender(eventID, str(r, "Message"), in, &ev)
@@ -133,6 +138,21 @@ func parseWindowsSecurity(eventID string, in []string, ev *Event) {
 			f["logon_process"] = strings.TrimSpace(at(in, 9))
 			f["process_path"] = at(in, 17)
 			f["process_name"] = baseName(at(in, 17))
+			// The account that asked for the logon, and the details newer
+			// Windows versions add: the impersonation level and elevation
+			// as message codes (%%1833 is Impersonation, %%1842 Yes), and
+			// for a new credentials logon (type 9, runas /netonly) the
+			// account used on the network.
+			f["src_user_sid"] = at(in, 0)
+			f["src_user"] = at(in, 1)
+			f["src_user_domain"] = at(in, 2)
+			f["key_length"] = atoi(at(in, 15))
+			f["impersonation_level"] = at(in, 20)
+			f["restricted_admin_mode"] = at(in, 21)
+			f["target_outbound_user"] = at(in, 22)
+			f["target_outbound_domain"] = at(in, 23)
+			f["virtual_account"] = at(in, 24)
+			f["elevated_token"] = at(in, 26)
 		} else {
 			f["action"] = "failure"
 			f["signature"] = "An account failed to log on"
@@ -250,6 +270,12 @@ func parseWindowsSecurity(eventID string, in []string, ev *Event) {
 		f["service_type"] = at(in, 6)
 		f["service_start_type"] = at(in, 7)
 		f["service_account"] = at(in, 8)
+		// Newer Windows versions add the process that asked the Service
+		// Control Manager and its parent.
+		if len(in) > 10 {
+			f["client_process_id"] = atoi(at(in, 10))
+			f["parent_process_id"] = atoi(at(in, 11))
+		}
 	case "4656", "4661", "4663":
 		// A handle to an object asked for (4656, or 4661 for a directory or
 		// SAM object) or an access to it (4663), when its audit rule (SACL)
@@ -660,6 +686,7 @@ func parseSysmon(eventID string, kv map[string]string, ev *Event) {
 		f["process_path"] = kv["Image"]
 		f["process_guid"] = kv["ProcessGuid"]
 		f["src_host"] = kv["SourceHostname"]
+		f["src_is_ipv6"] = strings.ToLower(kv["SourceIsIpv6"])
 		switch strings.ToLower(kv["Initiated"]) {
 		case "true":
 			f["direction"] = "outbound"

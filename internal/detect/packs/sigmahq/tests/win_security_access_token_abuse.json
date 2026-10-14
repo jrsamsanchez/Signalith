@@ -1,0 +1,7 @@
+{"rule": "02f7c9c1-1ae8-4c6a-8add-04693807f92f", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4624","data":{"AuthenticationPackageName":"Negotiate","ImpersonationLevel":"%%1833","LogonProcessName":"Advapi","LogonType":"9"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4624","data":{"ImpersonationLevel":"%%1833","LogonProcessName":"Advapi","LogonType":"9"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4624","data":{"AuthenticationPackageName":"Negotiate","LogonProcessName":"Advapi","LogonType":"9"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4624","data":{"AuthenticationPackageName":"Negotiate","ImpersonationLevel":"%%1833","LogonType":"9"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4624","data":{"AuthenticationPackageName":"Negotiate","ImpersonationLevel":"%%1833","LogonProcessName":"Advapi"}}
+]}

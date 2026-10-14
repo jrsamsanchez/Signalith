@@ -82,8 +82,11 @@ var sigmaFields = map[string]string{
 	// Sysmon network fields (event 3); Initiated becomes direction.
 	"sourcehostname": "src_host",
 	"initiated":      "direction",
-	"signature":      "signature",
-	"filename":       "file_path",
+	"sourceisipv6":   "src_is_ipv6",
+	// The provider that wrote the event, in any log source.
+	"provider_name": "provider",
+	"signature":     "signature",
+	"filename":      "file_path",
 }
 
 // sigmaEventFields maps the fields of Sysmon and PowerShell log sources
@@ -94,7 +97,7 @@ var sigmaFields = map[string]string{
 var sigmaEventFields = func() map[string]map[string]string {
 	common := map[string]string{
 		"image": "process_path", "user": "user", "processid": "process_id", "processguid": "process_guid",
-		"computer": "host", "computername": "host", "eventid": "signature_id",
+		"computer": "host", "computername": "host", "eventid": "signature_id", "provider_name": "provider",
 	}
 	with := func(m map[string]string) map[string]string {
 		for k, v := range common {
@@ -140,6 +143,17 @@ var sigmaEventFields = func() map[string]map[string]string {
 		"workstationname": "src_host", "ipaddress": "src", "ipport": "src_port", "processname": "process_path",
 		"computer": "host", "computername": "host", "eventid": "signature_id",
 	}
+	// A successful logon (4624) also names the account that asked for it
+	// and, on newer Windows versions, more about the session.
+	success := map[string]string{
+		"subjectusersid": "src_user_sid", "subjectusername": "src_user", "subjectdomainname": "src_user_domain",
+		"keylength": "key_length", "impersonationlevel": "impersonation_level", "restrictedadminmode": "restricted_admin_mode",
+		"targetoutboundusername": "target_outbound_user", "targetoutbounddomainname": "target_outbound_domain",
+		"virtualaccount": "virtual_account", "elevatedtoken": "elevated_token",
+	}
+	for k, v := range logon {
+		success[k] = v
+	}
 	handle := security(map[string]string{
 		"subjectusersid": "user_sid", "objectserver": "object_server", "objectname": "object_path", "objecttype": "object_type",
 		"accesslist": "access_names", "accessmask": "access_mask", "processname": "process_path",
@@ -172,10 +186,10 @@ var sigmaEventFields = func() map[string]map[string]string {
 		"driver_load":          with(map[string]string{"imageloaded": "loaded_file_path", "hashes": "loaded_file_hash", "signed": "signed", "signature": "signature", "signaturestatus": "signature_status", "image": "", "user": "", "processid": "", "processguid": ""}),
 		"process_access":       access,
 		"create_remote_thread": access,
-		"security_4624":        logon,
+		"security_4624":        success,
 		"security_4625":        logon,
 		"security_4663": security(map[string]string{
-			"objectname": "object_path", "objecttype": "object_type", "accesslist": "access_names",
+			"subjectusersid": "user_sid", "objectserver": "object_server", "objectname": "object_path", "objecttype": "object_type", "accesslist": "access_names",
 			"accessmask": "access_mask", "processname": "process_path",
 		}),
 		"security_4656":      handle,
@@ -220,6 +234,7 @@ var sigmaEventFields = func() map[string]map[string]string {
 		"security_4697": security(map[string]string{
 			"servicename": "service_name", "servicefilename": "service_path", "servicetype": "service_type",
 			"servicestarttype": "service_start_type", "serviceaccount": "service_account",
+			"clientprocessid": "client_process_id", "parentprocessid": "parent_process_id",
 		}),
 		"security_4698": security(map[string]string{"taskname": "task_name", "taskcontent": "task_content"}),
 		"security_5136": security(map[string]string{

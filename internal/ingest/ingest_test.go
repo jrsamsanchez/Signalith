@@ -106,6 +106,28 @@ func TestWindowsServiceInstalled(t *testing.T) {
 	}
 }
 
+func TestWindowsSuccessfulLogon(t *testing.T) {
+	ins := make([]string, 27)
+	ins[0], ins[1], ins[2], ins[4], ins[5], ins[6], ins[8], ins[9], ins[10] =
+		"S-1-5-18", "WS1$", "CORP", "S-1-5-21-1", "bob", "CORP", "9", "seclogo", "Negotiate"
+	ins[15], ins[18], ins[20], ins[22], ins[23], ins[26] = "0", "::1", "%%1833", "admin", "OTHER", "%%1842"
+	b, _ := json.Marshal(map[string]any{"Channel": "Security", "Computer": "WS1", "EventID": "4624", "StringInserts": ins})
+	expect(t, Normalize("win.security", decode(t, string(b)), now).Document(), map[string]any{
+		"datamodel": "Authentication", "action": "success", "user": "bob", "logon_type": int64(9), "logon_process": "seclogo",
+		"src_user": "WS1$", "src_user_sid": "S-1-5-18", "src_user_domain": "CORP", "key_length": int64(0),
+		"impersonation_level": "%%1833", "target_outbound_user": "admin", "target_outbound_domain": "OTHER",
+		"elevated_token": "%%1842",
+	})
+	// An older 4624 without the trailing values leaves them out.
+	b, _ = json.Marshal(map[string]any{"Channel": "Security", "Computer": "WS1", "EventID": "4624", "StringInserts": ins[:20]})
+	doc := Normalize("win.security", decode(t, string(b)), now).Document()
+	for _, k := range []string{"impersonation_level", "target_outbound_user", "elevated_token"} {
+		if _, ok := doc[k]; ok {
+			t.Errorf("%s set on an older 4624: %v", k, doc[k])
+		}
+	}
+}
+
 func TestWindowsSecurityServiceInstalled(t *testing.T) {
 	ins := []string{"S-1-5-21-1", "bob", "CORP", "0x3e7", "PSEXESVC", `%SystemRoot%\PSEXESVC.exe`, "0x10", "3", "LocalSystem"}
 	b, _ := json.Marshal(map[string]any{"Channel": "Security", "Computer": "WS1", "EventID": "4697", "StringInserts": ins})
@@ -114,6 +136,14 @@ func TestWindowsSecurityServiceInstalled(t *testing.T) {
 		"datamodel": "Change", "action": "created", "object_category": "service", "object": "PSEXESVC", "user": "bob",
 		"service_name": "PSEXESVC", "service_path": `%SystemRoot%\PSEXESVC.exe`, "service_type": "0x10",
 		"service_start_type": "3", "service_account": "LocalSystem",
+	})
+	if _, ok := ev.Document()["client_process_id"]; ok {
+		t.Error("client_process_id set on an older 4697")
+	}
+	ins = append(ins, "0x1", "0", "604")
+	b, _ = json.Marshal(map[string]any{"Channel": "Security", "Computer": "WS1", "EventID": "4697", "StringInserts": ins})
+	expect(t, Normalize("win.security", decode(t, string(b)), now).Document(), map[string]any{
+		"client_process_id": int64(0), "parent_process_id": int64(604),
 	})
 }
 
@@ -267,12 +297,14 @@ func TestSysmonMultiLineCommandLine(t *testing.T) {
 }
 
 func TestSysmonNetwork(t *testing.T) {
-	msg := "Network connection detected:\r\nRuleName: -\r\nImage: C:\\Tools\\nc.exe\r\nUser: CORP\\bob\r\nProtocol: tcp\r\nSourceIp: 10.0.0.5\r\nSourcePort: 50000\r\nDestinationIp: 198.51.100.7\r\nDestinationHostname: -\r\nDestinationPort: 4444"
-	b, _ := json.Marshal(map[string]any{"Channel": "Microsoft-Windows-Sysmon/Operational", "Computer": "WS1", "EventID": 3, "Message": msg})
+	msg := "Network connection detected:\r\nRuleName: -\r\nImage: C:\\Tools\\nc.exe\r\nUser: CORP\\bob\r\nProtocol: tcp\r\nSourceIsIpv6: False\r\nSourceIp: 10.0.0.5\r\nSourcePort: 50000\r\nDestinationIp: 198.51.100.7\r\nDestinationHostname: -\r\nDestinationPort: 4444"
+	b, _ := json.Marshal(map[string]any{"Channel": "Microsoft-Windows-Sysmon/Operational", "Computer": "WS1", "EventID": 3,
+		"ProviderName": "Microsoft-Windows-Sysmon", "Message": msg})
 	ev := Normalize("win.sysmon", decode(t, string(b)), now)
 	doc := ev.Document()
 	expect(t, doc, map[string]any{
 		"datamodel": "Network_Traffic", "dest": "198.51.100.7", "dest_port": int64(4444), "process_name": "nc.exe", "transport": "tcp",
+		"src_is_ipv6": "false", "provider": "Microsoft-Windows-Sysmon",
 	})
 	if _, ok := doc["dest_host"]; ok {
 		t.Errorf("dest_host '-' should be dropped")

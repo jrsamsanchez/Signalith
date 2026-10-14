@@ -242,8 +242,8 @@ Content packs are rule sets from other open source projects, shipped unchanged
 inside Signalith and converted when it starts. Every pack detection is **off** until
 an admin turns it on.
 
-**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,028 rules from
-[SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 1,914 Windows rules
+**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,035 rules from
+[SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 1,921 Windows rules
 for these Sysmon, Security, PowerShell and System log sources, and 114 Linux rules (see
 [Linux endpoints](#linux-endpoints-sysmon-for-linux)):
 
@@ -602,8 +602,14 @@ converts a rule and shows the result for review. Supported:
   `process`; `OriginalFileName` to `original_file_name`; `ParentUser`,
   `IntegrityLevel`, `CurrentDirectory`, `Description`, `Product`, `Company`,
   `FileVersion`, `LogonId`, `ProcessGuid`, `SourceHostname`, `Initiated` and more;
-  `TargetUserName` to `user`; `IpAddress` to `src`; and so on). Unmapped fields are
-  searched as-is and listed as warnings.
+  `TargetUserName` to `user`; `IpAddress` to `src`; `SourceIsIpv6` to `src_is_ipv6`;
+  `Provider_Name` to `provider`; and so on). In a successful logon (4624) the
+  requesting account's `SubjectUserSid` and `SubjectUserName` map to `src_user_sid`
+  and `src_user`, and `KeyLength`, `ImpersonationLevel`, `ElevatedToken` and
+  `TargetOutboundUserName` to `key_length`, `impersonation_level`, `elevated_token`
+  and `target_outbound_user`; a Security service install's (4697) `ClientProcessId`
+  and `ParentProcessId` to `client_process_id` and `parent_process_id`. Unmapped
+  fields are searched as-is and listed as warnings.
 - Modifiers `contains`, `startswith`, `endswith`, `all`, `windash`, `exists`,
   `base64`, `base64offset`, `utf16le`, `utf16be`, `utf16`, `wide`, `cidr` (IPv4 and IPv6) and
   `re` (with `i`, `m` and `s`), searched as a regular expression (`field=~"..."`);

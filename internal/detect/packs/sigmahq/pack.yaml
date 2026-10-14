@@ -73,6 +73,10 @@ rules:
     rule_id: a24e5861-c6ca-4fde-a93c-ba9256feddf0
     file: proc_access_win_susp_all_access_uncommon_target.yml
     path: rules/windows/process_access/proc_access_win_susp_all_access_uncommon_target.yml
+  - id: sigma-access-susp-direct-ntopenprocess-call
+    rule_id: 3f3f3506-1895-401b-9cc3-e86b16e630d0
+    file: proc_access_win_susp_direct_ntopenprocess_call.yml
+    path: rules/windows/process_access/proc_access_win_susp_direct_ntopenprocess_call.yml
   - id: sigma-access-svchost-credential-dumping
     rule_id: 174afcfa-6e40-4ae9-af64-496546389294
     file: proc_access_win_svchost_credential_dumping.yml
@@ -1769,6 +1773,10 @@ rules:
     rule_id: 9976fa64-2804-423c-8a5b-646ade840773
     file: net_connection_win_susp_outbound_smtp_connections.yml
     path: rules/windows/network_connection/net_connection_win_susp_outbound_smtp_connections.yml
+  - id: sigma-net-susp-remote-powershell-session
+    rule_id: c539afac-c12a-46ed-b1bd-5a5567c9f045
+    file: net_connection_win_susp_remote_powershell_session.yml
+    path: rules/windows/network_connection/net_connection_win_susp_remote_powershell_session.yml
   - id: sigma-net-winlogon-net-connections
     rule_id: 7610a4ea-c06d-495f-a2ac-0a696abcfd3b
     file: net_connection_win_winlogon_net_connections.yml
@@ -7621,6 +7629,10 @@ rules:
     rule_id: 1d2ab8ac-1a01-423b-9c39-001510eae8e8
     file: win_security_aadhealth_svc_agent_regkey_access.yml
     path: rules/windows/builtin/security/win_security_aadhealth_svc_agent_regkey_access.yml
+  - id: sigma-win-security-access-token-abuse
+    rule_id: 02f7c9c1-1ae8-4c6a-8add-04693807f92f
+    file: win_security_access_token_abuse.yml
+    path: rules/windows/builtin/security/account_management/win_security_access_token_abuse.yml
   - id: sigma-win-security-account-backdoor-dcsync-rights
     rule_id: 2c99737c-585d-4431-b61a-c911d86ff32f
     file: win_security_account_backdoor_dcsync_rights.yml
@@ -7669,6 +7681,10 @@ rules:
     rule_id: c39f0c81-7348-4965-ab27-2fde35a1b641
     file: win_security_dcom_iertutil_dll_hijack.yml
     path: rules/windows/builtin/security/win_security_dcom_iertutil_dll_hijack.yml
+  - id: sigma-win-security-diagtrack-eop-default-login-username
+    rule_id: 2111118f-7e46-4fc8-974a-59fd8ec95196
+    file: win_security_diagtrack_eop_default_login_username.yml
+    path: rules/windows/builtin/security/account_management/win_security_diagtrack_eop_default_login_username.yml
   - id: sigma-win-security-disable-event-auditing
     rule_id: 69aeb277-f15f-4d2d-b32a-55e883609563
     file: win_security_disable_event_auditing.yml
@@ -7745,6 +7761,10 @@ rules:
     rule_id: 4c54ba8f-73d2-4d40-8890-d9cf1dca3d30
     file: win_security_invoke_obfuscation_via_var_services_security.yml
     path: rules/windows/builtin/security/win_security_invoke_obfuscation_via_var_services_security.yml
+  - id: sigma-win-security-iso-mount
+    rule_id: 0248a7bc-8a9a-4cd8-a57e-3ae8e073a073
+    file: win_security_iso_mount.yml
+    path: rules/windows/builtin/security/win_security_iso_mount.yml
   - id: sigma-win-security-kerberoasting-activity
     rule_id: d04ae2b8-ad54-4de0-bd87-4bc1da66aa59
     file: win_security_kerberoasting_activity.yml
@@ -7781,6 +7801,10 @@ rules:
     rule_id: 192a0330-c20b-4356-90b6-7b7049ae0b87
     file: win_security_overpass_the_hash.yml
     path: rules/windows/builtin/security/account_management/win_security_overpass_the_hash.yml
+  - id: sigma-win-security-pass-the-hash-2
+    rule_id: 8eef149c-bd26-49f2-9e5a-9b00e3af499b
+    file: win_security_pass_the_hash_2.yml
+    path: rules/windows/builtin/security/account_management/win_security_pass_the_hash_2.yml
   - id: sigma-win-security-password-policy-enumerated
     rule_id: 12ba6a38-adb3-4d6b-91ba-a7fb248e3199
     file: win_security_password_policy_enumerated.yml
@@ -7825,6 +7849,10 @@ rules:
     rule_id: c8b00925-926c-47e3-beea-298fd563728e
     file: win_security_service_install_remote_access_software.yml
     path: rules/windows/builtin/security/win_security_service_install_remote_access_software.yml
+  - id: sigma-win-security-service-installation-by-unusal-client
+    rule_id: c4e92a97-a9ff-4392-9d2d-7a4c642768ca
+    file: win_security_service_installation_by_unusal_client.yml
+    path: rules/windows/builtin/security/win_security_service_installation_by_unusal_client.yml
   - id: sigma-win-security-smb-file-creation-admin-shares
     rule_id: b210394c-ba12-4f89-9117-44a2464b9511
     file: win_security_smb_file_creation_admin_shares.yml

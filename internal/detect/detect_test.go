@@ -817,4 +817,19 @@ detection:
 `), SigmaOptions{Strict: true}); err == nil || !strings.Contains(err.Error(), "CommandLine has no Signalith mapping in image_load") {
 		t.Errorf("err = %v", err)
 	}
+	// In a successful logon, the Subject is the account that asked for it.
+	r, err = ConvertSigmaWith([]byte(`title: x
+logsource: {product: windows, service: security}
+detection:
+  sel:
+    EventID: 4624
+    SubjectUserSid: 'S-1-0-0'
+    KeyLength: 0
+    ImpersonationLevel: '%%1833'
+  condition: sel
+`), SigmaOptions{Strict: true})
+	if err != nil || !strings.Contains(r.Detection.Query, "src_user_sid=S-1-0-0") || !strings.Contains(r.Detection.Query, "key_length=0") ||
+		!strings.Contains(r.Detection.Query, "impersonation_level=") {
+		t.Errorf("4624 = %v %+v", err, r)
+	}
 }

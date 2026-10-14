@@ -1,0 +1,7 @@
+{"rule": "0248a7bc-8a9a-4cd8-a57e-3ae8e073a073", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4663","data":{"ObjectName":"\\Device\\CdRom","ObjectServer":"Security","ObjectType":"File"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4663","data":{"ObjectName":"\\Device\\CdRom0\\setup.exe","ObjectServer":"Security","ObjectType":"File"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4663","data":{"ObjectServer":"Security","ObjectType":"File"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4663","data":{"ObjectName":"\\Device\\CdRom","ObjectType":"File"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4663","data":{"ObjectName":"\\Device\\CdRom","ObjectServer":"Security"}}
+]}

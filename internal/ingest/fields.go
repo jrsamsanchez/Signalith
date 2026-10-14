@@ -104,8 +104,16 @@ var knownFields = func() map[string]string {
 		// account, and the log's provider.
 		"service_name": kw, "service_path": kw, "service_type": kw, "service_start_type": kw, "service_account": kw,
 		"provider": kw,
-		// A logon's (Security 4624 and 4625) logon process and account SID.
-		"logon_process": kw, "user_sid": kw,
+		// Whether a Sysmon network connection's source is an IPv6 address.
+		"src_is_ipv6": kw,
+		// A logon's (Security 4624 and 4625) logon process and account SID,
+		// and for a 4624 the SID of the account that asked for it, its key
+		// length, impersonation level, elevation and outbound account.
+		"logon_process": kw, "user_sid": kw, "src_user_sid": kw, "key_length": long, "impersonation_level": kw,
+		"restricted_admin_mode": kw, "target_outbound_user": kw, "target_outbound_domain": kw, "virtual_account": kw,
+		"elevated_token": kw,
+		// The process that asked for a service install (Security 4697).
+		"client_process_id": long,
 		// An object access's access list with the names of its codes
 		// added (WriteData for %%4417), a network share access (Security 5145) and a directory
 		// object change (Security 5136), whose values (security
