@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"github.com/jrsamsanchez/signalith/internal/query"
@@ -279,6 +280,9 @@ func SplunkDetection(p *Pack, r PackRule, src []byte) (*Detection, error) {
 	if fp := strings.TrimSpace(rule.FalsePositives); fp != "" {
 		d.Guidance = "Known false positives: " + fp
 	}
+	if rule.Threshold != nil {
+		splunkThreshold(d, q, rule)
+	}
 	d.Origin = &Origin{
 		Pack: p.Name, PackTitle: p.Title, Rule: rule.ID, Author: strings.TrimSpace(rule.Author),
 		License: p.License, LicenseURL: p.LicenseURL, Status: rule.Status,
@@ -290,4 +294,69 @@ func SplunkDetection(p *Pack, r PackRule, src []byte) (*Detection, error) {
 		return nil, err
 	}
 	return d, nil
+}
+
+// splunkThreshold makes a detection count as its rule does: stats over
+// the rule's groups, then its limits. Each run counts the span the rule
+// counts over plus the time since the last run, so a burst that Splunk
+// finds in one of its fixed buckets is in some run's window even when
+// its events arrive a little late. (That can also find a burst that
+// straddles two of Splunk's buckets.) A group is found once a day.
+func splunkThreshold(d *Detection, q *query.Query, rule *splcheck.Rule) {
+	t := rule.Threshold
+	span := t.Span
+	if span == 0 {
+		span = splcheck.DefaultSpan
+	}
+	every := min(max(span, time.Minute), 5*time.Minute)
+	d.Schedule = formatDuration(every)
+	d.Lookback = formatDuration(span + every)
+	aggs := []string{"count"}
+	for _, a := range t.Aggs {
+		if a.Func == "dc" {
+			aggs = append(aggs, "dc("+a.Field+") as "+a.Name)
+		}
+	}
+	var limits []string
+	for _, l := range t.Limits {
+		limits = append(limits, fmt.Sprintf("%s %s %d", l.Name, l.Op, l.Value))
+	}
+	d.Query = q.String() + "\n| stats " + strings.Join(aggs, ", ") + " by " + strings.Join(t.By, ", ") +
+		"\n| where " + strings.Join(limits, " AND ")
+	// In canonical form; Validate reports a query that does not parse.
+	if pq, err := query.Parse(d.Query); err == nil {
+		d.Query = pq.String()
+	}
+	d.Title = strings.TrimSpace(rule.Name)
+	for _, tok := range []struct{ field, word string }{{"dest", "on"}, {"host", "on"}, {"src", "from"}, {"user", "for"}} {
+		if slices.Contains(t.By, tok.field) {
+			d.Title += " " + tok.word + " $" + tok.field + "$"
+			break
+		}
+	}
+	d.Throttle = Throttle{Window: "24h", Fields: slices.Clone(t.By)}
+	var objects []RiskObject
+	for _, f := range t.By {
+		switch f {
+		case "user":
+			objects = append(objects, RiskObject{Field: f, Type: "user"})
+		case "dest", "host", "src":
+			objects = append(objects, RiskObject{Field: f, Type: "system"})
+		}
+	}
+	if len(objects) == 0 {
+		objects = []RiskObject{{Field: t.By[0], Type: "other"}}
+	}
+	d.Risk.Objects = objects
+}
+
+// formatDuration writes a duration as a detection schedule: 90s, 5m, 1h.
+func formatDuration(d time.Duration) string {
+	switch {
+	case d%time.Hour == 0:
+		return fmt.Sprintf("%dh", d/time.Hour)
+	case d%time.Minute == 0:
+		return fmt.Sprintf("%dm", d/time.Minute)
+	}
+	return fmt.Sprintf("%ds", d/time.Second)
 }

@@ -71,4 +71,25 @@ search: |
 	if _, err := PackDetection(p, PackRule{ID: "splunk-x"}, r); err == nil {
 		t.Error("lookbehind accepted")
 	}
+
+	// A count with a limit counts each group over its span and the time
+	// since the last run, and finds each group once a day.
+	r = []byte(strings.Replace(string(src), "by Processes.dest\n", "by Processes.dest Processes.user _time span=1m\n  | where count >= 10\n", 1))
+	d, err = PackDetection(p, PackRule{ID: "splunk-x"}, r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasSuffix(d.Query, "\n| stats count by dest, user\n| where count>=10") || d.Schedule != "1m" || d.Lookback != "2m" ||
+		d.Title != "Windows Test Thing on $dest$" || strings.Join(d.Throttle.Fields, ",") != "dest,user" || d.Throttle.Window != "24h" {
+		t.Errorf("count = %s %+v", d.Query, d)
+	}
+	if q, err := query.Parse(d.Query); err != nil || q.String() != d.Query {
+		t.Errorf("%s: does not parse back: %v %v", d.Query, err, q)
+	}
+	r = []byte(strings.Replace(string(src), "| tstats count from", "| tstats dc(Processes.process) as n from", 1))
+	r = []byte(strings.Replace(string(r), "by Processes.dest\n", "by Processes.dest _time span=20m\n  | where n > 37\n", 1))
+	if d, err := PackDetection(p, PackRule{ID: "splunk-x"}, r); err != nil || !strings.Contains(d.Query, "| stats count, dc(process) as n by dest\n| where n>37") ||
+		d.Schedule != "5m" || d.Lookback != "25m" {
+		t.Errorf("distinct count = %v %+v", err, d)
+	}
 }

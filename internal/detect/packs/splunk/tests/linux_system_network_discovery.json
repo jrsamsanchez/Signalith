@@ -1,0 +1,21 @@
+{"rule": "535cb214-8b47-11ec-a2c7-acde48001122", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/usr/bin/arp","ParentProcessId":"4000","ProcessId":"4242","User":"CORP\\tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/usr/bin/firewall-cmd","ParentProcessId":"4000","ProcessId":"4242","User":"CORP\\tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/usr/bin/ifconfig","ParentProcessId":"4000","ProcessId":"4242","User":"CORP\\tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/usr/bin/ip","ParentProcessId":"4000","ProcessId":"4242","User":"CORP\\tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/usr/bin/iptables","ParentProcessId":"4000","ProcessId":"4242","User":"CORP\\tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/usr/bin/netstat","ParentProcessId":"4000","ProcessId":"4242","User":"CORP\\tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/usr/bin/route","ParentProcessId":"4000","ProcessId":"4242","User":"CORP\\tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/usr/bin/ss","ParentProcessId":"4000","ProcessId":"4242","User":"CORP\\tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/usr/bin/ufw","ParentProcessId":"4000","ProcessId":"4242","User":"CORP\\tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/usr/bin/arq","ParentProcessId":"4000","ProcessId":"4242","User":"CORP\\tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"ParentProcessId":"4000","ProcessId":"4242","User":"CORP\\tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/usr/bin/firewall-cme","ParentProcessId":"4000","ProcessId":"4242","User":"CORP\\tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/usr/bin/ifconfih","ParentProcessId":"4000","ProcessId":"4242","User":"CORP\\tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/usr/bin/iq","ParentProcessId":"4000","ProcessId":"4242","User":"CORP\\tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/usr/bin/iptablet","ParentProcessId":"4000","ProcessId":"4242","User":"CORP\\tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/usr/bin/netstau","ParentProcessId":"4000","ProcessId":"4242","User":"CORP\\tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/usr/bin/routf","ParentProcessId":"4000","ProcessId":"4242","User":"CORP\\tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/usr/bin/st","ParentProcessId":"4000","ProcessId":"4242","User":"CORP\\tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/usr/bin/ufx","ParentProcessId":"4000","ProcessId":"4242","User":"CORP\\tester"}}
+]}

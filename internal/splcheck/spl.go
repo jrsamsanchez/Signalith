@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -62,6 +63,8 @@ type Rule struct {
 	Where Expr `yaml:"-"`
 	// Linux is set for a rule over Sysmon for Linux events only.
 	Linux bool `yaml:"-"`
+	// Threshold is set for a rule that counts the events Where selects.
+	Threshold *Threshold `yaml:"-"`
 }
 
 // Score is the risk the rule assigns, 0 when it names none.
@@ -130,7 +133,7 @@ func nodeField(node, f string) string {
 
 // The stages after the where clause that only reshape the results.
 var (
-	tstatsRe    = regexp.MustCompile(`(?is)^\|\s*tstats\s+.*?\bfrom\s+datamodel=(Endpoint|Network_Traffic)\.(\w+)\s+where\s+(.*?)\s+by\s+[^|]*$`)
+	tstatsRe    = regexp.MustCompile(`(?is)^\|\s*tstats\s+(.*?)\s*\bfrom\s+datamodel=(Endpoint|Network_Traffic)\.(\w+)\s+where\s+(.*?)\s+by\s+([^|]*)$`)
 	harmlessRe  = regexp.MustCompile("^`(drop_dm_object_name|security_content_ctime)\\([^`]*\\)`$")
 	filterRe    = regexp.MustCompile("^`[\\w-]+_filter`$")
 	summariesRe = regexp.MustCompile("`security_content_summariesonly`")
@@ -152,8 +155,12 @@ func Parse(src []byte, macros map[string]*Macro) (*Rule, error) {
 	if r.ID == "" || r.Name == "" || r.Search == "" {
 		return nil, errors.New("not a detection: name, id and search are required")
 	}
-	r.Linux = len(r.DataSource) > 0 && !slices.ContainsFunc(r.DataSource, func(s string) bool {
-		return !strings.HasPrefix(s, "Sysmon for Linux ")
+	// osquery's results are Linux events too, which Signalith keeps in
+	// another data model; Sysmon for Linux is what the rule reads here.
+	r.Linux = slices.ContainsFunc(r.DataSource, func(s string) bool {
+		return strings.HasPrefix(s, "Sysmon for Linux ")
+	}) && !slices.ContainsFunc(r.DataSource, func(s string) bool {
+		return !strings.HasPrefix(s, "Sysmon for Linux ") && s != "Osquery Results"
 	})
 	// ```text``` is a comment in SPL.
 	stages := pipes(strings.TrimSpace(commentRe.ReplaceAllString(r.Search, " ")))
@@ -168,13 +175,21 @@ func Parse(src []byte, macros map[string]*Macro) (*Rule, error) {
 	if m == nil {
 		return nil, errors.New("search is not a tstats search of Endpoint.Processes, Filesystem or Registry")
 	}
-	r.Node = m[2]
+	r.Node = m[3]
 	fields, ok := Nodes[r.Node]
-	if !ok || (m[1] == "Network_Traffic") != (r.Node == "All_Traffic") {
-		return nil, fmt.Errorf("data model node %s.%s is not supported", m[1], r.Node)
+	if !ok || (m[2] == "Network_Traffic") != (r.Node == "All_Traffic") {
+		return nil, fmt.Errorf("data model node %s.%s is not supported", m[2], r.Node)
 	}
 	var present []Expr
 	for _, s := range stages[1:] {
+		if limits, ok := parseLimits(s); ok && r.Threshold == nil {
+			t, err := tstatsThreshold(r.Node, m[1], m[5], limits)
+			if err != nil {
+				return nil, err
+			}
+			r.Threshold = t
+			continue
+		}
 		if nn := notNullRe.FindStringSubmatch(s); nn != nil && slices.Contains(fields, nn[1]) {
 			present = append(present, &Cmp{Field: nodeField(r.Node, nn[1]), Values: []string{"*"}})
 			continue
@@ -196,7 +211,7 @@ func Parse(src []byte, macros map[string]*Macro) (*Rule, error) {
 			return nil, fmt.Errorf("search has a later stage Signalith does not run: %s", firstWords(s))
 		}
 	}
-	where, err := ParseWhere(m[3], r.Node, macros)
+	where, err := ParseWhere(m[4], r.Node, macros)
 	if err != nil {
 		return nil, err
 	}
@@ -396,6 +411,10 @@ const xmlkvSuffix = "+xmlkv"
 func parseRaw(r *Rule, source, terms string, later []string, macros map[string]*Macro) (*Rule, error) {
 	filled, counted, xml, renamed := false, false, false, false
 	var searches []string
+	// A count with limits: the bucket span, the stats stage and the where.
+	var span time.Duration
+	var stats string
+	var limits []Limit
 	var regexes []Expr
 	bits := newBitStages()
 	for _, s := range later {
@@ -428,8 +447,14 @@ func parseRaw(r *Rule, source, terms string, later []string, macros map[string]*
 			searches = append(searches, searchRe.FindStringSubmatch(s)[1])
 		case fillnullRe.MatchString(s) && !counted && !filled:
 			filled = true
+		case bucketRe.MatchString(s) && !counted && span == 0:
+			b := bucketRe.FindStringSubmatch(s)
+			span = parseSpan(b[1]+b[3], b[2]+b[4])
 		case statsRe.MatchString(s) && !counted:
 			counted = true
+			stats = s
+		case counted && limits == nil && isLimits(s):
+			limits, _ = parseLimits(s)
 		case evalRe.MatchString(s) && counted:
 			// After stats, eval only reshapes the counted rows (splits a
 			// call trace into lines); no stage after it filters them.
@@ -473,6 +498,18 @@ func parseRaw(r *Rule, source, terms string, later []string, macros map[string]*
 			return nil, fmt.Errorf("%s event %s is not supported", source, v)
 		}
 		r.Node = n
+	}
+	if limits != nil {
+		if filled {
+			return nil, fmt.Errorf("a count after fillnull is not supported")
+		}
+		t, err := rawThreshold(r.Node, stats, span, limits)
+		if err != nil {
+			return nil, err
+		}
+		r.Threshold = t
+	} else if span != 0 {
+		return nil, fmt.Errorf("search has a later stage Signalith does not run: bucket")
 	}
 	if xml && r.Node != "TaskCreated" {
 		return nil, fmt.Errorf("xmlkv on %s events is not supported", r.Node)

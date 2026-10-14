@@ -172,6 +172,9 @@ func main() {
 				}
 			}
 		}
+		if rule.Threshold != nil && hits > 0 {
+			fmt.Printf("count: %s: the recording reaches the limits: %v\n", r.File, splcheck.Reaches(rule.Threshold, found))
+		}
 		if *write {
 			if err := keep(r.File, found); err != nil {
 				log.Fatal(err)

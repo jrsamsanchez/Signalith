@@ -1,6 +1,7 @@
 package splcheck
 
 import (
+	"cmp"
 	"fmt"
 	"html"
 	"maps"
@@ -725,6 +726,9 @@ func Cases(r *Rule) []sigmacheck.Case {
 	pos, neg := Events(r.Where)
 	var out []sigmacheck.Case
 	for _, ev := range append(pos, neg...) {
+		if r.Threshold != nil {
+			countable(r.Threshold, ev)
+		}
 		cs := records(r.Node, ev)
 		if r.Linux {
 			cs = linuxRecords(r.Node, ev)
@@ -738,6 +742,31 @@ func Cases(r *Rule) []sigmacheck.Case {
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Expect && !out[j].Expect })
 	return out
+}
+
+// countable gives a field-level event of a threshold rule the fields its
+// count groups by and counts that the where clause leaves open, so that
+// its test events can be counted. dest and host are the event's host.
+func countable(t *Threshold, ev map[string]string) {
+	for _, f := range t.Fields() {
+		if ev[f] != "" {
+			continue
+		}
+		switch f {
+		case "user":
+			ev[f] = `CORP\tester`
+		case "parent_process_name":
+			ev[f] = "cmd.exe"
+		case "parent_process":
+			ev[f] = `cmd.exe /c run.bat`
+		case "original_file_name":
+			ev[f] = cmp.Or(ev["process_name"], "sample.exe")
+		case "process":
+			ev[f] = cmp.Or(ev["process_name"], "sample.exe") + " /run"
+		case "action":
+			ev[f] = "deleted"
+		}
+	}
 }
 
 // NodeModel is the Signalith data model of each node ("" for any).
@@ -817,6 +846,13 @@ func Verify(r *Rule, datamodel string, filter query.Expr, tf *sigmacheck.TestFil
 		if m != c.Expect {
 			errs = append(errs, fmt.Errorf("%s: the detection says %v for %s", where, m, sigmacheck.String(c.Data)))
 		}
+	}
+	if t := r.Threshold; t != nil && !slices.ContainsFunc(tf.Cases, func(c sigmacheck.Case) bool {
+		doc, _ := Stored(c)
+		v := View(doc)
+		return c.Expect && !slices.ContainsFunc(t.Fields(), func(f string) bool { return v[f] == "" })
+	}) {
+		errs = append(errs, fmt.Errorf("no matching test event has every field the count reads (%s), so no group could be counted", strings.Join(t.Fields(), ", ")))
 	}
 	return errs
 }

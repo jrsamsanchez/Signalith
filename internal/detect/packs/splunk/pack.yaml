@@ -446,6 +446,30 @@ rules:
     rule_id: 9cf8fe08-7ad8-11eb-9819-acde48001122
     file: eventvwr_uac_bypass.yml
     path: detections/endpoint/eventvwr_uac_bypass.yml
+  - id: splunk-excessive-attempt-to-disable-services
+    rule_id: 8fa2a0f0-acd9-11eb-8994-acde48001122
+    file: excessive_attempt_to_disable_services.yml
+    path: detections/endpoint/excessive_attempt_to_disable_services.yml
+  - id: splunk-excessive-distinct-processes-from-windows-temp
+    rule_id: 23587b6a-c479-11eb-b671-acde48001122
+    file: excessive_distinct_processes_from_windows_temp.yml
+    path: detections/endpoint/excessive_distinct_processes_from_windows_temp.yml
+  - id: splunk-excessive-file-deletion-in-windefender-folder
+    rule_id: b5baa09a-7a05-11ec-8da4-acde48001122
+    file: excessive_file_deletion_in_windefender_folder.yml
+    path: detections/endpoint/excessive_file_deletion_in_windefender_folder.yml
+  - id: splunk-excessive-number-of-service-control-start-as-disabled
+    rule_id: 77592bec-d5cc-11eb-9e60-acde48001122
+    file: excessive_number_of_service_control_start_as_disabled.yml
+    path: detections/endpoint/excessive_number_of_service_control_start_as_disabled.yml
+  - id: splunk-excessive-usage-of-cacls-app
+    rule_id: 0bdf6092-af17-11eb-939a-acde48001122
+    file: excessive_usage_of_cacls_app.yml
+    path: detections/endpoint/excessive_usage_of_cacls_app.yml
+  - id: splunk-excessive-usage-of-taskkill
+    rule_id: fe5bca48-accb-11eb-a67c-acde48001122
+    file: excessive_usage_of_taskkill.yml
+    path: detections/endpoint/excessive_usage_of_taskkill.yml
   - id: splunk-exchange-powershell-module-usage
     rule_id: 2d10095e-05ae-11ec-8fdf-acde48001122
     file: exchange_powershell_module_usage.yml
@@ -1014,6 +1038,10 @@ rules:
     rule_id: dc057fd6-34db-4c41-b8dd-00463c47bf83
     file: linux_suspicious_xdg_autostart.yml
     path: detections/endpoint/linux_suspicious_xdg_autostart.yml
+  - id: splunk-linux-system-network-discovery
+    rule_id: 535cb214-8b47-11ec-a2c7-acde48001122
+    file: linux_system_network_discovery.yml
+    path: detections/endpoint/linux_system_network_discovery.yml
   - id: splunk-linux-system-reboot-via-system-request-key
     rule_id: e1912b58-ed9c-422c-bbb0-2dbc70398345
     file: linux_system_reboot_via_system_request_key.yml
@@ -1522,6 +1550,10 @@ rules:
     rule_id: 15d905f6-da6b-11eb-ab82-acde48001122
     file: spoolsv_spawning_rundll32.yml
     path: detections/endpoint/spoolsv_spawning_rundll32.yml
+  - id: splunk-spoolsv-suspicious-loaded-modules
+    rule_id: a5e451f8-da81-11eb-b245-acde48001122
+    file: spoolsv_suspicious_loaded_modules.yml
+    path: detections/endpoint/spoolsv_suspicious_loaded_modules.yml
   - id: splunk-spoolsv-suspicious-process-access
     rule_id: 799b606e-da81-11eb-93f8-acde48001122
     file: spoolsv_suspicious_process_access.yml
@@ -1862,6 +1894,10 @@ rules:
     rule_id: 08a9ddcc-5b02-4055-abc5-945ba399f596
     file: windows_command_obfuscation_with_environment_variable_substrings.yml
     path: detections/endpoint/windows_command_obfuscation_with_environment_variable_substrings.yml
+  - id: splunk-windows-command-shell-dcrat-forkbomb-payload
+    rule_id: 2bb1a362-7aa8-444a-92ed-1987e8da83e1
+    file: windows_command_shell_dcrat_forkbomb_payload.yml
+    path: detections/endpoint/windows_command_shell_dcrat_forkbomb_payload.yml
   - id: splunk-windows-compatibility-telemetry-suspicious-child-process
     rule_id: 56fe46ca-ffef-46fe-8f0e-5cd4b7b4cc0c
     file: windows_compatibility_telemetry_suspicious_child_process.yml
@@ -2126,6 +2162,14 @@ rules:
     rule_id: ee54241e-0815-4423-9729-e1f5dfc402de
     file: windows_excel_spawning_microsoft_project_application.yml
     path: detections/endpoint/windows_excel_spawning_microsoft_project_application.yml
+  - id: splunk-windows-excessive-service-stop-attempt
+    rule_id: 8f3a614f-6b98-4f7d-82dd-d0df38452a8b
+    file: windows_excessive_service_stop_attempt.yml
+    path: detections/endpoint/windows_excessive_service_stop_attempt.yml
+  - id: splunk-windows-excessive-usage-of-net-app
+    rule_id: 355ba810-0a20-4215-8485-9ce3f87f2e38
+    file: windows_excessive_usage_of_net_app.yml
+    path: detections/endpoint/windows_excessive_usage_of_net_app.yml
   - id: splunk-windows-executable-in-loaded-modules
     rule_id: 3e27af56-fcf0-4113-988d-24969b062be7
     file: windows_executable_in_loaded_modules.yml
@@ -2258,6 +2302,10 @@ rules:
     rule_id: cafa4bce-9f06-11ec-a7b2-acde48001122
     file: windows_hide_notification_features_through_registry.yml
     path: detections/endpoint/windows_hide_notification_features_through_registry.yml
+  - id: splunk-windows-high-file-deletion-frequency
+    rule_id: 45b125c4-866f-11eb-a95a-acde48001122
+    file: windows_high_file_deletion_frequency.yml
+    path: detections/endpoint/windows_high_file_deletion_frequency.yml
   - id: splunk-windows-hijack-execution-flow-version-dll-side-load
     rule_id: 8351340b-ac0e-41ec-8b07-dd01bf32d6ea
     file: windows_hijack_execution_flow_version_dll_side_load.yml
@@ -2390,6 +2438,10 @@ rules:
     rule_id: 3428ac18-a410-4823-816c-ce697d26f7a8
     file: windows_indirect_command_execution_via_pcalua.yml
     path: detections/endpoint/windows_indirect_command_execution_via_pcalua.yml
+  - id: splunk-windows-indirect-command-execution-via-series-of-forfiles
+    rule_id: bfdaabe7-3db8-48c5-80c1-220f9b8f22be
+    file: windows_indirect_command_execution_via_series_of_forfiles.yml
+    path: detections/endpoint/windows_indirect_command_execution_via_series_of_forfiles.yml
   - id: splunk-windows-information-discovery-fsutil
     rule_id: 2181f261-93e6-4166-a5a9-47deac58feff
     file: windows_information_discovery_fsutil.yml
@@ -2682,6 +2734,14 @@ rules:
     rule_id: 3718549b-867e-4084-b770-790e8dab6ab8
     file: windows_mstsc_rdp_commandline.yml
     path: detections/endpoint/windows_mstsc_rdp_commandline.yml
+  - id: splunk-windows-multiple-disabled-users-failed-to-authenticate-wt
+    rule_id: 98f22d82-9d62-11eb-9fcf-acde48001122
+    file: windows_multiple_disabled_users_failed_to_authenticate_wth_kerberos.yml
+    path: detections/endpoint/windows_multiple_disabled_users_failed_to_authenticate_wth_kerberos.yml
+  - id: splunk-windows-multiple-invalid-users-fail-to-authenticate-using
+    rule_id: 001266a6-9d5b-11eb-829b-acde48001122
+    file: windows_multiple_invalid_users_fail_to_authenticate_using_kerberos.yml
+    path: detections/endpoint/windows_multiple_invalid_users_fail_to_authenticate_using_kerberos.yml
   - id: splunk-windows-mustang-panda-usb-tool-execution
     rule_id: e66a167f-6506-4e5b-8e4d-1b04940c70be
     file: windows_mustang_panda_usb_tool_execution.yml
@@ -3030,6 +3090,10 @@ rules:
     rule_id: c9f010da-57ab-11ec-82bd-acde48001122
     file: windows_raccine_scheduled_task_deletion.yml
     path: detections/endpoint/windows_raccine_scheduled_task_deletion.yml
+  - id: splunk-windows-rapid-authentication-on-multiple-hosts
+    rule_id: 62606c77-d53d-4182-9371-b02cdbbbcef7
+    file: windows_rapid_authentication_on_multiple_hosts.yml
+    path: detections/endpoint/windows_rapid_authentication_on_multiple_hosts.yml
   - id: splunk-windows-rasautou-dll-execution
     rule_id: 6f42b8be-8e96-11ec-ad5a-acde48001122
     file: windows_rasautou_dll_execution.yml

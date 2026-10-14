@@ -391,7 +391,7 @@ The generator keeps each rule's Signalith ID across runs, rewrites `rules/`,
 
 ### Splunk Security Content
 
-**Splunk Security Content** (`internal/detect/packs/splunk`) holds 903 Windows and
+**Splunk Security Content** (`internal/detect/packs/splunk`) holds 919 Windows and
 Linux detections from Splunk's Threat Research Team
 ([security_content](https://github.com/splunk/security_content)), pinned to one
 commit. They are the production TTP and anomaly rules that search the CIM
@@ -505,7 +505,23 @@ syntax (no lookarounds) and OpenSearch can search it exactly (no word boundaries
 A value with a `?`, which Splunk reads literally, is searched as a regular expression
 too. An address range (`dest_ip IN ("10.0.0.0/8", ...)`) matches the addresses in it, as in Splunk. Raw searches that test an access mask bit by bit (`eval m = tonumber(GrantedAccess, 16)`,
 `bit_and(m, 16)` and a `where` on the result being the mask, 0 or not 0) convert to a regular
-expression over the mask's hex digits. Searches with other `eval`s, `rex`, `lookup`, and other
+expression over the mask's hex digits.
+
+Rules that count events convert too: a `tstats` count `by` some fields and
+`_time span=1m` (or a raw search's `bucket span=5m _time` and `stats ... by`), then a
+`where` limit on the count (`where count >= 10`, `where unique_accounts > 30`, several
+joined by AND). The detection runs `| stats count, dc(field) as name by fields` and
+the same limit. Each run counts the rule's span plus the time since the last run
+(every minute for spans under 5 minutes, every 5 minutes otherwise; a count without
+a span covers an hour, as Splunk's default schedule does), so a burst Splunk finds
+in one of its fixed buckets is counted even when its events arrive a little late,
+and each group is found once a day. Fields of Splunk's add-ons that only restate
+which event it is (`signature`, `vendor_product`, `dvc`, `app`, `user_id`,
+`authentication_method`) are left out of the grouping; an event's `Computer` is
+`host`. A rule ships only when its test events carry every field it groups by and
+counts. Counts compared with an average (`eventstats`) are left out.
+
+Searches with other `eval`s, `rex`, `lookup`, and other
 raw searches are left out for now; `internal/detect/packs/splunk/REPORT.md` lists
 every rule left out and why. The same CI checks as the SigmaHQ pack run on it.
 
