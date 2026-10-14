@@ -533,7 +533,7 @@ func wazuhWindows(a map[string]any) (Event, bool) {
 		names, ok = windowsSchema[eventID]
 	}
 	if channel == SystemChannel {
-		names, ok = serviceInstallSchema, eventID == "7045"
+		names, ok = windowsSchemaFor(channel, wstr(sys["providerName"]), eventID)
 	} else if channel != "Security" {
 		ok = false
 	}

@@ -242,8 +242,8 @@ Content packs are rule sets from other open source projects, shipped unchanged
 inside Signalith and converted when it starts. Every pack detection is **off** until
 an admin turns it on.
 
-**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,122 rules from
-[SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 1,968 Windows rules
+**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,138 rules from
+[SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 1,984 Windows rules
 for these Sysmon, Security, PowerShell, System and Defender log sources, and 154 Linux rules (see
 [Linux endpoints](#linux-endpoints-sysmon-for-linux) and
 [the Linux audit log](#linux-audit-log-auditd)):
@@ -262,6 +262,7 @@ for these Sysmon, Security, PowerShell, System and Defender log sources, and 154
 | `raw_access_thread` | Sysmon 9 (a drive read directly; `Device` is `device`) | Endpoint |
 | `ps_script` | PowerShell 4104 | Script |
 | `service: system` | System 7045 (service installed) | Change |
+| `service: system` | Other System events, by provider and event ID (see below) | Other |
 | `service: windefend` | Microsoft Defender Antivirus events (threats, attack surface reduction blocks, protection turned off, settings changed; `Path` is `file_path`, `ProcessName` `process_path`, `NewValue` `new_value`, `SourceName` `detection_source`, a 5013's `Value` `setting`) | Malware |
 | `service: security` | The Security log events in the next table | See the next table |
 
@@ -554,9 +555,25 @@ command line), `ServiceType` (`service_type`), `StartType` (`service_start_type`
 `AccountName` (`service_account`). They are stored in Change with `object_category`
 `service` and action `created`. The Service Control Manager logs 7045 on every
 Windows version without any audit setting, and the Windows agent collects the System
-log. Of the System log's events, Signalith reads only service installs; other System
-rules (services stopping, for example) are left out of the packs, and importing one
-says so.
+log.
+
+Rules about other System log events find them in Other by provider (`Provider_Name`
+is `provider`) and event ID. Signalith also keeps the data of these events, each value
+as `system_` and its name in snake case:
+
+| Provider and event | Data |
+|---|---|
+| Service Control Manager 7036 (service changed state), 7034 (terminated unexpectedly), 7023 (terminated with an error) | `param1` (the service's display name) and `param2` (its state, crash count or error) |
+| Service Control Manager 7040 (start type changed) | `param1` to `param4` |
+| Microsoft-Windows-Eventlog 104 (a log cleared) | `SubjectUserName`, `SubjectDomainName`, `Channel` (the log cleared) and `BackupPath`; the account is also `user` and `user_domain` |
+| Microsoft-Windows-Kernel-General 16 (a hive's access history cleared) | `HiveName` and the counts with it |
+| Application Popup 26 | `Caption` and `Message` |
+| Microsoft-Windows-DistributedCOM 10001 (a DCOM server could not start) | `param1` to `param3` |
+
+An event's binary data (`Binary`, a service's name in UTF-16 hex for service events)
+is `system_binary` when the OpenTelemetry Collector sends it; Fluent Bit does not. Rules
+about other data of System events (NTFS volume names, for example) are left out of the
+packs, and importing one says so.
 
 Registry values that Sysmon writes as `DWORD (0x00000001)` compare as `0x00000001`,
 the way Splunk's Sysmon add-on reads them.

@@ -1,0 +1,4 @@
+{"rule": "d6b5520d-3934-48b4-928c-2aa3f92d6963", "cases": [
+  {"expect":true,"source":"synthesized","channel":"System","event_id":"7023","data":{"Binary":"420044004500530056004300","Provider_Name":"Service Control Manager"}},
+  {"expect":false,"source":"synthesized","channel":"System","event_id":"7023","data":{"Provider_Name":"Service Control Manager"}}
+]}

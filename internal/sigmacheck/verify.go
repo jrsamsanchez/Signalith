@@ -162,8 +162,10 @@ var sysmonEvents = map[string]string{
 	"file_delete":          "26",
 	"ps_script":            "4104",
 	// Windows System log rules (service: system) are about services
-	// installed.
-	"system": "7045",
+	// installed, or name the other System events they are about (a
+	// service changing state, by default).
+	"system":       "7045",
+	"system_event": "7036",
 	// Defender log rules (service: windefend) name their events; a
 	// threat detected is the first.
 	"windefend": "1116",
@@ -188,7 +190,19 @@ var SecurityGroups = [][]string{{"4656", "4663"}, {"4699", "4701"}}
 // SysmonEventID) for one of SecurityEvents or a group of SecurityGroups.
 func SecurityCategory(eventIDs ...string) string { return "security_" + strings.Join(eventIDs, "_") }
 
+// SystemCategory is the category of a System log rule (service: system)
+// about its events: services installed (7045), or other events.
+func SystemCategory(eventIDs ...string) string {
+	if len(eventIDs) > 0 && !slices.Contains(eventIDs, "7045") {
+		return "system_event"
+	}
+	return "system"
+}
+
 func init() {
+	// Other System events have no typical data: each rule names its
+	// event's.
+	Bases["system_event"] = map[string]string{}
 	// A task disabled has the data of a task deleted.
 	Bases[SecurityCategory("4701")] = Bases[SecurityCategory("4699")]
 	for _, id := range SecurityEvents {
@@ -207,7 +221,7 @@ func Channel(category string) string {
 	switch category {
 	case "ps_script":
 		return PowerShellChannel
-	case "system":
+	case "system", "system_event":
 		return SystemChannel
 	case "windefend":
 		return DefenderChannel

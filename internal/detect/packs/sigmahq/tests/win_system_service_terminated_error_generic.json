@@ -1,0 +1,3 @@
+{"rule": "acfa2210-0d71-4eeb-b477-afab494d596c", "cases": [
+  {"expect":true,"source":"synthesized","channel":"System","event_id":"7023","data":{"Provider_Name":"Service Control Manager"}}
+]}

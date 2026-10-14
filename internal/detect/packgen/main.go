@@ -58,9 +58,9 @@ var categories = map[string]string{
 	"process_access":       "rules/windows/process_access",
 	"create_remote_thread": "rules/windows/create_remote_thread",
 	"ps_script":            "rules/windows/powershell/powershell_script",
-	// Not a Sigma category: Windows System log rules (service: system)
-	// about services installed.
-	"system": "rules/windows/builtin/system/service_control_manager",
+	// Not a Sigma category: Windows System log rules (service: system),
+	// in folders by provider.
+	"system": "rules/windows/builtin/system",
 	// Nor this: Microsoft Defender Antivirus log rules (service:
 	// windefend).
 	"windefend": "rules/windows/builtin/windefend",
@@ -154,7 +154,7 @@ func main() {
 			cases = sigmacheck.AuditdCases
 		}
 		files, _ := filepath.Glob(filepath.Join(*sigmaDir, src.dir, "*.yml"))
-		if cat == "security" || cat == "auditd" {
+		if cat == "security" || cat == "auditd" || cat == "system" {
 			more, _ := filepath.Glob(filepath.Join(*sigmaDir, src.dir, "*", "*.yml"))
 			files = append(files, more...)
 		}
@@ -190,6 +190,10 @@ func main() {
 				continue
 			}
 			rcat, rbases := cat, bases
+			if cat == "system" {
+				rcat = sigmacheck.SystemCategory(rule.EventIDs()...)
+				rbases = sigmacheck.Bases[rcat]
+			}
 			if cat == "security" {
 				ids := rule.EventIDs()
 				rcat = sigmacheck.SecurityCategory(ids...)

@@ -106,6 +106,52 @@ func TestWindowsServiceInstalled(t *testing.T) {
 	}
 }
 
+func TestWindowsSystemEvents(t *testing.T) {
+	// A service stopped (7036): its data by name, in Other.
+	rec := map[string]any{"Channel": "System", "Computer": "WS1", "EventID": "7036", "ProviderName": "Service Control Manager",
+		"StringInserts": []string{"Microsoft Defender Antivirus Service", "stopped"}}
+	b, _ := json.Marshal(rec)
+	expect(t, Normalize("win.events", decode(t, string(b)), now).Document(), map[string]any{
+		"datamodel": "Other", "provider": "Service Control Manager", "signature_id": "7036", "signature": "A service changed state",
+		"system_param1": "Microsoft Defender Antivirus Service", "system_param2": "stopped",
+	})
+	// A log cleared (104): its account and the log.
+	rec = map[string]any{"Channel": "System", "Computer": "WS1", "EventID": "104", "ProviderName": "Microsoft-Windows-Eventlog",
+		"StringInserts": []string{"bob", "CORP", "Microsoft-Windows-Sysmon/Operational", ""}}
+	b, _ = json.Marshal(rec)
+	expect(t, Normalize("win.events", decode(t, string(b)), now).Document(), map[string]any{
+		"datamodel": "Other", "signature": "An event log was cleared", "user": "bob", "user_domain": "CORP",
+		"system_subject_user_name": "bob", "system_channel": "Microsoft-Windows-Sysmon/Operational",
+	})
+	// The OpenTelemetry Collector sends the data by name, and the binary
+	// data.
+	body := map[string]any{"channel": "System", "computer": "WS1", "event_id": map[string]any{"id": "7034"},
+		"provider":   map[string]any{"name": "Service Control Manager"},
+		"event_data": map[string]any{"param1": "Message Queuing", "param2": "1", "binary": "4D0053004D005100"}}
+	ev := otlpWindows(body)
+	if ev.Fields["system_param1"] != "Message Queuing" || ev.Fields["system_param2"] != "1" || ev.Fields["system_binary"] != "4d0053004d005100" {
+		t.Errorf("otlp 7034 = %v", ev.Fields)
+	}
+	// Another provider's event of the same ID keeps no data.
+	rec = map[string]any{"Channel": "System", "Computer": "WS1", "EventID": "7036", "ProviderName": "Some-Driver", "StringInserts": []string{"x"}}
+	b, _ = json.Marshal(rec)
+	if ev := Normalize("win.events", decode(t, string(b)), now); ev.Fields["system_param1"] != nil {
+		t.Errorf("other provider = %v", ev.Fields)
+	}
+	// Every data field is in the index template.
+	for f := range systemDataFields {
+		if _, ok := knownFields[f]; !ok {
+			t.Errorf("%s is not a declared field", f)
+		}
+	}
+	if f, ok := SystemDataField("HiveName"); !ok || f != "system_hive_name" {
+		t.Errorf("SystemDataField(HiveName) = %s %v", f, ok)
+	}
+	if _, ok := SystemDataField("Nope"); ok {
+		t.Error("SystemDataField(Nope) is known")
+	}
+}
+
 func TestWindowsSuccessfulLogon(t *testing.T) {
 	ins := make([]string, 27)
 	ins[0], ins[1], ins[2], ins[4], ins[5], ins[6], ins[8], ins[9], ins[10] =

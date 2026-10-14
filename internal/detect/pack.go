@@ -271,6 +271,10 @@ func packThrottle(category, datamodel string) []string {
 	case "windefend":
 		// A Defender event: which one, and the threat, file or setting.
 		return []string{"host", "signature_id", "signature", "file_path", "setting"}
+	case "system_event":
+		// A System log event: which one, and what it names first (the
+		// service of a service event).
+		return []string{"host", "provider", "signature_id", "system_param1"}
 	case "auditd":
 		// An audit record: its type, program and what it ran or touched.
 		return []string{"host", "auditd_type", "auditd_exe", "process", "auditd_name"}
@@ -333,8 +337,13 @@ func PackDetection(p *Pack, r PackRule, src []byte) (*Detection, error) {
 		return nil, err
 	}
 	category := meta.Logsource.Category
-	if category == "" && strings.EqualFold(meta.Logsource.Service, "auditd") {
-		category = "auditd"
+	if service := strings.ToLower(meta.Logsource.Service); category == "" {
+		switch {
+		case service == "auditd", service == "windefend":
+			category = service
+		case service == "system" && q.Datamodel == "Other":
+			category = "system_event"
+		}
 	}
 	d.Throttle = Throttle{Window: "24h", Fields: packThrottle(strings.ToLower(category), q.Datamodel)}
 	score := sigmaRisk[strings.ToLower(meta.Level)]
