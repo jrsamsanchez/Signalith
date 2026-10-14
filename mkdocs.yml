@@ -141,6 +141,7 @@ nav:
       - Servers: servers.md
       - signalith cluster: cluster-cli.md
       - Data retention: retention.md
+      - Audit: audit.md
   - Security:
       - Security checks: security.md
       - HTTPS: https.md

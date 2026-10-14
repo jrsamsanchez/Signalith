@@ -40,9 +40,18 @@ the run in progress already skips anything the new settings keep. The same setti
 | Risk events | `risk` | `<prefix>-risk-YYYY.MM.DD` | Event policy |
 | Findings | `findings` | `<prefix>_findings` | Delete closed findings after N days |
 | Investigations | `cases` | `<prefix>_cases` | Delete closed cases after N days |
+| Audit records | `audit` | `<prefix>_audit-YYYY.MM` | Kept by month, 400 days by default; listed once it has data or a policy |
 | Threat intel | `intel` | `<prefix>_intel` | Managed by feeds: indicators expire through each feed's `max_age` |
 
 Days are UTC days, the same days the index names use.
+
+**Audit records** are the server's audit log lines (who signed in, who changed a
+user, a setting, a feed or a retention policy), kept in OpenSearch once servers
+share one as a cluster (see [Audit](audit.md)). They are stored by month, not by
+day. Their policy has **Keep** and **Archive before deleting** only: a month is
+deleted, or archived and then deleted, once its last day is more than `keep_days`
+days old, and the current month is never deleted. Size caps, compaction and the
+disk guard leave audit records alone.
 
 ## Event policies
 
@@ -230,7 +239,12 @@ the folder with `-dir`:
 sudo -u signalith signalith archive list -c /etc/signalith/signalith.yaml -dir /var/lib/signalith/archive
 ```
 
-The CLI installs Signalith's index template before it restores, so restored days get
+On servers that share archives, `signalith archive restore` asks the server that
+runs retention to restore the days and shows its progress. Add `-offline` to restore
+from the files directly, for when no server runs; it is refused while a server that
+runs retention is up, unless you add `-force`.
+
+The CLI installs Signalith's index template before it restores, if it is missing, so restored days get
 the same field types as live ones, even on a new OpenSearch that the server has not
 started against yet. It does not check the disk first; use the page for that.
 
@@ -361,10 +375,14 @@ server runs retention.
 
 - **Run now** on another server asks the server that runs retention to run: the
   page shows "Asked siem-a to run retention", then whether siem-a started the run
-  or queued it behind one already going. The run is made there, and its result shows
-  on siem-a's Data retention page, as each server keeps its own run history. Saving a
-  change asks siem-a in the same way to apply it now. Restores of archived days are
-  still made on the server that runs retention.
+  or queued it behind one already going. The run is made there. Saving a
+  change asks siem-a in the same way to apply it now.
+- **Restore** on another server asks the server that runs retention to restore the
+  days, after the same disk check; the page follows the restore's progress there.
+- **One history.** The last run and the recent actions are kept as audit records,
+  so every server shows the same history, each action names the server that took
+  it, and the history survives a takeover. `GET /api/retention` says
+  `history_source: "audit"`.
 - **Where each value came from.** Under a policy, the default and the guard, the
   page says where a value that was not set on the page came from, such as
   "Applied from signalith.yaml on siem-b, 2026-10-01" or "Imported from the files
@@ -395,8 +413,19 @@ Archives are written on the server that runs retention, in its archive folder. W
 any policy archives, set `retention.archive_dir` to the same shared folder on every
 server: a server that uses a different folder does not take retention over by
 itself. Signalith names that folder with a small file in it, `.signalith-archive-id`;
-leave it there. Restore from the server that runs retention, or with the CLI after
-copying the files to where you run it.
+leave it there. The page says which servers can archive, and when the server that
+runs retention cannot (its folder is not the shared one, or is missing), it keeps
+the days it would have archived and says so, rather than deleting them unarchived.
+
+Once the cluster keeps audit records (see
+[Audit and archives across servers](servers.md#audit-and-archives-across-servers)),
+the list of archives is kept in OpenSearch as well: each archive is listed there
+before its file is written and marked complete once the file is checked, so every
+server shows the same archives, and two servers can never write the same file.
+Every step that deletes or changes data is also claimed in OpenSearch first, so a
+step a server started before it lost the jobs is never repeated by the next one.
+The CLI restores through the server that runs retention (see
+[Restoring](#restoring)).
 
 Before every step that deletes or changes data, retention checks with OpenSearch
 that its server still runs the background jobs, and stops if not. When OpenSearch's
@@ -441,9 +470,10 @@ error rather than a setting that does nothing.
 | `POST /api/retention/preview` | `{"category":"endpoint","policy":{...}}`, `{"category":"endpoint","policy":null}`, `{"default":{...}}` or `{"guard":{...}}` | What the run that saving starts would do: `summary` and `steps` for the change, `due`, `due_steps` and `due_records` for what is already due, `records`, `deletes_data`, `guard`, `notes` |
 | `POST /api/retention/run` | | `202 {"started":true}`; `409` while a run or restore is going. On a server that does not run retention, with shared settings: `202 {"request_id","queued_on"}` (see below) |
 | `POST /api/retention/policies/confirm` | | Confirms shared policies that wait to be confirmed: `{"confirmed":true,"run_started","run_queued"}`; `409` when none wait |
+| `GET /api/retention/job` | | The restores' progress, as the server that runs them shares it: `{"restores":[...]}` |
 | `GET /api/retention/archive` | | Archived days, with whether each is searchable and its latest restore |
 | `POST /api/retention/archive/preview` | `{"ids":[...],"keep_days":14}` | What the restore does to the disk: `bytes`, `percent_after`, `over_limit`, `flood`, the live days the guard would delete (`steps`, `deletes`, `unarchived`), `needs_confirm` and `message` |
-| `POST /api/retention/archive/restore` | `{"ids":["signalith-endpoint-2026.07.01"],"keep_days":14,"confirm":false}` | `202 {"restores":[...]}` with each restore's state; `409 {"error","check"}` when the restore needs `"confirm":true` |
+| `POST /api/retention/archive/restore` | `{"ids":["signalith-endpoint-2026.07.01"],"keep_days":14,"confirm":false}` | `202 {"restores":[...]}` with each restore's state; `409 {"error","check"}` when the restore needs `"confirm":true`. On a server that does not run retention, once archives are shared: `202 {"request_id","queued_on"}` |
 
 `run_started` is true when saving started a run; `run_queued` when a run or restore
 was going and a new run starts as soon as it ends. With shared settings, saving on a

@@ -392,13 +392,44 @@ server's heartbeat (`settings_drift`).
 retention. **Refresh** on a feed, and **Run now** or a policy change on the Data retention
 page, on another server ask it to: the request answers `202` with a `request_id`, which
 `GET /api/requests/{id}` follows until it is `done` or `failed`. Restoring archived days is
-still done on the server that runs the jobs.
+done on the server that runs the jobs; once the cluster keeps audit records, a restore asked
+on another server is sent there the same way (see below).
 
 **Changes at the same moment.** `GET /api/retention` and `GET /api/intel/feeds` (for
 admins) give each item's version (`ETag`, and `etags` for the feeds). A change sent with
 `If-Match` and that version is refused with `412` when someone changed the item meanwhile.
 While a server cannot use the shared settings (OpenSearch cannot be reached, or it misses
 the cluster key), changes there answer `503`.
+
+## Audit and archives across servers
+
+Once every server of the cluster runs this version, the cluster keeps its audit
+records and its archive list in OpenSearch, and `signalith cluster status` shows the cluster at
+level 4. The server that runs the background jobs first moves its retention history and
+its archive manifests into OpenSearch; the other servers keep their own until it is done.
+
+- **Audit records.** Each server writes its audit log lines (sign-ins, changes to users,
+  settings and retention) to monthly indices, `<prefix>_audit-YYYY.MM`, as well as
+  to its log. Lines wait in a small spool on disk (`audit-spool` in the state folder, at
+  most 50 MB) while OpenSearch is away, so none are lost. Search them on the
+  [Audit](audit.md) page. They are kept 400 days by default, by the **Audit records**
+  policy on the Data retention page.
+- **One retention history.** Retention runs and actions are audit records too, so every
+  server shows the same history, with the server that took each action, and it survives
+  a takeover.
+- **One archive list.** Every server lists the same archives. An archive is listed before
+  its file is written and marked complete once the file is checked; an archive left
+  unfinished for 6 hours (its server stopped while writing it) is removed with its file.
+- **No step taken twice.** Before deleting, archiving, compacting or restoring a day, the
+  server that runs retention claims that step in OpenSearch. A server that lost the jobs
+  partway through a run cannot repeat a step its successor already took.
+- **Restores from any server.** **Restore** on the Data retention page of any server, and
+  `signalith archive restore`, ask the server that runs retention to restore, and show its
+  progress.
+
+Set `retention.archive_dir` to the same shared folder on every server that may run the
+jobs. The Data retention page lists which servers can archive. When the server that runs
+retention cannot, it keeps the days it would archive rather than deleting them.
 
 ## Shared users and sign-in
 

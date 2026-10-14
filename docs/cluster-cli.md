@@ -38,7 +38,7 @@ signalith cluster status [-c file] [-json]
 ```
 
 Shows this server's name and identity, its mode, the cluster's name, identity and
-level (3 once every server can read shared settings, 2 once every server can read shared users, 1 before), the cluster key it uses, the servers in the keyring and any problem, such as a
+level (4 once every server keeps audit records and archives in OpenSearch, 3 once every server can read shared settings, 2 once every server can read shared users, 1 before), the cluster key it uses, the servers in the keyring and any problem, such as a
 shared setting that does not check out. `-json` prints the same as JSON, with the
 mode and the cluster under `shared`, and `problems` and `warnings` when there are any:
 

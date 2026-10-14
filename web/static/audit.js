@@ -8,8 +8,8 @@
   const RANGES = [['1h', 'Last hour', 3600e3], ['24h', 'Last 24 hours', 864e5], ['7d', 'Last 7 days', 7 * 864e5],
     ['30d', 'Last 30 days', 30 * 864e5], ['all', 'All time', 0]];
   // Most records are found by their words; these actions are named.
-  const ACTIONS = [['', 'All actions'], ['retention.', 'Data retention'], ['users.', 'Users'], ['feeds.', 'Threat intel feeds'],
-    ['config.', 'Shared settings'], ['audit.', 'Audit records lost']];
+  const ACTIONS = [['', 'All actions'], ['retention.', 'Data retention'], ['config.', 'Shared settings'],
+    ['audit.', 'Audit records lost']];
 
   const page = () => $('page-audit');
 
