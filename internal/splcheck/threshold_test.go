@@ -72,3 +72,29 @@ func TestThresholdReaches(t *testing.T) {
 		t.Error("two users pass > 2")
 	}
 }
+
+func TestDropPlatform(t *testing.T) {
+	r, err := Parse(rule(`| tstats count from datamodel=Endpoint.Processes where NOT Processes.os="Linux" Processes.process_name=nxc.exe by Processes.dest`), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c, ok := r.Where.(*Cmp); !ok || c.Field != "process_name" {
+		t.Errorf("where = %#v", r.Where)
+	}
+	for _, s := range []string{
+		// The rule's own platform, a positive test, != and wildcards say
+		// something about the event, so they are refused.
+		`NOT Processes.os="Microsoft Windows" Processes.process_name=a.exe`,
+		`Processes.os="Linux" Processes.process_name=a.exe`,
+		`Processes.os!="Linux" Processes.process_name=a.exe`,
+		`NOT Processes.os="*nux" Processes.process_name=a.exe`,
+		`Processes.process_name=a.exe OR NOT Processes.os="Linux"`,
+	} {
+		if _, err := Parse(rule("| tstats count from datamodel=Endpoint.Processes where "+s+" by Processes.dest"), nil); err == nil {
+			t.Errorf("%s: accepted", s)
+		}
+	}
+	if _, err := Parse(rule(`| tstats count from datamodel=Endpoint.Processes where Processes.process="*\/..\/*" by Processes.dest`), nil); err == nil {
+		t.Error(`\/ accepted`)
+	}
+}

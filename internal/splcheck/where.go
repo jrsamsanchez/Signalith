@@ -137,6 +137,8 @@ func lex(s string, macros map[string]*Macro, depth int) ([]token, error) {
 				// backslash is literal.
 				if rs[j] == '\\' && j+1 < len(rs) && strings.ContainsRune(`\"=`, rs[j+1]) {
 					j++
+				} else if rs[j] == '\\' && j+1 < len(rs) && rs[j+1] == '/' {
+					return nil, errUnsureEscape
 				}
 				b.WriteRune(rs[j])
 			}
@@ -164,6 +166,8 @@ func lex(s string, macros map[string]*Macro, depth int) ([]token, error) {
 			for j < len(rs) && !unicode.IsSpace(rs[j]) && !strings.ContainsRune("()=,\"`!<>", rs[j]) {
 				if rs[j] == '\\' && j+1 < len(rs) && rs[j+1] == '\\' {
 					j++
+				} else if rs[j] == '\\' && j+1 < len(rs) && rs[j+1] == '/' {
+					return nil, errUnsureEscape
 				}
 				b.WriteRune(rs[j])
 				j++
@@ -341,10 +345,103 @@ func (p *parser) field(name string) (string, error) {
 	if !ok {
 		return "", fmt.Errorf("field %s is not a field of %s", name, p.node)
 	}
+	if platformFields[f] {
+		return platformPrefix + name, nil
+	}
 	if !slices.Contains(Nodes[p.node], f) {
 		return "", fmt.Errorf("field %s has no Signalith mapping", name)
 	}
 	return nodeField(p.node, f), nil
+}
+
+// errUnsureEscape refuses \/ in a value: a rule's recorded attack
+// suggests Splunk reads it as /, which its documented escapes do not say.
+var errUnsureEscape = errors.New(`the escape \/ in a value is not supported`)
+
+// Rules that cover several platforms test which one an event is from
+// (NOT Processes.os="Linux"). Signalith knows that from the rule: its
+// events are Windows ones, or Sysmon for Linux ones. A test that only
+// leaves out the other platform's events is always true and is dropped
+// (dropPlatform); any other test of these fields is refused.
+var platformFields = map[string]bool{"os": true, "vendor_product": true}
+
+// platformPrefix marks a platform field until dropPlatform reads it.
+const platformPrefix = "platform:"
+
+// dropPlatform drops from a where clause the tests that only leave out
+// the other platform's events: NOT of a platform field compared with
+// values that name that platform, among clauses joined by AND. Splunk
+// finds the rule's events whether the field is the rule's platform or
+// missing, so the test is true for them.
+func dropPlatform(e Expr, linux bool) (Expr, error) {
+	other := func(c *Cmp) bool {
+		if c.Neg || c.Regex || !strings.HasPrefix(c.Field, platformPrefix) {
+			return false
+		}
+		for _, v := range c.Values {
+			l := strings.ToLower(v)
+			if strings.Contains(l, "*") || linux != strings.Contains(l, "windows") || strings.Contains(l, "linux") == linux {
+				return false
+			}
+		}
+		return true
+	}
+	alwaysTrue := func(k Expr) bool {
+		n, ok := k.(*Not)
+		if !ok {
+			return false
+		}
+		switch x := n.Kid.(type) {
+		case *Cmp:
+			return other(x)
+		case *Or:
+			for _, kk := range x.Kids {
+				if c, ok := kk.(*Cmp); !ok || !other(c) {
+					return false
+				}
+			}
+			return true
+		}
+		return false
+	}
+	if a, ok := e.(*And); ok {
+		var kids []Expr
+		for _, k := range a.Kids {
+			if !alwaysTrue(k) {
+				kids = append(kids, k)
+			}
+		}
+		switch len(kids) {
+		case 0:
+			return nil, errors.New("a where clause must test more than the platform")
+		case 1:
+			e = kids[0]
+		default:
+			e = &And{Kids: kids}
+		}
+	}
+	var bad error
+	var walk func(Expr)
+	walk = func(e Expr) {
+		switch x := e.(type) {
+		case *And:
+			for _, k := range x.Kids {
+				walk(k)
+			}
+		case *Or:
+			for _, k := range x.Kids {
+				walk(k)
+			}
+		case *Not:
+			walk(x.Kid)
+		case *Cmp:
+			if f, ok := strings.CutPrefix(x.Field, platformPrefix); ok && bad == nil {
+				bad = fmt.Errorf("field %s has no Signalith mapping", f)
+			}
+		}
+	}
+	walk(e)
+	return e, bad
 }
 
 // Eval reports whether an event, as field values, matches a where clause

@@ -215,6 +215,9 @@ func Parse(src []byte, macros map[string]*Macro) (*Rule, error) {
 	if err != nil {
 		return nil, err
 	}
+	if where, err = dropPlatform(where, r.Linux); err != nil {
+		return nil, err
+	}
 	if len(present) > 0 {
 		where = &And{Kids: append([]Expr{where}, present...)}
 	}

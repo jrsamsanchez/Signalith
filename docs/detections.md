@@ -391,7 +391,7 @@ The generator keeps each rule's Signalith ID across runs, rewrites `rules/`,
 
 ### Splunk Security Content
 
-**Splunk Security Content** (`internal/detect/packs/splunk`) holds 919 Windows and
+**Splunk Security Content** (`internal/detect/packs/splunk`) holds 921 Windows and
 Linux detections from Splunk's Threat Research Team
 ([security_content](https://github.com/splunk/security_content)), pinned to one
 commit. They are the production TTP and anomaly rules that search the CIM
@@ -520,6 +520,12 @@ which event it is (`signature`, `vendor_product`, `dvc`, `app`, `user_id`,
 `authentication_method`) are left out of the grouping; an event's `Computer` is
 `host`. A rule ships only when its test events carry every field it groups by and
 counts. Counts compared with an average (`eventstats`) are left out.
+
+A test that only leaves out the other platform's events (`NOT Processes.os="Linux"` in
+a Windows rule) is always true for the rule's own events, whether Splunk's add-on sets
+`os` or not, so it is dropped; other tests of `os` or `vendor_product` are left out.
+A `\/` in a value is left out too, since Splunk's documented escapes do not say how
+it reads it.
 
 Searches with other `eval`s, `rex`, `lookup`, and other
 raw searches are left out for now; `internal/detect/packs/splunk/REPORT.md` lists

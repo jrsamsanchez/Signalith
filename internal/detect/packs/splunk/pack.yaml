@@ -962,6 +962,10 @@ rules:
     rule_id: 084275ba-61b8-11ec-8d64-acde48001122
     file: linux_service_restarted.yml
     path: detections/endpoint/linux_service_restarted.yml
+  - id: splunk-linux-service-started-or-enabled
+    rule_id: e0428212-61b7-11ec-88a3-acde48001122
+    file: linux_service_started_or_enabled.yml
+    path: detections/endpoint/linux_service_started_or_enabled.yml
   - id: splunk-linux-setuid-using-chmod-utility
     rule_id: bf0304b6-6250-11ec-9d7c-acde48001122
     file: linux_setuid_using_chmod_utility.yml
@@ -3054,6 +3058,10 @@ rules:
     rule_id: e64399d4-94a8-11ec-a9da-acde48001122
     file: windows_process_with_namedpipe_commandline.yml
     path: detections/endpoint/windows_process_with_namedpipe_commandline.yml
+  - id: splunk-windows-process-with-netexec-command-line-parameters
+    rule_id: adbff89c-c1f2-4a2e-88a4-b5e645856510
+    file: windows_process_with_netexec_command_line_parameters.yml
+    path: detections/endpoint/windows_process_with_netexec_command_line_parameters.yml
   - id: splunk-windows-product-key-registry-query
     rule_id: 977da0c0-c7d5-45de-8b7e-f79e959ca13d
     file: windows_product_key_registry_query.yml
