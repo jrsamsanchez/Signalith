@@ -52,8 +52,10 @@ const templateHash = "bba9e110f0bd51d4905c36550be7e017147ff4e64c6341a91e0749bac7
 //
 // replicas are the index settings for extra copies on other nodes (see
 // config.Replicas.IndexSettings): number_of_replicas, or
-// auto_expand_replicas. They apply to each new day's indices; days
-// already stored keep the copies they have.
+// auto_expand_replicas, and number_of_shards when opensearch.shards asks
+// for more than one (see config.OpenSearch.EventIndexSettings). They
+// apply to each new day's indices; days already stored keep the copies
+// and shards they have.
 func IndexTemplate(prefix string, replicas map[string]any) map[string]any {
 	props := map[string]any{}
 	for name, typ := range knownFields {
@@ -111,8 +113,8 @@ var newerLogged atomic.Bool
 // share one OpenSearch, and may run different versions while they are
 // upgraded one by one: the newest template wins, whichever server starts
 // last (see RestoreIndexTemplate for two that start together). A
-// template of this version is written again only when its replicas
-// differ from this server's setting, so a changed setting still applies,
+// template of this version is written again only when its replicas or
+// shards differ from this server's settings, so a changed setting still applies,
 // and no start writes it for nothing. log may be nil.
 //
 // OpenSearch before 2.15 has no wildcard field type, so there the
@@ -128,8 +130,8 @@ func PutIndexTemplate(ctx context.Context, cl *store.Client, prefix string, repl
 // whether it did. Each server runs it every few minutes: during an
 // upgrade, a server of the older version that started at the same time
 // may have written its template over this one. A template of this
-// version with other replicas is left alone, so servers whose Replicas
-// differ do not take turns rewriting it.
+// version with other replicas or shards is left alone, so servers whose
+// Replicas or Shards differ do not take turns rewriting it.
 func RestoreIndexTemplate(ctx context.Context, cl *store.Client, prefix string, replicas map[string]any, log *slog.Logger) (bool, error) {
 	return putTemplate(ctx, cl, prefix, replicas, log, true)
 }
@@ -199,9 +201,10 @@ func storedVersion(tmpl map[string]any) int {
 	return n
 }
 
-// sameReplicas reports whether a stored template has the replica settings
-// want. OpenSearch gives settings back under "index", with values as
-// text; a template put as is (a test's fake) has them as they were put.
+// sameReplicas reports whether a stored template has the replica and
+// shard settings want. OpenSearch gives settings back under "index", with
+// values as text; a template put as is (a test's fake) has them as they
+// were put.
 func sameReplicas(tmpl map[string]any, want map[string]any) bool {
 	inner, _ := tmpl["template"].(map[string]any)
 	settings, _ := inner["settings"].(map[string]any)
@@ -232,7 +235,16 @@ func sameReplicas(tmpl map[string]any, want map[string]any) bool {
 			return false
 		}
 	}
-	return true
+	// One shard unless the settings ask for more (IndexTemplate always
+	// writes the number; a fake template may leave it out).
+	w, g := "1", got("number_of_shards")
+	if v, ok := want["number_of_shards"]; ok {
+		w = fmt.Sprint(v)
+	}
+	if g == "" {
+		g = "1"
+	}
+	return g == w
 }
 
 // withoutWildcard maps a template's wildcard fields as keywords.

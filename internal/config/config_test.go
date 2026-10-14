@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -34,15 +35,38 @@ func TestInitSaveLoadRoundTrip(t *testing.T) {
 
 func TestValidationListsEveryProblem(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "bad.yaml")
-	os.WriteFile(path, []byte("server:\n  listen: nonsense\nopensearch:\n  url: ftp://x\n  index_prefix: Bad Prefix\nretention:\n  days: -1\n"), 0o600)
+	os.WriteFile(path, []byte("server:\n  listen: nonsense\nopensearch:\n  url: ftp://x\n  index_prefix: Bad Prefix\n  shards: 2000\nretention:\n  days: -1\n"), 0o600)
 	_, err := Load(path)
 	if err == nil {
 		t.Fatal("want error")
 	}
-	for _, want := range []string{"server.listen", "opensearch.url", "index_prefix", "retention.days", "admin_password_hash"} {
+	for _, want := range []string{"server.listen", "opensearch.url", "index_prefix", "opensearch.shards", "retention.days", "admin_password_hash"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error missing %q:\n%v", want, err)
 		}
+	}
+}
+
+// opensearch.shards adds number_of_shards to the event index settings
+// only when it asks for more than one, so a configuration without it
+// gives the template OpenSearch had before.
+func TestEventIndexSettings(t *testing.T) {
+	for _, tc := range []struct {
+		shards int
+		want   map[string]any
+	}{
+		{0, map[string]any{"auto_expand_replicas": "0-1"}},
+		{1, map[string]any{"auto_expand_replicas": "0-1"}},
+		{3, map[string]any{"auto_expand_replicas": "0-1", "number_of_shards": 3}},
+	} {
+		o := OpenSearch{Replicas: ReplicasAuto, Shards: tc.shards}
+		if got := o.EventIndexSettings(); !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("shards %d: %v, want %v", tc.shards, got, tc.want)
+		}
+	}
+	o := OpenSearch{Replicas: "2", Shards: 2}
+	if got := o.EventIndexSettings(); !reflect.DeepEqual(got, map[string]any{"number_of_replicas": 2, "number_of_shards": 2}) {
+		t.Errorf("replicas 2, shards 2: %v", got)
 	}
 }
 

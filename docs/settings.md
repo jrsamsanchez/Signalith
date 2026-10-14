@@ -93,6 +93,14 @@ from when they are first stored; if they were stored by an older version with no
 copy, they get the setting when a server starts running the background jobs.
 Copies someone set on them by hand in OpenSearch are kept.
 
+**Shards**, in the same card, is how many primary shards each new day's events get,
+per data model. It is `1` unless you change it, which suits a few GB a day. When the
+busiest data model, often Endpoint, stores tens of GB a day, give it more: about one
+shard per OpenSearch data node, so a day is spread over the nodes and no shard grows
+past about 50 GB, which is where OpenSearch slows down. Up to 1024. A change applies
+to the next day's events after a restart; days already stored keep the shards they
+have. Findings, investigations and threat intel always have one shard; they are small.
+
 ## HTTPS
 
 The **HTTPS** card has how Signalith keeps the web page, the API, agents and syslog
@@ -427,7 +435,7 @@ badge with its group:
 
 - **All servers**: one value on every server. The public address, the sign-out
   time, the oldest event time, extra certificate names, agents on plain HTTP,
-  trusted reverse proxies and the client address header, replicas, the search
+  trusted reverse proxies and the client address header, replicas and shards, the search
   defaults and quiet data source time, the syslog senders allowed and the port
   devices send to, the most findings per run, making up missed runs and the
   detection content address, the AI assistant, threat intel from this computer,

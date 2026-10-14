@@ -137,10 +137,30 @@ func TestSameReplicasOpenSearchShape(t *testing.T) {
 		{`{"index":{"number_of_replicas":"0","auto_expand_replicas":"false"}}`, noReplicas, true},
 		{`{"index.auto_expand_replicas":"0-1"}`, autoReplicas, true},
 		{`{}`, noReplicas, false},
+		// Shards: one unless asked for, whether or not the template says so.
+		{`{"index":{"number_of_shards":"3","auto_expand_replicas":"0-1"}}`, autoReplicas, false},
+		{`{"index":{"number_of_shards":"3","auto_expand_replicas":"0-1"}}`, map[string]any{"auto_expand_replicas": "0-1", "number_of_shards": 3}, true},
+		{`{"index":{"number_of_shards":"1","auto_expand_replicas":"0-1"}}`, map[string]any{"auto_expand_replicas": "0-1", "number_of_shards": 3}, false},
+		{`{"index.auto_expand_replicas":"0-1"}`, map[string]any{"auto_expand_replicas": "0-1", "number_of_shards": 1}, true},
 	} {
 		if got := sameReplicas(stored(tc.settings), tc.want); got != tc.same {
 			t.Errorf("%s with %v: same %v", tc.settings, tc.want, got)
 		}
+	}
+}
+
+// opensearch.shards sets number_of_shards on each new day's indices;
+// the default template keeps one.
+func TestIndexTemplateShards(t *testing.T) {
+	settings := func(tmpl map[string]any) map[string]any {
+		return tmpl["template"].(map[string]any)["settings"].(map[string]any)
+	}
+	if got := settings(IndexTemplate("p", autoReplicas))["number_of_shards"]; got != 1 {
+		t.Errorf("default shards %v, want 1", got)
+	}
+	s := settings(IndexTemplate("p", map[string]any{"auto_expand_replicas": "0-1", "number_of_shards": 4}))
+	if s["number_of_shards"] != 4 || s["auto_expand_replicas"] != "0-1" {
+		t.Errorf("settings %v, want 4 shards and auto replicas", s)
 	}
 }
 

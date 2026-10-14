@@ -539,6 +539,11 @@ type OpenSearch struct {
 	// Replicas is how many extra copies of each new index OpenSearch keeps
 	// on other nodes: "auto" (the default) or a whole number.
 	Replicas Replicas `yaml:"replicas"`
+	// Shards is how many primary shards each new day's event indices
+	// get: 0 or 1 is one, the default. More spread a data model that
+	// stores tens of GB a day over the OpenSearch nodes. Days already
+	// stored keep theirs.
+	Shards int `yaml:"shards,omitempty"`
 }
 
 // Replicas is opensearch.replicas: "auto", or a whole number of extra
@@ -579,6 +584,21 @@ func (r Replicas) IndexSettings() map[string]any {
 		return map[string]any{"auto_expand_replicas": "0-1"}
 	}
 	return map[string]any{"number_of_replicas": n}
+}
+
+// MaxShards bounds opensearch.shards. It is OpenSearch's own limit on
+// the shards of one index.
+const MaxShards = 1024
+
+// EventIndexSettings returns the index settings each new day's event
+// indices get: the replicas settings (see Replicas.IndexSettings) and,
+// when opensearch.shards asks for more than one, number_of_shards.
+func (o *OpenSearch) EventIndexSettings() map[string]any {
+	s := o.Replicas.IndexSettings()
+	if o.Shards > 1 {
+		s["number_of_shards"] = o.Shards
+	}
+	return s
 }
 
 // problems checks the connection settings. resolve makes file paths
@@ -2356,6 +2376,9 @@ func (c *Config) Validate() error {
 	}
 	if !c.OpenSearch.Replicas.Valid() {
 		p = append(p, "opensearch.replicas must be auto or a whole number of 0 or more")
+	}
+	if c.OpenSearch.Shards < 0 || c.OpenSearch.Shards > MaxShards {
+		p = append(p, fmt.Sprintf("opensearch.shards must be a whole number from 1 to %d (0 means 1)", MaxShards))
 	}
 	if c.Search.MaxEvents < 1 || c.Search.MaxEvents > 100000 {
 		p = append(p, "search.max_events must be between 1 and 100000")
