@@ -45,6 +45,9 @@ type Archive struct {
 	Encryption string
 	// KID names the key Seal uses, recorded in manifests.
 	KID string
+	// Server names this server in the manifests it writes, when servers
+	// share one archive folder.
+	Server string
 	// Manifests, when set, keeps the manifests (servers that share one
 	// OpenSearch and one archive folder keep them in OpenSearch, so two
 	// servers never write the same archive): IDs are reserved there
@@ -286,6 +289,7 @@ func (a *Archive) Write(ctx context.Context, ex Exporter, src Source, expectDocs
 	if a.Seal != nil {
 		m.KID = a.KID
 	}
+	m.Server = a.Server
 	var id string
 	if a.Manifests != nil {
 		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), storeTimeout)

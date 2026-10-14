@@ -66,7 +66,8 @@ func TestLevelSharedSettings(t *testing.T) {
 
 	// The other server is upgraded: the level goes up, but settings are
 	// shared only once their import is done.
-	other.LevelMax = LevelMax
+	// It reads level 3, not later ones, so the level stays there.
+	other.LevelMax = LevelSharedSettings
 	peers.set(self, other)
 	a.step()
 	wantLevel(t, e, 3)

@@ -3,6 +3,8 @@ package retention
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"sync"
 	"time"
@@ -159,4 +161,22 @@ func (h *history) get() (*Run, []Action) {
 	acts := make([]Action, len(h.data.Actions))
 	copy(acts, h.data.Actions)
 	return run, acts
+}
+
+// ReadHistoryFile reads a history file a server keeps on its own: the
+// last run and the recent actions, newest first. A missing file is no
+// history.
+func ReadHistoryFile(path string) (*Run, []Action, error) {
+	b, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil, nil
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	var d historyData
+	if err := json.Unmarshal(b, &d); err != nil {
+		return nil, nil, fmt.Errorf("%s is not a retention history: %w", path, err)
+	}
+	return d.LastRun, d.Actions, nil
 }

@@ -2,9 +2,12 @@ package audit
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/url"
 	"time"
+
+	"github.com/jrsamsanchez/signalith/internal/store"
 )
 
 // Doer sends one request to OpenSearch and decodes its JSON answer into
@@ -61,4 +64,28 @@ func Template(prefix, replicas string) map[string]any {
 // monthly index is created with the audit mappings.
 func EnsureTemplate(ctx context.Context, c Doer, prefix, replicas string) error {
 	return c.Do(ctx, http.MethodPut, "/_index_template/"+url.PathEscape(TemplateName(prefix)), Template(prefix, replicas), nil)
+}
+
+// Write stores events directly, without the spool, for imports: each
+// under its ID, so writing them again stores nothing twice. It fails on
+// the first event OpenSearch refuses.
+func Write(ctx context.Context, c Bulker, prefix string, evs []Event) error {
+	docs := make([]store.IndexedDoc, 0, len(evs))
+	for _, ev := range evs {
+		docs = append(docs, store.IndexedDoc{Index: IndexName(prefix, ev.Time), ID: ev.ID(), Doc: ev.doc()})
+	}
+	for len(docs) > 0 {
+		batch := docs[:min(bulkSize, len(docs))]
+		docs = docs[len(batch):]
+		errs, err := c.Bulk(ctx, batch)
+		if err != nil {
+			return err
+		}
+		for _, e := range errs {
+			if !e.Conflict() {
+				return fmt.Errorf("OpenSearch refused an audit record in %s: %s", e.Index, e.Reason)
+			}
+		}
+	}
+	return nil
 }
