@@ -3,6 +3,7 @@ package playbooks
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -547,3 +548,73 @@ func TestResolveTarget(t *testing.T) {
 		}
 	}
 }
+
+// A finding raised while no server ran the jobs, for longer than
+// notify.Window, still starts its playbook.
+func TestCatchUpAfterAnOutage(t *testing.T) {
+	g := newRig(t)
+	g.save(bruteForce(Step{Kind: StepNotify, Channel: "soc"}))
+	f := g.finding("F-1", "brute-force", "high", "203.0.113.7", false)
+	g.advance(5 * time.Hour)
+	g.runner.Pass(context.Background())
+	if run := g.run(f, bruteForce()); run.Status != StatusSucceeded {
+		t.Fatalf("run %+v", run)
+	}
+}
+
+// More matches than one pass starts are started on the next passes, even
+// once they are older than notify.Window.
+func TestManyMatchesStartOverPasses(t *testing.T) {
+	g := newRig(t)
+	g.save(bruteForce(Step{Kind: StepSetFinding, Owner: "ann"}))
+	n := MaxStartsPerPass + 5
+	for i := range n {
+		g.finding(fmt.Sprintf("F-%03d", i), "brute-force", "high", "203.0.113.7", false)
+	}
+	g.advance(time.Hour)
+	g.runner.Pass(context.Background())
+	g.advance(time.Hour)
+	g.runner.Pass(context.Background())
+	if _, total, _ := g.runs.List(context.Background(), Filter{}); total != n {
+		t.Errorf("%d runs, want %d", total, n)
+	}
+}
+
+// A notify step and a notification rule that send the same finding to the
+// same channel send it once.
+func TestNotifyStepAndRuleSendOnce(t *testing.T) {
+	g := newRig(t)
+	deliveries := notify.NewMemory()
+	g.runner.Deliveries = deliveries
+	g.runner.Notify.Now = g.now
+	if _, err := g.runner.Notify.Save(notify.Input{Channels: []notify.ChannelInput{
+		{ID: "soc", Name: "#soc", Type: "slack", URL: "https://hooks.slack.com/services/T0/B0/x"},
+		{ID: "leads", Name: "#leads", Type: "slack", URL: "https://hooks.slack.com/services/T0/B0/y"},
+	}, Rules: []notify.RuleInput{{ID: "r1", Name: "urgent", Enabled: ptr(true), Channels: []string{"soc"}}}}); err != nil {
+		t.Fatal(err)
+	}
+	g.save(bruteForce(Step{Kind: StepNotify, Channel: "soc"}))
+	f := g.finding("F-1", "brute-force", "high", "203.0.113.7", false)
+	d := &notify.Dispatcher{Settings: g.runner.Notify, Findings: g.fs, Deliveries: deliveries, Sender: g.sender, Now: g.now,
+		Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	g.runner.Pass(context.Background())
+	d.Pass(context.Background())
+	if got := g.sender.list(); len(got) != 1 {
+		t.Fatalf("sent %v", got)
+	}
+	if run := g.run(f, bruteForce()); run.Status != StatusSucceeded || run.Steps[0].Text != "Sent this finding to Slack #soc." {
+		t.Fatalf("run %+v", run)
+	}
+	// The rule first: the step says the finding already went there.
+	f2 := g.finding("F-2", "brute-force", "high", "203.0.113.8", false)
+	d.Pass(context.Background())
+	g.runner.Pass(context.Background())
+	if got := g.sender.list(); len(got) != 2 {
+		t.Fatalf("sent %v", got)
+	}
+	if run := g.run(f2, bruteForce()); run.Status != StatusSucceeded || run.Steps[0].Text != "This finding was already sent to Slack #soc, so it was not sent again." {
+		t.Fatalf("run %+v", run)
+	}
+}
+
+func ptr[T any](v T) *T { return &v }

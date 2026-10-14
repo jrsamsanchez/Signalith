@@ -18,9 +18,9 @@ import (
 )
 
 // The runner is the background job "playbooks". Every Interval it reads
-// the findings raised in the last notify.Window, as the notifications
-// dispatcher does, and starts each playbook whose trigger a new finding
-// matches. Only the server that runs the background jobs does, and it
+// the findings raised since its last pass, as the notifications
+// dispatcher does (see notify.Reader), and starts each playbook whose
+// trigger a new finding matches. Only the server that runs the background jobs does, and it
 // asks Allowed before each step, so a server that lost the jobs stops at
 // once.
 //
@@ -96,6 +96,10 @@ type Runner struct {
 	// fails notify steps.
 	Notify *notify.Manager
 	Sender notify.Sender
+	// Deliveries records notify steps with the notifications' own
+	// deliveries, so a finding a rule already sent to a channel is not
+	// sent there again, and the other way round. nil sends every step.
+	Deliveries notify.Deliveries
 	// PublicURL returns server.public_url, for the links in messages.
 	PublicURL func() string
 	// Server names this server in the runs it makes.
@@ -107,8 +111,10 @@ type Runner struct {
 	Now func() time.Time
 	Log *slog.Logger
 
+	reader    notify.Reader
 	mu        sync.Mutex
 	inFlight  map[string]bool // runs this server is running
+	warned    bool            // a pass read the most findings it may; logged once
 	lastPurge time.Time
 	lastErr   string
 	last      time.Time
@@ -215,11 +221,19 @@ func (r *Runner) start(ctx context.Context, list []Playbook, now time.Time) erro
 		}
 	}
 	if len(active) == 0 {
+		r.reader.Done(now)
 		return nil
 	}
-	fs, err := notify.RecentFindings(ctx, r.Findings, now)
+	fs, truncated, err := r.reader.Read(ctx, r.Findings, now)
 	if err != nil {
 		return err
+	}
+	r.mu.Lock()
+	warn := truncated && !r.warned
+	r.warned = truncated
+	r.mu.Unlock()
+	if warn {
+		r.log().Warn("more findings were raised than one playbooks pass reads; the oldest do not start playbooks", "read", len(fs))
 	}
 	sort.SliceStable(fs, func(i, j int) bool {
 		if !fs[i].Created.Equal(fs[j].Created) {
@@ -242,6 +256,7 @@ func (r *Runner) start(ctx context.Context, list []Playbook, now time.Time) erro
 		}
 	}
 	if len(wants) == 0 {
+		r.reader.Done(now)
 		return nil
 	}
 	have, err := r.Runs.Existing(ctx, ids)
@@ -263,6 +278,9 @@ func (r *Runner) start(ctx context.Context, list []Playbook, now time.Time) erro
 		started++
 		r.begin(ctx, w.p, w.f)
 	}
+	// Every match started, or had: the next pass need not read these
+	// findings again. A pass cut short above leaves them for the next.
+	r.reader.Done(now)
 	return nil
 }
 
@@ -442,7 +460,7 @@ func failed(format string, args ...any) outcome {
 func (r *Runner) do(ctx context.Context, run *Run, f *findings.Finding, s Step, i int) outcome {
 	switch s.Kind {
 	case StepNotify:
-		return r.doNotify(ctx, f, s)
+		return r.doNotify(ctx, run, f, s)
 	case StepAction:
 		return r.doAction(ctx, run, f, s, i)
 	case StepOpenCase:
@@ -468,13 +486,27 @@ func (r *Runner) channel(id string) (notify.Channel, error) {
 	return c, nil
 }
 
-func (r *Runner) doNotify(ctx context.Context, f *findings.Finding, s Step) outcome {
+func (r *Runner) doNotify(ctx context.Context, run *Run, f *findings.Finding, s Step) outcome {
 	c, err := r.channel(s.Channel)
 	if err != nil {
 		return failed("Could not send this finding: %s.", strings.TrimSuffix(err.Error(), "."))
 	}
-	if err := r.Sender.Send(ctx, c, notify.NewMessage(f, notify.FindingsLink(r.publicURL()))); err != nil {
-		return failed("Could not send this finding to %s: %s", c.Label(), sentence(err.Error()))
+	m := notify.NewMessage(f, notify.FindingsLink(r.publicURL()))
+	again := false
+	if r.Deliveries == nil {
+		err = r.Sender.Send(ctx, c, m)
+	} else {
+		again, err = notify.SendOnce(ctx, r.Sender, r.Deliveries, c, m, run.PlaybookName, r.Server, r.Now)
+	}
+	switch {
+	case errors.Is(err, notify.ErrAlreadySent):
+		return outcome{res: StepResult{Status: StepSucceeded, Text: "This finding was already sent to " + c.Label() + ", so it was not sent again."}}
+	case err != nil:
+		text := "Could not send this finding to " + c.Label() + ": " + sentence(err.Error())
+		if again {
+			text += " It is tried again later, as the Notifications page shows."
+		}
+		return failed("%s", text)
 	}
 	return outcome{res: StepResult{Status: StepSucceeded, Text: "Sent this finding to " + c.Label() + "."}}
 }

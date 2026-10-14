@@ -423,3 +423,73 @@ func TestSendTestRecordsADelivery(t *testing.T) {
 		t.Errorf("failed test %v %+v", err, d)
 	}
 }
+
+// Findings raised while no pass ran, for longer than Window, are still
+// sent, up to CatchUp back.
+func TestDispatcherCatchesUpAfterAnOutage(t *testing.T) {
+	r := newRig(t, RuleInput{ID: "r1", Name: "urgent", Enabled: on(), Channels: []string{"aaa"}})
+	r.clock.add(time.Second)
+	r.raise("f-old", "high", "d")
+	r.clock.add(CatchUp + time.Minute)
+	r.raise("f-mid", "high", "d")
+	r.clock.add(3 * time.Hour)
+	r.pass()
+	if r.sender.count("") != 1 || r.sender.sent[0].msg.FindingID != "f-mid" {
+		t.Fatalf("sent %+v", r.sender.sent)
+	}
+	// A pass that finished reads back only Window from it.
+	r.clock.add(time.Minute)
+	r.raise("f-new", "high", "d")
+	r.clock.add(Window - 2*time.Minute)
+	r.pass()
+	if r.sender.count("") != 2 {
+		t.Errorf("sent %d", r.sender.count(""))
+	}
+}
+
+// A playbook's notify step and a rule share one delivery per finding and
+// channel, so the channel gets the finding once, whichever comes first.
+func TestSendOnceSharesTheRulesDelivery(t *testing.T) {
+	r := newRig(t, RuleInput{ID: "r1", Name: "urgent", Enabled: on(), Channels: []string{"aaa"}})
+	s, _ := r.set.Settings()
+	c, _ := s.Channel("aaa")
+	r.clock.add(time.Second)
+	f1 := r.raise("f1", "high", "d")
+	again, err := SendOnce(context.Background(), r.sender, r.store, c, NewMessage(f1, "x"), "Brute force response", "s1", r.clock.Now)
+	if err != nil || again {
+		t.Fatal(again, err)
+	}
+	r.pass()
+	if r.sender.count("aaa") != 1 {
+		t.Fatalf("sent %d", r.sender.count("aaa"))
+	}
+	if d, _ := r.store.Get(DeliveryID("f1", "aaa")); d.Playbook != "Brute force response" || d.Status != StatusSent || d.Rule != "" {
+		t.Errorf("delivery %+v", d)
+	}
+	// The rule first, then the playbook.
+	f2 := r.raise("f2", "high", "d")
+	r.pass()
+	if _, err := SendOnce(context.Background(), r.sender, r.store, c, NewMessage(f2, "x"), "p", "s1", r.clock.Now); !errors.Is(err, ErrAlreadySent) {
+		t.Fatal(err)
+	}
+	if r.sender.count("aaa") != 2 {
+		t.Fatalf("sent %d", r.sender.count("aaa"))
+	}
+	// A failed playbook message is tried again by the dispatcher.
+	f3 := r.raise("f3", "high", "d")
+	r.sender.fail = errors.New("connection reset")
+	again, err = SendOnce(context.Background(), r.sender, r.store, c, NewMessage(f3, "x"), "p", "s1", r.clock.Now)
+	if err == nil || !again {
+		t.Fatal(again, err)
+	}
+	r.sender.fail = nil
+	r.pass()
+	if r.sender.count("aaa") != 3 {
+		t.Fatalf("retried early: %d", r.sender.count("aaa"))
+	}
+	r.clock.add(time.Minute)
+	r.pass()
+	if d, _ := r.store.Get(DeliveryID("f3", "aaa")); r.sender.count("aaa") != 4 || d.Status != StatusSent || d.Attempts != 2 {
+		t.Errorf("sent %d, %+v", r.sender.count("aaa"), d)
+	}
+}

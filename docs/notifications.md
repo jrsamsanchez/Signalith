@@ -120,9 +120,11 @@ The dialog shows a plain-English summary of the rule as you change it.
 What gets sent:
 
 - Only **new** findings are sent. A rule sends findings raised after it was added or last
-  turned on, so a new rule does not send old findings. The job looks back over the last 30
-  minutes.
-- Each finding goes to each channel **once**, even when several rules match it.
+  turned on, so a new rule does not send old findings. If no server ran the job for a while
+  (a restart, or the background jobs moving to another server), the findings raised
+  meanwhile are still sent, up to 24 hours back.
+- Each finding goes to each channel **once**, even when several rules match it, and even
+  when a [playbook](playbooks.md) also sends it there.
 - The channels in one rule all get the finding.
 - **Flood guard**: if one pass would send more than 10 messages to a channel, Signalith sends
   the 9 most urgent and then one summary, such as "And 23 more new findings", with a link to

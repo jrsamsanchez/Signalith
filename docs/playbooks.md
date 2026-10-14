@@ -30,7 +30,7 @@ run, so a sample finding can block a real address or send a real message.
 
 | Step | What it does |
 | --- | --- |
-| **Notify a channel** | Sends the finding to one [notification channel](notifications.md), as a rule would. It does not wait for the notification rules: it sends even when no rule matches, and a rule that also matches sends its own message too. |
+| **Notify a channel** | Sends the finding to one [notification channel](notifications.md), as a rule would. It does not wait for the notification rules: it sends even when no rule matches. A finding goes to a channel once, so when a rule already sent it there, the step says so and sends nothing more, and a rule that matches later sends nothing either. A message that fails is tried again, as a rule's is, and shows under Recent deliveries. |
 | **Run a response action** | Runs one [response action](response-actions.md) on a target taken from the finding. See below. |
 | **Open a case** | Opens an [investigation](https://github.com/jrsamsanchez/Signalith/blob/main/README.md#investigations) with the finding in it. The title may use `{title}` `{detection}` `{urgency}` `{src}` `{dest}` `{user}` `{host}` `{finding_id}` (it is the finding's title when left empty), and an owner may be set. With **Add later findings to the case this playbook opened** on, a later finding goes into the last case this playbook opened while that case is still open, instead of opening another one. |
 | **Set the finding** | Sets the finding's status, its owner, or both. |
@@ -122,8 +122,8 @@ the decision up within 15 seconds.
   run is not started again. After about 15 minutes it is marked **Interrupted**: "The
   Signalith server stopped while this playbook ran, so its last step may or may not have
   happened." Check the finding and finish by hand.
-- A finding is looked at for 30 minutes after it is raised. If no server runs the jobs for
-  longer than that, playbooks do not start for the findings raised meanwhile.
+- If no server runs the jobs for a while, playbooks start for the findings raised meanwhile
+  once one does, up to 24 hours back. Steps that need approval still wait for it.
 - With `detections.scheduler: false` on every server, no playbook runs.
 
 ## Where the playbooks live

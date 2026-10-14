@@ -1311,7 +1311,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	in.jobs.Go(func() { srv.RunContentUpdates(ctx) })
 	pbRunner := &playbooks.Runner{
 		Playbooks: pbooks, Findings: fstore, Runs: pruns, Desk: srv.PlaybookDesk(), Respond: responder,
-		Notify: notes, Sender: senders, Server: sampleServer, Log: log,
+		Notify: notes, Sender: senders, Deliveries: deliveries, Server: sampleServer, Log: log,
 		PublicURL: func() string { return c.Server.PublicURL },
 	}
 	// Every server makes the indices it uses when they are missing; the

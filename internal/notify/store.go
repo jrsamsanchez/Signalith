@@ -40,6 +40,7 @@ type Delivery struct {
 	ChannelType string `json:"channel_type"`
 	Rule        string `json:"rule,omitempty"`
 	RuleName    string `json:"rule_name,omitempty"`
+	Playbook    string `json:"playbook,omitempty"` // for a playbook's notify step
 	Status      string `json:"status"`
 	// Final is true for a failed delivery that is not tried again.
 	Final    bool   `json:"final,omitempty"`
@@ -122,7 +123,7 @@ func properties() map[string]any {
 	date := map[string]any{"type": "date"}
 	return map[string]any{
 		"id": kw, "kind": kw, "finding_id": kw, "channel": kw, "channel_name": kw, "channel_type": kw, "rule": kw,
-		"rule_name": kw, "status": kw, "final": map[string]any{"type": "boolean"}, "attempts": map[string]any{"type": "integer"},
+		"rule_name": kw, "playbook": kw, "status": kw, "final": map[string]any{"type": "boolean"}, "attempts": map[string]any{"type": "integer"},
 		"duration_ms": map[string]any{"type": "long"}, "summary": map[string]any{"type": "integer"}, "server": kw,
 		"created": date, "updated": date, "claimed": date, "next_try": date,
 		"error":   map[string]any{"type": "text", "index": false},

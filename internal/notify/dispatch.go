@@ -14,7 +14,7 @@ import (
 )
 
 // The dispatcher is the background job "notifications". Every Interval it
-// reads the findings raised in the last Window, matches them against the
+// reads the findings raised since its last pass (see Reader), matches them against the
 // rules, and sends each new one to its channels. Only the server that
 // runs the background jobs does, and it asks Allowed before each message,
 // so a server that lost the jobs stops at once.
@@ -36,8 +36,6 @@ import (
 // Timing and limits of the dispatcher.
 const (
 	Interval = 15 * time.Second
-	// Window is how far back each pass reads findings.
-	Window = 30 * time.Minute
 	// FloodLimit is the most messages one pass sends a channel.
 	FloodLimit = 10
 	// KeepFor is how long deliveries are kept.
@@ -45,8 +43,6 @@ const (
 	// StuckAfter is how long a delivery may stay "sending" before it is
 	// taken for one a stopped server left.
 	StuckAfter = 5 * time.Minute
-	// maxFindings is the most findings one pass reads.
-	maxFindings = 2000
 	// purgeEvery is how often old deliveries are deleted.
 	purgeEvery = time.Hour
 )
@@ -77,8 +73,10 @@ type Dispatcher struct {
 	Now func() time.Time
 	Log *slog.Logger
 
+	reader    Reader
 	mu        sync.Mutex
 	inFlight  map[string]bool // deliveries this server is sending
+	warned    bool            // a pass read the most findings it may; logged once
 	lastPurge time.Time
 	lastErr   string // the last pass's problem, logged once
 }
@@ -189,12 +187,14 @@ func (d *Dispatcher) collect(ctx context.Context, s Settings, now time.Time, per
 		}
 	}
 	if len(rules) == 0 {
+		d.reader.Done(now)
 		return nil
 	}
-	list, err := RecentFindings(ctx, d.Findings, now)
+	list, truncated, err := d.reader.Read(ctx, d.Findings, now)
 	if err != nil {
 		return err
 	}
+	d.tooMany(truncated, len(list))
 	link := d.link()
 	type want struct {
 		f       *findings.Finding
@@ -222,6 +222,7 @@ func (d *Dispatcher) collect(ctx context.Context, s Settings, now time.Time, per
 		}
 	}
 	if len(wants) == 0 {
+		d.reader.Done(now)
 		return nil
 	}
 	ids := make([]string, len(wants))
@@ -239,7 +240,19 @@ func (d *Dispatcher) collect(ctx context.Context, s Settings, now time.Time, per
 		m := NewMessage(w.f, link)
 		perChannel[w.channel] = append(perChannel[w.channel], item{msg: m, rule: w.rule, urgency: urgencyRank(m.Urgency)})
 	}
+	d.reader.Done(now)
 	return nil
+}
+
+// tooMany logs, once, that a pass read the most findings it may.
+func (d *Dispatcher) tooMany(truncated bool, n int) {
+	d.mu.Lock()
+	warn := truncated && !d.warned
+	d.warned = truncated
+	d.mu.Unlock()
+	if warn {
+		d.log().Warn("more findings were raised than one notifications pass reads; the oldest are not sent", "read", n)
+	}
 }
 
 // sendChannel sends a channel its messages: the most urgent first, and
@@ -293,15 +306,6 @@ func (d *Dispatcher) sendChannel(ctx context.Context, c Channel, items []item, n
 		return
 	}
 	d.send(ctx, c, summaryMessage(len(claims), d.link(), d.now()), claims)
-}
-
-// RecentFindings reads the findings raised in the Window before now, as
-// each pass of the dispatcher does; playbooks read new findings the same
-// way. A matching rule or playbook still skips those raised before it
-// was turned on.
-func RecentFindings(ctx context.Context, fs findings.Store, now time.Time) ([]*findings.Finding, error) {
-	list, _, err := fs.Search(ctx, findings.Filter{Since: now.Add(-Window), Limit: maxFindings})
-	return list, err
 }
 
 // claimed is a delivery this server claimed and is about to send.
@@ -383,20 +387,8 @@ func (d *Dispatcher) send(ctx context.Context, c Channel, m Message, list []clai
 	took := end.Sub(start).Milliseconds()
 	for _, cl := range list {
 		del := cl.d
-		del.DurationMS, del.Updated = took, end
-		if err == nil {
-			del.Status, del.Error, del.Final = StatusSent, "", false
-		} else {
-			del.Status, del.Error = StatusFailed, err.Error()
-			var se *SendError
-			retry := !errors.As(err, &se) || se.Retry
-			if retry && del.Attempts < MaxAttempts {
-				next := end.Add(Backoff[min(del.Attempts-1, len(Backoff)-1)])
-				del.NextTry = &next
-			} else {
-				del.Final = true
-			}
-		}
+		del.DurationMS = took
+		settle(del, err, end)
 		// Written whatever happens to ctx: the message went out or not.
 		wctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 		_, werr := d.Deliveries.Update(wctx, del, cl.v)
@@ -409,6 +401,25 @@ func (d *Dispatcher) send(ctx context.Context, c Channel, m Message, list []clai
 		d.log().Warn("a notification could not be sent", "channel", c.Name, "type", c.Type, "findings", len(list), "err", err.Error())
 	} else {
 		d.log().Info("notification sent", "channel", c.Name, "type", c.Type, "findings", len(list), "kind", m.Kind)
+	}
+}
+
+// settle records how sending a delivery went at end: sent, or failed and
+// due to be tried again after the next Backoff, or failed for good.
+func settle(del *Delivery, err error, end time.Time) {
+	del.Updated, del.NextTry = end, nil
+	if err == nil {
+		del.Status, del.Error, del.Final = StatusSent, "", false
+		return
+	}
+	del.Status, del.Error = StatusFailed, err.Error()
+	var se *SendError
+	retry := !errors.As(err, &se) || se.Retry
+	if retry && del.Attempts < MaxAttempts {
+		next := end.Add(Backoff[min(del.Attempts-1, len(Backoff)-1)])
+		del.NextTry = &next
+	} else {
+		del.Final = true
 	}
 }
 
