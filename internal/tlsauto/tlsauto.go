@@ -98,6 +98,9 @@ const persistTimeout = 15 * time.Second
 type Manager struct {
 	opts Options
 	cert atomic.Pointer[tls.Certificate]
+	// sharedNames replaces Options.SharedNames once SetSharedNames is
+	// called; it is read under mu, so it is not mu's.
+	sharedNames atomic.Pointer[func() []string]
 
 	mu    sync.Mutex
 	ca    *x509.Certificate // the CA agents should trust; nil when none is known
@@ -617,7 +620,9 @@ func (m *Manager) candidateNames() []string {
 	var out []string
 	seen := map[string]bool{}
 	var shared []string
-	if m.opts.SharedNames != nil {
+	if fn := m.sharedNames.Load(); fn != nil {
+		shared = (*fn)()
+	} else if m.opts.SharedNames != nil {
 		shared = m.opts.SharedNames()
 	}
 	for _, list := range [][]string{m.opts.Names, shared, localNames(), m.added} {

@@ -22,6 +22,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/api"
 	"github.com/jrsamsanchez/signalith/internal/cluster"
 	"github.com/jrsamsanchez/signalith/internal/clustercfg"
+	"github.com/jrsamsanchez/signalith/internal/clustertls"
 	"github.com/jrsamsanchez/signalith/internal/config"
 	"github.com/jrsamsanchez/signalith/internal/retention"
 	"github.com/jrsamsanchez/signalith/internal/securefile"
@@ -588,6 +589,7 @@ func (r *runner) serverHandlers() map[string]shared.Handler {
 	return map[string]shared.Handler{
 		clustercfg.RequestRestart:       r.handleRestartRequest,
 		clustercfg.RequestSettingsCheck: r.handleSettingsCheck,
+		clustertls.RequestPublish:       r.sharedContent.tls.handler(r.sharedContent.cfg.Load, r.node.Name(), r.log),
 	}
 }
 
@@ -696,16 +698,19 @@ func (r *runner) confirmProbe(req *http.Request, token string) bool {
 
 // probeMoves follows a restart request this server made and probes the
 // new address of each server whose restart moved its web page, which
-// confirms the move there. Until the servers share one certificate
-// authority, the probe does not check the certificate: the token, which
-// only the request holds, reaching the new address is the proof, and a
-// probe can confirm a move, nothing else.
+// confirms the move there. Once the cluster has its one certificate
+// authority, the probe checks the certificate against it, and the name.
+// Until then it does not check the certificate: the token, which only the
+// request holds, reaching the new address is the proof, and a probe can
+// confirm a move, nothing else.
 func (r *runner) probeMoves(id string) {
 	ctx, cancel := context.WithTimeout(r.backgroundContext(context.Background()), 2*time.Hour)
 	defer cancel()
-	client := &http.Client{Timeout: 3 * time.Second, Transport: &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // the move token is the proof (see above)
-	}}
+	tlsConf := &tls.Config{InsecureSkipVerify: true} //nolint:gosec // the move token is the proof (see above)
+	if pinned := r.sharedContent.tls.probeTLS(); pinned != nil {
+		tlsConf = pinned
+	}
+	client := &http.Client{Timeout: 3 * time.Second, Transport: &http.Transport{TLSClientConfig: tlsConf}}
 	defer client.CloseIdleConnections()
 	for {
 		req, ok, err := r.shared.Requests().Get(ctx, id)

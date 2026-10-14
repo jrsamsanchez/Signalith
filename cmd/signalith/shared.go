@@ -65,12 +65,14 @@ type sharedDocs struct {
 	// auth holds the users, the directory sign-in settings and the
 	// sessions; on the server, the same documents as sharedUsers.docs.
 	auth *clusterauth.Docs
+	// tls holds the cluster's certificate authority (see sharedtls.go).
+	tls *sharedTLS
 }
 
 // newSharedDocs returns the documents of a process, with auth as the
 // users' documents.
 func newSharedDocs(auth *clusterauth.Docs) sharedDocs {
-	d := sharedDocs{docs: clustercfg.NewDocs(), auth: auth}
+	d := sharedDocs{docs: clustercfg.NewDocs(), auth: auth, tls: newSharedTLS()}
 	// The users and directory importers and the auth settings of
 	// signalith.yaml reach the users' documents.
 	d.docs.UseAuth(auth)
@@ -90,6 +92,7 @@ func (d sharedDocs) trackers() []sharedTracker {
 	return []sharedTracker{
 		d.docs,
 		d.auth,
+		d.tls.tls,
 		// Append a new shared collection here.
 	}
 }
@@ -118,6 +121,8 @@ func sharedImporters(d sharedDocs, f clustercfg.Files) []shared.Importer {
 		// The feeds, their status, the retention policies, the users, the
 		// directory sign-in settings and the settings of the Settings page.
 		clustercfg.Importers(d.docs, f),
+		// The founder's certificate authority, as the cluster's.
+		[]shared.Importer{d.tls.importer(f)},
 		// Append a new shared feature's importers here.
 	)
 }

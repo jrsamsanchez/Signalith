@@ -26,6 +26,7 @@ others may run while Signalith runs on the same computer.
 | [`found`](#found) | Makes the cluster from this server's files |
 | [`reset-key`](#reset-key) | Makes a new cluster key when every copy of it is lost |
 | [`accept-restore`](#accept-restore) | Accepts the shared settings after an OpenSearch snapshot was restored |
+| [`tls`](#tls) | The cluster's certificate authority and each server's; `tls choose` keeps one for the whole cluster |
 
 `signalith passwd`, which is not a `cluster` command, changes the built-in admin's
 password for every server of a cluster that shares its users; see
@@ -253,3 +254,31 @@ in a cluster, `-local` writes `admin-password-hash` and needs a restart, as
 | No server can run the background jobs, and you need the cluster now | `found` |
 | The built-in admin's password is lost or must change on every server | `signalith passwd` on any server |
 | You want a password for one server that works while OpenSearch is down | `signalith passwd -local` on that server |
+| Servers set up separately each have their own certificate authority | `tls`, then `tls choose` the one to keep |
+
+## tls
+
+```
+signalith cluster tls        [-c file] [-json]
+signalith cluster tls choose [-c file] [-yes] <server or fingerprint>
+```
+
+Once every server reads level 4, the servers of a cluster share one certificate
+authority: each issues its own HTTPS certificate from it, so an agent set up against one
+server trusts them all. A cluster that grew from one server keeps that server's, so
+nothing changes for its agents. When servers that were set up separately meet, each
+keeps its own until you choose one.
+
+`tls` shows the cluster's certificate authority (its fingerprint, the names every
+server's certificate covers and the ones retired), each server's certificate and, while
+none is chosen, the certificate authorities to choose from: the servers using each, how
+many agents trust it and how many would need a new configuration, and the servers whose
+names it may not sign. The one marked `*` is the one Signalith suggests: most agents,
+then the founder's. `-json` prints the same as JSON.
+
+`tls choose` keeps the certificate authority of a server (its name or node id) or with
+that fingerprint for the whole cluster. It asks first unless you add `-yes`, then asks
+the server holding it to publish it and waits for it. The other servers take it within
+seconds: each keeps its old one in `tls/retired` in its state folder, and the agents set
+up with an old one are marked as needing a new configuration. The choice is made once:
+changing the cluster's certificate authority comes in a later version.

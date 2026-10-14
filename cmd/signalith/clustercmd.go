@@ -41,6 +41,8 @@ const clusterUsage = `usage:
   signalith cluster import-key     [-c file] <file>           give this server the cluster key that export-key wrote
   signalith cluster reset-key      [-c file] [-yes]           make a new cluster key when every copy of it is lost
   signalith cluster accept-restore [-c file] [-yes]           accept the shared settings after an OpenSearch snapshot was restored
+  signalith cluster tls            [-c file] [-json]          the cluster's certificate authority and each server's
+  signalith cluster tls choose     [-c file] [-yes] <server|fingerprint>   keep that certificate authority for the whole cluster
 
 The servers that share one OpenSearch keep the settings they share in it
 (the <prefix>_config index), signed with the cluster key that each of them
@@ -69,6 +71,8 @@ type clusterCLI struct {
 	// its documents of the shared content and settings.
 	auth *clusterauth.Docs
 	docs *clustercfg.Docs
+	// tls holds the cluster's certificate authority of the same runtime.
+	tls *sharedTLS
 }
 
 // runCluster is cmdCluster with its input and output.
@@ -91,7 +95,7 @@ func runCluster(args []string, in *os.File, out, errOut io.Writer) error {
 	file := flags.String("f", "", "the file of settings to apply")
 	pos := parseInterleaved(flags, args)
 	switch sub {
-	case "status", "found", "export", "import", "export-key", "import-key", "reset-key", "accept-restore", "apply":
+	case "status", "found", "export", "import", "export-key", "import-key", "reset-key", "accept-restore", "apply", "tls":
 	default:
 		return fmt.Errorf("unknown cluster command %q\n\n%s", sub, clusterUsage)
 	}
@@ -144,6 +148,8 @@ func runCluster(args []string, in *os.File, out, errOut io.Writer) error {
 		return x.resetKey(ctx, *yes)
 	case "accept-restore":
 		return x.acceptRestore(ctx, *yes)
+	case "tls":
+		return x.tlsCommand(ctx, pos, *asJSON, *yes)
 	}
 	return nil
 }
@@ -173,7 +179,7 @@ func (x *clusterCLI) keyStore() shared.KeyStore {
 // readOnly writes nothing to OpenSearch or the state folder.
 func (x *clusterCLI) runtime(readOnly bool, name string) *shared.Runtime {
 	d := newSharedDocs(clusterauth.NewDocs())
-	x.docs, x.auth = d.docs, d.auth
+	x.docs, x.auth, x.tls = d.docs, d.auth, d.tls
 	files := x.files()
 	var made atomic.Pointer[shared.Runtime]
 	files.NodeCfg = func() *shared.Doc[shared.NodeCfg] {

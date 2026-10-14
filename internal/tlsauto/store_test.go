@@ -428,3 +428,69 @@ func TestUseStoreFilesMode(t *testing.T) {
 		t.Errorf("files mode: %v %q", err, m.Store())
 	}
 }
+
+// SetSharedNames replaces Options.SharedNames on a Manager a restart
+// keeps; Reissue covers the new names.
+func TestSetSharedNames(t *testing.T) {
+	fakeMachine(t)
+	c := &clock{time.Now()}
+	m, err := New(Options{Dir: t.TempDir(), Now: c.now, SharedNames: func() []string { return []string{"old.corp.lan"} }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.SetSharedNames(func() []string { return []string{"node-b.corp.lan"} })
+	if err := m.Reissue(); err != nil || !m.Covers("node-b.corp.lan") || m.Covers("old.corp.lan") {
+		t.Fatalf("Reissue: %v, names %v", err, m.Names())
+	}
+	m.SetSharedNames(nil)
+	if err := m.Reissue(); err != nil || !m.Covers("old.corp.lan") {
+		t.Fatalf("back to the options: %v, names %v", err, m.Names())
+	}
+}
+
+// LocalFiles reads the CA a server of its own keeps, without making one,
+// and returns nothing for the cluster's or during a change of CA.
+func TestLocalFiles(t *testing.T) {
+	fakeMachine(t)
+	c := &clock{time.Now()}
+	dir := t.TempDir()
+	if ca, _, _ := LocalFiles(dir); ca != nil || fileCount(t, dir) != 0 {
+		t.Fatal("LocalFiles of an empty folder")
+	}
+	m, err := New(Options{Dir: dir, Now: c.now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.EnsureName("agents.lan"); err != nil {
+		t.Fatal(err)
+	}
+	ca, key, names := LocalFiles(dir)
+	if ca == nil || key == nil || Fingerprint(ca.Raw) != m.Fingerprint() || !slices.Equal(names, []string{"agents.lan"}) {
+		t.Fatalf("LocalFiles: %v %v %v", ca != nil, key != nil, names)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, nextDir), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if ca, _, _ := LocalFiles(dir); ca != nil {
+		t.Error("LocalFiles during a change of CA")
+	}
+	if err := os.Remove(filepath.Join(dir, nextDir)); err != nil {
+		t.Fatal(err)
+	}
+	other := storeOf(t, m)
+	if err := m.UseStore(other); err != nil {
+		t.Fatal(err)
+	}
+	if ca, _, _ := LocalFiles(dir); ca != nil {
+		t.Error("LocalFiles with the cluster's CA")
+	}
+}
+
+func fileCount(t *testing.T, dir string) int {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return len(entries)
+}

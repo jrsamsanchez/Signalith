@@ -486,3 +486,37 @@ func InfoOf(ca *x509.Certificate) *CAInfo {
 	}
 	return infoOf(ca)
 }
+
+// SetSharedNames replaces Options.SharedNames: a Manager a restart keeps
+// takes the cluster's names of the new start. fn is called with the
+// Manager's lock held, so it must not call the Manager. Reissue brings
+// the certificate in line.
+func (m *Manager) SetSharedNames(fn func() []string) {
+	if fn == nil {
+		m.sharedNames.Store(nil)
+		return
+	}
+	m.sharedNames.Store(&fn)
+}
+
+// LocalFiles returns the certificate authority in dir (ca.pem and ca.key),
+// and the names EnsureName added, as LocalPair does for a running server,
+// without making anything: for publishing it from the command line. It
+// returns nil when there is none to publish: the folder has none, it holds
+// the cluster's, or a change of certificate authority is in progress.
+func LocalFiles(dir string) (*x509.Certificate, crypto.Signer, []string) {
+	if dir == "" || readMark(dir) != "" {
+		return nil, nil, nil
+	}
+	for _, p := range []string{nextDir, previousDir, journalFile} {
+		if exists(filepath.Join(dir, p)) {
+			return nil, nil, nil
+		}
+	}
+	s := fileStore{dir}
+	ca, key, err := s.Load()
+	if err != nil || ca == nil || key == nil {
+		return nil, nil, nil
+	}
+	return ca, key, s.Names()
+}

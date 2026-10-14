@@ -423,3 +423,38 @@ func TestPublishRequest(t *testing.T) {
 		t.Errorf("second CA: %v", err)
 	}
 }
+
+// AddRetired records a server's old certificate authority once, never the
+// cluster's own, and every server reads it.
+func TestAddRetired(t *testing.T) {
+	e := newEnv(t)
+	ca := makeCA(t, "cluster", time.Now())
+	old := makeCA(t, "siem-b's own", time.Now())
+	ta, _ := e.server("siem-a")
+	tb, hb := e.server("siem-b")
+	ctx := context.Background()
+	if err := tb.AddRetired(ctx, "siem-b", old.cert); err == nil {
+		t.Fatal("AddRetired without a tls document")
+	}
+	if err := ta.Publish(ctx, "admin", "siem-a", ca.pem, ca.key, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := hb.Cycle(ctx); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if err := tb.AddRetired(ctx, "siem-b", old.cert); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := tb.AddRetired(ctx, "siem-b", ca.cert); err != nil {
+		t.Fatal(err)
+	}
+	if err := ta.Doc().Load(ctx); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := ta.Get()
+	if fps := b.RetiredFingerprints(); len(fps) != 1 || !SameFingerprint(fps[0], old.fp) || b.Retired[0].Server != "siem-b" {
+		t.Fatalf("retired %+v", b.Retired)
+	}
+}

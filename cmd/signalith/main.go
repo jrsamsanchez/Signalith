@@ -1354,6 +1354,8 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			return agentinv.Pin(certs.Fingerprint())
 		},
 		Leader: func() bool { return r.node != nil && r.node.RunsJobs() }}
+	// The cluster's one certificate authority, once it has one.
+	tlsStatus := r.sharedTLS(ctx, in, c, certs, agentsInv)
 	r.agents.Store(agentsInv)
 	in.jobs.Go(func() { agentsInv.Run(ctx) })
 	srv := &api.Server{
@@ -1614,6 +1616,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 				return sharedFingerprints(fp, r.shared, sharedOn)
 			},
 			Indexed: pipeline.LastIndexed,
+			TLS:     tlsStatus,
 		}
 		if rt := r.shared; rt != nil {
 			settings.Shared = func() cluster.SharedStatus { return sharedStatus(rt, r.sharedContent) }

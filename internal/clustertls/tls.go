@@ -61,8 +61,10 @@ type Body struct {
 	// agents were set up with), oldest first: every server's certificate
 	// covers them.
 	Names []string `json:"names"`
-	// Retired are certificate authorities the cluster used before; a
-	// later version that changes the cluster's fills it.
+	// Retired are certificate authorities servers of the cluster used
+	// before they took this one (AddRetired), oldest first: agents whose
+	// configuration trusts only those need a new one. A later version
+	// that changes the cluster's adds the one it replaces.
 	Retired []RetiredCA `json:"retired,omitempty"`
 	// PublishedBy is the server that published the certificate authority,
 	// PublishedAt when.
@@ -75,6 +77,8 @@ type Body struct {
 type RetiredCA struct {
 	CACertPEM string    `json:"ca_cert_pem"`
 	RetiredAt time.Time `json:"retired_at"`
+	// Server is the server that used it, "" for the cluster's own.
+	Server string `json:"server,omitempty"`
 }
 
 // keyField binds the sealed key to the certificate's fingerprint.
@@ -412,3 +416,53 @@ func (s caStore) AddName(ctx context.Context, name string) error {
 
 // errUnchanged stops a Mutate that has nothing to write.
 var errUnchanged = errors.New("unchanged")
+
+// MaxRetired caps the certificate authorities Body.Retired keeps; the
+// oldest go first.
+const MaxRetired = 64
+
+// AddRetired records ca, the certificate authority the server named
+// server used before it took the cluster's, among Body.Retired, once. The
+// cluster's own is never added.
+func (t *TLS) AddRetired(ctx context.Context, server string, ca *x509.Certificate) error {
+	_, d, err := t.parts()
+	if err != nil {
+		return err
+	}
+	if ca == nil {
+		return nil
+	}
+	fp := tlsauto.Fingerprint(ca.Raw)
+	_, err = d.Mutate(ctx, systemUser, func(b *Body) error {
+		if SameFingerprint(b.CASHA256, fp) {
+			return errUnchanged
+		}
+		for _, r := range b.Retired {
+			if c := parsePEM(r.CACertPEM); c != nil && SameFingerprint(tlsauto.Fingerprint(c.Raw), fp) {
+				return errUnchanged
+			}
+		}
+		b.Retired = append(b.Retired, RetiredCA{CACertPEM: string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: ca.Raw})),
+			RetiredAt: time.Now().UTC(), Server: server})
+		if len(b.Retired) > MaxRetired {
+			b.Retired = b.Retired[len(b.Retired)-MaxRetired:]
+		}
+		return nil
+	})
+	if errors.Is(err, errUnchanged) {
+		return nil
+	}
+	return err
+}
+
+// RetiredFingerprints lists the fingerprints of the certificate
+// authorities in b.Retired.
+func (b *Body) RetiredFingerprints() []string {
+	var out []string
+	for _, r := range b.Retired {
+		if c := parsePEM(r.CACertPEM); c != nil {
+			out = append(out, tlsauto.Fingerprint(c.Raw))
+		}
+	}
+	return out
+}
