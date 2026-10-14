@@ -85,6 +85,8 @@ type Server struct {
 	// Retention enforces data retention policies; nil disables the Data
 	// retention page.
 	Retention *retention.Manager
+	// Audit backs the Audit page; nil leaves it empty.
+	Audit *Audit
 	// Endpoints manages the hosts that run osquery (the Endpoints page and
 	// osquery's remote API); nil disables them.
 	Endpoints *endpoint.Store
@@ -285,6 +287,7 @@ func (s *Server) Handler() http.Handler {
 	s.routePlaybooks(api)
 	s.routeUsers(api)
 	s.routeRetention(api)
+	s.routeAudit(api)
 	s.routeRequests(api)
 	s.routeSample(api)
 	s.routeEndpoints(api)

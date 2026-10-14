@@ -4820,3 +4820,13 @@ details[open] > summary .inv-exact__chev { transform: rotate(90deg); }
   .inv-timeline li { grid-template-columns: minmax(0, 1fr); gap: 2px; }
   .inv-dialog .modal__foot .spacer { display: none; }
 }
+
+/* ---------- Audit ---------- */
+.au-toolbar { margin-bottom: var(--sp-3); }
+.au-toolbar .input-wrap { flex: 1 1 180px; max-width: 280px; }
+.au-muted { color: var(--text-2); font-size: var(--fs-sm); overflow-wrap: anywhere; }
+.au-fields { font-family: var(--font-mono, monospace); font-size: var(--fs-xs); }
+.au-time { white-space: nowrap; }
+.au-table code { font-size: var(--fs-sm); }
+#page-retention #rt-edit-form[data-kind="monthly"] #rt-f-cap,
+#page-retention #rt-edit-form[data-kind="monthly"] #rt-f-compact { display: none; }

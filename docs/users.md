@@ -864,7 +864,8 @@ agents that send events, shown on the [Endpoints page](endpoints.md)), `GET /api
 (work asked of the server that runs the background jobs, such as a feed download or a retention
 run; see [servers.md](servers.md#shared-feeds-and-retention-policies)), every
 `/api/notify` route (the Notifications page; see [notifications.md](notifications.md)), every
-`/api/retention` route (see [retention.md](retention.md)), every
+`/api/retention` route (see [retention.md](retention.md)), `GET /api/audit` and
+`GET /api/audit/servers` (the [Audit page](audit.md)), every
 `/api/users` and `/api/auth/directory` route below, and every `/api/settings` route
 (`GET` and `PUT /api/settings`, `POST /api/settings/test/opensearch`,
 `POST /api/settings/test/assistant`, `POST /api/settings/restart`,

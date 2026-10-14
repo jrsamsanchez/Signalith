@@ -209,6 +209,7 @@
       <a class="nav__item" href="#retention" data-page="retention" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-hourglass"/></svg><span>Data retention</span></a>
       <a class="nav__item" href="#security" data-page="security" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-shield-check"/></svg><span>Security</span></a>
       <a class="nav__item" href="#servers" data-page="servers" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-server"/></svg><span>Servers</span></a>
+      <a class="nav__item" href="#audit" data-page="audit" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-scroll-text"/></svg><span>Audit</span></a>
       <a class="nav__item" href="#health" data-page="health"><svg class="icon" aria-hidden="true"><use href="#i-activity"/></svg><span>Health</span></a>
     </div>
     <p class="nav__empty hidden" id="jump-empty">No page matches.</p>
@@ -262,6 +263,7 @@
       <a class="set-tab" href="#retention" data-page="retention" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-hourglass"/></svg><span>Data retention</span></a>
       <a class="set-tab" href="#security" data-page="security" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-shield-check"/></svg><span>Security</span><span id="security-count" class="nav__count hidden" data-critical></span></a>
       <a class="set-tab" href="#servers" data-page="servers" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-server"/></svg><span>Servers</span></a>
+      <a class="set-tab" href="#audit" data-page="audit" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-scroll-text"/></svg><span>Audit</span></a>
       <a class="set-tab" href="#health" data-page="health"><svg class="icon" aria-hidden="true"><use href="#i-activity"/></svg><span>Health</span></a>
     </div>
   </nav>
@@ -1429,6 +1431,18 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
   </section>
 
   <!-- Help -->
+  <!-- Audit: who changed what, on every server -->
+  <section id="page-audit" class="page">
+    <div class="page-head">
+      <div>
+        <h2 class="page-head__title">Audit</h2>
+        <p class="page-head__desc">Who changed what, and when, on every server that shares this OpenSearch.</p>
+      </div>
+    </div>
+    <div id="au-filters"></div>
+    <div id="au-body"></div>
+  </section>
+
   <section id="page-help" class="page">
     <article class="card guide">
       <p class="guide__lead">A query is a search followed by commands joined with <code>|</code>. The search picks events; each command reshapes the results.</p>
@@ -1511,5 +1525,6 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
 <script src="endpoints.js"></script>
 <script src="vulns.js"></script>
 <script src="tokens.js"></script>
+<script src="audit.js"></script>
 </body>
 </html>

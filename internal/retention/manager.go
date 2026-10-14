@@ -1237,6 +1237,9 @@ type Overview struct {
 	Notes   []string `json:"notes"`
 	LastRun *Run     `json:"last_run"`
 	Recent  []Action `json:"recent"`
+	// RestoreQueued is set where restores asked on any server go to the
+	// one that runs retention (servers that share their archives).
+	RestoreQueued bool `json:"restore_queued,omitempty"`
 	// HistorySource says where the history is kept: "file" on a server
 	// of its own, "audit" when servers that share one OpenSearch keep it
 	// as audit records.
