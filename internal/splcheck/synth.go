@@ -357,6 +357,26 @@ func records(node string, ev map[string]string) []sigmacheck.Case {
 			delete(s, "Details")
 		}
 		return []sigmacheck.Case{{Channel: sigmacheck.SysmonChannel, EventID: id, Data: s}}
+	case "ImageLoad":
+		s := map[string]string{"ProcessId": "4242", "ProcessGuid": "{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}"}
+		set(s, "Image", imagePath(ev["process_path"], ev["process_name"]))
+		set(s, "ImageLoaded", ev["loaded_file_path"])
+		set(s, "Signed", ev["signed"])
+		set(s, "SignatureStatus", ev["signature_status"])
+		set(s, "Signature", ev["signature"])
+		return []sigmacheck.Case{{Channel: sigmacheck.SysmonChannel, EventID: "7", Data: s}}
+	case "ProcessAccess":
+		s := map[string]string{"SourceProcessId": "4242", "TargetProcessId": "640"}
+		set(s, "SourceImage", ev["process_path"])
+		set(s, "TargetImage", ev["target_process_path"])
+		set(s, "GrantedAccess", ev["granted_access"])
+		set(s, "CallTrace", ev["call_trace"])
+		set(s, "SourceUser", ev["user"])
+		id := ev[eventCode]
+		if id != "8" {
+			id = "10"
+		}
+		return []sigmacheck.Case{{Channel: sigmacheck.SysmonChannel, EventID: id, Data: s}}
 	case "PowerShell":
 		s := map[string]string{"MessageNumber": "1", "MessageTotal": "1", "ScriptBlockId": "6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10"}
 		set(s, "ScriptBlockText", ev["script_block_text"])
@@ -422,7 +442,7 @@ func Cases(r *Rule) []sigmacheck.Case {
 }
 
 // NodeModel is the Signalith data model of each node.
-var NodeModel = map[string]string{"Processes": "Endpoint", "Filesystem": "Filesystem", "Registry": "Registry", "PowerShell": "Script"}
+var NodeModel = map[string]string{"Processes": "Endpoint", "Filesystem": "Filesystem", "Registry": "Registry", "PowerShell": "Script", "ImageLoad": "Image_Load", "ProcessAccess": "Endpoint"}
 
 // Verify checks a converted detection against a rule's test events: each
 // event, as the real parser stores it, must be read the same way by the

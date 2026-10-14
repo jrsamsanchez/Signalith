@@ -1,0 +1,7 @@
+{"rule": "15bb8eb7-8e68-490b-9032-18f7adce53c7", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"x \\AppData\\Local\\Temp\\.net\\devtunnel\\ x x devtunnel.dll","ProcessGuid":"{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}","ProcessId":"4242"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"x \\AppData\\Local\\Temp\\.net\\devtunnel\\ x x devtunnel.dll","ProcessGuid":"{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}","ProcessId":"4242"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"x \\AppData\\Local\\Temp\\.net\\devtunnel\\ x x devtunnel.dll","ProcessGuid":"{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}","ProcessId":"4242"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"x \\AppData\\Local\\Temp\\.net\\devtunnel\\ x x devtunnel.dlm","ProcessGuid":"{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}","ProcessId":"4242"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ProcessGuid":"{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}","ProcessId":"4242"}}
+]}

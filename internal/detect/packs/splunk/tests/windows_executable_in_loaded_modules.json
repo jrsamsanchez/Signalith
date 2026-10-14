@@ -1,0 +1,11 @@
+{"rule": "3e27af56-fcf0-4113-988d-24969b062be7", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"x","ProcessGuid":"{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}","ProcessId":"4242","Signed":"x"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"x","ProcessGuid":"{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}","ProcessId":"4242","Signed":"x"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"x","ProcessGuid":"{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}","ProcessId":"4242","Signed":"x"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"y","ProcessGuid":"{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}","ProcessId":"4242","Signed":"x"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"x","ProcessGuid":"{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}","ProcessId":"4242","Signed":"y"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ProcessGuid":"{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}","ProcessId":"4242","Signed":"x"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"x .dll","ProcessGuid":"{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}","ProcessId":"4242","Signed":"x"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"x","ProcessGuid":"{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}","ProcessId":"4242"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"x","ProcessGuid":"{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}","ProcessId":"4242","Signed":"true"}}
+]}

@@ -741,7 +741,7 @@ changes and more, plus two risk incident rules); 19 are on by default.
   Signalith query and lists anything it had to approximate. Imported rules start
   disabled so you can test them first.
 - **Content packs** add community rules, off until you turn them on: 1,695 tested
-  [SigmaHQ](https://github.com/SigmaHQ/sigma) Windows rules and 669 Windows detections
+  [SigmaHQ](https://github.com/SigmaHQ/sigma) Windows rules and 699 Windows detections
   from Splunk's open source
   [security_content](https://github.com/splunk/security_content) (Apache 2.0). With
   both packs on, detections cover 140 ATT&CK techniques. Newer tested rules arrive as

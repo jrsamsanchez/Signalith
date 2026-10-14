@@ -1,0 +1,15 @@
+{"rule": "8351340b-ac0e-41ec-8b07-dd01bf32d6ea", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"x \\version.dll","ProcessGuid":"{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}","ProcessId":"4242","Signed":"false"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"x \\version.dll","ProcessGuid":"{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}","ProcessId":"4242","Signed":"false"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"x \\version.dll","ProcessGuid":"{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}","ProcessId":"4242","Signed":"false"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"x \\version.dll","ProcessGuid":"{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}","ProcessId":"4242","Signed":"falsf"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"x \\version.dll","ProcessGuid":"{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}","ProcessId":"4242"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"x \\version.dll","ProcessGuid":"{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}","ProcessId":"4242"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"x \\version.dll","ProcessGuid":"{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}","ProcessId":"4242"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"x \\version.dlm","ProcessGuid":"{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}","ProcessId":"4242","Signed":"false"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ProcessGuid":"{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}","ProcessId":"4242","Signed":"false"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"x \\version.dlm","ProcessGuid":"{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}","ProcessId":"4242"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ProcessGuid":"{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}","ProcessId":"4242"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"x \\windows\\system32 x","ProcessGuid":"{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}","ProcessId":"4242"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"x \\windows\\syswow64\\ x","ProcessGuid":"{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}","ProcessId":"4242"}}
+]}

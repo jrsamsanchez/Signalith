@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"path"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -201,12 +202,37 @@ func loadPacks(fsys fs.FS, lenient bool) ([]*Pack, []*Detection, []error, error)
 				return nil, nil, nil, err
 			}
 		}
-		for _, r := range p.Rules {
-			src, err := fs.ReadFile(fsys, path.Join(dir, "rules", r.File))
-			var d *Detection
-			if err == nil {
-				d, err = PackDetection(&p, r, src)
-			}
+		// Converting is most of a server's start, so the rules convert on
+		// every CPU; the results keep the manifest's order.
+		type result struct {
+			d   *Detection
+			err error
+		}
+		results := make([]result, len(p.Rules))
+		next := make(chan int)
+		var wg sync.WaitGroup
+		for range min(runtime.GOMAXPROCS(0), max(len(p.Rules), 1)) {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for i := range next {
+					r := p.Rules[i]
+					src, err := fs.ReadFile(fsys, path.Join(dir, "rules", r.File))
+					var d *Detection
+					if err == nil {
+						d, err = PackDetection(&p, r, src)
+					}
+					results[i] = result{d, err}
+				}
+			}()
+		}
+		for i := range p.Rules {
+			next <- i
+		}
+		close(next)
+		wg.Wait()
+		for i, r := range p.Rules {
+			d, err := results[i].d, results[i].err
 			if err != nil {
 				err = fmt.Errorf("%s: %s: %w", m, r.File, err)
 				if lenient {

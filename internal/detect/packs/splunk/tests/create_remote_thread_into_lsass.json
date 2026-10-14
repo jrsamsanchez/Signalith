@@ -1,0 +1,7 @@
+{"rule": "67d4dbef-9564-4699-8da8-03a151529edc", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"8","data":{"SourceProcessId":"4242","TargetImage":"x \\lsass.exe","TargetProcessId":"640"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"SourceProcessId":"4242","TargetImage":"x \\lsass.exe","TargetProcessId":"640"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"SourceProcessId":"4242","TargetImage":"x \\lsass.exe","TargetProcessId":"640"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"8","data":{"SourceProcessId":"4242","TargetImage":"x \\lsass.exf","TargetProcessId":"640"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"8","data":{"SourceProcessId":"4242","TargetProcessId":"640"}}
+]}
