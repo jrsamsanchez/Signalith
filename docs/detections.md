@@ -287,7 +287,7 @@ The generator keeps each rule's Signalith ID across runs, rewrites `rules/`,
 
 ### Splunk Security Content
 
-**Splunk Security Content** (`internal/detect/packs/splunk`) holds 173 Windows
+**Splunk Security Content** (`internal/detect/packs/splunk`) holds 573 Windows
 detections from Splunk's Threat Research Team
 ([security_content](https://github.com/splunk/security_content)), pinned to one
 commit. They are the production TTP and anomaly rules that search the CIM
@@ -310,9 +310,12 @@ add risk, as in Splunk ES risk-based alerting. Severity follows the rule's risk 
 `splunk`, the pack name, `ttp` or `anomaly`, and the node, and keeps the rule's
 known false positives as triage guidance.
 
+Registry values that Sysmon writes as `DWORD (0x00000001)` compare as `0x00000001`,
+the way Splunk's Sysmon add-on reads them.
+
 A rule is shipped only when its whole search converts exactly (a `tstats` search
-whose later stages only rename fields, format times or apply the rule's empty
-`_filter` macro) and, on test events made from its `where` clause and passed through
+whose later stages only rename fields, format times, keep rows that have a field
+(`where isnotnull(...)`) or apply the rule's empty `_filter` macro) and, on test events made from its `where` clause and passed through
 the real Windows parser, the converted detection agrees with Splunk's reading of the
 clause on every event. Searches with `eval`, `rex`, `regex`, `lookup` or raw `sysmon`
 event searches are left out for now; `internal/detect/packs/splunk/REPORT.md` lists

@@ -102,11 +102,18 @@ func splunkExpr(e splcheck.Expr) (query.Expr, error) {
 				return nil, fmt.Errorf("an empty value of %s is not supported", x.Field)
 			}
 		}
-		var match query.Expr
-		if len(x.Values) == 1 {
-			match = &query.Compare{Field: x.Field, Op: "=", Value: x.Values[0]}
-		} else {
-			match = &query.In{Field: x.Field, Values: x.Values}
+		match := valuesMatch(x.Field, x.Values)
+		if x.Field == "registry_value_data" {
+			// Signalith keeps Sysmon's "DWORD (0x00000001)" as it is;
+			// Splunk's add-on reads it as 0x00000001 (splcheck.View).
+			words := make([]string, 0, 2*len(x.Values))
+			for _, v := range x.Values {
+				words = append(words, "DWORD ("+v+")", "QWORD ("+v+")")
+			}
+			match = or([]query.Expr{
+				and([]query.Expr{match, &query.Not{Child: valuesMatch(x.Field, []string{"DWORD (0x*)", "QWORD (0x*)"})}}),
+				valuesMatch(x.Field, words),
+			})
 		}
 		if x.Neg {
 			return and([]query.Expr{&query.Compare{Field: x.Field, Op: "=", Value: "*"}, &query.Not{Child: match}}), nil
@@ -114,6 +121,14 @@ func splunkExpr(e splcheck.Expr) (query.Expr, error) {
 		return match, nil
 	}
 	return nil, fmt.Errorf("unknown where clause %T", e)
+}
+
+// valuesMatch is field=v, or field IN (v...) for several values.
+func valuesMatch(field string, values []string) query.Expr {
+	if len(values) == 1 {
+		return &query.Compare{Field: field, Op: "=", Value: values[0]}
+	}
+	return &query.In{Field: field, Values: values}
 }
 
 // splunkSeverity is a rule's severity: TTPs by their risk score, and

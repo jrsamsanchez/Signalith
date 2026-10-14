@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -109,11 +110,14 @@ var Nodes = map[string][]string{
 
 // The stages after the where clause that only reshape the results.
 var (
-	tstatsRe    = regexp.MustCompile(`(?s)^\|\s*tstats\s+.*?\bfrom\s+datamodel=Endpoint\.(\w+)\s+where\s+(.*?)\s+by\s+[^|]*$`)
+	tstatsRe    = regexp.MustCompile(`(?is)^\|\s*tstats\s+.*?\bfrom\s+datamodel=Endpoint\.(\w+)\s+where\s+(.*?)\s+by\s+[^|]*$`)
 	harmlessRe  = regexp.MustCompile("^`(drop_dm_object_name|security_content_ctime)\\([^`]*\\)`$")
 	filterRe    = regexp.MustCompile("^`[\\w-]+_filter`$")
 	summariesRe = regexp.MustCompile("`security_content_summariesonly`")
 	commentRe   = regexp.MustCompile("(?s)```.*?```")
+	// where isnotnull(field) after the tstats keeps the rows that have
+	// the field, which is field=* in the where clause.
+	notNullRe = regexp.MustCompile(`(?i)^where\s+isnotnull\((\w+)\)$`)
 )
 
 // Parse reads a detection and its search. Only a tstats search over
@@ -138,18 +142,27 @@ func Parse(src []byte, macros map[string]*Macro) (*Rule, error) {
 	if m == nil {
 		return nil, errors.New("search is not a tstats search of Endpoint.Processes, Filesystem or Registry")
 	}
+	r.Node = m[1]
+	fields, ok := Nodes[r.Node]
+	if !ok {
+		return nil, fmt.Errorf("data model node Endpoint.%s is not supported", r.Node)
+	}
+	var present []Expr
 	for _, s := range stages[1:] {
+		if nn := notNullRe.FindStringSubmatch(s); nn != nil && slices.Contains(fields, nn[1]) {
+			present = append(present, &Cmp{Field: nn[1], Values: []string{"*"}})
+			continue
+		}
 		if !harmlessRe.MatchString(s) && !filterRe.MatchString(s) {
 			return nil, fmt.Errorf("search has a later stage Signalith does not run: %s", firstWords(s))
 		}
 	}
-	r.Node = m[1]
-	if _, ok := Nodes[r.Node]; !ok {
-		return nil, fmt.Errorf("data model node Endpoint.%s is not supported", r.Node)
-	}
 	where, err := ParseWhere(m[2], r.Node, macros)
 	if err != nil {
 		return nil, err
+	}
+	if len(present) > 0 {
+		where = &And{Kids: append([]Expr{where}, present...)}
 	}
 	r.Where = where
 	return &r, nil

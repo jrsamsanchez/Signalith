@@ -1,0 +1,7 @@
+{"rule": "cc2a3425-2703-47e7-818f-3dca1b0bc56f", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"Warn","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Microsoft\\Windows\\System\\ShellSmartScreenLevel"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"Warn","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Microsoft\\Windows\\System\\ShellSmartScreenLevem"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"Warn","EventType":"SetValue","ProcessId":"4242","TargetObject":"HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"Waro","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Microsoft\\Windows\\System\\ShellSmartScreenLevel"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Microsoft\\Windows\\System\\ShellSmartScreenLevel"}}
+]}

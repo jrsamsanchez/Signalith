@@ -114,3 +114,28 @@ func TestCasesAgreeWithTheRule(t *testing.T) {
 		t.Fatalf("%d positives of %d", pos, len(cases))
 	}
 }
+
+func TestParseUppercaseAndNotNull(t *testing.T) {
+	src := rule("| tstats count FROM datamodel=Endpoint.Registry\n  WHERE Registry.registry_path=\"*\\\\Winlogon*\" Registry.registry_value_name=AutoAdminLogon Registry.registry_value_data=0x00000001\n" +
+		"  BY Registry.dest Registry.registry_value_data\n| `drop_dm_object_name(Registry)`\n| where isnotnull(registry_value_data)\n| `test_rule_filter`")
+	r, err := Parse(src, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ev := map[string]string{"registry_path": `HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon\AutoAdminLogon`, "registry_value_name": "AutoAdminLogon", "registry_value_data": "0x00000001"}
+	if !Eval(r.Where, ev) {
+		t.Error("does not match its own event")
+	}
+	// Splunk's Sysmon add-on reads "DWORD (0x00000001)" as 0x00000001.
+	if v := View(map[string]any{"registry_value_data": "DWORD (0x00000001)"}); v["registry_value_data"] != "0x00000001" {
+		t.Errorf("view = %v", v)
+	}
+	cases := Cases(r)
+	found := false
+	for _, c := range cases {
+		found = found || c.Expect
+	}
+	if !found {
+		t.Errorf("no test event matches: %+v", cases)
+	}
+}

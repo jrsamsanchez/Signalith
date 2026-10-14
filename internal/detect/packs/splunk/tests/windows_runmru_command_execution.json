@@ -1,7 +1,7 @@
 {"rule": "a15aa1ab-2b79-467f-8201-65e0f32d5b1a", "cases": [
   {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Microsoft\\Windows\\CurrentVersion\\Explorer\\RunMRU x"}},
   {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Microsoft\\Windows\\CurrentVersion\\Explorer\\RunMRU y"}},
-  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Microsoft\\Windows\\CurrentVersion\\Explorer\\RunMRU x"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Microsoft\\Windows\\CurrentVersion\\Explorer\\RunMRU x\\MRUList"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"unknown","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Microsoft\\Windows\\CurrentVersion\\Explorer\\RunMRU x"}}
 ]}
