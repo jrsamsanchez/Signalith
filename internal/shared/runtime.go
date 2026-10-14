@@ -92,6 +92,8 @@ type Runtime struct {
 	keyFileWarned bool
 	// fingerprint is this server's node key's, once read or made.
 	fingerprint string
+	// approval is a waiting server's request to join (approval.go).
+	approval approvalState
 }
 
 // Mode is how this server uses the shared configuration.
@@ -345,6 +347,10 @@ type RuntimeOptions struct {
 	Clock         Clock
 	Timing        Timing
 	Log           *slog.Logger
+	// JoinInfo says what a server waiting for approval tells about itself
+	// in its pending document (version, addresses, node_url); nil gives
+	// only its name, key and platform.
+	JoinInfo func() PendingDoc
 
 	// levelMax stands in for LevelMax, so tests can run a runtime of an
 	// older version; 0 is LevelMax.
@@ -834,7 +840,7 @@ func (rt *Runtime) evaluate(ctx context.Context, mayFound bool) {
 		return
 	}
 	if len(keys.all) == 0 {
-		rt.notMember()
+		rt.notMember(ctx)
 		return
 	}
 	var active *ClusterKey
@@ -857,7 +863,7 @@ func (rt *Runtime) evaluate(ctx context.Context, mayFound bool) {
 				rt.setMode(ModeKeyMissing, err.Error())
 				return
 			}
-			rt.notMember()
+			rt.notMember(ctx)
 			return
 		}
 		rt.log.Error("config.tamper: the cluster document in OpenSearch was changed outside Signalith", "audit", true, "doc", ClusterDocID, "reason", err.Error())
@@ -933,14 +939,16 @@ func (rt *Runtime) noteHolder() {
 
 // notMember is a look that found a cluster this server has no key to:
 // legacy (b). Its node key is made now, so the Servers page can show the
-// fingerprint an admin approves it by.
-func (rt *Runtime) notMember() {
+// fingerprint an admin approves it by, and it asks to join.
+func (rt *Runtime) notMember(ctx context.Context) {
 	rt.setMode(ModeLegacyB, "")
 	if !rt.opts.ReadOnly {
 		if _, err := rt.nodeKey(); err != nil {
 			rt.log.Debug("could not make this server's node key", "err", err)
 		}
 	}
+	// It asks to join, and takes the key once an admin approves it.
+	rt.awaitApproval(ctx)
 }
 
 // nodeKey returns this server's node key, making it the first time, and
@@ -1732,7 +1740,7 @@ func (rt *Runtime) Warnings() []Warning {
 			fp = " Its fingerprint is " + st.Fingerprint + "."
 		}
 		w = append(w, Warning{Level: "red", Text: "This server is not part of the cluster yet, so it uses its own files and runs no background jobs. " +
-			"Give it the cluster key: export it on a member with signalith cluster export-key and run signalith cluster import-key here, or set SIGNALITH_CLUSTER_KEY_FILE. " +
+			"Approve it on another server after comparing the fingerprint (signalith cluster approve there), or give it the cluster key: export it on a member with signalith cluster export-key and run signalith cluster import-key here, or set SIGNALITH_CLUSTER_KEY_FILE. " +
 			"It joins within seconds of having the key." + fp,
 			Banner: "This server is not part of the cluster yet, so it runs no background jobs."})
 	case ModeLegacyC:
