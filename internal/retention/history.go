@@ -1,6 +1,7 @@
 package retention
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"sync"
@@ -56,7 +57,43 @@ type Action struct {
 	File   string `json:"file,omitempty"`
 	By     string `json:"by,omitempty"`
 	Error  string `json:"error,omitempty"`
+	// Server is the server that took the action, when servers that share
+	// one OpenSearch keep one history.
+	Server string `json:"server,omitempty"`
 }
+
+// HistorySink keeps the last run and recent actions. A server on its own
+// keeps them in a file (HistoryFile); servers that share one OpenSearch
+// keep them as audit records, so the history survives a takeover.
+type HistorySink interface {
+	// Record adds a finished run (when not nil) and actions.
+	Record(ctx context.Context, run *Run, acts ...Action) error
+	// Recent returns the last run and the most recent actions, newest
+	// first, at most MaxActions.
+	Recent(ctx context.Context) (*Run, []Action, error)
+	// Source names where the history is kept: "file" or "audit".
+	Source() string
+}
+
+// History sources.
+const (
+	HistoryFromFile  = "file"
+	HistoryFromAudit = "audit"
+)
+
+// Record implements HistorySink.
+func (h *history) Record(_ context.Context, run *Run, acts ...Action) error {
+	return h.add(run, acts...)
+}
+
+// Recent implements HistorySink.
+func (h *history) Recent(context.Context) (*Run, []Action, error) {
+	run, acts := h.get()
+	return run, acts, nil
+}
+
+// Source implements HistorySink.
+func (h *history) Source() string { return HistoryFromFile }
 
 // Actions that are not index decisions.
 const (
