@@ -1,0 +1,4 @@
+{"rule": "545a5da6-f103-4919-a519-e9aec1026ee4", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Application","event_id":"1000","data":{"Data":"MsMpEng.exempengine.dll","Provider_Name":"Application Error"}},
+  {"expect":false,"source":"synthesized","channel":"Application","event_id":"1000","data":{"Provider_Name":"Application Error"}}
+]}

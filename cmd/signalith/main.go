@@ -89,8 +89,8 @@ Usage:
   signalith security  [-c file] [-json]   print the security report (exit 2 when something is at risk)
   signalith cluster   status|found|export|import|export-key|import-key|reset-key|accept-restore [-c file] ...  the settings the servers share in OpenSearch
   signalith service   install|uninstall|start|stop     manage the Windows service
-  signalith opensearch-certs -out DIR [-node name] [-san name]   certificates to secure your own OpenSearch
-  signalith bootstrap-docker -opensearch-dir DIR -signalith-dir DIR   prepare the Docker quick start (its setup service runs this)
+  signalith opensearch-certs [-ca-dir DIR] -node NAME [-san ...] [-peer ...] -out DIR   certificates to secure your own OpenSearch
+  signalith bootstrap-docker [-opensearch-name NAME] [-nodes N] [-export-ca-key] [-apply-security] [-new-ca]   prepare the Docker quick start (its setup service runs this)
   signalith version
 
 The config file defaults to %s

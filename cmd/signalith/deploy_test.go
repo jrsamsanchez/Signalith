@@ -99,6 +99,33 @@ func TestDockerCompose(t *testing.T) {
 	if !slices.Contains(setup.Volumes, "opensearch-certs:"+osDir) || !slices.Contains(setup.Volumes, "signalith-secrets:"+sigDir) {
 		t.Errorf("setup volumes %v", setup.Volumes)
 	}
+	// The CA's key has a volume of its own that only setup mounts, and
+	// setup can hand it over in Signalith's state folder and ask for the
+	// security settings to load again.
+	if _, ok := vols["opensearch-ca"]; !ok {
+		t.Error("volume opensearch-ca is not declared")
+	}
+	for flag, vol := range map[string]string{"-ca-dir": "opensearch-ca", "-state-dir": "signalith-data", "-loaded-dir": "opensearch-security-loaded"} {
+		dir := flagValue(setup.Command, flag)
+		if dir == "" || !slices.Contains(setup.Volumes, vol+":"+dir) {
+			t.Errorf("setup: %s %q, volumes %v", flag, dir, setup.Volumes)
+		}
+	}
+	// Runs by hand replace the command, so the same folders come from
+	// the environment too.
+	for flag, env := range map[string]string{"-opensearch-dir": "SIGNALITH_SETUP_OPENSEARCH_DIR", "-signalith-dir": "SIGNALITH_SETUP_SIGNALITH_DIR",
+		"-ca-dir": "SIGNALITH_SETUP_CA_DIR", "-state-dir": "SIGNALITH_SETUP_STATE_DIR", "-loaded-dir": "SIGNALITH_SETUP_LOADED_DIR"} {
+		if !slices.Contains(setup.Environment, env+"="+flagValue(setup.Command, flag)) {
+			t.Errorf("setup environment %v lacks %s for %s", setup.Environment, env, flag)
+		}
+	}
+	for name, s := range svc {
+		for _, v := range s.Volumes {
+			if strings.HasPrefix(v, "opensearch-ca:") && name != "setup" {
+				t.Errorf("%s mounts the CA's key: %s", name, v)
+			}
+		}
+	}
 	if setup.User != "0:0" || setup.Restart != "no" || setup.NetworkMode != "none" {
 		t.Errorf("setup: user %q restart %q network %q", setup.User, setup.Restart, setup.NetworkMode)
 	}

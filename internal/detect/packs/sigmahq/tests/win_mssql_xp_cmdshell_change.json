@@ -1,0 +1,4 @@
+{"rule": "d08dd86f-681e-4a00-a92c-1db218754417", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Application","event_id":"15457","data":{"Data":"xp_cmdshell","Provider_Name":"MSSQL"}},
+  {"expect":false,"source":"synthesized","channel":"Application","event_id":"15457","data":{"Provider_Name":"MSSQL"}}
+]}

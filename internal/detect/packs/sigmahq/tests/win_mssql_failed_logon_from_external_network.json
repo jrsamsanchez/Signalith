@@ -1,0 +1,4 @@
+{"rule": "ebfe73c2-5bc9-4ed9-aaa8-8b54b2b4777d", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Application","event_id":"18456","data":{"Provider_Name":"MSSQL"}},
+  {"expect":false,"source":"synthesized","channel":"Application","event_id":"18456","data":{"Data":"CLIENT: 172.21.","Provider_Name":"MSSQL"}}
+]}

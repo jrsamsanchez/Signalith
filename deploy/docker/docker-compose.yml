@@ -41,6 +41,11 @@ services:
   # Runs before the others on every "up", then stops. It makes the
   # certificates OpenSearch and Signalith use with each other, the first
   # admin password and the agents' ingest token, and keeps them after that.
+  # The CA those certificates come from keeps its key in a volume of its
+  # own, opensearch-ca, which no other service mounts. Run by hand, it also
+  # hands that CA to Signalith or reloads OpenSearch's security settings
+  # (docs/opensearch-security.md), for example:
+  #   docker compose -f deploy/docker/docker-compose.yml run --rm setup bootstrap-docker -export-ca-key
   setup:
     image: ghcr.io/jrsamsanchez/signalith:${SIGNALITH_VERSION:-main}
     pull_policy: always
@@ -56,10 +61,21 @@ services:
     security_opt:
       - no-new-privileges:true
     network_mode: none
-    command: ["bootstrap-docker", "-opensearch-dir", "/opensearch-certs", "-signalith-dir", "/signalith-secrets"]
+    command: ["bootstrap-docker", "-opensearch-dir", "/opensearch-certs", "-signalith-dir", "/signalith-secrets", "-ca-dir", "/opensearch-ca", "-state-dir", "/signalith-data", "-loaded-dir", "/opensearch-security-loaded"]
+    # The same folders for runs by hand, which replace the command above.
+    environment:
+      - SIGNALITH_SETUP_OPENSEARCH_DIR=/opensearch-certs
+      - SIGNALITH_SETUP_SIGNALITH_DIR=/signalith-secrets
+      - SIGNALITH_SETUP_CA_DIR=/opensearch-ca
+      - SIGNALITH_SETUP_STATE_DIR=/signalith-data
+      - SIGNALITH_SETUP_LOADED_DIR=/opensearch-security-loaded
     volumes:
       - opensearch-certs:/opensearch-certs
       - signalith-secrets:/signalith-secrets
+      - opensearch-ca:/opensearch-ca
+      # Written only by -export-ca-key and -apply-security.
+      - signalith-data:/signalith-data
+      - opensearch-security-loaded:/opensearch-security-loaded
     restart: "no"
 
   opensearch:
@@ -245,6 +261,9 @@ volumes:
   opensearch-data:
   # OpenSearch's certificates, made by the setup service.
   opensearch-certs:
+  # The OpenSearch CA's certificate and key, which the setup service makes
+  # new certificates with; only setup mounts it. Guard it like a password.
+  opensearch-ca:
   # A fingerprint of the security settings files opensearch-security loaded
   # last, so it loads them again only when they change.
   opensearch-security-loaded:

@@ -467,6 +467,10 @@ func ConvertSigmaWith(src []byte, opt SigmaOptions) (*SigmaResult, error) {
 			// Microsoft Defender Antivirus's own log, each rule naming
 			// the events it is about.
 			category = "windefend"
+		case "application":
+			// The Application log, each rule naming its provider and
+			// events, and searching their data (Data).
+			category = "application"
 		case "security":
 			// A Security log rule's fields are its event's own, so it
 			// converts for one event, or events with the same data.
@@ -621,8 +625,11 @@ func productScope(ls map[string]any, category string) query.Expr {
 	p, _ := ls["product"].(string)
 	switch strings.ToLower(p) {
 	case "windows":
-		if category == "system_event" {
+		switch category {
+		case "system_event":
 			return &query.Compare{Field: "sourcetype", Op: "=", Value: "WinEventLog:" + ingest.SystemChannel}
+		case "application":
+			return &query.Compare{Field: "sourcetype", Op: "=", Value: "WinEventLog:" + ingest.ApplicationChannel}
 		}
 		st := &query.Compare{Field: "sourcetype", Op: "=", Value: windowsSourcetypes}
 		if ids := sigmaWindowsEvents[category]; len(ids) > 0 {
@@ -663,7 +670,7 @@ func (c *sigmaConv) datamodel(ls map[string]any) string {
 		return "Script"
 	case "system":
 		return "Change"
-	case "system_event":
+	case "system_event", "application":
 		return "Other"
 	case "auditd":
 		return "Other"
@@ -685,6 +692,9 @@ func (c *sigmaConv) field(name string) string {
 	}
 	if c.category == "system_event" {
 		return c.systemField(name)
+	}
+	if c.category == "application" {
+		return c.applicationField(name)
 	}
 	if m, ok := sigmaEventFields[c.category]; ok {
 		if f := m[strings.ToLower(name)]; f != "" {
@@ -717,6 +727,23 @@ func (c *sigmaConv) systemField(name string) string {
 		return name
 	}
 	return f
+}
+
+// applicationField is the stored field of an Application log event's
+// field: its provider, ID and host, or its data values (Data).
+func (c *sigmaConv) applicationField(name string) string {
+	switch strings.ToLower(name) {
+	case "provider_name":
+		return "provider"
+	case "eventid":
+		return "signature_id"
+	case "computer", "computername":
+		return "host"
+	case "data":
+		return "event_data"
+	}
+	c.approx("field %s is not data Signalith reads from Application log events", name)
+	return name
 }
 
 // auditdField is the stored field of an audit record's field (see

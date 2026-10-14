@@ -117,10 +117,6 @@ rules:
     rule_id: 0d7a9363-af70-4e7b-a3b7-1a176b7fbe84
     file: create_stream_hash_regedit_export_to_ads.yml
     path: rules/windows/create_stream_hash/create_stream_hash_regedit_export_to_ads.yml
-  - id: sigma-create-stream-hash-susp-ip-domains
-    rule_id: 025bd229-fd1f-4fdb-97ab-20006e1a5368
-    file: create_stream_hash_susp_ip_domains.yml
-    path: rules/windows/create_stream_hash/create_stream_hash_susp_ip_domains.yml
   - id: sigma-create-stream-hash-winget-susp-package-source
     rule_id: a3f5c081-e75b-43a0-9f5b-51f26fe5dba2
     file: create_stream_hash_winget_susp_package_source.yml
@@ -7885,6 +7881,30 @@ rules:
     rule_id: c15e99a3-c474-48ab-b9a7-84549a7a9d16
     file: create_remote_thread_win_ttdinjec.yml
     path: rules/windows/create_remote_thread/create_remote_thread_win_ttdinjec.yml
+  - id: sigma-win-app-remote-access-tools-screenconnect-command-exec
+    rule_id: 076ebe48-cc05-4d8f-9d41-89245cd93a14
+    file: win_app_remote_access_tools_screenconnect_command_exec.yml
+    path: rules/windows/builtin/application/screenconnect/win_app_remote_access_tools_screenconnect_command_exec.yml
+  - id: sigma-win-app-remote-access-tools-screenconnect-file-transfer
+    rule_id: 5d19eb78-5b5b-4ef2-a9f0-4bfa94d58a13
+    file: win_app_remote_access_tools_screenconnect_file_transfer.yml
+    path: rules/windows/builtin/application/screenconnect/win_app_remote_access_tools_screenconnect_file_transfer.yml
+  - id: sigma-win-application-error-msmpeng-crash
+    rule_id: 545a5da6-f103-4919-a519-e9aec1026ee4
+    file: win_application_error_msmpeng_crash.yml
+    path: rules/windows/builtin/application/application_error/win_application_error_msmpeng_crash.yml
+  - id: sigma-win-application-msmpeng-crash-wer
+    rule_id: 6c82cf5c-090d-4d57-9188-533577631108
+    file: win_application_msmpeng_crash_wer.yml
+    path: rules/windows/builtin/application/windows_error_reporting/win_application_msmpeng_crash_wer.yml
+  - id: sigma-win-audit-cve
+    rule_id: 48d91a3a-2363-43ba-a456-ca71ac3da5c2
+    file: win_audit_cve.yml
+    path: rules/windows/builtin/application/microsoft-windows_audit_cve/win_audit_cve.yml
+  - id: sigma-win-builtin-remove-application
+    rule_id: 570ae5ec-33dc-427c-b815-db86228ad43e
+    file: win_builtin_remove_application.yml
+    path: rules/windows/builtin/application/msiinstaller/win_builtin_remove_application.yml
   - id: sigma-win-defender-antimalware-platform-expired
     rule_id: 360a1340-398a-46b6-8d06-99b905dc69d2
     file: win_defender_antimalware_platform_expired.yml
@@ -7941,6 +7961,50 @@ rules:
     rule_id: 686c0b4b-9dd3-4847-9077-d6c1bbe36fcb
     file: win_defender_virus_scan_disabled.yml
     path: rules/windows/builtin/windefend/win_defender_virus_scan_disabled.yml
+  - id: sigma-win-esent-ntdsutil-abuse
+    rule_id: e6e88853-5f20-4c4a-8d26-cd469fd8d31f
+    file: win_esent_ntdsutil_abuse.yml
+    path: rules/windows/builtin/application/esent/win_esent_ntdsutil_abuse.yml
+  - id: sigma-win-esent-ntdsutil-abuse-susp-location
+    rule_id: 94dc4390-6b7c-4784-8ffc-335334404650
+    file: win_esent_ntdsutil_abuse_susp_location.yml
+    path: rules/windows/builtin/application/esent/win_esent_ntdsutil_abuse_susp_location.yml
+  - id: sigma-win-msi-install-from-susp-locations
+    rule_id: c7c8aa1c-5aff-408e-828b-998e3620b341
+    file: win_msi_install_from_susp_locations.yml
+    path: rules/windows/builtin/application/msiinstaller/win_msi_install_from_susp_locations.yml
+  - id: sigma-win-msi-install-from-web
+    rule_id: 5594e67a-7f92-4a04-b65d-1a42fd824a60
+    file: win_msi_install_from_web.yml
+    path: rules/windows/builtin/application/msiinstaller/win_msi_install_from_web.yml
+  - id: sigma-win-mssql-add-sysadmin-account
+    rule_id: 08200f85-2678-463e-9c32-88dce2f073d1
+    file: win_mssql_add_sysadmin_account.yml
+    path: rules/windows/builtin/application/mssqlserver/win_mssql_add_sysadmin_account.yml
+  - id: sigma-win-mssql-disable-audit-settings
+    rule_id: 350dfb37-3706-4cdc-9e2e-5e24bc3a46df
+    file: win_mssql_disable_audit_settings.yml
+    path: rules/windows/builtin/application/mssqlserver/win_mssql_disable_audit_settings.yml
+  - id: sigma-win-mssql-failed-logon
+    rule_id: 218d2855-2bba-4f61-9c85-81d0ea63ac71
+    file: win_mssql_failed_logon.yml
+    path: rules/windows/builtin/application/mssqlserver/win_mssql_failed_logon.yml
+  - id: sigma-win-mssql-failed-logon-from-external-network
+    rule_id: ebfe73c2-5bc9-4ed9-aaa8-8b54b2b4777d
+    file: win_mssql_failed_logon_from_external_network.yml
+    path: rules/windows/builtin/application/mssqlserver/win_mssql_failed_logon_from_external_network.yml
+  - id: sigma-win-mssql-sp-procoption-set
+    rule_id: b3d57a5c-c92e-4b48-9a79-5f124b7cf964
+    file: win_mssql_sp_procoption_set.yml
+    path: rules/windows/builtin/application/mssqlserver/win_mssql_sp_procoption_set.yml
+  - id: sigma-win-mssql-xp-cmdshell-audit-log
+    rule_id: 7f103213-a04e-4d59-8261-213dddf22314
+    file: win_mssql_xp_cmdshell_audit_log.yml
+    path: rules/windows/builtin/application/mssqlserver/win_mssql_xp_cmdshell_audit_log.yml
+  - id: sigma-win-mssql-xp-cmdshell-change
+    rule_id: d08dd86f-681e-4a00-a92c-1db218754417
+    file: win_mssql_xp_cmdshell_change.yml
+    path: rules/windows/builtin/application/mssqlserver/win_mssql_xp_cmdshell_change.yml
   - id: sigma-win-security-aadhealth-mon-agent-regkey-access
     rule_id: ff151c33-45fa-475d-af4f-c2f93571f4fe
     file: win_security_aadhealth_mon_agent_regkey_access.yml
@@ -8337,6 +8401,14 @@ rules:
     rule_id: f6c68d5f-e101-4b86-8c84-7d96851fd65c
     file: win_security_wmiprvse_wbemcomn_dll_hijack.yml
     path: rules/windows/builtin/security/win_security_wmiprvse_wbemcomn_dll_hijack.yml
+  - id: sigma-win-software-restriction-policies-block
+    rule_id: b4c8da4a-1c12-46b0-8a2b-0a8521d03442
+    file: win_software_restriction_policies_block.yml
+    path: rules/windows/builtin/application/microsoft_windows_software_restriction_policies/win_software_restriction_policies_block.yml
+  - id: sigma-win-susp-backup-delete
+    rule_id: 9703792d-fd9a-456d-a672-ff92efe4806a
+    file: win_susp_backup_delete.yml
+    path: rules/windows/builtin/application/microsoft_windows_backup/win_susp_backup_delete.yml
   - id: sigma-win-system-adcs-enrollment-request-denied
     rule_id: 994bfd6d-0a2e-481e-a861-934069fcf5f5
     file: win_system_adcs_enrollment_request_denied.yml

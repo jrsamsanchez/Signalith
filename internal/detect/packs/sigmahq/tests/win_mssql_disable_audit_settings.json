@@ -1,0 +1,4 @@
+{"rule": "350dfb37-3706-4cdc-9e2e-5e24bc3a46df", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Application","event_id":"33205","data":{"Data":"statement:DROP SERVER AUDIT","Provider_Name":"MSSQL"}},
+  {"expect":false,"source":"synthesized","channel":"Application","event_id":"33205","data":{"Provider_Name":"MSSQL"}}
+]}
