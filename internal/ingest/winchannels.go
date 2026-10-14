@@ -17,6 +17,23 @@ const AppxChannel = "Microsoft-Windows-AppXDeploymentServer/Operational"
 // subscriptions.
 const WmiChannel = "Microsoft-Windows-WMI-Activity/Operational"
 
+// RdpSessionChannel is where Remote Desktop Services logs sessions
+// logging on, off, disconnecting and reconnecting, with the client's
+// address.
+const RdpSessionChannel = "Microsoft-Windows-TerminalServices-LocalSessionManager/Operational"
+
+// ShellCoreChannel is where the Windows shell logs, among others, apps
+// added to its app resolver cache (Start menu shortcuts).
+const ShellCoreChannel = "Microsoft-Windows-Shell-Core/Operational"
+
+// SmbClientSecurityChannel is where the SMB client logs security events,
+// such as insecure guest logons it refused.
+const SmbClientSecurityChannel = "Microsoft-Windows-SmbClient/Security"
+
+// MitigationsChannel is where Windows logs exploit protection blocks in
+// kernel mode, such as an unsigned image a protected process refused.
+const MitigationsChannel = "Microsoft-Windows-Security-Mitigations/KernelMode"
+
 // BitsChannel is where the Background Intelligent Transfer Service logs
 // its download and upload jobs.
 const BitsChannel = "Microsoft-Windows-Bits-Client/Operational"
@@ -47,6 +64,12 @@ var appxDeploymentFailed = []string{"DeploymentOperation", "PackageFullName", "P
 	"IsInRelatedSet", "IsPackageUsingBDC", "MainPackageFamilyName", "CallingProcess", "IsInPlaceUpdate", "ErrorFileInfo",
 	"DetailedMessageInfo", "RollbackErrorFileInfo", "RollbackDetailedMessageInfo", "IsOptional", "PackageFlags", "PackageFlags2",
 	"HasWin32alacarte", "HasFullTrust", "ExternalLocation", "PackageSourceUri", "PackageDisplayName"}
+
+// mitigationImage is the data of an image load a code integrity
+// mitigation blocked or audited (Security-Mitigations 11 and 12).
+var mitigationImage = []string{"ProcessPathLength", "ProcessPath", "ProcessCommandLineLength", "ProcessCommandLine", "ProcessId",
+	"ProcessCreateTime", "ProcessStartKey", "ProcessSignatureLevel", "ProcessSectionSignatureLevel", "ProcessProtection",
+	"TargetThreadId", "TargetThreadCreateTime", "RequiredSignatureLevel", "SignatureLevel", "ImageNameLength", "ImageName"}
 
 // namedChannels are the Windows logs, besides the System log, whose
 // events the parser keeps the data of by name, by channel (lower case):
@@ -87,6 +110,23 @@ var namedChannels = map[string]namedChannel{
 		"5859": {"A WMI event filter was registered", []string{"NamespaceName", "Query", "User", "processid", "providerName", "queryid", "PossibleCause"}},
 		"5861": {"A WMI permanent event subscription was registered", []string{"Namespace", "ESS", "CONSUMER", "PossibleCause"}},
 	}},
+	strings.ToLower(RdpSessionChannel): {"rdp", map[string]systemEvent{
+		"21": {"A Remote Desktop session logged on", []string{"User", "SessionID", "Address"}},
+		"22": {"A Remote Desktop session's shell started", []string{"User", "SessionID", "Address"}},
+		"23": {"A Remote Desktop session logged off", []string{"User", "SessionID"}},
+		"24": {"A Remote Desktop session disconnected", []string{"User", "SessionID", "Address"}},
+		"25": {"A Remote Desktop session reconnected", []string{"User", "SessionID", "Address"}},
+	}},
+	strings.ToLower(ShellCoreChannel): {"shell", map[string]systemEvent{
+		"28115": {"An app shortcut was added to the app resolver cache", []string{"Name", "AppID", "Flags"}},
+	}},
+	strings.ToLower(SmbClientSecurityChannel): {"smbclient", map[string]systemEvent{
+		"31017": {"The SMB client refused an insecure guest logon", []string{"UserNameLength", "UserName", "ServerNameLength", "ServerName"}},
+	}},
+	strings.ToLower(MitigationsChannel): {"mitigation", map[string]systemEvent{
+		"11": {"A process was blocked from loading an image not signed by Microsoft (audit)", mitigationImage},
+		"12": {"A process was blocked from loading an image not signed by Microsoft", mitigationImage},
+	}},
 	strings.ToLower(BitsChannel): {"bits", map[string]systemEvent{
 		"3": {"A BITS job was created", []string{"jobTitle", "jobId", "jobOwner", "processPath", "processId", "ClientProcessStartKey"}},
 		"16403": {"A BITS transfer started", []string{"User", "jobTitle", "jobId", "jobOwner", "fileCount", "RemoteName", "LocalName",
@@ -97,10 +137,14 @@ var namedChannels = map[string]namedChannel{
 // NamedChannelServices are the Sigma log source services of the logs
 // namedChannels lists, and their channels.
 var NamedChannelServices = map[string]string{
-	"firewall-as":           FirewallChannel,
-	"bits-client":           BitsChannel,
-	"appxdeployment-server": AppxChannel,
-	"wmi":                   WmiChannel,
+	"firewall-as":                          FirewallChannel,
+	"bits-client":                          BitsChannel,
+	"appxdeployment-server":                AppxChannel,
+	"wmi":                                  WmiChannel,
+	"terminalservices-localsessionmanager": RdpSessionChannel,
+	"shell-core":                           ShellCoreChannel,
+	"smbclient-security":                   SmbClientSecurityChannel,
+	"security-mitigations":                 MitigationsChannel,
 }
 
 // NamedChannelCategory is the category of the Sigma rules of a log

@@ -266,7 +266,7 @@ func TestAntivirusCollection(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		channels := "Security,System,Application,Microsoft-Windows-Windows Defender/Operational,Microsoft-Windows-CodeIntegrity/Operational,Microsoft-Windows-Windows Firewall With Advanced Security/Firewall,Microsoft-Windows-Bits-Client/Operational,Microsoft-Windows-AppXDeploymentServer/Operational,Microsoft-Windows-WMI-Activity/Operational"
+		channels := "Security,System,Application,Microsoft-Windows-Windows Defender/Operational,Microsoft-Windows-CodeIntegrity/Operational,Microsoft-Windows-Windows Firewall With Advanced Security/Firewall,Microsoft-Windows-Bits-Client/Operational,Microsoft-Windows-AppXDeploymentServer/Operational,Microsoft-Windows-WMI-Activity/Operational,Microsoft-Windows-TerminalServices-LocalSessionManager/Operational,Microsoft-Windows-Shell-Core/Operational,Microsoft-Windows-SmbClient/Security,Microsoft-Windows-Security-Mitigations/KernelMode"
 		if sysmon {
 			channels += ",Microsoft-Windows-Sysmon/Operational"
 		}
@@ -365,7 +365,7 @@ func TestFluentBitWindowsPowerShell(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(a.Config, "Channels             Security,System,Application,Microsoft-Windows-Windows Defender/Operational,Microsoft-Windows-CodeIntegrity/Operational,Microsoft-Windows-Windows Firewall With Advanced Security/Firewall,Microsoft-Windows-Bits-Client/Operational,Microsoft-Windows-AppXDeploymentServer/Operational,Microsoft-Windows-WMI-Activity/Operational,Microsoft-Windows-Sysmon/Operational,Microsoft-Windows-PowerShell/Operational") {
+	if !strings.Contains(a.Config, "Channels             Security,System,Application,Microsoft-Windows-Windows Defender/Operational,Microsoft-Windows-CodeIntegrity/Operational,Microsoft-Windows-Windows Firewall With Advanced Security/Firewall,Microsoft-Windows-Bits-Client/Operational,Microsoft-Windows-AppXDeploymentServer/Operational,Microsoft-Windows-WMI-Activity/Operational,Microsoft-Windows-TerminalServices-LocalSessionManager/Operational,Microsoft-Windows-Shell-Core/Operational,Microsoft-Windows-SmbClient/Security,Microsoft-Windows-Security-Mitigations/KernelMode,Microsoft-Windows-Sysmon/Operational,Microsoft-Windows-PowerShell/Operational") {
 		t.Errorf("config:\n%s", a.Config)
 	}
 	if !strings.Contains(strings.Join(a.Steps, "\n"), `Set-ItemProperty -Path $k -Name EnableScriptBlockLogging -Value 1`) {

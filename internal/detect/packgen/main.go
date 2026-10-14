@@ -70,10 +70,14 @@ var categories = map[string]string{
 	"code_integrity": "rules/windows/builtin/code_integrity",
 	// Nor these: rules about the logs the parser reads by name
 	// (service: firewall-as, bits-client, appxdeployment-server, wmi).
-	"firewall_as":           "rules/windows/builtin/firewall_as",
-	"bits_client":           "rules/windows/builtin/bits_client",
-	"appxdeployment_server": "rules/windows/builtin/appxdeployment_server",
-	"wmi":                   "rules/windows/builtin/wmi",
+	"firewall_as":                          "rules/windows/builtin/firewall_as",
+	"bits_client":                          "rules/windows/builtin/bits_client",
+	"appxdeployment_server":                "rules/windows/builtin/appxdeployment_server",
+	"wmi":                                  "rules/windows/builtin/wmi",
+	"terminalservices_localsessionmanager": "rules/windows/builtin/terminalservices",
+	"shell_core":                           "rules/windows/builtin/shell_core",
+	"smbclient_security":                   "rules/windows/builtin/smbclient/security",
+	"security_mitigations":                 "rules/windows/builtin/security_mitigations",
 	// Nor this: Microsoft Defender Antivirus log rules (service:
 	// windefend).
 	"windefend": "rules/windows/builtin/windefend",

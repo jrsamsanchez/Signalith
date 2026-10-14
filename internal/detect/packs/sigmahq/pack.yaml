@@ -8301,6 +8301,14 @@ rules:
     rule_id: ecbc5e16-58e0-4521-9c60-eb9a7ea4ad34
     file: win_security_meterpreter_or_cobaltstrike_getsystem_service_install.yml
     path: rules/windows/builtin/security/win_security_meterpreter_or_cobaltstrike_getsystem_service_install.yml
+  - id: sigma-win-security-mitigations-defender-load-unsigned-dll
+    rule_id: 0b0ea3cc-99c8-4730-9c53-45deee2a4c86
+    file: win_security_mitigations_defender_load_unsigned_dll.yml
+    path: rules/windows/builtin/security_mitigations/win_security_mitigations_defender_load_unsigned_dll.yml
+  - id: sigma-win-security-mitigations-unsigned-dll-from-susp-location
+    rule_id: 8289bf8c-4aca-4f5a-9db3-dc3d7afe5c10
+    file: win_security_mitigations_unsigned_dll_from_susp_location.yml
+    path: rules/windows/builtin/security_mitigations/win_security_mitigations_unsigned_dll_from_susp_location.yml
   - id: sigma-win-security-net-ntlm-downgrade
     rule_id: d3abac66-f11c-4ed0-8acb-50cc29c97eed
     file: win_security_net_ntlm_downgrade.yml
@@ -8513,6 +8521,14 @@ rules:
     rule_id: f6c68d5f-e101-4b86-8c84-7d96851fd65c
     file: win_security_wmiprvse_wbemcomn_dll_hijack.yml
     path: rules/windows/builtin/security/win_security_wmiprvse_wbemcomn_dll_hijack.yml
+  - id: sigma-win-shell-core-susp-packages-installed
+    rule_id: 83c161b6-ca67-4f33-8ad0-644a0737cf07
+    file: win_shell_core_susp_packages_installed.yml
+    path: rules/windows/builtin/shell_core/win_shell_core_susp_packages_installed.yml
+  - id: sigma-win-smbclient-security-susp-failed-guest-logon
+    rule_id: 71886b70-d7b4-4dbf-acce-87d2ca135262
+    file: win_smbclient_security_susp_failed_guest_logon.yml
+    path: rules/windows/builtin/smbclient/security/win_smbclient_security_susp_failed_guest_logon.yml
   - id: sigma-win-software-restriction-policies-block
     rule_id: b4c8da4a-1c12-46b0-8a2b-0a8521d03442
     file: win_software_restriction_policies_block.yml
@@ -8745,6 +8761,10 @@ rules:
     rule_id: a0cb7110-edf0-47a4-9177-541a4083128a
     file: win_system_vul_cve_2020_1472.yml
     path: rules/windows/builtin/system/netlogon/win_system_vul_cve_2020_1472.yml
+  - id: sigma-win-terminalservices-rdp-ngrok
+    rule_id: 64d51a51-32a6-49f0-9f3d-17e34d640272
+    file: win_terminalservices_rdp_ngrok.yml
+    path: rules/windows/builtin/terminalservices/win_terminalservices_rdp_ngrok.yml
   - id: sigma-win-wmi-activity-nteventlogfile-cleareventlog
     rule_id: d4f1a2b3-7c8e-4d5f-b6a9-1e0c2d3f4e5b
     file: win_wmi_activity_nteventlogfile_cleareventlog.yml

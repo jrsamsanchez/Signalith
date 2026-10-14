@@ -250,6 +250,13 @@ func TestWindowsFirewallAndBitsEvents(t *testing.T) {
 		"datamodel": "Other", "signature_id": "854", "appx_path": "https://example.org/app.msix",
 		"signature": "An app package file was downloaded",
 	})
+	// A Remote Desktop logon, its channel named in another case.
+	rec = map[string]any{"Channel": "Microsoft-Windows-TerminalServices-LocalSessionManager/operational", "Computer": "WS1",
+		"EventID": "21", "StringInserts": []string{`CORP\alice`, "2", "203.0.113.7"}}
+	b, _ = json.Marshal(rec)
+	expect(t, Normalize("win.events", decode(t, string(b)), now).Document(), map[string]any{
+		"datamodel": "Other", "signature_id": "21", "rdp_user": `CORP\alice`, "rdp_session_id": "2", "rdp_address": "203.0.113.7",
+	})
 }
 
 // The search engine knows every wildcard field, as it takes backslashes

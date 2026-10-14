@@ -186,10 +186,14 @@ var sysmonEvents = map[string]string{
 	// Rules about the logs the parser reads by name name their events:
 	// a firewall rule added, a BITS transfer started, an app package
 	// deployed and a WMI operation failed are the first.
-	"firewall_as":           "2004",
-	"bits_client":           "16403",
-	"appxdeployment_server": "400",
-	"wmi":                   "5858",
+	"firewall_as":                          "2004",
+	"bits_client":                          "16403",
+	"appxdeployment_server":                "400",
+	"wmi":                                  "5858",
+	"terminalservices_localsessionmanager": "21",
+	"shell_core":                           "28115",
+	"smbclient_security":                   "31017",
+	"security_mitigations":                 "12",
 	// Defender log rules (service: windefend) name their events; a
 	// threat detected is the first.
 	"windefend": "1116",
