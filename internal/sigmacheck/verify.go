@@ -135,7 +135,7 @@ var sysmonEvents = map[string]string{
 // SecurityEvents are the Security log events Security log rules
 // (service: security) are checked for; such a rule's category is
 // SecurityCategory of its one event.
-var SecurityEvents = []string{"4624", "4625", "4663", "4697", "4698"}
+var SecurityEvents = []string{"4624", "4625", "4663", "4697", "4698", "5136", "5145"}
 
 // SecurityCategory is the category of a Security log rule about one
 // event, as Bases, Cases and Channel know it.
@@ -287,6 +287,18 @@ var Bases = map[string]map[string]string{
 		"SubjectUserSid": "S-1-5-21-1000-1104", "SubjectUserName": "tester", "SubjectDomainName": "CORP", "SubjectLogonId": "0x1a2b3c",
 		"TaskName":    `\ExampleUpdater`,
 		"TaskContent": `<?xml version="1.0" encoding="UTF-16"?><Task version="1.2"><Actions Context="Author"><Exec><Command>D:\apps\updater\updater.exe</Command></Exec></Actions></Task>`,
+	},
+	"security_5136": {
+		"OpCorrelationID": "{2a5d8e4f-9b10-4b8e-9c71-6f1b4c2e0d3a}", "AppCorrelationID": "-",
+		"SubjectUserSid": "S-1-5-21-1000-1104", "SubjectUserName": "tester", "SubjectDomainName": "CORP", "SubjectLogonId": "0x1a2b3c",
+		"DSName": "corp.example.com", "DSType": "%%14676", "ObjectDN": "CN=Example User,OU=Staff,DC=corp,DC=example,DC=com",
+		"ObjectGUID": "{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}", "ObjectClass": "user", "AttributeLDAPDisplayName": "description",
+		"AttributeSyntaxOID": "2.5.5.12", "AttributeValue": "Example description", "OperationType": "%%14674",
+	},
+	"security_5145": {
+		"SubjectUserSid": "S-1-5-21-1000-1104", "SubjectUserName": "tester", "SubjectDomainName": "CORP", "SubjectLogonId": "0x1a2b3c",
+		"ObjectType": "File", "IpAddress": "192.0.2.10", "IpPort": "50123", "ShareName": `\\*\Projects`,
+		"ShareLocalPath": `\??\D:\Projects`, "RelativeTargetName": `reports\summary.txt`, "AccessMask": "0x1", "AccessList": "%%4416",
 	},
 	"system": {
 		"ServiceName": "ExampleUpdater",

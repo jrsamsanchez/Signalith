@@ -7229,6 +7229,10 @@ rules:
     rule_id: c15e99a3-c474-48ab-b9a7-84549a7a9d16
     file: create_remote_thread_win_ttdinjec.yml
     path: rules/windows/create_remote_thread/create_remote_thread_win_ttdinjec.yml
+  - id: sigma-win-security-account-backdoor-dcsync-rights
+    rule_id: 2c99737c-585d-4431-b61a-c911d86ff32f
+    file: win_security_account_backdoor_dcsync_rights.yml
+    path: rules/windows/builtin/security/win_security_account_backdoor_dcsync_rights.yml
   - id: sigma-win-security-admin-rdp-login
     rule_id: 0f63e1ef-1eb9-4226-9d54-8927ca08520a
     file: win_security_admin_rdp_login.yml
@@ -7237,6 +7241,10 @@ rules:
     rule_id: d7a95147-145f-4678-b85d-d1ff4a3bb3f6
     file: win_security_cobaltstrike_service_installs.yml
     path: rules/windows/builtin/security/win_security_cobaltstrike_service_installs.yml
+  - id: sigma-win-security-dcom-iertutil-dll-hijack
+    rule_id: c39f0c81-7348-4965-ab27-2fde35a1b641
+    file: win_security_dcom_iertutil_dll_hijack.yml
+    path: rules/windows/builtin/security/win_security_dcom_iertutil_dll_hijack.yml
   - id: sigma-win-security-hybridconnectionmgr-svc-installation
     rule_id: 0ee4d8a5-4e67-4faf-acfa-62a78457d1f2
     file: win_security_hybridconnectionmgr_svc_installation.yml
@@ -7289,6 +7297,10 @@ rules:
     rule_id: ecbc5e16-58e0-4521-9c60-eb9a7ea4ad34
     file: win_security_meterpreter_or_cobaltstrike_getsystem_service_install.yml
     path: rules/windows/builtin/security/win_security_meterpreter_or_cobaltstrike_getsystem_service_install.yml
+  - id: sigma-win-security-net-share-obj-susp-desktop-ini
+    rule_id: 35bc7e28-ee6b-492f-ab04-da58fcf6402e
+    file: win_security_net_share_obj_susp_desktop_ini.yml
+    path: rules/windows/builtin/security/win_security_net_share_obj_susp_desktop_ini.yml
   - id: sigma-win-security-overpass-the-hash
     rule_id: 192a0330-c20b-4356-90b6-7b7049ae0b87
     file: win_security_overpass_the_hash.yml
@@ -7297,10 +7309,18 @@ rules:
     rule_id: 7b687634-ab20-11ea-bb37-0242ac130002
     file: win_security_pcap_drivers.yml
     path: rules/windows/builtin/security/win_security_pcap_drivers.yml
+  - id: sigma-win-security-petitpotam-network-share
+    rule_id: 1ce8c8a3-2723-48ed-8246-906ac91061a6
+    file: win_security_petitpotam_network_share.yml
+    path: rules/windows/builtin/security/win_security_petitpotam_network_share.yml
   - id: sigma-win-security-powershell-script-installed-as-service
     rule_id: 2a926e6a-4b81-4011-8a96-e36cc8c04302
     file: win_security_powershell_script_installed_as_service.yml
     path: rules/windows/builtin/security/win_security_powershell_script_installed_as_service.yml
+  - id: sigma-win-security-protected-storage-service-access
+    rule_id: 45545954-4016-43c6-855e-eae8f1c369dc
+    file: win_security_protected_storage_service_access.yml
+    path: rules/windows/builtin/security/win_security_protected_storage_service_access.yml
   - id: sigma-win-security-rdp-localhost-login
     rule_id: 51e33403-2a37-4d66-a574-1fda1782cc31
     file: win_security_rdp_localhost_login.yml
@@ -7313,14 +7333,34 @@ rules:
     rule_id: c8b00925-926c-47e3-beea-298fd563728e
     file: win_security_service_install_remote_access_software.yml
     path: rules/windows/builtin/security/win_security_service_install_remote_access_software.yml
+  - id: sigma-win-security-smb-file-creation-admin-shares
+    rule_id: b210394c-ba12-4f89-9117-44a2464b9511
+    file: win_security_smb_file_creation_admin_shares.yml
+    path: rules/windows/builtin/security/win_security_smb_file_creation_admin_shares.yml
+  - id: sigma-win-security-susp-group-policy-abuse-privilege-addition
+    rule_id: 1c480e10-7ee1-46d4-8ed2-85f9789e3ce4
+    file: win_security_susp_group_policy_abuse_privilege_addition.yml
+    path: rules/windows/builtin/security/win_security_susp_group_policy_abuse_privilege_addition.yml
+  - id: sigma-win-security-susp-ldap-dataexchange
+    rule_id: d00a9a72-2c09-4459-ad03-5e0a23351e36
+    file: win_security_susp_ldap_dataexchange.yml
+    path: rules/windows/builtin/security/win_security_susp_ldap_dataexchange.yml
   - id: sigma-win-security-susp-logon-newcredentials
     rule_id: def8b624-e08f-4ae1-8612-1ba21190da6b
     file: win_security_susp_logon_newcredentials.yml
     path: rules/windows/builtin/security/account_management/win_security_susp_logon_newcredentials.yml
+  - id: sigma-win-security-susp-possible-shadow-credentials-added
+    rule_id: f598ea0c-c25a-4f72-a219-50c44411c791
+    file: win_security_susp_possible_shadow_credentials_added.yml
+    path: rules/windows/builtin/security/win_security_susp_possible_shadow_credentials_added.yml
   - id: sigma-win-security-susp-privesc-kerberos-relay-over-ldap
     rule_id: 749c9f5e-b353-4b90-a9c1-05243357ca4b
     file: win_security_susp_privesc_kerberos_relay_over_ldap.yml
     path: rules/windows/builtin/security/account_management/win_security_susp_privesc_kerberos_relay_over_ldap.yml
+  - id: sigma-win-security-susp-raccess-sensitive-fext
+    rule_id: 91c945bc-2ad1-4799-a591-4d00198a1215
+    file: win_security_susp_raccess_sensitive_fext.yml
+    path: rules/windows/builtin/security/win_security_susp_raccess_sensitive_fext.yml
   - id: sigma-win-security-susp-scheduled-task-creation
     rule_id: 3a734d25-df5c-4b99-8034-af1ddb5883a4
     file: win_security_susp_scheduled_task_creation.yml
@@ -7337,6 +7377,14 @@ rules:
     rule_id: 25cde13e-8e20-4c29-b949-4e795b76f16f
     file: win_security_teams_suspicious_objectaccess.yml
     path: rules/windows/builtin/security/win_security_teams_suspicious_objectaccess.yml
+  - id: sigma-win-security-transf-files-with-cred-data-via-network-share
+    rule_id: 910ab938-668b-401b-b08c-b596e80fdca5
+    file: win_security_transf_files_with_cred_data_via_network_shares.yml
+    path: rules/windows/builtin/security/win_security_transf_files_with_cred_data_via_network_shares.yml
+  - id: sigma-win-security-wmiprvse-wbemcomn-dll-hijack
+    rule_id: f6c68d5f-e101-4b86-8c84-7d96851fd65c
+    file: win_security_wmiprvse_wbemcomn_dll_hijack.yml
+    path: rules/windows/builtin/security/win_security_wmiprvse_wbemcomn_dll_hijack.yml
   - id: sigma-win-system-cobaltstrike-service-installs
     rule_id: 5a105d34-05fc-401e-8553-272b45c1522d
     file: win_system_cobaltstrike_service_installs.yml

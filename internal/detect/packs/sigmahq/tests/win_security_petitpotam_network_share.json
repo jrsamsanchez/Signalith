@@ -1,0 +1,6 @@
+{"rule": "1ce8c8a3-2723-48ed-8246-906ac91061a6", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"5145","data":{"RelativeTargetName":"lsarpc","ShareName":"\\\\\\IPC$","SubjectUserName":"ANONYMOUS LOGON"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"5145","data":{"ShareName":"\\\\\\IPC$","SubjectUserName":"ANONYMOUS LOGON"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"5145","data":{"RelativeTargetName":"lsarpc","SubjectUserName":"ANONYMOUS LOGON"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"5145","data":{"RelativeTargetName":"lsarpc","ShareName":"\\\\\\IPC$"}}
+]}

@@ -117,6 +117,24 @@ func TestWindowsSecurityServiceInstalled(t *testing.T) {
 	})
 }
 
+func TestWindowsShareAccessAndDirectoryChange(t *testing.T) {
+	ins := []string{"S-1-5-7", "ANONYMOUS LOGON", "NT AUTHORITY", "0x3e6", "File", "198.51.100.7", "49702", `\\*\IPC$`, "", "lsarpc", "0x3", "%%1541 %%4416 %%4417"}
+	b, _ := json.Marshal(map[string]any{"Channel": "Security", "Computer": "DC1", "EventID": "5145", "StringInserts": ins})
+	expect(t, Normalize("win.security", decode(t, string(b)), now).Document(), map[string]any{
+		"datamodel": "Filesystem", "action": "modified", "user": "ANONYMOUS LOGON", "src": "198.51.100.7", "src_port": int64(49702),
+		"share_name": `\\*\IPC$`, "share_target": "lsarpc", "file_name": "lsarpc", "access_list": "%%1541 %%4416 %%4417",
+		"access_names": "%%1541 %%4416 %%4417 SYNCHRONIZE ReadData WriteData", "access_mask": "0x3",
+	})
+	ins = []string{"{1}", "-", "S-1-5-21-1", "eve", "CORP", "0x1a2b", "corp.example.com", "%%14676", "CN=bob,CN=Users,DC=corp,DC=example,DC=com",
+		"{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}", "user", "sIDHistory", "2.5.5.17", "S-1-5-21-2-500", "%%14674"}
+	b, _ = json.Marshal(map[string]any{"Channel": "Security", "Computer": "DC1", "EventID": "5136", "StringInserts": ins})
+	expect(t, Normalize("win.security", decode(t, string(b)), now).Document(), map[string]any{
+		"datamodel": "Change", "action": "modified", "object_category": "directory_object", "user": "eve",
+		"object": "CN=bob,CN=Users,DC=corp,DC=example,DC=com", "ad_object_class": "user", "ad_attribute": "sIDHistory",
+		"ad_value": "S-1-5-21-2-500", "ad_operation": "%%14674", "ad_object_guid": "6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10",
+	})
+}
+
 func TestWindowsObjectAccess(t *testing.T) {
 	ins := []string{"S-1-5-21-1", "bob", "CORP", "0x3e7", "Security", "File", `C:\Users\bob\AppData\Local\Google\Chrome\User Data\Local State`,
 		"0x1f4", "%%4416\n\t\t\t\t", "0x1", "0x1092", `C:\Tools\steal.exe`}

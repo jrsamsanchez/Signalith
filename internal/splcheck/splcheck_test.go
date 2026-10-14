@@ -292,6 +292,33 @@ func TestParseServiceInstalled(t *testing.T) {
 	}
 }
 
+func TestParseDirectoryChangeAndShareAccess(t *testing.T) {
+	for src, node := range map[string]string{
+		"`wineventlog_security` EventCode=5136 AttributeLDAPDisplayName=sIDHistory OperationType=\"%%14674\"\n| stats values(ObjectDN) as ObjectDN by _time, Computer": "DirectoryChange",
+		"`wineventlog_security` SubjectUserName=\"ANONYMOUS LOGON\" EventCode=5145 RelativeTargetName=lsarpc\n| stats count by dest, ShareName":                        "ShareAccess",
+	} {
+		r, err := Parse(rule(src), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r.Node != node {
+			t.Fatalf("node %s, want %s", r.Node, node)
+		}
+		pos := 0
+		for _, c := range Cases(r) {
+			if c.Expect {
+				pos++
+			}
+			if c.Expect != Reads(r, c) {
+				t.Errorf("%s case %+v: Reads disagrees", node, c)
+			}
+		}
+		if pos == 0 {
+			t.Errorf("%s: no test event matches", node)
+		}
+	}
+}
+
 func TestParseSysmonAccess(t *testing.T) {
 	src := rule("`sysmon` EventCode=10 TargetImage=\"*\\\\lsass.exe\" GrantedAccess IN (\"0x1010\", \"0x1410\") NOT SourceImage=\"*\\\\MsMpEng.exe\"\n| stats count by dest SourceImage")
 	r, err := Parse(src, nil)

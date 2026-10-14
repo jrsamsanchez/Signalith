@@ -1,0 +1,4 @@
+{"rule": "910ab938-668b-401b-b08c-b596e80fdca5", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"5145","data":{"RelativeTargetName":"Windows\\System32\\config\\SECURITY"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"5145","data":{}}
+]}

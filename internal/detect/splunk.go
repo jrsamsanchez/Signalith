@@ -170,7 +170,8 @@ var splunkTechnique = regexp.MustCompile(`^T\d{4}(\.\d{3})?$`)
 
 // splunkThrottle is packThrottle for a Splunk rule: an object access is
 // one a day per host, program and object, a scheduled task per host and
-// task, a service per host and service.
+// task, a service per host and service, a directory change per object
+// and attribute, a share access per client, share and path.
 func splunkThrottle(node, dm string) []string {
 	switch node {
 	case "ObjectAccess":
@@ -179,6 +180,10 @@ func splunkThrottle(node, dm string) []string {
 		return []string{"host", "task_name"}
 	case "ServiceInstalled":
 		return []string{"host", "service_name"}
+	case "DirectoryChange":
+		return []string{"host", "object", "ad_attribute"}
+	case "ShareAccess":
+		return []string{"host", "src", "share_name", "share_target"}
 	}
 	return packThrottle("", dm)
 }

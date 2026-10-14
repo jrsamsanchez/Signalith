@@ -630,6 +630,15 @@ func TestConvertSigmaSecurityLog(t *testing.T) {
 	if q := res.Detection.Query; strings.Contains(q, "datamodel=") || !strings.Contains(q, "object_type=Key") {
 		t.Errorf("object access query = %s", q)
 	}
+	// A share access is searched by its access names as well as codes.
+	share := strings.NewReplacer("4624", "5145", "LogonType: 10", "RelativeTargetName: svcctl", "LogonProcessName: User32", "AccessList|contains: 'WriteData'").Replace(logon)
+	res, err = ConvertSigmaWith([]byte(share), SigmaOptions{Strict: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if q := res.Detection.Query; !strings.Contains(q, "datamodel=Filesystem") || !strings.Contains(q, "access_names=*WriteData*") || !strings.Contains(q, "share_target=svcctl") {
+		t.Errorf("share access query = %s", q)
+	}
 	// A rule about two events, or one Signalith does not read, is refused.
 	for _, other := range []string{strings.Replace(logon, "EventID: 4624", "EventID: [4624, 4625]", 1), strings.Replace(logon, "4624", "4776", 1)} {
 		if _, err := ConvertSigmaWith([]byte(other), SigmaOptions{Strict: true}); err == nil {

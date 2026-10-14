@@ -1066,6 +1066,10 @@ rules:
     rule_id: fa7ca5c6-c9d8-11eb-bce9-acde48001122
     file: permission_modification_using_takeown_app.yml
     path: detections/endpoint/permission_modification_using_takeown_app.yml
+  - id: splunk-petitpotam-network-share-access-request
+    rule_id: 95b8061a-0a67-11ec-85ec-acde48001122
+    file: petitpotam_network_share_access_request.yml
+    path: detections/endpoint/petitpotam_network_share_access_request.yml
   - id: splunk-ping-sleep-batch-command
     rule_id: ce058d6c-79f2-11ec-b476-acde48001122
     file: ping_sleep_batch_command.yml
@@ -1550,6 +1554,10 @@ rules:
     rule_id: 08cb291e-ea77-48e8-a95a-0799319bf056
     file: windows_ad_dsrm_account_changes.yml
     path: detections/endpoint/windows_ad_dsrm_account_changes.yml
+  - id: splunk-windows-ad-sid-history-attribute-modified
+    rule_id: 1155e47d-307f-4247-beab-71071e3a458c
+    file: windows_ad_sid_history_attribute_modified.yml
+    path: detections/endpoint/windows_ad_sid_history_attribute_modified.yml
   - id: splunk-windows-adfind-exe
     rule_id: bd3b0187-189b-46c0-be45-f52da2bae67f
     file: windows_adfind_exe.yml
@@ -1798,6 +1806,10 @@ rules:
     rule_id: 25b6329b-d6b7-4ccd-9ac2-6ca1dfd2b0c1
     file: windows_default_cobalt_strike_powershell_beacon.yml
     path: detections/endpoint/windows_default_cobalt_strike_powershell_beacon.yml
+  - id: splunk-windows-default-group-policy-object-modified
+    rule_id: fe6a6cc4-9e0d-4d66-bcf4-2c7f44860876
+    file: windows_default_group_policy_object_modified.yml
+    path: detections/endpoint/windows_default_group_policy_object_modified.yml
   - id: splunk-windows-default-group-policy-object-modified-with-gpme
     rule_id: eaf688b3-bb8f-454d-b105-920a862cd8cb
     file: windows_default_group_policy_object_modified_with_gpme.yml

@@ -146,7 +146,7 @@ var sigmaEventFields = func() map[string]map[string]string {
 		"security_4624":        logon,
 		"security_4625":        logon,
 		"security_4663": security(map[string]string{
-			"objectname": "object_path", "objecttype": "object_type", "accesslist": "access_list",
+			"objectname": "object_path", "objecttype": "object_type", "accesslist": "access_names",
 			"accessmask": "access_mask", "processname": "process_path",
 		}),
 		"security_4697": security(map[string]string{
@@ -154,6 +154,15 @@ var sigmaEventFields = func() map[string]map[string]string {
 			"servicestarttype": "service_start_type", "serviceaccount": "service_account",
 		}),
 		"security_4698": security(map[string]string{"taskname": "task_name", "taskcontent": "task_content"}),
+		"security_5136": security(map[string]string{
+			"objectdn": "object", "objectguid": "ad_object_guid", "objectclass": "ad_object_class",
+			"attributeldapdisplayname": "ad_attribute", "attributevalue": "ad_value", "operationtype": "ad_operation",
+		}),
+		"security_5145": security(map[string]string{
+			"objecttype": "object_type", "ipaddress": "src", "ipport": "src_port", "sharename": "share_name",
+			"sharelocalpath": "share_path", "relativetargetname": "share_target", "accessmask": "access_mask",
+			"accesslist": "access_names",
+		}),
 		"system": {
 			"servicename": "service_name", "imagepath": "service_path", "servicetype": "service_type",
 			"starttype": "service_start_type", "accountname": "service_account", "provider_name": "provider",
@@ -190,6 +199,8 @@ var sigmaWindowsEvents = map[string][]string{
 	"security_4663":        {"4663"},
 	"security_4697":        {"4697"},
 	"security_4698":        {"4698"},
+	"security_5136":        {"5136"},
+	"security_5145":        {"5145"},
 }
 
 // sigmaSecurityModels are the Security log events Security log rules
@@ -198,6 +209,7 @@ var sigmaWindowsEvents = map[string][]string{
 // rules search any.
 var sigmaSecurityModels = map[string]string{
 	"4624": "Authentication", "4625": "Authentication", "4663": "", "4697": "Change", "4698": "Change",
+	"5136": "Change", "5145": "Filesystem",
 }
 
 // anyModel reports whether the rule's events land in more than one data

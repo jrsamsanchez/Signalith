@@ -1,0 +1,5 @@
+{"rule": "1c480e10-7ee1-46d4-8ed2-85f9789e3ce4", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"5136","data":{"AttributeLDAPDisplayName":"gPCMachineExtensionNames","AttributeValue":"827D319E-6EAC-11D2-A4EA-00C04F79F83A"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"5136","data":{"AttributeValue":"827D319E-6EAC-11D2-A4EA-00C04F79F83A"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"5136","data":{"AttributeLDAPDisplayName":"gPCMachineExtensionNames"}}
+]}

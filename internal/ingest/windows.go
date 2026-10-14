@@ -223,6 +223,7 @@ func parseWindowsSecurity(eventID string, in []string, ev *Event) {
 		f["process_id"] = atoi(at(in, 10))
 		f["process_path"] = at(in, 11)
 		f["process_name"] = baseName(at(in, 11))
+		f["access_names"] = accessNames(f["access_list"].(string))
 		f["action"] = objectAccessAction(f["access_list"].(string))
 		switch at(in, 5) {
 		case "File":
@@ -234,6 +235,44 @@ func parseWindowsSecurity(eventID string, in []string, ev *Event) {
 			f["registry_path"] = name
 			f["registry_key_name"] = baseName(name)
 		}
+	case "5145":
+		// A file or named pipe on a network share, checked for the access
+		// a client asked for (with Audit Detailed File Share on). The
+		// path is relative to the share.
+		ev.Model = "Filesystem"
+		f["signature"] = "A network share object was checked to see whether client can be granted desired access"
+		f["user"] = at(in, 1)
+		f["user_domain"] = at(in, 2)
+		f["logon_id"] = at(in, 3)
+		f["object_type"] = at(in, 4)
+		f["src"] = at(in, 5)
+		f["src_port"] = atoi(at(in, 6))
+		f["share_name"] = at(in, 7)
+		f["share_path"] = at(in, 8)
+		f["share_target"] = at(in, 9)
+		f["file_path"] = at(in, 9)
+		f["file_name"] = baseName(at(in, 9))
+		f["access_mask"] = at(in, 10)
+		f["access_list"] = strings.Join(strings.Fields(at(in, 11)), " ")
+		f["access_names"] = accessNames(f["access_list"].(string))
+		f["action"] = objectAccessAction(f["access_list"].(string))
+	case "5136":
+		// A directory service object changed (with Audit Directory
+		// Service Changes on): one attribute value added or deleted.
+		ev.Model = "Change"
+		f["action"] = "modified"
+		f["object_category"] = "directory_object"
+		f["signature"] = "A directory service object was modified"
+		f["user"] = at(in, 3)
+		f["user_domain"] = at(in, 4)
+		f["logon_id"] = at(in, 5)
+		f["object"] = at(in, 8)
+		f["ad_object_guid"] = strings.Trim(at(in, 9), "{}")
+		f["ad_object_class"] = at(in, 10)
+		f["ad_attribute"] = at(in, 11)
+		f["ad_value"] = at(in, 13)
+		// %%14674 is a value added, %%14675 a value deleted.
+		f["ad_operation"] = at(in, 14)
 	case "4720", "4726":
 		ev.Model = "Change"
 		f["object"] = at(in, 0)
@@ -286,6 +325,29 @@ func parseWindowsSystem(eventID, provider string, in []string, ev *Event) {
 	f["service_type"] = at(in, 2)
 	f["service_start_type"] = at(in, 3)
 	f["service_account"] = at(in, 4)
+}
+
+// accessRightNames are the names Windows shows for the access codes of
+// an object access's access list.
+var accessRightNames = map[string]string{
+	"%%1537": "DELETE", "%%1538": "READ_CONTROL", "%%1539": "WRITE_DAC", "%%1540": "WRITE_OWNER",
+	"%%1541": "SYNCHRONIZE", "%%1542": "ACCESS_SYS_SEC",
+	"%%4416": "ReadData", "%%4417": "WriteData", "%%4418": "AppendData", "%%4419": "ReadEA",
+	"%%4420": "WriteEA", "%%4421": "Execute", "%%4422": "DeleteChild", "%%4423": "ReadAttributes",
+	"%%4424": "WriteAttributes",
+}
+
+// accessNames is an access list followed by the names of its codes
+// (%%4417 WriteData), so a search finds an access by its code, as the
+// event records it, or by its name, as Windows shows it.
+func accessNames(list string) string {
+	out := strings.Fields(list)
+	for _, c := range strings.Fields(list) {
+		if n, ok := accessRightNames[c]; ok {
+			out = append(out, n)
+		}
+	}
+	return strings.Join(out, " ")
 }
 
 // objectAccessAction is what an object access did, from its access list

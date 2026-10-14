@@ -434,6 +434,27 @@ func records(node string, ev map[string]string) []sigmacheck.Case {
 			out = append(out, sigmacheck.Case{Channel: sigmacheck.SecurityChannel, EventID: "4663", Data: key})
 		}
 		return out
+	case "DirectoryChange":
+		s := maps.Clone(sigmacheck.Bases[sigmacheck.SecurityCategory("5136")])
+		set(s, "ObjectDN", ev["object"])
+		set(s, "ObjectGUID", ev["ad_object_guid"])
+		set(s, "ObjectClass", ev["ad_object_class"])
+		set(s, "AttributeLDAPDisplayName", ev["ad_attribute"])
+		set(s, "AttributeValue", ev["ad_value"])
+		set(s, "OperationType", ev["ad_operation"])
+		set(s, "SubjectUserName", ev["user"])
+		return []sigmacheck.Case{{Channel: sigmacheck.SecurityChannel, EventID: "5136", Data: s}}
+	case "ShareAccess":
+		s := maps.Clone(sigmacheck.Bases[sigmacheck.SecurityCategory("5145")])
+		set(s, "ShareName", ev["share_name"])
+		set(s, "ShareLocalPath", ev["share_path"])
+		set(s, "RelativeTargetName", ev["share_target"])
+		set(s, "ObjectType", ev["object_type"])
+		set(s, "IpAddress", ev["src"])
+		set(s, "AccessMask", ev["access_mask"])
+		set(s, "AccessList", ev["access_list"])
+		set(s, "SubjectUserName", ev["user"])
+		return []sigmacheck.Case{{Channel: sigmacheck.SecurityChannel, EventID: "5145", Data: s}}
 	case "ServiceInstalled":
 		s := map[string]string{
 			"ServiceName": "ExampleUpdater", "ImagePath": `"C:\Program Files\Example\updater.exe" --service`,
@@ -569,7 +590,7 @@ func Cases(r *Rule) []sigmacheck.Case {
 }
 
 // NodeModel is the Signalith data model of each node ("" for any).
-var NodeModel = map[string]string{"Processes": "Endpoint", "Filesystem": "Filesystem", "Registry": "Registry", "PowerShell": "Script", "ImageLoad": "Image_Load", "ProcessAccess": "Endpoint", "TaskCreated": "Change", "ObjectAccess": "", "ServiceInstalled": "Change"}
+var NodeModel = map[string]string{"Processes": "Endpoint", "Filesystem": "Filesystem", "Registry": "Registry", "PowerShell": "Script", "ImageLoad": "Image_Load", "ProcessAccess": "Endpoint", "TaskCreated": "Change", "ObjectAccess": "", "ServiceInstalled": "Change", "DirectoryChange": "Change", "ShareAccess": "Filesystem"}
 
 // AttackDataSource marks a test event recorded in a real attack (Splunk's
 // attack_data, by internal/detect/attackgen).
@@ -594,6 +615,8 @@ var NodeEvents = map[string][]string{
 	"TaskCreated":      {"4698"},
 	"ObjectAccess":     {"4663"},
 	"ServiceInstalled": {"7045"},
+	"DirectoryChange":  {"5136"},
+	"ShareAccess":      {"5145"},
 }
 
 // InModel reports whether an event of a data model is one a node reads.

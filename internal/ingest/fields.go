@@ -104,6 +104,12 @@ var knownFields = func() map[string]string {
 		"provider": kw,
 		// A logon's (Security 4624 and 4625) logon process and account SID.
 		"logon_process": kw, "user_sid": kw,
+		// An object access's access list with the names of its codes
+		// added (WriteData for %%4417), a network share access (Security 5145) and a directory
+		// object change (Security 5136), whose values (security
+		// descriptors) rules search words inside.
+		"access_names": kw, "share_name": kw, "share_path": kw, "share_target": kw,
+		"ad_object_guid": kw, "ad_object_class": kw, "ad_attribute": kw, "ad_value": "wildcard", "ad_operation": kw,
 		// An sshd line whose client address cannot be told from text the
 		// client sent (see ambiguousSSH).
 		"src_ambiguous": kw,

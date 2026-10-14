@@ -187,7 +187,7 @@ var (
 		"powershell": {"4104": "PowerShell"},
 		"sysmon":     {"7": "ImageLoad", "8": "ProcessAccess", "10": "ProcessAccess"},
 		// Security events the Windows parser reads.
-		"wineventlog_security": {"4698": "TaskCreated", "4663": "ObjectAccess"},
+		"wineventlog_security": {"4698": "TaskCreated", "4663": "ObjectAccess", "5136": "DirectoryChange", "5145": "ShareAccess"},
 		// The Service Control Manager's service installed event.
 		"wineventlog_system": {"7045": "ServiceInstalled"},
 	}
@@ -209,6 +209,16 @@ var (
 			"ObjectName": "object_path", "object_file_path": "object_path", "object_file_name": "object_name",
 			"ObjectType": "object_type", "AccessList": "access_list", "AccessMask": "access_mask",
 			"ProcessName": "process_path", "process_path": "process_path",
+		},
+		"DirectoryChange": {
+			"ObjectDN": "object", "ObjectGUID": "ad_object_guid", "ObjectClass": "ad_object_class",
+			"AttributeLDAPDisplayName": "ad_attribute", "AttributeValue": "ad_value", "OperationType": "ad_operation",
+			"SubjectUserName": "user",
+		},
+		"ShareAccess": {
+			"ShareName": "share_name", "ShareLocalPath": "share_path", "RelativeTargetName": "share_target",
+			"ObjectType": "object_type", "IpAddress": "src", "AccessMask": "access_mask", "AccessList": "access_list",
+			"SubjectUserName": "user",
 		},
 		"ServiceInstalled": {
 			"ServiceName": "service_name", "ImagePath": "service_path", "ServiceType": "service_type",

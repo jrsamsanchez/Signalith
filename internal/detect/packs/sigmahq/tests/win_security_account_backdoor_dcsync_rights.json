@@ -1,0 +1,6 @@
+{"rule": "2c99737c-585d-4431-b61a-c911d86ff32f", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"5136","data":{"AttributeLDAPDisplayName":"ntSecurityDescriptor","AttributeValue":"89e95b76-444d-4c62-991a-0facbeda640c"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"5136","data":{"AttributeLDAPDisplayName":"ntSecurityDescriptor","AttributeValue":"89e95b76-444d-4c62-991a-0facbeda640c","ObjectClass":"dnsZoneScope"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"5136","data":{"AttributeValue":"89e95b76-444d-4c62-991a-0facbeda640c"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"5136","data":{"AttributeLDAPDisplayName":"ntSecurityDescriptor"}}
+]}

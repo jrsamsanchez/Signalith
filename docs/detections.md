@@ -242,8 +242,8 @@ Content packs are rule sets from other open source projects, shipped unchanged
 inside Signalith and converted when it starts. Every pack detection is **off** until
 an admin turns it on.
 
-**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 1,869 rules from
-[SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 1,759 Windows rules
+**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 1,881 rules from
+[SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 1,771 Windows rules
 for these Sysmon, Security, PowerShell and System log sources, and 110 Linux rules (see
 [Linux endpoints](#linux-endpoints-sysmon-for-linux)):
 
@@ -258,14 +258,18 @@ for these Sysmon, Security, PowerShell and System log sources, and 110 Linux rul
 | `dns_query` | Sysmon 22 | Network_Resolution |
 | `ps_script` | PowerShell 4104 | Script |
 | `service: system` | System 7045 (service installed) | Change |
-| `service: security` | Security 4624 and 4625 (logons); 4697 (service installed); 4698 (scheduled task created); 4663 (object access) | Authentication; Change; Change; Filesystem or Registry |
+| `service: security` | Security 4624 and 4625 (logons); 4697 (service installed); 4698 (scheduled task created); 4663 (object access); 5145 (network share access); 5136 (directory object changed) | Authentication; Change; Change; Filesystem or Registry; Filesystem; Change |
 
 A Security log rule names its event's own fields (`TargetUserName`, `LogonType`,
 `ServiceFileName`, `ObjectName`), so each one converts for the one Security event it
 is about; rules about other Security events, or about several, are left out. Windows
 logs these events with **Audit Logon** (4624, 4625), **Audit Security System
-Extension** (4697), **Audit Other Object Access Events** (4698), and **Audit File
-System** or **Audit Registry** (4663) on.
+Extension** (4697), **Audit Other Object Access Events** (4698), **Audit File
+System** or **Audit Registry** (4663), **Audit Detailed File Share** (5145) and **Audit
+Directory Service Changes** (5136, on domain controllers) on. An access list
+(`AccessList`) is searched by its codes (`%%4417`) and by their names (`WriteData`),
+since rules use both. Rules that match a share name with a literal `*`
+(`\\*\IPC$`) are left out: Signalith patterns cannot yet say "a literal asterisk".
 
 Each pack rule only searches its own log source's event IDs, since several kinds of
 event share a data model (a process creation and a process access are both Endpoint).
@@ -369,7 +373,7 @@ The generator keeps each rule's Signalith ID across runs, rewrites `rules/`,
 
 ### Splunk Security Content
 
-**Splunk Security Content** (`internal/detect/packs/splunk`) holds 829 Windows and
+**Splunk Security Content** (`internal/detect/packs/splunk`) holds 832 Windows and
 Linux detections from Splunk's Threat Research Team
 ([security_content](https://github.com/splunk/security_content)), pinned to one
 commit. They are the production TTP and anomaly rules that search the CIM
@@ -388,6 +392,8 @@ names, so each rule's `where` clause becomes a Signalith filter field for field:
 | `` `wineventlog_security` EventCode=4698 `` (raw search) | Security 4698 (scheduled task created) | Change |
 | `` `wineventlog_security` EventCode=4663 `` (raw search) | Security 4663 (object access) | Filesystem for a file, Registry for a key |
 | `` `wineventlog_system` EventCode=7045 `` (raw search) | System 7045 (service installed) | Change |
+| `` `wineventlog_security` EventCode=5136 `` (raw search) | Security 5136 (directory object changed) | Change |
+| `` `wineventlog_security` EventCode=5145 `` (raw search) | Security 5145 (network share access) | Filesystem |
 | `Endpoint.Processes` (Sysmon for Linux rules) | Sysmon for Linux 1 | Endpoint |
 | `Endpoint.Filesystem` (Sysmon for Linux rules) | Sysmon for Linux 11 and 23 | Filesystem |
 
@@ -424,6 +430,13 @@ Object access rules (Security 4663) search the object's path whatever its type
 Registry (action `read`, `modified` or `deleted`), and a rule searches both, as in
 Splunk. Windows logs 4663 only for objects whose auditing (SACL) asks for it, with
 **Audit File System** or **Audit Registry** on.
+
+Directory change rules (Security 5136) search the object's DN (`ObjectDN` is
+`object`), `ObjectClass` (`ad_object_class`), the attribute (`AttributeLDAPDisplayName`
+is `ad_attribute`), its value (`AttributeValue` is `ad_value`) and `OperationType`
+(`ad_operation`, `%%14674` for a value added). Share access rules (Security 5145)
+search `ShareName` (`share_name`), the path inside the share (`RelativeTargetName` is
+`share_target`), the client (`IpAddress` is `src`), `AccessMask` and `AccessList`.
 
 Service install rules (System 7045, from the Sigma `service: system` log source or
 Splunk's `wineventlog_system`) search the service's name (`ServiceName` is
