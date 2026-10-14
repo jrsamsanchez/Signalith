@@ -242,8 +242,8 @@ Content packs are rule sets from other open source projects, shipped unchanged
 inside Signalith and converted when it starts. Every pack detection is **off** until
 an admin turns it on.
 
-**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,100 rules from
-[SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 1,946 Windows rules
+**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,108 rules from
+[SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 1,954 Windows rules
 for these Sysmon, Security, PowerShell and System log sources, and 154 Linux rules (see
 [Linux endpoints](#linux-endpoints-sysmon-for-linux) and
 [the Linux audit log](#linux-audit-log-auditd)):
@@ -259,29 +259,35 @@ for these Sysmon, Security, PowerShell and System log sources, and 154 Linux rul
 | `dns_query` | Sysmon 22 | Network_Resolution |
 | `pipe_created` | Sysmon 17 and 18 (named pipe created or connected to) | Endpoint |
 | `create_stream_hash` | Sysmon 15 (alternate data stream written, such as a download's `Zone.Identifier`) | Filesystem |
+| `raw_access_thread` | Sysmon 9 (a drive read directly; `Device` is `device`) | Endpoint |
 | `ps_script` | PowerShell 4104 | Script |
 | `service: system` | System 7045 (service installed) | Change |
 | `service: security` | The Security log events in the next table | See the next table |
 
 A Security log rule names its event's own fields (`TargetUserName`, `LogonType`,
 `ServiceFileName`, `ObjectName`), so each one converts for the one Security event it
-is about, or for a handle request and the access made with it (4656 and 4663), which
-carry the same data; rules about other Security events, or other sets of events, are
-left out. Windows logs each event only with its audit policy setting on:
+is about, or for events that carry the same data: a handle request and the access made
+with it (4656 and 4663), or a scheduled task deleted or disabled (4699 and 4701). Rules
+about other Security events, or other sets of events, are left out. Event IDs of Windows
+2000 and XP (below 1000, such as 517 for the log cleared) that a rule names beside
+current ones are ignored, since those systems' events never reach Signalith. Windows
+logs each event only with its audit policy setting on:
 
 | Security events | Data model | Audit policy setting |
 | --- | --- | --- |
 | 4624, 4625 (logon, failed logon), 4648 (logon with explicit credentials) | Authentication | Audit Logon |
 | 4768, 4769 (Kerberos tickets, on domain controllers) | Authentication | Audit Kerberos Authentication Service, Audit Kerberos Service Ticket Operations |
 | 4697 (service installed) | Change | Audit Security System Extension |
-| 4698 (scheduled task created) | Change | Audit Other Object Access Events |
-| 4720, 4738 (user account created or changed), 4732 (member added to a local group) | Change | Audit User Account Management, Audit Security Group Management |
+| 4698, 4699, 4701, 4702 (scheduled task created, deleted, disabled, updated) | Change | Audit Other Object Access Events |
+| 4720, 4738 (user account created or changed), 4732 (member added to a local group), 4728, 4729 (member added to or removed from a global group), 4730 (global group deleted) | Change | Audit User Account Management, Audit Security Group Management |
+| 1102 (Security log cleared) | Change | Always logged |
 | 4719 (audit policy changed) | Change | Audit Audit Policy Change |
 | 4706 (domain trust created), 4794 (DSRM password set) | Change | Audit Authentication Policy Change, Audit User Account Management |
 | 4656 (handle requested), 4663 (object access) | Filesystem for a file, Registry for a key | Audit Handle Manipulation, Audit File System or Audit Registry |
 | 4661 (handle to a SAM or directory object) | none (searched in every model) | Audit SAM |
 | 4657 (registry value modified) | Registry | Audit Registry |
 | 5145 (network share access) | Filesystem | Audit Detailed File Share |
+| 5140 (network share accessed, once per session) | Filesystem | Audit File Share |
 | 5136 (directory object changed), 4662 (operation on a directory object) | Change | Audit Directory Service Changes, Audit Directory Service Access (domain controllers) |
 | 5156, 5157 (connection allowed or blocked) | Network_Traffic | Audit Filtering Platform Connection |
 
@@ -427,7 +433,7 @@ The generator keeps each rule's Signalith ID across runs, rewrites `rules/`,
 
 ### Splunk Security Content
 
-**Splunk Security Content** (`internal/detect/packs/splunk`) holds 975 Windows and
+**Splunk Security Content** (`internal/detect/packs/splunk`) holds 988 Windows and
 Linux detections from Splunk's Threat Research Team
 ([security_content](https://github.com/splunk/security_content)), pinned to one
 commit. They are the production TTP and anomaly rules that search the CIM
@@ -451,6 +457,7 @@ names, so each rule's `where` clause becomes a Signalith filter field for field:
 | `` `sysmon` EventCode=8 `` or `10` (raw search) | Sysmon 8 and 10 | Endpoint |
 | `` `sysmon` EventCode=17 `` or `18` (raw search) | Sysmon 17 and 18 (named pipe created or connected to; `PipeName` is `pipe_name`) | Endpoint |
 | `` `sysmon` EventCode=15 `` (raw search) | Sysmon 15 (alternate data stream written; `Contents` is `file_contents`) | Filesystem |
+| `` `sysmon` EventCode=5 `` or `9` (raw search) | Sysmon 5 (process terminated) and 9 (a drive read directly; `Device` is `device`) | Endpoint |
 | `` `wineventlog_security` EventCode=4624 `` or `4625` (raw search) | Security 4624 (successful logon) and 4625 (failed logon) | Authentication |
 | `` `wineventlog_security` EventCode=4698 `` (raw search) | Security 4698 (scheduled task created) | Change |
 | `` `wineventlog_security` EventCode=4663 `` (raw search) | Security 4663 (object access) | Filesystem for a file, Registry for a key |
@@ -459,6 +466,9 @@ names, so each rule's `where` clause becomes a Signalith filter field for field:
 | `` `wineventlog_security` EventCode=5145 `` (raw search) | Security 5145 (network share access) | Filesystem |
 | `` `wineventlog_security` EventCode=4768 `` or `4769` (raw search) | Security 4768 and 4769 (Kerberos tickets) | Authentication |
 | `` `wineventlog_security` EventCode=4738 `` or `4732` (raw search) | Security 4738 (user account changed) and 4732 (member added to a local group) | Change |
+| `` `wineventlog_security` EventCode=4648 ``, `4776` or `4771` (raw search) | Security 4648 (logon with explicit credentials), 4776 (NTLM credential check) and 4771 (Kerberos pre-authentication failed) | Authentication |
+| `` `wineventlog_security` EventCode=4741 ``, `4742`, `4781`, `4727`, `4730` or `4737` (raw search) | Security 4741 and 4742 (computer account created or changed), 4781 (account renamed), 4727, 4730 and 4737 (global group created, deleted or changed) | Change |
+| `` `wineventlog_security` EventCode=4798 ``, `4799`, `4886` or `4887` (raw search) | Security 4798 and 4799 (local group membership listed), 4886 and 4887 (certificate requested and issued) | Change |
 | `Endpoint.Processes` (Sysmon for Linux rules) | Sysmon for Linux 1 | Endpoint |
 | `Endpoint.Filesystem` (Sysmon for Linux rules) | Sysmon for Linux 11 and 23 | Filesystem |
 | `` `linux_auditd` `` (raw search) | Linux audit records, each field by auditd's name (see [the Linux audit log](#linux-audit-log-auditd)) | Other |
@@ -518,6 +528,23 @@ the change (`SubjectUserName` is `user`), the account's `UserAccountControl` fla
 (`user_account_control`, such as `%%2096` for Kerberos pre-authentication turned
 off), and the member added (`MemberSid` is `member_sid`). They are stored in Change
 with `object_category` `user` or `group`.
+
+Sign-in rules search the account (`TargetUserName` is `user`): a logon with explicit
+credentials (4648) by who used them (`SubjectUserName`, or the add-on's
+`Caller_User_Name`, is `src_user`), an NTLM credential check (4776) by the computer it
+came from (`Workstation` is `src_host`) and its result (`Status` is `ntlm_status`,
+`0xc0000064` for an account that does not exist), and a failed Kerberos
+pre-authentication (4771) by the client (`IpAddress` is `src`) and `Status`
+(`kerberos_status`, `0x18` for a wrong password).
+
+Computer account rules (4741, 4742) search the account (`TargetUserName` is `object`),
+its `UserAccountControl`, `NewUacValue` and service principal names
+(`ServicePrincipalNames` is `service_principal_names`, one space between names). A
+renamed account (4781) has its new name as `object` and its old one as `old_object`.
+Local group listing rules (4798, 4799) search the program that asked
+(`CallerProcessName` is `process_path`), and certificate rules (4886, 4887) the
+requester (`Requester` is `cert_requester`) and the request's `Attributes`
+(`cert_attributes`, such as its template and any subject alternative name).
 
 Service install rules (System 7045, from the Sigma `service: system` log source or
 Splunk's `wineventlog_system`) search the service's name (`ServiceName` is

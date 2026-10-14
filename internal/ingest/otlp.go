@@ -481,6 +481,40 @@ var windowsSchema = map[string][]string{
 		"SubjectDomainName", "SubjectLogonId"},
 	"4756": {"MemberName", "MemberSid", "TargetUserName", "TargetDomainName", "TargetSid", "SubjectUserSid", "SubjectUserName",
 		"SubjectDomainName", "SubjectLogonId"},
+	"4729": {"MemberName", "MemberSid", "TargetUserName", "TargetDomainName", "TargetSid", "SubjectUserSid", "SubjectUserName",
+		"SubjectDomainName", "SubjectLogonId"},
+	"4776": {"PackageName", "TargetUserName", "Workstation", "Status"},
+	"4771": {"TargetUserName", "TargetSid", "ServiceName", "TicketOptions", "Status", "PreAuthType", "IpAddress", "IpPort",
+		"CertIssuerName", "CertSerialNumber", "CertThumbprint"},
+	"4741": {"TargetUserName", "TargetDomainName", "TargetSid", "SubjectUserSid", "SubjectUserName", "SubjectDomainName", "SubjectLogonId",
+		"PrivilegeList", "SamAccountName", "DisplayName", "UserPrincipalName", "HomeDirectory",
+		"HomePath", "ScriptPath", "ProfilePath", "UserWorkstations", "PasswordLastSet", "AccountExpires",
+		"PrimaryGroupId", "AllowedToDelegateTo", "OldUacValue", "NewUacValue", "UserAccountControl",
+		"UserParameters", "SidHistory", "LogonHours", "DnsHostName", "ServicePrincipalNames"},
+	"4742": {"ComputerAccountChange", "TargetUserName", "TargetDomainName", "TargetSid", "SubjectUserSid", "SubjectUserName", "SubjectDomainName", "SubjectLogonId",
+		"PrivilegeList", "SamAccountName", "DisplayName", "UserPrincipalName", "HomeDirectory",
+		"HomePath", "ScriptPath", "ProfilePath", "UserWorkstations", "PasswordLastSet", "AccountExpires",
+		"PrimaryGroupId", "AllowedToDelegateTo", "OldUacValue", "NewUacValue", "UserAccountControl",
+		"UserParameters", "SidHistory", "LogonHours", "DnsHostName", "ServicePrincipalNames"},
+	"4781": {"OldTargetUserName", "NewTargetUserName", "TargetDomainName", "TargetSid", "SubjectUserSid", "SubjectUserName", "SubjectDomainName", "SubjectLogonId",
+		"PrivilegeList"},
+	"4727": {"TargetUserName", "TargetDomainName", "TargetSid", "SubjectUserSid", "SubjectUserName", "SubjectDomainName", "SubjectLogonId", "PrivilegeList",
+		"SamAccountName", "SidHistory"},
+	"4737": {"TargetUserName", "TargetDomainName", "TargetSid", "SubjectUserSid", "SubjectUserName", "SubjectDomainName", "SubjectLogonId", "PrivilegeList",
+		"SamAccountName", "SidHistory"},
+	"4730": {"TargetUserName", "TargetDomainName", "TargetSid", "SubjectUserSid", "SubjectUserName", "SubjectDomainName", "SubjectLogonId", "PrivilegeList"},
+	"4798": {"TargetUserName", "TargetDomainName", "TargetSid", "SubjectUserSid", "SubjectUserName", "SubjectDomainName", "SubjectLogonId", "CallerProcessId",
+		"CallerProcessName"},
+	"4799": {"TargetUserName", "TargetDomainName", "TargetSid", "SubjectUserSid", "SubjectUserName", "SubjectDomainName", "SubjectLogonId", "CallerProcessId",
+		"CallerProcessName"},
+	"4886": {"RequestId", "Requester", "Attributes"},
+	"4887": {"RequestId", "Requester", "Attributes", "Disposition", "SubjectKeyIdentifier", "Subject"},
+	"1102": {"SubjectUserSid", "SubjectUserName", "SubjectDomainName", "SubjectLogonId"},
+	"4699": {"SubjectUserSid", "SubjectUserName", "SubjectDomainName", "SubjectLogonId", "TaskName", "TaskContent"},
+	"4701": {"SubjectUserSid", "SubjectUserName", "SubjectDomainName", "SubjectLogonId", "TaskName", "TaskContent"},
+	"4702": {"SubjectUserSid", "SubjectUserName", "SubjectDomainName", "SubjectLogonId", "TaskName", "TaskContentNew"},
+	"5140": {"SubjectUserSid", "SubjectUserName", "SubjectDomainName", "SubjectLogonId", "ObjectType", "IpAddress", "IpPort", "ShareName",
+		"ShareLocalPath", "AccessMask", "AccessList"},
 }
 
 // hexID is an OTLP trace or span ID as lower-case hex, or "" when it is
@@ -516,3 +550,7 @@ func otlpInt(raw json.RawMessage) (int64, bool) {
 	}
 	return 0, false
 }
+
+// WindowsSecurityNames returns the names of a Security event's data
+// values in schema order, for the events the Windows parser reads.
+func WindowsSecurityNames(eventID string) []string { return windowsSchema[eventID] }

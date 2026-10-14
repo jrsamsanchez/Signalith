@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode/utf16"
 
@@ -173,6 +174,13 @@ var sigmaEventFields = func() map[string]map[string]string {
 		"destaddress": "dest", "destport": "dest_port", "filterrtid": "filter_rtid", "layername": "layer_name",
 		"layerrtid": "layer_rtid", "computer": "host", "computername": "host", "eventid": "signature_id",
 	}
+	// A group's member added or removed.
+	group := security(map[string]string{
+		"subjectusersid": "user_sid", "membername": "member", "membersid": "member_sid", "targetusername": "object",
+		"targetdomainname": "object_domain", "targetsid": "object_sid",
+	})
+	// A scheduled task deleted or disabled.
+	task := security(map[string]string{"subjectusersid": "user_sid", "taskname": "task_name", "taskcontent": "task_content"})
 	kerberos := map[string]string{
 		"targetusername": "user", "targetdomainname": "user_domain", "targetsid": "user_sid",
 		"servicename": "kerberos_service", "servicesid": "kerberos_service_sid", "ticketoptions": "ticket_options",
@@ -185,6 +193,7 @@ var sigmaEventFields = func() map[string]map[string]string {
 		"registry_add": registry, "registry_delete": registry, "registry_set": registry, "registry_event": registry,
 		"dns_query":            with(map[string]string{"queryname": "query", "queryresults": "answer"}),
 		"pipe_created":         with(map[string]string{"pipename": "pipe_name", "eventtype": "pipe_event_type"}),
+		"raw_access_thread":    with(map[string]string{"device": "device"}),
 		"create_stream_hash":   with(map[string]string{"targetfilename": "file_path", "hash": "file_hashes", "contents": "file_contents"}),
 		"image_load":           load,
 		"driver_load":          with(map[string]string{"imageloaded": "loaded_file_path", "hashes": "loaded_file_hash", "signed": "signed", "signature": "signature", "signaturestatus": "signature_status", "image": "", "user": "", "processid": "", "processguid": ""}),
@@ -228,11 +237,22 @@ var sigmaEventFields = func() map[string]map[string]string {
 		}),
 		"security_4720": account,
 		"security_4738": account,
-		"security_4732": security(map[string]string{
-			"subjectusersid": "user_sid", "membername": "member", "membersid": "member_sid", "targetusername": "object",
-			"targetdomainname": "object_domain", "targetsid": "object_sid",
-		}),
+		"security_4732": group,
 		"security_4794": security(map[string]string{"subjectusersid": "user_sid", "workstation": "src_host"}),
+		"security_4728": group,
+		"security_4729": group,
+		"security_4730": security(map[string]string{
+			"subjectusersid": "user_sid", "targetusername": "object", "targetdomainname": "object_domain", "targetsid": "object_sid",
+		}),
+		"security_1102":      security(map[string]string{"subjectusersid": "user_sid", "provider_name": "provider"}),
+		"security_4699":      task,
+		"security_4701":      task,
+		"security_4699_4701": task,
+		"security_4702":      security(map[string]string{"subjectusersid": "user_sid", "taskname": "task_name", "taskcontentnew": "task_content"}),
+		"security_5140": security(map[string]string{
+			"subjectusersid": "user_sid", "objecttype": "object_type", "ipaddress": "src", "ipport": "src_port",
+			"sharename": "share_name", "sharelocalpath": "share_path", "accessmask": "access_mask", "accesslist": "access_names",
+		}),
 		"security_4768": kerberos,
 		"security_4769": kerberos,
 		"security_4697": security(map[string]string{
@@ -276,6 +296,7 @@ var sigmaWindowsEvents = map[string][]string{
 	"registry_event":       {"12", "13", "14"},
 	"dns_query":            {"22"},
 	"pipe_created":         {"17", "18"},
+	"raw_access_thread":    {"9"},
 	"create_stream_hash":   {"15"},
 	"image_load":           {"7"},
 	"driver_load":          {"6"},
@@ -298,6 +319,15 @@ var sigmaWindowsEvents = map[string][]string{
 	"security_4732":        {"4732"},
 	"security_4738":        {"4738"},
 	"security_4794":        {"4794"},
+	"security_4728":        {"4728"},
+	"security_4729":        {"4729"},
+	"security_4730":        {"4730"},
+	"security_1102":        {"1102"},
+	"security_4699":        {"4699"},
+	"security_4701":        {"4701"},
+	"security_4699_4701":   {"4699", "4701"},
+	"security_4702":        {"4702"},
+	"security_5140":        {"5140"},
 	"security_4768":        {"4768"},
 	"security_4769":        {"4769"},
 	"security_4697":        {"4697"},
@@ -316,7 +346,8 @@ var sigmaSecurityModels = map[string]string{
 	"4624": "Authentication", "4625": "Authentication", "4656": "", "4657": "Registry", "4661": "", "4662": "Change",
 	"4663": "", "4697": "Change", "4698": "Change", "4706": "Change", "4719": "Change", "4720": "Change", "4732": "Change",
 	"4738": "Change", "4794": "Change", "4768": "Authentication", "4769": "Authentication",
-	"4648": "Authentication", "5136": "Change", "5145": "Filesystem", "5156": "Network_Traffic", "5157": "Network_Traffic",
+	"4648": "Authentication", "4728": "Change", "4729": "Change", "4730": "Change", "1102": "Change", "4699": "Change",
+	"4701": "Change", "4699_4701": "Change", "4702": "Change", "5140": "Filesystem", "5136": "Change", "5145": "Filesystem", "5156": "Network_Traffic", "5157": "Network_Traffic",
 }
 
 // anyModel reports whether the rule's events land in more than one data
@@ -363,6 +394,21 @@ func sigmaEventIDs(det map[string]any) []string {
 	return slices.Sorted(maps.Keys(seen))
 }
 
+// modernEventIDs drops the Windows 2000 and XP event IDs (below 1000,
+// such as 517 for the log cleared) from a rule's event IDs when it also
+// names current ones: those systems' events never reach Signalith, so a
+// selection on them matches nothing either way.
+func modernEventIDs(ids []string) []string {
+	modern := slices.DeleteFunc(slices.Clone(ids), func(id string) bool {
+		n, err := strconv.Atoi(id)
+		return err == nil && n < 1000
+	})
+	if len(modern) == 0 {
+		return ids
+	}
+	return modern
+}
+
 // sigmaLevels maps Sigma levels to severities.
 var sigmaLevels = map[string]string{
 	"informational": "informational", "low": "low", "medium": "medium", "high": "high", "critical": "critical",
@@ -407,7 +453,7 @@ func ConvertSigmaWith(src []byte, opt SigmaOptions) (*SigmaResult, error) {
 			// A Security log rule's fields are its event's own, so it
 			// converts for one event, or events with the same data.
 			category = "security"
-			if ids := sigmaEventIDs(r.Detection); len(ids) > 0 {
+			if ids := modernEventIDs(sigmaEventIDs(r.Detection)); len(ids) > 0 {
 				if _, ok := sigmaWindowsEvents["security_"+strings.Join(ids, "_")]; ok {
 					category = "security_" + strings.Join(ids, "_")
 				}
@@ -590,7 +636,7 @@ func (c *sigmaConv) datamodel(ls map[string]any) string {
 		return "Network_Resolution"
 	case "image_load", "driver_load":
 		return "Image_Load"
-	case "process_access", "create_remote_thread", "pipe_created":
+	case "process_access", "create_remote_thread", "pipe_created", "raw_access_thread":
 		return "Endpoint"
 	case "ps_script":
 		return "Script"

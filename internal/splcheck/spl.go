@@ -237,13 +237,17 @@ var (
 		"powershell": {"4104": "PowerShell"},
 		"sysmon": {
 			"1": "Processes", "3": "NetworkConnection", "7": "ImageLoad", "8": "ProcessAccess", "10": "ProcessAccess",
-			"22": "DnsQuery", "15": "FileStream", "17": "Pipe", "18": "Pipe",
+			"22": "DnsQuery", "15": "FileStream", "17": "Pipe", "18": "Pipe", "5": "ProcessTerminated", "9": "RawAccessRead",
 			"11": "Filesystem", "23": "Filesystem", "26": "Filesystem", "12": "Registry", "13": "Registry", "14": "Registry",
 		},
 		// Security events the Windows parser reads.
 		"wineventlog_security": {
 			"4624": "Logon", "4625": "Logon", "4698": "TaskCreated", "4663": "ObjectAccess", "5136": "DirectoryChange", "5145": "ShareAccess",
 			"4768": "KerberosTGT", "4769": "KerberosService", "4738": "UserChanged", "4732": "GroupMemberAdded",
+			"4648": "ExplicitLogon", "4776": "NtlmAuth", "4771": "KerberosPreAuth", "4741": "ComputerChanged",
+			"4742": "ComputerChanged", "4781": "AccountRenamed", "4727": "GroupChanged", "4730": "GroupChanged",
+			"4737": "GroupChanged", "4798": "LocalGroupRead", "4799": "LocalGroupRead", "4886": "CertRequest",
+			"4887": "CertRequest",
 		},
 		// The Service Control Manager's service installed event.
 		"wineventlog_system": {"7045": "ServiceInstalled"},
@@ -358,6 +362,57 @@ var (
 			"TargetUserName": "object", "TargetSid": "object_sid", "MemberSid": "member_sid", "MemberName": "member",
 			"SubjectUserName": "user",
 		},
+		// A logon with explicit credentials; the add-on names the account
+		// that acted Caller_User_Name and the one it used Target_User_Name.
+		"ExplicitLogon": {
+			"SubjectUserName": "src_user", "Caller_User_Name": "src_user", "TargetUserName": "user", "Target_User_Name": "user",
+			"TargetServerName": "dest", "TargetInfo": "target_info", "ProcessName": "process_path", "IpAddress": "src",
+			"src_ip": "src",
+		},
+		// An account's password checked for NTLM, and Kerberos
+		// pre-authentication failed.
+		"NtlmAuth": {
+			"TargetUserName": "user", "Workstation": "src_host", "Status": "ntlm_status", "PackageName": "authentication_method",
+		},
+		"KerberosPreAuth": {
+			"TargetUserName": "user", "TargetSid": "user_sid", "ServiceName": "kerberos_service", "TicketOptions": "ticket_options",
+			"Status": "kerberos_status", "PreAuthType": "pre_auth_type", "IpAddress": "src", "src_ip": "src",
+		},
+		// A computer account created or changed, an account renamed, and
+		// a global group created, deleted or changed.
+		"ComputerChanged": {
+			"TargetUserName": "object", "TargetDomainName": "object_domain", "TargetSid": "object_sid", "SubjectUserName": "user",
+			"SubjectDomainName": "user_domain", "SamAccountName": "sam_account_name", "PrimaryGroupId": "primary_group_id",
+			"OldUacValue": "old_uac_value", "NewUacValue": "new_uac_value", "UserAccountControl": "user_account_control",
+			"DnsHostName": "dns_host_name", "ServicePrincipalNames": "service_principal_names",
+			"AllowedToDelegateTo": "allowed_to_delegate_to",
+		},
+		"AccountRenamed": {
+			"OldTargetUserName": "old_object", "NewTargetUserName": "object", "TargetDomainName": "object_domain",
+			"TargetSid": "object_sid", "SubjectUserName": "user", "Caller_User_Name": "user", "SubjectLogonId": "logon_id",
+		},
+		"GroupChanged": {
+			"TargetUserName": "object", "TargetDomainName": "object_domain", "TargetSid": "object_sid", "SubjectUserName": "user",
+			"SubjectDomainName": "user_domain",
+		},
+		// A user's local groups or a local group's members listed.
+		"LocalGroupRead": {
+			"TargetUserName": "object", "TargetSid": "object_sid", "SubjectUserName": "user", "SubjectUserSid": "user_sid",
+			"CallerProcessName": "process_path", "CallerProcessId": "process_id",
+		},
+		// A certificate requested and issued by Certificate Services.
+		"CertRequest": {
+			"RequestId": "cert_request_id", "Requester": "cert_requester", "Attributes": "cert_attributes",
+			"Disposition": "cert_disposition", "Subject": "cert_subject",
+		},
+		// A process terminated, and a drive read directly.
+		"ProcessTerminated": {
+			"Image": "process_path", "process_path": "process_path", "process_name": "process_name", "ProcessId": "process_id",
+			"ProcessID": "process_id",
+		},
+		"RawAccessRead": {
+			"Device": "device", "Image": "process_path", "process_path": "process_path", "process_name": "process_name",
+		},
 		"ServiceInstalled": {
 			"ServiceName": "service_name", "ImagePath": "service_path", "ServiceType": "service_type",
 			"StartType": "service_start_type", "AccountName": "service_account",
@@ -370,6 +425,7 @@ var (
 	searchRe    = regexp.MustCompile(`(?is)^search\s+(.+)$`)
 	fillnullRe  = regexp.MustCompile(`(?i)^fillnull$`)
 	statsRe     = regexp.MustCompile(`(?is)^stats\s`)
+	tableRe     = regexp.MustCompile(`(?is)^table\s`)
 	renameRe    = regexp.MustCompile(`(?is)^rename\s`)
 )
 
@@ -483,6 +539,10 @@ func parseRaw(r *Rule, source, terms string, later []string, macros map[string]*
 		case statsRe.MatchString(s) && !counted:
 			counted = true
 			stats = s
+		case tableRe.MatchString(s) && !counted && !filled:
+			// A table only picks the columns shown: every event the
+			// search finds is a row.
+			counted = true
 		case counted && limits == nil && isLimits(s):
 			limits, _ = parseLimits(s)
 		case evalRe.MatchString(s) && counted:

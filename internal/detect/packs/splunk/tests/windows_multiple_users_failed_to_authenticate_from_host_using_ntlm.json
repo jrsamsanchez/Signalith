@@ -1,0 +1,12 @@
+{"rule": "7ed272a4-9c77-11eb-af22-acde48001122", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4776","data":{"PackageName":"MICROSOFT_AUTHENTICATION_PACKAGE_V1_0","Status":"0xC000006A","TargetUserName":"x","Workstation":"WS2"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4776","data":{"PackageName":"MICROSOFT_AUTHENTICATION_PACKAGE_V1_0","Status":"0xC000006A","TargetUserName":"x","Workstation":"WS2"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4776","data":{"PackageName":"MICROSOFT_AUTHENTICATION_PACKAGE_V1_0","Status":"0xC000006A","TargetUserName":"x","Workstation":"WS2"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4776","data":{"PackageName":"MICROSOFT_AUTHENTICATION_PACKAGE_V1_0","Status":"0xC000006A","TargetUserName":"y","Workstation":"WS2"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4776","data":{"PackageName":"MICROSOFT_AUTHENTICATION_PACKAGE_V1_0","Status":"0xC000006A","TargetUserName":"CORP\\tester","Workstation":"WS2"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4776","data":{"PackageName":"MICROSOFT_AUTHENTICATION_PACKAGE_V1_0","Status":"0xC000006A","TargetUserName":"x $","Workstation":"WS2"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4776","data":{"PackageName":"MICROSOFT_AUTHENTICATION_PACKAGE_V1_0","Status":"0xC000006B","TargetUserName":"x","Workstation":"WS2"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4776","data":{"PackageName":"MICROSOFT_AUTHENTICATION_PACKAGE_V1_0","Status":"0x0","TargetUserName":"x","Workstation":"WS2"}},
+  {"expect":true,"source":"attack_data","channel":"Security","event_id":"4776","data":{"PackageName":"MICROSOFT_AUTHENTICATION_PACKAGE_V1_0","Status":"0xc000006a","TargetUserName":"ADAM_RUIZ","Workstation":"WIN-HOST-MVELAZ"}},
+  {"expect":true,"source":"attack_data","channel":"Security","event_id":"4776","data":{"PackageName":"MICROSOFT_AUTHENTICATION_PACKAGE_V1_0","Status":"0xc000006a","TargetUserName":"ALDO_MCKEE","Workstation":"WIN-HOST-MVELAZ"}}
+]}

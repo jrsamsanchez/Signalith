@@ -442,6 +442,10 @@ rules:
     rule_id: 0c7d8ffe-25b1-11ec-9f39-acde48001122
     file: enable_wdigest_uselogoncredential_registry.yml
     path: detections/endpoint/enable_wdigest_uselogoncredential_registry.yml
+  - id: splunk-enumerate-users-local-group-using-telegram
+    rule_id: fcd74532-ae54-11eb-a5ab-acde48001122
+    file: enumerate_users_local_group_using_telegram.yml
+    path: detections/endpoint/enumerate_users_local_group_using_telegram.yml
   - id: splunk-etw-registry-disabled
     rule_id: 8ed523ac-276b-11ec-ac39-acde48001122
     file: etw_registry_disabled.yml
@@ -1754,6 +1758,10 @@ rules:
     rule_id: 347fd388-da87-11eb-836d-acde48001122
     file: spoolsv_writing_a_dll___sysmon.yml
     path: detections/endpoint/spoolsv_writing_a_dll___sysmon.yml
+  - id: splunk-suspicious-computer-account-name-change
+    rule_id: 35a61ed8-61c4-11ec-bc1e-acde48001122
+    file: suspicious_computer_account_name_change.yml
+    path: detections/endpoint/suspicious_computer_account_name_change.yml
   - id: splunk-suspicious-copy-on-system32
     rule_id: ce633e56-25b2-11ec-9e76-acde48001122
     file: suspicious_copy_on_system32.yml
@@ -2014,6 +2022,10 @@ rules:
     rule_id: 841e2abc-0442-4e7f-b445-b22680632a08
     file: windows_browser_process_launched_with_unusual_flags.yml
     path: detections/endpoint/windows_browser_process_launched_with_unusual_flags.yml
+  - id: splunk-windows-builtin-account-name-was-changed
+    rule_id: 65e6e8b9-c68c-460f-beb8-48cfe91b4d21
+    file: windows_builtin_account_name_was_changed.yml
+    path: detections/endpoint/windows_builtin_account_name_was_changed.yml
   - id: splunk-windows-bypass-uac-via-pkgmgr-tool
     rule_id: cce58e2c-988a-4319-9390-0daa9eefa3cd
     file: windows_bypass_uac_via_pkgmgr_tool.yml
@@ -2110,10 +2122,18 @@ rules:
     rule_id: 56fe46ca-ffef-46fe-8f0e-5cd4b7b4cc0c
     file: windows_compatibility_telemetry_suspicious_child_process.yml
     path: detections/endpoint/windows_compatibility_telemetry_suspicious_child_process.yml
+  - id: splunk-windows-computer-account-changed-to-domain-controller
+    rule_id: f9df6250-fa45-4f62-bc9a-768c60bf99b2
+    file: windows_computer_account_changed_to_domain_controller.yml
+    path: detections/endpoint/windows_computer_account_changed_to_domain_controller.yml
   - id: splunk-windows-computer-account-requesting-kerberos-ticket
     rule_id: fb3b2bb3-75a4-4279-848a-165b42624770
     file: windows_computer_account_requesting_kerberos_ticket.yml
     path: detections/endpoint/windows_computer_account_requesting_kerberos_ticket.yml
+  - id: splunk-windows-computer-account-with-spn
+    rule_id: 9a3e57e7-33f4-470e-b25d-165baa6e8357
+    file: windows_computer_account_with_spn.yml
+    path: detections/endpoint/windows_computer_account_with_spn.yml
   - id: splunk-windows-computerdefaults-spawning-a-process
     rule_id: 697eb4c0-1008-4c3c-b5ae-7bd9b39adbd6
     file: windows_computerdefaults_spawning_a_process.yml
@@ -2350,6 +2370,10 @@ rules:
     rule_id: c3b33d42-dd28-41bc-8abd-407654a5c9bc
     file: windows_error_report_created_in_reportqueue_manually.yml
     path: detections/endpoint/windows_error_report_created_in_reportqueue_manually.yml
+  - id: splunk-windows-esx-admins-group-creation-security-event
+    rule_id: 53b4c927-5ec4-47cd-8aed-d4b303304f87
+    file: windows_esx_admins_group_creation_security_event.yml
+    path: detections/endpoint/windows_esx_admins_group_creation_security_event.yml
   - id: splunk-windows-esx-admins-group-creation-via-net
     rule_id: 3d7df60b-3332-4667-8090-afe03e08dce0
     file: windows_esx_admins_group_creation_via_net.yml
@@ -2954,6 +2978,22 @@ rules:
     rule_id: 001266a6-9d5b-11eb-829b-acde48001122
     file: windows_multiple_invalid_users_fail_to_authenticate_using_kerberos.yml
     path: detections/endpoint/windows_multiple_invalid_users_fail_to_authenticate_using_kerberos.yml
+  - id: splunk-windows-multiple-invalid-users-failed-to-authenticate-usi
+    rule_id: 57ad5a64-9df7-11eb-a290-acde48001122
+    file: windows_multiple_invalid_users_failed_to_authenticate_using_ntlm.yml
+    path: detections/endpoint/windows_multiple_invalid_users_failed_to_authenticate_using_ntlm.yml
+  - id: splunk-windows-multiple-users-fail-to-authenticate-wth-explicitc
+    rule_id: e61918fa-9ca4-11eb-836c-acde48001122
+    file: windows_multiple_users_fail_to_authenticate_wth_explicitcredentials.yml
+    path: detections/endpoint/windows_multiple_users_fail_to_authenticate_wth_explicitcredentials.yml
+  - id: splunk-windows-multiple-users-failed-to-authenticate-from-host-u
+    rule_id: 7ed272a4-9c77-11eb-af22-acde48001122
+    file: windows_multiple_users_failed_to_authenticate_from_host_using_ntlm.yml
+    path: detections/endpoint/windows_multiple_users_failed_to_authenticate_from_host_using_ntlm.yml
+  - id: splunk-windows-multiple-users-failed-to-authenticate-using-kerbe
+    rule_id: 3a91a212-98a9-11eb-b86a-acde48001122
+    file: windows_multiple_users_failed_to_authenticate_using_kerberos.yml
+    path: detections/endpoint/windows_multiple_users_failed_to_authenticate_using_kerberos.yml
   - id: splunk-windows-multiple-users-remotely-failed-to-authenticate-fr
     rule_id: 80f9d53e-9ca1-11eb-b0d6-acde48001122
     file: windows_multiple_users_remotely_failed_to_authenticate_from_host.yml
@@ -3274,6 +3314,10 @@ rules:
     rule_id: adbff89c-c1f2-4a2e-88a4-b5e645856510
     file: windows_process_with_netexec_command_line_parameters.yml
     path: detections/endpoint/windows_process_with_netexec_command_line_parameters.yml
+  - id: splunk-windows-processes-killed-by-industroyer2-malware
+    rule_id: d8bea5ca-9d4a-4249-8b56-64a619109835
+    file: windows_processes_killed_by_industroyer2_malware.yml
+    path: detections/endpoint/windows_processes_killed_by_industroyer2_malware.yml
   - id: splunk-windows-product-key-registry-query
     rule_id: 977da0c0-c7d5-45de-8b7e-f79e959ca13d
     file: windows_product_key_registry_query.yml
@@ -3318,6 +3362,14 @@ rules:
     rule_id: 6f42b8be-8e96-11ec-ad5a-acde48001122
     file: windows_rasautou_dll_execution.yml
     path: detections/endpoint/windows_rasautou_dll_execution.yml
+  - id: splunk-windows-raw-access-to-disk-volume-partition
+    rule_id: a85aa37e-9647-11ec-90c5-acde48001122
+    file: windows_raw_access_to_disk_volume_partition.yml
+    path: detections/endpoint/windows_raw_access_to_disk_volume_partition.yml
+  - id: splunk-windows-raw-access-to-master-boot-record-drive
+    rule_id: 7b83f666-900c-11ec-a2d9-acde48001122
+    file: windows_raw_access_to_master_boot_record_drive.yml
+    path: detections/endpoint/windows_raw_access_to_master_boot_record_drive.yml
   - id: splunk-windows-rdp-automaticdestinations-deletion
     rule_id: e40a40a1-9fea-4554-abdf-b164422f0627
     file: windows_rdp_automaticdestinations_deletion.yml

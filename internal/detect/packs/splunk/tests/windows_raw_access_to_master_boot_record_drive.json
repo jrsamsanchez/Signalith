@@ -1,0 +1,11 @@
+{"rule": "7b83f666-900c-11ec-a2d9-acde48001122", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"9","data":{"Device":"\\Device\\Harddisk0\\DR0","Image":"C:\\Program Files\\Example\\app.exe","ProcessId":"4242","User":"CORP\\tester"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"9","data":{"Device":"\\Device\\Harddisk0\\DR0","Image":"C:\\Program Files\\Example\\app.exe","ProcessId":"4242","User":"CORP\\tester"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"9","data":{"Device":"\\Device\\Harddisk0\\DR0","Image":"C:\\Program Files\\Example\\app.exe","ProcessId":"4242","User":"CORP\\tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"9","data":{"Device":"\\Device\\Harddisk0\\DR1","Image":"C:\\Program Files\\Example\\app.exe","ProcessId":"4242","User":"CORP\\tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"9","data":{"Device":"\\Device\\HarddiskVolume2","Image":"C:\\Program Files\\Example\\app.exe","ProcessId":"4242","User":"CORP\\tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"9","data":{"Device":"\\Device\\Harddisk0\\DR0","Image":"x \\Windows\\System32\\ x","ProcessId":"4242","User":"CORP\\tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"9","data":{"Device":"\\Device\\Harddisk0\\DR0","Image":"x \\Windows\\SysWOW64\\ x","ProcessId":"4242","User":"CORP\\tester"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"9","data":{"Device":"\\Device\\Harddisk0\\DR0","Image":"C:\\Temp\\whispergate_mbr.exe","ProcessGuid":"{BD6F876E-9553-620B-EF0F-000000003702}","ProcessId":"9156","RuleName":"-","UtcTime":"2022-02-15 11:58:11.758"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"9","data":{"Device":"\\Device\\Harddisk0\\DR0","Image":"C:\\Temp\\whispergate_mbr.exe","ProcessGuid":"{BD6F876E-9555-620B-F20F-000000003702}","ProcessId":"6780","RuleName":"-","UtcTime":"2022-02-15 11:58:13.805"}}
+]}

@@ -144,6 +144,12 @@ var knownFields = func() map[string]string {
 		"registry_operation": kw, "registry_value_type": kw, "registry_old_value_data": kw,
 		"kerberos_service": kw, "kerberos_service_sid": kw, "kerberos_status": kw, "ticket_options": kw,
 		"ticket_encryption_type": kw, "pre_auth_type": kw, "cert_issuer": kw, "cert_serial": kw, "cert_thumbprint": kw,
+		// NTLM credential checks (4776), computer accounts (4741, 4742), an
+		// account renamed (4781), certificates requested and issued
+		// (4886, 4887) and Sysmon's raw disk reads (9).
+		"ntlm_status": kw, "dns_host_name": kw, "service_principal_names": "wildcard", "old_object": kw,
+		"cert_request_id": kw, "cert_requester": kw, "cert_attributes": "wildcard", "cert_disposition": kw,
+		"cert_subject_key_id": kw, "cert_subject": kw, "device": kw,
 		// Linux audit records (auditd.go): each field as auditd names it,
 		// the names of an ENRICHED record's numbers (auditd_uid_name), and
 		// a program's arguments one by one and joined, which rules search

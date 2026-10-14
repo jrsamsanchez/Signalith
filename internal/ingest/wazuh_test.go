@@ -115,9 +115,9 @@ var wazuhFixtures = map[string]string{
 				"sourceIp":"10.0.1.7","sourcePort":"50311","destinationIp":"198.51.100.80","destinationHostname":"evil.example","destinationPort":"443"}}},
 		"location":"EventChannel"}`,
 
-	"win_other": `{"timestamp":"2026-10-11T09:43:00.000+0000","rule":{"level":12,"description":"The audit log was cleared.","id":"63103",
+	"win_other": `{"timestamp":"2026-10-11T09:43:00.000+0000","rule":{"level":12,"description":"The system time was changed.","id":"63103",
 		"groups":["windows","windows_security"]},"agent":{"id":"004","name":"WS-07"},"manager":{"name":"wazuh-manager"},"id":"1760175780.4300",
-		"data":{"win":{"system":{"eventID":"1102","channel":"Security","computer":"WS-07.corp.local"},"eventdata":{"subjectUserName":"bob"}}},"location":"EventChannel"}`,
+		"data":{"win":{"system":{"eventID":"4616","channel":"Security","computer":"WS-07.corp.local"},"eventdata":{"subjectUserName":"bob"}}},"location":"EventChannel"}`,
 
 	"web_attack": `{"timestamp":"2026-10-11T09:50:00.000+0000","rule":{"level":7,"description":"SQL injection attempt.","id":"31103",
 		"mitre":{"id":["T1190"],"tactic":["Initial Access"]},"groups":["web","accesslog","attack","sql_injection"]},

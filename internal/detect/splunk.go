@@ -220,7 +220,10 @@ var splunkTechnique = regexp.MustCompile(`^T\d{4}(\.\d{3})?$`)
 // task, a service per host and service, a directory change per object
 // and attribute, a share access per client, share and path, a Kerberos
 // ticket per account and service, an account change or group member
-// added per account or group, a named pipe per host, program and pipe,
+// added per account or group, a logon or credential check per account
+// and where it came from, a certificate request per requester and
+// request, a named pipe or raw disk read per host, program and pipe or
+// drive,
 // an audit record per host, type, program and what it ran or touched.
 func splunkThrottle(node, dm string) []string {
 	switch node {
@@ -236,8 +239,22 @@ func splunkThrottle(node, dm string) []string {
 		return []string{"host", "src", "share_name", "share_target"}
 	case "KerberosTGT", "KerberosService":
 		return []string{"host", "user", "kerberos_service"}
-	case "UserChanged":
+	case "UserChanged", "ComputerChanged", "AccountRenamed", "GroupChanged":
 		return []string{"host", "object"}
+	case "ExplicitLogon":
+		return []string{"host", "src_user", "user"}
+	case "NtlmAuth":
+		return []string{"host", "src_host", "user"}
+	case "KerberosPreAuth":
+		return []string{"host", "src", "user"}
+	case "LocalGroupRead":
+		return []string{"host", "process_path", "object"}
+	case "CertRequest":
+		return []string{"host", "cert_requester", "cert_request_id"}
+	case "ProcessTerminated":
+		return []string{"host", "process_path"}
+	case "RawAccessRead":
+		return []string{"host", "process_path", "device"}
 	case "GroupMemberAdded":
 		return []string{"host", "object", "member_sid"}
 	case "Pipe":

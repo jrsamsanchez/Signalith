@@ -78,6 +78,11 @@ func parseWindowsWith(r map[string]any, named map[string]string) Event {
 
 	switch {
 	case channel == "Security":
+		// The provider that wrote it: the Event Log service writes the
+		// log cleared (1102), the auditing system the rest.
+		if p := str(r, "ProviderName"); p != "" {
+			f["provider"] = p
+		}
 		parseWindowsSecurity(eventID, in, &ev)
 	case channel == SystemChannel:
 		parseWindowsSystem(eventID, str(r, "ProviderName"), in, &ev)
@@ -541,6 +546,209 @@ func parseWindowsSecurity(eventID string, in []string, ev *Event) {
 		f["user_domain"] = at(in, 2)
 		f["logon_id"] = at(in, 3)
 		f["src_host"] = at(in, 4)
+	default:
+		parseWindowsSecurityNamed(eventID, securityNamed(eventID, in), ev)
+	}
+}
+
+// securityNamed is a Security event's data by name, from its values in
+// schema order (windowsSchema).
+func securityNamed(eventID string, in []string) map[string]string {
+	names := windowsSchema[eventID]
+	d := make(map[string]string, len(names))
+	for i, n := range names {
+		d[n] = at(in, i)
+	}
+	return d
+}
+
+// subject sets the account that acted (the event's Subject*).
+func subject(d map[string]string, f map[string]any) {
+	f["user_sid"] = d["SubjectUserSid"]
+	f["user"] = d["SubjectUserName"]
+	f["user_domain"] = d["SubjectDomainName"]
+	f["logon_id"] = d["SubjectLogonId"]
+}
+
+// parseWindowsSecurityNamed reads the Security events parsed by their
+// data names.
+func parseWindowsSecurityNamed(eventID string, d map[string]string, ev *Event) {
+	f := ev.Fields
+	switch eventID {
+	case "4776":
+		// A domain controller (or the local SAM) checked an account's
+		// password for NTLM: Status 0x0 is success, else why it failed.
+		ev.Model = "Authentication"
+		f["app"] = "win:local"
+		f["signature"] = "The computer attempted to validate the credentials for an account"
+		f["authentication_method"] = d["PackageName"]
+		f["user"] = d["TargetUserName"]
+		f["src_host"] = d["Workstation"]
+		f["ntlm_status"] = d["Status"]
+		f["action"] = "failure"
+		if d["Status"] == "0x0" {
+			f["action"] = "success"
+		} else if reason, ok := windowsFailureReasons[strings.ToLower(d["Status"])]; ok {
+			f["reason"] = reason
+		}
+	case "4771":
+		// Kerberos pre-authentication failed: a wrong password (Status
+		// 0x18) or another Kerberos error.
+		ev.Model = "Authentication"
+		f["app"] = "win:local"
+		f["action"] = "failure"
+		f["signature"] = "Kerberos pre-authentication failed"
+		f["user"] = d["TargetUserName"]
+		f["user_sid"] = d["TargetSid"]
+		f["kerberos_service"] = d["ServiceName"]
+		f["ticket_options"] = d["TicketOptions"]
+		f["kerberos_status"] = d["Status"]
+		f["pre_auth_type"] = d["PreAuthType"]
+		f["src"] = strings.TrimPrefix(d["IpAddress"], "::ffff:")
+		f["src_port"] = atoi(d["IpPort"])
+		f["cert_issuer"] = d["CertIssuerName"]
+		f["cert_serial"] = d["CertSerialNumber"]
+		f["cert_thumbprint"] = d["CertThumbprint"]
+	case "4741", "4742":
+		// A computer account created or changed, with the attributes of
+		// a user account and its DNS name and service principal names.
+		ev.Model = "Change"
+		f["object_category"] = "computer"
+		f["action"] = map[string]string{"4741": "created", "4742": "modified"}[eventID]
+		f["signature"] = map[string]string{
+			"4741": "A computer account was created",
+			"4742": "A computer account was changed",
+		}[eventID]
+		subject(d, f)
+		f["object"] = d["TargetUserName"]
+		f["object_domain"] = d["TargetDomainName"]
+		f["object_sid"] = d["TargetSid"]
+		f["sam_account_name"] = d["SamAccountName"]
+		f["display_name"] = d["DisplayName"]
+		f["user_principal_name"] = d["UserPrincipalName"]
+		f["primary_group_id"] = d["PrimaryGroupId"]
+		f["allowed_to_delegate_to"] = d["AllowedToDelegateTo"]
+		f["old_uac_value"] = d["OldUacValue"]
+		f["new_uac_value"] = d["NewUacValue"]
+		f["user_account_control"] = strings.Join(strings.Fields(d["UserAccountControl"]), " ")
+		f["sid_history"] = d["SidHistory"]
+		f["dns_host_name"] = d["DnsHostName"]
+		f["service_principal_names"] = strings.Join(strings.Fields(d["ServicePrincipalNames"]), " ")
+	case "4781":
+		// An account renamed: object is its new name.
+		ev.Model = "Change"
+		f["action"] = "modified"
+		f["object_category"] = "user"
+		f["signature"] = "The name of an account was changed"
+		subject(d, f)
+		f["object"] = d["NewTargetUserName"]
+		f["old_object"] = d["OldTargetUserName"]
+		f["object_domain"] = d["TargetDomainName"]
+		f["object_sid"] = d["TargetSid"]
+	case "4727", "4730", "4737":
+		// A security-enabled global group created, deleted or changed.
+		ev.Model = "Change"
+		f["object_category"] = "group"
+		f["action"] = map[string]string{"4727": "created", "4730": "deleted", "4737": "modified"}[eventID]
+		f["signature"] = map[string]string{
+			"4727": "A security-enabled global group was created",
+			"4730": "A security-enabled global group was deleted",
+			"4737": "A security-enabled global group was changed",
+		}[eventID]
+		subject(d, f)
+		f["object"] = d["TargetUserName"]
+		f["object_domain"] = d["TargetDomainName"]
+		f["object_sid"] = d["TargetSid"]
+		f["sam_account_name"] = d["SamAccountName"]
+		f["sid_history"] = d["SidHistory"]
+	case "4729":
+		// A member removed from a security-enabled global group.
+		ev.Model = "Change"
+		f["action"] = "modified"
+		f["object_category"] = "group"
+		f["signature"] = "A member was removed from a security-enabled global group"
+		subject(d, f)
+		f["member"] = d["MemberName"]
+		f["member_sid"] = d["MemberSid"]
+		f["object"] = d["TargetUserName"]
+		f["object_domain"] = d["TargetDomainName"]
+		f["object_sid"] = d["TargetSid"]
+	case "4798", "4799":
+		// A user's local groups (4798) or a local group's members (4799)
+		// listed, by the process that asked.
+		ev.Model = "Change"
+		f["action"] = "read"
+		f["object_category"] = map[string]string{"4798": "user", "4799": "group"}[eventID]
+		f["signature"] = map[string]string{
+			"4798": "A user's local group membership was enumerated",
+			"4799": "A security-enabled local group membership was enumerated",
+		}[eventID]
+		subject(d, f)
+		f["object"] = d["TargetUserName"]
+		f["object_domain"] = d["TargetDomainName"]
+		f["object_sid"] = d["TargetSid"]
+		f["process_id"] = atoi(d["CallerProcessId"])
+		f["process_path"] = d["CallerProcessName"]
+		f["process_name"] = baseName(d["CallerProcessName"])
+	case "4886", "4887":
+		// A certificate requested from Certificate Services (4886) and
+		// issued (4887): who asked, and the request's attributes, such as
+		// its template and any subject alternative name.
+		ev.Model = "Change"
+		f["object_category"] = "certificate"
+		f["action"] = map[string]string{"4886": "requested", "4887": "created"}[eventID]
+		f["signature"] = map[string]string{
+			"4886": "Certificate Services received a certificate request",
+			"4887": "Certificate Services approved a certificate request and issued a certificate",
+		}[eventID]
+		f["object"] = d["RequestId"]
+		f["cert_request_id"] = d["RequestId"]
+		f["cert_requester"] = d["Requester"]
+		f["cert_attributes"] = d["Attributes"]
+		f["cert_disposition"] = d["Disposition"]
+		f["cert_subject_key_id"] = d["SubjectKeyIdentifier"]
+		f["cert_subject"] = d["Subject"]
+	case "1102":
+		// The Security log cleared.
+		ev.Model = "Change"
+		f["action"] = "deleted"
+		f["object_category"] = "audit_log"
+		f["object"] = "Security"
+		f["signature"] = "The audit log was cleared"
+		subject(d, f)
+	case "4699", "4701", "4702":
+		// A scheduled task deleted, disabled or updated: its definition
+		// (the new one for an update).
+		ev.Model = "Change"
+		f["object_category"] = "scheduled_task"
+		f["action"] = map[string]string{"4699": "deleted", "4701": "modified", "4702": "modified"}[eventID]
+		f["signature"] = map[string]string{
+			"4699": "A scheduled task was deleted",
+			"4701": "A scheduled task was disabled",
+			"4702": "A scheduled task was updated",
+		}[eventID]
+		subject(d, f)
+		content := firstOf(d["TaskContent"], d["TaskContentNew"])
+		f["object"] = d["TaskName"]
+		f["task_name"] = d["TaskName"]
+		f["task_content"] = content
+		f["task_command"] = taskElement(content, "Command")
+		f["task_arguments"] = taskElement(content, "Arguments")
+	case "5140":
+		// A network share accessed (with Audit File Share on): once per
+		// session, for the share as a whole.
+		ev.Model = "Filesystem"
+		f["signature"] = "A network share object was accessed"
+		subject(d, f)
+		f["object_type"] = d["ObjectType"]
+		f["src"] = strings.TrimPrefix(d["IpAddress"], "::ffff:")
+		f["src_port"] = atoi(d["IpPort"])
+		f["share_name"] = d["ShareName"]
+		f["share_path"] = d["ShareLocalPath"]
+		f["access_mask"] = d["AccessMask"]
+		f["access_list"] = strings.Join(strings.Fields(d["AccessList"]), " ")
+		f["access_names"] = accessNames(f["access_list"].(string))
+		f["action"] = objectAccessAction(f["access_list"].(string))
 	}
 }
 
@@ -764,6 +972,18 @@ func parseSysmon(eventID string, kv map[string]string, ev *Event) {
 		}
 		f["file_hashes"] = firstOf(kv["Hash"], kv["Hashes"])
 		f["file_contents"] = kv["Contents"]
+	case "5":
+		ev.Model = "Endpoint"
+		f["action"] = "stopped"
+		f["signature"] = "Process terminated"
+		sysmonProcess(kv, f)
+	case "9":
+		// A process reading a drive directly (\Device\HarddiskVolume2),
+		// bypassing the file system.
+		ev.Model = "Endpoint"
+		f["signature"] = "RawAccessRead detected"
+		f["device"] = kv["Device"]
+		sysmonProcess(kv, f)
 	case "17", "18":
 		// A named pipe created (17) or connected to (18), by the process
 		// that did it.

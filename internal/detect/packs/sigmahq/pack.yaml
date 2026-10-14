@@ -6941,6 +6941,10 @@ rules:
     rule_id: 6c6c6282-7671-4fe9-a0ce-a2dcebdc342b
     file: posh_ps_xml_iex.yml
     path: rules/windows/powershell/powershell_script/posh_ps_xml_iex.yml
+  - id: sigma-raw-access-thread-susp-disk-access-using-uncommon-tools
+    rule_id: db809f10-56ce-4420-8c86-d6a7d793c79c
+    file: raw_access_thread_susp_disk_access_using_uncommon_tools.yml
+    path: rules/windows/raw_access_thread/raw_access_thread_susp_disk_access_using_uncommon_tools.yml
   - id: sigma-reg-add-local-hidden-user
     rule_id: 460479f3-80b7-42da-9c43-2cc1d54dbccd
     file: registry_event_add_local_hidden_user.yml
@@ -7921,6 +7925,10 @@ rules:
     rule_id: 0f63e1ef-1eb9-4226-9d54-8927ca08520a
     file: win_security_admin_rdp_login.yml
     path: rules/windows/builtin/security/account_management/win_security_admin_rdp_login.yml
+  - id: sigma-win-security-admin-share-access
+    rule_id: 098d7118-55bc-4912-a836-dc6483a8d150
+    file: win_security_admin_share_access.yml
+    path: rules/windows/builtin/security/win_security_admin_share_access.yml
   - id: sigma-win-security-alert-enable-weak-encryption
     rule_id: f6de9536-0441-4b3f-a646-f4e00f300ffd
     file: win_security_alert_enable_weak_encryption.yml
@@ -7929,6 +7937,10 @@ rules:
     rule_id: f6de6525-4509-495a-8a82-1f8b0ed73a00
     file: win_security_atsvc_task.yml
     path: rules/windows/builtin/security/win_security_atsvc_task.yml
+  - id: sigma-win-security-audit-log-cleared
+    rule_id: d99b79d2-0a6f-4f46-ad8b-260b6e17f982
+    file: win_security_audit_log_cleared.yml
+    path: rules/windows/builtin/security/win_security_audit_log_cleared.yml
   - id: sigma-win-security-cobaltstrike-service-installs
     rule_id: d7a95147-145f-4678-b85d-d1ff4a3bb3f6
     file: win_security_cobaltstrike_service_installs.yml
@@ -8045,6 +8057,14 @@ rules:
     rule_id: 1de68c67-af5c-4097-9c85-fe5578e09e67
     file: win_security_mal_wceaux_dll.yml
     path: rules/windows/builtin/security/win_security_mal_wceaux_dll.yml
+  - id: sigma-win-security-member-added-security-enabled-global-group
+    rule_id: c43c26be-2e87-46c7-8661-284588c5a53e
+    file: win_security_member_added_security_enabled_global_group.yml
+    path: rules/windows/builtin/security/account_management/win_security_member_added_security_enabled_global_group.yml
+  - id: sigma-win-security-member-removed-security-enabled-global-group
+    rule_id: 02c39d30-02b5-45d2-b435-8aebfe5a8629
+    file: win_security_member_removed_security_enabled_global_group.yml
+    path: rules/windows/builtin/security/account_management/win_security_member_removed_security_enabled_global_group.yml
   - id: sigma-win-security-meterpreter-or-cobaltstrike-getsystem-service
     rule_id: ecbc5e16-58e0-4521-9c60-eb9a7ea4ad34
     file: win_security_meterpreter_or_cobaltstrike_getsystem_service_install.yml
@@ -8105,6 +8125,10 @@ rules:
     rule_id: 13addce7-47b2-4ca0-a98f-1de964d1d669
     file: win_security_scm_database_handle_failure.yml
     path: rules/windows/builtin/security/win_security_scm_database_handle_failure.yml
+  - id: sigma-win-security-security-enabled-global-group-deleted
+    rule_id: b237c54b-0f15-4612-a819-44b735e0de27
+    file: win_security_security_enabled_global_group_deleted.yml
+    path: rules/windows/builtin/security/account_management/win_security_security_enabled_global_group_deleted.yml
   - id: sigma-win-security-service-install-remote-access-software
     rule_id: c8b00925-926c-47e3-beea-298fd563728e
     file: win_security_service_install_remote_access_software.yml
@@ -8197,6 +8221,14 @@ rules:
     rule_id: 3a734d25-df5c-4b99-8034-af1ddb5883a4
     file: win_security_susp_scheduled_task_creation.yml
     path: rules/windows/builtin/security/win_security_susp_scheduled_task_creation.yml
+  - id: sigma-win-security-susp-scheduled-task-delete-or-disable
+    rule_id: 7595ba94-cf3b-4471-aa03-4f6baa9e5fad
+    file: win_security_susp_scheduled_task_delete_or_disable.yml
+    path: rules/windows/builtin/security/win_security_susp_scheduled_task_delete_or_disable.yml
+  - id: sigma-win-security-susp-scheduled-task-update
+    rule_id: 614cf376-6651-47c4-9dcc-6b9527f749f4
+    file: win_security_susp_scheduled_task_update.yml
+    path: rules/windows/builtin/security/win_security_susp_scheduled_task_update.yml
   - id: sigma-win-security-susp-wmi-login
     rule_id: 5af54681-df95-4c26-854f-2565e13cfab0
     file: win_security_susp_wmi_login.yml
