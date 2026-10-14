@@ -380,9 +380,24 @@ func records(node string, ev map[string]string) []sigmacheck.Case {
 		s := map[string]string{"MessageNumber": "1", "MessageTotal": "1", "ScriptBlockId": "6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10"}
 		set(s, "ScriptBlockText", ev["script_block_text"])
 		return []sigmacheck.Case{{Channel: sigmacheck.PowerShellChannel, EventID: "4104", Data: s}}
+	case "TaskCreated":
+		s := map[string]string{
+			"SubjectUserSid": "S-1-5-21-1004336348-1177238915-682003330-1104", "SubjectUserName": "alice",
+			"SubjectDomainName": "CORP", "SubjectLogonId": "0x3e7", "TaskName": `\Updater`, "TaskContent": taskXML,
+		}
+		set(s, "SubjectUserName", ev["user"])
+		set(s, "TaskName", ev["task_name"])
+		set(s, "TaskContent", ev["task_content"])
+		return []sigmacheck.Case{{Channel: sigmacheck.SecurityChannel, EventID: "4698", Data: s}}
 	}
 	return nil
 }
+
+// taskXML is a scheduled task's definition, for test events whose rule
+// does not name it.
+const taskXML = `<?xml version="1.0" encoding="UTF-16"?><Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">` +
+	`<Settings><Enabled>true</Enabled><Hidden>false</Hidden></Settings>` +
+	`<Actions Context="Author"><Exec><Command>C:\Program Files\Updater\update.exe</Command></Exec></Actions></Task>`
 
 // linuxRecords turns one field-level event into the Sysmon for Linux
 // events that carry it.
@@ -493,7 +508,7 @@ func Cases(r *Rule) []sigmacheck.Case {
 }
 
 // NodeModel is the Signalith data model of each node.
-var NodeModel = map[string]string{"Processes": "Endpoint", "Filesystem": "Filesystem", "Registry": "Registry", "PowerShell": "Script", "ImageLoad": "Image_Load", "ProcessAccess": "Endpoint"}
+var NodeModel = map[string]string{"Processes": "Endpoint", "Filesystem": "Filesystem", "Registry": "Registry", "PowerShell": "Script", "ImageLoad": "Image_Load", "ProcessAccess": "Endpoint", "TaskCreated": "Change"}
 
 // Verify checks a converted detection against a rule's test events: each
 // event, as the real parser stores it, must be read the same way by the

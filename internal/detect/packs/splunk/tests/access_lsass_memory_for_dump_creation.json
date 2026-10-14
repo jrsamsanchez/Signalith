@@ -1,0 +1,15 @@
+{"rule": "fb4c31b0-13e8-4155-8aa5-24de4b8d6717", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"CallTrace":"x dbgcore.dll x","SourceProcessId":"4242","TargetImage":"x lsass.exe","TargetProcessId":"640"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"CallTrace":"x dbghelp.dll x","SourceProcessId":"4242","TargetImage":"x lsass.exe","TargetProcessId":"640"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"CallTrace":"x dbgcore.dll x","SourceProcessId":"4242","TargetImage":"x lsass.exe","TargetProcessId":"640"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"CallTrace":"x dbgcore.dll x","SourceProcessId":"4242","TargetImage":"x lsass.exe","TargetProcessId":"640"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"CallTrace":"x dbgcore.dll y","SourceProcessId":"4242","TargetImage":"x lsass.exe","TargetProcessId":"640"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"CallTrace":"x dbghelp.dll x","SourceProcessId":"4242","TargetImage":"x lsass.exe","TargetProcessId":"640"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"CallTrace":"x dbghelp.dll x","SourceProcessId":"4242","TargetImage":"x lsass.exe","TargetProcessId":"640"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"CallTrace":"x dbghelp.dll y","SourceProcessId":"4242","TargetImage":"x lsass.exe","TargetProcessId":"640"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"CallTrace":"x dbgcore.dll x","SourceProcessId":"4242","TargetImage":"x lsass.exf","TargetProcessId":"640"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"CallTrace":"x dbgcore.dll x","SourceProcessId":"4242","TargetProcessId":"640"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"SourceProcessId":"4242","TargetImage":"x lsass.exe","TargetProcessId":"640"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"CallTrace":"x dbghelp.dll x","SourceProcessId":"4242","TargetImage":"x lsass.exf","TargetProcessId":"640"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"CallTrace":"x dbghelp.dll x","SourceProcessId":"4242","TargetProcessId":"640"}}
+]}

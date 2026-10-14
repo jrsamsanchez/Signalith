@@ -10,6 +10,10 @@ license_url: https://www.apache.org/licenses/LICENSE-2.0
 notice: The detections in this pack are from Splunk security_content, Copyright Splunk Inc., licensed under the Apache License 2.0. They are shipped unchanged; Signalith converts them when it starts. Findings from them name the rule's author.
 format: splunk
 rules:
+  - id: splunk-access-lsass-memory-for-dump-creation
+    rule_id: fb4c31b0-13e8-4155-8aa5-24de4b8d6717
+    file: access_lsass_memory_for_dump_creation.yml
+    path: detections/endpoint/access_lsass_memory_for_dump_creation.yml
   - id: splunk-active-setup-registry-autostart
     rule_id: f64579c0-203f-11ec-abcc-acde48001122
     file: active_setup_registry_autostart.yml
@@ -1098,6 +1102,10 @@ rules:
     rule_id: a26d9db4-c883-11eb-9d75-acde48001122
     file: powershell_fileless_process_injection_via_getprocaddress.yml
     path: detections/endpoint/powershell_fileless_process_injection_via_getprocaddress.yml
+  - id: splunk-powershell-fileless-script-contains-base64-encoded-conten
+    rule_id: 8acbc04c-c882-11eb-b060-acde48001122
+    file: powershell_fileless_script_contains_base64_encoded_content.yml
+    path: detections/endpoint/powershell_fileless_script_contains_base64_encoded_content.yml
   - id: splunk-powershell-invoke-cimmethod-cimsession
     rule_id: 651ee958-a433-471c-b264-39725b788b83
     file: powershell_invoke_cimmethod_cimsession.yml
@@ -2006,6 +2014,10 @@ rules:
     rule_id: 4f8cd681-7583-47a0-9f38-6337b7adf48a
     file: windows_guest_account_enabled_via_net_exe.yml
     path: detections/endpoint/windows_guest_account_enabled_via_net_exe.yml
+  - id: splunk-windows-hidden-schedule-task-settings
+    rule_id: 0b730470-5fe8-4b13-93a7-fe0ad014d0cc
+    file: windows_hidden_schedule_task_settings.yml
+    path: detections/endpoint/windows_hidden_schedule_task_settings.yml
   - id: splunk-windows-hide-notification-features-through-registry
     rule_id: cafa4bce-9f06-11ec-a7b2-acde48001122
     file: windows_hide_notification_features_through_registry.yml
@@ -2190,6 +2202,10 @@ rules:
     rule_id: 1abf472a-88c9-41bb-9002-3272037531b7
     file: windows_level_rmm_powershell_script_installer.yml
     path: detections/endpoint/windows_level_rmm_powershell_script_installer.yml
+  - id: splunk-windows-level-rmm-watchdog-task-created
+    rule_id: c4abe40f-91fb-42c0-bcc1-74ada766d0d8
+    file: windows_level_rmm_watchdog_task_created.yml
+    path: detections/endpoint/windows_level_rmm_watchdog_task_created.yml
   - id: splunk-windows-linked-policies-in-adsi-discovery
     rule_id: 510ea428-4731-4d2f-8829-a28293e427aa
     file: windows_linked_policies_in_adsi_discovery.yml
@@ -2846,6 +2862,10 @@ rules:
     rule_id: 2f15e1a4-0fc2-49dd-919e-cbbe60699218
     file: windows_scheduled_task_with_highest_privileges.yml
     path: detections/endpoint/windows_scheduled_task_with_highest_privileges.yml
+  - id: splunk-windows-scheduled-tasks-for-compmgmtlauncher-or-eventvwr
+    rule_id: feb43b86-8c38-46cd-865e-20ce8a96c26c
+    file: windows_scheduled_tasks_for_compmgmtlauncher_or_eventvwr.yml
+    path: detections/endpoint/windows_scheduled_tasks_for_compmgmtlauncher_or_eventvwr.yml
   - id: splunk-windows-schtasks-create-run-as-system
     rule_id: 41a0e58e-884c-11ec-9976-acde48001122
     file: windows_schtasks_create_run_as_system.yml
@@ -3174,6 +3194,14 @@ rules:
     rule_id: 7cdbe5e2-878d-4020-94f3-52938760155e
     file: windows_xll_file_creation_outside_of_typical_location.yml
     path: detections/endpoint/windows_xll_file_creation_outside_of_typical_location.yml
+  - id: splunk-winevent-scheduled-task-created-to-spawn-shell
+    rule_id: 203ef0ea-9bd8-11eb-8201-acde48001122
+    file: winevent_scheduled_task_created_to_spawn_shell.yml
+    path: detections/endpoint/winevent_scheduled_task_created_to_spawn_shell.yml
+  - id: splunk-winevent-scheduled-task-created-within-public-path
+    rule_id: 5d9c6eee-988c-11eb-8253-acde48001122
+    file: winevent_scheduled_task_created_within_public_path.yml
+    path: detections/endpoint/winevent_scheduled_task_created_within_public_path.yml
   - id: splunk-winhlp32-spawning-a-process
     rule_id: d17dae9e-2618-11ec-b9f5-acde48001122
     file: winhlp32_spawning_a_process.yml

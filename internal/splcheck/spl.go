@@ -181,11 +181,13 @@ func Parse(src []byte, macros map[string]*Macro) (*Rule, error) {
 // the node, and each node's fields map to the Signalith fields they are
 // stored as. The code stays in the clause as signature_id.
 var (
-	rawRe = regexp.MustCompile("(?s)^`(powershell|sysmon)`\\s+(.*)$")
+	rawRe = regexp.MustCompile("(?s)^`(powershell|sysmon|wineventlog_security)`\\s+(.*)$")
 	// rawNodes are the nodes of each source by event code.
 	rawNodes = map[string]map[string]string{
 		"powershell": {"4104": "PowerShell"},
 		"sysmon":     {"7": "ImageLoad", "8": "ProcessAccess", "10": "ProcessAccess"},
+		// Security events the Windows parser reads.
+		"wineventlog_security": {"4698": "TaskCreated"},
 	}
 	// RawFields are the event fields a raw search may name on each node,
 	// with the Signalith field each is stored as.
@@ -200,6 +202,7 @@ var (
 			"SourceImage": "process_path", "TargetImage": "target_process_path",
 			"GrantedAccess": "granted_access", "CallTrace": "call_trace", "SourceUser": "user",
 		},
+		"TaskCreated": {"TaskName": "task_name", "TaskContent": "task_content", "user": "user"},
 	}
 	fillnullRe = regexp.MustCompile(`(?i)^fillnull$`)
 	statsRe    = regexp.MustCompile(`(?is)^stats\s`)
@@ -267,8 +270,37 @@ func parseRaw(r *Rule, source, terms string, later []string, macros map[string]*
 	if err := fieldsOf(where, r.Node); err != nil {
 		return nil, err
 	}
+	unescapeXML(where)
 	r.Where = where
 	return r, nil
+}
+
+// xmlFields are the raw fields that hold XML. Splunk keeps the XML
+// escaped (&lt;Hidden&gt;) and Signalith stores it as it is (<Hidden>),
+// so a rule's values are unescaped to match.
+var xmlFields = map[string]bool{"task_content": true}
+
+var xmlUnescape = strings.NewReplacer("&lt;", "<", "&gt;", ">", "&quot;", `"`, "&apos;", "'", "&amp;", "&")
+
+func unescapeXML(e Expr) {
+	switch x := e.(type) {
+	case *And:
+		for _, k := range x.Kids {
+			unescapeXML(k)
+		}
+	case *Or:
+		for _, k := range x.Kids {
+			unescapeXML(k)
+		}
+	case *Not:
+		unescapeXML(x.Kid)
+	case *Cmp:
+		if xmlFields[x.Field] {
+			for i, v := range x.Values {
+				x.Values[i] = xmlUnescape.Replace(v)
+			}
+		}
+	}
 }
 
 // fieldsOf checks that a raw clause names only fields of node.

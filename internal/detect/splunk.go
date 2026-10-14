@@ -26,6 +26,7 @@ var splunkEvents = map[string][]string{
 	"PowerShell":    {"4104"},
 	"ImageLoad":     {"7"},
 	"ProcessAccess": {"8", "10"},
+	"TaskCreated":   {"4698"},
 }
 
 // UseMacros gives a splunk pack the macros its rules' searches use (the

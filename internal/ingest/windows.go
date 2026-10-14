@@ -164,6 +164,19 @@ func parseWindowsSecurity(eventID string, in []string, ev *Event) {
 		if f["process"] == "" {
 			f["process"] = at(in, 5)
 		}
+	case "4698":
+		// The task's definition is its XML, as the Task Scheduler stores
+		// it: what it runs, when, and whether it is hidden.
+		ev.Model = "Change"
+		f["action"] = "created"
+		f["object_category"] = "scheduled_task"
+		f["signature"] = "A scheduled task was created"
+		f["user"] = at(in, 1)
+		f["user_domain"] = at(in, 2)
+		f["logon_id"] = at(in, 3)
+		f["object"] = at(in, 4)
+		f["task_name"] = at(in, 4)
+		f["task_content"] = at(in, 5)
 	case "4720", "4726":
 		ev.Model = "Change"
 		f["object"] = at(in, 0)

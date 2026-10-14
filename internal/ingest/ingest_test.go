@@ -63,6 +63,18 @@ func TestWindowsProcessCreation(t *testing.T) {
 	})
 }
 
+func TestWindowsScheduledTaskCreated(t *testing.T) {
+	task := `<?xml version="1.0" encoding="UTF-16"?><Task><Settings><Hidden>true</Hidden></Settings>` +
+		`<Actions><Exec><Command>C:\Users\Public\run.exe</Command></Exec></Actions></Task>`
+	ins := []string{"S-1-5-21-1", "bob", "CORP", "0x3e7", `\Updater`, task}
+	b, _ := json.Marshal(map[string]any{"Channel": "Security", "Computer": "WS1", "EventID": "4698", "StringInserts": ins})
+	ev := Normalize("win.security", decode(t, string(b)), now)
+	expect(t, ev.Document(), map[string]any{
+		"datamodel": "Change", "action": "created", "object_category": "scheduled_task", "object": `\Updater`,
+		"task_name": `\Updater`, "task_content": task, "user": "bob", "user_domain": "CORP",
+	})
+}
+
 func TestSysmonProcessHashes(t *testing.T) {
 	msg := "Process Create:\r\nImage: C:\\Users\\bob\\evil.exe\r\nCommandLine: evil.exe\r\nUser: CORP\\bob\r\nHashes: SHA1=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA,MD5=BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB,SHA256=CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC,IMPHASH=DD"
 	b, _ := json.Marshal(map[string]any{"Channel": "Microsoft-Windows-Sysmon/Operational", "Computer": "WS1", "EventID": 1, "Message": msg})

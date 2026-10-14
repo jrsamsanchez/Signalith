@@ -105,7 +105,7 @@ func compareQuery(c *query.Compare) (map[string]any, error) {
 // WildcardFields are the fields the index template maps as OpenSearch
 // wildcard fields (ingest.IndexTemplate): long text, such as a PowerShell
 // script block, searched for words inside it.
-var WildcardFields = map[string]bool{"script_block_text": true}
+var WildcardFields = map[string]bool{"script_block_text": true, "task_content": true}
 
 func equalsQuery(field, value string) map[string]any {
 	if field == "_time" {

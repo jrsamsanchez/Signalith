@@ -41,7 +41,7 @@ func ParseWhere(s, node string, macros map[string]*Macro) (Expr, error) {
 		return nil, err
 	}
 	p := &parser{toks: toks, node: node}
-	e, err := p.or()
+	e, err := p.and()
 	if err != nil {
 		return nil, err
 	}
@@ -148,10 +148,36 @@ func (p *parser) keyword(k string) bool {
 	return t.kind == 'w' && strings.EqualFold(t.text, k)
 }
 
+// Splunk's search syntax, which tstats where clauses and raw searches
+// use, evaluates OR before AND: "a b OR c" is a AND (b OR c). (The where
+// and eval commands differ, with AND first.)
+func (p *parser) and() (Expr, error) {
+	var kids []Expr
+	for {
+		e, err := p.or()
+		if err != nil {
+			return nil, err
+		}
+		kids = append(kids, e)
+		if p.keyword("AND") {
+			p.i++
+			continue
+		}
+		// Terms side by side are ANDed, unless the clause or group ends.
+		if t := p.peek(); t.kind == 0 || t.text == ")" {
+			break
+		}
+	}
+	if len(kids) == 1 {
+		return kids[0], nil
+	}
+	return &And{kids}, nil
+}
+
 func (p *parser) or() (Expr, error) {
 	var kids []Expr
 	for {
-		e, err := p.and()
+		e, err := p.not()
 		if err != nil {
 			return nil, err
 		}
@@ -165,29 +191,6 @@ func (p *parser) or() (Expr, error) {
 		return kids[0], nil
 	}
 	return &Or{kids}, nil
-}
-
-func (p *parser) and() (Expr, error) {
-	var kids []Expr
-	for {
-		e, err := p.not()
-		if err != nil {
-			return nil, err
-		}
-		kids = append(kids, e)
-		if p.keyword("AND") {
-			p.i++
-			continue
-		}
-		// Terms side by side are ANDed, unless the clause or group ends.
-		if t := p.peek(); t.kind == 0 || t.text == ")" || p.keyword("OR") {
-			break
-		}
-	}
-	if len(kids) == 1 {
-		return kids[0], nil
-	}
-	return &And{kids}, nil
 }
 
 func (p *parser) not() (Expr, error) {
@@ -206,7 +209,7 @@ func (p *parser) primary() (Expr, error) {
 	t := p.peek()
 	if t.kind == 'o' && t.text == "(" {
 		p.i++
-		e, err := p.or()
+		e, err := p.and()
 		if err != nil {
 			return nil, err
 		}
