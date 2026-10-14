@@ -27,6 +27,7 @@ import (
 
 	"github.com/jrsamsanchez/signalith/internal/detect"
 	"github.com/jrsamsanchez/signalith/internal/query"
+	"github.com/jrsamsanchez/signalith/internal/search"
 	"github.com/jrsamsanchez/signalith/internal/sigmacheck"
 	"github.com/jrsamsanchez/signalith/internal/splcheck"
 )
@@ -41,7 +42,13 @@ var (
 var windowsSources = []string{
 	"Sysmon EventID 1", "Windows Event Log Security 4688", "Sysmon EventID 11", "Sysmon EventID 12",
 	"Sysmon EventID 13", "Sysmon EventID 14", "Sysmon EventID 23", "Sysmon EventID 26",
+	"Powershell Script Block Logging 4104",
 }
+
+// maxWildcardTerms keeps a rule's searches of wildcard fields under
+// OpenSearch's default limit of 1,024 clauses in one search (see
+// search.WildcardFieldTerms), as for the SigmaHQ pack.
+const maxWildcardTerms = 1000
 
 var macroRef = regexp.MustCompile("`([\\w-]+)`")
 
@@ -150,6 +157,10 @@ func main() {
 		q, err := query.Parse(d.Query)
 		if err != nil {
 			log.Fatalf("%s: converted query does not parse: %v", rel, err)
+		}
+		if n := search.WildcardFieldTerms(q.Search); n > maxWildcardTerms {
+			skip("too many script text pieces for one OpenSearch search", fmt.Sprintf("%s: about %d", rel, n))
+			continue
 		}
 		tf := &sigmacheck.TestFile{Rule: rule.ID, Cases: splcheck.Cases(rule)}
 		if !slices.ContainsFunc(tf.Cases, func(c sigmacheck.Case) bool { return c.Expect }) {

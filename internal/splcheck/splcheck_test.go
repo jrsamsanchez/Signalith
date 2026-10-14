@@ -139,3 +139,39 @@ func TestParseUppercaseAndNotNull(t *testing.T) {
 		t.Errorf("no test event matches: %+v", cases)
 	}
 }
+
+func TestParsePowerShell(t *testing.T) {
+	src := rule("`powershell` EventCode=4104 ScriptBlockText = \"*ShadowCopy*\" (ScriptBlockText = \"*Delete*\" OR ScriptBlockText = \"*Remove*\")\n" +
+		"| fillnull | stats count min(_time) as firstTime BY dest signature\n| rename dest as host | `security_content_ctime(firstTime)` | `test_rule_filter`")
+	r, err := Parse(src, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Node != "PowerShell" {
+		t.Fatalf("node %s", r.Node)
+	}
+	if !Eval(r.Where, map[string]string{"script_block_text": "Get-WmiObject Win32_ShadowCopy | Remove-WmiObject"}) {
+		t.Error("does not match its own event")
+	}
+	if Eval(r.Where, map[string]string{"script_block_text": "Get-WmiObject Win32_ShadowCopy"}) {
+		t.Error("matches without Delete or Remove")
+	}
+	found := false
+	for _, c := range Cases(r) {
+		found = found || c.Expect
+	}
+	if !found {
+		t.Error("no test event matches")
+	}
+	for search, want := range map[string]string{
+		"`powershell` ScriptBlockText=\"*x*\" | fillnull | stats count by dest":                               "must name its event code",
+		"`powershell` EventCode=4103 ScriptBlockText=\"*x*\" | fillnull | stats count by dest":                "must be of event 4104",
+		"`powershell` EventCode=4104 ScriptBlockText=\"*x*\" | stats count by dest":                           "later stage",
+		"`powershell` EventCode=4104 Path=\"*x*\" | fillnull | stats count by dest":                           "no Signalith mapping",
+		"`powershell` EventCode=4104 (ScriptBlockText=\"*x*\" OR EventID=1) | fillnull | stats count by dest": "only be named once",
+	} {
+		if _, err := Parse(rule(search), nil); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%s: err = %v, want %q", search, err, want)
+		}
+	}
+}

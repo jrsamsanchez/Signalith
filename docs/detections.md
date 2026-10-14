@@ -287,19 +287,20 @@ The generator keeps each rule's Signalith ID across runs, rewrites `rules/`,
 
 ### Splunk Security Content
 
-**Splunk Security Content** (`internal/detect/packs/splunk`) holds 573 Windows
+**Splunk Security Content** (`internal/detect/packs/splunk`) holds 669 Windows
 detections from Splunk's Threat Research Team
 ([security_content](https://github.com/splunk/security_content)), pinned to one
 commit. They are the production TTP and anomaly rules that search the CIM
 `Endpoint.Processes`, `Endpoint.Filesystem` and `Endpoint.Registry` nodes with
-`tstats`. Signalith uses the same CIM field names, so each rule's `where` clause
-becomes a Signalith filter field for field:
+`tstats`, plus the PowerShell script block rules. Signalith uses the same CIM field
+names, so each rule's `where` clause becomes a Signalith filter field for field:
 
 | Splunk node | Windows events | Data model |
 | --- | --- | --- |
 | `Endpoint.Processes` | Sysmon 1, Security 4688 | Endpoint |
 | `Endpoint.Filesystem` | Sysmon 11, 23 and 26 | Filesystem |
 | `Endpoint.Registry` | Sysmon 12, 13 and 14 | Registry |
+| `` `powershell` EventCode=4104 `` (raw search) | PowerShell 4104 | Script |
 
 The rule files and the macros they use ship unchanged; Signalith converts them when
 it starts, reading the search the way Splunk does: `*` is the only wildcard (`?` is
@@ -310,6 +311,11 @@ add risk, as in Splunk ES risk-based alerting. Severity follows the rule's risk 
 `splunk`, the pack name, `ttp` or `anomaly`, and the node, and keeps the rule's
 known false positives as triage guidance.
 
+PowerShell rules search the script block events themselves rather than a data
+model: their `ScriptBlockText` terms become `script_block_text` filters, and their
+`fillnull | stats` stages only count the events. They need script block logging
+turned on (**Include PowerShell** on Add data).
+
 Registry values that Sysmon writes as `DWORD (0x00000001)` compare as `0x00000001`,
 the way Splunk's Sysmon add-on reads them.
 
@@ -317,8 +323,8 @@ A rule is shipped only when its whole search converts exactly (a `tstats` search
 whose later stages only rename fields, format times, keep rows that have a field
 (`where isnotnull(...)`) or apply the rule's empty `_filter` macro) and, on test events made from its `where` clause and passed through
 the real Windows parser, the converted detection agrees with Splunk's reading of the
-clause on every event. Searches with `eval`, `rex`, `regex`, `lookup` or raw `sysmon`
-event searches are left out for now; `internal/detect/packs/splunk/REPORT.md` lists
+clause on every event. Searches with `eval`, `rex`, `regex`, `lookup`, and raw searches other than
+PowerShell's, are left out for now; `internal/detect/packs/splunk/REPORT.md` lists
 every rule left out and why. The same CI checks as the SigmaHQ pack run on it.
 
 On the pack card, **Turn on N TTP rules** is the suggested start.

@@ -22,6 +22,7 @@ var splunkEvents = map[string][]string{
 	"Processes":  {"1", "4688"},
 	"Filesystem": {"11", "23", "26"},
 	"Registry":   {"12", "13", "14"},
+	"PowerShell": {"4104"},
 }
 
 // UseMacros gives a splunk pack the macros its rules' searches use (the

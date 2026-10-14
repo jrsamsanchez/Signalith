@@ -357,6 +357,10 @@ func records(node string, ev map[string]string) []sigmacheck.Case {
 			delete(s, "Details")
 		}
 		return []sigmacheck.Case{{Channel: sigmacheck.SysmonChannel, EventID: id, Data: s}}
+	case "PowerShell":
+		s := map[string]string{"MessageNumber": "1", "MessageTotal": "1", "ScriptBlockId": "6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10"}
+		set(s, "ScriptBlockText", ev["script_block_text"])
+		return []sigmacheck.Case{{Channel: sigmacheck.PowerShellChannel, EventID: "4104", Data: s}}
 	}
 	return nil
 }
@@ -418,7 +422,7 @@ func Cases(r *Rule) []sigmacheck.Case {
 }
 
 // NodeModel is the Signalith data model of each node.
-var NodeModel = map[string]string{"Processes": "Endpoint", "Filesystem": "Filesystem", "Registry": "Registry"}
+var NodeModel = map[string]string{"Processes": "Endpoint", "Filesystem": "Filesystem", "Registry": "Registry", "PowerShell": "Script"}
 
 // Verify checks a converted detection against a rule's test events: each
 // event, as the real parser stores it, must be read the same way by the

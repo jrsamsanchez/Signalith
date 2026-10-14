@@ -1,0 +1,63 @@
+name: Windows PowerShell Get CIMInstance Remote Computer
+id: d8c972eb-ed84-431a-8869-ca4bd83257d1
+version: 11
+creation_date: '2023-03-27'
+modification_date: '2026-10-09'
+author: Michael Haag, Splunk
+status: production
+type: Anomaly
+description: The following analytic detects the use of the Get-CimInstance cmdlet with the -ComputerName parameter, indicating an attempt to retrieve information from a remote computer. It leverages PowerShell Script Block Logging to identify this specific command execution. This activity is significant as it may indicate unauthorized remote access or information gathering by an attacker. If confirmed malicious, this could allow the attacker to collect sensitive data from remote systems, potentially leading to further exploitation or lateral movement within the network.
+data_source:
+    - Powershell Script Block Logging 4104
+search: |-
+    `powershell` EventCode=4104 ScriptBlockText="*get-ciminstance*" AND ScriptBlockText="*computername*"
+      | fillnull
+      | stats count min(_time) as firstTime max(_time) as lastTime
+        BY dest signature signature_id
+           user_id vendor_product EventID
+           Guid Opcode Name
+           Path ProcessID ScriptBlockId
+           ScriptBlockText
+      | `security_content_ctime(firstTime)`
+      | `security_content_ctime(lastTime)`
+      | `windows_powershell_get_ciminstance_remote_computer_filter`
+how_to_implement: To successfully implement this analytic, you will need to enable PowerShell Script Block Logging on some or all endpoints. Additional setup here https://help.splunk.com/en/security-offerings/splunk-user-behavior-analytics/get-data-in/5.4.1/add-other-data-to-splunk-uba/configure-powershell-logging-to-see-powershell-anomalies-in-splunk-uba.
+known_false_positives: This is meant to be a low risk RBA anomaly analytic or to be used for hunting. Enable this with a low risk score and let it generate risk in the risk index.
+references:
+    - https://learn.microsoft.com/en-us/powershell/module/cimcmdlets/get-ciminstance?view=powershell-7.3
+    - https://github.com/redcanaryco/atomic-red-team/blob/388942adbd9641f4dfdcf079d7efe9a75ec0ac43/atomics/T1112/T1112.yaml#L1104
+drilldown_searches:
+    - name: View the detection results for - "$dest$"
+      search: '%original_detection_search% | search  dest = "$dest$"'
+      earliest_offset: $info_min_time$
+      latest_offset: $info_max_time$
+    - name: View risk events for the last 7 days for - "$dest$"
+      search: '| from datamodel Risk.All_Risk | search normalized_risk_object IN ("$dest$") | stats count min(_time) as firstTime max(_time) as lastTime values(search_name) as "Search Name" values(risk_message) as "Risk Message" values(analyticstories) as "Analytic Stories" values(annotations._all) as "Annotations" values(annotations.mitre_attack.mitre_tactic) as "ATT&CK Tactics" by normalized_risk_object | `security_content_ctime(firstTime)` | `security_content_ctime(lastTime)`'
+      earliest_offset: 7d
+      latest_offset: "0"
+intermediate_findings:
+    entities:
+        - field: dest
+          type: system
+          score: 20
+          message: A PowerShell Cmdlet Get-CIMInstnace was ran on $dest$, attempting to connect to a remote host.
+analytic_story:
+    - Active Directory Lateral Movement
+asset_type: Endpoint
+atomic_guid:
+    - ac494fe5-81a4-4897-af42-e774cf005ecb
+mitre_attack_id:
+    - T1059.001
+product:
+    - Splunk Enterprise
+    - Splunk Enterprise Security
+    - Splunk Cloud
+category: endpoint
+security_domain: endpoint
+tests:
+    - name: True Positive Test
+      attack_data:
+        - data: https://media.githubusercontent.com/media/splunk/attack_data/master/datasets/attack_techniques/T1059.001/atomic_red_team/get_ciminstance_windows-powershell.log
+          source: XmlWinEventLog:Microsoft-Windows-PowerShell/Operational
+          sourcetype: XmlWinEventLog
+      test_type: unit
