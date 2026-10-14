@@ -102,6 +102,8 @@ var knownFields = func() map[string]string {
 		// account, and the log's provider.
 		"service_name": kw, "service_path": kw, "service_type": kw, "service_start_type": kw, "service_account": kw,
 		"provider": kw,
+		// A logon's (Security 4624 and 4625) logon process and account SID.
+		"logon_process": kw, "user_sid": kw,
 		// An sshd line whose client address cannot be told from text the
 		// client sent (see ambiguousSSH).
 		"src_ambiguous": kw,

@@ -1,0 +1,4 @@
+{"rule": "f241cf1b-3a6b-4e1a-b4f9-133c00dd95ca", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4697","data":{"ServiceFileName":"powershellshell32.dllshellexec_rundllrundll32.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4697","data":{}}
+]}

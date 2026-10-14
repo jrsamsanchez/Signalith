@@ -1,0 +1,4 @@
+{"rule": "f0d1feba-4344-4ca9-8121-a6c97bd6df52", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4697","data":{"ServiceFileName":"servpw"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4697","data":{}}
+]}

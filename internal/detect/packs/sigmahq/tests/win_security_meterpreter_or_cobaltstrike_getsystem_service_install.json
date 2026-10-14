@@ -1,0 +1,6 @@
+{"rule": "ecbc5e16-58e0-4521-9c60-eb9a7ea4ad34", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4697","data":{"ServiceFileName":"echo/ccmd\\pipe\\"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4697","data":{"ServiceFileName":"rundll32 /p: .dll,a"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4697","data":{"ServiceFileName":"\\\\127.0.0.1\\ADMIN$\\"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4697","data":{}}
+]}

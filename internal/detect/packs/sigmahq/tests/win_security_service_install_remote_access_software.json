@@ -1,0 +1,4 @@
+{"rule": "c8b00925-926c-47e3-beea-298fd563728e", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4697","data":{"ServiceName":"BASupportExpressSrvcUpdater"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4697","data":{}}
+]}

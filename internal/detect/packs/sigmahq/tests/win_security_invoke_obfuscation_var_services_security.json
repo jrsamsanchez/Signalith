@@ -1,0 +1,4 @@
+{"rule": "dcf2db1f-f091-425b-a821-c05875b8925a", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4697","data":{"ServiceFileName":"cmd-f\"set/r"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4697","data":{}}
+]}

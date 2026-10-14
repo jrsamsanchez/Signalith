@@ -242,8 +242,8 @@ Content packs are rule sets from other open source projects, shipped unchanged
 inside Signalith and converted when it starts. Every pack detection is **off** until
 an admin turns it on.
 
-**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 1,842 rules from
-[SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 1,732 Windows rules
+**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 1,869 rules from
+[SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 1,759 Windows rules
 for these Sysmon, Security, PowerShell and System log sources, and 110 Linux rules (see
 [Linux endpoints](#linux-endpoints-sysmon-for-linux)):
 
@@ -258,6 +258,14 @@ for these Sysmon, Security, PowerShell and System log sources, and 110 Linux rul
 | `dns_query` | Sysmon 22 | Network_Resolution |
 | `ps_script` | PowerShell 4104 | Script |
 | `service: system` | System 7045 (service installed) | Change |
+| `service: security` | Security 4624 and 4625 (logons); 4697 (service installed); 4698 (scheduled task created); 4663 (object access) | Authentication; Change; Change; Filesystem or Registry |
+
+A Security log rule names its event's own fields (`TargetUserName`, `LogonType`,
+`ServiceFileName`, `ObjectName`), so each one converts for the one Security event it
+is about; rules about other Security events, or about several, are left out. Windows
+logs these events with **Audit Logon** (4624, 4625), **Audit Security System
+Extension** (4697), **Audit Other Object Access Events** (4698), and **Audit File
+System** or **Audit Registry** (4663) on.
 
 Each pack rule only searches its own log source's event IDs, since several kinds of
 event share a data model (a process creation and a process access are both Endpoint).

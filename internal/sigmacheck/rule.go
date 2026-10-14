@@ -114,6 +114,32 @@ func (r *Rule) Fields() []string {
 	return out
 }
 
+// EventIDs returns the event IDs the rule's selections name (EventID
+// without modifiers), in order.
+func (r *Rule) EventIDs() []string {
+	seen := map[string]bool{}
+	for _, s := range r.sels {
+		for _, alt := range s.alts {
+			for _, fc := range alt {
+				if fc.field != "EventID" || len(fc.mods) > 0 {
+					continue
+				}
+				for _, v := range fc.values {
+					if v != nil {
+						seen[*v] = true
+					}
+				}
+			}
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for id := range seen {
+		out = append(out, id)
+	}
+	sort.Strings(out)
+	return out
+}
+
 // HasKeywords reports whether the rule searches free text.
 func (r *Rule) HasKeywords() bool {
 	for _, s := range r.sels {

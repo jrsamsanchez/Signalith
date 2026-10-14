@@ -1,0 +1,5 @@
+{"rule": "0ee4d8a5-4e67-4faf-acfa-62a78457d1f2", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4697","data":{"ServiceFileName":"HybridConnectionManager","ServiceName":"HybridConnectionManager"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4697","data":{"ServiceName":"HybridConnectionManager"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4697","data":{"ServiceFileName":"HybridConnectionManager"}}
+]}

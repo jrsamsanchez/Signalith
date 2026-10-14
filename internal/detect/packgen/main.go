@@ -58,6 +58,9 @@ var categories = map[string]string{
 	// Not a Sigma category: Windows System log rules (service: system)
 	// about services installed.
 	"system": "rules/windows/builtin/system/service_control_manager",
+	// Nor this: Windows Security log rules (service: security), each
+	// about one of the Security events sigmacheck.SecurityEvents lists.
+	"security": "rules/windows/builtin/security",
 }
 
 // linuxCategories are the Linux log source categories Sysmon for Linux
@@ -97,7 +100,7 @@ func main() {
 	pack := &detect.Pack{
 		Name:  "sigmahq",
 		Title: "SigmaHQ community rules",
-		Description: "Windows rules for Sysmon, Security and System events (processes, network connections, files, registry, DNS, DLL loads, process access and services installed) from the SigmaHQ project, converted to Signalith detections. " +
+		Description: "Windows rules for Sysmon, Security and System events (processes, network connections, files, registry, DNS, DLL loads, process access, logons, scheduled tasks and services installed) from the SigmaHQ project, converted to Signalith detections. " +
 			"Each rule shipped here fires on its test events and stays quiet on its exclusions, checked in CI.",
 		Source:     "https://github.com/SigmaHQ/sigma",
 		Version:    commit,
@@ -135,6 +138,10 @@ func main() {
 			bases, cases = sigmacheck.LinuxBases[cat], sigmacheck.LinuxCases
 		}
 		files, _ := filepath.Glob(filepath.Join(*sigmaDir, src.dir, "*.yml"))
+		if cat == "security" {
+			more, _ := filepath.Glob(filepath.Join(*sigmaDir, src.dir, "*", "*.yml"))
+			files = append(files, more...)
+		}
 		sort.Strings(files)
 		for _, f := range files {
 			rel, _ := filepath.Rel(*sigmaDir, f)
@@ -159,12 +166,22 @@ func main() {
 				continue
 			}
 			want := map[string]string{"product": product, "category": cat, "service": ""}
-			if cat == "system" {
-				want["category"], want["service"] = "", "system"
+			if cat == "system" || cat == "security" {
+				want["category"], want["service"] = "", cat
 			}
 			if rule.Logsource["product"] != want["product"] || rule.Logsource["category"] != want["category"] || rule.Logsource["service"] != want["service"] {
 				skip("log source is not plain "+product+" "+cat, rel)
 				continue
+			}
+			rcat, rbases := cat, bases
+			if cat == "security" {
+				ids := rule.EventIDs()
+				if len(ids) != 1 || !slices.Contains(sigmacheck.SecurityEvents, ids[0]) {
+					skip("not about one Security event Signalith reads", rel)
+					continue
+				}
+				rcat = sigmacheck.SecurityCategory(ids[0])
+				rbases = sigmacheck.Bases[rcat]
 			}
 			stem := strings.TrimSuffix(filepath.Base(f), ".yml")
 			id := old[rule.ID]
@@ -188,14 +205,14 @@ func main() {
 			} else if os.Getenv("PACKGEN_TERMS") != "" && n > 0 {
 				fmt.Fprintln(os.Stderr, "TERMS", n, rel)
 			}
-			syn, err := rule.Synthesize(seed(rule.ID), nil, bases)
+			syn, err := rule.Synthesize(seed(rule.ID), nil, rbases)
 			if err != nil {
 				skip("no test events: "+short(err), rel)
 				continue
 			}
-			tf := &sigmacheck.TestFile{Rule: rule.ID, Cases: cases(cat, syn, rule.Fields())}
+			tf := &sigmacheck.TestFile{Rule: rule.ID, Cases: cases(rcat, syn, rule.Fields())}
 			if product == "windows" {
-				tf.Cases = append(tf.Cases, regression(*sigmaDir, rel, rule, cat)...)
+				tf.Cases = append(tf.Cases, regression(*sigmaDir, rel, rule, rcat)...)
 			}
 			if errs := sigmacheck.Verify(rule, q.Datamodel, q.Search, tf); len(errs) > 0 {
 				skip("converted detection disagrees with the rule", rel+": "+errs[0].Error())

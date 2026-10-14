@@ -1,0 +1,4 @@
+{"rule": "4edf51e1-cb83-4e1a-bc39-800e396068e3", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4697","data":{"ServiceFileName":"\u0026\u0026clipboard]::cmd"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4697","data":{}}
+]}

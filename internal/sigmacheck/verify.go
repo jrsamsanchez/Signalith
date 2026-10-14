@@ -83,6 +83,14 @@ func (c Case) SigmaView() (map[string]string, bool) {
 			}
 		}
 		return out, true
+	case c.Channel == SecurityChannel && slices.Contains(SecurityEvents, c.EventID):
+		// Security log rules (service: security) name the event's own
+		// data.
+		out := map[string]string{"EventID": c.EventID}
+		for k, v := range c.Data {
+			out[k] = v
+		}
+		return out, true
 	}
 	return nil, false
 }
@@ -124,6 +132,21 @@ var sysmonEvents = map[string]string{
 	"system": "7045",
 }
 
+// SecurityEvents are the Security log events Security log rules
+// (service: security) are checked for; such a rule's category is
+// SecurityCategory of its one event.
+var SecurityEvents = []string{"4624", "4625", "4663", "4697", "4698"}
+
+// SecurityCategory is the category of a Security log rule about one
+// event, as Bases, Cases and Channel know it.
+func SecurityCategory(eventID string) string { return "security_" + eventID }
+
+func init() {
+	for _, id := range SecurityEvents {
+		sysmonEvents[SecurityCategory(id)] = id
+	}
+}
+
 // Channel returns the Windows channel a log source category's events come
 // from.
 func Channel(category string) string {
@@ -132,6 +155,9 @@ func Channel(category string) string {
 		return PowerShellChannel
 	case "system":
 		return SystemChannel
+	}
+	if strings.HasPrefix(category, "security_") {
+		return SecurityChannel
 	}
 	return SysmonChannel
 }
@@ -233,6 +259,34 @@ var Bases = map[string]map[string]string{
 		"ScriptBlockText": "Get-ChildItem -Path D:\\apps\\work | Select-Object Name",
 		"ScriptBlockId":   "6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10",
 		"Path":            `D:\apps\scripts\report.ps1`,
+	},
+	"security_4624": {
+		"SubjectUserSid": "S-1-5-18", "SubjectUserName": "WS1$", "SubjectDomainName": "CORP", "SubjectLogonId": "0x3e7",
+		"TargetUserSid": "S-1-5-21-1000-1104", "TargetUserName": "tester", "TargetDomainName": "CORP", "TargetLogonId": "0x1a2b3c",
+		"LogonType": "3", "LogonProcessName": "NtLmSsp", "AuthenticationPackageName": "NTLM", "WorkstationName": "WS2",
+		"LmPackageName": "NTLM V2", "KeyLength": "0", "ProcessId": "0x0", "IpAddress": "192.0.2.10", "IpPort": "50123",
+	},
+	"security_4625": {
+		"SubjectUserSid": "S-1-5-18", "SubjectUserName": "WS1$", "SubjectDomainName": "CORP", "SubjectLogonId": "0x3e7",
+		"TargetUserSid": "S-1-0-0", "TargetUserName": "tester", "TargetDomainName": "CORP", "Status": "0xc000006d",
+		"FailureReason": "%%2313", "SubStatus": "0xc000006a", "LogonType": "3", "LogonProcessName": "NtLmSsp",
+		"AuthenticationPackageName": "NTLM", "WorkstationName": "WS2", "KeyLength": "0", "ProcessId": "0x0",
+		"IpAddress": "192.0.2.10", "IpPort": "50123",
+	},
+	"security_4663": {
+		"SubjectUserSid": "S-1-5-21-1000-1104", "SubjectUserName": "tester", "SubjectDomainName": "CORP", "SubjectLogonId": "0x1a2b3c",
+		"ObjectServer": "Security", "ObjectType": "File", "ObjectName": `D:\apps\work\output.txt`, "HandleId": "0x1f4",
+		"AccessList": "%%4416", "AccessMask": "0x1", "ProcessId": "0x1092", "ProcessName": `D:\apps\launcher\launcher.exe`,
+	},
+	"security_4697": {
+		"SubjectUserSid": "S-1-5-21-1000-1104", "SubjectUserName": "tester", "SubjectDomainName": "CORP", "SubjectLogonId": "0x1a2b3c",
+		"ServiceName": "ExampleUpdater", "ServiceFileName": `"D:\apps\updater\updater.exe" --service`,
+		"ServiceType": "0x10", "ServiceStartType": "2", "ServiceAccount": "LocalSystem",
+	},
+	"security_4698": {
+		"SubjectUserSid": "S-1-5-21-1000-1104", "SubjectUserName": "tester", "SubjectDomainName": "CORP", "SubjectLogonId": "0x1a2b3c",
+		"TaskName":    `\ExampleUpdater`,
+		"TaskContent": `<?xml version="1.0" encoding="UTF-16"?><Task version="1.2"><Actions Context="Author"><Exec><Command>D:\apps\updater\updater.exe</Command></Exec></Actions></Task>`,
 	},
 	"system": {
 		"ServiceName": "ExampleUpdater",

@@ -1,0 +1,5 @@
+{"rule": "51e33403-2a37-4d66-a574-1fda1782cc31", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4624","data":{"IpAddress":"::1","LogonType":"10"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4624","data":{"LogonType":"10"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4624","data":{"IpAddress":"::1"}}
+]}

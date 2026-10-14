@@ -121,6 +121,7 @@ func parseWindowsSecurity(eventID string, in []string, ev *Event) {
 		f["app"] = "win:local"
 		f["user"] = at(in, 5)
 		f["user_domain"] = at(in, 6)
+		f["user_sid"] = at(in, 4)
 		if eventID == "4624" {
 			f["action"] = "success"
 			f["signature"] = "An account was successfully logged on"
@@ -129,6 +130,9 @@ func parseWindowsSecurity(eventID string, in []string, ev *Event) {
 			f["src_port"] = atoi(at(in, 19))
 			f["src_host"] = at(in, 11)
 			f["authentication_method"] = strings.TrimSpace(at(in, 10))
+			f["logon_process"] = strings.TrimSpace(at(in, 9))
+			f["process_path"] = at(in, 17)
+			f["process_name"] = baseName(at(in, 17))
 		} else {
 			f["action"] = "failure"
 			f["signature"] = "An account failed to log on"
@@ -137,6 +141,9 @@ func parseWindowsSecurity(eventID string, in []string, ev *Event) {
 			f["src_port"] = atoi(at(in, 20))
 			f["src_host"] = at(in, 13)
 			f["authentication_method"] = strings.TrimSpace(at(in, 12))
+			f["logon_process"] = strings.TrimSpace(at(in, 11))
+			f["process_path"] = at(in, 18)
+			f["process_name"] = baseName(at(in, 18))
 			sub := strings.ToLower(at(in, 9))
 			if reason, ok := windowsFailureReasons[sub]; ok {
 				f["reason"] = reason
@@ -183,6 +190,23 @@ func parseWindowsSecurity(eventID string, in []string, ev *Event) {
 		f["task_content"] = at(in, 5)
 		f["task_command"] = taskElement(at(in, 5), "Command")
 		f["task_arguments"] = taskElement(at(in, 5), "Arguments")
+	case "4697":
+		// A service installed, as the Security log records it (with
+		// Audit Security System Extension on): the same as System 7045,
+		// with who installed it, and the type and start type as numbers.
+		ev.Model = "Change"
+		f["action"] = "created"
+		f["object_category"] = "service"
+		f["signature"] = "A service was installed in the system"
+		f["user"] = at(in, 1)
+		f["user_domain"] = at(in, 2)
+		f["logon_id"] = at(in, 3)
+		f["object"] = at(in, 4)
+		f["service_name"] = at(in, 4)
+		f["service_path"] = at(in, 5)
+		f["service_type"] = at(in, 6)
+		f["service_start_type"] = at(in, 7)
+		f["service_account"] = at(in, 8)
 	case "4663":
 		// An access to an object whose audit rule (SACL) asks for it: a
 		// file goes to Filesystem and a registry key to Registry.

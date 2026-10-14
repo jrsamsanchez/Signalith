@@ -1,0 +1,4 @@
+{"rule": "3a734d25-df5c-4b99-8034-af1ddb5883a4", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4698","data":{"TaskContent":"\u003cArguments\u003e/k \\Downloads\\"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4698","data":{}}
+]}

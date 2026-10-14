@@ -610,6 +610,34 @@ func TestConvertSigmaServiceInstall(t *testing.T) {
 	}
 }
 
+func TestConvertSigmaSecurityLog(t *testing.T) {
+	logon := "title: RDP logon\nlogsource:\n  product: windows\n  service: security\ndetection:\n  sel:\n    EventID: 4624\n    LogonType: 10\n    LogonProcessName: User32\n  condition: sel\nlevel: medium\n"
+	res, err := ConvertSigmaWith([]byte(logon), SigmaOptions{Strict: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"datamodel=Authentication", "signature_id IN (4624)", "logon_type=10", "logon_process=User32"} {
+		if !strings.Contains(res.Detection.Query, want) {
+			t.Errorf("query missing %s: %s", want, res.Detection.Query)
+		}
+	}
+	// An object access may be a file's or a registry key's.
+	access := strings.NewReplacer("4624", "4663", "LogonType: 10", "ObjectType: Key", "LogonProcessName: User32", "AccessList|contains: '%%4417'").Replace(logon)
+	res, err = ConvertSigmaWith([]byte(access), SigmaOptions{Strict: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if q := res.Detection.Query; strings.Contains(q, "datamodel=") || !strings.Contains(q, "object_type=Key") {
+		t.Errorf("object access query = %s", q)
+	}
+	// A rule about two events, or one Signalith does not read, is refused.
+	for _, other := range []string{strings.Replace(logon, "EventID: 4624", "EventID: [4624, 4625]", 1), strings.Replace(logon, "4624", "4776", 1)} {
+		if _, err := ConvertSigmaWith([]byte(other), SigmaOptions{Strict: true}); err == nil {
+			t.Errorf("converted strictly: %s", other)
+		}
+	}
+}
+
 func mustParse(t *testing.T, s string) *query.Query {
 	t.Helper()
 	q, err := query.Parse(s)

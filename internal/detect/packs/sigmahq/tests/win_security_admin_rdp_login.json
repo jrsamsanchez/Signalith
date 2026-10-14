@@ -1,0 +1,6 @@
+{"rule": "0f63e1ef-1eb9-4226-9d54-8927ca08520a", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4624","data":{"AuthenticationPackageName":"Negotiate","LogonType":"10","TargetUserName":"Admin"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4624","data":{"LogonType":"10","TargetUserName":"Admin"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4624","data":{"AuthenticationPackageName":"Negotiate","TargetUserName":"Admin"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4624","data":{"AuthenticationPackageName":"Negotiate","LogonType":"10"}}
+]}

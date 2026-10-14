@@ -1,0 +1,5 @@
+{"rule": "11d00fff-5dc3-428c-8184-801f292faec0", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4663","data":{"AccessList":"%%1538","ObjectName":"ControlSet\\Services\\\\SYSTEM\\"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4663","data":{"ObjectName":"ControlSet\\Services\\\\SYSTEM\\"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4663","data":{"AccessList":"%%1538"}}
+]}

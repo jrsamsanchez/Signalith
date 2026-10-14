@@ -1,0 +1,4 @@
+{"rule": "cd0f7229-d16f-42de-8fe3-fba365fbcb3a", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4697","data":{"ServiceFileName":"\u0026\u0026shell32.dllinvokerundll32shellexec_rundll"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4697","data":{}}
+]}

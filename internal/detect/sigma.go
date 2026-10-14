@@ -5,8 +5,10 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"maps"
 	"net/netip"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"unicode/utf16"
@@ -113,6 +115,26 @@ var sigmaEventFields = func() map[string]map[string]string {
 	load := with(map[string]string{
 		"imageloaded": "loaded_file_path", "signed": "signed", "signature": "signature", "signaturestatus": "signature_status",
 	})
+	// Security log events: the account that acted (Subject*) is the
+	// user, except in a logon, where it is the account logged on
+	// (Target*).
+	security := func(m map[string]string) map[string]string {
+		for k, v := range map[string]string{
+			"subjectusername": "user", "subjectdomainname": "user_domain", "subjectlogonid": "logon_id",
+			"computer": "host", "computername": "host", "eventid": "signature_id",
+		} {
+			if _, ok := m[k]; !ok {
+				m[k] = v
+			}
+		}
+		return m
+	}
+	logon := map[string]string{
+		"targetusername": "user", "targetdomainname": "user_domain", "targetusersid": "user_sid",
+		"logontype": "logon_type", "logonprocessname": "logon_process", "authenticationpackagename": "authentication_method",
+		"workstationname": "src_host", "ipaddress": "src", "ipport": "src_port", "processname": "process_path",
+		"computer": "host", "computername": "host", "eventid": "signature_id",
+	}
 	return map[string]map[string]string{
 		"file_event": file, "file_delete": file,
 		"registry_add": registry, "registry_delete": registry, "registry_set": registry, "registry_event": registry,
@@ -121,6 +143,17 @@ var sigmaEventFields = func() map[string]map[string]string {
 		"driver_load":          with(map[string]string{"imageloaded": "loaded_file_path", "signed": "signed", "signature": "signature", "signaturestatus": "signature_status", "image": "", "user": "", "processid": "", "processguid": ""}),
 		"process_access":       access,
 		"create_remote_thread": access,
+		"security_4624":        logon,
+		"security_4625":        logon,
+		"security_4663": security(map[string]string{
+			"objectname": "object_path", "objecttype": "object_type", "accesslist": "access_list",
+			"accessmask": "access_mask", "processname": "process_path",
+		}),
+		"security_4697": security(map[string]string{
+			"servicename": "service_name", "servicefilename": "service_path", "servicetype": "service_type",
+			"servicestarttype": "service_start_type", "serviceaccount": "service_account",
+		}),
+		"security_4698": security(map[string]string{"taskname": "task_name", "taskcontent": "task_content"}),
 		"system": {
 			"servicename": "service_name", "imagepath": "service_path", "servicetype": "service_type",
 			"starttype": "service_start_type", "accountname": "service_account", "provider_name": "provider",
@@ -152,6 +185,57 @@ var sigmaWindowsEvents = map[string][]string{
 	"create_remote_thread": {"8"},
 	"ps_script":            {"4104"},
 	"system":               {"7045"},
+	"security_4624":        {"4624"},
+	"security_4625":        {"4625"},
+	"security_4663":        {"4663"},
+	"security_4697":        {"4697"},
+	"security_4698":        {"4698"},
+}
+
+// sigmaSecurityModels are the Security log events Security log rules
+// (service: security) convert for, with each one's data model: an object
+// access is a file's (Filesystem) or a registry key's (Registry), so its
+// rules search any.
+var sigmaSecurityModels = map[string]string{
+	"4624": "Authentication", "4625": "Authentication", "4663": "", "4697": "Change", "4698": "Change",
+}
+
+// anyModel reports whether the rule's events land in more than one data
+// model, so it searches them all.
+func (c *sigmaConv) anyModel() bool { return c.category == "security_4663" }
+
+// sigmaEventIDs returns the event IDs a rule's selections name (EventID
+// without modifiers), sorted.
+func sigmaEventIDs(det map[string]any) []string {
+	seen := map[string]bool{}
+	var walk func(v any)
+	walk = func(v any) {
+		switch x := v.(type) {
+		case []any:
+			for _, it := range x {
+				walk(it)
+			}
+		case map[string]any:
+			for k, val := range x {
+				if k != "EventID" {
+					continue
+				}
+				if list, ok := val.([]any); ok {
+					for _, it := range list {
+						seen[fmt.Sprint(it)] = true
+					}
+				} else {
+					seen[fmt.Sprint(val)] = true
+				}
+			}
+		}
+	}
+	for k, v := range det {
+		if k != "condition" {
+			walk(v)
+		}
+	}
+	return slices.Sorted(maps.Keys(seen))
 }
 
 // sigmaLevels maps Sigma levels to severities.
@@ -189,15 +273,28 @@ func ConvertSigmaWith(src []byte, opt SigmaOptions) (*SigmaResult, error) {
 	}
 	category, _ := r.Logsource["category"].(string)
 	if product, _ := r.Logsource["product"].(string); category == "" && strings.EqualFold(product, "windows") {
-		if service, _ := r.Logsource["service"].(string); strings.EqualFold(service, "system") {
+		switch service, _ := r.Logsource["service"].(string); strings.ToLower(service) {
+		case "system":
 			// The System log's events Signalith reads are services
 			// installed (7045).
 			category = "system"
+		case "security":
+			// A Security log rule's fields are its event's own, so it
+			// converts for one event.
+			category = "security"
+			if ids := sigmaEventIDs(r.Detection); len(ids) == 1 {
+				if _, ok := sigmaSecurityModels[ids[0]]; ok {
+					category = "security_" + ids[0]
+				}
+			}
 		}
 	}
 	c := &sigmaConv{strict: opt.Strict, category: strings.ToLower(category)}
 	dm := c.datamodel(r.Logsource)
-	if dm == "" && opt.Strict {
+	if c.category == "security" {
+		c.approx("Signalith converts Security log rules about one of the events %s", strings.Join(slices.Sorted(maps.Keys(sigmaSecurityModels)), ", "))
+	}
+	if dm == "" && opt.Strict && !c.anyModel() {
 		return nil, fmt.Errorf("log source %v has no Signalith data model", r.Logsource)
 	}
 	cond, ok := r.Detection["condition"]
@@ -364,6 +461,9 @@ func (c *sigmaConv) datamodel(ls map[string]any) string {
 		return "Script"
 	case "system":
 		return "Change"
+	}
+	if id, ok := strings.CutPrefix(c.category, "security_"); ok {
+		return sigmaSecurityModels[id]
 	}
 	if get("product") == "linux" && get("service") == "auth" {
 		return "Authentication"

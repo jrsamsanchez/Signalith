@@ -1,0 +1,4 @@
+{"rule": "2a926e6a-4b81-4011-8a96-e36cc8c04302", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4697","data":{"ServiceFileName":"powershell"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4697","data":{}}
+]}
