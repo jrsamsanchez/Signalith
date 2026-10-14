@@ -22,7 +22,7 @@ func TestAnthropicRetriesOnParseError(t *testing.T) {
 		var body struct {
 			Model    string    `json:"model"`
 			System   string    `json:"system"`
-			Messages []message `json:"messages"`
+			Messages []Message `json:"messages"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		if body.Model != "claude-sonnet-5-5" || !strings.Contains(body.System, "Authentication") {

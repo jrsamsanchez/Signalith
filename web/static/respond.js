@@ -147,7 +147,8 @@ function rpRunList(runs, filter) {
 // openRespond runs an action on a target from a finding or a case:
 // pick the action, check the target and give a reason, confirm a sentence
 // that says exactly what will happen, then see the result and output.
-// ctx: { findingId, caseId, entities: [{field, value, kind?}], title, onDone(run) }.
+// ctx: { findingId, caseId, entities: [{field, value, kind?}], title, onDone(run),
+// and optionally action, target and reason to start with }.
 const rp = { seq: 0 };
 async function openRespond(ctx) {
   const d = modalDialog('rp-run');
@@ -192,11 +193,14 @@ async function openRespond(ctx) {
   };
 
   const cands = rpCandidates(ctx.entities);
-  const st = { action: null, target: '', kind: '', typed: false, reason: '' };
+  // A suggestion (from Investigate with AI) fills in the action, target
+  // and reason; the analyst still checks them and confirms.
+  const st = { action: null, target: ctx.target || '', kind: '', typed: !!ctx.target, reason: ctx.reason || '' };
   const firstUsable = (list) => list.find((a) => !a.problem);
 
   // Step 1: what, on what, and why.
   const choose = (err) => {
+    if (!st.action && ctx.action) st.action = actions.find((a) => a.name === ctx.action && !a.problem) || null;
     if (!st.action) st.action = firstUsable(actions) || null;
     const errBox = el('div', { class: 'alert hidden', 'data-tone': 'danger', role: 'alert' });
     const options = el('div', { class: 'rp-pick', role: 'radiogroup', 'aria-label': 'Action' }, ...actions.map((a, i) => {

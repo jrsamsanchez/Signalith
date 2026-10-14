@@ -600,6 +600,8 @@ are counted for each person's own address, not the proxy's. See
 | `dashboards.stale_after` | `2h` | How long a host and source type can be quiet before the posture dashboard lists it as stopped |
 | `assistant.provider` | off | Optional AI model for **Ask**: `anthropic`, or `openai` for any OpenAI-compatible API (OpenAI, Ollama, LM Studio, vLLM) |
 | `assistant.url`, `assistant.model`, `assistant.api_key` | per provider | Endpoint, model name and key; `anthropic` defaults to `claude-sonnet-5-5` |
+| `assistant.investigate` | `false` | Lets analysts use **Investigate with AI** on a finding, which sends the finding's events to the model. See [docs/investigate.md](docs/investigate.md) |
+| `assistant.mask_fields` | none | Fields whose values are replaced with stand-ins before Investigate with AI sends anything; `_raw` leaves out the event text. Passwords, tokens, keys and cookies are always masked |
 
 Secrets can come from the environment instead: `SIGNALITH_OPENSEARCH_PASSWORD`,
 `SIGNALITH_ADMIN_PASSWORD`, `SIGNALITH_INGEST_TOKEN`, `SIGNALITH_LDAP_BIND_PASSWORD` (for
@@ -771,6 +773,20 @@ like an investigation in Splunk ES. Open the **Investigations** tab to see open 
 
 Cases are stored in OpenSearch in the `<prefix>_cases` index, and every change is
 recorded with who made it.
+
+### Investigate with AI
+
+**Investigate with AI** on a finding gathers its events, where its users, hosts and
+addresses show up, threat intel matches and related findings, lets the AI model run a
+few more read-only searches, and writes a short verdict (likely real, likely benign or
+unsure) with a timeline, the evidence behind it and suggested response actions, which a
+person still reviews and runs. **Save to case** keeps the write-up as a case note.
+
+It sends event data to the model, so it is off until an admin turns it on in **Settings
+→ AI assistant**. Analysts see exactly what will be sent before it goes, admins can mask
+fields (replaced with stand-ins such as `masked-user-1`), and a model on your own
+hardware, such as Ollama, keeps everything on site. See
+[docs/investigate.md](docs/investigate.md).
 
 ## Notifications
 

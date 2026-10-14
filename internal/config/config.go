@@ -905,6 +905,14 @@ type Assistant struct {
 	URL    string `yaml:"url,omitempty"`
 	Model  string `yaml:"model,omitempty"`
 	APIKey string `yaml:"api_key,omitempty"`
+	// Investigate lets analysts use Investigate with AI on a finding,
+	// which sends the finding's events and the results of read-only
+	// searches to the model. Off unless an admin turns it on.
+	Investigate bool `yaml:"investigate,omitempty"`
+	// MaskFields are fields whose values are replaced with "[masked]"
+	// before Investigate with AI sends anything, wherever the value
+	// appears; _raw leaves out the original event text. Wildcards * work.
+	MaskFields []string `yaml:"mask_fields,omitempty"`
 }
 
 // Intel configures threat intel feeds. Nothing is downloaded until a

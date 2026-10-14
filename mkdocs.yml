@@ -127,6 +127,7 @@ nav:
   - Using Signalith:
       - Query language: query-language.md
       - Detections: detections.md
+      - Investigate with AI: investigate.md
       - Threat intel: threat-intel.md
       - Dashboards: dashboards.md
       - Response actions: response-actions.md
