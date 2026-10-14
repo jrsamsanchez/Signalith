@@ -352,6 +352,38 @@ func TestParseSysmonAccess(t *testing.T) {
 	}
 }
 
+func TestParseSysmonFileRegistryProcess(t *testing.T) {
+	for _, c := range []struct {
+		search, node string
+		ev           map[string]string
+	}{
+		{"`sysmon` EventCode IN (23, 26) TargetFilename=\"*\\\\default.rdp\"", "Filesystem",
+			map[string]string{"signature_id": "26", "file_path": `C:\Users\bob\Documents\Default.rdp`}},
+		{"`sysmon` EventID=\"12\" TargetObject=\"*\\\\SYSTEM\\\\CrowdStrike\" action=\"deleted\"", "Registry",
+			map[string]string{"signature_id": "12", "registry_path": `HKLM\SYSTEM\CrowdStrike`, "action": "deleted"}},
+		{"`sysmon` EventID=1 CommandLine=\"*-nographic*\" Company=\"*qemu*\"", "Processes",
+			map[string]string{"signature_id": "1", "process": "qemu.exe -nographic", "process_company": "QEMU"}},
+	} {
+		r, err := Parse(rule(c.search+"\n| stats count by dest"), nil)
+		if err != nil {
+			t.Fatalf("%s: %v", c.search, err)
+		}
+		if r.Node != c.node {
+			t.Errorf("%s: node %s", c.search, r.Node)
+		}
+		if !Eval(r.Where, c.ev) {
+			t.Errorf("%s: does not match %v", c.search, c.ev)
+		}
+		found := false
+		for _, tc := range Cases(r) {
+			found = found || tc.Expect
+		}
+		if !found {
+			t.Errorf("%s: no test event matches", c.search)
+		}
+	}
+}
+
 func TestRegexStage(t *testing.T) {
 	field := func(f string) (string, error) { return f, nil }
 	e, ok, err := regexStage(`where match(process, "(?i)cmd\.exe\s+\/Q") AND match(process,"\\\\127\.0\.0\.1\\.*")`, field)

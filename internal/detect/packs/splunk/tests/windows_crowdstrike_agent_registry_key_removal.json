@@ -1,0 +1,10 @@
+{"rule": "094e8c62-c071-4b3d-af43-d3c74c4b249f", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"12","data":{"EventType":"DeleteValue","ProcessId":"4242","TargetObject":"x \\SYSTEM\\CrowdStrike"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"12","data":{"EventType":"DeleteValue","ProcessId":"4242","TargetObject":"x \\SYSTEM\\CrowdStrike"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"12","data":{"EventType":"DeleteValue","ProcessId":"4242","TargetObject":"x \\SYSTEM\\CrowdStrike"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"12","data":{"EventType":"DeleteValue","ProcessId":"4242","TargetObject":"x \\SYSTEM\\CrowdStrike"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\SYSTEM\\CrowdStrike"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"12","data":{"EventType":"DeleteValue","ProcessId":"4242","TargetObject":"x \\SYSTEM\\CrowdStrikf"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"12","data":{"EventType":"DeleteValue","ProcessId":"4242","TargetObject":"HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"12","data":{"EventType":"DeleteKey","Image":"C:\\Windows\\System32\\MsiExec.exe","ProcessGuid":"BD1BA16A-3C5F-638E-2511-000000000F00","ProcessId":"6360","RuleName":"-","TargetObject":"HKLM\\SYSTEM\\CrowdStrike","User":"NT AUTHORITY\\SYSTEM","UtcTime":"2022-12-05 18:46:12.740"}}
+]}

@@ -1,0 +1,13 @@
+{"rule": "30a334c1-f9a5-4fbd-8958-5b65a8435cb2", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"23","data":{"ProcessId":"4242","TargetFilename":"x \\default.rdp"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"26","data":{"ProcessId":"4242","TargetFilename":"x \\default.rdp"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\default.rdp"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\default.rdp"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"23","data":{"ProcessId":"4242","TargetFilename":"x \\default.rdq"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"23","data":{"ProcessId":"4242"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\default.rdp"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"26","data":{"ProcessId":"4242","TargetFilename":"x \\default.rdq"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"26","data":{"ProcessId":"4242"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"23","data":{"Archived":"true","Hashes":"MD5=1569D8EDB0C32E4638DA99D2CA246A83,SHA256=C55E14A18C6A7D599B9E44A3754AA0AE6B591E70DF43A9C9EEBD072762C14542,IMPHASH=00000000000000000000000000000000","Image":"C:\\Windows\\system32\\cmd.exe","IsExecutable":"false","ProcessGuid":"{E4B49A97-C0FC-6878-0F02-00000000EE03}","ProcessId":"2852","RuleName":"-","TargetFilename":"C:\\Users\\Administrator\\Documents\\Default.rdp","User":"ATTACKRANGE\\Administrator","UtcTime":"2025-07-17 09:50:10.333"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"23","data":{"Archived":"true","Hashes":"MD5=D41D8CD98F00B204E9800998ECF8427E,SHA256=E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855,IMPHASH=00000000000000000000000000000000","Image":"C:\\Windows\\system32\\mstsc.exe","IsExecutable":"false","ProcessGuid":"{E4B49A97-C61E-6878-9102-00000000EE03}","ProcessId":"5412","RuleName":"-","TargetFilename":"C:\\Users\\Administrator\\Documents\\Default.rdp","User":"ATTACKRANGE\\Administrator","UtcTime":"2025-07-17 09:46:58.219"}}
+]}

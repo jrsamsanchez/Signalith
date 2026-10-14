@@ -1,0 +1,9 @@
+{"rule": "ab3bcce0-a105-11eb-973c-acde48001122", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"C:\\Windows\\System32\\wermgr.exe","ProcessId":"4242","TargetFilename":"x .exe"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"C:\\Windows\\System32\\wermgr.exe","ProcessId":"4242","TargetFilename":"x .exe"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"C:\\Windows\\System32\\wermgr.exe","ProcessId":"4242","TargetFilename":"x .exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"C:\\Windows\\System32\\wermgr.exf","ProcessId":"4242","TargetFilename":"x .exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x .exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"C:\\Windows\\System32\\wermgr.exe","ProcessId":"4242","TargetFilename":"x .exf"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"C:\\Windows\\System32\\wermgr.exe","ProcessId":"4242"}}
+]}

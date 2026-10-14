@@ -298,6 +298,10 @@ func records(node string, ev map[string]string) []sigmacheck.Case {
 		set(s, "Image", imagePath(ev["process_path"], ev["process_name"]))
 		set(s, "CommandLine", ev["process"])
 		set(s, "OriginalFileName", ev["original_file_name"])
+		set(s, "Description", ev["process_description"])
+		set(s, "Product", ev["process_product"])
+		set(s, "Company", ev["process_company"])
+		set(s, "FileVersion", ev["process_file_version"])
 		set(s, "ParentImage", imagePath(ev["parent_process_path"], ev["parent_process_name"]))
 		set(s, "ParentCommandLine", ev["parent_process"])
 		set(s, "User", ev["user"])
@@ -334,6 +338,10 @@ func records(node string, ev map[string]string) []sigmacheck.Case {
 		id := "11"
 		if a := strings.ToLower(ev["action"]); strings.HasPrefix(a, "delet") {
 			id = "23"
+		}
+		// A raw search names its event code.
+		if c := ev[eventCode]; c == "11" || c == "23" || c == "26" {
+			id = c
 		}
 		out := []sigmacheck.Case{{Channel: sigmacheck.SysmonChannel, EventID: id, Data: s}}
 		// When the rule names the folder and the file apart, the file goes
@@ -379,6 +387,34 @@ func records(node string, ev map[string]string) []sigmacheck.Case {
 			id, s["EventType"] = "12", "CreateKey"
 			delete(s, "Details")
 		}
+		// A raw search may name the type and names its event code.
+		if t := ev["registry_event_type"]; t != "" {
+			s["EventType"] = t
+			switch t {
+			case "CreateKey", "DeleteKey", "DeleteValue":
+				id = "12"
+				delete(s, "Details")
+			case "RenameKey":
+				id = "14"
+			default:
+				id = "13"
+			}
+		}
+		if c := ev[eventCode]; (c == "12" || c == "13" || c == "14") && c != id {
+			id = c
+			switch c {
+			case "12":
+				s["EventType"] = "DeleteValue"
+				if strings.HasPrefix(strings.ToLower(ev["action"]), "creat") {
+					s["EventType"] = "CreateKey"
+				}
+				delete(s, "Details")
+			case "13":
+				s["EventType"] = "SetValue"
+			case "14":
+				s["EventType"] = "RenameKey"
+			}
+		}
 		return []sigmacheck.Case{{Channel: sigmacheck.SysmonChannel, EventID: id, Data: s}}
 	case "ImageLoad":
 		s := map[string]string{"ProcessId": "4242", "ProcessGuid": "{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}"}
@@ -387,6 +423,10 @@ func records(node string, ev map[string]string) []sigmacheck.Case {
 		set(s, "Signed", ev["signed"])
 		set(s, "SignatureStatus", ev["signature_status"])
 		set(s, "Signature", ev["signature"])
+		set(s, "OriginalFileName", ev["loaded_original_file_name"])
+		set(s, "Description", ev["loaded_file_description"])
+		set(s, "Product", ev["loaded_file_product"])
+		set(s, "Company", ev["loaded_file_company"])
 		return []sigmacheck.Case{{Channel: sigmacheck.SysmonChannel, EventID: "7", Data: s}}
 	case "ProcessAccess":
 		s := map[string]string{"SourceProcessId": "4242", "TargetProcessId": "640"}
@@ -435,8 +475,21 @@ func records(node string, ev map[string]string) []sigmacheck.Case {
 		set(s, "ObjectType", ev["object_type"])
 		set(s, "AccessList", ev["access_list"])
 		set(s, "AccessMask", ev["access_mask"])
-		set(s, "ProcessName", ev["process_path"])
+		set(s, "ProcessName", imagePath(ev["process_path"], ev["process_name"]))
 		name := ev["object_path"]
+		// The add-on's file_path and file_name are a file's object name.
+		if name == "" && ev["file_path"] != "" {
+			name = ev["file_path"]
+			s["ObjectType"] = "File"
+		}
+		if n := ev["file_name"]; n != "" {
+			s["ObjectType"] = "File"
+			if name == "" {
+				name = `C:\Users\alice\Documents\` + n
+			} else if !strings.HasSuffix(strings.ToLower(name), `\`+strings.ToLower(n)) {
+				name = strings.TrimRight(name, `\`) + `\` + n
+			}
+		}
 		// When the rule names the object's file name apart, it ends the path.
 		if n := ev["object_name"]; n != "" && !strings.HasSuffix(strings.ToLower(name), `\`+strings.ToLower(n)) {
 			if name == "" {
@@ -488,6 +541,8 @@ func records(node string, ev map[string]string) []sigmacheck.Case {
 		set(s, "Status", ev["kerberos_status"])
 		set(s, "TicketEncryptionType", ev["ticket_encryption_type"])
 		set(s, "PreAuthType", ev["pre_auth_type"])
+		set(s, "CertThumbprint", ev["cert_thumbprint"])
+		set(s, "CertIssuerName", ev["cert_issuer"])
 		// An IPv4 client is recorded as ::ffff:a.b.c.d.
 		if v := ev["src"]; v != "" && !strings.Contains(v, ":") {
 			set(s, "IpAddress", "::ffff:"+v)

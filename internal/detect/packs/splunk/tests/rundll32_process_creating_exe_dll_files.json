@@ -1,0 +1,15 @@
+{"rule": "6338266a-ee2a-11eb-bf68-acde48001122", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"x rundll32.exe","ProcessId":"4242","TargetFilename":"x .exe"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"x rundll32.exe","ProcessId":"4242","TargetFilename":"x .dll"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"x rundll32.exe","ProcessId":"4242","TargetFilename":"x .exe"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"x rundll32.exe","ProcessId":"4242","TargetFilename":"x .exe"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"x rundll32.exe","ProcessId":"4242","TargetFilename":"x .dll"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"x rundll32.exe","ProcessId":"4242","TargetFilename":"x .dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"x rundll32.exf","ProcessId":"4242","TargetFilename":"x .exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x .exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"x rundll32.exe","ProcessId":"4242","TargetFilename":"x .exf"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"x rundll32.exe","ProcessId":"4242"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"x rundll32.exf","ProcessId":"4242","TargetFilename":"x .dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x .dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"x rundll32.exe","ProcessId":"4242","TargetFilename":"x .dlm"}}
+]}

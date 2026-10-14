@@ -1,0 +1,13 @@
+{"rule": "f3e86ff3-b1f9-4382-8924-6913385f1019", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"23","data":{"ProcessId":"4242","TargetFilename":"x \\Terminal Server Client\\Cache\\ .bmc"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"26","data":{"ProcessId":"4242","TargetFilename":"x \\Terminal Server Client\\Cache\\cache .bin"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\Terminal Server Client\\Cache\\ .bmc"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\Terminal Server Client\\Cache\\ .bmc"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"23","data":{"ProcessId":"4242","TargetFilename":"x \\Terminal Server Client\\Cache\\ .bmd"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"23","data":{"ProcessId":"4242"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\Terminal Server Client\\Cache\\cache .bin"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\Terminal Server Client\\Cache\\cache .bin"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"26","data":{"ProcessId":"4242","TargetFilename":"x \\Terminal Server Client\\Cache\\cache .bio"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"26","data":{"ProcessId":"4242"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"23","data":{"Archived":"true","Hashes":"MD5=D41D8CD98F00B204E9800998ECF8427E,SHA256=E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855,IMPHASH=00000000000000000000000000000000","Image":"C:\\Windows\\system32\\cmd.exe","IsExecutable":"false","ProcessGuid":"{E4B49A97-C0FC-6878-0F02-00000000EE03}","ProcessId":"2852","RuleName":"-","TargetFilename":"C:\\Users\\Administrator\\AppData\\Local\\Microsoft\\Terminal Server Client\\Cache\\bcache24.bmc","User":"ATTACKRANGE\\Administrator","UtcTime":"2025-07-17 09:58:00.186"}}
+]}

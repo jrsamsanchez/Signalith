@@ -1,0 +1,9 @@
+{"rule": "4ab6862b-ce88-4223-96c0-f6da2cffb898", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x __tmp_rar_sfx_access_check x"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x __tmp_rar_sfx_access_check x"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x __tmp_rar_sfx_access_check x"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x __tmp_rar_sfx_access_check y"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"CreationUtcTime":"2024-11-28 16:37:40.596","Image":"C:\\programdata\\migrate.exe","ProcessGuid":"{c8f010d8-9c53-6748-475a-00000000f901}","ProcessId":"5052","RuleName":"T1053","TargetFilename":"C:\\Windows\\Tasks\\__tmp_rar_sfx_access_check_202788656","User":"VEGETA\\Administrator","UtcTime":"2024-11-28 16:37:40.596"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"CreationUtcTime":"2024-11-26 14:44:15.412","Image":"C:\\programdata\\migrate.exe","ProcessGuid":"{86ec55c7-debe-6745-8b11-00000000f901}","ProcessId":"2300","RuleName":"T1053","TargetFilename":"C:\\Windows\\Tasks\\__tmp_rar_sfx_access_check_22151125","User":"SONGOKU\\Administrator","UtcTime":"2024-11-26 14:44:15.412"}}
+]}

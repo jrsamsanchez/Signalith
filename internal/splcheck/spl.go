@@ -198,7 +198,10 @@ var (
 	// rawNodes are the nodes of each source by event code.
 	rawNodes = map[string]map[string]string{
 		"powershell": {"4104": "PowerShell"},
-		"sysmon":     {"7": "ImageLoad", "8": "ProcessAccess", "10": "ProcessAccess"},
+		"sysmon": {
+			"1": "Processes", "7": "ImageLoad", "8": "ProcessAccess", "10": "ProcessAccess",
+			"11": "Filesystem", "23": "Filesystem", "26": "Filesystem", "12": "Registry", "13": "Registry", "14": "Registry",
+		},
 		// Security events the Windows parser reads.
 		"wineventlog_security": {
 			"4698": "TaskCreated", "4663": "ObjectAccess", "5136": "DirectoryChange", "5145": "ShareAccess",
@@ -215,6 +218,30 @@ var (
 			"ImageLoaded": "loaded_file_path", "loaded_file_path": "loaded_file_path",
 			"Image": "process_path", "process_path": "process_path", "process_name": "process_name",
 			"Signed": "signed", "SignatureStatus": "signature_status", "Signature": "signature",
+			// The loaded file's version information.
+			"OriginalFileName": "loaded_original_file_name", "Description": "loaded_file_description",
+			"Product": "loaded_file_product", "Company": "loaded_file_company",
+		},
+		// Sysmon's process created (1), file created or deleted (11, 23,
+		// 26) and registry (12-14) events, with the add-on's names for
+		// what it derives from them (process_name, file_name).
+		"Processes": {
+			"Image": "process_path", "process_path": "process_path", "process_name": "process_name",
+			"CommandLine": "process", "process": "process", "OriginalFileName": "original_file_name",
+			"original_file_name": "original_file_name", "Description": "process_description", "Product": "process_product",
+			"Company": "process_company", "FileVersion": "process_file_version", "ParentImage": "parent_process_path",
+			"parent_process_path": "parent_process_path", "parent_process_name": "parent_process_name",
+			"ParentCommandLine": "parent_process", "parent_process": "parent_process", "IntegrityLevel": "process_integrity_level",
+			"CurrentDirectory": "process_current_directory",
+		},
+		"Filesystem": {
+			"TargetFilename": "file_path", "file_path": "file_path", "file_name": "file_name", "action": "action",
+			"Image": "process_path", "process_path": "process_path", "process_name": "process_name",
+		},
+		"Registry": {
+			"TargetObject": "registry_path", "registry_path": "registry_path", "Details": "registry_value_data",
+			"registry_value_data": "registry_value_data", "EventType": "registry_event_type", "action": "action",
+			"Image": "process_path", "process_path": "process_path", "process_name": "process_name",
 		},
 		"ProcessAccess": {
 			"SourceImage": "process_path", "TargetImage": "target_process_path",
@@ -224,7 +251,9 @@ var (
 		"ObjectAccess": {
 			"ObjectName": "object_path", "object_file_path": "object_path", "object_file_name": "object_name",
 			"ObjectType": "object_type", "AccessList": "access_list", "AccessMask": "access_mask",
-			"ProcessName": "process_path", "process_path": "process_path",
+			"ProcessName": "process_path", "process_path": "process_path", "process_name": "process_name",
+			// The add-on's names for a file's path and name.
+			"file_path": "file_path", "file_name": "file_name",
 		},
 		"DirectoryChange": {
 			"ObjectDN": "object", "ObjectGUID": "ad_object_guid", "ObjectClass": "ad_object_class",
@@ -241,6 +270,7 @@ var (
 		"KerberosTGT": {
 			"TargetUserName": "user", "TargetSid": "user_sid", "ServiceName": "kerberos_service", "TicketOptions": "ticket_options",
 			"Status": "kerberos_status", "TicketEncryptionType": "ticket_encryption_type", "PreAuthType": "pre_auth_type", "src_ip": "src",
+			"src": "src", "CertThumbprint": "cert_thumbprint", "CertIssuerName": "cert_issuer",
 		},
 		"KerberosService": {
 			"TargetUserName": "user", "ServiceName": "kerberos_service", "TicketOptions": "ticket_options",
