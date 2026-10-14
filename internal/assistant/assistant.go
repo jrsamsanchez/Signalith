@@ -59,7 +59,7 @@ func New(provider, url, model, apiKey string) *Client {
 		model = DefaultModel[provider]
 	}
 	return &Client{Provider: provider, URL: strings.TrimRight(url, "/"), Model: model, APIKey: apiKey,
-		HTTP: &http.Client{Timeout: 60 * time.Second, CheckRedirect: sameOriginRedirects}}
+		HTTP: &http.Client{Timeout: 3 * time.Minute, CheckRedirect: sameOriginRedirects}}
 }
 
 // sameOriginRedirects follows a redirect only to the same scheme, host and
@@ -92,10 +92,10 @@ func (c *Client) Name() string { return c.Model }
 // attempt, offered as a hint. The returned query always parses: a reply
 // that does not is sent back once with the parser's error.
 func (c *Client) Translate(ctx context.Context, question, draft string) (string, error) {
-	msgs := []message{{Role: "user", Content: userPrompt(question, draft)}}
+	msgs := []Message{{Role: "user", Content: userPrompt(question, draft)}}
 	var lastErr error
 	for attempt := 0; attempt < 2; attempt++ {
-		reply, err := c.complete(ctx, msgs)
+		reply, err := c.Chat(ctx, SystemPrompt(), msgs, 600)
 		if err != nil {
 			return "", err
 		}
@@ -104,31 +104,34 @@ func (c *Client) Translate(ctx context.Context, question, draft string) (string,
 			return q, nil
 		} else {
 			lastErr = err
-			msgs = append(msgs, message{Role: "assistant", Content: reply},
-				message{Role: "user", Content: fmt.Sprintf("That query does not parse: %v. Reply with a corrected query only.", err)})
+			msgs = append(msgs, Message{Role: "assistant", Content: reply},
+				Message{Role: "user", Content: fmt.Sprintf("That query does not parse: %v. Reply with a corrected query only.", err)})
 		}
 	}
 	return "", fmt.Errorf("the model's query did not parse: %v", lastErr)
 }
 
-type message struct {
+// Message is one turn of a conversation: Role is "user" or "assistant".
+type Message struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
 }
 
-func (c *Client) complete(ctx context.Context, msgs []message) (string, error) {
+// Chat sends a conversation with a system prompt and returns the model's
+// reply. maxTokens bounds the reply's length.
+func (c *Client) Chat(ctx context.Context, system string, msgs []Message, maxTokens int) (string, error) {
 	var path string
 	var body any
 	hdr := http.Header{"Content-Type": {"application/json"}}
 	switch c.Provider {
 	case Anthropic:
 		path = "/v1/messages"
-		body = map[string]any{"model": c.Model, "max_tokens": 600, "system": SystemPrompt(), "messages": msgs, "temperature": 0}
+		body = map[string]any{"model": c.Model, "max_tokens": maxTokens, "system": system, "messages": msgs, "temperature": 0}
 		hdr.Set("x-api-key", c.APIKey)
 		hdr.Set("anthropic-version", "2023-06-01")
 	case OpenAI:
 		path = "/chat/completions"
-		all := append([]message{{Role: "system", Content: SystemPrompt()}}, msgs...)
+		all := append([]Message{{Role: "system", Content: system}}, msgs...)
 		body = map[string]any{"model": c.Model, "messages": all, "temperature": 0}
 		if c.APIKey != "" {
 			hdr.Set("Authorization", "Bearer "+c.APIKey)
@@ -177,7 +180,7 @@ func (c *Client) complete(ctx context.Context, msgs []message) (string, error) {
 			Text string `json:"text"`
 		} `json:"content"`
 		Choices []struct {
-			Message message `json:"message"`
+			Message Message `json:"message"`
 		} `json:"choices"`
 	}
 	if err := json.Unmarshal(data, &out); err != nil {
@@ -222,10 +225,15 @@ func userPrompt(question, draft string) string {
 
 // SystemPrompt describes the query language and data models.
 func SystemPrompt() string {
-	var b strings.Builder
-	b.WriteString(`You write queries for Signalith, a SIEM. Translate the analyst's question into one Signalith query and reply with the query only, no explanation and no code fences.
+	return "You write queries for Signalith, a SIEM. Translate the analyst's question into one Signalith query and reply with the query only, no explanation and no code fences.\n\n" +
+		QueryReference()
+}
 
-Query language (SPL-like, but only what is listed here exists):
+// QueryReference describes the query language, the data models and their
+// fields, with examples.
+func QueryReference() string {
+	var b strings.Builder
+	b.WriteString(`Query language (SPL-like, but only what is listed here exists):
 - A search, then zero or more commands each after "|".
 - Search terms: datamodel=Name, field=value (case-insensitive exact), field=val* (wildcards * ?), field!=value, field>10 (also >= < <=), field IN (a, b), bare words or "quoted phrases" (text anywhere in the raw event), NOT term, ( ... ), a OR b (OR binds tighter than the implicit AND).
 - Time: earliest=-24h latest=now. Units s m h d w mon y; snap with @d @h @w, e.g. earliest=-1d@d latest=@d for yesterday. Leave time out unless the question names a period.
