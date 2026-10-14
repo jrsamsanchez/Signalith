@@ -379,7 +379,7 @@ func (m *Manager) snapshot(ctx context.Context) (*state, error) {
 		return nil, fmt.Errorf("%w: could not list indices: %w", ErrOpenSearch, err)
 	}
 	for _, ix := range all {
-		if strings.HasPrefix(ix.Name, m.Prefix+"-") {
+		if cat, _, ok := ParseIndex(m.Prefix, ix.Name); strings.HasPrefix(ix.Name, m.Prefix+"-") || ok && isMonthly(cat) {
 			st.snap.Indices = append(st.snap.Indices, ix)
 		} else {
 			st.records[ix.Name] = ix
@@ -745,10 +745,13 @@ func (m *Manager) apply(ctx context.Context, d Decision, today time.Time) Action
 	cat, day, ok := ParseIndex(m.Prefix, d.Index)
 	switch {
 	case !ok || cat != d.Category:
-		act.Error = "refused: not a Signalith daily index"
+		act.Error = "refused: not a Signalith daily or monthly index"
 		return act
 	case d.Removes() && !day.Before(today):
 		act.Error = "refused: today's and future days are never deleted"
+		return act
+	case isMonthly(cat) && (d.Action == ActionCompact || !monthEnd(day).Before(today)):
+		act.Error = "refused: the current month is never deleted, and monthly indices are never compacted"
 		return act
 	case d.Action == ActionCompact && !day.Before(today.AddDate(0, 0, -1)):
 		act.Error = "refused: today and yesterday are never compacted"
@@ -1478,7 +1481,9 @@ func (m *Manager) Overview(ctx context.Context) *Overview {
 	for _, c := range Categories() {
 		cv := byCat[c.ID]
 		// "Other events" only shows once there are some, or a policy for them.
-		if c.ID == "other" && cv.Days == 0 && cv.Source == SourceDefault {
+		// Neither do audit records, which only servers that share one
+		// OpenSearch keep.
+		if (c.ID == "other" || c.Kind == KindMonthly) && cv.Days == 0 && cv.Source == SourceDefault {
 			continue
 		}
 		ov.TotalBytes += cv.Bytes
@@ -1552,7 +1557,7 @@ func (m *Manager) Archives(ctx context.Context) (*ArchiveList, error) {
 		out.Problems = problems
 	}
 	live := map[string]IndexInfo{}
-	if ixs, err := m.Cluster.Indices(ctx, m.Prefix+"-*"); err != nil {
+	if ixs, err := m.Cluster.Indices(ctx, m.Prefix+"-*,"+m.Prefix+"_*"); err != nil {
 		out.Error = "could not check OpenSearch for restored days: " + err.Error()
 	} else {
 		for _, ix := range ixs {

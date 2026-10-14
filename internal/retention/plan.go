@@ -239,6 +239,12 @@ func archivedCopy(ix IndexInfo, mans []Manifest) int64 {
 	return n
 }
 
+// isMonthly reports whether a category keeps monthly indices.
+func isMonthly(id string) bool {
+	c, ok := CategoryByID(id)
+	return ok && c.Kind == KindMonthly
+}
+
 func startOfDay(t time.Time) time.Time {
 	t = t.UTC()
 	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
@@ -290,7 +296,17 @@ func PlanIndices(snap Snapshot, s Settings) *Plan {
 		e.compacted = ix.Compacted()
 		e.writesBlocked, e.diskBlocked = ix.WriteBlocked || ix.DiskBlocked, ix.DiskBlocked
 		e.Action = ActionKeep
+		monthly := isMonthly(cat)
+		if monthly {
+			// A month counts from its last day, and only keep_days removes
+			// it: size caps and the disk guard never touch it.
+			e.age = int(today.Sub(monthEnd(day)).Hours() / 24)
+			e.hold = true
+		}
 		switch {
+		case monthly && !ix.Unavailable && e.age <= 0 && !(ix.RestoredUntil != "" && ix.RestoredUntil >= todayKey):
+			e.age = 0
+			e.Reason = "This month's records"
 		case ix.Unavailable:
 			// Its size and events are unknown, and deleting it now would
 			// lose what is on the missing shard.

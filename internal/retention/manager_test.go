@@ -550,10 +550,11 @@ func TestOverview(t *testing.T) {
 	}
 
 	// OpenSearch down: the page still gets policies (every category but
-	// "other", which has no events), and says why sizes are missing.
+	// "other" and "audit", which have no data), and says why sizes are
+	// missing.
 	f.mem.Fail["indices"] = errors.New("connection refused")
 	ov = f.m.Overview(context.Background())
-	if !strings.Contains(ov.Error, "connection refused") || len(ov.Categories) != len(Categories())-1 || ov.Guard.Status.State != GuardUnknown {
+	if !strings.Contains(ov.Error, "connection refused") || len(ov.Categories) != len(Categories())-2 || ov.Guard.Status.State != GuardUnknown {
 		t.Errorf("down: %+v", ov)
 	}
 }
