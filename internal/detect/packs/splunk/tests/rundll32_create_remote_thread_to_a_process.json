@@ -1,0 +1,9 @@
+{"rule": "2dbeee3a-f067-11eb-96c0-acde48001122", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"8","data":{"SourceImage":"x \\rundll32.exe","SourceProcessId":"4242","TargetImage":"x .exe","TargetProcessId":"640"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"SourceImage":"x \\rundll32.exe","SourceProcessId":"4242","TargetImage":"x .exe","TargetProcessId":"640"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"SourceImage":"x \\rundll32.exe","SourceProcessId":"4242","TargetImage":"x .exe","TargetProcessId":"640"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"8","data":{"SourceImage":"x \\rundll32.exf","SourceProcessId":"4242","TargetImage":"x .exe","TargetProcessId":"640"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"8","data":{"SourceProcessId":"4242","TargetImage":"x .exe","TargetProcessId":"640"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"8","data":{"SourceImage":"x \\rundll32.exe","SourceProcessId":"4242","TargetImage":"x .exf","TargetProcessId":"640"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"8","data":{"SourceImage":"x \\rundll32.exe","SourceProcessId":"4242","TargetProcessId":"640"}}
+]}

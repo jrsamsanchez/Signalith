@@ -270,13 +270,15 @@ func (p *parser) primary() (Expr, error) {
 // field checks a node-prefixed field name and returns it without the
 // prefix.
 func (p *parser) field(name string) (string, error) {
-	if raw, ok := RawFields[p.node]; ok {
+	if source, ok := strings.CutPrefix(p.node, "raw:"); ok {
 		// Splunk field names are case sensitive.
 		if name == "EventCode" || name == "EventID" {
 			return eventCode, nil
 		}
-		if f, ok := raw[name]; ok {
-			return f, nil
+		for _, node := range rawNodes[source] {
+			if f, ok := RawFields[node][name]; ok {
+				return f, nil
+			}
 		}
 		return "", fmt.Errorf("field %s has no Signalith mapping", name)
 	}

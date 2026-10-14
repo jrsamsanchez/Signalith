@@ -172,91 +172,150 @@ func Parse(src []byte, macros map[string]*Macro) (*Rule, error) {
 }
 
 // Raw event searches: a source macro, then terms on the event's own
-// fields. Each source is a node whose fields map to Signalith's.
+// fields, which must name the event code (EventCode=10). The code picks
+// the node, and each node's fields map to the Signalith fields they are
+// stored as. The code stays in the clause as signature_id.
 var (
-	rawRe     = regexp.MustCompile("(?s)^`(powershell)`\\s+(.*)$")
-	rawNodes  = map[string]string{"powershell": "PowerShell"}
-	rawEvents = map[string]string{"PowerShell": "4104"}
+	rawRe = regexp.MustCompile("(?s)^`(powershell|sysmon)`\\s+(.*)$")
+	// rawNodes are the nodes of each source by event code.
+	rawNodes = map[string]map[string]string{
+		"powershell": {"4104": "PowerShell"},
+		"sysmon":     {"7": "ImageLoad", "8": "ProcessAccess", "10": "ProcessAccess"},
+	}
 	// RawFields are the event fields a raw search may name on each node,
 	// with the Signalith field each is stored as.
 	RawFields = map[string]map[string]string{
 		"PowerShell": {"ScriptBlockText": "script_block_text"},
+		"ImageLoad": {
+			"ImageLoaded": "loaded_file_path", "loaded_file_path": "loaded_file_path",
+			"Image": "process_path", "process_path": "process_path", "process_name": "process_name",
+			"Signed": "signed", "SignatureStatus": "signature_status", "Signature": "signature",
+		},
+		"ProcessAccess": {
+			"SourceImage": "process_path", "TargetImage": "target_process_path",
+			"GrantedAccess": "granted_access", "CallTrace": "call_trace", "SourceUser": "user",
+		},
 	}
 	fillnullRe = regexp.MustCompile(`(?i)^fillnull$`)
 	statsRe    = regexp.MustCompile(`(?is)^stats\s`)
 	renameRe   = regexp.MustCompile(`(?is)^rename\s`)
 )
 
-// parseRaw reads a raw event search of one source: its terms must name
-// the source's event code (EventCode=4104) and otherwise only fields the
-// node maps. Later, fillnull then stats only count the events (fillnull
-// keeps stats from dropping events that miss a by field), and rename only
-// renames the counts.
+// eventCode is the stored field of EventCode or EventID.
+const eventCode = "signature_id"
+
+// rawSource is the pseudo node a raw search is parsed against before its
+// event code names the node.
+func rawSource(source string) string { return "raw:" + source }
+
+// parseRaw reads a raw event search of one source. Later, fillnull and
+// stats only count the events and rename only renames the counts.
+// (Without fillnull, Splunk's stats also drops events that miss one of
+// its by fields; Signalith keeps them, so it finds those too.)
 func parseRaw(r *Rule, source, terms string, later []string, macros map[string]*Macro) (*Rule, error) {
-	r.Node = rawNodes[source]
 	filled, counted := false, false
 	for _, s := range later {
 		switch {
 		case harmlessRe.MatchString(s) || filterRe.MatchString(s):
-		case fillnullRe.MatchString(s) && !counted:
+		case fillnullRe.MatchString(s) && !counted && !filled:
 			filled = true
-		case statsRe.MatchString(s) && filled && !counted:
+		case statsRe.MatchString(s) && !counted:
 			counted = true
 		case renameRe.MatchString(s) && counted:
 		default:
 			return nil, fmt.Errorf("search has a later stage Signalith does not run: %s", firstWords(s))
 		}
 	}
-	where, err := ParseWhere(terms, r.Node, macros)
+	where, err := ParseWhere(terms, rawSource(source), macros)
 	if err != nil {
 		return nil, err
 	}
-	// The event code is the node itself, so it leaves the clause.
-	and, ok := where.(*And)
-	if !ok {
-		return nil, errors.New("a raw search must name its event code and a field")
-	}
-	var kids []Expr
-	code := false
-	for _, k := range and.Kids {
-		if c, ok := k.(*Cmp); ok && c.Field == eventCode {
-			if c.Neg || len(c.Values) != 1 || c.Values[0] != rawEvents[r.Node] {
-				return nil, fmt.Errorf("a %s search must be of event %s", source, rawEvents[r.Node])
-			}
-			code = true
-			continue
-		}
-		kids = append(kids, k)
-	}
-	if !code {
-		return nil, fmt.Errorf("a %s search must name EventCode=%s", source, rawEvents[r.Node])
-	}
-	if hasField(&And{Kids: kids}, eventCode) {
-		return nil, errors.New("the event code may only be named once, at the top")
-	}
-	if len(kids) == 1 {
-		r.Where = kids[0]
+	// The event code, named once at the top, picks the node.
+	var top []Expr
+	if a, ok := where.(*And); ok {
+		top = a.Kids
 	} else {
-		r.Where = &And{Kids: kids}
+		top = []Expr{where}
 	}
+	var code *Cmp
+	for _, k := range top {
+		if c, ok := k.(*Cmp); ok && c.Field == eventCode {
+			if code != nil || c.Neg {
+				return nil, fmt.Errorf("a %s search must name its event code once", source)
+			}
+			code = c
+		}
+	}
+	if code == nil || countField(where, eventCode) != 1 {
+		return nil, fmt.Errorf("a %s search must name its event code (EventCode=...) once, at the top", source)
+	}
+	for _, v := range code.Values {
+		n := rawNodes[source][v]
+		if n == "" || (r.Node != "" && n != r.Node) {
+			return nil, fmt.Errorf("%s event %s is not supported", source, v)
+		}
+		r.Node = n
+	}
+	if len(top) < 2 {
+		return nil, fmt.Errorf("a %s search must name a field besides its event code", source)
+	}
+	if err := fieldsOf(where, r.Node); err != nil {
+		return nil, err
+	}
+	r.Where = where
 	return r, nil
 }
 
-// eventCode stands for EventCode or EventID in a raw search.
-const eventCode = "\x00event_code"
-
-func hasField(e Expr, f string) bool {
+// fieldsOf checks that a raw clause names only fields of node.
+func fieldsOf(e Expr, node string) error {
 	switch x := e.(type) {
 	case *And:
-		return slices.ContainsFunc(x.Kids, func(k Expr) bool { return hasField(k, f) })
+		for _, k := range x.Kids {
+			if err := fieldsOf(k, node); err != nil {
+				return err
+			}
+		}
 	case *Or:
-		return slices.ContainsFunc(x.Kids, func(k Expr) bool { return hasField(k, f) })
+		for _, k := range x.Kids {
+			if err := fieldsOf(k, node); err != nil {
+				return err
+			}
+		}
 	case *Not:
-		return hasField(x.Kid, f)
+		return fieldsOf(x.Kid, node)
 	case *Cmp:
-		return x.Field == f
+		if x.Field == eventCode {
+			return nil
+		}
+		for _, f := range RawFields[node] {
+			if f == x.Field {
+				return nil
+			}
+		}
+		return fmt.Errorf("field %s is not a field of %s events", x.Field, node)
 	}
-	return false
+	return nil
+}
+
+func countField(e Expr, f string) int {
+	n := 0
+	switch x := e.(type) {
+	case *And:
+		for _, k := range x.Kids {
+			n += countField(k, f)
+		}
+	case *Or:
+		for _, k := range x.Kids {
+			n += countField(k, f)
+		}
+	case *Not:
+		n = countField(x.Kid, f)
+	case *Cmp:
+		if x.Field == f {
+			n = 1
+		}
+	}
+	return n
 }
 
 func firstWords(s string) string {

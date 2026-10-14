@@ -287,7 +287,7 @@ The generator keeps each rule's Signalith ID across runs, rewrites `rules/`,
 
 ### Splunk Security Content
 
-**Splunk Security Content** (`internal/detect/packs/splunk`) holds 669 Windows
+**Splunk Security Content** (`internal/detect/packs/splunk`) holds 699 Windows
 detections from Splunk's Threat Research Team
 ([security_content](https://github.com/splunk/security_content)), pinned to one
 commit. They are the production TTP and anomaly rules that search the CIM
@@ -301,6 +301,8 @@ names, so each rule's `where` clause becomes a Signalith filter field for field:
 | `Endpoint.Filesystem` | Sysmon 11, 23 and 26 | Filesystem |
 | `Endpoint.Registry` | Sysmon 12, 13 and 14 | Registry |
 | `` `powershell` EventCode=4104 `` (raw search) | PowerShell 4104 | Script |
+| `` `sysmon` EventCode=7 `` (raw search) | Sysmon 7 | Image_Load |
+| `` `sysmon` EventCode=8 `` or `10` (raw search) | Sysmon 8 and 10 | Endpoint |
 
 The rule files and the macros they use ship unchanged; Signalith converts them when
 it starts, reading the search the way Splunk does: `*` is the only wildcard (`?` is
@@ -311,9 +313,12 @@ add risk, as in Splunk ES risk-based alerting. Severity follows the rule's risk 
 `splunk`, the pack name, `ttp` or `anomaly`, and the node, and keeps the rule's
 known false positives as triage guidance.
 
-PowerShell rules search the script block events themselves rather than a data
-model: their `ScriptBlockText` terms become `script_block_text` filters, and their
-`fillnull | stats` stages only count the events. They need script block logging
+PowerShell rules, and Sysmon image load, remote thread and process access rules,
+search the events themselves rather than a data model: their event fields become
+Signalith's (`ScriptBlockText` is `script_block_text`, `ImageLoaded` is
+`loaded_file_path`, `TargetImage` is `target_process_path`, and so on), and their
+`fillnull` and `stats` stages only count the events. (Without `fillnull`, Splunk's
+`stats` also drops events that miss one of its `by` fields; Signalith keeps them.) PowerShell rules need script block logging
 turned on (**Include PowerShell** on Add data).
 
 Registry values that Sysmon writes as `DWORD (0x00000001)` compare as `0x00000001`,
@@ -323,8 +328,8 @@ A rule is shipped only when its whole search converts exactly (a `tstats` search
 whose later stages only rename fields, format times, keep rows that have a field
 (`where isnotnull(...)`) or apply the rule's empty `_filter` macro) and, on test events made from its `where` clause and passed through
 the real Windows parser, the converted detection agrees with Splunk's reading of the
-clause on every event. Searches with `eval`, `rex`, `regex`, `lookup`, and raw searches other than
-PowerShell's, are left out for now; `internal/detect/packs/splunk/REPORT.md` lists
+clause on every event. Searches with `eval`, `rex`, `regex`, `lookup`, and other raw searches
+are left out for now; `internal/detect/packs/splunk/REPORT.md` lists
 every rule left out and why. The same CI checks as the SigmaHQ pack run on it.
 
 On the pack card, **Turn on N TTP rules** is the suggested start.

@@ -1,0 +1,9 @@
+{"rule": "0c398be7-e33a-4882-9546-12166ceaf73c", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"SourceImage":"x \\vssvc.exe","SourceProcessId":"4242","TargetImage":"x \\MsMpEng.exe","TargetProcessId":"640"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"SourceImage":"x \\vssvc.exe","SourceProcessId":"4242","TargetImage":"x \\MsMpEng.exe","TargetProcessId":"640"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"SourceImage":"x \\vssvc.exe","SourceProcessId":"4242","TargetImage":"x \\MsMpEng.exe","TargetProcessId":"640"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"SourceImage":"x \\vssvc.exe","SourceProcessId":"4242","TargetImage":"x \\MsMpEng.exf","TargetProcessId":"640"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"SourceImage":"x \\vssvc.exe","SourceProcessId":"4242","TargetProcessId":"640"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"SourceImage":"x \\vssvc.exf","SourceProcessId":"4242","TargetImage":"x \\MsMpEng.exe","TargetProcessId":"640"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"SourceProcessId":"4242","TargetImage":"x \\MsMpEng.exe","TargetProcessId":"640"}}
+]}
