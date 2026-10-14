@@ -85,6 +85,8 @@ func parseWindowsWith(r map[string]any, named map[string]string) Event {
 			f["provider"] = p
 		}
 		parseWindowsSecurity(eventID, in, &ev)
+	case channel == ApplicationChannel:
+		parseWindowsApplication(str(r, "ProviderName"), in, &ev)
 	case channel == SystemChannel:
 		parseWindowsSystem(eventID, str(r, "ProviderName"), in, &ev)
 		if b := str(r, "Binary"); b != "" && ev.Model == "Other" {
@@ -877,6 +879,30 @@ func parseSystemEvent(eventID, provider string, in []string, ev *Event) {
 		// The account that cleared the log.
 		f["user"] = at(in, 0)
 		f["user_domain"] = at(in, 1)
+	}
+}
+
+// ApplicationChannel is the Windows Application log, where programs and
+// services (SQL Server, Windows Installer, backup tools) log.
+const ApplicationChannel = "Application"
+
+// parseWindowsApplication reads an Application log event: its provider,
+// and its data values one per line as event_data, which rules search for
+// words inside (each provider's events have their own data). The event
+// stays in Other, found by its provider and ID.
+func parseWindowsApplication(provider string, in []string, ev *Event) {
+	f := ev.Fields
+	if provider != "" {
+		f["provider"] = provider
+	}
+	var data []string
+	for _, v := range in {
+		if v = strings.TrimSpace(v); v != "" {
+			data = append(data, v)
+		}
+	}
+	if len(data) > 0 {
+		f["event_data"] = strings.Join(data, "\n")
 	}
 }
 

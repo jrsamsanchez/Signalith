@@ -156,6 +156,8 @@ var knownFields = func() map[string]string {
 		"system_subject_user_name": kw, "system_subject_domain_name": kw, "system_channel": kw,
 		"system_backup_path": kw, "system_hive_name_length": kw, "system_hive_name": kw, "system_keys_updated": kw,
 		"system_dirty_pages": kw, "system_caption": kw, "system_message": "wildcard",
+		// An Application log event's data values, one per line.
+		"event_data": "wildcard",
 		// Linux audit records (auditd.go): each field as auditd names it,
 		// the names of an ENRICHED record's numbers (auditd_uid_name), and
 		// a program's arguments one by one and joined, which rules search

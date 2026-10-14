@@ -1,0 +1,4 @@
+{"rule": "e6e88853-5f20-4c4a-8d26-cd469fd8d31f", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Application","event_id":"326","data":{"Data":"ntds.dit","Provider_Name":"ESENT"}},
+  {"expect":false,"source":"synthesized","channel":"Application","event_id":"326","data":{"Provider_Name":"ESENT"}}
+]}

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jrsamsanchez/signalith/internal/search"
 	"github.com/jrsamsanchez/signalith/internal/store"
 )
 
@@ -149,6 +150,38 @@ func TestWindowsSystemEvents(t *testing.T) {
 	}
 	if _, ok := SystemDataField("Nope"); ok {
 		t.Error("SystemDataField(Nope) is known")
+	}
+}
+
+func TestWindowsApplicationEvents(t *testing.T) {
+	// A SQL Server audit event: its data values one per line.
+	rec := map[string]any{"Channel": "Application", "Computer": "DB1", "EventID": "33205", "ProviderName": "MSSQLSERVER",
+		"StringInserts": []string{"audit_schema_version:1\nobject_name:xp_cmdshell\nstatement:EXEC xp_cmdshell 'whoami'", "", " "}}
+	b, _ := json.Marshal(rec)
+	expect(t, Normalize("win.events", decode(t, string(b)), now).Document(), map[string]any{
+		"datamodel": "Other", "provider": "MSSQLSERVER", "signature_id": "33205", "sourcetype": "WinEventLog:Application",
+		"event_data": "audit_schema_version:1\nobject_name:xp_cmdshell\nstatement:EXEC xp_cmdshell 'whoami'",
+	})
+	// The OpenTelemetry Collector's named values go in by name.
+	ev := otlpWindows(map[string]any{"channel": "Application", "computer": "WS1", "event_id": map[string]any{"id": "1040"},
+		"provider": map[string]any{"name": "MsiInstaller"}, "event_data": map[string]any{"param1": `C:\Users\Public\x.msi`, "param2": "(NULL)"}})
+	if ev.Fields["event_data"] != "C:\\Users\\Public\\x.msi\n(NULL)" || ev.Fields["provider"] != "MsiInstaller" {
+		t.Errorf("otlp application = %v", ev.Fields)
+	}
+}
+
+// The search engine knows every wildcard field, as it takes backslashes
+// in them literally.
+func TestWildcardFieldsKnownToSearch(t *testing.T) {
+	for f, typ := range knownFields {
+		if (typ == "wildcard") != search.WildcardFields[f] {
+			t.Errorf("%s is %s here, wildcard to search: %v", f, typ, search.WildcardFields[f])
+		}
+	}
+	for f := range search.WildcardFields {
+		if _, ok := knownFields[f]; !ok {
+			t.Errorf("search's wildcard field %s is not a field", f)
+		}
 	}
 }
 

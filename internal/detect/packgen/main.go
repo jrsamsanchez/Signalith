@@ -61,6 +61,9 @@ var categories = map[string]string{
 	// Not a Sigma category: Windows System log rules (service: system),
 	// in folders by provider.
 	"system": "rules/windows/builtin/system",
+	// Nor this: Windows Application log rules (service: application), in
+	// folders by provider.
+	"application": "rules/windows/builtin/application",
 	// Nor this: Microsoft Defender Antivirus log rules (service:
 	// windefend).
 	"windefend": "rules/windows/builtin/windefend",
@@ -154,7 +157,7 @@ func main() {
 			cases = sigmacheck.AuditdCases
 		}
 		files, _ := filepath.Glob(filepath.Join(*sigmaDir, src.dir, "*.yml"))
-		if cat == "security" || cat == "auditd" || cat == "system" {
+		if cat == "security" || cat == "auditd" || cat == "system" || cat == "application" {
 			more, _ := filepath.Glob(filepath.Join(*sigmaDir, src.dir, "*", "*.yml"))
 			files = append(files, more...)
 		}
@@ -182,7 +185,7 @@ func main() {
 				continue
 			}
 			want := map[string]string{"product": product, "category": cat, "service": ""}
-			if cat == "system" || cat == "security" || cat == "auditd" || cat == "windefend" {
+			if cat == "system" || cat == "security" || cat == "auditd" || cat == "windefend" || cat == "application" {
 				want["category"], want["service"] = "", cat
 			}
 			if rule.Logsource["product"] != want["product"] || rule.Logsource["category"] != want["category"] || rule.Logsource["service"] != want["service"] {

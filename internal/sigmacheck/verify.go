@@ -17,11 +17,12 @@ import (
 
 // Windows channels the test events come from.
 const (
-	SysmonChannel     = "Microsoft-Windows-Sysmon/Operational"
-	SecurityChannel   = "Security"
-	SystemChannel     = ingest.SystemChannel
-	PowerShellChannel = ingest.PowerShellChannel
-	DefenderChannel   = ingest.DefenderChannel
+	SysmonChannel      = "Microsoft-Windows-Sysmon/Operational"
+	SecurityChannel    = "Security"
+	SystemChannel      = ingest.SystemChannel
+	ApplicationChannel = ingest.ApplicationChannel
+	PowerShellChannel  = ingest.PowerShellChannel
+	DefenderChannel    = ingest.DefenderChannel
 	// LinuxSysmonChannel is Sysmon for Linux, whose events have Sysmon's
 	// event IDs and fields.
 	LinuxSysmonChannel = ingest.LinuxSysmonChannel
@@ -86,6 +87,14 @@ func (c Case) SigmaView() (map[string]string, bool) {
 	case strings.EqualFold(c.Channel, DefenderChannel):
 		// Defender rules name the event's data as its message labels
 		// it (Path, ProcessName, NewValue).
+		out := map[string]string{"EventID": c.EventID}
+		for k, v := range c.Data {
+			out[k] = v
+		}
+		return out, true
+	case c.Channel == ApplicationChannel:
+		// Application log rules name the provider and the event's data
+		// values (Data).
 		out := map[string]string{"EventID": c.EventID}
 		for k, v := range c.Data {
 			out[k] = v
@@ -166,6 +175,9 @@ var sysmonEvents = map[string]string{
 	// service changing state, by default).
 	"system":       "7045",
 	"system_event": "7036",
+	// Application log rules (service: application) name their events;
+	// an application crash is the first.
+	"application": "1000",
 	// Defender log rules (service: windefend) name their events; a
 	// threat detected is the first.
 	"windefend": "1116",
@@ -203,6 +215,7 @@ func init() {
 	// Other System events have no typical data: each rule names its
 	// event's.
 	Bases["system_event"] = map[string]string{}
+	Bases["application"] = map[string]string{}
 	// A task disabled has the data of a task deleted.
 	Bases[SecurityCategory("4701")] = Bases[SecurityCategory("4699")]
 	for _, id := range SecurityEvents {
@@ -223,6 +236,8 @@ func Channel(category string) string {
 		return PowerShellChannel
 	case "system", "system_event":
 		return SystemChannel
+	case "application":
+		return ApplicationChannel
 	case "windefend":
 		return DefenderChannel
 	}
@@ -692,7 +707,7 @@ func CasesOn(channel, category string, syn *Synthesis, fields []string) []Case {
 			// A near miss without the event ID: every event has one.
 			return
 		}
-		if _, ok := ev["Provider_Name"]; !ok && !expect && channel == SystemChannel && slices.Contains(fields, "Provider_Name") {
+		if _, ok := ev["Provider_Name"]; !ok && !expect && (channel == SystemChannel || channel == ApplicationChannel) && slices.Contains(fields, "Provider_Name") {
 			// Nor without its provider.
 			return
 		}
