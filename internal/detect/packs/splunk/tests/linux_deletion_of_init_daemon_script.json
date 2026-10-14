@@ -1,0 +1,7 @@
+{"rule": "729aab57-d26f-4156-b97f-ab8dda8f44b1", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"23","data":{"ProcessId":"4242","TargetFilename":"/etc/init.d/ x","User":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"23","data":{"ProcessId":"4242","TargetFilename":"/etc/init.d/ x","User":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"23","data":{"ProcessId":"4242","TargetFilename":"/etc/init.d/ y","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"/etc/init.d/ x","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"23","data":{"ProcessId":"4242","User":"tester"}}
+]}

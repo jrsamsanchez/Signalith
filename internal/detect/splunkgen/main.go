@@ -43,6 +43,7 @@ var windowsSources = []string{
 	"Sysmon EventID 1", "Windows Event Log Security 4688", "Sysmon EventID 11", "Sysmon EventID 12",
 	"Sysmon EventID 13", "Sysmon EventID 14", "Sysmon EventID 23", "Sysmon EventID 26",
 	"Powershell Script Block Logging 4104", "Sysmon EventID 7", "Sysmon EventID 8", "Sysmon EventID 10",
+	"Sysmon for Linux EventID 1", "Sysmon for Linux EventID 11",
 }
 
 // maxWildcardTerms keeps a rule's searches of wildcard fields under

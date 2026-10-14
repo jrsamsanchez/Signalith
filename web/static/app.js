@@ -2210,6 +2210,7 @@ $('linux-source').addEventListener('change', loadAgentConfig);
 $('otel-host').addEventListener('change', loadAgentConfig);
 $('osquery-platform').addEventListener('change', loadAgentConfig);
 $('sysmon').addEventListener('change', loadAgentConfig);
+$('sysmon-linux').addEventListener('change', loadAgentConfig);
 $('powershell').addEventListener('change', loadAgentConfig);
 $('wazuh-syslog').addEventListener('click', (e) => {
   e.preventDefault();
@@ -2460,6 +2461,8 @@ async function agentSetupLoad() {
   $('otel-opts').classList.toggle('hidden', !otel);
   $('osquery-opts').classList.toggle('hidden', !osq);
   $('linux-opts').classList.toggle('hidden', host !== 'linux');
+  // The Collector reads Sysmon for Linux's events with Fluent Bit only.
+  $('sysmon-linux').closest('label').classList.toggle('hidden', otel);
   $('windows-opts').classList.toggle('hidden', host !== 'windows');
   $('wazuh-note').classList.toggle('hidden', !wazuh);
   const osqName = { linux: 'Linux', windows: 'Windows', darwin: 'macOS' }[$('osquery-platform').value];
@@ -2473,7 +2476,7 @@ async function agentSetupLoad() {
   steps.setAttribute('aria-busy', 'true');
   if (!agentSetupConfig) agentSetupSkeleton();
   const q = wazuh ? new URLSearchParams({ os: 'linux', source: 'wazuh' })
-    : new URLSearchParams({ os, source: $('linux-source').value, sysmon: $('sysmon').checked, powershell: $('powershell').checked });
+    : new URLSearchParams({ os, source: $('linux-source').value, sysmon: (host === 'linux' ? !otel && $('sysmon-linux').checked : $('sysmon').checked), powershell: $('powershell').checked });
   if (otel) q.set('collector', host);
   if (osq) q.set('platform', $('osquery-platform').value);
   const server = agentServerValue();

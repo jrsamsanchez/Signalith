@@ -1,0 +1,4 @@
+{"rule": "72f4ab3f-787d-495d-a55d-68c2ff46cf4c", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"http_proxy="}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{}}
+]}

@@ -1,0 +1,5 @@
+{"rule": "c9d8b7fd-78e4-44fe-88f6-599135d46d60", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"nessusd","Image":"/egrep"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/egrep"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"nessusd"}}
+]}

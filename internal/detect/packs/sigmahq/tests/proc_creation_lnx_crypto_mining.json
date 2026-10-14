@@ -1,0 +1,4 @@
+{"rule": "9069ea3c-b213-4c52-be13-86506a227ab1", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x -o pool."}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{}}
+]}

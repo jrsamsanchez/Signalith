@@ -1,0 +1,7 @@
+{"rule": "6eea1bf6-f8d2-488a-a742-e6ef6c1b67db", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/etc/opt/microsoft/scx/conf/tmpdir/scx","CurrentDirectory":"/var/opt/microsoft/scx/tmp","LogonId":"0","User":"root"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CurrentDirectory":"/var/opt/microsoft/scx/tmp","LogonId":"0","User":"root"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/etc/opt/microsoft/scx/conf/tmpdir/scx","LogonId":"0","User":"root"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/etc/opt/microsoft/scx/conf/tmpdir/scx","CurrentDirectory":"/var/opt/microsoft/scx/tmp","User":"root"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/etc/opt/microsoft/scx/conf/tmpdir/scx","CurrentDirectory":"/var/opt/microsoft/scx/tmp","LogonId":"0"}}
+]}

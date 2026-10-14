@@ -29,7 +29,8 @@ type Options struct {
 	// "journal" (systemd journal, for distros without rsyslog) or "wazuh"
 	// (tail a Wazuh manager's alerts.json; Fluent Bit only).
 	LinuxSource string
-	// Sysmon adds the Sysmon operational channel on Windows.
+	// Sysmon adds the Sysmon operational channel on Windows, and Sysmon
+	// for Linux's events (from the systemd journal) on Linux.
 	Sysmon bool
 	// PowerShell adds Windows PowerShell's operational channel, where
 	// script block logging writes the scripts that run (event 4104).
@@ -250,7 +251,7 @@ func Generate(o Options) (*Agent, error) {
 				{"storage.type", "filesystem"},
 			}))
 		} else if o.LinuxSource == "journal" {
-			b.WriteString(section("INPUT", [][2]string{
+			journal := [][2]string{
 				{"Name", "systemd"}, {"Tag", "linux.journal"},
 				{"DB", "/var/lib/fluent-bit/signalith-journal.db"},
 				{"Systemd_Filter", "SYSLOG_IDENTIFIER=sshd"},
@@ -265,9 +266,14 @@ func Generate(o Options) (*Agent, error) {
 				{"Systemd_Filter", "SYSLOG_IDENTIFIER=clamd"},
 				{"Systemd_Filter", "SYSLOG_IDENTIFIER=clamonacc"},
 				{"Systemd_Filter", "SYSLOG_IDENTIFIER=freshclam"},
+			}
+			if o.Sysmon {
+				journal = append(journal, [2]string{"Systemd_Filter", "SYSLOG_IDENTIFIER=sysmon"})
+			}
+			b.WriteString(section("INPUT", append(journal, [][2]string{
 				{"Read_From_Tail", "On"},
 				{"storage.type", "filesystem"},
-			}))
+			}...)))
 			// clamd checks its database every few minutes; those lines
 			// say nothing and would be most of the volume.
 			b.WriteString(section("FILTER", [][2]string{
@@ -275,6 +281,17 @@ func Generate(o Options) (*Agent, error) {
 				{"Exclude", "MESSAGE ^SelfCheck"},
 			}))
 		} else {
+			if o.Sysmon {
+				// Sysmon for Linux logs through syslog into the journal; only
+				// its events are read from there.
+				b.WriteString(section("INPUT", [][2]string{
+					{"Name", "systemd"}, {"Tag", "linux.journal"},
+					{"DB", "/var/lib/fluent-bit/signalith-sysmon.db"},
+					{"Systemd_Filter", "SYSLOG_IDENTIFIER=sysmon"},
+					{"Read_From_Tail", "On"},
+					{"storage.type", "filesystem"},
+				}))
+			}
 			b.WriteString(section("INPUT", [][2]string{
 				{"Name", "tail"}, {"Tag", "linux.auth"},
 				{"Path", "/var/log/auth.log,/var/log/secure"},
@@ -305,6 +322,9 @@ func Generate(o Options) (*Agent, error) {
 		a.Steps = []string{"Install Fluent Bit (3.1 or later): curl https://raw.githubusercontent.com/fluent/fluent-bit/master/install.sh | sh"}
 		if o.LinuxSource == "wazuh" {
 			a.Steps = []string{"On the Wazuh manager (not on each Wazuh agent), install Fluent Bit (3.1 or later): curl https://raw.githubusercontent.com/fluent/fluent-bit/master/install.sh | sh"}
+		}
+		if o.Sysmon && o.LinuxSource != "wazuh" {
+			a.Steps = append(a.Steps, "Install Sysmon for Linux (open source, github.com/Sysinternals/SysmonForLinux) and start it with a configuration (sudo sysmon -accepteula -i config.xml), so process, network and file events are recorded")
 		}
 		if useCA {
 			a.CAPath = LinuxCAPath

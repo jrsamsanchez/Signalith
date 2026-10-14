@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/search"
 	"github.com/jrsamsanchez/signalith/internal/sigmacheck"
@@ -385,12 +384,60 @@ func records(node string, ev map[string]string) []sigmacheck.Case {
 	return nil
 }
 
+// linuxRecords turns one field-level event into the Sysmon for Linux
+// events that carry it.
+func linuxRecords(node string, ev map[string]string) []sigmacheck.Case {
+	set := func(m map[string]string, k, v string) {
+		if v != "" {
+			m[k] = v
+		}
+	}
+	bin := func(path, name string) string {
+		switch {
+		case path != "":
+			return path
+		case name != "":
+			return "/usr/bin/" + name
+		}
+		return ""
+	}
+	switch node {
+	case "Processes":
+		s := map[string]string{"ProcessId": "4242", "ParentProcessId": "4000", "User": "tester"}
+		set(s, "Image", bin(ev["process_path"], ev["process_name"]))
+		set(s, "CommandLine", ev["process"])
+		set(s, "ParentImage", bin(ev["parent_process_path"], ev["parent_process_name"]))
+		set(s, "ParentCommandLine", ev["parent_process"])
+		set(s, "User", ev["user"])
+		set(s, "CurrentDirectory", ev["process_current_directory"])
+		set(s, "ProcessId", ev["process_id"])
+		set(s, "ParentProcessId", ev["parent_process_id"])
+		return []sigmacheck.Case{{Channel: sigmacheck.LinuxSysmonChannel, EventID: "1", Data: s}}
+	case "Filesystem":
+		s := map[string]string{"ProcessId": "4242", "User": "tester"}
+		set(s, "Image", bin(ev["process_path"], ev["process_name"]))
+		set(s, "User", ev["user"])
+		target := ev["file_path"]
+		if target == "" && ev["file_name"] != "" {
+			target = "/tmp/" + ev["file_name"]
+		} else if name := ev["file_name"]; name != "" && !strings.EqualFold(path.Base(target), name) {
+			target = strings.TrimRight(target, "/") + "/" + name
+		}
+		set(s, "TargetFilename", target)
+		id := "11"
+		if a := strings.ToLower(ev["action"]); strings.HasPrefix(a, "delet") {
+			id = "23"
+		}
+		return []sigmacheck.Case{{Channel: sigmacheck.LinuxSysmonChannel, EventID: id, Data: s}}
+	}
+	return nil
+}
+
 // Stored is a case's event as Signalith stores it, after the real Windows
 // parser, with its data model.
 func Stored(c sigmacheck.Case) (map[string]any, string) {
 	now := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
-	rec := ingest.WinEventRecord(c.Channel, c.EventID, "test-host", now, c.Data)
-	ev := ingest.Normalize("win.events", rec, now)
+	ev := c.Stored("test-host", now)
 	return ev.Document(), ev.Model
 }
 
@@ -430,7 +477,11 @@ func Cases(r *Rule) []sigmacheck.Case {
 	pos, neg := Events(r.Where)
 	var out []sigmacheck.Case
 	for _, ev := range append(pos, neg...) {
-		for _, c := range records(r.Node, ev) {
+		cs := records(r.Node, ev)
+		if r.Linux {
+			cs = linuxRecords(r.Node, ev)
+		}
+		for _, c := range cs {
 			doc, model := Stored(c)
 			c.Source = "synthesized"
 			c.Expect = model == NodeModel[r.Node] && Eval(r.Where, View(doc))

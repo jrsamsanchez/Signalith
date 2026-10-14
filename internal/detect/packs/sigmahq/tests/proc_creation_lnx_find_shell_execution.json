@@ -1,0 +1,5 @@
+{"rule": "6adfbf8f-52be-4444-9bac-81b539624146", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x . -exec/bin/zsh","Image":"/find"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/find"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x . -exec/bin/zsh"}}
+]}

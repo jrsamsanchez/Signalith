@@ -372,3 +372,30 @@ func TestFluentBitWindowsPowerShell(t *testing.T) {
 		t.Errorf("steps: %q", a.Steps)
 	}
 }
+
+func TestFluentBitLinuxSysmon(t *testing.T) {
+	for _, source := range []string{"file", "journal"} {
+		for _, sysmon := range []bool{false, true} {
+			a, err := Generate(Options{OS: "linux", LinuxSource: source, ServerURL: "http://192.168.1.20:8080", Token: "tok-0123456789abcdef", Sysmon: sysmon})
+			if err != nil {
+				t.Fatal(err)
+			}
+			has := strings.Contains(a.Config, "SYSLOG_IDENTIFIER=sysmon")
+			if has != sysmon {
+				t.Errorf("%s, sysmon %v: config reads Sysmon for Linux = %v:\n%s", source, sysmon, has, a.Config)
+			}
+			step := strings.Contains(strings.Join(a.Steps, "\n"), "SysmonForLinux")
+			if step != sysmon {
+				t.Errorf("%s, sysmon %v: install step = %v", source, sysmon, step)
+			}
+		}
+	}
+	// A Wazuh manager's agent only sends alerts.
+	a, err := Generate(Options{OS: "linux", LinuxSource: "wazuh", ServerURL: "http://192.168.1.20:8080", Token: "tok-0123456789abcdef", Sysmon: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(a.Config, "sysmon") {
+		t.Errorf("wazuh config reads Sysmon:\n%s", a.Config)
+	}
+}

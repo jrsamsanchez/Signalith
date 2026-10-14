@@ -1,0 +1,5 @@
+{"rule": "259df6bc-003f-4306-9f54-4ff1a08fa38e", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"execopenconnectSocket -e x","Image":"/perl"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/perl"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"execopenconnectSocket -e x"}}
+]}

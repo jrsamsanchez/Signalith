@@ -1,0 +1,5 @@
+{"rule": "f41dada5-3f56-4232-8503-3fb7f9cf2d60", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"storage get","Image":"/esxcli"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/esxcli"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"storage get"}}
+]}

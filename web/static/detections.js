@@ -1060,10 +1060,10 @@ const packShort = (name) => ({ sigmahq: 'SigmaHQ', splunk: 'Splunk' }[name] || n
 // (Splunk's TTP rules raise findings; its anomalies only add risk).
 const PACK_INFO = {
   sigmahq: { icon: 'sigma', by: 'By the SigmaHQ authors named on each rule, under the ', license: 'Detection Rule License 1.1', home: 'SigmaHQ on GitHub',
-    desc: 'Windows rules for Sysmon, Security and PowerShell events, each tested before it ships. Off until you turn them on.',
+    desc: 'Windows rules for Sysmon, Security and PowerShell events, and Linux rules for Sysmon for Linux, each tested before it ships. Off until you turn them on.',
     strong: (d) => d.severity === 'high' || d.severity === 'critical', strongName: 'high and critical rule' },
   splunk: { icon: 'layers', by: 'By Splunk’s Threat Research Team and the authors named on each rule, under the ', license: 'Apache License 2.0', home: 'security_content on GitHub',
-    desc: 'Splunk’s Windows process, file and registry detections, each tested before it ships. TTP rules raise findings; anomalies add risk. Off until you turn them on.',
+    desc: 'Splunk’s Windows and Linux process, file, registry and PowerShell detections, each tested before it ships. TTP rules raise findings; anomalies add risk. Off until you turn them on.',
     strong: (d) => (d.tags || []).includes('ttp'), strongName: 'TTP rule' },
 };
 const packInfo = (p) => PACK_INFO[p.name] || { icon: 'layers', by: 'Under the ', license: p.license, home: 'Source', desc: p.description, strong: () => false, strongName: 'rule' };

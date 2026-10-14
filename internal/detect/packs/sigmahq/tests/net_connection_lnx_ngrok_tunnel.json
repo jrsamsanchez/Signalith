@@ -1,0 +1,4 @@
+{"rule": "19bf6fdb-7721-4f3d-867f-53467f6a5db6", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":"tunnel.jp.ngrok.com"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"3","data":{}}
+]}

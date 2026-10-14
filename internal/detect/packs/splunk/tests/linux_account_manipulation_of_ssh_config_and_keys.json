@@ -1,0 +1,11 @@
+{"rule": "73a56508-1cf5-4df7-b8d9-5737fbdc27d2", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"23","data":{"ProcessId":"4242","TargetFilename":"/etc/ssh/ x","User":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"23","data":{"ProcessId":"4242","TargetFilename":"~/.ssh/ x","User":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"23","data":{"ProcessId":"4242","TargetFilename":"/etc/ssh/ x","User":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"23","data":{"ProcessId":"4242","TargetFilename":"/etc/ssh/ y","User":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"23","data":{"ProcessId":"4242","TargetFilename":"~/.ssh/ x","User":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"23","data":{"ProcessId":"4242","TargetFilename":"~/.ssh/ y","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"/etc/ssh/ x","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"23","data":{"ProcessId":"4242","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"~/.ssh/ x","User":"tester"}}
+]}

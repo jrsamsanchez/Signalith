@@ -1,0 +1,9 @@
+{"rule": "6e0913d4-5461-487c-9dce-6d22ef2c0f03", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x  -p  x x  -f root x","Image":"/usr/bin/login","ParentImage":"/usr/bin/telnetd","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x  -p  x x  -f root y","Image":"/usr/bin/login","ParentImage":"/usr/bin/telnetd","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x  -p  x x  -f root x","Image":"/usr/bin/logio","ParentImage":"/usr/bin/telnetd","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x  -p  x x  -f root x","ParentImage":"/usr/bin/telnetd","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x  -p  x x  -f root x","Image":"/usr/bin/login","ParentImage":"/usr/bin/telnete","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x  -p  x x  -f root x","Image":"/usr/bin/login","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/usr/bin/login","ParentImage":"/usr/bin/telnetd","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}}
+]}

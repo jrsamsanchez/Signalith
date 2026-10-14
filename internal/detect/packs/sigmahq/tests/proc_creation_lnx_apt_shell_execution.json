@@ -1,0 +1,5 @@
+{"rule": "bb382fd5-b454-47ea-a264-1828e4c766d6", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"APT::Update::Pre-Invoke::=","Image":"/apt-get"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/apt-get"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"APT::Update::Pre-Invoke::="}}
+]}

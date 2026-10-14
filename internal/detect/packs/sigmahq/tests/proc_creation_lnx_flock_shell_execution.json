@@ -1,0 +1,5 @@
+{"rule": "4b09c71e-4269-4111-9cdd-107d8867f0cc", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x -u  /bin/dash","Image":"/flock"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/flock"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x -u  /bin/dash"}}
+]}

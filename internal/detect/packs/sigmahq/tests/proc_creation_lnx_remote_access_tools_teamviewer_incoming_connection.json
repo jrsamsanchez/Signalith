@@ -1,0 +1,6 @@
+{"rule": "1f6b8cd4-3e60-47cc-b282-5aa1cbc9182d", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/TeamViewer_Desktop --IPCport 5939 --Module 1","Image":"/TeamViewer_Desktop","ParentImage":"/TeamViewer_Service"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/TeamViewer_Desktop","ParentImage":"/TeamViewer_Service"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/TeamViewer_Desktop --IPCport 5939 --Module 1","ParentImage":"/TeamViewer_Service"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/TeamViewer_Desktop --IPCport 5939 --Module 1","Image":"/TeamViewer_Desktop"}}
+]}

@@ -86,6 +86,17 @@ tabs(startList, (tab) => {
   document.querySelectorAll('.start__panel').forEach((p) => { p.hidden = p.id !== tab.getAttribute('aria-controls'); });
 });
 
+// Demo video: a big play button over the poster, native controls once playing.
+const demo = document.querySelector('[data-demo]');
+if (demo) {
+  const video = demo.querySelector('video');
+  const play = demo.querySelector('[data-demo-play]');
+  video.controls = false;
+  play.hidden = false;
+  play.addEventListener('click', () => { video.controls = true; video.play(); });
+  video.addEventListener('play', () => { play.hidden = true; video.controls = true; });
+}
+
 // Copy buttons ------------------------------------------------------------------
 document.querySelectorAll('.copy').forEach((b) => b.addEventListener('click', async () => {
   const text = b.parentElement.querySelector('code').innerText;

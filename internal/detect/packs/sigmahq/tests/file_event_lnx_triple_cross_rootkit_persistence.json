@@ -1,0 +1,4 @@
+{"rule": "1a2ea919-d11d-4d1e-8535-06cda13be20f", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"ebpfbackdoor"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"11","data":{}}
+]}

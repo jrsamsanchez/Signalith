@@ -1,0 +1,4 @@
+{"rule": "e4ffe466-6ff8-48d4-94bd-e32d1a6061e2", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/nohup"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{}}
+]}
