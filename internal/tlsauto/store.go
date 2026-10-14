@@ -461,3 +461,28 @@ func (m *Manager) keptLeaf() (*tls.Certificate, error) {
 	}
 	return &pair, nil
 }
+
+// LocalPair returns this server's own certificate authority, its key and
+// the names EnsureName added, for publishing it as the cluster's. It
+// returns nil when there is none to publish: with the admin's certificate
+// files, with the cluster's certificate authority already in use, or
+// while a change of certificate authority is in progress.
+func (m *Manager) LocalPair() (*x509.Certificate, crypto.Signer, []string) {
+	if !m.LocalCA() || m.changeInProgress() != nil {
+		return nil, nil, nil
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.inCluster() || m.ca == nil || m.caKey == nil {
+		return nil, nil, nil
+	}
+	return m.ca, m.caKey, slices.Clone(m.added)
+}
+
+// InfoOf describes the certificate authority ca.
+func InfoOf(ca *x509.Certificate) *CAInfo {
+	if ca == nil {
+		return nil
+	}
+	return infoOf(ca)
+}

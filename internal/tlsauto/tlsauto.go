@@ -320,20 +320,53 @@ func (m *Manager) canCover(host string) (string, error) {
 			name, shortList(certNames(m.Leaf()), 6), name)
 	}
 	m.mu.Lock()
-	allowed := m.allowed(name)
-	strict := m.ca != nil && classify(m.ca) == ScopeStrict
+	ca := m.ca
 	m.mu.Unlock()
-	if !allowed && strict {
-		return "", fmt.Errorf("Signalith's certificate authority is strict, so it can only vouch for the names it was made with. "+
-			"Add %s under Extra certificate names and make a new certificate authority on the Security page, or switch to standard", name)
-	}
-	if !allowed {
-		return "", fmt.Errorf("Signalith's certificate can't include %s: its own certificate authority only signs this server's names and private network addresses, "+
-			"so trusting it can't expose other websites. Use this computer's IP address or a name the certificate covers (%s), "+
-			"or see \"Names the certificate can cover\" in docs/https.md", name, shortList(certNames(m.Leaf()), 4))
+	if err := nameRefusal(ca, name, certNames(m.Leaf())); err != nil {
+		return "", err
 	}
 	return name, nil
 }
+
+// nameRefusal says why ca may not sign name, or returns nil when it may;
+// covered are names the certificate covers, offered instead.
+func nameRefusal(ca *x509.Certificate, name string, covered []string) error {
+	if caAllows(ca, name) {
+		return nil
+	}
+	if classify(ca) == ScopeStrict {
+		return fmt.Errorf("Signalith's certificate authority is strict, so it can only vouch for the names it was made with. "+
+			"Add %s under Extra certificate names and make a new certificate authority on the Security page, or switch to standard", name)
+	}
+	return fmt.Errorf("Signalith's certificate can't include %s: its own certificate authority only signs this server's names and private network addresses, "+
+		"so trusting it can't expose other websites. Use this computer's IP address or a name the certificate covers (%s), "+
+		"or see \"Names the certificate can cover\" in docs/https.md", name, shortList(covered, 4))
+}
+
+// CheckName returns name as a certificate holds it (see NormalizeName),
+// or why the certificate authority ca may not sign it, in the words
+// EnsureName uses.
+func CheckName(ca *x509.Certificate, name string) (string, error) {
+	n, ok := normalizeName(name)
+	if !ok {
+		return "", fmt.Errorf("%q is not a host name or IP address", name)
+	}
+	if ca == nil {
+		return n, nil
+	}
+	if err := nameRefusal(ca, n, infoOf(ca).Names); err != nil {
+		return "", err
+	}
+	return n, nil
+}
+
+// CAAllows reports whether the name constraints of ca let it sign name,
+// a name as NormalizeName returns it.
+func CAAllows(ca *x509.Certificate, name string) bool { return caAllows(ca, name) }
+
+// NormalizeName returns a host name in lower case without a trailing dot,
+// or an IP address in its usual form; false when s is neither.
+func NormalizeName(s string) (string, bool) { return normalizeName(s) }
 
 // EnsureName makes sure the certificate covers host, the address agents
 // are being set up to send to. In auto mode it issues a new certificate
