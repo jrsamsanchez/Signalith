@@ -4,3 +4,6 @@
 *.yaml.local
 /cmd/zz-devdemo/
 /deploy/docker/master.key
+
+# Windows resources, made at build time by go-winres (packages.yml)
+cmd/signalith/rsrc_*.syso

@@ -44,6 +44,7 @@ jobs:
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: go.mod
+      - run: go install github.com/tc-hib/go-winres@v0.3.3
       - name: Build for Linux (amd64, arm64) and Windows (amd64)
         env:
           VERSION: ${{ needs.versions.outputs.version }}
@@ -51,10 +52,17 @@ jobs:
           PREVIOUS_RELEASE: ${{ needs.versions.outputs.previous_release }}
         run: |
           build() {
+            # signalith.exe carries its name, version and icon, which Windows
+            # shows in Properties and code signing checks.
+            (cd cmd/signalith && go-winres simply --arch amd64 --manifest none \
+              --icon ../../deploy/windows/msi/signalith.ico --product-name Signalith \
+              --product-version "$1" --file-version "${1%%-*}.0" --original-filename signalith.exe \
+              --file-description "Signalith SIEM" --copyright "Signalith contributors, Apache License 2.0")
             for target in linux/amd64 linux/arm64 windows/amd64; do
               os=${target%/*}; arch=${target#*/}; ext=""; [ "$os" = windows ] && ext=.exe
               GOOS=$os GOARCH=$arch CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$1" -o "$2/signalith-$os-$arch$ext" ./cmd/signalith
             done
+            rm cmd/signalith/rsrc_windows_amd64.syso
           }
           build "$VERSION" dist
           # Without a release to upgrade from, the tests upgrade from this

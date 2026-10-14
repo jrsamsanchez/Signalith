@@ -53,6 +53,8 @@ Invoke-Msi "/i" $New "$env:RUNNER_TEMP\msi-upgrade.log"
 Wait-Up
 $got = & $exe version
 if ($got -notlike "*$Version*") { throw "signalith version says $got, want $Version" }
+$info = (Get-Item $exe).VersionInfo
+if ($info.ProductName -ne "Signalith" -or $info.ProductVersion -ne $Version) { throw "signalith.exe says it is $($info.ProductName) $($info.ProductVersion), want Signalith $Version" }
 if ((& $exe initial-password).Trim() -ne $password) { throw "the first password changed in the upgrade" }
 Test-SignIn $password
 $installed = @(Get-CimInstance Win32_Product -Filter "Name='Signalith'")
