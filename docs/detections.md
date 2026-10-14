@@ -391,7 +391,7 @@ The generator keeps each rule's Signalith ID across runs, rewrites `rules/`,
 
 ### Splunk Security Content
 
-**Splunk Security Content** (`internal/detect/packs/splunk`) holds 882 Windows and
+**Splunk Security Content** (`internal/detect/packs/splunk`) holds 892 Windows and
 Linux detections from Splunk's Threat Research Team
 ([security_content](https://github.com/splunk/security_content)), pinned to one
 commit. They are the production TTP and anomaly rules that search the CIM
@@ -499,7 +499,10 @@ the real Windows parser, the converted detection agrees with Splunk's reading of
 clause on every event. A regular expression converts when it is also valid in Go's
 syntax (no lookarounds) and OpenSearch can search it exactly (no word boundaries).
 A value with a `?`, which Splunk reads literally, is searched as a regular expression
-too. Searches with `eval`, `rex`, `lookup`, and other raw searches are left out for now; `internal/detect/packs/splunk/REPORT.md` lists
+too. Raw searches that test an access mask bit by bit (`eval m = tonumber(GrantedAccess, 16)`,
+`bit_and(m, 16)` and a `where` on the result being the mask, 0 or not 0) convert to a regular
+expression over the mask's hex digits. Searches with other `eval`s, `rex`, `lookup`, and other
+raw searches are left out for now; `internal/detect/packs/splunk/REPORT.md` lists
 every rule left out and why. The same CI checks as the SigmaHQ pack run on it.
 
 Each rule is also checked on the real attack it was written for: Splunk records one

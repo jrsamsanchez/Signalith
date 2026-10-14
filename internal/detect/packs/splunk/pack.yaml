@@ -190,6 +190,10 @@ rules:
     rule_id: 9251299c-ea5b-11eb-a8de-acde48001122
     file: detect_copy_of_shadowcopy_with_script_block_logging.yml
     path: detections/endpoint/detect_copy_of_shadowcopy_with_script_block_logging.yml
+  - id: splunk-detect-credential-dumping-through-lsass-access
+    rule_id: 2c365e57-4414-4540-8dc0-73ab10729996
+    file: detect_credential_dumping_through_lsass_access.yml
+    path: detections/endpoint/detect_credential_dumping_through_lsass_access.yml
   - id: splunk-detect-empire-with-powershell-script-block-logging
     rule_id: bc1dc6b8-c954-11eb-bade-acde48001122
     file: detect_empire_with_powershell_script_block_logging.yml
@@ -438,6 +442,10 @@ rules:
     rule_id: 2d10095e-05ae-11ec-8fdf-acde48001122
     file: exchange_powershell_module_usage.yml
     path: detections/endpoint/exchange_powershell_module_usage.yml
+  - id: splunk-executable-file-written-in-administrative-smb-share
+    rule_id: f63c34fe-a435-11eb-935a-acde48001122
+    file: executable_file_written_in_administrative_smb_share.yml
+    path: detections/endpoint/executable_file_written_in_administrative_smb_share.yml
   - id: splunk-executables-or-script-creation-in-suspicious-path
     rule_id: a7e3f0f0-ae42-11eb-b245-acde48001122
     file: executables_or_script_creation_in_suspicious_path.yml
@@ -1346,6 +1354,10 @@ rules:
     rule_id: cca37478-8377-11ec-b59a-acde48001122
     file: rubeus_command_line_parameters.yml
     path: detections/endpoint/rubeus_command_line_parameters.yml
+  - id: splunk-rubeus-kerberos-ticket-exports-through-winlogon-access
+    rule_id: 5ed8c50a-8869-11ec-876f-acde48001122
+    file: rubeus_kerberos_ticket_exports_through_winlogon_access.yml
+    path: detections/endpoint/rubeus_kerberos_ticket_exports_through_winlogon_access.yml
   - id: splunk-rundll-loading-dll-by-ordinal
     rule_id: 6c135f8d-5e60-454e-80b7-c56eed739833
     file: rundll_loading_dll_by_ordinal.yml
@@ -1618,6 +1630,10 @@ rules:
     rule_id: e8fc95bc-a107-11eb-a978-acde48001122
     file: wermgr_process_spawned_cmd_or_powershell_process.yml
     path: detections/endpoint/wermgr_process_spawned_cmd_or_powershell_process.yml
+  - id: splunk-windows-access-token-winlogon-duplicate-handle-in-uncommo
+    rule_id: b8f7ed6b-0556-4c84-bffd-839c262b0278
+    file: windows_access_token_winlogon_duplicate_handle_in_uncommon_path.yml
+    path: detections/endpoint/windows_access_token_winlogon_duplicate_handle_in_uncommon_path.yml
   - id: splunk-windows-account-access-removal-via-logoff-exec
     rule_id: 223572ab-8768-4e20-9b39-c38707af80dc
     file: windows_account_access_removal_via_logoff_exec.yml
@@ -1810,6 +1826,10 @@ rules:
     rule_id: 2e0042b9-8a75-49ca-b3a2-948f04b752bf
     file: windows_cloud_files_filter_log_created_by_non_system_process.yml
     path: detections/endpoint/windows_cloud_files_filter_log_created_by_non_system_process.yml
+  - id: splunk-windows-cloud-sensitive-file-read-access-by-uncommon-proc
+    rule_id: 313e4f5c-add3-4b4d-8348-6a009ce5fe40
+    file: windows_cloud_sensitive_file_read_access_by_uncommon_process.yml
+    path: detections/endpoint/windows_cloud_sensitive_file_read_access_by_uncommon_process.yml
   - id: splunk-windows-cmdline-tool-execution-from-non-shell-process
     rule_id: 2afa393f-b88d-41b7-9793-623c93a2dfde
     file: windows_cmdline_tool_execution_from_non_shell_process.yml
@@ -2202,6 +2222,10 @@ rules:
     rule_id: 4f8cd681-7583-47a0-9f38-6337b7adf48a
     file: windows_guest_account_enabled_via_net_exe.yml
     path: detections/endpoint/windows_guest_account_enabled_via_net_exe.yml
+  - id: splunk-windows-handle-duplication-in-known-uac-bypass-binaries
+    rule_id: d7369bf5-1315-4138-b927-2dd8bb8c1da7
+    file: windows_handle_duplication_in_known_uac_bypass_binaries.yml
+    path: detections/endpoint/windows_handle_duplication_in_known_uac_bypass_binaries.yml
   - id: splunk-windows-hidden-schedule-task-settings
     rule_id: 0b730470-5fe8-4b13-93a7-fe0ad014d0cc
     file: windows_hidden_schedule_task_settings.yml
@@ -2766,6 +2790,10 @@ rules:
     rule_id: 2fa9dec8-9d8e-46d3-96c1-202c06f0e6e1
     file: windows_phishing_pdf_file_executes_url_link.yml
     path: detections/endpoint/windows_phishing_pdf_file_executes_url_link.yml
+  - id: splunk-windows-possible-credential-dumping
+    rule_id: e4723b92-7266-11ec-af45-acde48001122
+    file: windows_possible_credential_dumping.yml
+    path: detections/endpoint/windows_possible_credential_dumping.yml
   - id: splunk-windows-potato-privilege-escalation-tool-execution
     rule_id: cfde2a20-3737-4760-8498-16e1e6d1672d
     file: windows_potato_privilege_escalation_tool_execution.yml
@@ -2914,6 +2942,10 @@ rules:
     rule_id: d131673f-ede1-47f2-93a1-0108d3e7fafd
     file: windows_process_injection_in_non_service_searchindexer.yml
     path: detections/endpoint/windows_process_injection_in_non_service_searchindexer.yml
+  - id: splunk-windows-process-injection-into-commonly-abused-processes
+    rule_id: 1e1dedc6-f6f3-41a0-9dd7-a1245904fe75
+    file: windows_process_injection_into_commonly_abused_processes.yml
+    path: detections/endpoint/windows_process_injection_into_commonly_abused_processes.yml
   - id: splunk-windows-process-injection-remote-thread
     rule_id: 8a618ade-ca8f-4d04-b972-2d526ba59924
     file: windows_process_injection_remote_thread.yml
@@ -3366,6 +3398,10 @@ rules:
     rule_id: 2fd33fb6-8c72-4e88-869f-b3b516f9f37e
     file: windows_teamcity_plugin_installed.yml
     path: detections/endpoint/windows_teamcity_plugin_installed.yml
+  - id: splunk-windows-terminating-lsass-process
+    rule_id: 7ab3c319-a4e7-4211-9e8c-40a049d0dba6
+    file: windows_terminating_lsass_process.yml
+    path: detections/endpoint/windows_terminating_lsass_process.yml
   - id: splunk-windows-theme-file-creation-in-unusual-location
     rule_id: a11f5f36-2c32-4323-8cb0-0fec84b3188d
     file: windows_theme_file_creation_in_unusual_location.yml
@@ -3450,6 +3486,10 @@ rules:
     rule_id: 90013cc4-585b-4437-a95f-099933974f3e
     file: windows_winscp_configuration_security_access.yml
     path: detections/endpoint/windows_winscp_configuration_security_access.yml
+  - id: splunk-windows-wmi-impersonate-token
+    rule_id: cf192860-2d94-40db-9a51-c04a2e8a8f8b
+    file: windows_wmi_impersonate_token.yml
+    path: detections/endpoint/windows_wmi_impersonate_token.yml
   - id: splunk-windows-wmi-process-and-service-list
     rule_id: ef3c5ef2-3f6d-4087-aa75-49bf746dc907
     file: windows_wmi_process_and_service_list.yml

@@ -359,9 +359,20 @@ func parseRaw(r *Rule, source, terms string, later []string, macros map[string]*
 	filled, counted, xml, renamed := false, false, false, false
 	var searches []string
 	var regexes []Expr
+	bits := newBitStages()
 	for _, s := range later {
 		if !counted && !renamed {
-			e, ok, err := regexStage(s, func(f string) (string, error) { return rawFieldPrefix + f, nil })
+			e, ok, err := bits.stage(s, func(f string) (string, error) { return rawFieldPrefix + f, nil })
+			if err != nil {
+				return nil, err
+			}
+			if ok {
+				if e != nil {
+					regexes = append(regexes, e)
+				}
+				continue
+			}
+			e, ok, err = regexStage(s, func(f string) (string, error) { return rawFieldPrefix + f, nil })
 			if err != nil {
 				return nil, err
 			}
@@ -381,6 +392,9 @@ func parseRaw(r *Rule, source, terms string, later []string, macros map[string]*
 			filled = true
 		case statsRe.MatchString(s) && !counted:
 			counted = true
+		case evalRe.MatchString(s) && counted:
+			// After stats, eval only reshapes the counted rows (splits a
+			// call trace into lines); no stage after it filters them.
 		case renameRe.MatchString(s) && (counted || !xml && len(searches) == 0):
 			// Before stats, a rename only renames what stats counts by,
 			// as long as no later stage filters on the new names.
@@ -388,6 +402,9 @@ func parseRaw(r *Rule, source, terms string, later []string, macros map[string]*
 		default:
 			return nil, fmt.Errorf("search has a later stage Signalith does not run: %s", firstWords(s))
 		}
+	}
+	if bits.unused != "" {
+		return nil, fmt.Errorf("search has a later stage Signalith does not run: %s", firstWords(bits.unused))
 	}
 	where, err := ParseWhere(terms, rawSource(source), macros)
 	if err != nil {
