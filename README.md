@@ -201,9 +201,10 @@ sudo dnf install ./signalith-0.1.0-1.x86_64.rpm     # Red Hat, Rocky, Alma, Fedo
 sudo signalith initial-password                     # the first admin password
 ```
 
-On Windows, double-click `signalith-0.1.0-x64.msi`. See
-[docs/install-packages.md](docs/install-packages.md) for what they set up, upgrades, and
-how to check a download's signature and SBOM. The steps below install by hand.
+On Windows, double-click `signalith-0.1.0-x64.msi`. On Linux you can instead add
+Signalith's signed apt or dnf repository, so `apt upgrade` and `dnf upgrade` bring new
+releases. See [docs/install-packages.md](docs/install-packages.md) for the repositories,
+what the packages set up, upgrades, and how to check a download's signature and SBOM. The steps below install by hand.
 
 ### Linux
 

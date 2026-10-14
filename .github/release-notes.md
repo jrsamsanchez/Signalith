@@ -9,6 +9,8 @@
 
 Then `sudo signalith initial-password` (on Windows, `signalith initial-password` in PowerShell as Administrator) shows the first admin password. Signalith needs OpenSearch 2.x; see [Install from packages](https://signalith.io/docs/install-packages/).
 
+{GPG}Already using Signalith's [apt or dnf repository](https://signalith.io/docs/install-packages/)? `sudo apt upgrade` or `sudo dnf upgrade` installs this release.
+
 ## Check your download
 
 ```sh

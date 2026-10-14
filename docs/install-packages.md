@@ -23,19 +23,43 @@ Want to try Signalith without installing anything? Use the
 
 ## Debian and Ubuntu
 
+Add Signalith's apt repository once, then install. `apt upgrade` brings each new
+release from then on:
+
+```sh
+sudo install -d -m 0755 /etc/apt/keyrings
+sudo curl -fsSL -o /etc/apt/keyrings/signalith.asc https://signalith.io/apt/signalith.asc
+echo "deb [signed-by=/etc/apt/keyrings/signalith.asc] https://signalith.io/apt stable main" | sudo tee /etc/apt/sources.list.d/signalith.list
+sudo apt update
+sudo apt install signalith
+sudo signalith initial-password
+```
+
+Or install a downloaded package (upgrades are then by hand, with the next one):
+
 ```sh
 sudo apt install ./signalith_0.1.0-1_amd64.deb
-sudo signalith initial-password
 ```
 
 ## Red Hat, Rocky, Alma, Fedora and SUSE
 
+Add Signalith's repository once, then install. `dnf upgrade` brings each new release
+from then on (`dnf` asks you to accept the Signalith key the first time):
+
 ```sh
-sudo dnf install ./signalith-0.1.0-1.x86_64.rpm
+sudo curl -fsSL -o /etc/yum.repos.d/signalith.repo https://signalith.io/rpm/signalith.repo
+sudo dnf install signalith
 sudo signalith initial-password
 ```
 
-(`sudo zypper install` on SUSE.)
+On SUSE: `sudo zypper addrepo https://signalith.io/rpm/signalith.repo`, then
+`sudo zypper install signalith`.
+
+Or install a downloaded package (upgrades are then by hand, with the next one):
+
+```sh
+sudo dnf install ./signalith-0.1.0-1.x86_64.rpm
+```
 
 ### What the Linux packages do
 
@@ -95,10 +119,10 @@ Each release is also a container image for amd64 and arm64:
 docker pull ghcr.io/jrsamsanchez/signalith:0.1.0
 ```
 
-The [Docker quick start](getting-started.md#docker-quick-start) builds the same image
-from source and sets up OpenSearch with it; to use the published image there, replace
-the `build:` section of the `signalith` service in `deploy/docker/docker-compose.yml`
-with `image: ghcr.io/jrsamsanchez/signalith:0.1.0`.
+The [Docker quick start](getting-started.md#docker-quick-start) runs this image with
+OpenSearch: the newest code on `main` by default (the `:main` image, rebuilt on every
+change), or a release when you set `SIGNALITH_VERSION`, for example
+`SIGNALITH_VERSION=0.1.0`.
 
 ## Check a download
 
@@ -131,7 +155,9 @@ On Windows, `Get-FileHash signalith-0.1.0-x64.msi` prints the SHA-256 to compare
 line in `SHA256SUMS`.
 
 The `.rpm` packages are signed with the same GPG key, so `dnf` and `rpm -K` can check
-them once it is imported (`sudo rpm --import signalith-release-key.asc`).
+them once it is imported (`sudo rpm --import signalith-release-key.asc`). The apt and
+dnf repositories are signed with it too, and `apt` and `dnf` check every download
+from them.
 
 ## Software bill of materials
 

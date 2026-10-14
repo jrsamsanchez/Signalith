@@ -26,6 +26,8 @@ The **Release** workflow (`.github/workflows/release.yml`) runs when a tag such 
 5. Publishes it all on the [Releases page](https://github.com/jrsamsanchez/Signalith/releases),
    with install and verify steps (`.github/release-notes.md`) above the generated
    list of changes. A version with a `-` suffix is marked as a pre-release.
+6. Once it has published, the **Website** workflow adds the new packages to the apt and
+   dnf repositories on signalith.io (below), so `apt upgrade` and `dnf upgrade` find them.
 
 **Run workflow** on the Release workflow's page (Actions > Release) is a dry run: it
 builds and tests everything for the version you enter and keeps the files as a workflow
@@ -59,7 +61,11 @@ provenance without any setup: GitHub vouches for the workflow that built it.
 `apt`, `dnf` and `rpm` check packages with GPG keys. When the repository has a
 `SIGNALITH_GPG_PRIVATE_KEY` secret, the `.rpm` and `.deb` packages and `SHA256SUMS` are
 signed with it, and the public key is published with each release as
-`signalith-release-key.asc`.
+`signalith-release-key.asc`. It also signs the apt and dnf repositories at
+https://signalith.io/apt and https://signalith.io/rpm, which the **Website** workflow
+rebuilds from the five newest releases after every **Release** run
+(`deploy/repos/build.sh`; packages from before the key existed are signed there). Until
+the secret is set, the website has no repositories.
 
 To make the key (with Docker, on any computer), in an empty folder:
 
