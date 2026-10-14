@@ -1,0 +1,16 @@
+{"rule": "4a1b6da0-d94f-4fc3-98fc-2d9cb9e5ee76", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4656","data":{"AccessMask":"0x1418","ObjectName":"\\lsass.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4663","data":{"AccessList":"4484","ObjectName":"\\lsass.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4656","data":{"AccessList":"%%4484","AccessMask":"0x1418","ObjectName":"\\lsass.exe","ProcessName":":\\Windows\\Temp\\asgard2-agent-sc\\aurora\\\\aurora-agent-64.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4656","data":{"AccessList":"%%4484","AccessMask":"0x1418","ObjectName":"\\lsass.exe","ProcessName":"\\AppData\\Local\\Temp\\is- :\\Users\\ \\avira_system_speedup.tmp"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4656","data":{"AccessList":"%%4484","AccessMask":"0x1418","ObjectName":"\\lsass.exe","ProcessName":":\\Windows\\Temp\\ \\avira_speedup_setup_update.tmp"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4656","data":{"AccessMask":"0x1418","ObjectName":"\\lsass.exe","ProcessName":":\\Windows\\System32\\taskhostw.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4656","data":{"AccessMask":"0x1418","ObjectName":"\\lsass.exe","ProcessName":":\\Program Files"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4656","data":{"AccessList":"%%4484","AccessMask":"0x1418","ObjectName":"\\lsass.exe","ProcessName":":\\Windows\\SystemTemp\\ \\GoogleUpdate.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4656","data":{"AccessList":"%%4484","AccessMask":"0x1418","ObjectName":"\\lsass.exe","ProcessName":"\\x64\\SCENARIOENGINE.EXE"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4656","data":{"AccessList":"%%4484","AccessMask":"0x1418","ObjectName":"\\lsass.exe","ProcessName":":\\Windows\\System32\\snmp.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4656","data":{"AccessMask":"0x1418","ObjectName":"\\lsass.exe","ProcessName":":\\Windows\\SysWow64\\ \\VsTskMgr.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4656","data":{"AccessList":"%%4484","AccessMask":"0x1418","ObjectName":"\\lsass.exe","ProcessName":":\\Windows\\Sysmon64.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4656","data":{"AccessList":"%%4484","AccessMask":"0x1418","ObjectName":"\\lsass.exe","ProcessName":"\\procmon.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4656","data":{"ObjectName":"\\lsass.exe"}}
+]}

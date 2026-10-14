@@ -1,0 +1,5 @@
+{"rule": "9a4ff3b8-6187-4fd2-8e8b-e0eae1129495", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4663","data":{"ObjectName":"lsa\\JD","ObjectType":"key"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4663","data":{"ObjectType":"key"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4663","data":{"ObjectName":"lsa\\JD"}}
+]}

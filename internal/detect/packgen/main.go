@@ -176,11 +176,11 @@ func main() {
 			rcat, rbases := cat, bases
 			if cat == "security" {
 				ids := rule.EventIDs()
-				if len(ids) != 1 || !slices.Contains(sigmacheck.SecurityEvents, ids[0]) {
+				rcat = sigmacheck.SecurityCategory(ids...)
+				if _, ok := sigmacheck.SysmonEventID(rcat); !ok || len(ids) == 0 {
 					skip("not about one Security event Signalith reads", rel)
 					continue
 				}
-				rcat = sigmacheck.SecurityCategory(ids[0])
 				rbases = sigmacheck.Bases[rcat]
 			}
 			stem := strings.TrimSuffix(filepath.Base(f), ".yml")

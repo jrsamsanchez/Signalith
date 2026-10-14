@@ -649,6 +649,15 @@ func TestConvertSigmaSecurityLog(t *testing.T) {
 	if q := res.Detection.Query; !strings.Contains(q, "datamodel=Authentication") || !strings.Contains(q, "ticket_encryption_type=0x17") || !strings.Contains(q, "kerberos_service=*$") {
 		t.Errorf("kerberos query = %s", q)
 	}
+	// A handle request and the access made with it convert together.
+	both := strings.NewReplacer("EventID: 4624", "EventID: [4656, 4663]", "LogonType: 10", "ObjectType: Key", "LogonProcessName: User32", "ObjectName|endswith: '\\SAM'").Replace(logon)
+	res, err = ConvertSigmaWith([]byte(both), SigmaOptions{Strict: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if q := res.Detection.Query; !strings.Contains(q, "signature_id IN (4656, 4663)") || !strings.Contains(q, "object_path=*\\SAM") {
+		t.Errorf("handle and access query = %s", q)
+	}
 	// A rule about two events, or one Signalith does not read, is refused.
 	for _, other := range []string{strings.Replace(logon, "EventID: 4624", "EventID: [4624, 4625]", 1), strings.Replace(logon, "4624", "4776", 1)} {
 		if _, err := ConvertSigmaWith([]byte(other), SigmaOptions{Strict: true}); err == nil {

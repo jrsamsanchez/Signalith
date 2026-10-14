@@ -242,8 +242,8 @@ Content packs are rule sets from other open source projects, shipped unchanged
 inside Signalith and converted when it starts. Every pack detection is **off** until
 an admin turns it on.
 
-**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 1,898 rules from
-[SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 1,788 Windows rules
+**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 1,905 rules from
+[SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 1,795 Windows rules
 for these Sysmon, Security, PowerShell and System log sources, and 110 Linux rules (see
 [Linux endpoints](#linux-endpoints-sysmon-for-linux)):
 
@@ -262,7 +262,9 @@ for these Sysmon, Security, PowerShell and System log sources, and 110 Linux rul
 
 A Security log rule names its event's own fields (`TargetUserName`, `LogonType`,
 `ServiceFileName`, `ObjectName`), so each one converts for the one Security event it
-is about; rules about other Security events, or about several, are left out. Windows
+is about, or for a handle request and the access made with it (4656 and 4663), which
+carry the same data; rules about other Security events, or other sets of events, are
+left out. Windows
 logs these events with **Audit Logon** (4624, 4625), **Audit Kerberos Authentication
 Service** and **Audit Kerberos Service Ticket Operations** (4768, 4769, on domain
 controllers), **Audit Security System Extension** (4697), **Audit Other Object Access

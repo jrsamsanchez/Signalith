@@ -7229,6 +7229,14 @@ rules:
     rule_id: c15e99a3-c474-48ab-b9a7-84549a7a9d16
     file: create_remote_thread_win_ttdinjec.yml
     path: rules/windows/create_remote_thread/create_remote_thread_win_ttdinjec.yml
+  - id: sigma-win-security-aadhealth-mon-agent-regkey-access
+    rule_id: ff151c33-45fa-475d-af4f-c2f93571f4fe
+    file: win_security_aadhealth_mon_agent_regkey_access.yml
+    path: rules/windows/builtin/security/win_security_aadhealth_mon_agent_regkey_access.yml
+  - id: sigma-win-security-aadhealth-svc-agent-regkey-access
+    rule_id: 1d2ab8ac-1a01-423b-9c39-001510eae8e8
+    file: win_security_aadhealth_svc_agent_regkey_access.yml
+    path: rules/windows/builtin/security/win_security_aadhealth_svc_agent_regkey_access.yml
   - id: sigma-win-security-account-backdoor-dcsync-rights
     rule_id: 2c99737c-585d-4431-b61a-c911d86ff32f
     file: win_security_account_backdoor_dcsync_rights.yml
@@ -7321,10 +7329,18 @@ rules:
     rule_id: d04ae2b8-ad54-4de0-bd87-4bc1da66aa59
     file: win_security_kerberoasting_activity.yml
     path: rules/windows/builtin/security/win_security_kerberoasting_activity.yml
+  - id: sigma-win-security-lsass-access-non-system-account
+    rule_id: 962fe167-e48d-4fd6-9974-11e5b9a5d6d1
+    file: win_security_lsass_access_non_system_account.yml
+    path: rules/windows/builtin/security/win_security_lsass_access_non_system_account.yml
   - id: sigma-win-security-mal-creddumper
     rule_id: f0d1feba-4344-4ca9-8121-a6c97bd6df52
     file: win_security_mal_creddumper.yml
     path: rules/windows/builtin/security/win_security_mal_creddumper.yml
+  - id: sigma-win-security-mal-wceaux-dll
+    rule_id: 1de68c67-af5c-4097-9c85-fe5578e09e67
+    file: win_security_mal_wceaux_dll.yml
+    path: rules/windows/builtin/security/win_security_mal_wceaux_dll.yml
   - id: sigma-win-security-meterpreter-or-cobaltstrike-getsystem-service
     rule_id: ecbc5e16-58e0-4521-9c60-eb9a7ea4ad34
     file: win_security_meterpreter_or_cobaltstrike_getsystem_service_install.yml
@@ -7401,6 +7417,10 @@ rules:
     rule_id: aa1697b7-d611-4f9a-9cb2-5125b4ccfd5c
     file: win_security_susp_lsass_dump.yml
     path: rules/windows/builtin/security/win_security_susp_lsass_dump.yml
+  - id: sigma-win-security-susp-lsass-dump-generic
+    rule_id: 4a1b6da0-d94f-4fc3-98fc-2d9cb9e5ee76
+    file: win_security_susp_lsass_dump_generic.yml
+    path: rules/windows/builtin/security/win_security_susp_lsass_dump_generic.yml
   - id: sigma-win-security-susp-net-recon-activity
     rule_id: 968eef52-9cff-4454-8992-1e74b9cbad6c
     file: win_security_susp_net_recon_activity.yml
@@ -7429,6 +7449,10 @@ rules:
     rule_id: 5af54681-df95-4c26-854f-2565e13cfab0
     file: win_security_susp_wmi_login.yml
     path: rules/windows/builtin/security/account_management/win_security_susp_wmi_login.yml
+  - id: sigma-win-security-syskey-registry-access
+    rule_id: 9a4ff3b8-6187-4fd2-8e8b-e0eae1129495
+    file: win_security_syskey_registry_access.yml
+    path: rules/windows/builtin/security/win_security_syskey_registry_access.yml
   - id: sigma-win-security-tap-driver-installation
     rule_id: 9c8afa4d-0022-48f0-9456-3712466f9701
     file: win_security_tap_driver_installation.yml
@@ -7445,6 +7469,10 @@ rules:
     rule_id: 46a68649-f218-4f86-aea1-16a759d81820
     file: win_security_windows_defender_exclusions_registry_modified.yml
     path: rules/windows/builtin/security/win_security_windows_defender_exclusions_registry_modified.yml
+  - id: sigma-win-security-windows-defender-exclusions-write-access
+    rule_id: e9c8808f-4cfb-4ba9-97d4-e5f3beaa244d
+    file: win_security_windows_defender_exclusions_write_access.yml
+    path: rules/windows/builtin/security/win_security_windows_defender_exclusions_write_access.yml
   - id: sigma-win-security-wmi-persistence
     rule_id: f033f3f3-fd24-4995-97d8-a3bb17550a88
     file: win_security_wmi_persistence.yml

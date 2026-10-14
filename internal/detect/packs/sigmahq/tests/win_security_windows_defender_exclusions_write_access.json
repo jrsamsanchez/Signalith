@@ -1,0 +1,5 @@
+{"rule": "e9c8808f-4cfb-4ba9-97d4-e5f3beaa244d", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4663","data":{"AccessList":"%%4418","ObjectName":"\\Microsoft\\Windows Defender\\Exclusions\\"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4663","data":{"ObjectName":"\\Microsoft\\Windows Defender\\Exclusions\\"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4663","data":{"AccessList":"%%4418"}}
+]}

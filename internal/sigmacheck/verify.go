@@ -134,16 +134,28 @@ var sysmonEvents = map[string]string{
 
 // SecurityEvents are the Security log events Security log rules
 // (service: security) are checked for; such a rule's category is
-// SecurityCategory of its one event.
+// SecurityCategory of its one event, or of the events of one of
+// SecurityGroups.
 var SecurityEvents = []string{"4624", "4625", "4656", "4657", "4661", "4662", "4663", "4697", "4698", "4768", "4769", "5136", "5145"}
 
-// SecurityCategory is the category of a Security log rule about one
-// event, as Bases, Cases and Channel know it.
-func SecurityCategory(eventID string) string { return "security_" + eventID }
+// SecurityGroups are Security events with the same data that a rule may
+// name together: a handle to an object requested (4656) and the access
+// made with it (4663). Test events are made as the last one first.
+var SecurityGroups = [][]string{{"4656", "4663"}}
+
+// SecurityCategory is the category of a Security log rule about its
+// events (sorted), as Bases, Cases and Channel know it; it is known (by
+// SysmonEventID) for one of SecurityEvents or a group of SecurityGroups.
+func SecurityCategory(eventIDs ...string) string { return "security_" + strings.Join(eventIDs, "_") }
 
 func init() {
 	for _, id := range SecurityEvents {
 		sysmonEvents[SecurityCategory(id)] = id
+	}
+	for _, g := range SecurityGroups {
+		c := SecurityCategory(g...)
+		sysmonEvents[c] = g[len(g)-1]
+		Bases[c] = Bases[SecurityCategory(g[len(g)-1])]
 	}
 }
 

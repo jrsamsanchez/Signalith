@@ -135,6 +135,10 @@ var sigmaEventFields = func() map[string]map[string]string {
 		"workstationname": "src_host", "ipaddress": "src", "ipport": "src_port", "processname": "process_path",
 		"computer": "host", "computername": "host", "eventid": "signature_id",
 	}
+	handle := security(map[string]string{
+		"subjectusersid": "user_sid", "objectserver": "object_server", "objectname": "object_path", "objecttype": "object_type",
+		"accesslist": "access_names", "accessmask": "access_mask", "processname": "process_path",
+	})
 	kerberos := map[string]string{
 		"targetusername": "user", "targetdomainname": "user_domain", "targetsid": "user_sid",
 		"servicename": "kerberos_service", "servicesid": "kerberos_service_sid", "ticketoptions": "ticket_options",
@@ -156,10 +160,8 @@ var sigmaEventFields = func() map[string]map[string]string {
 			"objectname": "object_path", "objecttype": "object_type", "accesslist": "access_names",
 			"accessmask": "access_mask", "processname": "process_path",
 		}),
-		"security_4656": security(map[string]string{
-			"subjectusersid": "user_sid", "objectserver": "object_server", "objectname": "object_path", "objecttype": "object_type",
-			"accesslist": "access_names", "accessmask": "access_mask", "processname": "process_path",
-		}),
+		"security_4656":      handle,
+		"security_4656_4663": handle,
 		"security_4657": security(map[string]string{
 			"subjectusersid": "user_sid", "objectname": "object_path", "objectvaluename": "registry_value_name", "operationtype": "registry_operation",
 			"oldvalue": "registry_old_value_data", "newvalue": "registry_value_data", "newvaluetype": "registry_value_type",
@@ -227,6 +229,7 @@ var sigmaWindowsEvents = map[string][]string{
 	"security_4661":        {"4661"},
 	"security_4662":        {"4662"},
 	"security_4663":        {"4663"},
+	"security_4656_4663":   {"4656", "4663"},
 	"security_4768":        {"4768"},
 	"security_4769":        {"4769"},
 	"security_4697":        {"4697"},
@@ -249,7 +252,7 @@ var sigmaSecurityModels = map[string]string{
 // model, so it searches them all.
 func (c *sigmaConv) anyModel() bool {
 	switch c.category {
-	case "security_4656", "security_4661", "security_4663":
+	case "security_4656", "security_4661", "security_4663", "security_4656_4663":
 		return true
 	}
 	return false
@@ -331,11 +334,11 @@ func ConvertSigmaWith(src []byte, opt SigmaOptions) (*SigmaResult, error) {
 			category = "system"
 		case "security":
 			// A Security log rule's fields are its event's own, so it
-			// converts for one event.
+			// converts for one event, or events with the same data.
 			category = "security"
-			if ids := sigmaEventIDs(r.Detection); len(ids) == 1 {
-				if _, ok := sigmaSecurityModels[ids[0]]; ok {
-					category = "security_" + ids[0]
+			if ids := sigmaEventIDs(r.Detection); len(ids) > 0 {
+				if _, ok := sigmaWindowsEvents["security_"+strings.Join(ids, "_")]; ok {
+					category = "security_" + strings.Join(ids, "_")
 				}
 			}
 		}
