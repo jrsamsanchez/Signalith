@@ -265,6 +265,33 @@ func TestParseObjectAccess(t *testing.T) {
 	}
 }
 
+func TestParseServiceInstalled(t *testing.T) {
+	src := rule("`wineventlog_system` EventCode=7045 ImagePath = \"*.exe\" NOT (ImagePath IN (\"*:\\\\Windows\\\\*\", \"*%systemroot%\\\\*\"))\n| stats count by EventCode ImagePath ServiceName Computer | rename Computer as dest")
+	r, err := Parse(src, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Node != "ServiceInstalled" || !InModel(r.Node, "Change") {
+		t.Fatalf("node %s", r.Node)
+	}
+	if !Eval(r.Where, map[string]string{"signature_id": "7045", "service_path": `C:\Users\Public\svc.exe`}) ||
+		Eval(r.Where, map[string]string{"signature_id": "7045", "service_path": `%SystemRoot%\system32\svc.exe`}) {
+		t.Error("reads its events wrong")
+	}
+	pos := 0
+	for _, c := range Cases(r) {
+		if c.Expect {
+			pos++
+		}
+		if c.Expect != Reads(r, c) {
+			t.Errorf("case %+v: Reads disagrees", c)
+		}
+	}
+	if pos == 0 {
+		t.Error("no test event matches")
+	}
+}
+
 func TestParseSysmonAccess(t *testing.T) {
 	src := rule("`sysmon` EventCode=10 TargetImage=\"*\\\\lsass.exe\" GrantedAccess IN (\"0x1010\", \"0x1410\") NOT SourceImage=\"*\\\\MsMpEng.exe\"\n| stats count by dest SourceImage")
 	r, err := Parse(src, nil)

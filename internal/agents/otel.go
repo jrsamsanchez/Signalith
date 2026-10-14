@@ -78,6 +78,9 @@ func generateOTel(o Options) (*Agent, error) {
 		b.WriteString("\nreceivers:\n")
 		b.WriteString("  windowseventlog/security:\n    channel: Security\n    storage: file_storage/signalith\n")
 		receivers = append(receivers, "windowseventlog/security")
+		// The System log, where services installed are recorded.
+		b.WriteString("  windowseventlog/system:\n    channel: System\n    storage: file_storage/signalith\n")
+		receivers = append(receivers, "windowseventlog/system")
 		if o.Sysmon {
 			b.WriteString("  windowseventlog/sysmon:\n    channel: Microsoft-Windows-Sysmon/Operational\n    storage: file_storage/signalith\n")
 			receivers = append(receivers, "windowseventlog/sysmon")

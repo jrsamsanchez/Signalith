@@ -474,13 +474,20 @@ func wazuhWindows(a map[string]any) (Event, bool) {
 	channel := wstr(sys["channel"])
 	eventID := wstr(sys["eventID"])
 	r := map[string]any{
-		"Channel":     channel,
-		"EventID":     eventID,
-		"Computer":    wstr(sys["computer"]),
-		"TimeCreated": wstr(sys["systemTime"]),
-		"Message":     strings.Trim(wstr(sys["message"]), `"`),
+		"Channel":      channel,
+		"EventID":      eventID,
+		"Computer":     wstr(sys["computer"]),
+		"TimeCreated":  wstr(sys["systemTime"]),
+		"Message":      strings.Trim(wstr(sys["message"]), `"`),
+		"ProviderName": wstr(sys["providerName"]),
 	}
-	if names, ok := windowsInsertNames[eventID]; ok && channel == "Security" {
+	names, ok := windowsInsertNames[eventID]
+	if channel == SystemChannel {
+		names, ok = serviceInstallSchema, eventID == "7045"
+	} else if channel != "Security" {
+		ok = false
+	}
+	if ok {
 		ins := make([]any, len(names))
 		for i, n := range names {
 			ins[i] = byName[strings.ToLower(n)]

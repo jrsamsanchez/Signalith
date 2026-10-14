@@ -591,6 +591,25 @@ func TestConvertSigmaAntivirus(t *testing.T) {
 	}
 }
 
+func TestConvertSigmaServiceInstall(t *testing.T) {
+	rule := "title: PsExec service installed\nlogsource:\n  product: windows\n  service: system\ndetection:\n  sel:\n    Provider_Name: 'Service Control Manager'\n    EventID: 7045\n    ServiceName: PSEXESVC\n    ImagePath|endswith: '\\PSEXESVC.exe'\n  condition: sel\nlevel: medium\n"
+	res, err := ConvertSigmaWith([]byte(rule), SigmaOptions{Strict: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := res.Detection.Query
+	for _, want := range []string{"datamodel=Change", "signature_id IN (7045)", `provider="Service Control Manager"`, "service_name=PSEXESVC", `service_path=*\PSEXESVC.exe`} {
+		if !strings.Contains(q, want) {
+			t.Errorf("query missing %s: %s", want, q)
+		}
+	}
+	// Other System log events are not read.
+	other := strings.ReplaceAll(rule, "7045", "7036")
+	if _, err := ConvertSigmaWith([]byte(other), SigmaOptions{Strict: true}); err == nil {
+		t.Error("a 7036 rule converted strictly")
+	}
+}
+
 func mustParse(t *testing.T, s string) *query.Query {
 	t.Helper()
 	q, err := query.Parse(s)

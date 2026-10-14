@@ -181,13 +181,15 @@ func Parse(src []byte, macros map[string]*Macro) (*Rule, error) {
 // the node, and each node's fields map to the Signalith fields they are
 // stored as. The code stays in the clause as signature_id.
 var (
-	rawRe = regexp.MustCompile("(?s)^`(powershell|sysmon|wineventlog_security)`\\s+(.*)$")
+	rawRe = regexp.MustCompile("(?s)^`(powershell|sysmon|wineventlog_security|wineventlog_system)`\\s+(.*)$")
 	// rawNodes are the nodes of each source by event code.
 	rawNodes = map[string]map[string]string{
 		"powershell": {"4104": "PowerShell"},
 		"sysmon":     {"7": "ImageLoad", "8": "ProcessAccess", "10": "ProcessAccess"},
 		// Security events the Windows parser reads.
 		"wineventlog_security": {"4698": "TaskCreated", "4663": "ObjectAccess"},
+		// The Service Control Manager's service installed event.
+		"wineventlog_system": {"7045": "ServiceInstalled"},
 	}
 	// RawFields are the event fields a raw search may name on each node,
 	// with the Signalith field each is stored as.
@@ -207,6 +209,10 @@ var (
 			"ObjectName": "object_path", "object_file_path": "object_path", "object_file_name": "object_name",
 			"ObjectType": "object_type", "AccessList": "access_list", "AccessMask": "access_mask",
 			"ProcessName": "process_path", "process_path": "process_path",
+		},
+		"ServiceInstalled": {
+			"ServiceName": "service_name", "ImagePath": "service_path", "ServiceType": "service_type",
+			"StartType": "service_start_type", "AccountName": "service_account",
 		},
 	}
 	// XMLKVFields are the fields xmlkv takes from a scheduled task's XML

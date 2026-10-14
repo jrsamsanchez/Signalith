@@ -97,6 +97,11 @@ var knownFields = func() map[string]string {
 		// An object access (Security 4663): what kind of object, its path
 		// and name whatever the kind, and the access asked for.
 		"object_type": kw, "object_path": kw, "object_name": kw, "access_list": kw, "access_mask": kw,
+		// A service installed (System 7045): its name, the command it runs
+		// (a path, or a whole command line), its type, start type and
+		// account, and the log's provider.
+		"service_name": kw, "service_path": kw, "service_type": kw, "service_start_type": kw, "service_account": kw,
+		"provider": kw,
 		// An sshd line whose client address cannot be told from text the
 		// client sent (see ambiguousSSH).
 		"src_ambiguous": kw,

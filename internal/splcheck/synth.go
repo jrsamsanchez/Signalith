@@ -434,6 +434,17 @@ func records(node string, ev map[string]string) []sigmacheck.Case {
 			out = append(out, sigmacheck.Case{Channel: sigmacheck.SecurityChannel, EventID: "4663", Data: key})
 		}
 		return out
+	case "ServiceInstalled":
+		s := map[string]string{
+			"ServiceName": "ExampleUpdater", "ImagePath": `"C:\Program Files\Example\updater.exe" --service`,
+			"ServiceType": "user mode service", "StartType": "auto start", "AccountName": "LocalSystem",
+		}
+		set(s, "ServiceName", ev["service_name"])
+		set(s, "ImagePath", ev["service_path"])
+		set(s, "ServiceType", ev["service_type"])
+		set(s, "StartType", ev["service_start_type"])
+		set(s, "AccountName", ev["service_account"])
+		return []sigmacheck.Case{{Channel: sigmacheck.SystemChannel, EventID: "7045", Data: s}}
 	}
 	return nil
 }
@@ -558,7 +569,7 @@ func Cases(r *Rule) []sigmacheck.Case {
 }
 
 // NodeModel is the Signalith data model of each node ("" for any).
-var NodeModel = map[string]string{"Processes": "Endpoint", "Filesystem": "Filesystem", "Registry": "Registry", "PowerShell": "Script", "ImageLoad": "Image_Load", "ProcessAccess": "Endpoint", "TaskCreated": "Change", "ObjectAccess": ""}
+var NodeModel = map[string]string{"Processes": "Endpoint", "Filesystem": "Filesystem", "Registry": "Registry", "PowerShell": "Script", "ImageLoad": "Image_Load", "ProcessAccess": "Endpoint", "TaskCreated": "Change", "ObjectAccess": "", "ServiceInstalled": "Change"}
 
 // AttackDataSource marks a test event recorded in a real attack (Splunk's
 // attack_data, by internal/detect/attackgen).
@@ -574,14 +585,15 @@ func Reads(r *Rule, c sigmacheck.Case) bool {
 // NodeEvents are the Windows event IDs each node reads (as Splunk's
 // add-ons map them to the data model).
 var NodeEvents = map[string][]string{
-	"Processes":     {"1", "4688"},
-	"Filesystem":    {"11", "23", "26"},
-	"Registry":      {"12", "13", "14"},
-	"PowerShell":    {"4104"},
-	"ImageLoad":     {"7"},
-	"ProcessAccess": {"8", "10"},
-	"TaskCreated":   {"4698"},
-	"ObjectAccess":  {"4663"},
+	"Processes":        {"1", "4688"},
+	"Filesystem":       {"11", "23", "26"},
+	"Registry":         {"12", "13", "14"},
+	"PowerShell":       {"4104"},
+	"ImageLoad":        {"7"},
+	"ProcessAccess":    {"8", "10"},
+	"TaskCreated":      {"4698"},
+	"ObjectAccess":     {"4663"},
+	"ServiceInstalled": {"7045"},
 }
 
 // InModel reports whether an event of a data model is one a node reads.

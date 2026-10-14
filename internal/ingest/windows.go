@@ -79,6 +79,8 @@ func parseWindowsWith(r map[string]any, named map[string]string) Event {
 	switch {
 	case channel == "Security":
 		parseWindowsSecurity(eventID, in, &ev)
+	case channel == SystemChannel:
+		parseWindowsSystem(eventID, str(r, "ProviderName"), in, &ev)
 	case strings.EqualFold(channel, "Microsoft-Windows-Sysmon/Operational"):
 		kv := keyValues(str(r, "Message"))
 		for k, v := range named {
@@ -227,6 +229,39 @@ func parseWindowsSecurity(eventID string, in []string, ev *Event) {
 		f["object"] = at(in, 2)
 		f["user"] = at(in, 6)
 	}
+}
+
+// SystemChannel is the Windows System log, where the Service Control
+// Manager records services being installed.
+const SystemChannel = "System"
+
+// ServiceControlManager is the provider of the System log's service
+// events.
+const ServiceControlManager = "Service Control Manager"
+
+// parseWindowsSystem reads the System log events the parser knows: a
+// service installed (7045). Event IDs belong to their provider, so only
+// the Service Control Manager's 7045 is one; a record without a provider
+// is taken as its.
+func parseWindowsSystem(eventID, provider string, in []string, ev *Event) {
+	f := ev.Fields
+	if provider != "" {
+		f["provider"] = provider
+	}
+	if eventID != "7045" || (provider != "" && !strings.EqualFold(provider, ServiceControlManager)) {
+		return
+	}
+	f["provider"] = ServiceControlManager
+	ev.Model = "Change"
+	f["action"] = "created"
+	f["object_category"] = "service"
+	f["signature"] = "A service was installed in the system"
+	f["object"] = at(in, 0)
+	f["service_name"] = at(in, 0)
+	f["service_path"] = at(in, 1)
+	f["service_type"] = at(in, 2)
+	f["service_start_type"] = at(in, 3)
+	f["service_account"] = at(in, 4)
 }
 
 // objectAccessAction is what an object access did, from its access list

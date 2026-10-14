@@ -1,0 +1,4 @@
+{"rule": "7e9c7999-0f9b-4d4a-a6ed-af6d553d4af4", "cases": [
+  {"expect":true,"source":"synthesized","channel":"System","event_id":"7045","data":{"ImagePath":"vbscript:createobject mshta","Provider_Name":"Service Control Manager"}},
+  {"expect":false,"source":"synthesized","channel":"System","event_id":"7045","data":{"Provider_Name":"Service Control Manager"}}
+]}

@@ -1,0 +1,5 @@
+{"rule": "c4ff1eac-84ad-44dd-a6fb-d56a92fc43a9", "cases": [
+  {"expect":true,"source":"synthesized","channel":"System","event_id":"7045","data":{"AccountName":"LocalSystem","Provider_Name":"Service Control Manager","ServiceName":"ProcessHacker"}},
+  {"expect":false,"source":"synthesized","channel":"System","event_id":"7045","data":{"Provider_Name":"Service Control Manager","ServiceName":"ProcessHacker"}},
+  {"expect":false,"source":"synthesized","channel":"System","event_id":"7045","data":{"AccountName":"LocalSystem","Provider_Name":"Service Control Manager"}}
+]}

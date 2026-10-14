@@ -242,9 +242,9 @@ Content packs are rule sets from other open source projects, shipped unchanged
 inside Signalith and converted when it starts. Every pack detection is **off** until
 an admin turns it on.
 
-**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 1,805 rules from
-[SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 1,695 Windows rules
-for these Sysmon, Security and PowerShell log sources, and 110 Linux rules (see
+**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 1,842 rules from
+[SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 1,732 Windows rules
+for these Sysmon, Security, PowerShell and System log sources, and 110 Linux rules (see
 [Linux endpoints](#linux-endpoints-sysmon-for-linux)):
 
 | Sigma log source | Windows events | Data model |
@@ -257,6 +257,7 @@ for these Sysmon, Security and PowerShell log sources, and 110 Linux rules (see
 | `registry_add`, `registry_delete`, `registry_set`, `registry_event` | Sysmon 12; 12; 13; 12, 13 and 14 | Registry |
 | `dns_query` | Sysmon 22 | Network_Resolution |
 | `ps_script` | PowerShell 4104 | Script |
+| `service: system` | System 7045 (service installed) | Change |
 
 Each pack rule only searches its own log source's event IDs, since several kinds of
 event share a data model (a process creation and a process access are both Endpoint).
@@ -360,7 +361,7 @@ The generator keeps each rule's Signalith ID across runs, rewrites `rules/`,
 
 ### Splunk Security Content
 
-**Splunk Security Content** (`internal/detect/packs/splunk`) holds 822 Windows and
+**Splunk Security Content** (`internal/detect/packs/splunk`) holds 829 Windows and
 Linux detections from Splunk's Threat Research Team
 ([security_content](https://github.com/splunk/security_content)), pinned to one
 commit. They are the production TTP and anomaly rules that search the CIM
@@ -378,6 +379,7 @@ names, so each rule's `where` clause becomes a Signalith filter field for field:
 | `` `sysmon` EventCode=8 `` or `10` (raw search) | Sysmon 8 and 10 | Endpoint |
 | `` `wineventlog_security` EventCode=4698 `` (raw search) | Security 4698 (scheduled task created) | Change |
 | `` `wineventlog_security` EventCode=4663 `` (raw search) | Security 4663 (object access) | Filesystem for a file, Registry for a key |
+| `` `wineventlog_system` EventCode=7045 `` (raw search) | System 7045 (service installed) | Change |
 | `Endpoint.Processes` (Sysmon for Linux rules) | Sysmon for Linux 1 | Endpoint |
 | `Endpoint.Filesystem` (Sysmon for Linux rules) | Sysmon for Linux 11 and 23 | Filesystem |
 
@@ -414,6 +416,17 @@ Object access rules (Security 4663) search the object's path whatever its type
 Registry (action `read`, `modified` or `deleted`), and a rule searches both, as in
 Splunk. Windows logs 4663 only for objects whose auditing (SACL) asks for it, with
 **Audit File System** or **Audit Registry** on.
+
+Service install rules (System 7045, from the Sigma `service: system` log source or
+Splunk's `wineventlog_system`) search the service's name (`ServiceName` is
+`service_name`), what it runs (`ImagePath` is `service_path`, a path or a whole
+command line), `ServiceType` (`service_type`), `StartType` (`service_start_type`) and
+`AccountName` (`service_account`). They are stored in Change with `object_category`
+`service` and action `created`. The Service Control Manager logs 7045 on every
+Windows version without any audit setting, and the Windows agent collects the System
+log. Of the System log's events, Signalith reads only service installs; other System
+rules (services stopping, for example) are left out of the packs, and importing one
+says so.
 
 Registry values that Sysmon writes as `DWORD (0x00000001)` compare as `0x00000001`,
 the way Splunk's Sysmon add-on reads them.

@@ -1,0 +1,4 @@
+{"rule": "14bcba49-a428-42d9-b943-e2ce0f0f7ae6", "cases": [
+  {"expect":true,"source":"synthesized","channel":"System","event_id":"7045","data":{"ImagePath":"\u0026\u0026set cmd /c -f {1}","Provider_Name":"Service Control Manager"}},
+  {"expect":false,"source":"synthesized","channel":"System","event_id":"7045","data":{"Provider_Name":"Service Control Manager"}}
+]}

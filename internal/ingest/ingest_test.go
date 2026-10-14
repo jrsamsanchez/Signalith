@@ -76,6 +76,34 @@ func TestWindowsScheduledTaskCreated(t *testing.T) {
 	})
 }
 
+func TestWindowsServiceInstalled(t *testing.T) {
+	ins := []string{"RemCom Service", `%systemroot%\RemComSvc.exe`, "user mode service", "demand start", "LocalSystem"}
+	rec := map[string]any{"Channel": "System", "Computer": "WS1", "EventID": "7045", "ProviderName": "Service Control Manager", "StringInserts": ins}
+	b, _ := json.Marshal(rec)
+	ev := Normalize("win.events", decode(t, string(b)), now)
+	expect(t, ev.Document(), map[string]any{
+		"datamodel": "Change", "action": "created", "object_category": "service", "object": "RemCom Service",
+		"service_name": "RemCom Service", "service_path": `%systemroot%\RemComSvc.exe`, "service_type": "user mode service",
+		"service_start_type": "demand start", "service_account": "LocalSystem", "provider": "Service Control Manager",
+		"sourcetype": "WinEventLog:System", "signature_id": "7045",
+	})
+	// Event IDs are their provider's: another provider's 7045 is not a
+	// service install.
+	rec["ProviderName"] = "Some-Driver"
+	b, _ = json.Marshal(rec)
+	if ev := Normalize("win.events", decode(t, string(b)), now); ev.Model != "Other" || ev.Fields["provider"] != "Some-Driver" {
+		t.Errorf("other provider = %s %v", ev.Model, ev.Fields)
+	}
+	// Wazuh sends the same event by name.
+	alert := `{"timestamp":"2026-10-14T10:00:00.000+0000","rule":{"id":"61138","level":5,"description":"New Windows Service Created"},"agent":{"id":"001","name":"WS1"},` +
+		`"data":{"win":{"system":{"providerName":"Service Control Manager","eventID":"7045","channel":"System","computer":"WS1","systemTime":"2026-10-14T10:00:00Z"},` +
+		`"eventdata":{"serviceName":"KrbSCM","imagePath":"C:\\Users\\Public\\krb.exe","serviceType":"user mode service","startType":"auto start","accountName":"LocalSystem"}}}}`
+	ev, ok := wazuhWindows(decode(t, alert))
+	if !ok || ev.Model != "Change" || ev.Fields["service_name"] != "KrbSCM" || ev.Fields["service_path"] != `C:\Users\Public\krb.exe` || ev.Fields["service_start_type"] != "auto start" {
+		t.Errorf("wazuh = %v %s %v", ok, ev.Model, ev.Fields)
+	}
+}
+
 func TestWindowsObjectAccess(t *testing.T) {
 	ins := []string{"S-1-5-21-1", "bob", "CORP", "0x3e7", "Security", "File", `C:\Users\bob\AppData\Local\Google\Chrome\User Data\Local State`,
 		"0x1f4", "%%4416\n\t\t\t\t", "0x1", "0x1092", `C:\Tools\steal.exe`}

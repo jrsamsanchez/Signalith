@@ -1,0 +1,4 @@
+{"rule": "25b9c01c-350d-4b95-bed1-836d04a4f324", "cases": [
+  {"expect":true,"source":"synthesized","channel":"System","event_id":"7045","data":{"Provider_Name":"Service Control Manager","ServiceName":"ZzNetSvc"}},
+  {"expect":false,"source":"synthesized","channel":"System","event_id":"7045","data":{"Provider_Name":"Service Control Manager"}}
+]}

@@ -1,0 +1,4 @@
+{"rule": "2d510d8d-912b-45c5-b1df-36faa3d8c3f4", "cases": [
+  {"expect":true,"source":"synthesized","channel":"System","event_id":"7045","data":{"Provider_Name":"Service Control Manager","ServiceName":"Client32"}},
+  {"expect":false,"source":"synthesized","channel":"System","event_id":"7045","data":{"Provider_Name":"Service Control Manager"}}
+]}

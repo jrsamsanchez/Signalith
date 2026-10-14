@@ -18,6 +18,7 @@ import (
 const (
 	SysmonChannel     = "Microsoft-Windows-Sysmon/Operational"
 	SecurityChannel   = "Security"
+	SystemChannel     = ingest.SystemChannel
 	PowerShellChannel = ingest.PowerShellChannel
 	// LinuxSysmonChannel is Sysmon for Linux, whose events have Sysmon's
 	// event IDs and fields.
@@ -62,6 +63,18 @@ func (c Case) SigmaView() (map[string]string, bool) {
 			out[k] = v
 		}
 		return out, true
+	case c.Channel == SystemChannel:
+		// The provider is part of the event's System section, which Sigma
+		// rules name as Provider_Name; the parser takes an event without
+		// one as the Service Control Manager's.
+		out := map[string]string{"EventID": c.EventID}
+		for k, v := range c.Data {
+			out[k] = v
+		}
+		if out["Provider_Name"] == "" {
+			out["Provider_Name"] = ingest.ServiceControlManager
+		}
+		return out, true
 	case c.Channel == SecurityChannel && c.EventID == "4688":
 		out := map[string]string{"EventID": c.EventID}
 		for raw, sig := range security4688 {
@@ -89,7 +102,8 @@ func (c Case) Stored(host string, t time.Time) ingest.Event {
 	return ingest.Normalize(tag, rec, t)
 }
 
-// Logsource event IDs: the Sysmon event a Sigma log source category is.
+// Logsource event IDs: the Sysmon event (or, for the System log, the
+// Windows event) a Sigma log source category is.
 var sysmonEvents = map[string]string{
 	"process_creation":     "1",
 	"network_connection":   "3",
@@ -105,13 +119,19 @@ var sysmonEvents = map[string]string{
 	"dns_query":            "22",
 	"file_delete":          "26",
 	"ps_script":            "4104",
+	// Windows System log rules (service: system) are about services
+	// installed.
+	"system": "7045",
 }
 
 // Channel returns the Windows channel a log source category's events come
 // from.
 func Channel(category string) string {
-	if category == "ps_script" {
+	switch category {
+	case "ps_script":
 		return PowerShellChannel
+	case "system":
+		return SystemChannel
 	}
 	return SysmonChannel
 }
@@ -214,6 +234,13 @@ var Bases = map[string]map[string]string{
 		"ScriptBlockId":   "6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10",
 		"Path":            `D:\apps\scripts\report.ps1`,
 	},
+	"system": {
+		"ServiceName": "ExampleUpdater",
+		"ImagePath":   `"D:\apps\updater\updater.exe" --service`,
+		"ServiceType": "user mode service",
+		"StartType":   "auto start",
+		"AccountName": "LocalSystem",
+	},
 	"dns_query": {
 		"Image":        `D:\apps\launcher\launcher.exe`,
 		"ProcessId":    "4242",
@@ -315,6 +342,10 @@ func CasesOn(channel, category string, syn *Synthesis, fields []string) []Case {
 		eid := id
 		if _, ok := ev["EventID"]; !ok && !expect && slices.Contains(fields, "EventID") {
 			// A near miss without the event ID: every event has one.
+			return
+		}
+		if _, ok := ev["Provider_Name"]; !ok && !expect && channel == SystemChannel && slices.Contains(fields, "Provider_Name") {
+			// Nor without its provider.
 			return
 		}
 		if v, ok := ev["EventID"]; ok {

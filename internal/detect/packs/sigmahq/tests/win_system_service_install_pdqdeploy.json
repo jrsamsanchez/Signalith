@@ -1,0 +1,4 @@
+{"rule": "ee9ca27c-9bd7-4cee-9b01-6e906be7cae3", "cases": [
+  {"expect":true,"source":"synthesized","channel":"System","event_id":"7045","data":{"Provider_Name":"Service Control Manager","ServiceName":"PDQDeploy"}},
+  {"expect":false,"source":"synthesized","channel":"System","event_id":"7045","data":{"Provider_Name":"Service Control Manager"}}
+]}

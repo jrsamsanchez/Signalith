@@ -1,0 +1,4 @@
+{"rule": "4bb79b62-ef12-4861-981d-2aab43fab642", "cases": [
+  {"expect":true,"source":"synthesized","channel":"System","event_id":"7045","data":{"ImagePath":"tacticalrmm.exe","Provider_Name":"Service Control Manager"}},
+  {"expect":false,"source":"synthesized","channel":"System","event_id":"7045","data":{"Provider_Name":"Service Control Manager"}}
+]}

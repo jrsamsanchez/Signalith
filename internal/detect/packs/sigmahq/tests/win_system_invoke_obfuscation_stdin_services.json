@@ -1,0 +1,4 @@
+{"rule": "72862bf2-0eb1-11eb-adc1-0242ac120002", "cases": [
+  {"expect":true,"source":"synthesized","channel":"System","event_id":"7045","data":{"ImagePath":"cmd /r powershell noexit","Provider_Name":"Service Control Manager"}},
+  {"expect":false,"source":"synthesized","channel":"System","event_id":"7045","data":{"Provider_Name":"Service Control Manager"}}
+]}

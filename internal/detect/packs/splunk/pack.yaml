@@ -106,6 +106,10 @@ rules:
     rule_id: 5a8a2a72-8322-11eb-9ee9-acde48001122
     file: clop_common_exec_parameter.yml
     path: detections/endpoint/clop_common_exec_parameter.yml
+  - id: splunk-clop-ransomware-known-service-name
+    rule_id: 07e08a12-870c-11eb-b5f9-acde48001122
+    file: clop_ransomware_known_service_name.yml
+    path: detections/endpoint/clop_ransomware_known_service_name.yml
   - id: splunk-cmd-echo-pipe-escalation
     rule_id: eb277ba0-b96b-11eb-b00e-acde48001122
     file: cmd_echo_pipe___escalation.yml
@@ -1618,6 +1622,10 @@ rules:
     rule_id: d0e6ec70-6e40-41a2-8b93-8d9ff077a746
     file: windows_bitlocker_suspicious_command_usage.yml
     path: detections/endpoint/windows_bitlocker_suspicious_command_usage.yml
+  - id: splunk-windows-bluetooth-service-installed-from-uncommon-locatio
+    rule_id: f12b81e6-2fa2-48e0-95cd-f5f7e4d9ac89
+    file: windows_bluetooth_service_installed_from_uncommon_location.yml
+    path: detections/endpoint/windows_bluetooth_service_installed_from_uncommon_location.yml
   - id: splunk-windows-boot-or-logon-autostart-execution-in-startup-fold
     rule_id: 99d157cb-923f-4a00-aee9-1f385412146f
     file: windows_boot_or_logon_autostart_execution_in_startup_folder.yml
@@ -2222,6 +2230,10 @@ rules:
     rule_id: bf471c94-0324-4b19-a113-d02749b969bc
     file: windows_known_graphicalproton_loaded_modules.yml
     path: detections/endpoint/windows_known_graphicalproton_loaded_modules.yml
+  - id: splunk-windows-krbrelayup-service-creation
+    rule_id: e40ef542-8241-4419-9af4-6324582ea60a
+    file: windows_krbrelayup_service_creation.yml
+    path: detections/endpoint/windows_krbrelayup_service_creation.yml
   - id: splunk-windows-laps-password-gathering-via-powershell-script
     rule_id: 02b712b6-5996-4537-b72a-cad3cb1bb3b4
     file: windows_laps_password_gathering_via_powershell_script.yml
@@ -2950,10 +2962,22 @@ rules:
     rule_id: 0b4e3b06-1b2b-4885-b752-cf06d12a90cb
     file: windows_service_create_kernel_mode_driver.yml
     path: detections/endpoint/windows_service_create_kernel_mode_driver.yml
+  - id: splunk-windows-service-create-remcomsvc
+    rule_id: 0be4b5d6-c449-4084-b945-2392b519c33b
+    file: windows_service_create_remcomsvc.yml
+    path: detections/endpoint/windows_service_create_remcomsvc.yml
+  - id: splunk-windows-service-create-sliverc2
+    rule_id: 89dad3ee-57ec-43dc-9044-131c4edd663f
+    file: windows_service_create_sliverc2.yml
+    path: detections/endpoint/windows_service_create_sliverc2.yml
   - id: splunk-windows-service-create-with-tscon
     rule_id: c13b3d74-6b63-4db5-a841-4206f0370077
     file: windows_service_create_with_tscon.yml
     path: detections/endpoint/windows_service_create_with_tscon.yml
+  - id: splunk-windows-service-created-with-suspicious-service-path
+    rule_id: 429141be-8311-11eb-adb6-acde48001122
+    file: windows_service_created_with_suspicious_service_path.yml
+    path: detections/endpoint/windows_service_created_with_suspicious_service_path.yml
   - id: splunk-windows-service-creation-on-remote-endpoint
     rule_id: e0eea4fa-4274-11ec-882b-3e22fbd008af
     file: windows_service_creation_on_remote_endpoint.yml
@@ -3010,6 +3034,10 @@ rules:
     rule_id: 13cf8b79-805d-443c-bf52-f55bd7610dfd
     file: windows_snake_malware_registry_modification_wav_openwithprogids.yml
     path: detections/endpoint/windows_snake_malware_registry_modification_wav_openwithprogids.yml
+  - id: splunk-windows-snake-malware-service-create
+    rule_id: 64eb091f-8cab-4b41-9b09-8fb4942377df
+    file: windows_snake_malware_service_create.yml
+    path: detections/endpoint/windows_snake_malware_service_create.yml
   - id: splunk-windows-snappybee-create-test-registry
     rule_id: 80402396-d78a-4c6e-ade5-7697ea670adf
     file: windows_snappybee_create_test_registry.yml

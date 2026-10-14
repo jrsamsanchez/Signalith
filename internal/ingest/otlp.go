@@ -397,6 +397,8 @@ func windowsSchemaFor(channel, eventID string) ([]string, bool) {
 	case channel == "Security":
 		s, ok := windowsSchema[eventID]
 		return s, ok
+	case channel == SystemChannel && eventID == "7045":
+		return serviceInstallSchema, true
 	case strings.EqualFold(channel, PowerShellChannel) && eventID == "4104":
 		return scriptBlockSchema, true
 	}
@@ -406,6 +408,10 @@ func windowsSchemaFor(channel, eventID string) ([]string, bool) {
 // scriptBlockSchema is the order of PowerShell's script block event
 // (4104): one part of a script that may be split over several events.
 var scriptBlockSchema = []string{"MessageNumber", "MessageTotal", "ScriptBlockText", "ScriptBlockId", "Path"}
+
+// serviceInstallSchema is the order of the Service Control Manager's
+// service installed event (System 7045).
+var serviceInstallSchema = []string{"ServiceName", "ImagePath", "ServiceType", "StartType", "AccountName"}
 
 // windowsSchema lists, for the Security events the Windows parser reads,
 // the names of the event's data values in schema order, up to the last

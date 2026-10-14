@@ -55,6 +55,9 @@ var categories = map[string]string{
 	"process_access":       "rules/windows/process_access",
 	"create_remote_thread": "rules/windows/create_remote_thread",
 	"ps_script":            "rules/windows/powershell/powershell_script",
+	// Not a Sigma category: Windows System log rules (service: system)
+	// about services installed.
+	"system": "rules/windows/builtin/system/service_control_manager",
 }
 
 // linuxCategories are the Linux log source categories Sysmon for Linux
@@ -94,7 +97,7 @@ func main() {
 	pack := &detect.Pack{
 		Name:  "sigmahq",
 		Title: "SigmaHQ community rules",
-		Description: "Windows rules for Sysmon and Security events (processes, network connections, files, registry, DNS, DLL loads and process access) from the SigmaHQ project, converted to Signalith detections. " +
+		Description: "Windows rules for Sysmon, Security and System events (processes, network connections, files, registry, DNS, DLL loads, process access and services installed) from the SigmaHQ project, converted to Signalith detections. " +
 			"Each rule shipped here fires on its test events and stays quiet on its exclusions, checked in CI.",
 		Source:     "https://github.com/SigmaHQ/sigma",
 		Version:    commit,
@@ -155,7 +158,11 @@ func main() {
 				skip("level informational", rel)
 				continue
 			}
-			if rule.Logsource["product"] != product || rule.Logsource["category"] != cat || rule.Logsource["service"] != "" {
+			want := map[string]string{"product": product, "category": cat, "service": ""}
+			if cat == "system" {
+				want["category"], want["service"] = "", "system"
+			}
+			if rule.Logsource["product"] != want["product"] || rule.Logsource["category"] != want["category"] || rule.Logsource["service"] != want["service"] {
 				skip("log source is not plain "+product+" "+cat, rel)
 				continue
 			}

@@ -59,6 +59,9 @@ type ruleTests struct {
 
 type event struct {
 	System struct {
+		Provider struct {
+			Name string `xml:"Name,attr"`
+		} `xml:"Provider"`
 		EventID     string `xml:"EventID"`
 		Channel     string `xml:"Channel"`
 		Computer    string `xml:"Computer"`
@@ -264,6 +267,10 @@ func recording(url string) ([]sigmacheck.Case, error) {
 			if v.Name != "" {
 				data[v.Name] = strings.TrimSpace(v.Value)
 			}
+		}
+		if e.System.Channel == sigmacheck.SystemChannel && e.System.Provider.Name != "" {
+			// System event IDs are their provider's.
+			data["Provider_Name"] = e.System.Provider.Name
 		}
 		out = append(out, sigmacheck.Case{Source: "attack_data", Channel: e.System.Channel, EventID: e.System.EventID, Data: data})
 	}

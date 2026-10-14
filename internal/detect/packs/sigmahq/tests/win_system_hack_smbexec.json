@@ -1,0 +1,5 @@
+{"rule": "52a85084-6989-40c3-8f32-091e12e13f09", "cases": [
+  {"expect":true,"source":"synthesized","channel":"System","event_id":"7045","data":{"ImagePath":".bat \u0026 del x","Provider_Name":"Service Control Manager"}},
+  {"expect":true,"source":"synthesized","channel":"System","event_id":"7045","data":{"Provider_Name":"Service Control Manager","ServiceName":"BTOBTO"}},
+  {"expect":false,"source":"synthesized","channel":"System","event_id":"7045","data":{"Provider_Name":"Service Control Manager"}}
+]}

@@ -1,0 +1,4 @@
+{"rule": "e97d9903-53b2-41fc-8cb9-889ed4093e80", "cases": [
+  {"expect":true,"source":"synthesized","channel":"System","event_id":"7045","data":{"ServiceName":"KrbSCM"}},
+  {"expect":false,"source":"synthesized","channel":"System","event_id":"7045","data":{}}
+]}

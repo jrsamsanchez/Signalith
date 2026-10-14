@@ -1,0 +1,7 @@
+{"rule": "5a105d34-05fc-401e-8553-272b45c1522d", "cases": [
+  {"expect":true,"source":"synthesized","channel":"System","event_id":"7045","data":{"ImagePath":"ADMIN$ .exe","Provider_Name":"Service Control Manager"}},
+  {"expect":true,"source":"synthesized","channel":"System","event_id":"7045","data":{"ImagePath":"startpowershell%COMSPEC%","Provider_Name":"Service Control Manager"}},
+  {"expect":true,"source":"synthesized","channel":"System","event_id":"7045","data":{"ImagePath":"powershell -nop -w hidden -encodedcommand","Provider_Name":"Service Control Manager"}},
+  {"expect":true,"source":"synthesized","channel":"System","event_id":"7045","data":{"ImagePath":"SUVYIChOZXctT2JqZWN0IE5ldC5XZWJjbGllbnQpLkRvd25sb2FkU3RyaW5nKCdodHRwOi8vMTI3LjAuMC4xO","Provider_Name":"Service Control Manager"}},
+  {"expect":false,"source":"synthesized","channel":"System","event_id":"7045","data":{"Provider_Name":"Service Control Manager"}}
+]}

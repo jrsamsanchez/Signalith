@@ -1,0 +1,4 @@
+{"rule": "e0d1ad53-c7eb-48ec-a87a-72393cc6cedc", "cases": [
+  {"expect":true,"source":"synthesized","channel":"System","event_id":"7045","data":{"Provider_Name":"Service Control Manager","ServiceName":"Mesh Agent"}},
+  {"expect":false,"source":"synthesized","channel":"System","event_id":"7045","data":{"Provider_Name":"Service Control Manager"}}
+]}

@@ -372,9 +372,10 @@ func Generate(o Options) (*Agent, error) {
 			done)
 	case "windows":
 		a.ConfigPath = `C:\Program Files\fluent-bit\conf\fluent-bit.conf`
-		// Microsoft Defender is always collected: it is part of every
-		// supported Windows version, needs no install and logs little.
-		channels := "Security,Microsoft-Windows-Windows Defender/Operational"
+		// The System log (services installed, logs cleared) and Microsoft
+		// Defender are always collected: they are part of every supported
+		// Windows version, need no install and log little.
+		channels := "Security,System,Microsoft-Windows-Windows Defender/Operational"
 		if o.Sysmon {
 			channels += ",Microsoft-Windows-Sysmon/Operational"
 		}

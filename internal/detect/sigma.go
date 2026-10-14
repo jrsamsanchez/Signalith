@@ -121,6 +121,11 @@ var sigmaEventFields = func() map[string]map[string]string {
 		"driver_load":          with(map[string]string{"imageloaded": "loaded_file_path", "signed": "signed", "signature": "signature", "signaturestatus": "signature_status", "image": "", "user": "", "processid": "", "processguid": ""}),
 		"process_access":       access,
 		"create_remote_thread": access,
+		"system": {
+			"servicename": "service_name", "imagepath": "service_path", "servicetype": "service_type",
+			"starttype": "service_start_type", "accountname": "service_account", "provider_name": "provider",
+			"computer": "host", "computername": "host", "eventid": "signature_id",
+		},
 		"ps_script": {
 			"scriptblocktext": "script_block_text", "path": "script_path", "scriptblockid": "script_block_id",
 			"computer": "host", "computername": "host", "eventid": "signature_id",
@@ -146,6 +151,7 @@ var sigmaWindowsEvents = map[string][]string{
 	"process_access":       {"10"},
 	"create_remote_thread": {"8"},
 	"ps_script":            {"4104"},
+	"system":               {"7045"},
 }
 
 // sigmaLevels maps Sigma levels to severities.
@@ -182,6 +188,13 @@ func ConvertSigmaWith(src []byte, opt SigmaOptions) (*SigmaResult, error) {
 		return nil, errors.New("not a Sigma rule: title and detection are required")
 	}
 	category, _ := r.Logsource["category"].(string)
+	if product, _ := r.Logsource["product"].(string); category == "" && strings.EqualFold(product, "windows") {
+		if service, _ := r.Logsource["service"].(string); strings.EqualFold(service, "system") {
+			// The System log's events Signalith reads are services
+			// installed (7045).
+			category = "system"
+		}
+	}
 	c := &sigmaConv{strict: opt.Strict, category: strings.ToLower(category)}
 	dm := c.datamodel(r.Logsource)
 	if dm == "" && opt.Strict {
@@ -202,6 +215,9 @@ func ConvertSigmaWith(src []byte, opt SigmaOptions) (*SigmaResult, error) {
 	}
 	if strings.Contains(condStr, "|") {
 		return nil, errors.New("Sigma aggregation conditions (| count() ...) are not supported; use a correlation in the query instead")
+	}
+	if c.category == "system" && !bytes.Contains(src, []byte("7045")) {
+		c.approx("Signalith reads only services installed (event 7045) from the System log, and this rule is about other events")
 	}
 	expr, err := c.condition(condStr, r.Detection)
 	if err != nil {
@@ -325,7 +341,7 @@ func productScope(ls map[string]any, category string) query.Expr {
 
 func (c *sigmaConv) datamodel(ls map[string]any) string {
 	get := func(k string) string { s, _ := ls[k].(string); return strings.ToLower(s) }
-	switch get("category") {
+	switch c.category {
 	case "process_creation":
 		return "Endpoint"
 	case "network_connection", "firewall":
@@ -346,6 +362,8 @@ func (c *sigmaConv) datamodel(ls map[string]any) string {
 		return "Endpoint"
 	case "ps_script":
 		return "Script"
+	case "system":
+		return "Change"
 	}
 	if get("product") == "linux" && get("service") == "auth" {
 		return "Authentication"

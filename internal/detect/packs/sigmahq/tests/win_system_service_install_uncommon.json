@@ -1,0 +1,9 @@
+{"rule": "26481afe-db26-4228-b264-25a29fe6efc7", "cases": [
+  {"expect":true,"source":"synthesized","channel":"System","event_id":"7045","data":{"ImagePath":"\\\\.\\pipe","Provider_Name":"Service Control Manager"}},
+  {"expect":true,"source":"synthesized","channel":"System","event_id":"7045","data":{"ImagePath":"x -e aQBlAHgA","Provider_Name":"Service Control Manager"}},
+  {"expect":false,"source":"synthesized","channel":"System","event_id":"7045","data":{"ImagePath":"C:\\ProgramData\\Microsoft\\Windows Defender\\Definition Updates\\\\\\.\\pipe","Provider_Name":"Service Control Manager"}},
+  {"expect":false,"source":"synthesized","channel":"System","event_id":"7045","data":{"ImagePath":"C:\\WINDOWS\\TEMP\\thor10-remote\\thor64.exe\\\\.\\pipe","Provider_Name":"Service Control Manager"}},
+  {"expect":false,"source":"synthesized","channel":"System","event_id":"7045","data":{"Provider_Name":"Service Control Manager"}},
+  {"expect":false,"source":"synthesized","channel":"System","event_id":"7045","data":{"ImagePath":"C:\\ProgramData\\Microsoft\\Windows Defender\\Definition Updates\\  aQBlAHgA  -e","Provider_Name":"Service Control Manager"}},
+  {"expect":false,"source":"synthesized","channel":"System","event_id":"7045","data":{"ImagePath":"C:\\WINDOWS\\TEMP\\thor10-remote\\thor64.exe -e aQBlAHgA","Provider_Name":"Service Control Manager"}}
+]}

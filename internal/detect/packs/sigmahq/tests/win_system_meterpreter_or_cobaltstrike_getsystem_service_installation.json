@@ -1,0 +1,6 @@
+{"rule": "843544a7-56e0-4dcc-a44f-5cc266dd97d6", "cases": [
+  {"expect":true,"source":"synthesized","channel":"System","event_id":"7045","data":{"ImagePath":"%COMSPEC%\\pipe\\/cecho","Provider_Name":"Service Control Manager"}},
+  {"expect":true,"source":"synthesized","channel":"System","event_id":"7045","data":{"ImagePath":"rundll32 /p: .dll,a","Provider_Name":"Service Control Manager"}},
+  {"expect":true,"source":"synthesized","channel":"System","event_id":"7045","data":{"ImagePath":"\\\\127.0.0.1\\ADMIN$\\","Provider_Name":"Service Control Manager"}},
+  {"expect":false,"source":"synthesized","channel":"System","event_id":"7045","data":{"Provider_Name":"Service Control Manager"}}
+]}

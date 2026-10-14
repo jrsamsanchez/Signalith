@@ -1,0 +1,4 @@
+{"rule": "1d61f71d-59d2-479e-9562-4ff5f4ead16b", "cases": [
+  {"expect":true,"source":"synthesized","channel":"System","event_id":"7045","data":{"ImagePath":":\\Temp\\","Provider_Name":"Service Control Manager"}},
+  {"expect":false,"source":"synthesized","channel":"System","event_id":"7045","data":{"Provider_Name":"Service Control Manager"}}
+]}

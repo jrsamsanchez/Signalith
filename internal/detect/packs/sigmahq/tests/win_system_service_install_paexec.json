@@ -1,0 +1,4 @@
+{"rule": "de7ce410-b3fb-4e8a-b38c-3b999e2c3420", "cases": [
+  {"expect":true,"source":"synthesized","channel":"System","event_id":"7045","data":{"Provider_Name":"Service Control Manager","ServiceName":"PAExec-"}},
+  {"expect":false,"source":"synthesized","channel":"System","event_id":"7045","data":{"Provider_Name":"Service Control Manager"}}
+]}
