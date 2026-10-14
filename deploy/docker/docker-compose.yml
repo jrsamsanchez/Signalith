@@ -204,11 +204,18 @@ services:
       # Secrets come from files the setup service made, never from this file.
       - SIGNALITH_ADMIN_PASSWORD_FILE=/run/signalith-secrets/initial-admin-password
       # A shared token for agents set up before per-agent tokens; Add data gives new agents their own.
+      # When several servers share one OpenSearch and their settings, every
+      # server accepts it; a changed file replaces it there when this server
+      # starts, and an unchanged one never brings back a token retired on Add data.
       - SIGNALITH_INGEST_TOKEN_FILE=/run/signalith-secrets/ingest-token
       # This server's name on the Servers page. When several servers share
       # one OpenSearch, give each its own.
       - SIGNALITH_NODE_NAME=signalith-1
       # Set to https://<this computer's IP>:8080 so agents on other machines can reach it.
+      # When several servers share one OpenSearch and their settings, the public
+      # address is one for all of them: a change here applies to every server
+      # when this server starts with it, and the Settings page can change it
+      # again until this value changes.
       # - SIGNALITH_PUBLIC_URL=https://192.168.1.20:8080
     volumes:
       - ./signalith.yaml:/etc/signalith/signalith.yaml:ro

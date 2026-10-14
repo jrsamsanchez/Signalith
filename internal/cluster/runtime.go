@@ -205,6 +205,44 @@ type Heartbeat struct {
 	// server's version reads.
 	LevelMin int `json:"level_min,omitempty"`
 	LevelMax int `json:"level_max,omitempty"`
+	// RestartNeeded lists the settings whose value the server would use
+	// differs from the one it runs: they apply at its next restart.
+	// SettingsRefused lists the shared settings it could not use, so it
+	// keeps its own value of each.
+	RestartNeeded   []string `json:"restart_needed,omitempty"`
+	SettingsRefused []string `json:"settings_refused,omitempty"`
+	// SettingsRev is how far the server has applied the shared settings
+	// and its own settings (its nodecfg), nil from versions before they
+	// were shared.
+	SettingsRev *SettingsRev `json:"settings_rev,omitempty"`
+	// Restart is the server's restart run by request, nil when it has run
+	// none and runs none now.
+	Restart *RestartStatus `json:"restart,omitempty"`
+}
+
+// SettingsRev is the revisions of the settings document and of a server's
+// nodecfg document that the server applied.
+type SettingsRev struct {
+	Settings int64 `json:"settings"`
+	NodeCfg  int64 `json:"nodecfg"`
+}
+
+// RestartStatus is a server's restart run by request: Busy while one runs,
+// and how the last one ended.
+type RestartStatus struct {
+	Busy bool           `json:"busy"`
+	Last *RestartResult `json:"last,omitempty"`
+}
+
+// RestartResult is how a restart ended: OK when the server serves with the
+// new settings, else Error, and RolledBack when it went back to the ones
+// it ran before; Keys are the settings it was for.
+type RestartResult struct {
+	At         time.Time `json:"at"`
+	OK         bool      `json:"ok"`
+	Error      string    `json:"error,omitempty"`
+	RolledBack bool      `json:"rolled_back,omitempty"`
+	Keys       []string  `json:"keys,omitempty"`
 }
 
 // SecuritySummary is a server's last security check, as its heartbeat

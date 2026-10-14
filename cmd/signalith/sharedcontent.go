@@ -48,6 +48,20 @@ type sharedContent struct {
 	// rt is the runtime, whose nodecfg document the importers record
 	// this server's settings in.
 	rt atomic.Pointer[shared.Runtime]
+	// settingsOn is true while the components running now take the
+	// settings of the Settings page from the shared settings, settings is
+	// what the heartbeat says of them, and settingsKick wakes the follower
+	// (see sharedsettings.go). followedNC and followedCluster are the
+	// runtime's documents subscribed to, under followMu.
+	settingsOn      atomic.Bool
+	settings        atomic.Pointer[settingsState]
+	settingsKick    chan struct{}
+	followMu        sync.Mutex
+	followedNC      *shared.Doc[shared.NodeCfg]
+	followedCluster *shared.Doc[shared.ClusterBody]
+	// applyMu keeps the changes of the files from being applied twice at
+	// once: by a start, and before the next one (runner.applyFiles).
+	applyMu sync.Mutex
 }
 
 type osTarget struct {
@@ -57,7 +71,7 @@ type osTarget struct {
 
 // newSharedContent returns the content's link for the process.
 func newSharedContent(c *config.Config, node *cluster.Node, log *slog.Logger) *sharedContent {
-	ct := &sharedContent{docs: clustercfg.NewDocs(), users: newSharedUsers(log), node: node, log: log}
+	ct := &sharedContent{docs: clustercfg.NewDocs(), users: newSharedUsers(log), node: node, log: log, settingsKick: make(chan struct{}, 1)}
 	// The users and directory importers and the auth settings of
 	// signalith.yaml reach the users' documents.
 	ct.docs.UseAuth(ct.users.docs)
@@ -198,7 +212,9 @@ func (ct *sharedContent) apply(ctx context.Context, rt *shared.Runtime, c *confi
 	ct.drift.Store(nil)
 	for {
 		if rt.Writable() == nil {
+			ct.applyMu.Lock()
 			res, err := clustercfg.Apply(ctx, rt, ct.docs, c, ct.node.Name(), ct.log)
+			ct.applyMu.Unlock()
 			if err == nil {
 				ct.drift.Store(&res.Drift)
 				return
@@ -304,6 +320,15 @@ type liveMaxAge struct {
 	last     time.Duration
 }
 
+// Use works the age out again with c, the configuration in use after
+// ingest.max_event_age was changed (api.EventAge).
+func (l *liveMaxAge) Use(c *config.Config) {
+	l.mu.Lock()
+	l.c = c
+	l.mu.Unlock()
+	l.update(nil)
+}
+
 // update works the age out again from s, or from the policies in use when
 // s is nil.
 func (l *liveMaxAge) update(s *retention.Settings) {
@@ -314,8 +339,8 @@ func (l *liveMaxAge) update(s *retention.Settings) {
 		}
 		s = &cur
 	}
-	d := l.c.MaxEventAge(s.ShortestKeepDays())
 	l.mu.Lock()
+	d := l.c.MaxEventAge(s.ShortestKeepDays())
 	same := d == l.last
 	l.last = d
 	l.mu.Unlock()

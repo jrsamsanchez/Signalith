@@ -108,6 +108,12 @@ type Setting struct {
 	// this live setting wait too: the public address is worked out from
 	// the listen address.
 	WaitsFor []string
+	// SharedOnly settings are on the page only of a server whose settings
+	// are shared with the other servers of its cluster (see Shared), such
+	// as the cluster's name; LegacyOnly ones only of a server that keeps
+	// its settings to itself, such as detections.scheduler, the old name
+	// of cluster.leader_eligible. See OnPage.
+	SharedOnly, LegacyOnly bool
 	// check checks a value from the page beyond what Validate does.
 	check func(any) error
 	// problem words what is wrong with the setting in a whole
@@ -118,6 +124,16 @@ type Setting struct {
 
 // Live reports whether a change applies as soon as it is saved.
 func (s *Setting) Live() bool { return !s.Restart }
+
+// OnPage reports whether the Settings page shows the setting: on a server
+// whose settings are shared with the other servers (shared), or on one
+// that keeps them to itself.
+func (s *Setting) OnPage(shared bool) bool {
+	if shared {
+		return !s.LegacyOnly
+	}
+	return !s.SharedOnly
+}
 
 // Check checks a value from ParseValue beyond what Validate does, as a
 // save from the page does.
@@ -179,7 +195,10 @@ var Registry = []Setting{
 	{Key: "auth.session_timeout", Scope: ScopeCluster, Section: "general", Label: "Sign out after", Type: TypeDuration,
 		Help:        "Signs people out of the web page after this long without use, unless they ticked Keep me signed in. At least 5m.",
 		Placeholder: "12h", EmptyMeans: "12h"},
-	{Key: "ingest.max_event_age", Scope: ScopeCluster, Section: "general", Label: "Oldest event time", Type: TypeDuration, Restart: true,
+	{Key: "cluster.name", Scope: ScopeCluster, Section: "general", Label: "Cluster name", Type: TypeText, SharedOnly: true,
+		Help:        "The name of the servers that share this OpenSearch, shown at the top of the Servers page. Every server shows the same name.",
+		Placeholder: "SOC", EmptyMeans: "the name the first server gave it"},
+	{Key: "ingest.max_event_age", Scope: ScopeCluster, Section: "general", Label: "Oldest event time", Type: TypeDuration,
 		Help:        "Events from agents and syslog that say they are older than this are filed under the time they arrived, with their own time kept in device_time. Raise it to load old logs.",
 		Placeholder: "30d", EmptyMeans: "7d, or the shortest retention period when that is shorter"},
 
@@ -193,6 +212,11 @@ var Registry = []Setting{
 	{Key: "server.shared_addresses", Scope: ScopeServer, Section: "web", Label: "Proxies and gateways", Type: TypeList, Restart: true,
 		Help:        "IP addresses or ranges of a reverse proxy, load balancer or NAT gateway that many people and agents reach Signalith through. They are not limited like one computer: wrong passwords from them count against each account, and never pause sign-ins from the whole address.",
 		Placeholder: "10.0.0.5", EmptyMeans: "none", check: checkAddressList, problem: listProblem("server.shared_addresses")},
+	{Key: "server.node_url", Scope: ScopeServer, Section: "web", Label: "Address for other servers", Type: TypeURL, SharedOnly: true,
+		Help: "The address the other Signalith servers that share this OpenSearch reach this one at, shown on the Servers page. " +
+			"In a container set it, since a container cannot know the address it is reached at.",
+		Placeholder: "https://10.0.0.5:8080", EmptyMeans: "worked out from the listen address and this computer's name",
+		Env: "SIGNALITH_NODE_URL", check: noSecretIn("an address for other servers needs no password")},
 
 	{Key: "server.tls.mode", Scope: ScopeServer, Section: "https", Label: "HTTPS", Type: TypeChoice, Restart: true,
 		Help: "Automatic: Signalith makes its own certificate and renews it; browsers warn until its certificate authority is trusted, which the sign-in page offers to download. " +
@@ -269,6 +293,10 @@ var Registry = []Setting{
 		Help: "Extra copies of each new day's events on other OpenSearch nodes. Automatic (auto) keeps one copy on another node once OpenSearch has more than one node, and none on a single node. " +
 			"Or enter a number: 0 for none. Days already stored keep the copies they have.",
 		Placeholder: "auto", EmptyMeans: "auto", check: checkReplicas},
+	{Key: "cluster.opensearch_url", Scope: ScopeCluster, Section: "opensearch", Label: "Address for new servers", Type: TypeURL, SharedOnly: true,
+		Help: "The OpenSearch address a new server is given when it is added to these servers, when it reaches OpenSearch another way than this one does: " +
+			"each server's own Address above may be, for one, 127.0.0.1.",
+		Placeholder: "https://opensearch.example.com:9200", EmptyMeans: "this server's address", check: noSecretIn("each server keeps its own OpenSearch username and password")},
 
 	{Key: "search.default_earliest", Scope: ScopeCluster, Section: "search", Label: "Default time range", Type: TypeChoice,
 		Help: "The time range the Search page starts with until someone picks another, and of a search sent without one, such as from the API.", check: checkEarliest,
@@ -296,9 +324,15 @@ var Registry = []Setting{
 		Help:       "When Docker or a firewall forwards another port to the one Signalith listens on, the port devices send to. Add data shows it.",
 		EmptyMeans: "the listen port"},
 
-	{Key: "detections.scheduler", Scope: ScopeServer, Section: "detections", Label: "Run detections on schedule", Type: TypeBool, Restart: true,
+	{Key: "detections.scheduler", Scope: ScopeServer, Section: "detections", Label: "Run detections on schedule", Type: TypeBool, Restart: true, LegacyOnly: true,
 		Help:    "Lets this server run detections, threat intel downloads, notifications and retention. Servers that share one OpenSearch take turns automatically; turn it off only on a server that should never run them.",
+		Env:     "SIGNALITH_LEADER_ELIGIBLE",
 		Confirm: "This server will stop running detections, threat intel downloads, notifications and retention. If no other server shares its OpenSearch, none of them run until this is turned on again.", ConfirmWhen: "off"},
+	{Key: "cluster.leader_eligible", Scope: ScopeServer, Section: "detections", Label: "May run background jobs", Type: TypeBool, Restart: true, SharedOnly: true,
+		Help: "Lets this server run detections, threat intel downloads, notifications, playbooks and retention. The servers take turns automatically, one at a time; " +
+			"turn it off only on a server that should never run them. Its old name in signalith.yaml, detections.scheduler, still works.",
+		Env:     "SIGNALITH_LEADER_ELIGIBLE",
+		Confirm: "This server will stop running detections, threat intel downloads, notifications, playbooks and retention. If no other server may run them, none of them run until this is turned on again.", ConfirmWhen: "off"},
 	{Key: "detections.max_findings_per_run", Scope: ScopeCluster, Section: "detections", Label: "Most findings per run", Type: TypeNumber, Min: intp(1), Max: intp(10000),
 		Help: "The most findings one detection run can raise, so a noisy rule cannot flood the queue."},
 	{Key: "detections.catch_up", Scope: ScopeCluster, Section: "detections", Label: "Make up missed runs", Type: TypeDuration,
@@ -365,7 +399,7 @@ var Excluded = map[string]Exclusion{
 	"retention.default":        {ScopeCluster, "Data retention has its own page."},
 	"retention.policies":       {ScopeCluster, "Data retention has its own page."},
 	"retention.guard":          {ScopeCluster, "Data retention has its own page."},
-	"auth.admin_user":          {ScopeCluster, "The built-in admin is the break-glass account. It is set only in signalith.yaml, so no change on a page can lock everyone out."},
+	"auth.admin_user":          {ScopeCluster, "The built-in admin is the break-glass account, so no change on a page can lock everyone out. It is set in signalith.yaml, or with signalith cluster apply on servers that share their settings."},
 	"auth.admin_password_hash": {ScopeCluster, "The built-in admin's password is changed on the server with signalith passwd."},
 	"auth.users_file":          {ScopeBootstrap, "The Users page keeps its users there, and a page cannot move a file it depends on. Shown under About this server."},
 	"auth.ldap":                {ScopeCluster, "Directory sign-in is set up on the Users page."},
@@ -380,7 +414,6 @@ var Excluded = map[string]Exclusion{
 	"playbooks.file":           {ScopeBootstrap, "The Playbooks page keeps its playbooks there, and a page cannot move a file it depends on. Shown under About this server."},
 	"response.scripts_dir":     {ScopeServer, "It decides which programs response actions may run, so only signalith.yaml or SIGNALITH_RESPONSE_SCRIPTS_DIR can set it, never a page. Shown under About this server."},
 	"cluster.node_name":        {ScopeBootstrap, "This server's name is set in signalith.yaml or with SIGNALITH_NODE_NAME, and kept in its state folder once chosen. The Servers page shows it."},
-	"server.node_url":          {ScopeServer, "The address other servers reach this one at is set in signalith.yaml or with SIGNALITH_NODE_URL. The Servers page shows it."},
 }
 
 // ScopeOf returns the scope of a setting of Config, on the page or not,
@@ -536,6 +569,8 @@ func (c *Config) Value(key string) any {
 		return "deny"
 	case "server.tls.ca_scope":
 		return c.Server.CAScope()
+	case "cluster.leader_eligible":
+		return c.LeaderEligible()
 	}
 	if v.Kind() == reflect.Slice && v.Type().Elem().Kind() == reflect.String {
 		out := make([]string, v.Len())
@@ -555,6 +590,13 @@ func (c *Config) SetValue(key string, val any) error {
 		return fmt.Errorf("unknown setting %s", key)
 	}
 	nv := reflect.ValueOf(val)
+	if v.Kind() == reflect.Pointer && nv.Type().AssignableTo(v.Type().Elem()) {
+		// A setting that may be left unset, such as cluster.leader_eligible,
+		// is set to a value of its own.
+		p := reflect.New(v.Type().Elem())
+		p.Elem().Set(nv)
+		nv = p
+	}
 	if !nv.Type().AssignableTo(v.Type()) {
 		return fmt.Errorf("%s takes a %s, not a %s", key, v.Type(), nv.Type())
 	}
@@ -581,10 +623,16 @@ func (c *Config) CopyValue(key string, from *Config) error {
 	}
 	dst, _ := fieldToSet(c, key)
 	dst.Set(src)
-	if key == "server.public_url" {
+	switch key {
+	case "server.public_url":
 		c.publicURLDerived, c.httpPublicURL = from.publicURLDerived, from.httpPublicURL
+	case "cluster.leader_eligible", "detections.scheduler":
+		// Two names for one setting (see syncEligible).
+		v := from.LeaderEligible()
+		c.Cluster.LeaderEligible, c.Detections.Scheduler = &v, v
 	}
 	c.copyPageProblem(key, from)
+	c.copySharedSource(key, from)
 	return nil
 }
 
@@ -602,6 +650,9 @@ func ParseValue(s *Setting, raw any) (any, error) {
 	v, ok := field(&Config{}, s.Key)
 	if !ok {
 		return nil, fmt.Errorf("unknown setting %s", s.Key)
+	}
+	if v.Kind() == reflect.Pointer {
+		v = reflect.New(v.Type().Elem()).Elem()
 	}
 	switch v.Kind() {
 	case reflect.String:
@@ -719,6 +770,19 @@ func noSecretIn(why string) func(any) error {
 		}
 		return nil
 	}
+}
+
+// AddressHasSecret reports whether v, a value of setting key, is an
+// address with a password or key in it (see hasSecret). The Settings page
+// refuses those; the shared settings take none from a server's files
+// either, as they are kept unencrypted and shown on every server's page.
+func AddressHasSecret(key string, v any) bool {
+	s, ok := Lookup(key)
+	if !ok || s.Type != TypeURL {
+		return false
+	}
+	str, _ := v.(string)
+	return hasSecret(str)
 }
 
 // hasSecret reports whether an address holds a user name and password,

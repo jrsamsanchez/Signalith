@@ -339,13 +339,14 @@ func TestAuthAppliedWhenChanged(t *testing.T) {
 		t.Fatalf("applied twice: %v", res.Applied)
 	}
 
-	// B joins with auth.ldap in its file: its first start only records it.
+	// B joins with auth.ldap in its file: its first start only records it
+	// (and adds its agent tokens to the shared ones).
 	ldap := func(url string) string {
 		return "  ldap:\n    type: openldap\n    url: " + url + "\n    bind_dn: cn=svc,dc=example,dc=org\n    bind_password: yaml-pass\n    user_base_dn: ou=people,dc=example,dc=org\n    admin_groups: [\"cn=admins,dc=example,dc=org\"]\n"
 	}
 	dirB := t.TempDir()
 	b := newAuthMember(t, o, "siem-b", dirB, authConfig(t, dirB, ldap("ldaps://ldap.example.org")), a.key())
-	if res := b.apply(); len(res.Applied) != 0 {
+	if res := b.apply(); !slices.Equal(res.Applied, []string{"ingest.tokens"}) {
 		t.Fatalf("B's first apply %+v", res)
 	}
 	if _, ok := b.auth.Directory().Get(); ok {

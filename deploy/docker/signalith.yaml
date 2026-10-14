@@ -36,9 +36,14 @@ retention:
   days: 90
 auth:
   admin_user: admin
+cluster:
+  # May run the background jobs (detections, threat intel downloads,
+  # retention). Servers that share one OpenSearch take turns; turn it off
+  # only on a server that should never run them. The older name,
+  # detections.scheduler, still works.
+  leader_eligible: true
 detections:
   dir: /var/lib/signalith/detections
-  scheduler: true
   max_findings_per_run: 100
   catch_up: 6h
 lookups:

@@ -85,7 +85,7 @@ func sharedStatus(rt *shared.Runtime, ct *sharedContent) cluster.SharedStatus {
 	}
 	return cluster.SharedStatus{Mode: string(st.Mode), ClusterKID: st.ClusterKID, ConfigSeq: max(st.ConfigSeq, 0), MaxRev: st.MaxRev,
 		NeedsUpgrade: st.NeedsUpgrade, Tamper: st.Tamper, LevelMin: st.LevelMin, LevelMax: st.LevelMax, NotEligible: st.NotEligible,
-		SettingsDrift: ct.settingsDrift()}
+		SettingsDrift: ct.settingsDrift(), SettingsRev: ct.settingsRev()}
 }
 
 // useShared points the runtime at this start's OpenSearch client, with

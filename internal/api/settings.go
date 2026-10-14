@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -36,6 +37,7 @@ func (s *Server) routeSettings(api *router) {
 	api.admin("POST /api/settings/restart", s.handleRestart)
 	api.admin("POST /api/settings/restart/confirm", s.handleConfirmMove)
 	api.admin("GET /api/settings/export", s.handleExportSettings)
+	api.admin("POST /api/cluster/restart", s.handleClusterRestart)
 }
 
 // Restarter restarts the server in-process with the saved settings. The
@@ -121,12 +123,21 @@ type RestartResult struct {
 var errNoConfigFile = errors.New("this server was started without a configuration file, so its settings cannot be changed here")
 
 // savedSettings returns the configuration as saved: on the page, in
-// signalith.yaml and in the environment.
+// signalith.yaml and in the environment, and, on a server whose settings
+// are shared, in the shared settings.
 func (s *Server) savedSettings() (*config.Saved, error) {
 	if s.Config.Path() == "" {
 		return &config.Saved{Config: s.conf()}, nil
 	}
-	saved, err := config.LoadSaved(s.Config.Path())
+	var saved *config.Saved
+	var err error
+	if s.settingsShared() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		saved, _, _, err = s.savedShared(ctx)
+	} else {
+		saved, err = config.LoadSaved(s.Config.Path())
+	}
 	if err != nil {
 		return nil, fmt.Errorf("Signalith could not read its configuration file: %v. Fix it on the server; until then settings cannot be changed here", err)
 	}
@@ -178,6 +189,20 @@ type settingField struct {
 	// StartupProblem is true when this setting kept Signalith from
 	// starting with the settings saved here.
 	StartupProblem bool `json:"startup_problem,omitempty"`
+
+	// On a server whose settings are shared: Scope is cluster (every
+	// server), server (this server's own) or bootstrap (its connection
+	// and folders); Version is the revision a change names (if_version);
+	// AppliedFrom says which server's signalith.yaml or environment the
+	// shared value came from, when it did; Kept is set when the server
+	// shown could not use the shared value and keeps its own; Servers
+	// says, for a shared setting that waits for a restart, where it is
+	// applied, waiting or refused, by server name.
+	Scope       string            `json:"scope,omitempty"`
+	Version     *int64            `json:"version,omitempty"`
+	AppliedFrom string            `json:"applied_from,omitempty"`
+	Kept        *keptSetting      `json:"kept,omitempty"`
+	Servers     map[string]string `json:"servers,omitempty"`
 }
 
 // resetTo is a setting's value without the page: from signalith.yaml
@@ -236,7 +261,7 @@ func pendingSettings(running, saved *config.Config) []pendingSetting {
 	out := []pendingSetting{}
 	for i := range config.Registry {
 		set := &config.Registry[i]
-		if config.SameValue(running, saved, set.Key) {
+		if !set.OnPage(saved.SharedSettings()) || config.SameValue(running, saved, set.Key) {
 			continue
 		}
 		p := pendingSetting{Key: set.Key, Label: set.Label, Section: set.Section}
@@ -385,12 +410,13 @@ func (s *Server) settingsView() (map[string]any, error) {
 		refused[refusedList[i].Key] = &refusedList[i]
 	}
 	startupKeys := running.SettingsProblemKeys()
+	onShared := saved.SharedSettings()
 	sections := make([]settingsSection, 0, len(config.Sections))
 	for _, sec := range config.Sections {
 		out := settingsSection{ID: sec.ID, Title: sec.Title, Help: sec.Help, Fields: []settingField{}}
 		for i := range config.Registry {
 			set := &config.Registry[i]
-			if set.Section != sec.ID {
+			if set.Section != sec.ID || !set.OnPage(onShared) {
 				continue
 			}
 			f := settingField{Key: set.Key, Label: set.Label, Help: set.Help, Type: set.Type, Choices: set.Choices,
@@ -423,7 +449,7 @@ func (s *Server) settingsView() (map[string]any, error) {
 			if f.Source.Kind == config.FromEnv {
 				f.Locked, f.LockedReason = true, config.LockedReason(f.Source.Env)
 			}
-			if f.Source.Kind == config.FromPage {
+			if f.Source.Kind == config.FromPage && !(onShared && set.Scope == config.ScopeCluster) {
 				base := saved.Base()
 				rt := &resetTo{Source: base.Source(set.Key).Kind}
 				rt.Value, rt.Set = fieldValue(base, set)
@@ -648,10 +674,28 @@ func (s *Server) confirmMove(r *http.Request) bool {
 
 func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 	s.confirmMove(r)
+	if s.settingsShared() {
+		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+		defer cancel()
+		view, err := s.sharedSettingsView(ctx, r.URL.Query().Get("server"))
+		var unknown errUnknownServer
+		switch {
+		case errors.As(err, &unknown):
+			writeError(w, http.StatusNotFound, err)
+		case err != nil:
+			writeError(w, http.StatusInternalServerError, err)
+		default:
+			writeJSON(w, http.StatusOK, view)
+		}
+		return
+	}
 	view, err := s.settingsView()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
+	}
+	if p := s.settingsPending(); p != nil {
+		view["shared_pending"] = p
 	}
 	writeJSON(w, http.StatusOK, view)
 }
@@ -802,13 +846,22 @@ func clientHost(r *http.Request) string {
 }
 
 func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
-	var req settingsRequest
-	if err := readJSON(r, &req); err != nil {
+	var raw json.RawMessage
+	if err := readJSON(r, &raw); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
 	if s.Config.Path() == "" {
 		writeError(w, http.StatusConflict, errNoConfigFile)
+		return
+	}
+	if s.settingsShared() {
+		s.handlePutSharedSettings(w, r, raw)
+		return
+	}
+	var req settingsRequest
+	if err := decodeJSON(raw, &req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
 		return
 	}
 	s.settingsMu.Lock()
@@ -1034,6 +1087,13 @@ func (s *Server) applyLive(old, saved *config.Config) []string {
 			applied = append(applied, k)
 		}
 	}
+	if saved.SharedSettings() {
+		for _, k := range sharedLiveKeys {
+			if !config.SameValue(old, saved, k) && !config.SameValue(cur, saved, k) && next.CopyValue(k, saved) == nil {
+				applied = append(applied, k)
+			}
+		}
+	}
 	if len(applied) == 0 {
 		return nil
 	}
@@ -1066,6 +1126,12 @@ func (s *Server) applyLive(old, saved *config.Config) []string {
 	}
 	if changed("server.tls.plaintext_ingest") {
 		s.endOldTokenLocked()
+	}
+	if changed("ingest.max_event_age") && s.EventAge != nil {
+		s.EventAge.Use(&next)
+	}
+	if changed("server.node_url") && s.NodeURLChanged != nil {
+		s.NodeURLChanged(&next)
 	}
 	return applied
 }
@@ -1441,7 +1507,14 @@ func (s *Server) handleExportSettings(w http.ResponseWriter, r *http.Request) {
 	if len(saved.Problems) > 0 || saved.PageErr != nil {
 		c = s.conf()
 	}
-	text, err := exportSettings(c, redact.URL(s.conf().Server.PublicURL), time.Now())
+	var text string
+	if s.settingsShared() && c == saved.Config {
+		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+		defer cancel()
+		text, err = s.exportShared(ctx, saved, r.URL.Query().Get("server"), time.Now())
+	} else {
+		text, err = exportSettings(c, redact.URL(s.conf().Server.PublicURL), time.Now())
+	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
@@ -1485,13 +1558,34 @@ func exportSettings(c *config.Config, from string, now time.Time) (string, error
 	fmt.Fprintf(&b, "# Settings exported from Signalith at %s on %s.\n", from, now.UTC().Format("2006-01-02"))
 	b.WriteString("# Copy what you need into signalith.yaml on another server. Passwords and\n")
 	b.WriteString("# keys are left out: set them there, or with environment variables.\n")
-	// signalith.yaml groups settings by their first word, which does not
-	// always follow the page's sections (server.public_url is under
-	// General, server.listen under Web server).
+	var list []*config.Setting
+	for i := range config.Registry {
+		if set := &config.Registry[i]; set.OnPage(false) {
+			list = append(list, set)
+		}
+	}
+	if err := (exporter{value: c.Value, note: serverOwn}).write(&b, list); err != nil {
+		return "", err
+	}
+	return b.String(), nil
+}
+
+// exporter writes settings as signalith.yaml sections: value gives each
+// one's value, note says why one may not suit another server (or ""),
+// and comment turns every line into a comment.
+type exporter struct {
+	value   func(key string) any
+	note    func(*config.Setting) string
+	comment bool
+}
+
+// write writes settings in their order. signalith.yaml groups settings
+// by their first word, which does not always follow the page's sections
+// (server.public_url is under General, server.listen under Web server).
+func (e exporter) write(b *strings.Builder, settings []*config.Setting) error {
 	var tops []string
 	byTop := map[string][]*config.Setting{}
-	for i := range config.Registry {
-		set := &config.Registry[i]
+	for _, set := range settings {
 		top, _, _ := strings.Cut(set.Key, ".")
 		if byTop[top] == nil {
 			tops = append(tops, top)
@@ -1499,15 +1593,23 @@ func exportSettings(c *config.Config, from string, now time.Time) (string, error
 		byTop[top] = append(byTop[top], set)
 	}
 	for _, top := range tops {
-		fmt.Fprintf(&b, "%s:\n", top)
-		if err := exportSection(&b, c, byTop[top]); err != nil {
-			return "", err
+		fmt.Fprintf(b, "%s%s:\n", e.lead(), top)
+		if err := e.section(b, byTop[top]); err != nil {
+			return err
 		}
 	}
-	return b.String(), nil
+	return nil
 }
 
-func exportSection(b *strings.Builder, c *config.Config, settings []*config.Setting) error {
+// lead begins each line.
+func (e exporter) lead() string {
+	if e.comment {
+		return "# "
+	}
+	return ""
+}
+
+func (e exporter) section(b *strings.Builder, settings []*config.Setting) error {
 	// A setting a level deeper, such as server.tls.mode, goes in its own
 	// part, written where the first of its settings is.
 	var flat []*config.Setting
@@ -1531,22 +1633,23 @@ func exportSection(b *strings.Builder, c *config.Config, settings []*config.Sett
 		if set == nil {
 			sub := subs[next]
 			next++
-			fmt.Fprintf(b, "  %s:\n", sub)
-			if err := exportSettingLines(b, c, bySub[sub], "    "); err != nil {
+			fmt.Fprintf(b, "%s  %s:\n", e.lead(), sub)
+			if err := e.lines(b, bySub[sub], "    "); err != nil {
 				return err
 			}
 			continue
 		}
-		if err := exportSettingLines(b, c, []*config.Setting{set}, "  "); err != nil {
+		if err := e.lines(b, []*config.Setting{set}, "  "); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// exportSettingLines writes settings, each under the last word of its key,
-// indented by indent.
-func exportSettingLines(b *strings.Builder, c *config.Config, settings []*config.Setting, indent string) error {
+// lines writes settings, each under the last word of its key, indented
+// by indent.
+func (e exporter) lines(b *strings.Builder, settings []*config.Setting, indent string) error {
+	indent = e.lead() + indent
 	for _, set := range settings {
 		name := set.Key[strings.LastIndex(set.Key, ".")+1:]
 		if set.Type == config.TypeSecret {
@@ -1557,13 +1660,14 @@ func exportSettingLines(b *strings.Builder, c *config.Config, settings []*config
 			fmt.Fprintf(b, "%s# %s: left out; %s\n", indent, name, hint)
 			continue
 		}
+		val := e.value(set.Key)
 		// An address with a password in it is left out like a password.
-		if s, _ := c.Value(set.Key).(string); urlKeys[set.Key] && s != "" && redact.URL(s) != s {
+		if s, _ := val.(string); urlKeys[set.Key] && s != "" && redact.URL(s) != s {
 			fmt.Fprintf(b, "%s# %s: left out, as it holds a password; set it here\n", indent, name)
 			continue
 		}
 		v := &yaml.Node{}
-		if err := v.Encode(c.Value(set.Key)); err != nil {
+		if err := v.Encode(val); err != nil {
 			return err
 		}
 		if v.Kind == yaml.SequenceNode {
@@ -1574,7 +1678,7 @@ func exportSettingLines(b *strings.Builder, c *config.Config, settings []*config
 			return err
 		}
 		line := fmt.Sprintf("%s%s: %s", indent, name, strings.TrimSpace(string(out)))
-		if note := serverOwn(set); note != "" {
+		if note := e.note(set); note != "" {
 			line += "  # " + note
 		}
 		b.WriteString(line + "\n")

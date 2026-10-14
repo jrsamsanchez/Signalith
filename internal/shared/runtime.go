@@ -82,6 +82,12 @@ type Runtime struct {
 	failed        bool
 	wake          chan struct{}
 	reqWake       chan struct{}
+	// srvWake wakes the loop of the requests that name this server
+	// (RunServerRequests), as reqWake wakes the leader's.
+	srvWake chan struct{}
+	// boot is this process's boot id, recorded with each request part it
+	// claims, so the next process can tell a part it left running.
+	boot          string
 	started       bool
 	keyFileWarned bool
 	// fingerprint is this server's node key's, once read or made.
@@ -158,6 +164,23 @@ func (rt *Runtime) SharedUsers() bool {
 	return users && dir
 }
 
+// SharedSettings reports whether this server takes the settings of the
+// Settings page from the shared settings rather than from its own files:
+// it keeps the users there, the cluster is at level 3 (every server reads
+// them and runs the requests that name it), and the founder's settings
+// were imported.
+func (rt *Runtime) SharedSettings() bool {
+	if !rt.SharedUsers() {
+		return false
+	}
+	b, ok := rt.Cluster().Get()
+	if !ok || b.Level < LevelSharedSettings {
+		return false
+	}
+	_, done := b.Import.Done[ImportSettings]
+	return done
+}
+
 // ImportStalled is how long the founder may take to move its files into
 // OpenSearch before the other servers report it.
 const ImportStalled = 30 * time.Minute
@@ -223,7 +246,7 @@ func (rt *Runtime) founderWarning() *Warning {
 		}
 	}
 	founder := cmp.Or(b.CreatedBy, b.CreatedByID)
-	return &Warning{Level: "amber", Text: fmt.Sprintf("Users and sign-in become shared once %s, which founded the cluster, is back: it brings in its users and directory sign-in settings. "+
+	return &Warning{Level: "amber", Text: fmt.Sprintf("Users, sign-in and settings become shared once %s, which founded the cluster, is back: it brings in its users, directory sign-in settings and Settings page. "+
 		"Until then each server keeps its own. If %s is gone for good, the server that runs the background jobs brings in its own once %s has not been seen for 7 days.", founder, founder, founder)}
 }
 
@@ -261,6 +284,9 @@ func (m Mode) Legacy() bool {
 type Self struct {
 	NodeID string
 	Name   string
+	// BootID is this process's boot id (the heartbeat's); a runtime
+	// without one makes its own.
+	BootID string
 }
 
 // Peer is a server as its heartbeat shows it, this one included.
@@ -349,7 +375,10 @@ func NewRuntime(o RuntimeOptions) *Runtime {
 		o.DegradedAfter = 15 * time.Second
 	}
 	rt := &Runtime{opts: o, log: o.Log, clock: o.Clock, mode: ModeStarting, fatal: make(chan error, 1),
-		wake: make(chan struct{}, 1), reqWake: make(chan struct{}, 1)}
+		wake: make(chan struct{}, 1), reqWake: make(chan struct{}, 1), srvWake: make(chan struct{}, 1), boot: o.Self.BootID}
+	if rt.boot == "" {
+		rt.boot = newBootID()
+	}
 	rt.build()
 	return rt
 }
@@ -364,14 +393,12 @@ func (rt *Runtime) build() {
 	rt.nodecfg = NewDoc[NodeCfg](h, NodeCfgID(rt.opts.Self.NodeID), NodeCfgKind, 1)
 	rt.nodecfg.Local = true
 	rt.requests = NewRequests(h, rt.opts.Self.NodeID)
+	rt.requests.wake = rt.wakeRequests
 	if rt.opts.Content != nil {
 		rt.opts.Content(h)
 	}
 	h.Watch("requests", func(context.Context) error {
-		select {
-		case rt.reqWake <- struct{}{}:
-		default:
-		}
+		rt.wakeRequests()
 		return nil
 	})
 	rt.joined, rt.provisional, rt.keysSig, rt.listed = false, false, "", nil
@@ -1509,13 +1536,29 @@ func (rt *Runtime) RaiseLevel(ctx context.Context) bool {
 	return true
 }
 
-// RunRequests runs the requests for this server until ctx ends: when
-// watch:requests changes, and every minute. It is one of the background
-// jobs, so it runs on the server that holds the job lease.
+// RunRequests runs the requests for the server that holds the job lease
+// until ctx ends: when watch:requests changes, and every minute. It is one
+// of the background jobs, so it runs on that server. Requests that name a
+// server are left to RunServerRequests.
 func (rt *Runtime) RunRequests(ctx context.Context, handlers map[string]Handler) {
+	rt.runRequests(ctx, handlers, RunLeader, rt.reqWake)
+}
+
+// RunServerRequests runs the requests that name this server (such as its
+// part of a restart of several servers, one at a time) until ctx ends:
+// when watch:requests changes, and every minute. Unlike RunRequests it runs
+// on every server, for as long as the process does, so an in-process
+// restart run from it does not end it. A part of this server's that an
+// earlier process left running (it stopped before the part was over) is
+// failed, so a request in sequence does not go on past it.
+func (rt *Runtime) RunServerRequests(ctx context.Context, handlers map[string]Handler) {
+	rt.runRequests(ctx, handlers, RunServer, rt.srvWake)
+}
+
+func (rt *Runtime) runRequests(ctx context.Context, handlers map[string]Handler, only string, wake <-chan struct{}) {
 	for {
 		if m, _ := rt.Mode(); m == ModeMember {
-			rn := &Runner{Requests: rt.Requests(), Handlers: handlers, Log: rt.log,
+			rn := &Runner{Requests: rt.Requests(), Handlers: handlers, Log: rt.log, Only: only, Boot: rt.boot,
 				Lease: func() (int64, bool) {
 					var e int64
 					if rt.opts.LeaseEpoch != nil {
@@ -1531,10 +1574,32 @@ func (rt *Runtime) RunRequests(ctx context.Context, handlers map[string]Handler)
 		select {
 		case <-ctx.Done():
 			return
-		case <-rt.reqWake:
+		case <-wake:
 		case <-rt.clock.After(time.Minute):
 		}
 	}
+}
+
+// wakeRequests wakes the loops that run requests: one was made, or a
+// part of one is over.
+func (rt *Runtime) wakeRequests() {
+	for _, ch := range []chan struct{}{rt.reqWake, rt.srvWake} {
+		select {
+		case ch <- struct{}{}:
+		default:
+		}
+	}
+}
+
+// BootID returns this process's boot id, as recorded with the request
+// parts it claims.
+func (rt *Runtime) BootID() string { return rt.boot }
+
+// Self returns this server's node id and name.
+func (rt *Runtime) Self() Self {
+	s := rt.opts.Self
+	s.BootID = rt.boot
+	return s
 }
 
 // offline reports whether server nodeID's heartbeat stopped.

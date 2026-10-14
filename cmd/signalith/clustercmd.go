@@ -34,6 +34,8 @@ const clusterUsage = `usage:
   signalith cluster status         [-c file] [-json]          this server's place in the cluster, the keyring and any problem
   signalith cluster found          [-c file] [-force] [-name n]   make the servers sharing this OpenSearch a cluster, from this server's files
   signalith cluster export         [-c file] [-o file]        the shared settings as YAML (stored passwords stay encrypted)
+  signalith cluster export -settings [-c file] [-o file] [-server s]   the settings the servers share, as a file cluster apply takes
+  signalith cluster apply          [-c file] -f file [-yes]   change the settings the servers share to those of a file
   signalith cluster import         [-c file] -from-cache      write this server's copy of the shared settings back to OpenSearch
   signalith cluster export-key     [-c file] [-o file]        the cluster key, encrypted with a passphrase, for another server
   signalith cluster import-key     [-c file] <file>           give this server the cluster key that export-key wrote
@@ -45,7 +47,9 @@ The servers that share one OpenSearch keep the settings they share in it
 keeps in its state folder. The server that runs the background jobs makes
 the cluster by itself; these commands are for when something went wrong.
 Only found and reset-key change the cluster without a running server's
-help; the others may run while the server runs.
+help; the others may run while the server runs. apply changes the shared
+settings as a Settings page does: what applies at once does so on every
+server within a few seconds.
 `
 
 // cmdCluster runs signalith cluster.
@@ -61,8 +65,10 @@ type clusterCLI struct {
 	out    io.Writer
 	errOut io.Writer
 	by     string
-	// auth holds the users' documents of the runtime made last.
+	// auth holds the users' documents of the runtime made last, and docs
+	// its documents of the shared content and settings.
 	auth *clusterauth.Docs
+	docs *clustercfg.Docs
 }
 
 // runCluster is cmdCluster with its input and output.
@@ -80,9 +86,12 @@ func runCluster(args []string, in *os.File, out, errOut io.Writer) error {
 	outFile := flags.String("o", "", "write to this file instead of the standard output")
 	fromCache := flags.Bool("from-cache", false, "write this server's copy of the shared settings (cache.enc) back")
 	yes := flags.Bool("yes", false, "do it without asking")
+	settingsOnly := flags.Bool("settings", false, "export the settings the servers share, as a file signalith cluster apply takes")
+	server := flags.String("server", "", "with -settings, only this server's own settings (a name or node id)")
+	file := flags.String("f", "", "the file of settings to apply")
 	pos := parseInterleaved(flags, args)
 	switch sub {
-	case "status", "found", "export", "import", "export-key", "import-key", "reset-key", "accept-restore":
+	case "status", "found", "export", "import", "export-key", "import-key", "reset-key", "accept-restore", "apply":
 	default:
 		return fmt.Errorf("unknown cluster command %q\n\n%s", sub, clusterUsage)
 	}
@@ -110,7 +119,15 @@ func runCluster(args []string, in *os.File, out, errOut io.Writer) error {
 	case "found":
 		return x.found(ctx, *force, *name)
 	case "export":
+		if *settingsOnly {
+			return x.exportSettings(ctx, *outFile, *server)
+		}
 		return x.export(ctx, *outFile)
+	case "apply":
+		if *file == "" {
+			return errors.New("usage: signalith cluster apply [-c file] -f file [-yes]")
+		}
+		return x.apply(ctx, *file, *yes)
 	case "import":
 		if !*fromCache {
 			return errors.New("signalith cluster import needs -from-cache: it writes this server's copy of the shared settings back to OpenSearch")
@@ -156,6 +173,7 @@ func (x *clusterCLI) keyStore() shared.KeyStore {
 // readOnly writes nothing to OpenSearch or the state folder.
 func (x *clusterCLI) runtime(readOnly bool, name string) *shared.Runtime {
 	docs := clustercfg.NewDocs()
+	x.docs = docs
 	x.auth = clusterauth.NewDocs()
 	docs.UseAuth(x.auth)
 	files := x.files()

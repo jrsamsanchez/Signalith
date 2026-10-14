@@ -1,7 +1,10 @@
 // Servers page (admins): the Signalith servers that share this OpenSearch,
 // and the one that runs the background jobs (detections, threat intel
 // downloads and retention). It only shows; it is live while open, so a
-// takeover shows up within seconds.
+// takeover shows up within seconds. A server's name opens a side panel
+// with its settings: those waiting for its restart, shared values it
+// could not use, and what its own Settings page had before the settings
+// were shared.
 'use strict';
 
 (function () {
@@ -147,7 +150,7 @@
       el('div', { class: 'sv-server' },
         el('span', { class: 'sv-server__icon' }, icon('server')),
         el('div', { class: 'sv-server__text' },
-          el('div', { class: 'sv-server__name' }, el('span', { title: s.name }, s.name),
+          el('div', { class: 'sv-server__name' }, el('button', { type: 'button', class: 'link-btn sv-open', title: 'Settings of ' + s.name, onclick: () => openPanel(s.node_id || s.name) }, s.name),
             s.self ? el('span', { class: 'badge badge--outline', title: 'The server that answered this page' }, 'This server') : null),
           addr ? el('div', { class: 'sv-server__addr mono', title: addr }, addr) : null)));
   }
@@ -199,7 +202,9 @@
     } else {
       body = [el('span', { class: 'sv-standby' }, 'Doesn’t run them')];
       let why = s.not_eligible || '';
-      if (/^detections\.scheduler is off/.test(why)) why = 'Run detections on schedule is off';
+      // The setting's name as this server's Settings page shows it: its new
+      // name once that server takes its settings from the shared ones.
+      if (/^detections\.scheduler is off/.test(why)) why = (s.shared && s.shared.settings_rev ? 'May run background jobs' : 'Run detections on schedule') + ' is off';
       if (why) body.push(el('div', { class: 'sv-sub' }, cap(why)));
     }
     return el('td', { 'data-col': 'jobs' }, ...body);
@@ -226,6 +231,11 @@
     const out = [el('span', { class: tone ? 'sv-state sv-warn' : 'sv-standby', title: why }, label)];
     const odd = [...(sh.tamper || []).map((t) => 'changed outside Signalith: ' + t), ...(sh.needs_upgrade || []).map((t) => 'written by a newer version: ' + t)];
     if (odd.length) out.push(el('div', { class: 'sv-sub sv-warn' }, icon('triangle-alert', 'icon--sm'), el('span', {}, 'Keeps its last good copy of ' + odd.join('; '))));
+    const waiting = sh.restart_needed || [];
+    const refused = sh.settings_refused || [];
+    if (sh.restart && sh.restart.busy) out.push(el('div', { class: 'sv-sub' }, icon('rotate-ccw', 'icon--sm'), 'Restarting to apply settings'));
+    else if (waiting.length) out.push(el('div', { class: 'sv-sub sv-warn' }, icon('clock', 'icon--sm'), waiting.length === 1 ? '1 setting waits for a restart' : `${waiting.length} settings wait for a restart`));
+    if (refused.length) out.push(el('div', { class: 'sv-sub sv-bad' }, icon('circle-alert', 'icon--sm'), refused.length === 1 ? 'Couldn’t use 1 shared value' : `Couldn’t use ${refused.length} shared values`));
     const drift = Object.entries(sh.settings_drift || {}).filter(([, keys]) => keys && keys.length);
     for (const [src, keys] of drift) {
       const file = src === 'yaml' ? 'signalith.yaml' : src === 'env' ? 'environment' : src;
@@ -337,7 +347,7 @@
     return JSON.stringify([d.warnings, d.writes_refused, lease.frozen, lease.holder_name, (d.opensearch || {}).status, (d.opensearch || {}).problem, noteHidden(),
       servers.map((s) => [s.node_id, s.name, s.self, s.state, (s.opensearch || {}).problem, s.jobs, s.version, s.node_url, s.listen, s.cannot_take_over, s.not_eligible,
         clockOff(s), s.problems, s.seen_seconds_ago == null, s.uptime_seconds == null,
-        s.shared && [s.shared.mode, s.shared.tamper, s.shared.needs_upgrade, s.shared.settings_drift]])]);
+        s.shared && [s.shared.mode, s.shared.tamper, s.shared.needs_upgrade, s.shared.settings_drift, s.shared.restart_needed, s.shared.settings_refused, s.shared.restart]])]);
   }
 
   function render(d) {
@@ -372,6 +382,99 @@
     if (note) parts.push(note);
     box.replaceChildren(...parts);
     foot();
+    syncPanel();
+  }
+
+  // ---------- the side panel: one server's settings ----------
+  // P.id is the server shown (its node id), P.view its Settings page as
+  // api/settings?server= has it, for the names of the settings and the
+  // values brought in from its own page.
+  const P = { id: '', view: null, seq: 0 };
+  // Values brought in from a server's own Settings page are listed for a
+  // week after the settings became shared.
+  const MIGRATED_DAYS = 7;
+
+  function openPanel(id) {
+    P.id = id;
+    P.view = null;
+    const d = modalDialog('sv-panel');
+    d.classList.add('sv-panel');
+    d.onclose = () => {
+      const from = P.id && document.querySelector(`#servers tr[data-server="${CSS.escape(P.id)}"] .sv-open`);
+      P.id = '';
+      if (from) from.focus();
+    };
+    syncPanel();
+    if (!d.open) d.showModal();
+    const seq = ++P.seq;
+    const s = ((S.data || {}).servers || []).find((x) => (x.node_id || x.name) === id);
+    api('api/settings' + (s && !s.self ? '?server=' + encodeURIComponent(id) : '')).then((v) => {
+      if (seq !== P.seq || P.id !== id) return;
+      P.view = v;
+      syncPanel();
+    }, () => {
+      if (seq !== P.seq || P.id !== id) return;
+      P.view = { failed: true };
+      syncPanel();
+    });
+  }
+
+  // syncPanel draws the open panel from the last answers.
+  function syncPanel() {
+    const d = $('sv-panel');
+    if (!d || !P.id) return;
+    const s = ((S.data || {}).servers || []).find((x) => (x.node_id || x.name) === P.id);
+    if (!s) { d.close(); return; }
+    const keep = d.contains(document.activeElement) ? document.activeElement.dataset.focus : '';
+    const sh = s.shared || {};
+    const labels = {};
+    for (const sec of (P.view && P.view.sections) || []) for (const f of sec.fields) labels[f.key] = f.label;
+    const name = (k) => labels[k] || k;
+    const list = (keys) => el('ul', { class: 'sv-panel__list', role: 'list' }, ...keys.map((k) => el('li', {}, el('span', {}, name(k)), labels[k] ? el('span', { class: 'mono sv-panel__key' }, k) : null)));
+    const part = (title, ...kids) => el('section', { class: 'sv-panel__part' }, el('h3', { class: 'section-title' }, title), ...kids);
+    const parts = [];
+    const waiting = sh.restart_needed || [];
+    const refused = sh.settings_refused || [];
+    const last = sh.restart && sh.restart.last;
+    if (!s.shared || sh.mode !== 'member') {
+      parts.push(el('p', { class: 'sv-panel__text' }, s.shared
+        ? 'It doesn’t use the shared settings right now (' + ((CONFIG[sh.mode] || [sh.mode])[0] || '').toLowerCase() + '), so it reports nothing about them.'
+        : 'It keeps every setting in its own files.'));
+    }
+    if (sh.restart && sh.restart.busy) parts.push(alertBox('info', 'Restarting to apply settings', ''));
+    parts.push(part('Waiting for a restart', waiting.length ? list(waiting)
+      : el('p', { class: 'sv-panel__text' }, 'Nothing: it runs every setting saved for it.')));
+    if (refused.length) {
+      parts.push(part('Shared values it couldn’t use', el('p', { class: 'sv-panel__text' }, 'It keeps its own value of each until the shared one changes, or until someone tries it again on its Settings page.'), list(refused)));
+    }
+    if (last) {
+      const when = el('span', { title: new Date(last.at).toLocaleString() }, ago(last.at));
+      parts.push(part('Last restart', el('p', { class: 'sv-panel__text' + (last.ok ? '' : ' sv-bad') }, last.ok ? 'Restarted with the saved settings, ' : (last.rolled_back ? 'Went back to its previous settings, ' : 'Failed, '), when,
+        last.ok ? '.' : ': ' + (last.error || 'no reason given'))));
+    }
+    const drift = Object.entries(sh.settings_drift || {}).filter(([, keys]) => keys && keys.length);
+    if (drift.length) {
+      parts.push(part('Differs in its own files', el('p', { class: 'sv-panel__text' }, 'The shared value is used: a change in its file or environment applies to every server when it is made.'),
+        ...drift.map(([src, keys]) => el('div', {}, el('b', {}, src === 'yaml' ? 'signalith.yaml' : src === 'env' ? 'Environment' : src), list(keys)))));
+    }
+    const recent = ((P.view && P.view.migrated) || []).filter((m) => !m.at || Date.now() - Date.parse(m.at) < MIGRATED_DAYS * 86400000);
+    if (recent.length) {
+      const val = (v) => (v === undefined || v === null ? 'empty' : typeof v === 'object' && v.set ? 'a value of its own' : Array.isArray(v) ? v.join(', ') : String(v));
+      parts.push(part('Before the settings were shared', el('p', { class: 'sv-panel__text' }, `${s.name}’s Settings page had other values than the shared ones. The shared values are used; change them on the Settings page if ${s.name}’s were the right ones.`),
+        el('ul', { class: 'sv-panel__list', role: 'list' }, ...recent.map((m) => el('li', {}, el('span', {}, name(m.key)),
+          el('span', { class: 'sv-panel__was' }, 'had ', el('span', { class: 'mono' }, val(m.value)), m.shared !== undefined ? '; shared ' : '', m.shared !== undefined ? el('span', { class: 'mono' }, val(m.shared)) : null))))));
+    }
+    if (P.view && P.view.failed) parts.push(el('p', { class: 'sv-panel__text' }, 'Its settings couldn’t be read now, so settings show by their names.'));
+    const open = el('button', { type: 'button', class: 'btn btn--primary', 'data-focus': 'open', onclick: () => {
+      const id = s.self ? '' : s.node_id;
+      d.close();
+      if (typeof window.openServerSettings === 'function') window.openServerSettings(id); else showPage('settings');
+    } }, icon('settings'), 'Open its settings');
+    fill(d, modalHead('sv-panel', s.name, s.node_url || s.listen || '', () => d.close()),
+      el('div', { class: 'modal__body sv-panel__body' }, ...parts),
+      el('div', { class: 'modal__foot' }, el('button', { type: 'button', class: 'btn btn--ghost', 'data-focus': 'close', onclick: () => d.close() }, 'Close'), open));
+    const f = keep && d.querySelector(`[data-focus="${keep}"]`);
+    if (f) f.focus();
   }
 
   // foot says when the list was last read.

@@ -20,7 +20,8 @@ others may run while Signalith runs on the same computer.
 | [`status`](#status) | This server's place in the cluster, the servers with the key, and any problem |
 | [`export-key`](#export-key-and-import-key) | Writes the cluster key, encrypted with a passphrase, for another server |
 | [`import-key`](#export-key-and-import-key) | Gives this server the cluster key that `export-key` wrote |
-| [`export`](#export) | Prints the shared settings as YAML |
+| [`export`](#export) | Prints the shared settings as YAML; with `-settings`, the settings of all servers as a file `apply` takes |
+| [`apply`](#apply) | Changes the settings of all servers to those of a file (configuration as code) |
 | [`import -from-cache`](#import-from-cache) | Writes this server's copy of the shared settings back to OpenSearch |
 | [`found`](#found) | Makes the cluster from this server's files |
 | [`reset-key`](#reset-key) | Makes a new cluster key when every copy of it is lost |
@@ -37,7 +38,7 @@ signalith cluster status [-c file] [-json]
 ```
 
 Shows this server's name and identity, its mode, the cluster's name, identity and
-level (2 once every server can read shared users, 1 before), the cluster key it uses, the servers in the keyring and any problem, such as a
+level (3 once every server can read shared settings, 2 once every server can read shared users, 1 before), the cluster key it uses, the servers in the keyring and any problem, such as a
 shared setting that does not check out. `-json` prints the same as JSON, with the
 mode and the cluster under `shared`, and `problems` and `warnings` when there are any:
 
@@ -99,6 +100,50 @@ its content. Stored passwords and API keys stay encrypted with the cluster key.
 Use it to look at the shared settings, or to keep a copy next to your backups.
 Documents in `<prefix>_config` that Signalith did not write are named in a comment
 and left out.
+
+### export -settings
+
+```
+signalith cluster export -settings [-c file] [-o file] [-server name]
+```
+
+Once the servers share their settings (see
+[Settings on several servers](settings.md#settings-on-several-servers)), writes the
+settings of all servers as one file in the shape of `signalith.yaml`, the file
+`apply` takes as it is, followed by each server's own settings as comments marked
+"this server only" (only one server's with `-server`, a name or node id). Passwords
+and keys are left out. It is the same file as **Download settings as YAML** on the
+Settings page.
+
+## apply
+
+```
+signalith cluster apply [-c file] -f file [-yes]
+```
+
+Changes the settings every server shares to those of a file in the shape of
+`signalith.yaml`, such as one `export -settings` wrote and you then edited and keep
+in version control. It shows what changes, compared with the values in use, asks,
+and then writes them, as a change on the Settings page would: what applies at once
+does so on every server within a few seconds, and the Settings page lists what waits
+for a restart and restarts the servers one at a time. `-yes` skips the question, for
+scripts. Applying a file that changes nothing says so and writes nothing.
+
+- Only settings for all servers are taken. A file with a server's own settings, or
+  its connection and folder settings, is refused with the list of them: change those
+  on that server's Settings page. Settings not in the file are left as they are.
+- `retention.*`, `intel.feeds` and `auth.ldap` in the file change the shared retention
+  policies, feeds and directory sign-in, as a change of them in a server's
+  `signalith.yaml` would.
+- A changed `auth.admin_user` renames the built-in admin for every server: it signs in
+  under the new name with the same password, and its sessions end. A user that already
+  has the new name stops it. If the command is stopped part way, run it again to finish.
+  This is the only way to rename it: a changed `auth.admin_user` in one server's
+  `signalith.yaml` is only listed on the Servers page.
+- It refuses while the servers do not share their settings yet, or while this server
+  cannot use the shared settings (it is not a member, or OpenSearch refuses writes).
+
+Every change is audited with who ran the command.
 
 ## import -from-cache
 

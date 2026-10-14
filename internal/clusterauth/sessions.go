@@ -231,6 +231,9 @@ func (s *Sessions) SetIdle(d time.Duration) {
 	s.idle = d
 }
 
+// Idle is how long a session lasts without a request now.
+func (s *Sessions) Idle() time.Duration { return s.idleFor() }
+
 func (s *Sessions) idleFor() time.Duration {
 	s.idleMu.Lock()
 	defer s.idleMu.Unlock()

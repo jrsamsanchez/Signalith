@@ -1,6 +1,7 @@
 package shared
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -8,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"slices"
 	"sort"
 	"strings"
@@ -81,10 +83,15 @@ type Request struct {
 	Epoch int64 `json:"epoch"`
 	// Interrupted is set on a request put back in the queue because its
 	// server lost the job lease while running it.
-	Interrupted bool            `json:"interrupted,omitempty"`
-	Progress    Progress        `json:"progress"`
-	Result      json.RawMessage `json:"result,omitempty"`
-	Error       string          `json:"error"`
+	Interrupted bool `json:"interrupted,omitempty"`
+	// Boots holds, per server that claimed a request naming it (or its
+	// part of one for several), the boot id of the process that claimed
+	// it. A part still running under another boot id was left by a
+	// process that stopped (see Runner.Boot).
+	Boots    map[string]string `json:"boots,omitempty"`
+	Progress Progress          `json:"progress"`
+	Result   json.RawMessage   `json:"result,omitempty"`
+	Error    string            `json:"error"`
 
 	ver store.Version
 }
@@ -104,6 +111,24 @@ func (r *Request) SetResult(v any) error {
 
 func requestDocID(id string) string { return "request:" + id }
 
+// named reports whether req names server nodeID: its Target, or one of
+// its Targets.
+func (r *Request) named(nodeID string) bool {
+	return r.Target == nodeID || slices.Contains(r.Targets, nodeID)
+}
+
+// forServers reports whether req is meant for the servers it names rather
+// than for the server that holds the job lease.
+func (r *Request) forServers() bool { return len(r.Targets) > 0 || r.Target != TargetLeader }
+
+func newBootID() string {
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
+	return "b_" + hex.EncodeToString(b)
+}
+
 func newRequestID() string {
 	b := make([]byte, 12)
 	if _, err := rand.Read(b); err != nil {
@@ -117,6 +142,9 @@ type Requests struct {
 	h *Hub
 	// NodeID is this server's node id.
 	NodeID string
+	// wake, when set, wakes this server's own runners: its own bump of
+	// watch:requests does not reach its watcher.
+	wake func()
 }
 
 // NewRequests returns the requests of h's cluster, made by server nodeID.
@@ -166,6 +194,9 @@ func (r *Requests) submit(ctx context.Context, req *Request, args any, by string
 		// The runner also looks for requests on its own.
 		r.h.log.Warn("made a request, but could not tell the other servers; it starts within a minute", "request", req.ID, "err", err)
 	}
+	if r.wake != nil {
+		r.wake()
+	}
 	return req, nil
 }
 
@@ -193,6 +224,49 @@ func (r *Requests) put(ctx context.Context, req *Request) error {
 	}
 	req.ver = ver
 	return nil
+}
+
+// SaveResult records what a running request found so far (its Result
+// and Progress), before it is over: such as where a restart of several
+// servers moves one of them. Servers of a request for several write the
+// same document, so a result that is a JSON object keeps the entries the
+// others wrote.
+func (r *Requests) SaveResult(ctx context.Context, req *Request) error {
+	var err error
+	for range store.ModifyTries {
+		now, found, gerr := r.Get(ctx, req.ID)
+		if gerr != nil || !found {
+			return cmp.Or(gerr, store.ErrNotFound)
+		}
+		now.Progress, now.Result = req.Progress, mergeResult(now.Result, req.Result)
+		if err = r.put(ctx, now); err == nil {
+			*req = *now
+			return nil
+		}
+		if !errors.Is(err, store.ErrConflict) {
+			return err
+		}
+	}
+	return err
+}
+
+// mergeResult is mine over theirs when both are JSON objects (one entry
+// per server): mine's entries win, theirs' others are kept. Otherwise it
+// is mine, or theirs when mine is empty.
+func mergeResult(theirs, mine json.RawMessage) json.RawMessage {
+	if len(mine) == 0 {
+		return theirs
+	}
+	var a, b map[string]json.RawMessage
+	if json.Unmarshal(theirs, &a) != nil || json.Unmarshal(mine, &b) != nil || a == nil || b == nil {
+		return mine
+	}
+	maps.Copy(a, b)
+	out, err := json.Marshal(a)
+	if err != nil {
+		return mine
+	}
+	return out
 }
 
 // SetProgress records how far a running request has come.
@@ -256,11 +330,34 @@ func (r *Requests) Housekeep(ctx context.Context, now time.Time) (int, error) {
 // queue for the next holder.
 type Handler func(ctx context.Context, req *Request) error
 
+// Which requests a Runner runs.
+const (
+	// RunAll runs both kinds.
+	RunAll = ""
+	// RunLeader runs only the requests for the server that holds the job
+	// lease.
+	RunLeader = "leader"
+	// RunServer runs only the requests that name this server.
+	RunServer = "server"
+)
+
+// ErrStoppedDuring is the error of a request part a server claimed and
+// then stopped (or crashed) before it was over.
+var ErrStoppedDuring = errors.New("the server stopped before it was done (it was restarted or crashed)")
+
 // Runner runs the requests for this server: those for the leader while
 // it holds the job lease, and those that name it.
 type Runner struct {
 	Requests *Requests
 	Handlers map[string]Handler
+	// Only is RunLeader or RunServer to run only those requests; RunAll
+	// runs both.
+	Only string
+	// Boot is this process's boot id, recorded with each part claimed of
+	// a request that names this server. With it set, a part of this
+	// server's still running under another boot id is failed with
+	// ErrStoppedDuring: the process that ran it stopped.
+	Boot string
 	// Lease returns the job lease's epoch and whether this server holds
 	// it.
 	Lease func() (epoch int64, holding bool)
@@ -285,6 +382,12 @@ func (rn *Runner) RunOnce(ctx context.Context) (int, error) {
 		if ctx.Err() != nil {
 			return ran, ctx.Err()
 		}
+		if rn.stale(req) {
+			if rn.failStale(ctx, req) {
+				ran++
+			}
+			continue
+		}
 		h := rn.Handlers[req.Type]
 		if h == nil {
 			// A newer version's request: left for a server that knows it.
@@ -307,6 +410,9 @@ func (rn *Runner) RunOnce(ctx context.Context) (int, error) {
 // mayRun reports whether this server is to run req now, and the lease
 // epoch to record.
 func (rn *Runner) mayRun(req *Request) (int64, bool) {
+	if rn.Only == RunLeader && req.forServers() || rn.Only == RunServer && !req.forServers() {
+		return 0, false
+	}
 	if len(req.Targets) > 0 {
 		return 0, rn.mayRunListed(req)
 	}
@@ -380,6 +486,12 @@ func (rn *Runner) claim(ctx context.Context, req *Request, epoch int64) (bool, e
 		} else {
 			req.State, req.ClaimedBy, req.Epoch, req.Started = RequestRunning, rn.Requests.NodeID, epoch, &t
 		}
+		if rn.Boot != "" && req.forServers() {
+			if req.Boots == nil {
+				req.Boots = map[string]string{}
+			}
+			req.Boots[rn.Requests.NodeID] = rn.Boot
+		}
 		err = rn.Requests.put(ctx, req)
 		if err == nil {
 			return true, nil
@@ -393,6 +505,50 @@ func (rn *Runner) claim(ctx context.Context, req *Request, epoch int64) (bool, e
 		}
 	}
 	return false, nil
+}
+
+// stale reports whether req has a part of this server's that a process
+// other than this one claimed and left running.
+func (rn *Runner) stale(req *Request) bool {
+	self := rn.Requests.NodeID
+	if rn.Boot == "" || rn.Only == RunLeader || !req.forServers() || !req.named(self) || req.Over() {
+		return false
+	}
+	running := req.Status[self] == RequestRunning
+	if len(req.Targets) == 0 {
+		running = req.State == RequestRunning && req.ClaimedBy == self
+	}
+	return running && req.Boots[self] != rn.Boot
+}
+
+// failStale fails this server's part of req, which an earlier process
+// left running, as if its handler had failed with ErrStoppedDuring. It
+// reports whether it did.
+func (rn *Runner) failStale(ctx context.Context, req *Request) bool {
+	self := rn.Requests.NodeID
+	for range store.ModifyTries {
+		now, found, err := rn.Requests.Get(ctx, req.ID)
+		if err != nil || !found || !rn.stale(now) {
+			return false
+		}
+		*req = *now
+		if len(req.Targets) > 0 {
+			rn.finishListed(ctx, req, ErrStoppedDuring)
+		} else {
+			t := rn.Requests.h.clock.Now().UTC()
+			req.State, req.Finished, req.Error = RequestFailed, &t, ErrStoppedDuring.Error()
+			if err := rn.Requests.put(ctx, req); errors.Is(err, store.ErrConflict) {
+				continue
+			} else if err != nil {
+				return false
+			}
+		}
+		if rn.Log != nil {
+			rn.Log.Warn("a request this server was running when it stopped is marked failed", "request", req.ID, "type", req.Type, "server", self)
+		}
+		return true
+	}
+	return false
 }
 
 func (rn *Runner) run(ctx context.Context, req *Request, h Handler, epoch int64) {
@@ -435,8 +591,9 @@ func (rn *Runner) finishListed(ctx context.Context, req *Request, runErr error) 
 			err = gerr
 			break
 		}
-		// What the handler recorded (progress, result) is kept.
-		now.Progress, now.Result = req.Progress, req.Result
+		// What the handler recorded (progress, result) is kept, with what
+		// the other servers recorded in a result of one entry per server.
+		now.Progress, now.Result = req.Progress, mergeResult(now.Result, req.Result)
 		if now.Status == nil {
 			now.Status = map[string]string{}
 		}
@@ -470,6 +627,16 @@ func (rn *Runner) finishListed(ctx context.Context, req *Request, runErr error) 
 	}
 	if err != nil && rn.Log != nil {
 		rn.Log.Warn("could not record the end of a request", "request", req.ID, "type", req.Type, "server", self, "err", err)
+	}
+	if err == nil && !req.Over() {
+		// The next server of a request in sequence acts now, rather than at
+		// its next look a minute from now.
+		if _, berr := rn.Requests.h.bump(ctx, requestsWatch, nil); berr != nil && rn.Log != nil {
+			rn.Log.Debug("could not tell the other servers that a part of a request is over", "request", req.ID, "err", berr)
+		}
+		if w := rn.Requests.wake; w != nil {
+			w()
+		}
 	}
 }
 

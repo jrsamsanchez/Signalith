@@ -594,6 +594,28 @@ func TestApplyLiveComparesTwoConfigs(t *testing.T) {
 	}
 }
 
+// eventAge records what the server passes to EventAge.
+type eventAge struct{ got []string }
+
+func (e *eventAge) Use(c *config.Config) { e.got = append(e.got, c.Ingest.MaxEventAge) }
+
+// TestMaxEventAgeAppliesAtOnce: ingest.max_event_age is put into use
+// without a restart, through EventAge.
+func TestMaxEventAgeAppliesAtOnce(t *testing.T) {
+	ages := &eventAge{}
+	ts, srv, _ := newSettingsServer(t, "", func(s *Server) { s.EventAge = ages })
+	code, out, _ := call(t, ts, "PUT", "/api/settings", `{"values":{"ingest.max_event_age":"30d"}}`, "admin", "s3cret-pass", nil)
+	if code != 200 {
+		t.Fatalf("save %d %v", code, out)
+	}
+	if srv.conf().Ingest.MaxEventAge != "30d" || strings.Join(ages.got, ",") != "30d" {
+		t.Errorf("not applied: %q %v", srv.conf().Ingest.MaxEventAge, ages.got)
+	}
+	if pending, _ := out["pending"].([]any); len(pending) != 0 {
+		t.Errorf("waits for a restart: %v", out["pending"])
+	}
+}
+
 func TestAssistantChangesApplyAtOnce(t *testing.T) {
 	ts, srv, _ := newSettingsServer(t, "", nil)
 	if code, info := do(t, ts, "GET", "/api/ask", "", true); code != 200 || info["ai_available"] != false {

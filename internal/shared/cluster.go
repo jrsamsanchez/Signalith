@@ -35,14 +35,22 @@ const (
 // level 1 ignores them, so the level is raised only once every server
 // seen lately reads level 2 (RaiseLevel), and from then on an older
 // version refuses to start rather than keep users of its own.
+//
+// Level 3 keeps the settings of the Settings page in the shared settings
+// too, and has each server run the requests that name it (a restart of
+// these servers, one at a time), so it is raised the same way.
 const (
 	LevelMin = 1
-	LevelMax = 2
+	LevelMax = 3
 )
 
 // LevelSharedUsers is the level from which users are kept in the shared
 // settings.
 const LevelSharedUsers = 2
+
+// LevelSharedSettings is the level from which the settings of the
+// Settings page are kept in the shared settings.
+const LevelSharedSettings = 3
 
 // The names of the importers of users and of the directory sign-in
 // settings in cluster.import.done: users become shared once both ran.
@@ -50,6 +58,10 @@ const (
 	ImportUsers     = "users"
 	ImportDirectory = "directory"
 )
+
+// ImportSettings is the name of the importer of the founder's settings in
+// cluster.import.done: settings become shared once it ran.
+const ImportSettings = "settings"
 
 // Import states.
 const (
@@ -119,6 +131,10 @@ type ClusterBody struct {
 	// Builtin is the user name of the built-in admin, set by the users
 	// importer: it is fixed for the cluster from then on.
 	Builtin string `json:"builtin,omitempty"`
+	// BuiltinPrev is the built-in admin's name before a rename (signalith
+	// cluster apply), set only while the rename is under way: until it is
+	// cleared, a user document of either name may be the built-in admin.
+	BuiltinPrev string `json:"builtin_prev,omitempty"`
 	// Merged lists the servers whose files were merged in when they
 	// joined (signalith join --merge).
 	Merged map[string]json.RawMessage `json:"merged,omitempty"`

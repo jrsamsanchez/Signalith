@@ -105,6 +105,11 @@ func TestLevelRaise(t *testing.T) {
 		if st := b.rt.Status(); st.Level != 2 {
 			t.Errorf("the other member reads level %d", st.Level)
 		}
+		// One level at a time: every server reads the next one too.
+		if !a.rt.RaiseLevel(context.Background()) {
+			t.Error("did not raise the level to the next one every server reads")
+		}
+		wantLevel(t, e, 3)
 		if a.rt.RaiseLevel(context.Background()) {
 			t.Error("raised the level above what this version reads")
 		}
@@ -117,7 +122,7 @@ func TestLevelRaise(t *testing.T) {
 		select {
 		case err := <-pr4.rt.Fatal():
 			var le *LevelError
-			if !errors.As(err, &le) || le.Level != 2 || !strings.Contains(err.Error(), "reads up to level 1") {
+			if !errors.As(err, &le) || le.Level != 3 || !strings.Contains(err.Error(), "reads up to level 1") {
 				t.Errorf("fatal = %v", err)
 			}
 		default:
@@ -270,7 +275,7 @@ func TestLateImports(t *testing.T) {
 		founder.SeenAgo = FounderGone
 		peers.set(append([]Peer{self, founder}, others...)...)
 		b.step()
-		body := wantLevel(t, e, 2)
+		body := wantLevel(t, e, 3)
 		if n := usersIm.runs.Load(); n != 1 {
 			t.Fatalf("the users importer ran %d times", n)
 		}
@@ -330,7 +335,7 @@ func TestLateImports(t *testing.T) {
 			t.Errorf("the users importer ran %d times", n)
 		}
 	})
-	t.Run("at founding on level 2", func(t *testing.T) {
+	t.Run("at founding on the highest level", func(t *testing.T) {
 		e := newEnv(t)
 		usersIm := &counter{name: ImportUsers, min: LevelSharedUsers}
 		a := e.server("siem-a", func(o *RuntimeOptions) {
@@ -338,7 +343,7 @@ func TestLateImports(t *testing.T) {
 		})
 		a.holds.Store(true)
 		a.step()
-		body := wantLevel(t, e, 2)
+		body := wantLevel(t, e, LevelMax)
 		if n := usersIm.runs.Load(); n != 1 || body.Import.State != ImportReady || body.Import.Late != nil {
 			t.Errorf("runs %d, import %+v", n, body.Import)
 		}

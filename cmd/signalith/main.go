@@ -1050,9 +1050,17 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	// The shared configuration looks at this OpenSearch first: whether
 	// the feeds and retention policies come from it or from this server's
 	// files depends on what it finds.
-	sharedOn := false
+	sharedOn, settingsOn := false, false
 	if r.node != nil {
 		sharedOn = useShared(r.shared, r.sharedContent, c, cl)
+		// The settings of the Settings page come from the shared settings
+		// when c was loaded with them, or would have been but could not
+		// start with them (see startWithout).
+		settingsOn = r.settingsShared() && (c.SharedSettings() || c.SharedSkipped())
+		r.sharedContent.settingsOn.Store(settingsOn)
+		if settingsOn {
+			r.sharedContent.followDocs(r.shared)
+		}
 	}
 	ret := newRetention(c, cl, log)
 	if sharedOn {
@@ -1351,6 +1359,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		Agents:     agentsInv,
 		Engine:     eng,
 		Pipeline:   pipeline,
+		EventAge:   live,
 		Syslog:     receiver,
 		Backend:    cl,
 		Detections: lib,
@@ -1539,10 +1548,10 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	if hook := jobStarting; hook != nil {
 		in.jobsList = watchJobs(in.jobsList, c, hook)
 	}
-	if !c.Detections.Scheduler && sharedOn {
+	if !c.LeaderEligible() && sharedOn {
 		log.Warn("detections.scheduler is off, so this server never runs detections, threat intel downloads, notifications, playbooks or retention; " +
 			"another server that shares its OpenSearch does")
-	} else if !c.Detections.Scheduler {
+	} else if !c.LeaderEligible() {
 		log.Warn("detections.scheduler is off, so this server never runs detections, threat intel downloads, notifications, playbooks or retention; " +
 			"another server that shares its OpenSearch does. The Data retention and feed settings are read-only here")
 	}
@@ -1559,15 +1568,26 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		sched.Epoch, sched.NodeID, sched.ClusterNow = r.node.Lease().Epoch, r.node.ID(), r.node.ClusterNow
 		scanner.Allowed = r.node.RunsJobs
 		srv.Cluster = r.node
+		srv.NodeURLChanged = func(c *config.Config) { r.node.SetNodeURL(nodeURL(c)) }
 		if r.shared != nil {
 			srv.Cluster = sharedCluster{Node: r.node, rt: r.shared}
 			srv.Shared = sharedAPI{rt: r.shared, on: sharedOn}
 			srv.ConfigToken = configToken{rt: r.shared}
+			if settingsOn {
+				srv.Settings = settingsStore{r: r}
+				// The shared settings and this server's own are followed
+				// while this start runs: what applies at once is applied,
+				// and the rest waits for a restart. The settings set aside
+				// with signalith settings reset -local are refused there.
+				in.jobs.Go(func() { r.followSettings(ctx, srv, ret, c) })
+				in.jobs.Go(func() { r.settleSetAside(ctx, c) })
+			}
 		}
 		in.node = r.node
 	}
 	tokenSrv.Store(srv)
 	in.srv, in.handler = srv, srv.Handler()
+	r.srv.Store(srv)
 	// The example ingest token of an older Docker quick start: decide
 	// whether this one was upgraded if that is still open, and end it for
 	// good once agents on plain HTTP are refused.
@@ -1583,7 +1603,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		// Last, once everything started: the node points at this
 		// OpenSearch, and runs these jobs while it holds the job lease.
 		settings := cluster.Settings{
-			Eligible: c.Detections.Scheduler, NodeURL: nodeURL(c), Listen: c.Server.Listen,
+			Eligible: c.LeaderEligible(), NodeURL: nodeURL(c), Listen: c.Server.Listen,
 			Syslog: cluster.Syslog{UDP: c.Syslog.UDP, TCP: c.Syslog.TCP, TLS: c.Syslog.TLS},
 			Fingerprints: func() cluster.Fingerprints {
 				fp := filesFingerprints(c, ret, feeds, notes, pbooks)
@@ -1594,6 +1614,11 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		}
 		if rt := r.shared; rt != nil {
 			settings.Shared = func() cluster.SharedStatus { return sharedStatus(rt, r.sharedContent) }
+			settings.Restart = r.restartStatus
+			settings.Pending = func() (restart, refused []string) {
+				restart, refused, _ = r.sharedContent.settingsStatus()
+				return restart, refused
+			}
 			settings.Housekeep = rt.Housekeep
 			if parts != nil {
 				settings.Housekeep = func(ctx context.Context) {
@@ -1607,7 +1632,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		// may still hold the lease from before a restart in place, which
 		// Use gives up in the background: until then it must not start
 		// them with settings that say it never runs them.
-		if c.Detections.Scheduler {
+		if c.LeaderEligible() {
 			r.node.SetJobs(in.jobsList)
 		} else {
 			r.node.SetJobs(nil)

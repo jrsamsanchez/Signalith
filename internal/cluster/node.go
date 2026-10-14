@@ -55,6 +55,13 @@ type Settings struct {
 	// the server that runs the background jobs (old tombstones and
 	// finished requests); nil for none.
 	Housekeep func(ctx context.Context)
+	// Restart says how this server's restarts run by request go, for its
+	// heartbeat; nil has none. It must not call the node.
+	Restart func() RestartStatus
+	// Pending lists the settings that wait for a restart of this server,
+	// and the shared settings it could not use, for its heartbeat; nil has
+	// none. It must not call the node.
+	Pending func() (restart, refused []string)
 }
 
 // SharedStatus is how a server uses the shared configuration in
@@ -73,6 +80,9 @@ type SharedStatus struct {
 	// NotEligible says why the shared configuration keeps this server
 	// from running the background jobs, "" when it does not.
 	NotEligible string
+	// SettingsRev is how far this server has applied the shared settings
+	// and its nodecfg; nil before settings are shared.
+	SettingsRev *SettingsRev
 }
 
 // Node is this server in the cluster. It lives as long as the process:
@@ -351,6 +361,15 @@ func (n *Node) SetSecurity(s SecuritySummary) {
 	n.mu.Lock()
 	n.security = s
 	n.mu.Unlock()
+}
+
+// SetNodeURL changes the address the other servers reach this one at,
+// from the next heartbeat on: server.node_url applies without a restart.
+func (n *Node) SetNodeURL(url string) {
+	n.mu.Lock()
+	n.settings.NodeURL = url
+	n.mu.Unlock()
+	n.poke()
 }
 
 // SetJobs replaces the background jobs this server runs while it holds
@@ -715,12 +734,22 @@ func (n *Node) heartbeatDoc(state string) Heartbeat {
 	eligible, why := n.eligible()
 	view := n.lease.View()
 	n.mu.Lock()
-	sharedFn := n.settings.Shared
+	sharedFn, restartFn, pendingFn := n.settings.Shared, n.settings.Restart, n.settings.Pending
 	n.mu.Unlock()
 	var sh *SharedStatus
 	if sharedFn != nil {
 		s := sharedFn()
 		sh = &s
+	}
+	var restart *RestartStatus
+	if restartFn != nil {
+		if r := restartFn(); r.Busy || r.Last != nil {
+			restart = &r
+		}
+	}
+	var restartNeeded, refused []string
+	if pendingFn != nil {
+		restartNeeded, refused = pendingFn()
 	}
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -760,7 +789,9 @@ func (n *Node) heartbeatDoc(state string) Heartbeat {
 		hb.Mode, hb.ClusterKID, hb.ConfigSeq, hb.MaxRev = sh.Mode, sh.ClusterKID, sh.ConfigSeq, sh.MaxRev
 		hb.NeedsUpgrade, hb.Tamper, hb.SettingsDrift = sh.NeedsUpgrade, sh.Tamper, sh.SettingsDrift
 		hb.LevelMin, hb.LevelMax = sh.LevelMin, sh.LevelMax
+		hb.SettingsRev = sh.SettingsRev
 	}
+	hb.Restart, hb.RestartNeeded, hb.SettingsRefused = restart, restartNeeded, refused
 	return hb
 }
 

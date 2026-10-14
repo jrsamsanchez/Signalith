@@ -148,6 +148,13 @@ type Server struct {
 	// Pages keeps the settings saved on the Settings page; nil keeps them
 	// in the settings file next to Config (config.PageFile).
 	Pages config.PageStore
+	// Settings keeps them in the shared settings once the servers of a
+	// cluster share their settings; nil, or while it is not Shared, they
+	// stay in Pages.
+	Settings SettingsStore
+	// NodeURLChanged hears of a new server.node_url applied at once, which
+	// the heartbeat then carries; nil when there is no heartbeat.
+	NodeURLChanged func(*config.Config)
 	// Cluster is this server among those that share its OpenSearch: it
 	// says which one runs the background jobs. nil means this server runs
 	// them when detections.scheduler is on, and lists no servers.
@@ -168,6 +175,10 @@ type Server struct {
 	// Agents counts the agents that send events, for the Endpoints page;
 	// nil keeps no list.
 	Agents *agentinv.Inventory
+	// EventAge follows ingest.max_event_age when a change applies at once:
+	// how old an event's own time may be in the pipeline and syslog. nil
+	// leaves the age the server started with.
+	EventAge EventAge
 
 	authOnce     sync.Once
 	creds        credCache  // recently checked Basic credentials
@@ -196,6 +207,13 @@ type Server struct {
 	blockedLog    logOnce    // blocked osquery hosts that tried to enroll
 	tokensOnce    sync.Once
 	tokenRate     tokenRate // agent token creation
+}
+
+// EventAge is what keeps the age of events the server accepts in step
+// with the configuration in use.
+type EventAge interface {
+	// Use works the age out again from c.
+	Use(c *config.Config)
 }
 
 // liveModel is the assistant after a change on the Settings page; nil

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -1221,4 +1222,45 @@ func TestSharedStatusInHeartbeatAndEligibility(t *testing.T) {
 	}
 	why.Store("")
 	until(t, 5*time.Second, "it takes the jobs once it may", n.RunsJobs)
+}
+
+// The settings waiting for a restart, the shared ones refused, how far
+// the settings were applied and the restart run by request go into the
+// heartbeat; a server with none of them writes none of the fields.
+func TestSettingsStateInHeartbeat(t *testing.T) {
+	fos := ostest.New(t)
+	c := store.New(store.Config{URL: fos.URL})
+	l, err := OpenLocal(t.TempDir(), testOptions("siem-a"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := New(Options{Local: l, Version: "1.0.0", Timing: fast})
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(func() {
+		cancel()
+		n.Close()
+	})
+	var busy atomic.Bool
+	n.Start(ctx)
+	n.Use(c, "s", Settings{Eligible: true})
+	waitReady(t, n, 5*time.Second)
+	if src := fos.Source(RuntimeIndex("s"), nodeDocID(n.ID())); src["restart_needed"] != nil || src["restart"] != nil || src["settings_rev"] != nil {
+		t.Fatalf("fields written without settings: %v", src)
+	}
+	at := time.Date(2026, 10, 12, 9, 0, 0, 0, time.UTC)
+	n.Use(c, "s", Settings{Eligible: true,
+		Shared: func() SharedStatus {
+			return SharedStatus{Mode: "member", SettingsRev: &SettingsRev{Settings: 7, NodeCfg: 12}}
+		},
+		Pending: func() ([]string, []string) { return []string{"server.listen"}, []string{"server.tls.names"} },
+		Restart: func() RestartStatus {
+			return RestartStatus{Busy: busy.Load(), Last: &RestartResult{At: at, Error: "port 8443 is in use", RolledBack: true, Keys: []string{"server.listen"}}}
+		}})
+	busy.Store(true)
+	until(t, 5*time.Second, "the heartbeat carries the settings' state", func() bool {
+		hb := heartbeatOf(t, fos, n.ID())
+		return slices.Equal(hb.RestartNeeded, []string{"server.listen"}) && slices.Equal(hb.SettingsRefused, []string{"server.tls.names"}) &&
+			hb.SettingsRev != nil && *hb.SettingsRev == SettingsRev{Settings: 7, NodeCfg: 12} &&
+			hb.Restart != nil && hb.Restart.Busy && hb.Restart.Last != nil && hb.Restart.Last.RolledBack && hb.Restart.Last.At.Equal(at)
+	})
 }

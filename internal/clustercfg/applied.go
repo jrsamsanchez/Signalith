@@ -1,6 +1,7 @@
 package clustercfg
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"encoding/json"
@@ -30,7 +31,17 @@ import (
 // (auth.admin_password_hash, from signalith.yaml or
 // SIGNALITH_ADMIN_PASSWORD(_FILE); the file signalith passwd writes is
 // not a source) and directory sign-in (auth.ldap from signalith.yaml, its
-// service account password from SIGNALITH_LDAP_BIND_PASSWORD(_FILE)).
+// service account password from SIGNALITH_LDAP_BIND_PASSWORD(_FILE));
+// and, once the settings of the Settings page are shared, each of them
+// (config.SharedKeys) from signalith.yaml and from the environment, each
+// source on its own. The shared agent tokens of older setups
+// (ingest.tokens) are a list every server adds its own to: a changed
+// SIGNALITH_INGEST_TOKEN_FILE replaces the tokens that server's
+// environment brought, and they are added, not only recorded, at its
+// first start with shared settings, so agents that send them keep
+// working. auth.admin_user is never applied: renaming the built-in admin,
+// the break-glass account, takes signalith cluster apply; a differing
+// value is drift.
 
 // fileValue is one shared setting as this server's signalith.yaml or
 // environment sets it.
@@ -52,6 +63,11 @@ type fileValue struct {
 	// conn is the directory connection signalith.yaml names, which the
 	// service account password is for.
 	conn *users.LDAPSettings
+	// setting marks a setting of the settings document, which applies
+	// only once settings are shared, and adminUser auth.admin_user, which
+	// is only compared (Drift).
+	setting   bool
+	adminUser bool
 }
 
 // from says where a value came from, for the audit.
@@ -83,7 +99,53 @@ func fileValues(c *config.Config) []fileValue {
 			out = append(out, fileValue{key: "auth.ldap.bind_password", value: pw, source: shared.SourceEnv, auth: true, password: pw, conn: s})
 		}
 	}
+	return append(out, settingValues(c)...)
+}
+
+// settingValues lists the settings of the settings document that
+// signalith.yaml and the environment set, each source on its own, and
+// auth.admin_user. An address with a password or key in it is left out
+// (see addressSecrets).
+func settingValues(c *config.Config) []fileValue {
+	var out []fileValue
+	for _, key := range config.SharedKeys() {
+		for _, sv := range c.SourceValues(key) {
+			if config.AddressHasSecret(key, sv.Value) {
+				continue
+			}
+			out = append(out, fileValue{key: key, value: sv.Value, source: sv.Source, setting: true})
+		}
+	}
+	for _, sv := range c.SourceValues("auth.admin_user") {
+		out = append(out, fileValue{key: "auth.admin_user", value: sv.Value, source: sv.Source, adminUser: true})
+	}
 	return out
+}
+
+// addressSecrets lists the shared settings whose address in this
+// server's signalith.yaml or environment has a password or key in it:
+// the shared settings, kept unencrypted and shown on every server's
+// page, take none of them, as the Settings page does not.
+func addressSecrets(c *config.Config) []string {
+	var out []string
+	for _, key := range config.SharedKeys() {
+		for _, sv := range c.SourceValues(key) {
+			if config.AddressHasSecret(key, sv.Value) && !slices.Contains(out, key) {
+				out = append(out, key)
+			}
+		}
+	}
+	return out
+}
+
+// warnAddressSecrets says which addresses of this server's files the
+// shared settings do not take, and why.
+func warnAddressSecrets(log *slog.Logger, c *config.Config) {
+	if keys := addressSecrets(c); len(keys) > 0 && log != nil {
+		log.Warn("these addresses in signalith.yaml or the environment have a password or key in them, so the servers do not share them; "+
+			"take it out of the address (an API key has its own setting) and the change applies",
+			"settings", strings.Join(keys, ","))
+	}
 }
 
 // ldapValue is the directory sign-in settings as compared: normalised,
@@ -138,7 +200,8 @@ type Applied struct {
 // ("retention.days applied from signalith.yaml on siem-b"). At a
 // server's first start as a member it only records them; the settings of
 // the users and directory sign-in are only recorded at its first start
-// once users are shared, and left alone before.
+// once users are shared, and left alone before, and so are those of the
+// Settings page once settings are shared; the agent tokens are added.
 func Apply(ctx context.Context, rt *shared.Runtime, d *Docs, c *config.Config, node string, log *slog.Logger) (Applied, error) {
 	var res Applied
 	keys := d.Hub().Keys()
@@ -152,12 +215,17 @@ func Apply(ctx context.Context, rt *shared.Runtime, d *Docs, c *config.Config, n
 	nc, _ := ncDoc.Get()
 	first := nc.Applied == ""
 	firstAuth := nc.UsersApplied == ""
+	withSettings := rt.SharedSettings()
+	firstSettings := nc.SettingsApplied == ""
+	if withSettings {
+		warnAddressSecrets(log, c)
+	}
 	now := time.Now()
 	type seen struct{ key, source, hash string }
 	var record []seen
 	var apply []fileValue
 	for _, fv := range fileValues(c) {
-		if fv.auth && !withAuth {
+		if fv.adminUser || fv.auth && !withAuth || fv.setting && !withSettings {
 			continue
 		}
 		h, err := shared.SeenHash(k, fv.key, fv.value)
@@ -166,15 +234,65 @@ func Apply(ctx context.Context, rt *shared.Runtime, d *Docs, c *config.Config, n
 		}
 		src := cmp.Or(fv.source, shared.SourceYAML)
 		record = append(record, seen{fv.key, src, h})
-		if nc.Changed(fv.key, src, h, first || fv.auth && firstAuth) {
+		only := first || fv.auth && firstAuth || fv.setting && firstSettings
+		if fv.key == "ingest.tokens" {
+			// Added at the first start too: agents that send this server's
+			// tokens must keep working.
+			only = false
+		}
+		if nc.Changed(fv.key, src, h, only) {
 			apply = append(apply, fv)
 		}
 	}
-	var feeds, ret, creds []fileValue
+	applied, err := write(ctx, rt, d, c, apply, node, log, func(fv fileValue) string { return "applied from " + fv.from() + " on " + node })
+	if err != nil {
+		return res, err
+	}
+	res.Applied = applied
+	if first || len(record) > 0 || withAuth && firstAuth || withSettings && firstSettings {
+		_, err := ncDoc.Mutate(ctx, "signalith", func(n *shared.NodeCfg) error {
+			for _, s := range record {
+				n.Record(s.key, s.source, s.hash)
+			}
+			stamp := now.UTC().Format(time.RFC3339Nano)
+			if n.Applied == "" {
+				n.Applied = stamp
+			}
+			if withAuth && n.UsersApplied == "" {
+				n.UsersApplied = stamp
+			}
+			if withSettings && n.SettingsApplied == "" {
+				n.SettingsApplied = stamp
+			}
+			return nil
+		})
+		if err != nil {
+			return res, err
+		}
+	}
+	res.Drift = Drift(d, c)
+	return res, nil
+}
+
+// write writes values of the shared settings to their documents: the
+// retention policies, the feeds, the settings document and the users'
+// documents, and audits each one as how words it. It returns the keys
+// written.
+func write(ctx context.Context, rt *shared.Runtime, d *Docs, c *config.Config, apply []fileValue, node string, log *slog.Logger,
+	how func(fileValue) string) ([]string, error) {
+	keys := d.Hub().Keys()
+	k := keys.Active()
+	if k == nil {
+		return nil, fmt.Errorf("this server has no cluster key")
+	}
+	now := time.Now()
+	var feeds, ret, creds, sets []fileValue
 	for _, fv := range apply {
 		switch {
 		case fv.auth:
 			creds = append(creds, fv)
+		case fv.setting:
+			sets = append(sets, fv)
 		case fv.feed != nil:
 			feeds = append(feeds, fv)
 		default:
@@ -212,7 +330,7 @@ func Apply(ctx context.Context, rt *shared.Runtime, d *Docs, c *config.Config, n
 			return nil
 		})
 		if err != nil {
-			return res, err
+			return nil, err
 		}
 	}
 	if len(feeds) > 0 {
@@ -233,40 +351,25 @@ func Apply(ctx context.Context, rt *shared.Runtime, d *Docs, c *config.Config, n
 			return nil
 		})
 		if err != nil {
-			return res, err
+			return nil, err
 		}
 	}
-	applied, err := applyAuth(ctx, auth, creds, node, log)
-	if err != nil {
-		return res, err
+	if err := applySettings(ctx, d, sets, c, rt.Self(), now); err != nil {
+		return nil, err
 	}
+	applied, err := applyAuth(ctx, d.Auth(), creds, node, log)
+	if err != nil {
+		return nil, err
+	}
+	var out []string
 	for _, fv := range apply {
 		if fv.auth && !slices.Contains(applied, fv.key+"/"+fv.source) {
 			continue
 		}
-		res.Applied = append(res.Applied, fv.key)
-		log.Info(fv.key+" applied from "+fv.from()+" on "+node, "audit", true, "setting", fv.key, "server", node)
+		out = append(out, fv.key)
+		log.Info(fv.key+" "+how(fv), "audit", true, "setting", fv.key, "server", node)
 	}
-	if first || len(record) > 0 || withAuth && firstAuth {
-		_, err := ncDoc.Mutate(ctx, "signalith", func(n *shared.NodeCfg) error {
-			for _, s := range record {
-				n.Record(s.key, s.source, s.hash)
-			}
-			stamp := now.UTC().Format(time.RFC3339Nano)
-			if n.Applied == "" {
-				n.Applied = stamp
-			}
-			if withAuth && n.UsersApplied == "" {
-				n.UsersApplied = stamp
-			}
-			return nil
-		})
-		if err != nil {
-			return res, err
-		}
-	}
-	res.Drift = Drift(d, c)
-	return res, nil
+	return out, nil
 }
 
 // applyAuth applies the settings of the users and directory sign-in that
@@ -349,11 +452,24 @@ func Drift(d *Docs, c *config.Config) []string {
 		shared = decodeFeeds(fb, opener(d.Hub().Keys()))
 	}
 	auth := d.Auth()
+	sb, sok := d.Settings().Get()
 	envPassword := slices.ContainsFunc(c.SeenAdminPassword(), func(p config.SeenPassword) bool { return p.Source == "env" })
 	for _, fv := range fileValues(c) {
 		var have any
 		known := rok
 		switch {
+		case fv.adminUser:
+			if auth != nil {
+				if name, _, ok := auth.Builtin(); ok && !strings.EqualFold(name, fmt.Sprint(fv.value)) && !slices.Contains(out, fv.key) {
+					out = append(out, fv.key)
+				}
+			}
+			continue
+		case fv.setting:
+			if sok && settingDrift(sb, fv) && !slices.Contains(out, fv.key) {
+				out = append(out, fv.key)
+			}
+			continue
 		case fv.auth:
 			if auth != nil && authDrift(auth, fv, envPassword) {
 				out = append(out, fv.key)
@@ -418,4 +534,131 @@ func sameJSON(a, b any) bool {
 	x, _ := json.Marshal(a)
 	y, _ := json.Marshal(b)
 	return reflect.DeepEqual(x, y)
+}
+
+// settingDrift reports whether a setting of the settings document in this
+// server's files differs from the shared one. Passwords, keys and the
+// agent tokens never count: they cannot be compared without being kept.
+func settingDrift(b *SettingsBody, fv fileValue) bool {
+	if s, ok := config.Lookup(fv.key); fv.key == "ingest.tokens" || ok && s.Type == config.TypeSecret {
+		return false
+	}
+	have, ok := b.Values[fv.key]
+	raw := have.Value
+	if !ok {
+		raw, _ = json.Marshal(defaults().Value(fv.key))
+	}
+	mine, err := json.Marshal(fv.value)
+	return err == nil && !bytes.Equal(compact(raw), compact(mine))
+}
+
+// applySettings writes the settings of the settings document that
+// changed in this server's files, as from them, in one change.
+func applySettings(ctx context.Context, d *Docs, list []fileValue, c *config.Config, self shared.Self, now time.Time) error {
+	if len(list) == 0 {
+		return nil
+	}
+	keys := d.Hub().Keys()
+	batch := map[string]any{}
+	for _, fv := range list {
+		batch[fv.key] = fv.value
+	}
+	_, err := d.Settings().Mutate(ctx, "signalith", func(b *SettingsBody) error {
+		if b.Values == nil {
+			b.Values = map[string]SettingValue{}
+		}
+		for _, fv := range list {
+			src := cmp.Or(fv.source, shared.SourceYAML)
+			if fv.key == "ingest.tokens" {
+				plain, _ := fv.value.([]string)
+				toks, _, err := setTokens(keys, b.IngestTokens, self.NodeID, self.Name, src, plain, now)
+				if err != nil {
+					return err
+				}
+				b.IngestTokens = toks
+				continue
+			}
+			sv, err := settingValue(keys, fv.key, fv.value, sentToFor(c, fv.key, batch), shared.From{Source: src, Node: self.Name, At: now.UTC()})
+			if err != nil {
+				return fmt.Errorf("%s: %w", fv.key, err)
+			}
+			b.set(fv.key, sv)
+		}
+		return nil
+	})
+	return err
+}
+
+// settingValue is a shared setting's value v, a password or key sealed
+// for sentTo.
+func settingValue(keys *shared.KeySet, key string, v any, sentTo string, from shared.From) (SettingValue, error) {
+	sv := SettingValue{From: from}
+	if s, ok := config.Lookup(key); ok && s.Type == config.TypeSecret {
+		plain, _ := v.(string)
+		if plain == "" {
+			return sv, nil
+		}
+		sealed, err := sealFor(keys, key, plain, sentTo)
+		if err != nil {
+			return sv, err
+		}
+		sv.Secret, sv.SentTo = sealed, sentTo
+		return sv, nil
+	}
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return sv, err
+	}
+	sv.Value = raw
+	return sv, nil
+}
+
+// sentToFor returns where the password or key of setting key may be sent
+// with the configuration c and the values of batch, changed with it.
+func sentToFor(c *config.Config, key string, batch map[string]any) string {
+	s, ok := config.Lookup(key)
+	if !ok || len(s.SentWith) == 0 {
+		return ""
+	}
+	view := config.Default()
+	for _, k := range s.SentWith {
+		v := c.Value(k)
+		if b, ok := batch[k]; ok {
+			v = b
+		}
+		if v != nil {
+			_ = view.SetValue(k, v)
+		}
+	}
+	return s.SentTo(view)
+}
+
+// setTokens replaces the shared agent tokens server node (named name)
+// brought from source with plain, and reports whether that changed them:
+// the same tokens are kept as they are.
+func setTokens(keys *shared.KeySet, list []IngestToken, node, name, source string, plain []string, now time.Time) ([]IngestToken, bool, error) {
+	var others, mine []IngestToken
+	var have []string
+	for _, t := range list {
+		if t.Node != node || t.Source != source {
+			others = append(others, t)
+			continue
+		}
+		mine = append(mine, t)
+		if p, err := openFor(keys, "ingest.tokens", t.Secret, ""); err == nil {
+			have = append(have, p)
+		}
+	}
+	if len(have) == len(mine) && slices.Equal(have, plain) {
+		return list, false, nil
+	}
+	out := others
+	for _, p := range plain {
+		sealed, err := sealFor(keys, "ingest.tokens", p, "")
+		if err != nil {
+			return list, false, err
+		}
+		out = append(out, IngestToken{Secret: sealed, Node: node, Name: name, Source: source, At: now.UTC()})
+	}
+	return out, true, nil
 }

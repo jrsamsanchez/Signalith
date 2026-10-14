@@ -22,6 +22,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/jrsamsanchez/signalith/internal/agents"
 	"github.com/jrsamsanchez/signalith/internal/detect"
@@ -78,6 +80,9 @@ type Config struct {
 	// environment, which follow those in the file in Ingest.Tokens:
 	// SIGNALITH_INGEST_TOKEN_FILE or SIGNALITH_INGEST_TOKEN.
 	envTokens []string
+	// sharedTokenFrom says, with a shared layer, where each of
+	// Ingest.Tokens came from: the server whose files brought it.
+	sharedTokenFrom []string
 	// httpPublicURL is the http:// public_url Validate read as https://,
 	// for Warnings.
 	httpPublicURL string
@@ -142,6 +147,20 @@ type layers struct {
 	problem     string
 	problemKeys []string
 	pageFileErr bool
+	// sharedOn is set when the config was built with a shared layer (see
+	// Shared): shared holds the values it took from there, and kept the
+	// shared values this server refused, whose kept value it uses.
+	sharedOn bool
+	shared   map[string]SharedValue
+	kept     map[string]SharedRefusal
+	// files is the config of signalith.yaml and the environment alone,
+	// decrypted, and filesEnv the settings the environment set there:
+	// with a shared layer, the environment no longer sets the shared
+	// settings in effect (see SourceValues).
+	files    *Config
+	filesEnv map[string]string
+	// sharedSkipped is set by LoadWithoutShared.
+	sharedSkipped bool
 }
 
 // Server controls the web UI and API listener.
@@ -936,6 +955,47 @@ type Cluster struct {
 	// Empty uses the name kept in the state folder, else this computer's
 	// name. SIGNALITH_NODE_NAME overrides it.
 	NodeName string `yaml:"node_name,omitempty"`
+	// LeaderEligible says whether this server may run the background jobs
+	// (detections, threat intel downloads, notifications, playbooks and
+	// retention); nil uses detections.scheduler, its old name, which is
+	// on by default. SIGNALITH_LEADER_ELIGIBLE overrides both. See
+	// Config.LeaderEligible.
+	LeaderEligible *bool `yaml:"leader_eligible,omitempty"`
+	// Name is the name of the servers that share one OpenSearch. They keep
+	// it in OpenSearch; this is only the value the Settings page saves
+	// there.
+	Name string `yaml:"name,omitempty"`
+	// OpenSearchURL is the OpenSearch address a server added to the
+	// cluster is given, when it differs from this server's own
+	// opensearch.url (which may be 127.0.0.1, say). Empty uses that one.
+	OpenSearchURL string `yaml:"opensearch_url,omitempty"`
+}
+
+// LeaderEligible reports whether this server may run the background jobs:
+// cluster.leader_eligible, or detections.scheduler, its old name, when
+// only that is set.
+func (c *Config) LeaderEligible() bool {
+	if c.Cluster.LeaderEligible != nil {
+		return *c.Cluster.LeaderEligible
+	}
+	return c.Detections.Scheduler
+}
+
+// syncEligible makes cluster.leader_eligible and detections.scheduler,
+// its old name, say the same, so code that reads either sees the value in
+// effect. An environment variable sets both; a change made on the
+// Settings page under the old name (as servers that keep their settings
+// to themselves show it) wins over cluster.leader_eligible in
+// signalith.yaml, as a page change does; otherwise cluster.leader_eligible
+// wins.
+func (c *Config) syncEligible() {
+	if l := c.layers; l != nil && l.env["cluster.leader_eligible"] == "" {
+		if _, ok := l.page["detections.scheduler"]; ok {
+			v := c.Detections.Scheduler
+			c.Cluster.LeaderEligible = &v
+		}
+	}
+	c.Detections.Scheduler = c.LeaderEligible()
 }
 
 // Lookups holds the asset and identity lists.
@@ -1181,7 +1241,7 @@ func (c *Config) HasSection(name string) bool { return c.sections[name] }
 // decrypted is left out and reported by Warnings rather than failing (see
 // Unreadable and PageUnreadable).
 func Load(path string) (*Config, error) {
-	return loadWith(path, nil)
+	return loadWith(path, nil, nil)
 }
 
 // LoadSetAside is Load with the settings keys, changed on the Settings
@@ -1189,7 +1249,7 @@ func Load(path string) (*Config, error) {
 // whether or not that could be saved.
 func LoadSetAside(path string, keys []string, reason string) (*Config, error) {
 	now := time.Now()
-	return loadWith(path, func(p *PageSettings) { p.refuse(keys, reason, now) })
+	return loadWith(path, func(p *PageSettings) { p.refuse(keys, reason, now) }, nil)
 }
 
 // SetAsideAlong returns keys and the other settings changed on the
@@ -1199,17 +1259,41 @@ func LoadSetAside(path string, keys []string, reason string) (*Config, error) {
 // server.tls.mode aside, for one, takes along the certificate files saved
 // with it, which the mode in signalith.yaml refuses.
 func SetAsideAlong(path string, keys []string) []string {
+	return setAsideAlong(path, keys, nil)
+}
+
+// SetAsideAlongShared is SetAsideAlong with the shared layer sh: the
+// settings taken along may be this server's own, or shared ones.
+func SetAsideAlongShared(path string, sh *Shared, keys []string) []string {
+	return setAsideAlong(path, keys, sh)
+}
+
+func setAsideAlong(path string, keys []string, sh *Shared) []string {
 	out := slices.Clone(keys)
 	now := time.Now()
 	for range len(Registry) {
-		s, err := loadSaved(path, func(p *PageSettings) { p.refuse(out, "set aside", now) })
+		layer := sh
+		if sh != nil {
+			layer = sh.Clone()
+			for _, k := range out {
+				if e := layer.Server[k]; e != nil && e.Refused == "" {
+					e.Refused, e.RefusedAt = "set aside", now.UTC()
+				}
+				if v, ok := layer.Cluster[k]; ok {
+					if _, done := layer.Refused[k]; !done {
+						layer.Refused[k] = SharedRefusal{Hash: layer.hash(k, v), Reason: "set aside", At: now.UTC()}
+					}
+				}
+			}
+		}
+		s, err := loadSaved(path, func(p *PageSettings) { p.refuse(out, "set aside", now) }, layer)
 		if err != nil || s.PageErr != nil || s.Problems == nil {
 			return out
 		}
 		more := false
 		for _, p := range s.Problems {
 			for _, k := range ProblemKeys(p) {
-				if s.Config.Source(k).Kind == FromPage && !slices.Contains(out, k) {
+				if kind := s.Config.Source(k).Kind; (kind == FromPage || kind == FromShared) && !slices.Contains(out, k) {
 					out, more = append(out, k), true
 				}
 			}
@@ -1221,8 +1305,8 @@ func SetAsideAlong(path string, keys []string) []string {
 	return out
 }
 
-func loadWith(path string, adjust func(*PageSettings)) (*Config, error) {
-	s, err := loadSaved(path, adjust)
+func loadWith(path string, adjust func(*PageSettings), sh *Shared) (*Config, error) {
+	s, err := loadSaved(path, adjust, sh)
 	if err != nil {
 		return nil, err
 	}
@@ -1233,16 +1317,23 @@ func loadWith(path string, adjust func(*PageSettings)) (*Config, error) {
 		// Nothing came from the page: the problems are the file's own.
 		return nil, fmt.Errorf("%s: %w", path, &ValidationError{Problems: s.Problems})
 	}
-	c, err := LoadFile(path)
+	alone := "signalith.yaml alone"
+	var c *Config
+	if sh == nil {
+		c, err = LoadFile(path)
+	} else {
+		alone = "signalith.yaml and the settings the servers share"
+		c, err = loadFileShared(path, sh)
+	}
 	if err != nil {
 		return nil, err
 	}
 	c.layers.pageFileErr = s.PageErr != nil
 	if s.PageErr != nil {
-		c.layers.problem = fmt.Sprintf("The settings saved on the Settings page were not used, because %v. Signalith started with signalith.yaml alone. Fix the file, or remove it with: signalith settings reset", s.PageErr)
+		c.layers.problem = fmt.Sprintf("The settings saved on the Settings page were not used, because %v. Signalith started with %s. Fix the file, or remove it with: signalith settings reset", s.PageErr, alone)
 	} else {
 		c.layers.problem = "The settings saved on the Settings page were not used, because with them: " + strings.Join(s.Problems, "; ") +
-			". Signalith started with signalith.yaml alone. Fix these settings on the Settings page, or remove them with: signalith settings reset"
+			". Signalith started with " + alone + ". Fix these settings on the Settings page, or remove them with: signalith settings reset"
 		for _, p := range s.Problems {
 			for _, k := range ProblemKeys(p) {
 				if s.Config.Source(k).Kind == FromPage && !slices.Contains(c.layers.problemKeys, k) {
@@ -1323,10 +1414,10 @@ type Saved struct {
 
 // LoadSaved reads the configuration as saved, valid or not.
 func LoadSaved(path string) (*Saved, error) {
-	return loadSaved(path, nil)
+	return loadSaved(path, nil, nil)
 }
 
-func loadSaved(path string, adjust func(*PageSettings)) (*Saved, error) {
+func loadSaved(path string, adjust func(*PageSettings), sh *Shared) (*Saved, error) {
 	c, err := readAndEnv(path)
 	if err != nil {
 		return nil, err
@@ -1340,11 +1431,11 @@ func loadSaved(path string, adjust func(*PageSettings)) (*Saved, error) {
 		}
 		s.Page = page
 	}
-	cfg, err := build(path, page)
+	cfg, err := buildWith(path, page, sh)
 	var pe *PageFileError
 	if errors.As(err, &pe) {
 		perr = pe
-		cfg, err = build(path, nil)
+		cfg, err = buildWith(path, nil, sh)
 	}
 	if err != nil {
 		return nil, err
@@ -1371,30 +1462,69 @@ func problemsOf(c *Config) []string {
 // settings changed on the page, without validating. A page setting that
 // cannot be used is a *PageFileError.
 func build(path string, page *PageSettings) (*Config, error) {
+	return buildWith(path, page, nil)
+}
+
+// buildWith is build with the shared layer sh, when it is not nil (see
+// Shared): the shared settings take their values from it and nowhere
+// else, this server's own from it in place of the page's file, which then
+// holds only the settings needed before OpenSearch can be reached.
+func buildWith(path string, page *PageSettings, sh *Shared) (*Config, error) {
 	c, err := readAndEnv(path)
 	if err != nil {
 		return nil, err
 	}
-	base, err := readAndEnv(path)
+	files, err := c.readFiles(path)
 	if err != nil {
 		return nil, err
 	}
-	// Both use the same master key.
-	base.keys = c.Keyring()
-	base.openSecrets()
-	// Validating fills in worked-out values, such as the public address.
-	_ = base.Validate()
-	c.layers.base = base
-	if !page.Empty() {
+	base := files
+	if sh != nil {
+		// What a file from before HTTPS was the default leaves to its
+		// other settings is fixed first, so the shared public address
+		// changes only itself, as one saved on the page does.
+		if c.Server.TLS == nil {
+			c.Server.materializeTLS(files.Server)
+		}
+		if base, err = c.readFiles(path); err != nil {
+			return nil, err
+		}
+		if base.Server.TLS == nil {
+			base.Server.materializeTLS(files.Server)
+		}
+		base.resetShared()
+		base.openSecrets()
+		_ = base.Validate()
+		c.resetShared()
+		c.applyShared(sh)
+		page = sh.pageFor(c, page)
+	}
+	c.layers.base, c.layers.files = base, files
+	if !page.Empty() || sh != nil {
 		if err := c.applyPage(page, base); err != nil {
 			return nil, &PageFileError{Path: c.layers.pageFile, Err: err}
 		}
 	}
+	c.syncEligible()
 	// The passwords and keys in signalith.yaml are decrypted once the
 	// page's settings are in: one the page replaces is not needed, as one
 	// an environment variable replaces is not.
 	c.openSecrets()
 	return c, nil
+}
+
+// readFiles reads signalith.yaml with the environment, decrypted and
+// validated, with the master key of c.
+func (c *Config) readFiles(path string) (*Config, error) {
+	f, err := readAndEnv(path)
+	if err != nil {
+		return nil, err
+	}
+	f.keys = c.Keyring()
+	f.openSecrets()
+	// Validating fills in worked-out values, such as the public address.
+	_ = f.Validate()
+	return f, nil
 }
 
 // readAndEnv reads signalith.yaml with defaults and the environment,
@@ -1434,6 +1564,7 @@ func readAndEnv(path string) (*Config, error) {
 	if err := c.applyAdminHashFile(); err != nil {
 		return nil, err
 	}
+	c.syncEligible()
 	c.readDockerUpgrade()
 	c.layers.pageFileEnv = strings.TrimSpace(os.Getenv("SIGNALITH_SETTINGS_FILE")) != ""
 	c.layers.pageFile = c.SettingsFile()
@@ -1671,6 +1802,15 @@ func (c *Config) applyEnv() error {
 		c.Server.NodeURL = v
 		c.fromEnv("server.node_url", "SIGNALITH_NODE_URL")
 	}
+	if v := strings.TrimSpace(os.Getenv("SIGNALITH_LEADER_ELIGIBLE")); v != "" {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			return fmt.Errorf("SIGNALITH_LEADER_ELIGIBLE %q must be true or false", v)
+		}
+		c.Cluster.LeaderEligible, c.Detections.Scheduler = &b, b
+		c.fromEnv("cluster.leader_eligible", "SIGNALITH_LEADER_ELIGIBLE")
+		c.fromEnv("detections.scheduler", "SIGNALITH_LEADER_ELIGIBLE")
+	}
 	if v := strings.TrimSpace(os.Getenv("SIGNALITH_NODE_NAME")); v != "" {
 		c.Cluster.NodeName = v
 		c.fromEnv("cluster.node_name", "SIGNALITH_NODE_NAME")
@@ -1878,6 +2018,14 @@ func (c *Config) Validate() error {
 			p = append(p, fmt.Sprintf("server.node_url %q: %v", c.Server.NodeURL, err))
 		}
 	}
+	if n := c.Cluster.Name; utf8.RuneCountInString(n) > 100 || strings.IndexFunc(n, unicode.IsControl) >= 0 {
+		p = append(p, "cluster.name must be at most 100 characters, on one line")
+	}
+	if u := c.Cluster.OpenSearchURL; u != "" {
+		if pu, err := url.Parse(u); err != nil || (pu.Scheme != "http" && pu.Scheme != "https") || pu.Host == "" || pu.User != nil {
+			p = append(p, fmt.Sprintf("cluster.opensearch_url %q must be http(s)://host:port, without a username or password", redact.URL(u)))
+		}
+	}
 	if n := c.Cluster.NodeName; n != "" && !ValidNodeName(n) {
 		p = append(p, fmt.Sprintf("cluster.node_name %q must be 1 to 63 letters, digits, dots, dashes or underscores, starting with a letter or digit", n))
 	}
@@ -2054,14 +2202,31 @@ func (c *Config) Warnings() []string {
 			"the ingest token and events cross the network unencrypted unless a reverse proxy in front adds HTTPS. Turn it on with server.tls.mode: auto, "+
 			"or list the proxy's address under server.trusted_proxies.")
 	}
+	if l := c.layers; l != nil && c.file != nil && l.file["detections.scheduler"] {
+		// Both names set in signalith.yaml, or the old one there and the
+		// new one in the environment, saying different things.
+		if b := c.Base().Cluster.LeaderEligible; b != nil && *b != c.file.Detections.Scheduler {
+			w = append(w, fmt.Sprintf("detections.scheduler (%v) in signalith.yaml is the old name of cluster.leader_eligible, which is %v; cluster.leader_eligible is used. Remove detections.scheduler from signalith.yaml.",
+				c.file.Detections.Scheduler, *b))
+		}
+	}
 	return append(w, c.secretWarnings()...)
 }
 
 // IngestTokenSource says where the i-th of Ingest.Tokens came from:
-// signalith.yaml, SIGNALITH_INGEST_TOKEN or SIGNALITH_INGEST_TOKEN_FILE.
+// signalith.yaml, SIGNALITH_INGEST_TOKEN or SIGNALITH_INGEST_TOKEN_FILE;
+// once the servers share them, the files of the server that brought it
+// (see Shared.TokenFrom).
 // These are the shared agent tokens of older setups and the Docker quick
 // start; new agents get their own (see internal/agenttokens).
 func (c *Config) IngestTokenSource(i int) string {
+	if c.sharedTokenFrom != nil {
+		// Shared by the servers, each brought by one of them.
+		if i >= 0 && i < len(c.sharedTokenFrom) && c.sharedTokenFrom[i] != "" {
+			return c.sharedTokenFrom[i]
+		}
+		return "the shared settings"
+	}
 	if fromEnv := i - (len(c.Ingest.Tokens) - len(c.envTokens)); fromEnv >= 0 && fromEnv < len(c.envTokens) {
 		return c.envTokens[fromEnv]
 	}
@@ -2290,8 +2455,10 @@ const header = `# Signalith configuration.
 # syslog.allow       sender IPs or CIDRs allowed to send syslog (empty = any sender)
 # syslog.public_port port devices send to, if forwarded to another (Docker: 514 -> 5514)
 # detections.dir     folder for custom detections (relative to this file)
-# detections.scheduler  lets this server run detections, threat intel downloads and
-#                    retention; servers that share one OpenSearch take turns
+# cluster.leader_eligible  lets this server run detections, threat intel downloads,
+#                    notifications and retention (default true; SIGNALITH_LEADER_ELIGIBLE);
+#                    servers that share one OpenSearch take turns.
+#                    detections.scheduler is its older name
 # detections.catch_up  how far back detection runs missed while no server ran them
 #                    are made up (default 6h, at most 7d; 0 = off)
 # lookups.dir        folder for assets.csv and identities.csv (relative to this file)

@@ -151,6 +151,13 @@ counts it as retired. It stays listed as **No longer accepted**.
 - **Environment (optional):** remove `SIGNALITH_INGEST_TOKEN` (or `_FILE`) from the
   service's environment and restart it.
 
+Once servers that share one OpenSearch share their settings (see
+[Settings](settings.md)), every server accepts the shared tokens of every server, and
+**Add data** names the server whose `signalith.yaml` or environment brought each one.
+Removing a token from a file or the environment then no longer stops it being
+accepted: **Stop accepting** on **Add data** is the only way to retire it, and every
+server follows it within seconds.
+
 The example token `change-this-ingest-token` from older Docker quick starts is handled
 on its own; see
 [The Docker quick start's old example token](https.md#the-docker-quick-starts-old-example-token).

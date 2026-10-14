@@ -25,8 +25,15 @@ few seconds.
 | Server | The server's name (`cluster.node_name`), **This server** on the one you are signed in to, and its address (`server.node_url`) |
 | Status | **Running**, **Starting**, **Stopping**, **Stopped** (shut down on purpose), **Not answering** (no sign of life for 30 seconds), **Couldn't start** (a restart after a settings change failed with the new settings and the old ones: it receives nothing, runs no jobs and tries again every 30 seconds; its log says why), **Identity in use** (see [Identity](#identity)), or, on this server only, what keeps it from using OpenSearch, such as **Can't reach OpenSearch** (see [When this server can't use OpenSearch](#when-this-server-cant-use-opensearch)). Below it: how long it has been up, or when it was last seen, counted by the server that answered the page, so neither the other server's clock nor yours matters. A clock more than 2 seconds off is shown here too |
 | Background jobs | **Runs jobs** on the server that runs them. **Standby** on a server that would take them over, or why it would not. **Doesn't run them** on a server that may not, with the reason |
-| Settings | How it uses the [shared settings](#shared-settings-and-the-cluster-key): **Shared** when it uses the settings every server shares; **Its own files** when it is not part of the cluster (amber when it misses the cluster key, or could not reach OpenSearch when it started); **Saved copy** when it cannot read the shared settings now and works from its copy; **Missed a key change** or **Settings gone** when it needs `signalith cluster` (see [signalith cluster](cluster-cli.md)). Hover over it for what to do. Below it, a shared setting that was changed outside Signalith or by a newer version (the server keeps its last good copy), and the settings in its signalith.yaml or environment that differ from the shared ones |
+| Settings | How it uses the [shared settings](#shared-settings-and-the-cluster-key): **Shared** when it uses the settings every server shares; **Its own files** when it is not part of the cluster (amber when it misses the cluster key, or could not reach OpenSearch when it started); **Saved copy** when it cannot read the shared settings now and works from its copy; **Missed a key change** or **Settings gone** when it needs `signalith cluster` (see [signalith cluster](cluster-cli.md)). Hover over it for what to do. Below it, a shared setting that was changed outside Signalith or by a newer version (the server keeps its last good copy), the settings in its signalith.yaml or environment that differ from the shared ones, how many settings wait for its restart, and how many shared values it could not use |
 | Version | The Signalith version it runs |
+
+A server's name opens a panel with its settings: those that wait for its restart, the
+shared values it could not use (it keeps its own value of each, see
+[Settings on several servers](settings.md#when-a-server-cannot-use-a-shared-value)), how
+its last restart went, what differs in its own files, and, for 7 days after the
+settings became shared, the values its own Settings page had that differ from the
+shared ones. **Open its settings** opens the Settings page at that server.
 
 With one server, the page shows that server and nothing to set up. To add one, see
 [Adding a server by hand](#adding-a-server-by-hand). Servers that run a version of
@@ -110,9 +117,12 @@ is kept in OpenSearch, so every server shows the same Detections page, detection
 health and warnings, and **Run now** works on any of them.
 
 **Which servers may run them.** Every server, unless **Run detections on schedule**
-(`detections.scheduler`) is turned off on its Settings page. Leave it on: the
+(`detections.scheduler`) is turned off on its Settings page; once the servers share
+their settings it is called **May run background jobs** (`cluster.leader_eligible`,
+or `SIGNALITH_LEADER_ELIGIBLE`), one of each server's own settings. Leave it on: the
 servers take turns by themselves. Turn it off only on a server that should never
-run the jobs, for example one that only receives data.
+run the jobs, for example one that only receives data. A change applies at the
+server's next restart.
 
 **Changing retention and feeds.** Once the servers are a cluster (see
 [Shared feeds and retention policies](#shared-feeds-and-retention-policies)), the Data retention
@@ -297,8 +307,9 @@ server keeps in its state folder (`keys/cluster-<id>.key`, encrypted with that
 server's master key) and never in OpenSearch, so someone who can write to OpenSearch
 cannot change them unnoticed. They share what makes them one cluster (its name, the
 list of servers and their keys), the threat intel feeds and the retention policies
-(see [Shared feeds and retention policies](#shared-feeds-and-retention-policies)), and
-the users and sign-in (see [Shared users and sign-in](#shared-users-and-sign-in)).
+(see [Shared feeds and retention policies](#shared-feeds-and-retention-policies)),
+the users and sign-in (see [Shared users and sign-in](#shared-users-and-sign-in)), and
+the Settings page (see [Settings on several servers](settings.md#settings-on-several-servers)).
 
 The server that runs the background jobs makes the cluster by itself, the first
 time it runs this version: it makes the cluster key and writes the shared settings.
@@ -340,7 +351,8 @@ cannot be reached (it then answers `/readyz` with `degraded` and pauses changes)
 | --- | --- |
 | `signalith cluster status` | This server's place in the cluster, the servers with the key, and any problem |
 | `signalith cluster found` | Makes the cluster from this server's files when no server that runs the background jobs is up |
-| `signalith cluster export` | Prints the shared settings as YAML; stored passwords stay encrypted |
+| `signalith cluster export` | Prints the shared settings as YAML; stored passwords stay encrypted. `-settings` writes the settings of all servers as a file `apply` takes |
+| `signalith cluster apply -f` | Changes the settings of all servers to those of a file, such as one kept in version control |
 | `signalith cluster import -from-cache` | Writes this server's copy back after the `<prefix>_config` index was deleted; the other servers resume by themselves |
 | `signalith cluster export-key`, `import-key` | Gives another server the cluster key, encrypted with a passphrase |
 | `signalith cluster reset-key` | When every copy of the key is lost: with every server stopped, shows the shared settings, makes a new key and signs them with it. Passwords stored with the old key must be entered again |
@@ -484,6 +496,15 @@ in once more**, on a single server too. From then on:
   restart. `signalith passwd -local` is the break-glass password of one server, used
   only while OpenSearch cannot be used.
 - A server of an earlier version can no longer start on this OpenSearch.
+
+**Settings.** The servers start sharing their Settings page in the same way, once every
+server that ran in the last 24 hours runs this version: the founder brings in its
+settings, then each server restarts in place by itself and brings in its own, and
+nobody needs to sign in again. Settings for all servers then have one value on every
+server, each server's own settings can be changed on any server's page, and
+`settings.yaml` keeps only each server's connection and folder settings. See
+[When the settings become shared](settings.md#when-the-settings-become-shared) for what
+changes, and how a value one server's page had is shown for a week.
 
 ## Load balancers: /readyz and /livez
 

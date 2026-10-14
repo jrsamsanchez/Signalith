@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -510,6 +511,12 @@ func (c *Config) applyPage(p *PageSettings, base *Config) error {
 		if e, ok := l.page[s.Key]; ok {
 			bound = e.SentTo
 		}
+		if v, ok := l.shared[s.Key]; ok {
+			bound = v.SentTo
+		} else if r, ok := l.kept[s.Key]; ok {
+			kept, _ := keptValue(s.Key, r.Kept)
+			bound = kept.SentTo
+		}
 		// A secret sent nowhere now (the assistant turned off) is kept
 		// for when the address it was saved with comes back.
 		if now := s.SentTo(c); now != "" && now != bound {
@@ -552,13 +559,18 @@ func orNone(origin string) string {
 
 // Source says where a setting's value comes from.
 type Source struct {
-	// Kind is env, page, file or default.
+	// Kind is env, page, file, shared, kept or default.
 	Kind string `json:"kind"`
 	// Env is the environment variable, for env.
 	Env string `json:"env,omitempty"`
-	// By and At say who changed it on the page, and when.
-	By string    `json:"by,omitempty"`
-	At time.Time `json:"at,omitzero"`
+	// By and At say who changed it on the page, and when; for shared, who
+	// changed the shared value, when, and on which server (Node).
+	By   string    `json:"by,omitempty"`
+	At   time.Time `json:"at,omitzero"`
+	Node string    `json:"node,omitempty"`
+	// Applied is "yaml" or "env" for a shared value that came from a
+	// server's signalith.yaml or environment when it changed there.
+	Applied string `json:"applied,omitempty"`
 }
 
 // Where a value comes from.
@@ -566,8 +578,24 @@ const (
 	FromEnv     = "env"
 	FromPage    = "page"
 	FromFile    = "file"
+	FromShared  = "shared"
 	FromDefault = "default"
+	// FromKept is a shared setting this server keeps its own value of,
+	// because it could not use the shared one (see SharedKept).
+	FromKept = "kept"
 )
+
+// alias is the other name of a setting with two: detections.scheduler is
+// the old name of cluster.leader_eligible.
+func alias(key string) string {
+	switch key {
+	case "cluster.leader_eligible":
+		return "detections.scheduler"
+	case "detections.scheduler":
+		return "cluster.leader_eligible"
+	}
+	return ""
+}
 
 // Source says where the value of a setting in c comes from.
 func (c *Config) Source(key string) Source {
@@ -578,10 +606,26 @@ func (c *Config) Source(key string) Source {
 	if v := l.env[key]; v != "" {
 		return Source{Kind: FromEnv, Env: v}
 	}
-	if e, ok := l.page[key]; ok {
-		return Source{Kind: FromPage, By: e.ChangedBy, At: e.ChangedAt}
+	if v, ok := l.shared[key]; ok {
+		src := Source{Kind: FromShared, By: v.From.By, At: v.From.At, Node: v.From.Node}
+		if k := v.From.Kind; k == "yaml" || k == FromEnv {
+			src.Applied = k
+		}
+		return src
 	}
-	if l.file[key] {
+	if r, ok := l.kept[key]; ok {
+		return Source{Kind: FromKept, At: r.At}
+	}
+	if l.sharedOn && slices.Contains(SharedKeys(), key) {
+		// Neither the files nor the page set it.
+		return Source{Kind: FromDefault}
+	}
+	for _, k := range []string{key, alias(key)} {
+		if e, ok := l.page[k]; ok && k != "" {
+			return Source{Kind: FromPage, By: e.ChangedBy, At: e.ChangedAt}
+		}
+	}
+	if l.file[key] || alias(key) != "" && l.file[alias(key)] {
 		return Source{Kind: FromFile}
 	}
 	return Source{Kind: FromDefault}

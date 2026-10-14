@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -129,6 +130,10 @@ type Manager struct {
 	// starting runs every few minutes.
 	guardPaused    time.Time
 	guardPausedWhy string
+	// liveInterval replaces Interval once SetInterval changed it (in
+	// nanoseconds; 0 is none), and reschedule tells Start.
+	liveInterval atomic.Int64
+	reschedule   chan struct{}
 }
 
 type queuedRun struct{ trigger, by string }
@@ -219,6 +224,7 @@ func (m *Manager) init() {
 		if m.Archive == nil {
 			m.Archive = &Archive{}
 		}
+		m.reschedule = make(chan struct{}, 1)
 	})
 }
 
@@ -230,6 +236,9 @@ func (m *Manager) now() time.Time {
 }
 
 func (m *Manager) interval() time.Duration {
+	if d := time.Duration(m.liveInterval.Load()); d > 0 {
+		return d
+	}
 	if m.Interval > 0 {
 		return m.Interval
 	}
@@ -888,12 +897,27 @@ func (m *Manager) verifiedDelete(ctx context.Context, d Decision, act *Action) e
 	return nil
 }
 
+// SetInterval changes how often Start enforces policies, at once: the
+// next run comes one new interval after the last one, or now when that
+// is past. retention.interval is shared by the servers of a cluster and
+// applies without a restart.
+func (m *Manager) SetInterval(d time.Duration) {
+	m.init()
+	if d <= 0 || d == m.interval() {
+		return
+	}
+	m.liveInterval.Store(int64(d))
+	select {
+	case m.reschedule <- struct{}{}:
+	default:
+	}
+}
+
 // Start enforces retention every Interval until ctx ends, and checks the
 // disk every few minutes so the guard can act between runs. Only the
 // server that runs the detection scheduler calls it.
 func (m *Manager) Start(ctx context.Context) {
 	m.init()
-	interval := m.interval()
 	m.mu.Lock()
 	m.automatic, m.baseCtx, m.nextRun = true, ctx, m.now().Add(firstRunDelay)
 	m.mu.Unlock()
@@ -911,16 +935,32 @@ func (m *Manager) Start(ctx context.Context) {
 			m.Log.Info("retention run skipped; another job is in progress", "trigger", trigger)
 		}
 	}
+	// lastRun is when the last scheduled run ended; zero before the first,
+	// which comes a moment after the start whatever the interval.
+	var lastRun time.Time
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-timer.C:
 			scheduled(TriggerSchedule)
+			lastRun = m.now()
 			m.mu.Lock()
-			m.nextRun = m.now().Add(interval)
+			m.nextRun = lastRun.Add(m.interval())
 			m.mu.Unlock()
-			timer.Reset(interval)
+			timer.Reset(m.interval())
+		case <-m.reschedule:
+			if lastRun.IsZero() {
+				continue
+			}
+			next := lastRun.Add(m.interval())
+			if now := m.now(); next.Before(now) {
+				next = now
+			}
+			m.mu.Lock()
+			m.nextRun = next
+			m.mu.Unlock()
+			timer.Reset(next.Sub(m.now()))
 		case <-check.C:
 			if m.guardTripped(ctx) {
 				scheduled(TriggerGuard)
