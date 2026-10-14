@@ -117,6 +117,14 @@ var knownFields = func() map[string]string {
 		// connection the filtering platform allowed or blocked (5156, 5157).
 		"object_server": kw, "object_properties": kw, "src_user_domain": kw, "target_info": kw,
 		"filter_rtid": kw, "layer_name": kw, "layer_rtid": kw,
+		// User accounts and groups changed (Security 4720, 4726, 4728,
+		// 4732, 4738, 4756), the audit policy changed (4719) and a domain
+		// trust created (4706).
+		"object_domain": kw, "object_sid": kw, "member_sid": kw, "sam_account_name": kw, "display_name": kw,
+		"user_principal_name": kw, "primary_group_id": kw, "allowed_to_delegate_to": kw, "old_uac_value": kw,
+		"new_uac_value": kw, "user_account_control": kw, "sid_history": kw, "audit_category": kw,
+		"audit_subcategory": kw, "audit_subcategory_guid": kw, "audit_policy_changes": kw, "trust_type": kw,
+		"trust_direction": kw, "trust_attributes": kw,
 		"registry_operation": kw, "registry_value_type": kw, "registry_old_value_data": kw,
 		"kerberos_service": kw, "kerberos_service_sid": kw, "kerberos_status": kw, "ticket_options": kw,
 		"ticket_encryption_type": kw, "pre_auth_type": kw, "cert_issuer": kw, "cert_serial": kw, "cert_thumbprint": kw,

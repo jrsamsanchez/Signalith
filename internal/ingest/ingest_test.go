@@ -219,6 +219,27 @@ func TestWindowsExplicitCredentialsAndFilteringPlatform(t *testing.T) {
 	})
 }
 
+func TestWindowsAccountAndAuditPolicyChanges(t *testing.T) {
+	sec := func(id string, ins []string) map[string]any {
+		b, _ := json.Marshal(map[string]any{"Channel": "Security", "Computer": "DC1", "EventID": id, "StringInserts": ins})
+		return Normalize("win.security", decode(t, string(b)), now).Document()
+	}
+	ins := []string{"-", "jdoe", "CORP", "S-1-5-21-1-1201", "S-1-5-21-1-500", "admin", "CORP", "0x967cf92", "-", "-", "-", "-", "-", "-",
+		"-", "-", "-", "-", "-", "-", "-", "0x10", "0x10010", "\r\n\t\t%%2096", "-", "-", "%%1793"}
+	expect(t, sec("4738", ins), map[string]any{
+		"datamodel": "Change", "action": "modified", "object_category": "user", "object": "jdoe", "object_sid": "S-1-5-21-1-1201",
+		"user": "admin", "old_uac_value": "0x10", "new_uac_value": "0x10010", "user_account_control": "%%2096",
+	})
+	expect(t, sec("4720", ins[1:]), map[string]any{"action": "created", "object": "jdoe", "user": "admin", "user_domain": "CORP"})
+	expect(t, sec("4732", []string{"-", "S-1-5-21-1-1201", "DnsAdmins", "CORP", "S-1-5-21-1-1101", "S-1-5-21-1-500", "admin", "CORP", "0x1"}), map[string]any{
+		"object_category": "group", "object": "DnsAdmins", "member_sid": "S-1-5-21-1-1201", "user": "admin", "object_sid": "S-1-5-21-1-1101",
+	})
+	expect(t, sec("4719", []string{"S-1-5-18", "DC1$", "CORP", "0x3e7", "%%8274", "%%12801", "{0CCE9215-69AE-11D9-BED3-505054503030}", "%%8448, %%8450"}), map[string]any{
+		"object_category": "audit_policy", "audit_subcategory_guid": "{0CCE9215-69AE-11D9-BED3-505054503030}",
+		"audit_policy_changes": "%%8448, %%8450", "user": "DC1$",
+	})
+}
+
 func TestSysmonProcessHashes(t *testing.T) {
 	msg := "Process Create:\r\nImage: C:\\Users\\bob\\evil.exe\r\nCommandLine: evil.exe\r\nUser: CORP\\bob\r\nHashes: SHA1=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA,MD5=BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB,SHA256=CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC,IMPHASH=DD"
 	b, _ := json.Marshal(map[string]any{"Channel": "Microsoft-Windows-Sysmon/Operational", "Computer": "WS1", "EventID": 1, "Message": msg})

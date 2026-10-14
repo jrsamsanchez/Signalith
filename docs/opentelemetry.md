@@ -62,7 +62,7 @@ agent collects them:
 
 | Receiver | Becomes |
 | --- | --- |
-| `windowseventlog` (Security log 4624, 4625, 4648, 4656, 4657, 4661, 4662, 4663, 4688, 4697, 4698, 4720, 4726, 4728, 4732, 4756, 4768, 4769, 5136, 5145, 5156, 5157; System 7045; Sysmon 1, 3, 6, 7, 8, 10, 11, 12, 13, 14, 22, 23, 26; PowerShell 4104) | Authentication, Endpoint, Change, Network_Traffic, Image_Load, Filesystem, Registry, Network_Resolution, Script |
+| `windowseventlog` (Security log 4624, 4625, 4648, 4656, 4657, 4661, 4662, 4663, 4688, 4697, 4698, 4706, 4719, 4720, 4726, 4728, 4732, 4738, 4756, 4768, 4769, 4794, 5136, 5145, 5156, 5157; System 7045; Sysmon 1, 3, 6, 7, 8, 10, 11, 12, 13, 14, 22, 23, 26; PowerShell 4104) | Authentication, Endpoint, Change, Network_Traffic, Image_Load, Filesystem, Registry, Network_Resolution, Script |
 | `filelog` on `auth.log` or `secure` (or any syslog-format file) | Authentication and Change for sshd, sudo, su and account changes |
 | `journald` | as the agent's journal input |
 | `syslog` | as Signalith's own syslog receiver |

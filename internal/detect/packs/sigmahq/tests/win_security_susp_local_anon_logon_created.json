@@ -1,0 +1,4 @@
+{"rule": "1bbf25b9-8038-4154-a50b-118f2a32be27", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4720","data":{"SamAccountName":"ANONYMOUS LOGON"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4720","data":{}}
+]}

@@ -136,7 +136,8 @@ var sysmonEvents = map[string]string{
 // (service: security) are checked for; such a rule's category is
 // SecurityCategory of its one event, or of the events of one of
 // SecurityGroups.
-var SecurityEvents = []string{"4624", "4625", "4648", "4656", "4657", "4661", "4662", "4663", "4697", "4698", "4768", "4769", "5136", "5145", "5156", "5157"}
+var SecurityEvents = []string{"4624", "4625", "4648", "4656", "4657", "4661", "4662", "4663", "4697", "4698", "4706", "4719",
+	"4720", "4732", "4738", "4794", "4768", "4769", "5136", "5145", "5156", "5157"}
 
 // SecurityGroups are Security events with the same data that a rule may
 // name together: a handle to an object requested (4656) and the access
@@ -340,6 +341,38 @@ var Bases = map[string]map[string]string{
 		"ProcessID": "4242", "Application": `\device\harddiskvolume2\apps\launcher\launcher.exe`, "Direction": "%%14593",
 		"SourceAddress": "192.0.2.10", "SourcePort": "50123", "DestAddress": "198.51.100.20", "DestPort": "8443", "Protocol": "6",
 		"FilterRTID": "70413", "LayerName": "%%14611", "LayerRTID": "48",
+	},
+	"security_4706": {
+		"DomainName": "partner.example.net", "DomainSid": "S-1-5-21-2000", "TdoType": "2", "TdoDirection": "3", "TdoAttributes": "8",
+		"SidFilteringEnabled": "%%1796", "SubjectUserSid": "S-1-5-21-1000-1104", "SubjectUserName": "tester",
+		"SubjectDomainName": "CORP", "SubjectLogonId": "0x1a2b3c",
+	},
+	"security_4719": {
+		"SubjectUserSid": "S-1-5-18", "SubjectUserName": "WS1$", "SubjectDomainName": "CORP", "SubjectLogonId": "0x3e7",
+		"CategoryId": "%%8274", "SubcategoryId": "%%12801", "SubcategoryGuid": "{0CCE921D-69AE-11D9-BED3-505054503030}",
+		"AuditPolicyChanges": "%%8449",
+	},
+	"security_4720": {
+		"TargetUserName": "jdoe", "TargetDomainName": "CORP", "TargetSid": "S-1-5-21-1000-1201",
+		"SubjectUserSid": "S-1-5-21-1000-1104", "SubjectUserName": "tester", "SubjectDomainName": "CORP", "SubjectLogonId": "0x1a2b3c",
+		"PrivilegeList": "-", "SamAccountName": "jdoe", "DisplayName": "%%1793", "UserPrincipalName": "-", "PrimaryGroupId": "513",
+		"AllowedToDelegateTo": "-", "OldUacValue": "0x0", "NewUacValue": "0x15", "UserAccountControl": "%%2080 %%2082 %%2084",
+		"SidHistory": "-",
+	},
+	"security_4732": {
+		"MemberName": "-", "MemberSid": "S-1-5-21-1000-1201", "TargetUserName": "Remote Desktop Users", "TargetDomainName": "Builtin",
+		"TargetSid": "S-1-5-32-555", "SubjectUserSid": "S-1-5-21-1000-1104", "SubjectUserName": "tester",
+		"SubjectDomainName": "CORP", "SubjectLogonId": "0x1a2b3c",
+	},
+	"security_4738": {
+		"Dummy": "-", "TargetUserName": "jdoe", "TargetDomainName": "CORP", "TargetSid": "S-1-5-21-1000-1201",
+		"SubjectUserSid": "S-1-5-21-1000-1104", "SubjectUserName": "tester", "SubjectDomainName": "CORP", "SubjectLogonId": "0x1a2b3c",
+		"PrivilegeList": "-", "SamAccountName": "-", "DisplayName": "-", "UserPrincipalName": "-", "PrimaryGroupId": "-",
+		"AllowedToDelegateTo": "-", "OldUacValue": "0x10", "NewUacValue": "0x210", "UserAccountControl": "%%2089", "SidHistory": "-",
+	},
+	"security_4794": {
+		"SubjectUserSid": "S-1-5-21-1000-1104", "SubjectUserName": "tester", "SubjectDomainName": "CORP", "SubjectLogonId": "0x1a2b3c",
+		"Workstation": "DC1",
 	},
 	"security_4697": {
 		"SubjectUserSid": "S-1-5-21-1000-1104", "SubjectUserName": "tester", "SubjectDomainName": "CORP", "SubjectLogonId": "0x1a2b3c",

@@ -472,6 +472,26 @@ func records(node string, ev map[string]string) []sigmacheck.Case {
 			set(s, "IpAddress", v)
 		}
 		return []sigmacheck.Case{{Channel: sigmacheck.SecurityChannel, EventID: id, Data: s}}
+	case "UserChanged":
+		s := maps.Clone(sigmacheck.Bases[sigmacheck.SecurityCategory("4738")])
+		set(s, "TargetUserName", ev["object"])
+		set(s, "TargetSid", ev["object_sid"])
+		set(s, "SubjectUserName", ev["user"])
+		set(s, "SamAccountName", ev["sam_account_name"])
+		set(s, "UserAccountControl", ev["user_account_control"])
+		set(s, "AllowedToDelegateTo", ev["allowed_to_delegate_to"])
+		set(s, "OldUacValue", ev["old_uac_value"])
+		set(s, "NewUacValue", ev["new_uac_value"])
+		set(s, "SidHistory", ev["sid_history"])
+		return []sigmacheck.Case{{Channel: sigmacheck.SecurityChannel, EventID: "4738", Data: s}}
+	case "GroupMemberAdded":
+		s := maps.Clone(sigmacheck.Bases[sigmacheck.SecurityCategory("4732")])
+		set(s, "TargetUserName", ev["object"])
+		set(s, "TargetSid", ev["object_sid"])
+		set(s, "MemberSid", ev["member_sid"])
+		set(s, "MemberName", ev["member"])
+		set(s, "SubjectUserName", ev["user"])
+		return []sigmacheck.Case{{Channel: sigmacheck.SecurityChannel, EventID: "4732", Data: s}}
 	case "ServiceInstalled":
 		s := map[string]string{
 			"ServiceName": "ExampleUpdater", "ImagePath": `"C:\Program Files\Example\updater.exe" --service`,
@@ -607,7 +627,7 @@ func Cases(r *Rule) []sigmacheck.Case {
 }
 
 // NodeModel is the Signalith data model of each node ("" for any).
-var NodeModel = map[string]string{"Processes": "Endpoint", "Filesystem": "Filesystem", "Registry": "Registry", "PowerShell": "Script", "ImageLoad": "Image_Load", "ProcessAccess": "Endpoint", "TaskCreated": "Change", "ObjectAccess": "", "ServiceInstalled": "Change", "DirectoryChange": "Change", "ShareAccess": "Filesystem", "KerberosTGT": "Authentication", "KerberosService": "Authentication"}
+var NodeModel = map[string]string{"Processes": "Endpoint", "Filesystem": "Filesystem", "Registry": "Registry", "PowerShell": "Script", "ImageLoad": "Image_Load", "ProcessAccess": "Endpoint", "TaskCreated": "Change", "ObjectAccess": "", "ServiceInstalled": "Change", "DirectoryChange": "Change", "ShareAccess": "Filesystem", "KerberosTGT": "Authentication", "KerberosService": "Authentication", "UserChanged": "Change", "GroupMemberAdded": "Change"}
 
 // AttackDataSource marks a test event recorded in a real attack (Splunk's
 // attack_data, by internal/detect/attackgen).
@@ -636,6 +656,8 @@ var NodeEvents = map[string][]string{
 	"ShareAccess":      {"5145"},
 	"KerberosTGT":      {"4768"},
 	"KerberosService":  {"4769"},
+	"UserChanged":      {"4738"},
+	"GroupMemberAdded": {"4732"},
 }
 
 // InModel reports whether an event of a data model is one a node reads.

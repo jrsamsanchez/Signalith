@@ -421,24 +421,100 @@ func parseWindowsSecurity(eventID string, in []string, ev *Event) {
 		f["ad_value"] = at(in, 13)
 		// %%14674 is a value added, %%14675 a value deleted.
 		f["ad_operation"] = at(in, 14)
-	case "4720", "4726":
+	case "4720", "4726", "4738":
+		// A user account created, deleted or changed: the account, then
+		// who did it, then (4720 and 4738) its attributes, "-" when a
+		// change left one as it was. 4738 starts with an unused value.
 		ev.Model = "Change"
-		f["object"] = at(in, 0)
 		f["object_category"] = "user"
-		f["user"] = at(in, 4)
-		f["action"] = map[string]string{"4720": "created", "4726": "deleted"}[eventID]
+		f["action"] = map[string]string{"4720": "created", "4726": "deleted", "4738": "modified"}[eventID]
 		f["signature"] = map[string]string{
 			"4720": "A user account was created",
 			"4726": "A user account was deleted",
+			"4738": "A user account was changed",
 		}[eventID]
+		if eventID == "4738" {
+			in = in[min(1, len(in)):]
+		}
+		f["object"] = at(in, 0)
+		f["object_domain"] = at(in, 1)
+		f["object_sid"] = at(in, 2)
+		f["user_sid"] = at(in, 3)
+		f["user"] = at(in, 4)
+		f["user_domain"] = at(in, 5)
+		f["logon_id"] = at(in, 6)
+		if eventID != "4726" {
+			f["sam_account_name"] = at(in, 8)
+			f["display_name"] = at(in, 9)
+			f["user_principal_name"] = at(in, 10)
+			f["primary_group_id"] = at(in, 18)
+			f["allowed_to_delegate_to"] = at(in, 19)
+			f["old_uac_value"] = at(in, 20)
+			f["new_uac_value"] = at(in, 21)
+			f["user_account_control"] = strings.Join(strings.Fields(at(in, 22)), " ")
+			f["sid_history"] = at(in, 24)
+		}
 	case "4728", "4732", "4756":
+		// A member added to a global (4728), local (4732) or universal
+		// (4756) security group.
 		ev.Model = "Change"
 		f["action"] = "modified"
 		f["object_category"] = "group"
 		f["signature"] = "A member was added to a security-enabled group"
 		f["member"] = at(in, 0)
+		f["member_sid"] = at(in, 1)
 		f["object"] = at(in, 2)
+		f["object_domain"] = at(in, 3)
+		f["object_sid"] = at(in, 4)
+		f["user_sid"] = at(in, 5)
 		f["user"] = at(in, 6)
+		f["user_domain"] = at(in, 7)
+		f["logon_id"] = at(in, 8)
+	case "4719":
+		// The audit policy changed: which subcategory and what was
+		// turned on or off (%%8448 success removed, %%8450 failure
+		// removed, %%8449 success added, %%8451 failure added).
+		ev.Model = "Change"
+		f["action"] = "modified"
+		f["object_category"] = "audit_policy"
+		f["signature"] = "System audit policy was changed"
+		f["user_sid"] = at(in, 0)
+		f["user"] = at(in, 1)
+		f["user_domain"] = at(in, 2)
+		f["logon_id"] = at(in, 3)
+		f["audit_category"] = at(in, 4)
+		f["audit_subcategory"] = at(in, 5)
+		f["object"] = at(in, 6)
+		f["audit_subcategory_guid"] = at(in, 6)
+		f["audit_policy_changes"] = strings.Join(strings.Fields(at(in, 7)), " ")
+	case "4706":
+		// A trust to a domain was created.
+		ev.Model = "Change"
+		f["action"] = "created"
+		f["object_category"] = "domain_trust"
+		f["signature"] = "A new trust was created to a domain"
+		f["object"] = at(in, 0)
+		f["object_sid"] = at(in, 1)
+		f["trust_type"] = at(in, 2)
+		f["trust_direction"] = at(in, 3)
+		f["trust_attributes"] = at(in, 4)
+		f["user_sid"] = at(in, 6)
+		f["user"] = at(in, 7)
+		f["user_domain"] = at(in, 8)
+		f["logon_id"] = at(in, 9)
+	case "4794":
+		// A domain controller's Directory Services Restore Mode
+		// administrator password was set.
+		ev.Model = "Change"
+		f["action"] = "modified"
+		f["object_category"] = "user"
+		f["object"] = "DSRM Administrator"
+		f["signature"] = "An attempt was made to set the Directory Services Restore Mode administrator password"
+		f["user_sid"] = at(in, 0)
+		f["user"] = at(in, 1)
+		f["user_domain"] = at(in, 2)
+		f["logon_id"] = at(in, 3)
+		f["src_host"] = at(in, 4)
 	}
 }
 

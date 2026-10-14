@@ -582,6 +582,10 @@ rules:
     rule_id: 5cc67381-44fa-4111-8a37-7a230943f027
     file: kerberoasting_spn_request_with_rc4_encryption.yml
     path: detections/endpoint/kerberoasting_spn_request_with_rc4_encryption.yml
+  - id: splunk-kerberos-pre-authentication-flag-disabled-in-useraccountc
+    rule_id: 0cb847ee-9423-11ec-b2df-acde48001122
+    file: kerberos_pre_authentication_flag_disabled_in_useraccountcontrol.yml
+    path: detections/endpoint/kerberos_pre_authentication_flag_disabled_in_useraccountcontrol.yml
   - id: splunk-kerberos-pre-authentication-flag-disabled-with-powershell
     rule_id: 59b51620-94c9-11ec-b3d5-acde48001122
     file: kerberos_pre_authentication_flag_disabled_with_powershell.yml
@@ -1926,6 +1930,10 @@ rules:
     rule_id: 347e0892-e8f3-4512-afda-dc0e3fa996f3
     file: windows_dns_gather_network_info.yml
     path: detections/endpoint/windows_dns_gather_network_info.yml
+  - id: splunk-windows-dnsadmins-new-member-added
+    rule_id: 27e600aa-77f8-4614-bc80-2662a67e2f48
+    file: windows_dnsadmins_new_member_added.yml
+    path: detections/endpoint/windows_dnsadmins_new_member_added.yml
   - id: splunk-windows-domain-account-discovery-via-get-netcomputer
     rule_id: a7fbbc4e-4571-424a-b627-6968e1c939e4
     file: windows_domain_account_discovery_via_get_netcomputer.yml
@@ -2650,6 +2658,10 @@ rules:
     rule_id: 27958de0-2857-43ca-9d4c-b255cf59dcab
     file: windows_powershell_disable_http_logging.yml
     path: detections/endpoint/windows_powershell_disable_http_logging.yml
+  - id: splunk-windows-powershell-export-certificate
+    rule_id: 5e38ded4-c964-41f4-8cb6-4a1a53c6929f
+    file: windows_powershell_export_certificate.yml
+    path: detections/endpoint/windows_powershell_export_certificate.yml
   - id: splunk-windows-powershell-export-pfxcertificate
     rule_id: ed06725f-6da6-439f-9dcc-ab30e891297c
     file: windows_powershell_export_pfxcertificate.yml

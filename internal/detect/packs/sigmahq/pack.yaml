@@ -7265,6 +7265,10 @@ rules:
     rule_id: 0f63e1ef-1eb9-4226-9d54-8927ca08520a
     file: win_security_admin_rdp_login.yml
     path: rules/windows/builtin/security/account_management/win_security_admin_rdp_login.yml
+  - id: sigma-win-security-alert-enable-weak-encryption
+    rule_id: f6de9536-0441-4b3f-a646-f4e00f300ffd
+    file: win_security_alert_enable_weak_encryption.yml
+    path: rules/windows/builtin/security/win_security_alert_enable_weak_encryption.yml
   - id: sigma-win-security-cobaltstrike-service-installs
     rule_id: d7a95147-145f-4678-b85d-d1ff4a3bb3f6
     file: win_security_cobaltstrike_service_installs.yml
@@ -7273,6 +7277,14 @@ rules:
     rule_id: c39f0c81-7348-4965-ab27-2fde35a1b641
     file: win_security_dcom_iertutil_dll_hijack.yml
     path: rules/windows/builtin/security/win_security_dcom_iertutil_dll_hijack.yml
+  - id: sigma-win-security-disable-event-auditing
+    rule_id: 69aeb277-f15f-4d2d-b32a-55e883609563
+    file: win_security_disable_event_auditing.yml
+    path: rules/windows/builtin/security/win_security_disable_event_auditing.yml
+  - id: sigma-win-security-disable-event-auditing-critical
+    rule_id: ab4561b1-6c7e-48a7-ad08-087cfb9ce8f1
+    file: win_security_disable_event_auditing_critical.yml
+    path: rules/windows/builtin/security/win_security_disable_event_auditing_critical.yml
   - id: sigma-win-security-dot-net-etw-tamper
     rule_id: a4c90ea1-2634-4ca0-adbb-35eae169b6fc
     file: win_security_dot_net_etw_tamper.yml
@@ -7281,6 +7293,10 @@ rules:
     rule_id: 4ac1f50b-3bd0-4968-902d-868b4647937e
     file: win_security_dpapi_domain_backupkey_extraction.yml
     path: rules/windows/builtin/security/win_security_dpapi_domain_backupkey_extraction.yml
+  - id: sigma-win-security-hidden-user-creation
+    rule_id: 7b449a5e-1db5-4dd0-a2dc-4e3a67282538
+    file: win_security_hidden_user_creation.yml
+    path: rules/windows/builtin/security/win_security_hidden_user_creation.yml
   - id: sigma-win-security-hybridconnectionmgr-svc-installation
     rule_id: 0ee4d8a5-4e67-4faf-acfa-62a78457d1f2
     file: win_security_hybridconnectionmgr_svc_installation.yml
@@ -7405,6 +7421,14 @@ rules:
     rule_id: b210394c-ba12-4f89-9117-44a2464b9511
     file: win_security_smb_file_creation_admin_shares.yml
     path: rules/windows/builtin/security/win_security_smb_file_creation_admin_shares.yml
+  - id: sigma-win-security-susp-add-domain-trust
+    rule_id: 0255a820-e564-4e40-af2b-6ac61160335c
+    file: win_security_susp_add_domain_trust.yml
+    path: rules/windows/builtin/security/win_security_susp_add_domain_trust.yml
+  - id: sigma-win-security-susp-dsrm-password-change
+    rule_id: 53ad8e36-f573-46bf-97e4-15ba5bf4bb51
+    file: win_security_susp_dsrm_password_change.yml
+    path: rules/windows/builtin/security/win_security_susp_dsrm_password_change.yml
   - id: sigma-win-security-susp-group-policy-abuse-privilege-addition
     rule_id: 1c480e10-7ee1-46d4-8ed2-85f9789e3ce4
     file: win_security_susp_group_policy_abuse_privilege_addition.yml
@@ -7413,6 +7437,10 @@ rules:
     rule_id: d00a9a72-2c09-4459-ad03-5e0a23351e36
     file: win_security_susp_ldap_dataexchange.yml
     path: rules/windows/builtin/security/win_security_susp_ldap_dataexchange.yml
+  - id: sigma-win-security-susp-local-anon-logon-created
+    rule_id: 1bbf25b9-8038-4154-a50b-118f2a32be27
+    file: win_security_susp_local_anon_logon_created.yml
+    path: rules/windows/builtin/security/win_security_susp_local_anon_logon_created.yml
   - id: sigma-win-security-susp-logon-explicit-credentials
     rule_id: 941e5c45-cda7-4864-8cea-bbb7458d194a
     file: win_security_susp_logon_explicit_credentials.yml
@@ -7477,6 +7505,14 @@ rules:
     rule_id: 910ab938-668b-401b-b08c-b596e80fdca5
     file: win_security_transf_files_with_cred_data_via_network_shares.yml
     path: rules/windows/builtin/security/win_security_transf_files_with_cred_data_via_network_shares.yml
+  - id: sigma-win-security-user-added-to-local-administrators
+    rule_id: c265cf08-3f99-46c1-8d59-328247057d57
+    file: win_security_user_added_to_local_administrators.yml
+    path: rules/windows/builtin/security/win_security_user_added_to_local_administrators.yml
+  - id: sigma-win-security-user-creation
+    rule_id: 66b6be3d-55d0-4f47-9855-d69df21740ea
+    file: win_security_user_creation.yml
+    path: rules/windows/builtin/security/win_security_user_creation.yml
   - id: sigma-win-security-wfp-endpoint-agent-blocked
     rule_id: bacf58c6-e199-4040-a94f-95dea0f1e45a
     file: win_security_wfp_endpoint_agent_blocked.yml

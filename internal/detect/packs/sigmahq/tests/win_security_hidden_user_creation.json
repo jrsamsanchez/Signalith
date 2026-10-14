@@ -1,0 +1,5 @@
+{"rule": "7b449a5e-1db5-4dd0-a2dc-4e3a67282538", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4720","data":{"TargetUserName":"$"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4720","data":{"TargetUserName":"HomeGroupUser$"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4720","data":{}}
+]}

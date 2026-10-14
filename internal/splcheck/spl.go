@@ -189,7 +189,7 @@ var (
 		// Security events the Windows parser reads.
 		"wineventlog_security": {
 			"4698": "TaskCreated", "4663": "ObjectAccess", "5136": "DirectoryChange", "5145": "ShareAccess",
-			"4768": "KerberosTGT", "4769": "KerberosService",
+			"4768": "KerberosTGT", "4769": "KerberosService", "4738": "UserChanged", "4732": "GroupMemberAdded",
 		},
 		// The Service Control Manager's service installed event.
 		"wineventlog_system": {"7045": "ServiceInstalled"},
@@ -233,6 +233,16 @@ var (
 			"TargetUserName": "user", "ServiceName": "kerberos_service", "TicketOptions": "ticket_options",
 			"Status": "kerberos_status", "TicketEncryptionType": "ticket_encryption_type", "src_ip": "src",
 		},
+		// A user account changed, and a member added to a local group.
+		"UserChanged": {
+			"TargetUserName": "object", "TargetSid": "object_sid", "SubjectUserName": "user", "SamAccountName": "sam_account_name",
+			"UserAccountControl": "user_account_control", "AllowedToDelegateTo": "allowed_to_delegate_to",
+			"OldUacValue": "old_uac_value", "NewUacValue": "new_uac_value", "SidHistory": "sid_history",
+		},
+		"GroupMemberAdded": {
+			"TargetUserName": "object", "TargetSid": "object_sid", "MemberSid": "member_sid", "MemberName": "member",
+			"SubjectUserName": "user",
+		},
 		"ServiceInstalled": {
 			"ServiceName": "service_name", "ImagePath": "service_path", "ServiceType": "service_type",
 			"StartType": "service_start_type", "AccountName": "service_account",
@@ -256,6 +266,40 @@ const RawUser = "raw:user"
 // eventCode is the stored field of EventCode or EventID.
 const eventCode = "signature_id"
 
+// rawFieldPrefix marks an event field of a raw search before its node,
+// and so the field it is stored as, is known.
+const rawFieldPrefix = "rawfield:"
+
+// resolveRaw replaces a raw search's event fields with the fields the
+// node stores them as.
+func resolveRaw(e Expr, node string) error {
+	switch x := e.(type) {
+	case *And:
+		for _, k := range x.Kids {
+			if err := resolveRaw(k, node); err != nil {
+				return err
+			}
+		}
+	case *Or:
+		for _, k := range x.Kids {
+			if err := resolveRaw(k, node); err != nil {
+				return err
+			}
+		}
+	case *Not:
+		return resolveRaw(x.Kid, node)
+	case *Cmp:
+		if name, ok := strings.CutPrefix(x.Field, rawFieldPrefix); ok {
+			f, ok := RawFields[node][name]
+			if !ok {
+				return fmt.Errorf("field %s is not a field of %s events", name, node)
+			}
+			x.Field = f
+		}
+	}
+	return nil
+}
+
 // rawSource is the pseudo node a raw search is parsed against before its
 // event code names the node.
 func rawSource(source string) string { return "raw:" + source }
@@ -269,12 +313,12 @@ const xmlkvSuffix = "+xmlkv"
 // (Without fillnull, Splunk's stats also drops events that miss one of
 // its by fields; Signalith keeps them, so it finds those too.)
 func parseRaw(r *Rule, source, terms string, later []string, macros map[string]*Macro) (*Rule, error) {
-	filled, counted, xml := false, false, false
+	filled, counted, xml, renamed := false, false, false, false
 	var searches []string
 	for _, s := range later {
 		switch {
 		case harmlessRe.MatchString(s) || filterRe.MatchString(s):
-		case xmlkvRe.MatchString(s) && !counted && !filled && !xml && len(searches) == 0:
+		case xmlkvRe.MatchString(s) && !counted && !filled && !xml && !renamed && len(searches) == 0:
 			xml = true
 		case searchRe.MatchString(s) && xml && !counted && !filled:
 			// A search after xmlkv filters on what it extracted.
@@ -283,7 +327,10 @@ func parseRaw(r *Rule, source, terms string, later []string, macros map[string]*
 			filled = true
 		case statsRe.MatchString(s) && !counted:
 			counted = true
-		case renameRe.MatchString(s) && counted:
+		case renameRe.MatchString(s) && (counted || !xml && len(searches) == 0):
+			// Before stats, a rename only renames what stats counts by,
+			// as long as no later stage filters on the new names.
+			renamed = true
 		default:
 			return nil, fmt.Errorf("search has a later stage Signalith does not run: %s", firstWords(s))
 		}
@@ -337,6 +384,9 @@ func parseRaw(r *Rule, source, terms string, later []string, macros map[string]*
 	where = &And{Kids: top}
 	if len(top) == 1 {
 		where = top[0]
+	}
+	if err := resolveRaw(where, r.Node); err != nil {
+		return nil, err
 	}
 	if err := fieldsOf(where, r.Node, xml); err != nil {
 		return nil, err

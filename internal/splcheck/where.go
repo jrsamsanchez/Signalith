@@ -292,9 +292,11 @@ func (p *parser) field(name string) (string, error) {
 				return f, nil
 			}
 		}
+		// The stored field depends on the node, which the event code
+		// picks once the whole search is read (resolveRaw).
 		for _, node := range rawNodes[source] {
-			if f, ok := RawFields[node][name]; ok {
-				return f, nil
+			if _, ok := RawFields[node][name]; ok {
+				return rawFieldPrefix + name, nil
 			}
 		}
 		return "", fmt.Errorf("field %s has no Signalith mapping", name)

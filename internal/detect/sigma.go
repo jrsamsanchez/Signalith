@@ -139,6 +139,13 @@ var sigmaEventFields = func() map[string]map[string]string {
 		"subjectusersid": "user_sid", "objectserver": "object_server", "objectname": "object_path", "objecttype": "object_type",
 		"accesslist": "access_names", "accessmask": "access_mask", "processname": "process_path",
 	})
+	// A user account created or changed.
+	account := security(map[string]string{
+		"subjectusersid": "user_sid", "targetusername": "object", "targetdomainname": "object_domain", "targetsid": "object_sid",
+		"samaccountname": "sam_account_name", "displayname": "display_name", "userprincipalname": "user_principal_name",
+		"primarygroupid": "primary_group_id", "allowedtodelegateto": "allowed_to_delegate_to", "olduacvalue": "old_uac_value",
+		"newuacvalue": "new_uac_value", "useraccountcontrol": "user_account_control", "sidhistory": "sid_history",
+	})
 	// A connection the filtering platform allowed or blocked.
 	wfp := map[string]string{
 		"processid": "process_id", "application": "process_path", "sourceaddress": "src", "sourceport": "src_port",
@@ -188,6 +195,21 @@ var sigmaEventFields = func() map[string]map[string]string {
 		}),
 		"security_5156": wfp,
 		"security_5157": wfp,
+		"security_4706": security(map[string]string{
+			"subjectusersid": "user_sid", "domainname": "object", "domainsid": "object_sid", "tdotype": "trust_type",
+			"tdodirection": "trust_direction", "tdoattributes": "trust_attributes",
+		}),
+		"security_4719": security(map[string]string{
+			"subjectusersid": "user_sid", "categoryid": "audit_category", "subcategoryid": "audit_subcategory",
+			"subcategoryguid": "audit_subcategory_guid", "auditpolicychanges": "audit_policy_changes",
+		}),
+		"security_4720": account,
+		"security_4738": account,
+		"security_4732": security(map[string]string{
+			"subjectusersid": "user_sid", "membername": "member", "membersid": "member_sid", "targetusername": "object",
+			"targetdomainname": "object_domain", "targetsid": "object_sid",
+		}),
+		"security_4794": security(map[string]string{"subjectusersid": "user_sid", "workstation": "src_host"}),
 		"security_4768": kerberos,
 		"security_4769": kerberos,
 		"security_4697": security(map[string]string{
@@ -244,6 +266,12 @@ var sigmaWindowsEvents = map[string][]string{
 	"security_4662":        {"4662"},
 	"security_4663":        {"4663"},
 	"security_4656_4663":   {"4656", "4663"},
+	"security_4706":        {"4706"},
+	"security_4719":        {"4719"},
+	"security_4720":        {"4720"},
+	"security_4732":        {"4732"},
+	"security_4738":        {"4738"},
+	"security_4794":        {"4794"},
 	"security_4768":        {"4768"},
 	"security_4769":        {"4769"},
 	"security_4697":        {"4697"},
@@ -260,7 +288,8 @@ var sigmaWindowsEvents = map[string][]string{
 // (Registry) or another object's, so its rules search any.
 var sigmaSecurityModels = map[string]string{
 	"4624": "Authentication", "4625": "Authentication", "4656": "", "4657": "Registry", "4661": "", "4662": "Change",
-	"4663": "", "4697": "Change", "4698": "Change", "4768": "Authentication", "4769": "Authentication",
+	"4663": "", "4697": "Change", "4698": "Change", "4706": "Change", "4719": "Change", "4720": "Change", "4732": "Change",
+	"4738": "Change", "4794": "Change", "4768": "Authentication", "4769": "Authentication",
 	"4648": "Authentication", "5136": "Change", "5145": "Filesystem", "5156": "Network_Traffic", "5157": "Network_Traffic",
 }
 

@@ -172,7 +172,8 @@ var splunkTechnique = regexp.MustCompile(`^T\d{4}(\.\d{3})?$`)
 // one a day per host, program and object, a scheduled task per host and
 // task, a service per host and service, a directory change per object
 // and attribute, a share access per client, share and path, a Kerberos
-// ticket per account and service.
+// ticket per account and service, an account change or group member
+// added per account or group.
 func splunkThrottle(node, dm string) []string {
 	switch node {
 	case "ObjectAccess":
@@ -187,6 +188,10 @@ func splunkThrottle(node, dm string) []string {
 		return []string{"host", "src", "share_name", "share_target"}
 	case "KerberosTGT", "KerberosService":
 		return []string{"host", "user", "kerberos_service"}
+	case "UserChanged":
+		return []string{"host", "object"}
+	case "GroupMemberAdded":
+		return []string{"host", "object", "member_sid"}
 	}
 	return packThrottle("", dm)
 }
