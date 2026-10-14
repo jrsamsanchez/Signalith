@@ -204,9 +204,14 @@ var (
 		},
 		"TaskCreated": {"TaskName": "task_name", "TaskContent": "task_content", "user": "user"},
 	}
-	fillnullRe = regexp.MustCompile(`(?i)^fillnull$`)
-	statsRe    = regexp.MustCompile(`(?is)^stats\s`)
-	renameRe   = regexp.MustCompile(`(?is)^rename\s`)
+	// XMLKVFields are the fields xmlkv takes from a scheduled task's XML
+	// (TaskCreated), with the Signalith field each is stored as.
+	XMLKVFields = map[string]string{"Command": "task_command", "Arguments": "task_arguments"}
+	xmlkvRe     = regexp.MustCompile(`(?i)^xmlkv\s+(Message|TaskContent)$`)
+	searchRe    = regexp.MustCompile(`(?is)^search\s+(.+)$`)
+	fillnullRe  = regexp.MustCompile(`(?i)^fillnull$`)
+	statsRe     = regexp.MustCompile(`(?is)^stats\s`)
+	renameRe    = regexp.MustCompile(`(?is)^rename\s`)
 )
 
 // eventCode is the stored field of EventCode or EventID.
@@ -216,15 +221,25 @@ const eventCode = "signature_id"
 // event code names the node.
 func rawSource(source string) string { return "raw:" + source }
 
+// xmlkvSuffix marks a raw source whose search stage may also name the
+// fields xmlkv extracts.
+const xmlkvSuffix = "+xmlkv"
+
 // parseRaw reads a raw event search of one source. Later, fillnull and
 // stats only count the events and rename only renames the counts.
 // (Without fillnull, Splunk's stats also drops events that miss one of
 // its by fields; Signalith keeps them, so it finds those too.)
 func parseRaw(r *Rule, source, terms string, later []string, macros map[string]*Macro) (*Rule, error) {
-	filled, counted := false, false
+	filled, counted, xml := false, false, false
+	var searches []string
 	for _, s := range later {
 		switch {
 		case harmlessRe.MatchString(s) || filterRe.MatchString(s):
+		case xmlkvRe.MatchString(s) && !counted && !filled && !xml && len(searches) == 0:
+			xml = true
+		case searchRe.MatchString(s) && xml && !counted && !filled:
+			// A search after xmlkv filters on what it extracted.
+			searches = append(searches, searchRe.FindStringSubmatch(s)[1])
 		case fillnullRe.MatchString(s) && !counted && !filled:
 			filled = true
 		case statsRe.MatchString(s) && !counted:
@@ -264,10 +279,27 @@ func parseRaw(r *Rule, source, terms string, later []string, macros map[string]*
 		}
 		r.Node = n
 	}
+	if xml && r.Node != "TaskCreated" {
+		return nil, fmt.Errorf("xmlkv on %s events is not supported", r.Node)
+	}
+	for _, s := range searches {
+		e, err := ParseWhere(s, rawSource(source)+xmlkvSuffix, macros)
+		if err != nil {
+			return nil, err
+		}
+		if countField(e, eventCode) != 0 {
+			return nil, fmt.Errorf("a %s search must name its event code once, at the top", source)
+		}
+		top = append(top, e)
+	}
 	if len(top) < 2 {
 		return nil, fmt.Errorf("a %s search must name a field besides its event code", source)
 	}
-	if err := fieldsOf(where, r.Node); err != nil {
+	where = &And{Kids: top}
+	if len(top) == 1 {
+		where = top[0]
+	}
+	if err := fieldsOf(where, r.Node, xml); err != nil {
 		return nil, err
 	}
 	unescapeXML(where)
@@ -275,57 +307,35 @@ func parseRaw(r *Rule, source, terms string, later []string, macros map[string]*
 	return r, nil
 }
 
-// xmlFields are the raw fields that hold XML. Splunk keeps the XML
-// escaped (&lt;Hidden&gt;) and Signalith stores it as it is (<Hidden>),
-// so a rule's values are unescaped to match.
-var xmlFields = map[string]bool{"task_content": true}
-
-var xmlUnescape = strings.NewReplacer("&lt;", "<", "&gt;", ">", "&quot;", `"`, "&apos;", "'", "&amp;", "&")
-
-func unescapeXML(e Expr) {
+// fieldsOf checks that a raw clause names only fields of node, and of
+// xmlkv's when the search runs it.
+func fieldsOf(e Expr, node string, xml bool) error {
 	switch x := e.(type) {
 	case *And:
 		for _, k := range x.Kids {
-			unescapeXML(k)
-		}
-	case *Or:
-		for _, k := range x.Kids {
-			unescapeXML(k)
-		}
-	case *Not:
-		unescapeXML(x.Kid)
-	case *Cmp:
-		if xmlFields[x.Field] {
-			for i, v := range x.Values {
-				x.Values[i] = xmlUnescape.Replace(v)
-			}
-		}
-	}
-}
-
-// fieldsOf checks that a raw clause names only fields of node.
-func fieldsOf(e Expr, node string) error {
-	switch x := e.(type) {
-	case *And:
-		for _, k := range x.Kids {
-			if err := fieldsOf(k, node); err != nil {
+			if err := fieldsOf(k, node, xml); err != nil {
 				return err
 			}
 		}
 	case *Or:
 		for _, k := range x.Kids {
-			if err := fieldsOf(k, node); err != nil {
+			if err := fieldsOf(k, node, xml); err != nil {
 				return err
 			}
 		}
 	case *Not:
-		return fieldsOf(x.Kid, node)
+		return fieldsOf(x.Kid, node, xml)
 	case *Cmp:
 		if x.Field == eventCode {
 			return nil
 		}
 		for _, f := range RawFields[node] {
 			if f == x.Field {
+				return nil
+			}
+		}
+		for _, f := range XMLKVFields {
+			if xml && f == x.Field {
 				return nil
 			}
 		}
@@ -361,6 +371,34 @@ func firstWords(s string) string {
 		f = f[:3]
 	}
 	return strings.Join(f, " ")
+}
+
+// xmlFields are the raw fields that hold XML. Splunk keeps the XML
+// escaped (&lt;Hidden&gt;) and Signalith stores it as it is (<Hidden>),
+// so a rule's values are unescaped to match.
+var xmlFields = map[string]bool{"task_content": true}
+
+var xmlUnescape = strings.NewReplacer("&lt;", "<", "&gt;", ">", "&quot;", `"`, "&apos;", "'", "&amp;", "&")
+
+func unescapeXML(e Expr) {
+	switch x := e.(type) {
+	case *And:
+		for _, k := range x.Kids {
+			unescapeXML(k)
+		}
+	case *Or:
+		for _, k := range x.Kids {
+			unescapeXML(k)
+		}
+	case *Not:
+		unescapeXML(x.Kid)
+	case *Cmp:
+		if xmlFields[x.Field] {
+			for i, v := range x.Values {
+				x.Values[i] = xmlUnescape.Replace(v)
+			}
+		}
+	}
 }
 
 // pipes splits a search into its stages at the | outside quotes and macro

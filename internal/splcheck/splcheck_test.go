@@ -212,6 +212,26 @@ func TestParseScheduledTask(t *testing.T) {
 	}
 }
 
+func TestParseScheduledTaskXMLKV(t *testing.T) {
+	src := rule("`wineventlog_security` EventCode=4698 | xmlkv Message | search Command IN (\"*rundll32*\")\n| stats count by dest Task_Name Command")
+	r, err := Parse(src, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !Eval(r.Where, map[string]string{"signature_id": "4698", "task_command": `C:\Windows\System32\rundll32.exe`}) {
+		t.Error("does not match its own event")
+	}
+	for search, want := range map[string]string{
+		"`wineventlog_security` EventCode=4698 Command=\"*x*\" | stats count by dest":                    "no Signalith mapping",
+		"`sysmon` EventCode=10 | xmlkv Message | search Command=\"*x*\" | stats count by dest":           "xmlkv on ProcessAccess",
+		"`wineventlog_security` EventCode=4698 | xmlkv Message | search EventCode=1 | stats count by dest": "once, at the top",
+	} {
+		if _, err := Parse(rule(search), nil); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%s: err = %v, want %q", search, err, want)
+		}
+	}
+}
+
 func TestParseSysmonAccess(t *testing.T) {
 	src := rule("`sysmon` EventCode=10 TargetImage=\"*\\\\lsass.exe\" GrantedAccess IN (\"0x1010\", \"0x1410\") NOT SourceImage=\"*\\\\MsMpEng.exe\"\n| stats count by dest SourceImage")
 	r, err := Parse(src, nil)

@@ -2,6 +2,7 @@ package splcheck
 
 import (
 	"fmt"
+	"html"
 	"maps"
 	"path"
 	"regexp"
@@ -387,6 +388,18 @@ func records(node string, ev map[string]string) []sigmacheck.Case {
 		}
 		set(s, "SubjectUserName", ev["user"])
 		set(s, "TaskName", ev["task_name"])
+		if ev["task_command"] != "" || ev["task_arguments"] != "" {
+			cmd := ev["task_command"]
+			if cmd == "" {
+				cmd = `C:\Windows\System32\cmd.exe`
+			}
+			action := "<Command>" + html.EscapeString(cmd) + "</Command>"
+			if a := ev["task_arguments"]; a != "" {
+				action += "<Arguments>" + html.EscapeString(a) + "</Arguments>"
+			}
+			s["TaskContent"] = `<?xml version="1.0" encoding="UTF-16"?><Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">` +
+				`<Actions Context="Author"><Exec>` + action + `</Exec></Actions></Task>`
+		}
 		set(s, "TaskContent", ev["task_content"])
 		return []sigmacheck.Case{{Channel: sigmacheck.SecurityChannel, EventID: "4698", Data: s}}
 	}

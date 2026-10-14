@@ -278,6 +278,11 @@ func (p *parser) field(name string) (string, error) {
 		if name == "EventCode" || name == "EventID" {
 			return eventCode, nil
 		}
+		if source, ok = strings.CutSuffix(source, xmlkvSuffix); ok {
+			if f, ok := XMLKVFields[name]; ok {
+				return f, nil
+			}
+		}
 		for _, node := range rawNodes[source] {
 			if f, ok := RawFields[node][name]; ok {
 				return f, nil

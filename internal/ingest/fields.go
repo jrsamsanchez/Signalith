@@ -80,7 +80,7 @@ var knownFields = func() map[string]string {
 		"script_part": long, "script_parts": long, "script_block_text": "wildcard",
 		// A scheduled task (Security 4698): its name and its definition,
 		// XML that rules search for words inside, as for script blocks.
-		"task_name": kw, "task_content": "wildcard",
+		"task_name": kw, "task_content": "wildcard", "task_command": kw, "task_arguments": kw,
 		// An sshd line whose client address cannot be told from text the
 		// client sent (see ambiguousSSH).
 		"src_ambiguous": kw,

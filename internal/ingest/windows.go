@@ -1,6 +1,7 @@
 package ingest
 
 import (
+	"html"
 	"strconv"
 	"strings"
 )
@@ -177,6 +178,8 @@ func parseWindowsSecurity(eventID string, in []string, ev *Event) {
 		f["object"] = at(in, 4)
 		f["task_name"] = at(in, 4)
 		f["task_content"] = at(in, 5)
+		f["task_command"] = taskElement(at(in, 5), "Command")
+		f["task_arguments"] = taskElement(at(in, 5), "Arguments")
 	case "4720", "4726":
 		ev.Model = "Change"
 		f["object"] = at(in, 0)
@@ -196,6 +199,20 @@ func parseWindowsSecurity(eventID string, in []string, ev *Event) {
 		f["object"] = at(in, 2)
 		f["user"] = at(in, 6)
 	}
+}
+
+// taskElement is the text of a scheduled task's first element named tag
+// (what its first action runs), or "".
+func taskElement(task, tag string) string {
+	_, rest, ok := strings.Cut(task, "<"+tag+">")
+	if !ok {
+		return ""
+	}
+	v, _, ok := strings.Cut(rest, "</"+tag+">")
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(html.UnescapeString(v))
 }
 
 func parseSysmon(eventID string, kv map[string]string, ev *Event) {

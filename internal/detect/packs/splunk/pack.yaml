@@ -1306,6 +1306,14 @@ rules:
     rule_id: 493a879d-519d-428f-8f57-a06a0fdc107e
     file: samsam_test_file_write.yml
     path: detections/endpoint/samsam_test_file_write.yml
+  - id: splunk-schedule-task-with-http-command-arguments
+    rule_id: 523c2684-a101-11eb-916b-acde48001122
+    file: schedule_task_with_http_command_arguments.yml
+    path: detections/endpoint/schedule_task_with_http_command_arguments.yml
+  - id: splunk-schedule-task-with-rundll32-command-trigger
+    rule_id: 75b00fd8-a0ff-11eb-8b31-acde48001122
+    file: schedule_task_with_rundll32_command_trigger.yml
+    path: detections/endpoint/schedule_task_with_rundll32_command_trigger.yml
   - id: splunk-scheduled-task-creation-on-remote-endpoint-using-at
     rule_id: 4be54858-432f-11ec-8209-3e22fbd008af
     file: scheduled_task_creation_on_remote_endpoint_using_at.yml

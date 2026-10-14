@@ -308,7 +308,7 @@ The generator keeps each rule's Signalith ID across runs, rewrites `rules/`,
 
 ### Splunk Security Content
 
-**Splunk Security Content** (`internal/detect/packs/splunk`) holds 808 Windows and
+**Splunk Security Content** (`internal/detect/packs/splunk`) holds 810 Windows and
 Linux detections from Splunk's Threat Research Team
 ([security_content](https://github.com/splunk/security_content)), pinned to one
 commit. They are the production TTP and anomaly rules that search the CIM
@@ -347,7 +347,8 @@ Signalith's (`ScriptBlockText` is `script_block_text`, `ImageLoaded` is
 turned on (**Include PowerShell** on Add data).
 
 Scheduled task rules search the task's name (`TaskName` is `task_name`) and its
-XML definition (`TaskContent` is `task_content`). Splunk keeps that XML escaped
+XML definition (`TaskContent` is `task_content`); after `xmlkv`, the command and
+arguments of its first action are `task_command` and `task_arguments`. Splunk keeps that XML escaped
 (`&lt;Hidden&gt;`); Signalith stores it as it is, so the rule's values are unescaped
 to match. Security 4698 is logged when **Audit Other Object Access Events** is on.
 
