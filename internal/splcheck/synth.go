@@ -444,7 +444,12 @@ func records(node string, ev map[string]string) []sigmacheck.Case {
 		set(s, "QueryName", ev["query"])
 		return []sigmacheck.Case{{Channel: sigmacheck.SysmonChannel, EventID: "22", Data: s}}
 	case "Logon":
-		s := maps.Clone(sigmacheck.Bases[sigmacheck.SecurityCategory("4624")])
+		// A failed logon (4625) when the rule names it.
+		id := "4624"
+		if ev[eventCode] == "4625" {
+			id = "4625"
+		}
+		s := maps.Clone(sigmacheck.Bases[sigmacheck.SecurityCategory(id)])
 		set(s, "LogonType", ev["logon_type"])
 		set(s, "TargetUserName", ev["user"])
 		set(s, "AuthenticationPackageName", ev["authentication_method"])
@@ -452,7 +457,7 @@ func records(node string, ev map[string]string) []sigmacheck.Case {
 		set(s, "IpAddress", ev["src"])
 		set(s, "WorkstationName", ev["src_host"])
 		set(s, "ProcessName", ev["process_path"])
-		return []sigmacheck.Case{{Channel: sigmacheck.SecurityChannel, EventID: "4624", Data: s}}
+		return []sigmacheck.Case{{Channel: sigmacheck.SecurityChannel, EventID: id, Data: s}}
 	case "ImageLoad":
 		s := map[string]string{"ProcessId": "4242", "ProcessGuid": "{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}"}
 		set(s, "Image", imagePath(ev["process_path"], ev["process_name"]))
@@ -795,7 +800,7 @@ var NodeEvents = map[string][]string{
 	"NetworkConnection": {"3"},
 	"All_Traffic":       {"3"},
 	"DnsQuery":          {"22"},
-	"Logon":             {"4624"},
+	"Logon":             {"4624", "4625"},
 	"TaskCreated":       {"4698"},
 	"ObjectAccess":      {"4663"},
 	"ServiceInstalled":  {"7045"},

@@ -2510,6 +2510,10 @@ rules:
     rule_id: 510ea428-4731-4d2f-8829-a28293e427aa
     file: windows_linked_policies_in_adsi_discovery.yml
     path: detections/endpoint/windows_linked_policies_in_adsi_discovery.yml
+  - id: splunk-windows-local-administrator-credential-stuffing
+    rule_id: 09555511-aca6-484a-b6ab-72cd03d73c34
+    file: windows_local_administrator_credential_stuffing.yml
+    path: detections/endpoint/windows_local_administrator_credential_stuffing.yml
   - id: splunk-windows-lsa-secrets-nolmhash-registry
     rule_id: 48cc1605-538c-4223-8382-e36bee5b540d
     file: windows_lsa_secrets_nolmhash_registry.yml
@@ -2746,6 +2750,10 @@ rules:
     rule_id: 001266a6-9d5b-11eb-829b-acde48001122
     file: windows_multiple_invalid_users_fail_to_authenticate_using_kerberos.yml
     path: detections/endpoint/windows_multiple_invalid_users_fail_to_authenticate_using_kerberos.yml
+  - id: splunk-windows-multiple-users-remotely-failed-to-authenticate-fr
+    rule_id: 80f9d53e-9ca1-11eb-b0d6-acde48001122
+    file: windows_multiple_users_remotely_failed_to_authenticate_from_host.yml
+    path: detections/endpoint/windows_multiple_users_remotely_failed_to_authenticate_from_host.yml
   - id: splunk-windows-mustang-panda-usb-tool-execution
     rule_id: e66a167f-6506-4e5b-8e4d-1b04940c70be
     file: windows_mustang_panda_usb_tool_execution.yml

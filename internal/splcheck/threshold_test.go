@@ -98,3 +98,19 @@ func TestDropPlatform(t *testing.T) {
 		t.Error(`\/ accepted`)
 	}
 }
+
+func TestParseEventCodes(t *testing.T) {
+	r, err := Parse(rule("`wineventlog_security` EventCode=4625 OR EventCode=4624 Logon_Type=3 TargetUserName=Administrator | bucket span=5m _time | stats dc(Computer) AS unique_targets BY _time, IpAddress, TargetUserName, EventCode, action, app | where unique_targets > 30"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Node != "Logon" || !reflect.DeepEqual(r.Threshold.By, []string{"src", "user", "signature_id", "action"}) {
+		t.Errorf("node %s, by %v", r.Node, r.Threshold.By)
+	}
+	for code, want := range map[string]bool{"4624": true, "4625": true, "4634": false} {
+		ev := map[string]string{"signature_id": code, "logon_type": "3", "user": "Administrator"}
+		if Eval(r.Where, ev) != want {
+			t.Errorf("%s: want %v", code, want)
+		}
+	}
+}

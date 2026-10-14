@@ -241,7 +241,7 @@ var (
 		},
 		// Security events the Windows parser reads.
 		"wineventlog_security": {
-			"4624": "Logon", "4698": "TaskCreated", "4663": "ObjectAccess", "5136": "DirectoryChange", "5145": "ShareAccess",
+			"4624": "Logon", "4625": "Logon", "4698": "TaskCreated", "4663": "ObjectAccess", "5136": "DirectoryChange", "5145": "ShareAccess",
 			"4768": "KerberosTGT", "4769": "KerberosService", "4738": "UserChanged", "4732": "GroupMemberAdded",
 		},
 		// The Service Control Manager's service installed event.
@@ -483,6 +483,17 @@ func parseRaw(r *Rule, source, terms string, later []string, macros map[string]*
 	} else {
 		top = []Expr{where}
 	}
+	// EventCode=4625 OR EventCode=4624 names the codes once too.
+	for i, k := range top {
+		if c := codes(k); c != nil {
+			top[i] = c
+		}
+	}
+	if a, ok := where.(*And); ok {
+		a.Kids = top
+	} else {
+		where = top[0]
+	}
 	var code *Cmp
 	for _, k := range top {
 		if c, ok := k.(*Cmp); ok && c.Field == eventCode {
@@ -544,6 +555,24 @@ func parseRaw(r *Rule, source, terms string, later []string, macros map[string]*
 	unescapeXML(where)
 	r.Where = where
 	return r, nil
+}
+
+// codes reads an OR of event codes (EventCode=4625 OR EventCode=4624)
+// as one comparison with each code; nil when e is not one.
+func codes(e Expr) *Cmp {
+	o, ok := e.(*Or)
+	if !ok {
+		return nil
+	}
+	out := &Cmp{Field: eventCode}
+	for _, k := range o.Kids {
+		c, ok := k.(*Cmp)
+		if !ok || c.Field != eventCode || c.Neg || c.Regex {
+			return nil
+		}
+		out.Values = append(out.Values, c.Values...)
+	}
+	return out
 }
 
 // fieldsOf checks that a raw clause names only fields of node, and of
