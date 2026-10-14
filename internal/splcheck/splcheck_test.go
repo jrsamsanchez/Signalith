@@ -222,8 +222,8 @@ func TestParseScheduledTaskXMLKV(t *testing.T) {
 		t.Error("does not match its own event")
 	}
 	for search, want := range map[string]string{
-		"`wineventlog_security` EventCode=4698 Command=\"*x*\" | stats count by dest":                    "no Signalith mapping",
-		"`sysmon` EventCode=10 | xmlkv Message | search Command=\"*x*\" | stats count by dest":           "xmlkv on ProcessAccess",
+		"`wineventlog_security` EventCode=4698 Command=\"*x*\" | stats count by dest":                      "no Signalith mapping",
+		"`sysmon` EventCode=10 | xmlkv Message | search Command=\"*x*\" | stats count by dest":             "xmlkv on ProcessAccess",
 		"`wineventlog_security` EventCode=4698 | xmlkv Message | search EventCode=1 | stats count by dest": "once, at the top",
 	} {
 		if _, err := Parse(rule(search), nil); err == nil || !strings.Contains(err.Error(), want) {
