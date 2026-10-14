@@ -835,6 +835,18 @@ Context changes three things:
 Risk events are stored under the Risk data model (`datamodel=Risk`) in
 `<prefix>-risk-YYYY.MM.DD` indices, which ordinary searches leave out.
 
+## Vulnerability scanning
+
+The **Vulnerabilities** page scans the networks you list with [Nmap](https://nmap.org),
+on a schedule or with **Scan now**, and matches the software it finds to known CVEs from
+the U.S. National Vulnerability Database, marking the ones in CISA's Known Exploited
+Vulnerabilities catalog. Before the first scan, **Scanner setup** checks the server and
+says what is needed, why, and how to fix anything missing. Only product names are sent
+for CVE lookups. Results go to the Vulnerabilities data model and three built-in
+detections, and the hosts join the asset list. The Docker image includes Nmap; on
+Windows and Linux installs, install Nmap from your package manager or nmap.org. See
+[docs/vulnerabilities.md](docs/vulnerabilities.md).
+
 ## Threat intel
 
 Like the ES threat intelligence framework, Signalith matches events against

@@ -336,10 +336,10 @@
       tr.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') openHost(h.id); });
       return tr;
     }));
-    listEl.replaceChildren(el('div', { class: 'table-wrap' }, el('table', { class: 'table vs-table' },
+    listEl.replaceChildren(...[el('div', { class: 'table-wrap' }, el('table', { class: 'table vs-table' },
       el('thead', {}, el('tr', {}, el('th', {}, 'Host'), el('th', { class: 'vs-c-worst' }, 'Worst'), el('th', { class: 'vs-c-cves' }, 'CVEs'),
         el('th', { class: 'vs-c-ports' }, 'Open ports'), el('th', { class: 'vs-c-net' }, 'Network'), el('th', { class: 'vs-c-seen' }, 'Seen'))),
-      tbody)), rows.length > 1000 ? el('div', { class: 'table-foot' }, 'Showing the first 1,000 of ' + rows.length.toLocaleString() + ' hosts. Narrow the list with Find.') : null);
+      tbody)), rows.length > 1000 ? el('div', { class: 'table-foot' }, 'Showing the first 1,000 of ' + rows.length.toLocaleString() + ' hosts. Narrow the list with Find.') : null].filter(Boolean));
   }
 
   function sevOf(score) {

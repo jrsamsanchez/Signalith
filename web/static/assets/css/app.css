@@ -4461,6 +4461,9 @@ dialog.ep-set { width: min(620px, calc(100vw - 32px)); }
 /* vulnerabilities: network scans with Nmap */
 #page-vulns .vs-tabs { margin-bottom: var(--sp-4); }
 .vs-panel { display: flex; flex-direction: column; gap: var(--sp-3); }
+#page-vulns .modal__head > div { flex: 1; min-width: 0; }
+#page-vulns .modal__head > .modal__close { margin: -4px -8px 0 auto; flex: none; }
+#page-vulns .modal__title { overflow-wrap: anywhere; }
 .vs-muted { color: var(--text-2); font-size: var(--fs-sm); }
 .vs-skel { padding: var(--sp-4); display: flex; flex-direction: column; gap: 14px; }
 .vs-skel__row .skeleton { height: 12px; }

@@ -20,6 +20,12 @@ description: |-
   Sigma import, risk-based alerting, threat intel and investigation cases.
   The server is one program with the web UI built in, run by systemd.
 
+# Nmap runs the network scans on the Vulnerabilities page. It is
+# recommended rather than required: Signalith works without it, and the
+# page says what is missing.
+recommends:
+  - nmap
+
 contents:
   - src: ./signalith
     dst: /usr/bin/signalith

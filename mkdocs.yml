@@ -123,6 +123,7 @@ nav:
       - Endpoints (osquery): endpoints.md
       - Wazuh alerts: wazuh.md
       - Antivirus: antivirus.md
+      - Vulnerability scanning: vulnerabilities.md
       - Sample data: sample-data.md
   - Using Signalith:
       - Query language: query-language.md

@@ -100,10 +100,10 @@ The first three phases are complete, and the fourth has started.
     [Suricata](https://suricata.io) with the free Emerging Threats Open rules, feeding
     network events and alerts into Signalith.
 
-**Vulnerability scanning**
-:   Network discovery and scanning with [Nmap](https://nmap.org) by default, and
-    [OpenVAS](https://www.openvas.org) as an option for deeper scans, with the results
-    added to asset context and risk.
+**Vulnerability scanning: more**
+:   Scanning with [Nmap](https://nmap.org) and CVE matching is built
+    ([vulnerabilities.md](vulnerabilities.md)). Still to come: a scanner server for each
+    network zone, and [OpenVAS](https://www.openvas.org) as an option for deeper scans.
 
 **Hardening and 1.0**
 :   Fuzzing of every parser that reads data from the network, an outside security

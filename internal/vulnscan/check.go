@@ -154,7 +154,7 @@ func (c *Checker) Run(ctx context.Context, set Settings) (checks []Check, path s
 	}
 	checks = append(checks, cve)
 
-	key := Check{ID: "nvd_key", Title: "NVD API key (optional)",
+	key := Check{ID: "nvd_key", Title: "NVD API key",
 		Why: "Without a key the database allows 5 lookups every 30 seconds, so the first scan of a network with a lot of different software takes longer. Lookups are kept for a day, so later scans are fast either way."}
 	switch {
 	case c.NVD != nil && c.NVD.APIKey != "":

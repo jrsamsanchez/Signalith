@@ -149,6 +149,15 @@ jobs:
             -H 'Content-Type: application/json' -d '{"username":"admin","password":"change-me-please"}' \
             https://localhost:8080/api/login)
           test "$code" = 401
+      - name: Check Nmap runs in the image for vulnerability scans
+        run: |
+          # The Vulnerabilities page scans with the image's Nmap, as the
+          # unprivileged user, read-only and with no capabilities.
+          $COMPOSE exec -T signalith nmap --version | head -n 1
+          curl -sf -b "$RUNNER_TEMP/cookies" --cacert "$RUNNER_TEMP/signalith-ca.pem" \
+            "https://localhost:8080/api/vulns/setup?fresh=1" > "$RUNNER_TEMP/vulns-setup.json"
+          jq -c '.report.checks[] | {id, state, detail}' "$RUNNER_TEMP/vulns-setup.json"
+          jq -e '[.report.checks[] | select(.id == "nmap" or .id == "nmap_runs") | .state] == ["ok", "ok"]' "$RUNNER_TEMP/vulns-setup.json"
       - name: Check a new install refuses the old example ingest token
         run: |
           # Older quick starts gave every agent change-this-ingest-token,
