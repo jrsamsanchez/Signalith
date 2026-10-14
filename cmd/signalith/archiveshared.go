@@ -123,4 +123,3 @@ func (ac *archiveCluster) offlineAllowed(force bool) error {
 	}
 	return fmt.Errorf("%s runs retention now, so restore through it (leave out -offline); add -force to restore from the files here anyway", ac.leader)
 }
-
