@@ -1,0 +1,5 @@
+{"rule": "2992ac4d-31e9-4325-99f2-b18a73221bb2", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"killvm process","Image":"/esxcli"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/esxcli"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"killvm process"}}
+]}

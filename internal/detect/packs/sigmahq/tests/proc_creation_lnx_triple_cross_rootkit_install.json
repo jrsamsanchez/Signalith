@@ -1,0 +1,5 @@
+{"rule": "22236d75-d5a0-4287-bf06-c93b1770860f", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x enp0s3  tc  filter x","Image":"/sudo"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/sudo"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x enp0s3  tc  filter x"}}
+]}

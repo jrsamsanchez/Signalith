@@ -1,0 +1,4 @@
+{"rule": "8a46f16c-8c4c-82d1-b121-0fdd3ba70a84", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/groupdel"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{}}
+]}

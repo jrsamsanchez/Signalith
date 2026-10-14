@@ -1,0 +1,5 @@
+{"rule": "999c3b12-0a8c-40b6-8e13-dd7d62b75c7a", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x /tmp/","Image":"/mkfifo"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/mkfifo"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x /tmp/"}}
+]}

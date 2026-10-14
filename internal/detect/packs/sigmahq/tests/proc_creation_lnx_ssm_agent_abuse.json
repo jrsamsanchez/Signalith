@@ -1,0 +1,5 @@
+{"rule": "f9b3edc5-3322-4fc7-8aa3-245d646cc4b7", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"-region -register -id -code x","Image":"/amazon-ssm-agent"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/amazon-ssm-agent"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"-region -register -id -code x"}}
+]}

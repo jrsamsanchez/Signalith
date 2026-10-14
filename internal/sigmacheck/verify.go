@@ -19,6 +19,9 @@ const (
 	SysmonChannel     = "Microsoft-Windows-Sysmon/Operational"
 	SecurityChannel   = "Security"
 	PowerShellChannel = ingest.PowerShellChannel
+	// LinuxSysmonChannel is Sysmon for Linux, whose events have Sysmon's
+	// event IDs and fields.
+	LinuxSysmonChannel = ingest.LinuxSysmonChannel
 )
 
 // TestFile holds a shipped rule's test events.
@@ -51,7 +54,8 @@ var security4688 = map[string]string{
 // the event's channel has no Sigma view here.
 func (c Case) SigmaView() (map[string]string, bool) {
 	switch {
-	case strings.EqualFold(c.Channel, SysmonChannel), strings.EqualFold(c.Channel, PowerShellChannel) && c.EventID == "4104":
+	case strings.EqualFold(c.Channel, SysmonChannel), strings.EqualFold(c.Channel, LinuxSysmonChannel),
+		strings.EqualFold(c.Channel, PowerShellChannel) && c.EventID == "4104":
 		out := map[string]string{"EventID": c.EventID}
 		for k, v := range c.Data {
 			out[k] = v
@@ -67,6 +71,21 @@ func (c Case) SigmaView() (map[string]string, bool) {
 		return out, true
 	}
 	return nil, false
+}
+
+// Record is a case's event as the agent sends it, with its Fluent Bit tag:
+// a journal record for Sysmon for Linux, else a Windows event record.
+func (c Case) Record(host string, t time.Time) (string, map[string]any) {
+	if strings.EqualFold(c.Channel, LinuxSysmonChannel) {
+		return "linux.journal", ingest.LinuxSysmonRecord(c.EventID, host, t, c.Data)
+	}
+	return "win.events", ingest.WinEventRecord(c.Channel, c.EventID, host, t, c.Data)
+}
+
+// Stored is a case's event after the real parser.
+func (c Case) Stored(host string, t time.Time) ingest.Event {
+	tag, rec := c.Record(host, t)
+	return ingest.Normalize(tag, rec, t)
 }
 
 // Logsource event IDs: the Sysmon event a Sigma log source category is.
@@ -204,6 +223,34 @@ var Bases = map[string]map[string]string{
 	},
 }
 
+// LinuxBases are Bases for Linux rules, as Sysmon for Linux writes them.
+var LinuxBases = map[string]map[string]string{
+	"process_creation": {
+		"User":              "tester",
+		"ProcessId":         "4242",
+		"ParentProcessId":   "4100",
+		"ParentImage":       "/opt/apps/launcher/launcher",
+		"ParentCommandLine": "/opt/apps/launcher/launcher --run",
+		"CurrentDirectory":  "/opt/apps/work",
+	},
+	"network_connection": {
+		"User":            "tester",
+		"ProcessId":       "4242",
+		"Protocol":        "tcp",
+		"Initiated":       "true",
+		"SourceIp":        "192.0.2.10",
+		"SourcePort":      "50123",
+		"DestinationIp":   "198.51.100.20",
+		"DestinationPort": "8443",
+	},
+	"file_event": {
+		"Image":          "/opt/apps/launcher/launcher",
+		"ProcessId":      "4242",
+		"User":           "tester",
+		"TargetFilename": "/opt/apps/work/output.txt",
+	},
+}
+
 func init() {
 	// registry_event covers keys and values; a set value is the typical
 	// event.
@@ -236,11 +283,21 @@ func SysmonEventID(category string) (string, bool) {
 // and process creations whose fields Security 4688 also carries as a
 // 4688 event too.
 func Cases(category string, syn *Synthesis, fields []string) []Case {
+	return CasesOn(Channel(category), category, syn, fields)
+}
+
+// LinuxCases are Cases for a Linux rule: each as a Sysmon for Linux event.
+func LinuxCases(category string, syn *Synthesis, fields []string) []Case {
+	return CasesOn(LinuxSysmonChannel, category, syn, fields)
+}
+
+// CasesOn is Cases with the channel the events are written to.
+func CasesOn(channel, category string, syn *Synthesis, fields []string) []Case {
 	id, ok := sysmonEvents[category]
 	if !ok {
 		return nil
 	}
-	also4688 := category == "process_creation"
+	also4688 := category == "process_creation" && channel == SysmonChannel
 	for _, f := range fields {
 		found := false
 		for _, sig := range security4688 {
@@ -266,7 +323,7 @@ func Cases(category string, syn *Synthesis, fields []string) []Case {
 			ev = maps.Clone(ev)
 			delete(ev, "EventID")
 		}
-		out = append(out, Case{Expect: expect, Source: "synthesized", Channel: Channel(category), EventID: eid, Data: ev})
+		out = append(out, Case{Expect: expect, Source: "synthesized", Channel: channel, EventID: eid, Data: ev})
 		if also4688 {
 			data := map[string]string{"SubjectUserName": "tester", "SubjectDomainName": "CORP"}
 			for raw, sig := range security4688 {
@@ -307,8 +364,7 @@ func Verify(rule *Rule, datamodel string, filter query.Expr, tf *TestFile) []err
 			errs = append(errs, fmt.Errorf("%s: the Sigma rule says %v for %s", where, m, String(view)))
 			continue
 		}
-		rec := ingest.WinEventRecord(c.Channel, c.EventID, "test-host", now, c.Data)
-		ev := ingest.Normalize("win.events", rec, now)
+		ev := c.Stored("test-host", now)
 		if datamodel != "" && !strings.EqualFold(ev.Model, datamodel) {
 			// An event of another data model never reaches the detection:
 			// right for an event it must not match.

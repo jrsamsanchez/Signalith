@@ -1,0 +1,11 @@
+{"rule": "6419afd1-3742-47a5-a7e6-b50386cd15f8", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/.Library/","Image":"/chmod"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"chmod 700 /tmp/apt-key-gpghome./.Library/","Image":"/chmod"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"chmod 0775 /etc/landscape/","Image":"/chmod"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"chmod 755 /var/tmp/mkinitramfs/.Library/","Image":"/chmod"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/.Library//etc/","Image":"/chmod","ParentCommandLine":".postinst configure/var/lib/dpkg/info/"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"chmod 644 /etc/apparmor.d/tunables/home.d/ubuntu","Image":"/chmod"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/.Library/chmod --reference=/etc/shells","Image":"/chmod","ParentCommandLine":"/update-shells"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/chmod"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/.Library/"}}
+]}

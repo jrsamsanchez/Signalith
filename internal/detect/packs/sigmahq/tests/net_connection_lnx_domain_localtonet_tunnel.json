@@ -1,0 +1,5 @@
+{"rule": "c4568f5d-131f-4e78-83d4-45b2da0ec4f1", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":".localto.net","Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"3","data":{"Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":".localto.net"}}
+]}

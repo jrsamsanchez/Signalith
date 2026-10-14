@@ -1,0 +1,4 @@
+{"rule": "00eee2a5-fdb0-4746-a21d-e43fbdea5681", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"/etc/doas.conf"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"11","data":{}}
+]}

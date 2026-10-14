@@ -190,9 +190,10 @@ Content packs are rule sets from other open source projects, shipped unchanged
 inside Signalith and converted when it starts. Every pack detection is **off** until
 an admin turns it on.
 
-**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 1,695 Windows
-rules from [SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit, for
-these Sysmon, Security and PowerShell log sources:
+**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 1,805 rules from
+[SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 1,695 Windows rules
+for these Sysmon, Security and PowerShell log sources, and 110 Linux rules (see
+[Linux endpoints](#linux-endpoints-sysmon-for-linux)):
 
 | Sigma log source | Windows events | Data model |
 | --- | --- | --- |
@@ -209,6 +210,26 @@ Each pack rule only searches its own log source's event IDs, since several kinds
 event share a data model (a process creation and a process access are both Endpoint).
 Sysmon only records the events its configuration asks for, so a rule fires only when
 your Sysmon configuration logs that kind of event.
+
+### Linux endpoints (Sysmon for Linux)
+
+[Sysmon for Linux](https://github.com/Sysinternals/SysmonForLinux) (open source, MIT)
+records process creations, network connections and file creation and deletion with
+the same event IDs and fields as Sysmon on Windows, and writes them to syslog. Signalith
+reads them into the same data models, with sourcetype `sysmon:linux`:
+
+| Sigma log source (Linux) | Sysmon for Linux events | Data model |
+| --- | --- | --- |
+| `process_creation` | 1 | Endpoint |
+| `network_connection` | 3 | Network_Traffic |
+| `file_event` | 11 | Filesystem |
+
+The SigmaHQ pack's Linux rules and the Splunk pack's Linux rules read these events.
+Sigma Linux rules search every Linux event of their data model; Splunk's search only
+Sysmon for Linux events. To collect them, install Sysmon for Linux with a
+configuration, then on **Add data** choose Linux, turn on **Include Sysmon for Linux**
+and use the new agent configuration: the agent reads Sysmon's events from the
+systemd journal.
 
 ### PowerShell script blocks
 
@@ -287,8 +308,8 @@ The generator keeps each rule's Signalith ID across runs, rewrites `rules/`,
 
 ### Splunk Security Content
 
-**Splunk Security Content** (`internal/detect/packs/splunk`) holds 699 Windows
-detections from Splunk's Threat Research Team
+**Splunk Security Content** (`internal/detect/packs/splunk`) holds 801 Windows and
+Linux detections from Splunk's Threat Research Team
 ([security_content](https://github.com/splunk/security_content)), pinned to one
 commit. They are the production TTP and anomaly rules that search the CIM
 `Endpoint.Processes`, `Endpoint.Filesystem` and `Endpoint.Registry` nodes with
@@ -303,6 +324,8 @@ names, so each rule's `where` clause becomes a Signalith filter field for field:
 | `` `powershell` EventCode=4104 `` (raw search) | PowerShell 4104 | Script |
 | `` `sysmon` EventCode=7 `` (raw search) | Sysmon 7 | Image_Load |
 | `` `sysmon` EventCode=8 `` or `10` (raw search) | Sysmon 8 and 10 | Endpoint |
+| `Endpoint.Processes` (Sysmon for Linux rules) | Sysmon for Linux 1 | Endpoint |
+| `Endpoint.Filesystem` (Sysmon for Linux rules) | Sysmon for Linux 11 and 23 | Filesystem |
 
 The rule files and the macros they use ship unchanged; Signalith converts them when
 it starts, reading the search the way Splunk does: `*` is the only wildcard (`?` is
