@@ -3,5 +3,7 @@
   {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"MessageNumber":"1","MessageTotal":"1","ScriptBlockId":"6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10","ScriptBlockText":"x Enable-PSRemoting x"}},
   {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"MessageNumber":"1","MessageTotal":"1","ScriptBlockId":"6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10","ScriptBlockText":"x Enable-PSRemoting x"}},
   {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"MessageNumber":"1","MessageTotal":"1","ScriptBlockId":"6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10","ScriptBlockText":"x Enable-PSRemoting y"}},
-  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"MessageNumber":"1","MessageTotal":"1","ScriptBlockId":"6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10"}}
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"MessageNumber":"1","MessageTotal":"1","ScriptBlockId":"6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"MessageNumber":"1","MessageTotal":"1","Path":"","ScriptBlockId":"f566c4d4-1b9d-4385-9394-50c6260816d0","ScriptBlockText":"Enable-PSRemoting -force"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"MessageNumber":"1","MessageTotal":"1","Path":"","ScriptBlockId":"327f2d88-9773-4092-a854-1f56f4e06017","ScriptBlockText":"enable-PSRemoting -force"}}
 ]}

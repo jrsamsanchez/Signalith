@@ -100,6 +100,24 @@ func main() {
 			old[r.RuleID] = r.ID
 		}
 	}
+	// Real recorded events (attackgen) are kept across a refresh.
+	recorded := map[string][]sigmacheck.Case{}
+	oldTests, _ := filepath.Glob(filepath.Join(*outDir, "tests", "*.json"))
+	for _, f := range oldTests {
+		data, err := os.ReadFile(f)
+		if err != nil {
+			log.Fatal(err)
+		}
+		tf, err := sigmacheck.DecodeTestFile(data)
+		if err != nil {
+			log.Fatalf("%s: %v", f, err)
+		}
+		for _, c := range tf.Cases {
+			if c.Source == splcheck.AttackDataSource {
+				recorded[tf.Rule] = append(recorded[tf.Rule], c)
+			}
+		}
+	}
 	for _, d := range []string{"rules", "tests", "macros"} {
 		if err := os.RemoveAll(filepath.Join(*outDir, d)); err != nil {
 			log.Fatal(err)
@@ -168,6 +186,10 @@ func main() {
 		if !slices.ContainsFunc(tf.Cases, func(c sigmacheck.Case) bool { return c.Expect }) {
 			skip("no test events: no Windows event as Signalith stores it matches the rule", rel)
 			continue
+		}
+		for _, c := range recorded[rule.ID] {
+			c.Expect = splcheck.Reads(rule, c)
+			tf.Cases = append(tf.Cases, c)
 		}
 		if errs := splcheck.Verify(rule, q.Datamodel, q.Search, tf); len(errs) > 0 {
 			skip("converted detection disagrees with the rule", rel+": "+errs[0].Error())

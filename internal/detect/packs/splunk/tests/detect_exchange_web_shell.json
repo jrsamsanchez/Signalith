@@ -21,5 +21,6 @@
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\HttpProxy\\OAB\\ y"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\HttpProxy\\OAB\\ x"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\HttpProxy\\OAB\\ x\\x .aspy"}},
-  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\HttpProxy\\OAB\\ x"}}
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\HttpProxy\\OAB\\ x"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"CreationUtcTime":"2021-03-16 21:41:42.664","Image":"System","ProcessGuid":"{9A05EE67-DA26-6050-0100-00000000B001}","ProcessId":"4","RuleName":"-","TargetFilename":"C:\\Program Files\\Microsoft\\Exchange Server\\V15\\FrontEnd\\HttpProxy\\owa\\auth\\shell.aspx","UtcTime":"2021-03-16 21:41:42.664"}}
 ]}

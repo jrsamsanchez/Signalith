@@ -3,5 +3,6 @@
   {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"C:\\Users\\Public\\x .udl"}},
   {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"C:\\Users\\Public\\x .udl"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"C:\\Users\\Public\\x .udm"}},
-  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242"}}
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"CreationUtcTime":"2024-08-21 15:35:12.499","Image":"C:\\Windows\\Explorer.EXE","ProcessGuid":"BD875050-07D8-66C6-1004-00000000C702","ProcessId":"3248","RuleName":"-","TargetFilename":"C:\\Users\\user\\Desktop\\Important - Copy.udl","User":"EC2AMAZ-7DETGRN\\user","UtcTime":"2024-08-21 15:35:12.499"}}
 ]}

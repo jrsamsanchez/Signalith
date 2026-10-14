@@ -1,5 +1,6 @@
 {"rule": "a7a7afdb-3c58-45b6-9bff-63e5acfd9d40", "cases": [
   {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\defaultIcon\\(Default) x x HKCR\\ x"}},
   {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\defaultIcon\\(Default) x x HKCR\\ y"}},
-  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run"}}
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"C:\\ProgramData\\cHpfiXA9s.ico","EventType":"SetValue","Image":"C:\\Temp\\ConfirmEmail.exe","ProcessGuid":"{FCCA13C7-394B-63C5-A305-00000000AF02}","ProcessId":"3676","RuleName":"-","TargetObject":"HKCR\\cHpfiXA9s\\DefaultIcon\\(Default)","UtcTime":"2023-01-16 11:47:23.496"}}
 ]}

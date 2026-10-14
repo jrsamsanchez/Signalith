@@ -3,5 +3,6 @@
   {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"x CurrentControlSet\\Control\\Print\\Monitors x"}},
   {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"x CurrentControlSet\\Control\\Print\\Monitors x"}},
   {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"x CurrentControlSet\\Control\\Print\\Monitors y"}},
-  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run"}}
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"C:\\Path\\AtomicRedTeam.dll","EventType":"SetValue","Image":"C:\\Windows\\system32\\reg.exe","ProcessGuid":"{7942A313-ECE5-61FC-9802-000000002D02}","ProcessId":"7496","RuleName":"-","TargetObject":"HKLM\\System\\CurrentControlSet\\Control\\Print\\Monitors\\ART\\Atomic Red Team","UtcTime":"2022-02-04 09:07:49.241"}}
 ]}

@@ -1,5 +1,6 @@
 {"rule": "783f0798-f679-4c17-b3b3-187febf0b9b8", "cases": [
   {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Windows Defender\\Scan\\QuickScanInterval"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Windows Defender\\Scan\\QuickScanIntervam"}},
-  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run"}}
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000018)","EventType":"SetValue","Image":"C:\\Windows\\system32\\reg.exe","ProcessGuid":"{4EF50BA8-35EA-6598-6502-000000002F03}","ProcessId":"3948","RuleName":"-","TargetObject":"HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows Defender\\Scan\\QuickScanInterval","User":"ATTACKRANGE\\Administrator","UtcTime":"2024-01-05 17:01:30.570"}}
 ]}

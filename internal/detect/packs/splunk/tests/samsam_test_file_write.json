@@ -1,5 +1,6 @@
 {"rule": "493a879d-519d-428f-8f57-a06a0fdc107e", "cases": [
-  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\\\windows\\\\system32\\\\test.txt"}},
-  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\\\windows\\\\system32\\\\test.txu"}},
-  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242"}}
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\windows\\system32\\test.txt"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\windows\\system32\\test.txu"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"CreationUtcTime":"2020-12-07 12:02:44.163","Image":"C:\\Windows\\System32\\cmd.exe","ProcessGuid":"{7E7FFDA1-19DB-5FCE-0000-00104C680F00}","ProcessId":"6628","RuleName":"","TargetFilename":"C:\\Windows\\System32\\test.txt","UtcTime":"2020-12-07 12:02:44.163"}}
 ]}

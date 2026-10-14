@@ -13,5 +13,7 @@
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\MOVEitTransfer\\wwwroot\\ x"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\MOVEitTransfer\\wwwroot\\ y"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"C:\\Users\\Public\\x .asp x"}},
-  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\MOVEitTransfer\\wwwroot\\ x"}}
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\MOVEitTransfer\\wwwroot\\ x"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"CreationUtcTime":"2021-03-16 22:17:52.268","Image":"System","ProcessGuid":"{9A05EE67-DA26-6050-0100-00000000B001}","ProcessId":"4","RuleName":"-","TargetFilename":"C:\\MOVEitTransfer\\wwwroot\\human2.aspx","UtcTime":"2021-03-16 22:17:52.268"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"CreationUtcTime":"2021-03-16 21:41:42.664","Image":"System","ProcessGuid":"{9A05EE67-DA26-6050-0100-00000000B001}","ProcessId":"4","RuleName":"-","TargetFilename":"C:\\MOVEitTransfer\\wwwroot\\human2.aspx","UtcTime":"2021-03-16 21:41:42.664"}}
 ]}

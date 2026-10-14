@@ -43,5 +43,6 @@
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\Temp\\ x\\x .themf"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\Temp\\ x"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\Temp\\ x"}},
-  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\Temp\\ x"}}
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\Temp\\ x"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"CreationUtcTime":"2023-09-14 17:27:42.883","Image":"C:\\Windows\\system32\\rundll32.exe","ProcessGuid":"E25640CB-428E-6503-4F01-000000000600","ProcessId":"7300","RuleName":"-","TargetFilename":"C:\\Users\\snapattack\\Downloads\\Custom.theme","User":"DESKTOP-U2I67LF\\snapattack","UtcTime":"2023-09-14 17:27:42.883"}}
 ]}

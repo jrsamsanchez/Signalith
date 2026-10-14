@@ -3,5 +3,6 @@
   {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\vmware\\horizon\\workspace\\webapps\\ x x .jsp"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x /vmware/horizon/workspace/webapps/ x x .jsq"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242"}},
-  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\vmware\\horizon\\workspace\\webapps\\ x x .jsq"}}
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\vmware\\horizon\\workspace\\webapps\\ x x .jsq"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"CreationUtcTime":"2022-05-26 14:59:38.210","Image":"C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe","ProcessGuid":"5C68405B-95D9-628F-FA09-00000000B601","ProcessId":"6452","RuleName":"-","TargetFilename":"C:\\VMware\\VMwareIdentityManager\\opt\\vmware\\horizon\\workspace\\webapps\\cas\\static\\cmd.jsp","User":"NT AUTHORITY\\SYSTEM","UtcTime":"2022-05-26 14:59:38.210"}}
 ]}

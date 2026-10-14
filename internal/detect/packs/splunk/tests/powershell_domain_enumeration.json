@@ -19,5 +19,7 @@
   {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"MessageNumber":"1","MessageTotal":"1","ScriptBlockId":"6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10","ScriptBlockText":"x get-domainuser x"}},
   {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"MessageNumber":"1","MessageTotal":"1","ScriptBlockId":"6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10","ScriptBlockText":"x get-domainuser x"}},
   {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"MessageNumber":"1","MessageTotal":"1","ScriptBlockId":"6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10","ScriptBlockText":"x get-domainuser y"}},
-  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"MessageNumber":"1","MessageTotal":"1","ScriptBlockId":"6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10"}}
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"MessageNumber":"1","MessageTotal":"1","ScriptBlockId":"6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"MessageNumber":"1","MessageTotal":"1","Path":"","ScriptBlockId":"4bbd9126-c611-419b-a5a2-8f6615374adc","ScriptBlockText":"get-addomain"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"MessageNumber":"1","MessageTotal":"1","Path":"","ScriptBlockId":"9b49e3ef-01bd-4bad-a211-2a1ce4e63cb0","ScriptBlockText":"get-adgroupmember"}}
 ]}

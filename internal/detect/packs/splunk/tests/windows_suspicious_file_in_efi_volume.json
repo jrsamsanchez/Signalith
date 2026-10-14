@@ -1,5 +1,6 @@
 {"rule": "4000d728-faaf-44d4-969b-12216f2879e1", "cases": [
   {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\EFI\\Boot\\ x x .dat"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\EFI\\Boot\\ x x .dau"}},
-  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242"}}
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"CreationUtcTime":"2025-09-16 10:59:52.380","Image":"C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe","ProcessGuid":"AC4C5E18-391A-68C9-0501-000000001A00","ProcessId":"9004","RuleName":"-","TargetFilename":"\\\\?\\Volume{112b78eb-26e7-49e3-9e90-922fd8cfb387}\\EFI\\Boot\\cloak.dat","User":"WIN11-22H2-X64\\localuser","UtcTime":"2025-09-16 10:59:52.380"}}
 ]}

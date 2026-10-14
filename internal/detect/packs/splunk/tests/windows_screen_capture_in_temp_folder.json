@@ -20,5 +20,6 @@
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\temp\\ x"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\temp\\ x\\screenshot.bmq"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\temp\\ y"}},
-  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"C:\\Users\\Public\\screenshot.bmp"}}
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"C:\\Users\\Public\\screenshot.bmp"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"CreationUtcTime":"2024-09-24 10:07:19.930","Image":"C:\\Python311\\python.exe","ProcessGuid":"{F4BF863A-8F57-66F2-C5CD-000000001403}","ProcessId":"1176","RuleName":"-","TargetFilename":"C:\\Users\\Administrator\\AppData\\Local\\Temp\\2\\screenshot.png","User":"TESTLAB-WIN-2\\Administrator","UtcTime":"2024-09-24 10:07:19.930"}}
 ]}

@@ -27,7 +27,7 @@ search: |
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"datamodel=Endpoint", "signature_id IN (1, 4688)", "process_name=reg.exe", "user=*", "NOT user=SYSTEM"} {
+	for _, want := range []string{"datamodel=Endpoint", "signature_id IN (1, 4688)", "process_name=reg.exe", "user=*", `user=*\SYSTEM`} {
 		if !strings.Contains(d.Query, want) {
 			t.Errorf("query %s lacks %s", d.Query, want)
 		}

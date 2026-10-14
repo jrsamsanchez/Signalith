@@ -34,8 +34,9 @@ type TestFile struct {
 // Case is one Windows event and whether the rule must match it.
 type Case struct {
 	Expect bool `json:"expect"`
-	// Source is "synthesized" (made from the rule) or "sigmahq" (a real
-	// event from SigmaHQ's regression data).
+	// Source is "synthesized" (made from the rule), "sigmahq" (a real
+	// event from SigmaHQ's regression data) or "attack_data" (a real event
+	// from Splunk's attack recordings).
 	Source  string            `json:"source"`
 	Channel string            `json:"channel"`
 	EventID string            `json:"event_id"`

@@ -3,5 +3,6 @@
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x .xlm"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x :\\Program Files\\Microsoft Office\\ x"}},
-  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\AppData\\Roaming\\Microsoft\\AddIns\\ x"}}
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\AppData\\Roaming\\Microsoft\\AddIns\\ x"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"CreationUtcTime":"2023-03-16 23:24:55.392","Image":"C:\\Users\\user\\AppData\\Roaming\\autosnap\\pybas.exe","ProcessGuid":"CF2FE148-A533-6413-3405-000000003902","ProcessId":"6880","RuleName":"-","TargetFilename":"C:\\Users\\user\\AppData\\Local\\Temp\\_MEI68802\\atomic-red-team\\atomics\\T1137.006\\bin\\Addins\\excelxll_x64.xll","User":"SNAPATTACK\\user","UtcTime":"2023-03-16 23:24:55.392"}}
 ]}

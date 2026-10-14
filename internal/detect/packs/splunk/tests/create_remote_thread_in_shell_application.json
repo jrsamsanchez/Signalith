@@ -15,5 +15,6 @@
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"8","data":{"SourceProcessId":"4242","TargetImage":"x \\powershell.exf","TargetProcessId":"640"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"SourceProcessId":"4242","TargetImage":"x \\pwsh.exe","TargetProcessId":"640"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"SourceProcessId":"4242","TargetImage":"x \\pwsh.exe","TargetProcessId":"640"}},
-  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"8","data":{"SourceProcessId":"4242","TargetImage":"x \\pwsh.exf","TargetProcessId":"640"}}
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"8","data":{"SourceProcessId":"4242","TargetImage":"x \\pwsh.exf","TargetProcessId":"640"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"8","data":{"NewThreadId":"3404","RuleName":"-","SourceImage":"C:\\Python39\\rundll32.exe","SourceProcessGuid":"{014657FA-034D-6104-0634-00000000E801}","SourceProcessId":"6500","StartAddress":"0x000000000AF20000","StartFunction":"-","StartModule":"-","TargetImage":"C:\\Windows\\System32\\cmd.exe","TargetProcessGuid":"{014657FA-01C0-6104-D333-00000000E801}","TargetProcessId":"6964","UtcTime":"2021-07-30 13:49:01.762"}}
 ]}

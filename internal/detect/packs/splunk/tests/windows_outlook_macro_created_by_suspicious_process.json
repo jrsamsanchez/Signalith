@@ -1,5 +1,6 @@
 {"rule": "3ec347e3-a94a-4a8b-a918-8306ea403182", "cases": [
   {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x Appdata\\Roaming\\Microsoft\\Outlook\\VbaProject.OTM"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x Appdata\\Roaming\\Microsoft\\Outlook\\VbaProject.OTN"}},
-  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242"}}
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"CreationUtcTime":"2024-08-01 17:59:13.612","Image":"C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe","ProcessGuid":"F51F9151-CCF0-66AB-520B-000000000C00","ProcessId":"8676","RuleName":"-","TargetFilename":"C:\\Users\\localuser\\AppData\\Roaming\\Microsoft\\Outlook\\VbaProject.OTM","User":"WIN10-21H1\\localuser","UtcTime":"2024-08-01 17:59:13.612"}}
 ]}

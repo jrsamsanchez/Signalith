@@ -61,5 +61,7 @@
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x :\\Windows\\Temp\\ x"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x :\\Windows\\Temp\\ x\\x .lnl"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x :\\Windows\\Temp\\ x"}},
-  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x :\\Windows\\Temp\\ y"}}
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x :\\Windows\\Temp\\ y"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"CreationUtcTime":"2020-12-08 14:45:35.993","Image":"C:\\Windows\\Explorer.EXE","ProcessGuid":"{B0A3CCD1-9144-5FCF-0000-0010DDA50800}","ProcessId":"4488","RuleName":"","TargetFilename":"C:\\Temp\\splunkuf - Shortcut.lnk","UtcTime":"2020-12-08 14:45:35.993"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"CreationUtcTime":"2020-12-08 14:45:28.822","Image":"C:\\Windows\\Explorer.EXE","ProcessGuid":"{B0A3CCD1-9144-5FCF-0000-0010DDA50800}","ProcessId":"4488","RuleName":"","TargetFilename":"C:\\Users\\Administrator\\Desktop\\splunkuf - Shortcut.lnk","UtcTime":"2020-12-08 14:45:28.822"}}
 ]}

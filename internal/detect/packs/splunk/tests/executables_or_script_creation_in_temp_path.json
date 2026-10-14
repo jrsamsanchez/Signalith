@@ -157,5 +157,7 @@
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\AppData\\Local\\Temp\\ y"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"C:\\Users\\Public\\x .vbs"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\__PSScriptPolicyTest_ x"}},
-  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\__PSScriptPolicyTest_ x\\x .vbs"}}
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\__PSScriptPolicyTest_ x\\x .vbs"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"CreationUtcTime":"2021-04-28 20:10:31.822","Image":"C:\\Windows\\SysWOW64\\cmd.exe","ProcessGuid":"{4C77B871-C124-6089-E964-00000000BB01}","ProcessId":"4836","RuleName":"EXE","TargetFilename":"C:\\Windows\\Temp\\cry.exe","UtcTime":"2021-04-28 20:10:31.822"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"CreationUtcTime":"2021-04-28 20:10:58.437","Image":"C:\\Windows\\SysWOW64\\cmd.exe","ProcessGuid":"{4C77B871-C124-6089-E964-00000000BB01}","ProcessId":"4836","RuleName":"EXE","TargetFilename":"C:\\Windows\\Temp\\ogol.exe","UtcTime":"2021-04-28 20:10:58.437"}}
 ]}

@@ -10,5 +10,6 @@
   {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\WindowsPowerShell\\Modules\\ .dll"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\WindowsPowerShell\\Modules\\ .dlm"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"C:\\Users\\Public\\x .dll"}},
-  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\WindowsPowerShell\\Modules\\ .dll\\x .dlm"}}
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\WindowsPowerShell\\Modules\\ .dll\\x .dlm"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"CreationUtcTime":"2024-10-07 15:45:43.522","Image":"C:\\Windows\\explorer.exe","ProcessGuid":"A2F0EB99-011D-6704-C411-000000000300","ProcessId":"4988","RuleName":"-","TargetFilename":"C:\\Users\\Administrator\\Documents\\WindowsPowershell\\Modules\\SmugglingCmdlet\\SmugglingCmdlet.dll","User":"DESKTOP-O4UAANR\\Administrator","UtcTime":"2024-10-07 15:45:43.522"}}
 ]}

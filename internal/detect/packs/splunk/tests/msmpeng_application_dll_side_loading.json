@@ -15,5 +15,7 @@
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\WinSxS\\ defender-service x"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\WinSxS\\ defender-service x\\mpsvc.dll"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\WinSxS\\Temp\\ defender-service x"}},
-  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\WinSxS\\Temp\\ defender-service x\\mpsvc.dll"}}
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\WinSxS\\Temp\\ defender-service x\\mpsvc.dll"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"CreationUtcTime":"2021-07-05 14:02:06.020","Image":"C:\\Windows\\system32\\cmd.exe","ProcessGuid":"{D694AEB8-10DD-60E3-0D0C-00000000D301}","ProcessId":"5136","RuleName":"DLL","TargetFilename":"C:\\Windows\\mpsvc.dll","UtcTime":"2021-07-05 14:02:06.020"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"CreationUtcTime":"2021-07-05 14:02:06.020","Image":"C:\\Windows\\system32\\cmd.exe","ProcessGuid":"{D694AEB8-10E2-60E3-0F0C-00000000D301}","ProcessId":"7156","RuleName":"DLL","TargetFilename":"C:\\Windows\\mpsvc.dll","UtcTime":"2021-07-05 14:02:12.761"}}
 ]}

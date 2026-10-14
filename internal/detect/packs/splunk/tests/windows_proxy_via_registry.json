@@ -1,5 +1,6 @@
 {"rule": "0270455b-1385-4579-9ac5-e77046c508ae", "cases": [
   {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\System\\CurrentControlSet\\Services\\PortProxy\\v4tov4\\tcp x"}},
   {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\System\\CurrentControlSet\\Services\\PortProxy\\v4tov4\\tcp y"}},
-  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run"}}
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"127.0.0.1/8443","EventType":"SetValue","Image":"C:\\Windows\\system32\\netsh.exe","ProcessGuid":"{03799797-60D3-646F-8C07-00000000ED02}","ProcessId":"4692","RuleName":"proxy","TargetObject":"HKLM\\System\\CurrentControlSet\\Services\\PortProxy\\v4tov4\\tcp\\127.0.0.1/9999","User":"AR-WIN-2\\Administrator","UtcTime":"2023-05-25 13:21:23.640"}}
 ]}

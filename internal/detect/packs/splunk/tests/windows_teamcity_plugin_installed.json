@@ -10,5 +10,6 @@
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x :\\ProgramData\\JetBrains\\TeamCity\\plugins\\ x\\x .ziq"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x :\\ProgramData\\JetBrains\\TeamCity\\plugins\\ x"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x :\\ProgramData\\JetBrains\\TeamCity\\plugins\\ x"}},
-  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x :\\ProgramData\\JetBrains\\TeamCity\\plugins\\ x"}}
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x :\\ProgramData\\JetBrains\\TeamCity\\plugins\\ x"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"CreationUtcTime":"2024-03-05 16:08:46.562","Image":"c:\\TeamCity\\jre\\bin\\java.exe","ProcessGuid":"D52145E4-3B31-65E7-8300-000000000500","ProcessId":"4956","RuleName":"-","TargetFilename":"C:\\ProgramData\\JetBrains\\TeamCity\\plugins\\ED6gWxnM.zip","User":"NT AUTHORITY\\SYSTEM","UtcTime":"2024-03-05 16:08:46.562"}}
 ]}

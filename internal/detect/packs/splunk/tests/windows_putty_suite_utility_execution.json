@@ -30,5 +30,6 @@
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"PSCQ","ParentProcessId":"4000","ProcessId":"4242"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"Plinl","ParentProcessId":"4000","ProcessId":"4242"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"PSFTQ","ParentProcessId":"4000","ProcessId":"4242"}},
-  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"PuTTYgeo","ParentProcessId":"4000","ProcessId":"4242"}}
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"PuTTYgeo","ParentProcessId":"4000","ProcessId":"4242"}},
+  {"expect":true,"source":"attack_data","channel":"Security","event_id":"4688","data":{"CommandLine":"puTTY.exe  -ssh test@137.184.15.189","MandatoryLabel":"S-1-16-16384","NewProcessId":"0x5b8","NewProcessName":"C:\\Users\\Public\\Documents\\puTTY.exe","ParentProcessName":"C:\\Windows\\System32\\cmd.exe","ProcessId":"0x1b60","SubjectDomainName":"SNAPATTACK","SubjectLogonId":"0x3e7","SubjectUserName":"SLABS-DC$","SubjectUserSid":"S-1-5-18","TargetDomainName":"-","TargetLogonId":"0x0","TargetUserName":"-","TargetUserSid":"S-1-0-0","TokenElevationType":"%%1936"}}
 ]}

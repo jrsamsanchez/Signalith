@@ -3,5 +3,6 @@
   {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"x","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Control\\MiniNt\\ y"}},
   {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"y","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Control\\MiniNt\\ x"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"x","EventType":"SetValue","ProcessId":"4242","TargetObject":"HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run"}},
-  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Control\\MiniNt\\ x"}}
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Control\\MiniNt\\ x"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"(Empty)","EventType":"SetValue","Image":"C:\\Windows\\system32\\reg.exe","ProcessGuid":"{6EDEAD03-1101-615C-0007-00000000FB01}","ProcessId":"1492","RuleName":"-","TargetObject":"HKLM\\System\\CurrentControlSet\\Control\\MiniNt\\(Default)","UtcTime":"2021-10-05 08:46:57.735"}}
 ]}

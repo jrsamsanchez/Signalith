@@ -1,5 +1,6 @@
 {"rule": "f2a1615a-1d63-11ec-97d2-acde48001122", "cases": [
-  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\\\Software\\\\Remcos x"}},
-  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\\\Software\\\\Remcos y"}},
-  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run"}}
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Software\\Remcos x"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Software\\Remcos y"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"(Empty)","EventType":"SetValue","Image":"C:\\Temp\\Remcos-v3.2.1-Light\\remcos_a.exe","ProcessGuid":"{DA02E8FA-3486-6238-6801-000000004102}","ProcessId":"6328","RuleName":"-","TargetObject":"HKU\\S-1-5-21-2182867758-2228517806-1658428495-500\\SOFTWARE\\Remcos-831TYD\\licence","UtcTime":"2022-03-21 08:17:10.435"}}
 ]}

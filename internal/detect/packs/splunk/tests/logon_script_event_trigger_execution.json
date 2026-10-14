@@ -1,5 +1,7 @@
 {"rule": "4c38c264-1f74-11ec-b5fa-acde48001122", "cases": [
   {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Environment\\UserInitMprLogonScript"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Environment\\UserInitMprLogonScripu"}},
-  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run"}}
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"12","data":{"EventType":"DeleteValue","Image":"C:\\Windows\\regedit.exe","ProcessGuid":"{5EBD8912-8D80-6151-AF00-00000000FD01}","ProcessId":"5156","RuleName":"-","TargetObject":"HKU\\S-1-5-21-2741910449-3045839080-4200281267-500\\Environment\\UserInitMprLogonScript","UtcTime":"2021-09-27 09:25:44.318"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"12","data":{"EventType":"DeleteValue","Image":"C:\\Windows\\regedit.exe","ProcessGuid":"{5EBD8912-8D80-6151-AF00-00000000FD01}","ProcessId":"5156","RuleName":"-","TargetObject":"HKU\\S-1-5-21-2741910449-3045839080-4200281267-500\\Environment\\UserInitMprLogonScript","UtcTime":"2021-09-27 09:27:09.898"}}
 ]}

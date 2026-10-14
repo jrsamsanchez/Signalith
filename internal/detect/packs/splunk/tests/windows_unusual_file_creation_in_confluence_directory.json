@@ -17,5 +17,6 @@
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\Atlassian\\Confluence\\ x x .msd"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\Atlassian\\Confluence\\ x x .ps2"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\Atlassian\\Confluence\\ x x .vbf"}},
-  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\Atlassian\\Confluence\\ x x .vbt"}}
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\Atlassian\\Confluence\\ x x .vbt"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"CreationUtcTime":"2024-01-23 15:53:25.702","Image":"C:\\Windows\\SYSTEM32\\curl.exe","ProcessGuid":"D52145E4-E0F5-65AF-A60D-000000000B00","ProcessId":"10136","RuleName":"-","TargetFilename":"C:\\Program Files\\Atlassian\\Confluence\\mini-reverse.ps1","User":"NT AUTHORITY\\NETWORK SERVICE","UtcTime":"2024-01-23 15:53:25.703"}}
 ]}

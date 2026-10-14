@@ -384,8 +384,10 @@ names, so each rule's `where` clause becomes a Signalith filter field for field:
 The rule files and the macros they use ship unchanged; Signalith converts them when
 it starts, reading the search the way Splunk does: `*` is the only wildcard (`?` is
 literal, so rules with one are left out), case is ignored, `!=` only matches
-when the field is present, and `OR` binds tighter than `AND` (`a b OR c` is
-`a AND (b OR c)`), as in Splunk's search syntax. TTP rules raise findings and add risk; anomaly rules only
+when the field is present, `OR` binds tighter than `AND` (`a b OR c` is
+`a AND (b OR c)`), and `\\` is one backslash, quoted or not, as in Splunk's search
+syntax. Sysmon's user (`NT AUTHORITY\SYSTEM`) compares as the name alone
+(`SYSTEM`), the way Splunk's Sysmon add-on reads it. TTP rules raise findings and add risk; anomaly rules only
 add risk, as in Splunk ES risk-based alerting. Severity follows the rule's risk score
 (TTP: 80 and up critical, 64 high, 30 medium; anomalies low). Each is tagged
 `splunk`, the pack name, `ttp` or `anomaly`, and the node, and keeps the rule's
@@ -423,6 +425,17 @@ the real Windows parser, the converted detection agrees with Splunk's reading of
 clause on every event. Searches with `eval`, `rex`, `regex`, `lookup`, and other raw searches
 are left out for now; `internal/detect/packs/splunk/REPORT.md` lists
 every rule left out and why. The same CI checks as the SigmaHQ pack run on it.
+
+Each rule is also checked on the real attack it was written for: Splunk records one
+for most rules (`tests.attack_data`, from [attack_data](https://github.com/splunk/attack_data)).
+Every recorded Windows event goes through Signalith's parser, and the detection must
+read it as the rule does and find the attack. 715 of the 717 shipped rules with a
+Windows recording do, and up to two recorded events each rule finds are kept with
+its test events, so CI checks real events too:
+
+```sh
+go run ./internal/detect/attackgen -write   # downloads the recordings, about 2 GB
+```
 
 On the pack card, **Turn on N TTP rules** is the suggested start.
 

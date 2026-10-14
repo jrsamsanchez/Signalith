@@ -191,6 +191,17 @@ func TestOrBeforeAnd(t *testing.T) {
 	}
 }
 
+// An unquoted value reads \\ as one backslash, as a quoted one does.
+func TestUnquotedBackslash(t *testing.T) {
+	e, err := ParseWhere(`Processes.process=*\\users\\public\\* Processes.process_name="*\\\\*"`, "Processes", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !Eval(e, map[string]string{"process": `schtasks /create /tr C:\Users\Public\a.exe`, "process_name": `\\host\x`}) {
+		t.Errorf("does not match single backslashes: %#v", e)
+	}
+}
+
 func TestParseScheduledTask(t *testing.T) {
 	src := rule("`wineventlog_security` EventCode=4698 TaskContent = \"*&lt;Hidden&gt;true&lt;/Hidden&gt;*\"\n| stats count by TaskName TaskContent dest")
 	r, err := Parse(src, nil)

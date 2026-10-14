@@ -7,5 +7,6 @@
   {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"MessageNumber":"1","MessageTotal":"1","ScriptBlockId":"6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10","ScriptBlockText":"x Set-MpPreference  x x -exclusion x"}},
   {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"MessageNumber":"1","MessageTotal":"1","ScriptBlockId":"6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10","ScriptBlockText":"x Set-MpPreference  x x -exclusion x"}},
   {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"MessageNumber":"1","MessageTotal":"1","ScriptBlockId":"6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10","ScriptBlockText":"x Set-MpPreference  x x -exclusion y"}},
-  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"MessageNumber":"1","MessageTotal":"1","ScriptBlockId":"6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10"}}
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"MessageNumber":"1","MessageTotal":"1","ScriptBlockId":"6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"MessageNumber":"1","MessageTotal":"1","Path":"","ScriptBlockId":"dad71a18-1edf-4d03-afb0-a69983c05ad5","ScriptBlockText":"Add-MpPreference -ExclusionPath \"C:\\Path\\To\\Exclude\""}}
 ]}

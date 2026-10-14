@@ -6,5 +6,6 @@
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\remcos\\ x\\x .dau"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\remcos\\ x"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\remcos\\ y"}},
-  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"C:\\Users\\Public\\x .dat"}}
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"C:\\Users\\Public\\x .dat"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"CreationUtcTime":"2021-09-21 08:22:00.862","Image":"C:\\Users\\Administrator\\AppData\\Roaming\\WIN32\\WIN32.exe","ProcessGuid":"{5097E253-961E-6149-3A2C-00000000FB01}","ProcessId":"7644","RuleName":"-","TargetFilename":"C:\\Users\\Administrator\\AppData\\Roaming\\remcos\\logs.dat","UtcTime":"2021-09-21 08:22:00.862"}}
 ]}

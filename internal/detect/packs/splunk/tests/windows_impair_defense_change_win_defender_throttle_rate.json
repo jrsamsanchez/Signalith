@@ -1,5 +1,6 @@
 {"rule": "f7da5fca-9261-43de-a4d0-130dad1e4f4d", "cases": [
   {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Windows Defender\\NIS\\Consumers\\IPS\\ThrottleDetectionEventsRate"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Windows Defender\\NIS\\Consumers\\IPS\\ThrottleDetectionEventsRatf"}},
-  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run"}}
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00989680)","EventType":"SetValue","Image":"C:\\Windows\\system32\\reg.exe","ProcessGuid":"{4EF50BA8-35EA-6598-5C02-000000002F03}","ProcessId":"3864","RuleName":"-","TargetObject":"HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows Defender\\NIS\\Consumers\\IPS\\ThrottleDetectionEventsRate","User":"ATTACKRANGE\\Administrator","UtcTime":"2024-01-05 17:01:30.257"}}
 ]}

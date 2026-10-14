@@ -19,16 +19,7 @@ import (
 
 // splunkEvents are the Windows events each data model node is, so a rule
 // over Endpoint.Processes reads process creations, not process access.
-var splunkEvents = map[string][]string{
-	"Processes":     {"1", "4688"},
-	"Filesystem":    {"11", "23", "26"},
-	"Registry":      {"12", "13", "14"},
-	"PowerShell":    {"4104"},
-	"ImageLoad":     {"7"},
-	"ProcessAccess": {"8", "10"},
-	"TaskCreated":   {"4698"},
-	"ObjectAccess":  {"4663"},
-}
+var splunkEvents = splcheck.NodeEvents
 
 // UseMacros gives a splunk pack the macros its rules' searches use (the
 // pack generator reads them from a security_content checkout).
@@ -112,7 +103,11 @@ func splunkExpr(e splcheck.Expr) (query.Expr, error) {
 				return nil, fmt.Errorf("an empty value of %s is not supported", x.Field)
 			}
 		}
-		match := valuesMatch(x.Field, x.Values)
+		field := x.Field
+		if field == splcheck.RawUser {
+			field = "user"
+		}
+		match := valuesMatch(field, x.Values)
 		if x.Field == "registry_value_data" {
 			// Signalith keeps Sysmon's "DWORD (0x00000001)" as it is;
 			// Splunk's add-on reads it as 0x00000001 (splcheck.View).
@@ -125,8 +120,20 @@ func splunkExpr(e splcheck.Expr) (query.Expr, error) {
 				valuesMatch(x.Field, words),
 			})
 		}
+		if x.Field == "user" && !slices.ContainsFunc(x.Values, func(v string) bool { return strings.Contains(v, `\`) }) {
+			// Signalith keeps Sysmon's DOMAIN\name; Splunk's add-on
+			// reads the name alone (splcheck.View).
+			named := make([]string, len(x.Values))
+			for i, v := range x.Values {
+				named[i] = `*\` + v
+			}
+			match = or([]query.Expr{
+				and([]query.Expr{&query.Not{Child: &query.Compare{Field: x.Field, Op: "=", Value: `*\*`}}, match}),
+				valuesMatch(x.Field, named),
+			})
+		}
 		if x.Neg {
-			return and([]query.Expr{&query.Compare{Field: x.Field, Op: "=", Value: "*"}, &query.Not{Child: match}}), nil
+			return and([]query.Expr{&query.Compare{Field: field, Op: "=", Value: "*"}, &query.Not{Child: match}}), nil
 		}
 		return match, nil
 	}

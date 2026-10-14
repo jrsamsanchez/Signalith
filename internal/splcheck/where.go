@@ -97,7 +97,9 @@ func lex(s string, macros map[string]*Macro, depth int) ([]token, error) {
 			var b strings.Builder
 			j := i + 1
 			for ; j < len(rs) && rs[j] != '"'; j++ {
-				if rs[j] == '\\' && j+1 < len(rs) && (rs[j+1] == '\\' || rs[j+1] == '"') {
+				// \\, \" and \= stand for the character; any other
+				// backslash is literal.
+				if rs[j] == '\\' && j+1 < len(rs) && strings.ContainsRune(`\"=`, rs[j+1]) {
 					j++
 				}
 				b.WriteRune(rs[j])
@@ -119,11 +121,18 @@ func lex(s string, macros map[string]*Macro, depth int) ([]token, error) {
 		case c == '<' || c == '>':
 			return nil, errors.New("comparisons with < or > are not supported")
 		default:
+			// Unquoted, as quoted, \\ is one backslash in Splunk's search
+			// syntax: *\\users\\public\\* matches C:\Users\Public\x.
+			var b strings.Builder
 			j := i
 			for j < len(rs) && !unicode.IsSpace(rs[j]) && !strings.ContainsRune("()=,\"`!<>", rs[j]) {
+				if rs[j] == '\\' && j+1 < len(rs) && rs[j+1] == '\\' {
+					j++
+				}
+				b.WriteRune(rs[j])
 				j++
 			}
-			out = append(out, token{'w', string(rs[i:j])})
+			out = append(out, token{'w', b.String()})
 			i = j
 		}
 	}

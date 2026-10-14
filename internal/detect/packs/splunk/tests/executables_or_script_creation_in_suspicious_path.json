@@ -94,5 +94,6 @@
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x Recycle.bin x"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x Recycle.bin x\\x .vbt"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x Recycle.bin x"}},
-  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x Recycle.bin y"}}
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x Recycle.bin y"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"CreationUtcTime":"2025-02-11 09:47:34.224","Image":"C:\\Users\\Public\\mspaint.exe","ProcessGuid":"{A9E392D4-1C7A-67AB-3302-00000000CD03}","ProcessId":"1704","RuleName":"T1023","TargetFilename":"C:\\Users\\Public\\MicrosotShared.exe","User":"ATTACKRANGE\\Administrator","UtcTime":"2025-02-11 09:47:34.224"}}
 ]}

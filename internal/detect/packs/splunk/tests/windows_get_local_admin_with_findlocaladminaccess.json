@@ -3,5 +3,7 @@
   {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"MessageNumber":"1","MessageTotal":"1","ScriptBlockId":"6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10","ScriptBlockText":"x Find-LocalAdminAccess x"}},
   {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"MessageNumber":"1","MessageTotal":"1","ScriptBlockId":"6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10","ScriptBlockText":"x Find-LocalAdminAccess x"}},
   {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"MessageNumber":"1","MessageTotal":"1","ScriptBlockId":"6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10","ScriptBlockText":"x Find-LocalAdminAccess y"}},
-  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"MessageNumber":"1","MessageTotal":"1","ScriptBlockId":"6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10"}}
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"MessageNumber":"1","MessageTotal":"1","ScriptBlockId":"6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"MessageNumber":"1","MessageTotal":"1","Path":"","ScriptBlockId":"2703051c-ebf9-44bc-ae1d-0be49f717c0f","ScriptBlockText":"Find-LocalAdminAccess"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"MessageNumber":"1","MessageTotal":"1","Path":"","ScriptBlockId":"ce14e184-d0b3-42d3-81b5-28e349636f6d","ScriptBlockText":"Find-LocalAdminAccess"}}
 ]}

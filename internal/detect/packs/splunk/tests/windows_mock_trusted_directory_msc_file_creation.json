@@ -19,5 +19,6 @@
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"C:\\Windows \\System32\\ja-JP\\ .msd"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"C:\\Windows \\System32\\ko-KR\\ .msd"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"C:\\Windows \\System32\\zh-CN\\ .msd"}},
-  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"C:\\Windows \\System32\\zh-TW\\ .msd"}}
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"C:\\Windows \\System32\\zh-TW\\ .msd"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"CreationUtcTime":"2025-01-14 15:33:15.282","Image":"C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe","ProcessGuid":"BD875050-8555-6786-8808-00000000C702","ProcessId":"4560","RuleName":"-","TargetFilename":"C:\\Windows \\System32\\WmiMgmt.msc","User":"EC2AMAZ-7DETGRN\\user","UtcTime":"2025-01-14 15:40:12.830"}}
 ]}

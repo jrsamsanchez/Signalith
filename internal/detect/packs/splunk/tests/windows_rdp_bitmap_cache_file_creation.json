@@ -3,5 +3,6 @@
   {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\Terminal Server Client\\Cache\\cache .bin"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\Terminal Server Client\\Cache\\ .bmd"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242"}},
-  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\Terminal Server Client\\Cache\\cache .bio"}}
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\Terminal Server Client\\Cache\\cache .bio"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"CreationUtcTime":"2025-07-17 09:07:41.241","Image":"C:\\Windows\\system32\\mstsc.exe","ProcessGuid":"{E4B49A97-BD3B-6878-B401-00000000EE03}","ProcessId":"5208","RuleName":"-","TargetFilename":"C:\\Users\\Administrator\\AppData\\Local\\Microsoft\\Terminal Server Client\\Cache\\bcache24.bmc","User":"ATTACKRANGE\\Administrator","UtcTime":"2025-07-17 09:07:41.241"}}
 ]}

@@ -52,5 +52,6 @@
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x :\\Windows\\System32\\wow64log.dlm"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x :\\Windows\\System32\\WptsExtensions.dlm"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\phoneinfo.dlm"}},
-  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\SprintCSP.dlm"}}
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\SprintCSP.dlm"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"CreationUtcTime":"2026-08-14 16:03:29.585","Image":"System","ProcessGuid":"{1b43529b-244c-6a7f-eb03-000000000000}","ProcessId":"4","RuleName":"DLL","TargetFilename":"C:\\Windows\\System32\\phoneinfo.dll","User":"NT AUTHORITY\\SYSTEM","UtcTime":"2026-08-14 16:03:29.585"}}
 ]}

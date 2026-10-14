@@ -22,5 +22,7 @@
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"C:\\Users\\Public\\x .cmd"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x :\\Windows\\SysWOW64\\ x"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x :\\Windows\\SysWOW64\\ x\\x .cme"}},
-  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x :\\Windows\\SysWOW64\\ x"}}
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x :\\Windows\\SysWOW64\\ x"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"CreationUtcTime":"2020-11-06 12:35:05.467","Image":"C:\\Windows\\system32\\notepad.exe","ProcessGuid":"{8A675139-42DB-5FA5-B806-000000008801}","ProcessId":"5780","RuleName":"-","TargetFilename":"C:\\Windows\\System32\\test.bat","UtcTime":"2020-11-06 12:35:05.529"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"CreationUtcTime":"2020-11-06 12:35:05.467","Image":"C:\\Windows\\system32\\notepad.exe","ProcessGuid":"{8A675139-42DB-5FA5-B806-000000008801}","ProcessId":"5780","RuleName":"-","TargetFilename":"C:\\Windows\\System32\\test.bat","UtcTime":"2020-11-06 12:35:05.467"}}
 ]}

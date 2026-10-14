@@ -15,5 +15,7 @@
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"C:\\Users\\Public\\x _users.jsoo"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"C:\\Users\\Public\\x _groups.jsoo"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"C:\\Users\\Public\\x _ous.jsoo"}},
-  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"C:\\Users\\Public\\x _containers.jsoo"}}
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"C:\\Users\\Public\\x _containers.jsoo"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"CreationUtcTime":"2021-06-03 13:54:11.079","Image":"C:\\temp\\notsharph.exe","ProcessGuid":"{D419E45B-DF02-60B8-844E-00000000C401}","ProcessId":"2400","RuleName":"T1053","TargetFilename":"C:\\Temp\\20210603135410_ous.json","UtcTime":"2021-06-03 13:54:11.079"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"CreationUtcTime":"2021-06-03 13:53:54.658","Image":"c:\\temp\\SharpHound.exe","ProcessGuid":"{D419E45B-DEF0-60B8-814E-00000000C401}","ProcessId":"1084","RuleName":"T1053","TargetFilename":"C:\\Temp\\20210603135353_ous.json","UtcTime":"2021-06-03 13:53:54.658"}}
 ]}

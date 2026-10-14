@@ -200,7 +200,7 @@ var (
 		},
 		"ProcessAccess": {
 			"SourceImage": "process_path", "TargetImage": "target_process_path",
-			"GrantedAccess": "granted_access", "CallTrace": "call_trace", "SourceUser": "user",
+			"GrantedAccess": "granted_access", "CallTrace": "call_trace", "SourceUser": RawUser,
 		},
 		"TaskCreated": {"TaskName": "task_name", "TaskContent": "task_content", "user": "user"},
 		"ObjectAccess": {
@@ -218,6 +218,11 @@ var (
 	statsRe     = regexp.MustCompile(`(?is)^stats\s`)
 	renameRe    = regexp.MustCompile(`(?is)^rename\s`)
 )
+
+// RawUser is an event's own user field (SourceUser), DOMAIN\name as
+// Sysmon writes it; the CIM user field is the name alone (View). Both are
+// stored as user.
+const RawUser = "raw:user"
 
 // eventCode is the stored field of EventCode or EventID.
 const eventCode = "signature_id"

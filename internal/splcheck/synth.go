@@ -371,7 +371,7 @@ func records(node string, ev map[string]string) []sigmacheck.Case {
 		set(s, "TargetImage", ev["target_process_path"])
 		set(s, "GrantedAccess", ev["granted_access"])
 		set(s, "CallTrace", ev["call_trace"])
-		set(s, "SourceUser", ev["user"])
+		set(s, "SourceUser", ev[RawUser])
 		id := ev[eventCode]
 		if id != "8" {
 			id = "10"
@@ -524,6 +524,11 @@ func View(doc map[string]any) map[string]string {
 	if m := wordRe.FindStringSubmatch(out["registry_value_data"]); m != nil {
 		out["registry_value_data"] = m[1]
 	}
+	// It reads Sysmon's user (NT AUTHORITY\SYSTEM) as the name alone.
+	if u := out["user"]; u != "" {
+		out[RawUser] = u
+		out["user"] = u[strings.LastIndex(u, `\`)+1:]
+	}
 	return out
 }
 
@@ -554,6 +559,30 @@ func Cases(r *Rule) []sigmacheck.Case {
 
 // NodeModel is the Signalith data model of each node ("" for any).
 var NodeModel = map[string]string{"Processes": "Endpoint", "Filesystem": "Filesystem", "Registry": "Registry", "PowerShell": "Script", "ImageLoad": "Image_Load", "ProcessAccess": "Endpoint", "TaskCreated": "Change", "ObjectAccess": ""}
+
+// AttackDataSource marks a test event recorded in a real attack (Splunk's
+// attack_data, by internal/detect/attackgen).
+const AttackDataSource = "attack_data"
+
+// Reads reports whether Splunk's rule finds an event: one of its node's
+// events whose stored fields match the where clause.
+func Reads(r *Rule, c sigmacheck.Case) bool {
+	doc, model := Stored(c)
+	return InModel(r.Node, model) && slices.Contains(NodeEvents[r.Node], c.EventID) && Eval(r.Where, View(doc))
+}
+
+// NodeEvents are the Windows event IDs each node reads (as Splunk's
+// add-ons map them to the data model).
+var NodeEvents = map[string][]string{
+	"Processes":     {"1", "4688"},
+	"Filesystem":    {"11", "23", "26"},
+	"Registry":      {"12", "13", "14"},
+	"PowerShell":    {"4104"},
+	"ImageLoad":     {"7"},
+	"ProcessAccess": {"8", "10"},
+	"TaskCreated":   {"4698"},
+	"ObjectAccess":  {"4663"},
+}
 
 // InModel reports whether an event of a data model is one a node reads.
 // An object access is a file's (Filesystem) or a registry key's

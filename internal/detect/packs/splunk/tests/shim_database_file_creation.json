@@ -1,5 +1,7 @@
 {"rule": "6e4c4588-ba2f-42fa-97e6-9f6f548eaa33", "cases": [
-  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x Windows\\\\AppPatch\\\\Custom x"}},
-  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x Windows\\\\AppPatch\\\\Custom y"}},
-  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242"}}
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x Windows\\AppPatch\\Custom x"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x Windows\\AppPatch\\Custom y"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"CreationUtcTime":"2020-11-26 12:34:52.140","Image":"C:\\Windows\\system32\\sdbinst.exe","ProcessGuid":"{F0120972-A0EC-5FBF-F000-000000009101}","ProcessId":"4912","RuleName":"-","TargetFilename":"C:\\Windows\\AppPatch\\Custom\\{084c9f6c-a911-44f5-aecf-6a9a55b93c43}.sdb","UtcTime":"2020-11-26 12:34:52.140"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"CreationUtcTime":"2020-11-26 12:34:52.578","Image":"C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe","ProcessGuid":"{F0120972-A0EC-5FBF-F100-000000009101}","ProcessId":"3288","RuleName":"-","TargetFilename":"C:\\Windows\\AppPatch\\Custom\\T1546.011CompatDatabase.sdb","UtcTime":"2020-11-26 12:34:52.578"}}
 ]}
