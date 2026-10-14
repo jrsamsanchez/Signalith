@@ -21,6 +21,7 @@ const (
 	SecurityChannel   = "Security"
 	SystemChannel     = ingest.SystemChannel
 	PowerShellChannel = ingest.PowerShellChannel
+	DefenderChannel   = ingest.DefenderChannel
 	// LinuxSysmonChannel is Sysmon for Linux, whose events have Sysmon's
 	// event IDs and fields.
 	LinuxSysmonChannel = ingest.LinuxSysmonChannel
@@ -77,6 +78,14 @@ func (c Case) SigmaView() (map[string]string, bool) {
 		return out, true
 	case strings.EqualFold(c.Channel, SysmonChannel), strings.EqualFold(c.Channel, LinuxSysmonChannel),
 		strings.EqualFold(c.Channel, PowerShellChannel) && c.EventID == "4104":
+		out := map[string]string{"EventID": c.EventID}
+		for k, v := range c.Data {
+			out[k] = v
+		}
+		return out, true
+	case strings.EqualFold(c.Channel, DefenderChannel):
+		// Defender rules name the event's data as its message labels
+		// it (Path, ProcessName, NewValue).
 		out := map[string]string{"EventID": c.EventID}
 		for k, v := range c.Data {
 			out[k] = v
@@ -155,6 +164,9 @@ var sysmonEvents = map[string]string{
 	// Windows System log rules (service: system) are about services
 	// installed.
 	"system": "7045",
+	// Defender log rules (service: windefend) name their events; a
+	// threat detected is the first.
+	"windefend": "1116",
 }
 
 // SecurityEvents are the Security log events Security log rules
@@ -197,6 +209,8 @@ func Channel(category string) string {
 		return PowerShellChannel
 	case "system":
 		return SystemChannel
+	case "windefend":
+		return DefenderChannel
 	}
 	if strings.HasPrefix(category, "security_") {
 		return SecurityChannel
@@ -461,6 +475,15 @@ var Bases = map[string]map[string]string{
 		"SubjectUserSid": "S-1-5-21-1000-1104", "SubjectUserName": "tester", "SubjectDomainName": "CORP", "SubjectLogonId": "0x1a2b3c",
 		"ObjectType": "File", "IpAddress": "192.0.2.10", "IpPort": "50123", "ShareName": `\\*\Projects`,
 		"ShareLocalPath": `\??\D:\Projects`, "AccessMask": "0x1", "AccessList": "%%4416",
+	},
+	"windefend": {
+		"ThreatName":    "Trojan:Win32/Example",
+		"SeverityName":  "Severe",
+		"CategoryName":  "Trojan",
+		"Path":          `file:_C:\Users\tester\Downloads\invoice.exe`,
+		"SourceName":    "Real-Time Protection",
+		"ProcessName":   `C:\Windows\explorer.exe`,
+		"DetectionUser": `CORP\tester`,
 	},
 	"raw_access_thread": {
 		"Image":     `D:\apps\backup\backup.exe`,

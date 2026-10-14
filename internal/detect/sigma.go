@@ -275,6 +275,13 @@ var sigmaEventFields = func() map[string]map[string]string {
 			"starttype": "service_start_type", "accountname": "service_account", "provider_name": "provider",
 			"computer": "host", "computername": "host", "eventid": "signature_id",
 		},
+		// Defender's event data as its message names it (Path, Process
+		// Name, New Value).
+		"windefend": {
+			"path": "file_path", "processname": "process_path", "newvalue": "new_value", "oldvalue": "old_value",
+			"sourcename": "detection_source", "value": "setting",
+			"computer": "host", "computername": "host", "eventid": "signature_id",
+		},
 		"ps_script": {
 			"scriptblocktext": "script_block_text", "path": "script_path", "scriptblockid": "script_block_id",
 			"computer": "host", "computername": "host", "eventid": "signature_id",
@@ -304,38 +311,41 @@ var sigmaWindowsEvents = map[string][]string{
 	"create_remote_thread": {"8"},
 	"ps_script":            {"4104"},
 	"system":               {"7045"},
-	"security_4624":        {"4624"},
-	"security_4625":        {"4625"},
-	"security_4648":        {"4648"},
-	"security_4656":        {"4656"},
-	"security_4657":        {"4657"},
-	"security_4661":        {"4661"},
-	"security_4662":        {"4662"},
-	"security_4663":        {"4663"},
-	"security_4656_4663":   {"4656", "4663"},
-	"security_4706":        {"4706"},
-	"security_4719":        {"4719"},
-	"security_4720":        {"4720"},
-	"security_4732":        {"4732"},
-	"security_4738":        {"4738"},
-	"security_4794":        {"4794"},
-	"security_4728":        {"4728"},
-	"security_4729":        {"4729"},
-	"security_4730":        {"4730"},
-	"security_1102":        {"1102"},
-	"security_4699":        {"4699"},
-	"security_4701":        {"4701"},
-	"security_4699_4701":   {"4699", "4701"},
-	"security_4702":        {"4702"},
-	"security_5140":        {"5140"},
-	"security_4768":        {"4768"},
-	"security_4769":        {"4769"},
-	"security_4697":        {"4697"},
-	"security_4698":        {"4698"},
-	"security_5136":        {"5136"},
-	"security_5145":        {"5145"},
-	"security_5156":        {"5156"},
-	"security_5157":        {"5157"},
+	"windefend": {"1006", "1007", "1008", "1009", "1015", "1116", "1117", "1118", "1119", "1121", "1122", "1123", "1124",
+		"1125", "1126", "1127", "1128", "1150", "1151", "2000", "2001", "2002", "2003", "2004", "2006", "3002", "5000",
+		"5001", "5004", "5007", "5008", "5009", "5010", "5011", "5012", "5013", "5101"},
+	"security_4624":      {"4624"},
+	"security_4625":      {"4625"},
+	"security_4648":      {"4648"},
+	"security_4656":      {"4656"},
+	"security_4657":      {"4657"},
+	"security_4661":      {"4661"},
+	"security_4662":      {"4662"},
+	"security_4663":      {"4663"},
+	"security_4656_4663": {"4656", "4663"},
+	"security_4706":      {"4706"},
+	"security_4719":      {"4719"},
+	"security_4720":      {"4720"},
+	"security_4732":      {"4732"},
+	"security_4738":      {"4738"},
+	"security_4794":      {"4794"},
+	"security_4728":      {"4728"},
+	"security_4729":      {"4729"},
+	"security_4730":      {"4730"},
+	"security_1102":      {"1102"},
+	"security_4699":      {"4699"},
+	"security_4701":      {"4701"},
+	"security_4699_4701": {"4699", "4701"},
+	"security_4702":      {"4702"},
+	"security_5140":      {"5140"},
+	"security_4768":      {"4768"},
+	"security_4769":      {"4769"},
+	"security_4697":      {"4697"},
+	"security_4698":      {"4698"},
+	"security_5136":      {"5136"},
+	"security_5145":      {"5145"},
+	"security_5156":      {"5156"},
+	"security_5157":      {"5157"},
 }
 
 // sigmaSecurityModels are the Security log events Security log rules
@@ -449,6 +459,10 @@ func ConvertSigmaWith(src []byte, opt SigmaOptions) (*SigmaResult, error) {
 			// The System log's events Signalith reads are services
 			// installed (7045).
 			category = "system"
+		case "windefend":
+			// Microsoft Defender Antivirus's own log, each rule naming
+			// the events it is about.
+			category = "windefend"
 		case "security":
 			// A Security log rule's fields are its event's own, so it
 			// converts for one event, or events with the same data.
@@ -644,6 +658,8 @@ func (c *sigmaConv) datamodel(ls map[string]any) string {
 		return "Change"
 	case "auditd":
 		return "Other"
+	case "windefend":
+		return "Malware"
 	}
 	if id, ok := strings.CutPrefix(c.category, "security_"); ok {
 		return sigmaSecurityModels[id]

@@ -1,0 +1,3 @@
+{"rule": "b28e58e4-2a72-4fae-bdee-0fbe904db642", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Windows Defender/Operational","event_id":"5001","data":{}}
+]}

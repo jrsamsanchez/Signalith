@@ -242,9 +242,9 @@ Content packs are rule sets from other open source projects, shipped unchanged
 inside Signalith and converted when it starts. Every pack detection is **off** until
 an admin turns it on.
 
-**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,108 rules from
-[SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 1,954 Windows rules
-for these Sysmon, Security, PowerShell and System log sources, and 154 Linux rules (see
+**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,122 rules from
+[SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 1,968 Windows rules
+for these Sysmon, Security, PowerShell, System and Defender log sources, and 154 Linux rules (see
 [Linux endpoints](#linux-endpoints-sysmon-for-linux) and
 [the Linux audit log](#linux-audit-log-auditd)):
 
@@ -262,6 +262,7 @@ for these Sysmon, Security, PowerShell and System log sources, and 154 Linux rul
 | `raw_access_thread` | Sysmon 9 (a drive read directly; `Device` is `device`) | Endpoint |
 | `ps_script` | PowerShell 4104 | Script |
 | `service: system` | System 7045 (service installed) | Change |
+| `service: windefend` | Microsoft Defender Antivirus events (threats, attack surface reduction blocks, protection turned off, settings changed; `Path` is `file_path`, `ProcessName` `process_path`, `NewValue` `new_value`, `SourceName` `detection_source`, a 5013's `Value` `setting`) | Malware |
 | `service: security` | The Security log events in the next table | See the next table |
 
 A Security log rule names its event's own fields (`TargetUserName`, `LogonType`,

@@ -1,0 +1,4 @@
+{"rule": "91903aba-1088-42ee-b680-d6d94fe002b0", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Windows Defender/Operational","event_id":"5007","data":{"NewValue":"\\Real-Time Protection\\SubmitSamplesConsent = 0x0"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Windows Defender/Operational","event_id":"5007","data":{}}
+]}

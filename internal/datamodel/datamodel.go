@@ -163,6 +163,8 @@ var Models = []Model{
 			{Name: "rule", Type: "string", Description: "Protection rule that acted", Examples: []string{"Office app started a child process"}},
 			{Name: "rule_id", Type: "string", Description: "ID of that rule (for attack surface reduction, its GUID)", Examples: []string{"d4f940ab-401b-4efc-aadc-ad5f3c50688a"}},
 			{Name: "setting", Type: "string", Description: "Setting that changed, as the product wrote it", Examples: []string{`HKLM\SOFTWARE\Microsoft\Windows Defender\Exclusions\Paths\C:\Temp = 0x0`}},
+			{Name: "old_value", Type: "string", Description: "Setting as it was, for a configuration change (Defender 5007)"},
+			{Name: "new_value", Type: "string", Description: "Setting as it is now, for a configuration change (Defender 5007)", Examples: []string{`HKLM\SOFTWARE\Microsoft\Windows Defender\Real-Time Protection\DisableRealtimeMonitoring = 0x1`}},
 			{Name: "exclusion", Type: "string", Description: "What an added or removed exclusion lets through", Examples: []string{`C:\ProgramData\SyncSvc`}},
 			{Name: "exclusion_type", Type: "string", Description: "Kind of exclusion: path, extension, process or ip", Examples: []string{"path"}},
 			{Name: "signature_version", Type: "string", Description: "Version of the antivirus definitions", Examples: []string{"1.419.2361.0"}},

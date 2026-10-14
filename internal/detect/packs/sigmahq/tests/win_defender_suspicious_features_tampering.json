@@ -1,0 +1,4 @@
+{"rule": "801bd44f-ceed-4eb6-887c-11544633c0aa", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Windows Defender/Operational","event_id":"5007","data":{"NewValue":"\\Windows Defender\\SpyNet\\DisableBlockAtFirstSeen x"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Windows Defender/Operational","event_id":"5007","data":{}}
+]}

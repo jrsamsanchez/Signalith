@@ -44,6 +44,16 @@ func WinEventRecord(channel, eventID, computer string, t time.Time, data map[str
 		for _, n := range names {
 			msg.WriteString(n + ": " + data[n] + "\n")
 		}
+	} else if strings.EqualFold(channel, DefenderChannel) {
+		// Defender's events are read from their message's labels.
+		msg.WriteString("Microsoft Defender Antivirus event " + eventID + ":\n")
+		for _, n := range names {
+			label, ok := defenderDataLabels[n]
+			if !ok {
+				label = n
+			}
+			msg.WriteString(label + ": " + data[n] + "\n")
+		}
 	} else {
 		msg.WriteString("Windows event " + eventID)
 	}
@@ -95,4 +105,12 @@ func LinuxSysmonRecord(eventID, computer string, t time.Time, data map[string]st
 
 func xmlText(b *strings.Builder, s string) {
 	_ = xml.EscapeText(b, []byte(s))
+}
+
+// defenderDataLabels are the message labels Defender writes its event
+// data under.
+var defenderDataLabels = map[string]string{
+	"Path": "Path", "ProcessName": "Process Name", "NewValue": "New Value", "OldValue": "Old Value",
+	"SourceName": "Detection Source", "Value": "Value", "ThreatName": "Name", "ThreatID": "ID",
+	"SeverityName": "Severity", "CategoryName": "Category", "DetectionUser": "User", "ID": "ID",
 }

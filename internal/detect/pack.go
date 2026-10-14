@@ -268,6 +268,9 @@ func packThrottle(category, datamodel string) []string {
 		return []string{"host", "process_path", "pipe_name"}
 	case "raw_access_thread":
 		return []string{"host", "process_path", "device"}
+	case "windefend":
+		// A Defender event: which one, and the threat, file or setting.
+		return []string{"host", "signature_id", "signature", "file_path", "setting"}
 	case "auditd":
 		// An audit record: its type, program and what it ran or touched.
 		return []string{"host", "auditd_type", "auditd_exe", "process", "auditd_name"}

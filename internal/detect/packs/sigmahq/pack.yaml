@@ -7885,6 +7885,62 @@ rules:
     rule_id: c15e99a3-c474-48ab-b9a7-84549a7a9d16
     file: create_remote_thread_win_ttdinjec.yml
     path: rules/windows/create_remote_thread/create_remote_thread_win_ttdinjec.yml
+  - id: sigma-win-defender-antimalware-platform-expired
+    rule_id: 360a1340-398a-46b6-8d06-99b905dc69d2
+    file: win_defender_antimalware_platform_expired.yml
+    path: rules/windows/builtin/windefend/win_defender_antimalware_platform_expired.yml
+  - id: sigma-win-defender-asr-lsass-access
+    rule_id: a0a278fe-2c0e-4de2-ac3c-c68b08a9ba98
+    file: win_defender_asr_lsass_access.yml
+    path: rules/windows/builtin/windefend/win_defender_asr_lsass_access.yml
+  - id: sigma-win-defender-asr-psexec-wmi
+    rule_id: 97b9ce1e-c5ab-11ea-87d0-0242ac130003
+    file: win_defender_asr_psexec_wmi.yml
+    path: rules/windows/builtin/windefend/win_defender_asr_psexec_wmi.yml
+  - id: sigma-win-defender-config-change-exclusion-added
+    rule_id: 1321dc4e-a1fe-481d-a016-52c45f0c8b4f
+    file: win_defender_config_change_exclusion_added.yml
+    path: rules/windows/builtin/windefend/win_defender_config_change_exclusion_added.yml
+  - id: sigma-win-defender-config-change-exploit-guard-tamper
+    rule_id: a3ab73f1-bd46-4319-8f06-4b20d0617886
+    file: win_defender_config_change_exploit_guard_tamper.yml
+    path: rules/windows/builtin/windefend/win_defender_config_change_exploit_guard_tamper.yml
+  - id: sigma-win-defender-config-change-sample-submission-consent
+    rule_id: 91903aba-1088-42ee-b680-d6d94fe002b0
+    file: win_defender_config_change_sample_submission_consent.yml
+    path: rules/windows/builtin/windefend/win_defender_config_change_sample_submission_consent.yml
+  - id: sigma-win-defender-malware-and-pua-scan-disabled
+    rule_id: bc275be9-0bec-4d77-8c8f-281a2df6710f
+    file: win_defender_malware_and_pua_scan_disabled.yml
+    path: rules/windows/builtin/windefend/win_defender_malware_and_pua_scan_disabled.yml
+  - id: sigma-win-defender-malware-detected-amsi-source
+    rule_id: ea9bf0fa-edec-4fb8-8b78-b119f2528186
+    file: win_defender_malware_detected_amsi_source.yml
+    path: rules/windows/builtin/windefend/win_defender_malware_detected_amsi_source.yml
+  - id: sigma-win-defender-real-time-protection-disabled
+    rule_id: b28e58e4-2a72-4fae-bdee-0fbe904db642
+    file: win_defender_real_time_protection_disabled.yml
+    path: rules/windows/builtin/windefend/win_defender_real_time_protection_disabled.yml
+  - id: sigma-win-defender-restored-quarantine-file
+    rule_id: bc92ca75-cd42-4d61-9a37-9d5aa259c88b
+    file: win_defender_restored_quarantine_file.yml
+    path: rules/windows/builtin/windefend/win_defender_restored_quarantine_file.yml
+  - id: sigma-win-defender-suspicious-features-tampering
+    rule_id: 801bd44f-ceed-4eb6-887c-11544633c0aa
+    file: win_defender_suspicious_features_tampering.yml
+    path: rules/windows/builtin/windefend/win_defender_suspicious_features_tampering.yml
+  - id: sigma-win-defender-tamper-protection-trigger
+    rule_id: 49e5bc24-8b86-49f1-b743-535f332c2856
+    file: win_defender_tamper_protection_trigger.yml
+    path: rules/windows/builtin/windefend/win_defender_tamper_protection_trigger.yml
+  - id: sigma-win-defender-threat
+    rule_id: 57b649ef-ff42-4fb0-8bf6-62da243a1708
+    file: win_defender_threat.yml
+    path: rules/windows/builtin/windefend/win_defender_threat.yml
+  - id: sigma-win-defender-virus-scan-disabled
+    rule_id: 686c0b4b-9dd3-4847-9077-d6c1bbe36fcb
+    file: win_defender_virus_scan_disabled.yml
+    path: rules/windows/builtin/windefend/win_defender_virus_scan_disabled.yml
   - id: sigma-win-security-aadhealth-mon-agent-regkey-access
     rule_id: ff151c33-45fa-475d-af4f-c2f93571f4fe
     file: win_security_aadhealth_mon_agent_regkey_access.yml
