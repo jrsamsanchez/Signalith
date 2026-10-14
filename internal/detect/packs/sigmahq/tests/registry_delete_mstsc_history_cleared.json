@@ -1,0 +1,8 @@
+{"rule": "07bdd2f5-9c58-4f38-aec8-e101bb79ef8d", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"12","data":{"EventType":"DeleteValue","TargetObject":"\\Microsoft\\Terminal Server Client\\Default\\MRU"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"12","data":{"EventType":"DeleteKey","TargetObject":"\\Microsoft\\Terminal Server Client\\Servers\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"12","data":{"TargetObject":"\\Microsoft\\Terminal Server Client\\Default\\MRU"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"12","data":{"EventType":"DeleteValue"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"12","data":{"TargetObject":"\\Microsoft\\Terminal Server Client\\Servers\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"12","data":{"EventType":"DeleteKey"}}
+]}

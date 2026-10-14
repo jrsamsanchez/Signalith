@@ -674,8 +674,15 @@ func parseSysmon(eventID string, kv map[string]string, ev *Event) {
 		f["signature_status"] = kv["SignatureStatus"]
 		f["loaded_file_path"] = kv["ImageLoaded"]
 		f["loaded_file_name"] = baseName(kv["ImageLoaded"])
+		// The loaded file's hashes as Sysmon lists them (SHA256=...,
+		// IMPHASH=...), and for a DLL its version information.
+		f["loaded_file_hash"] = kv["Hashes"]
 		if eventID == "7" {
 			sysmonProcess(kv, f)
+			f["loaded_original_file_name"] = kv["OriginalFileName"]
+			f["loaded_file_description"] = kv["Description"]
+			f["loaded_file_product"] = kv["Product"]
+			f["loaded_file_company"] = kv["Company"]
 		}
 	case "8", "10":
 		// Remote thread created (8) and process accessed (10): the source
@@ -717,6 +724,7 @@ func parseSysmon(eventID string, kv map[string]string, ev *Event) {
 		// key or value renamed (14).
 		ev.Model = "Registry"
 		f["action"] = registryActions[kv["EventType"]]
+		f["registry_event_type"] = kv["EventType"]
 		path := kv["TargetObject"]
 		f["registry_path"] = path
 		if eventID == "12" && strings.HasSuffix(kv["EventType"], "Key") || eventID == "14" && kv["EventType"] == "RenameKey" {

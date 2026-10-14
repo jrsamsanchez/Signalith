@@ -401,9 +401,11 @@ func TestSysmonEventTypes(t *testing.T) {
 		return Normalize("win.sysmon", decode(t, string(b)), now).Document()
 	}
 	expect(t, sysmon(7, "Image loaded:", `Image: C:\Users\bob\app.exe`, "ProcessId: 4242", `ImageLoaded: C:\Users\bob\evil.dll`,
-		"Description: Evil", "Signed: false", "Signature: -", "SignatureStatus: Unavailable", `User: CORP\bob`), map[string]any{
+		"Description: Evil", "OriginalFileName: evil.dll", "Hashes: SHA256=ABCD,IMPHASH=EF01", "Signed: false", "Signature: -",
+		"SignatureStatus: Unavailable", `User: CORP\bob`), map[string]any{
 		"datamodel": "Image_Load", "process_name": "app.exe", "loaded_file_path": `C:\Users\bob\evil.dll`, "loaded_file_name": "evil.dll",
 		"signed": "false", "signature_status": "Unavailable", "process_id": int64(4242), "user": `CORP\bob`,
+		"loaded_file_description": "Evil", "loaded_original_file_name": "evil.dll", "loaded_file_hash": "SHA256=ABCD,IMPHASH=EF01",
 	})
 	expect(t, sysmon(10, "Process accessed:", `SourceImage: C:\Tools\procdump.exe`, "SourceProcessId: 77", `TargetImage: C:\Windows\system32\lsass.exe`,
 		"TargetProcessId: 640", "GrantedAccess: 0x1410", `CallTrace: C:\Windows\SYSTEM32\ntdll.dll+9d4c4|UNKNOWN(00007FFB)`, `SourceUser: CORP\bob`), map[string]any{
@@ -423,7 +425,7 @@ func TestSysmonEventTypes(t *testing.T) {
 	expect(t, sysmon(13, "Registry value set:", "EventType: SetValue", `Image: C:\x.exe`,
 		`TargetObject: HKU\S-1-5-21\Software\Microsoft\Windows\CurrentVersion\Run\Updater`, `Details: C:\Users\bob\u.exe`), map[string]any{
 		"datamodel": "Registry", "action": "modified", "registry_value_name": "Updater", "registry_key_name": "Run",
-		"registry_value_data": `C:\Users\bob\u.exe`,
+		"registry_value_data": `C:\Users\bob\u.exe`, "registry_event_type": "SetValue",
 	})
 	expect(t, sysmon(12, "Registry object added or deleted:", "EventType: CreateKey", `TargetObject: HKLM\System\CurrentControlSet\Services\Evil`), map[string]any{
 		"datamodel": "Registry", "action": "created", "registry_key_name": "Evil",

@@ -1,0 +1,9 @@
+{"rule": "3669afd2-9891-4534-a626-e5cf03810a61", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"OriginalFileName":"RstrtMgr.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"C:\\Windows\\Temp\\","OriginalFileName":"RstrtMgr.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"C:\\Windows\\SoftwareDistribution\\","OriginalFileName":"RstrtMgr.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"C:\\Users\\ \\AppData\\Local\\Temp\\is- .tmp\\ .tmp","OriginalFileName":"RstrtMgr.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"C:\\Users\\\\AppData\\Local\\Microsoft\\OneDrive\\OneDrive.exe","OriginalFileName":"RstrtMgr.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"C:\\Users\\\\AppData\\Local\\Microsoft\\OneDrive\\\\OneDrive.Sync.Service.exe","OriginalFileName":"RstrtMgr.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{}}
+]}

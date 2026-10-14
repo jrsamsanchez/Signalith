@@ -105,7 +105,7 @@ var sigmaEventFields = func() map[string]map[string]string {
 		return m
 	}
 	file := with(map[string]string{"targetfilename": "file_path"})
-	registry := with(map[string]string{"targetobject": "registry_path", "details": "registry_value_data", "newname": "registry_new_path"})
+	registry := with(map[string]string{"targetobject": "registry_path", "details": "registry_value_data", "newname": "registry_new_path", "eventtype": "registry_event_type"})
 	access := with(map[string]string{
 		"sourceimage": "process_path", "sourceprocessid": "process_id", "sourceprocessguid": "process_guid",
 		"sourceuser": "user", "targetimage": "target_process_path", "targetprocessid": "target_process_id",
@@ -113,8 +113,12 @@ var sigmaEventFields = func() map[string]map[string]string {
 		"startaddress": "start_address", "startmodule": "start_module", "startfunction": "start_function",
 		"image": "", "processid": "", "processguid": "", "user": "",
 	})
+	// An image load's Hashes, OriginalFileName, Description, Product
+	// and Company are the loaded file's.
 	load := with(map[string]string{
 		"imageloaded": "loaded_file_path", "signed": "signed", "signature": "signature", "signaturestatus": "signature_status",
+		"hashes": "loaded_file_hash", "originalfilename": "loaded_original_file_name", "description": "loaded_file_description",
+		"product": "loaded_file_product", "company": "loaded_file_company",
 	})
 	// Security log events: the account that acted (Subject*) is the
 	// user, except in a logon, where it is the account logged on
@@ -165,7 +169,7 @@ var sigmaEventFields = func() map[string]map[string]string {
 		"registry_add": registry, "registry_delete": registry, "registry_set": registry, "registry_event": registry,
 		"dns_query":            with(map[string]string{"queryname": "query", "queryresults": "answer"}),
 		"image_load":           load,
-		"driver_load":          with(map[string]string{"imageloaded": "loaded_file_path", "signed": "signed", "signature": "signature", "signaturestatus": "signature_status", "image": "", "user": "", "processid": "", "processguid": ""}),
+		"driver_load":          with(map[string]string{"imageloaded": "loaded_file_path", "hashes": "loaded_file_hash", "signed": "signed", "signature": "signature", "signaturestatus": "signature_status", "image": "", "user": "", "processid": "", "processguid": ""}),
 		"process_access":       access,
 		"create_remote_thread": access,
 		"security_4624":        logon,

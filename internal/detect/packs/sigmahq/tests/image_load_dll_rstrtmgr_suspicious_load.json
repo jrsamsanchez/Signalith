@@ -1,0 +1,8 @@
+{"rule": "b48492dc-c5ef-4572-8dff-32bc241c15c8", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":":\\Perflogs\\","ImageLoaded":"\\RstrtMgr.dll"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":":\\Users\\ \\Favorites\\","OriginalFileName":"RstrtMgr.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"\\RstrtMgr.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":":\\Perflogs\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"OriginalFileName":"RstrtMgr.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":":\\Users\\ \\Favorites\\"}}
+]}

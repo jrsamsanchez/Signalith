@@ -157,10 +157,22 @@ rules:
     rule_id: b3e6418f-7c7a-4fad-993a-93b65027a9f1
     file: dns_query_win_vscode_tunnel_communication.yml
     path: rules/windows/dns_query/dns_query_win_vscode_tunnel_communication.yml
+  - id: sigma-driver-mal-drivers
+    rule_id: 05296024-fe8a-4baf-8f3d-9a5f5624ceb2
+    file: driver_load_win_mal_drivers.yml
+    path: rules/windows/driver_load/driver_load_win_mal_drivers.yml
   - id: sigma-driver-mal-drivers-names
     rule_id: 39b64854-5497-4b57-a448-40977b8c9679
     file: driver_load_win_mal_drivers_names.yml
     path: rules/windows/driver_load/driver_load_win_mal_drivers_names.yml
+  - id: sigma-driver-pua-process-hacker
+    rule_id: 67add051-9ee7-4ad3-93ba-42935615ae8d
+    file: driver_load_win_pua_process_hacker.yml
+    path: rules/windows/driver_load/driver_load_win_pua_process_hacker.yml
+  - id: sigma-driver-pua-system-informer
+    rule_id: 10cb6535-b31d-4512-9962-513dcbc42cc1
+    file: driver_load_win_pua_system_informer.yml
+    path: rules/windows/driver_load/driver_load_win_pua_system_informer.yml
   - id: sigma-driver-susp-temp-use
     rule_id: 2c4523d5-d481-4ed0-8ec3-7fbf0cb41a75
     file: driver_load_win_susp_temp_use.yml
@@ -169,6 +181,18 @@ rules:
     rule_id: 72cd00d6-490c-4650-86ff-1d11f491daa1
     file: driver_load_win_vuln_drivers_names.yml
     path: rules/windows/driver_load/driver_load_win_vuln_drivers_names.yml
+  - id: sigma-driver-vuln-hevd-driver
+    rule_id: 295c9289-acee-4503-a571-8eacaef36b28
+    file: driver_load_win_vuln_hevd_driver.yml
+    path: rules/windows/driver_load/driver_load_win_vuln_hevd_driver.yml
+  - id: sigma-driver-vuln-winring0-driver
+    rule_id: 1a42dfa6-6cb2-4df9-9b48-295be477e835
+    file: driver_load_win_vuln_winring0_driver.yml
+    path: rules/windows/driver_load/driver_load_win_vuln_winring0_driver.yml
+  - id: sigma-driver-windivert
+    rule_id: 679085d5-f427-4484-9f58-1dc30a7c426d
+    file: driver_load_win_windivert.yml
+    path: rules/windows/driver_load/driver_load_win_windivert.yml
   - id: sigma-file-adsi-cache-creation-by-uncommon-tool
     rule_id: 75bf09fa-1dd7-4d18-9af9-dd9e492562eb
     file: file_event_win_adsi_cache_creation_by_uncommon_tool.yml
@@ -1265,6 +1289,14 @@ rules:
     rule_id: 50f852e6-af22-4c78-9ede-42ef36aa3453
     file: image_load_dll_azure_microsoft_account_token_provider_dll_load.yml
     path: rules/windows/image_load/image_load_dll_azure_microsoft_account_token_provider_dll_load.yml
+  - id: sigma-load-dll-comsvcs-load-renamed-version-by-rundll32
+    rule_id: 8cde342c-ba48-4b74-b615-172c330f2e93
+    file: image_load_dll_comsvcs_load_renamed_version_by_rundll32.yml
+    path: rules/windows/image_load/image_load_dll_comsvcs_load_renamed_version_by_rundll32.yml
+  - id: sigma-load-dll-credui-uncommon-process-load
+    rule_id: 9ae01559-cf7e-4f8e-8e14-4c290a1b4784
+    file: image_load_dll_credui_uncommon_process_load.yml
+    path: rules/windows/image_load/image_load_dll_credui_uncommon_process_load.yml
   - id: sigma-load-dll-dbghelp-dbgcore-unsigned-load
     rule_id: bdc64095-d59a-42a2-8588-71fd9c9d9abc
     file: image_load_dll_dbghelp_dbgcore_unsigned_load.yml
@@ -1273,10 +1305,22 @@ rules:
     rule_id: 84b0a8f3-680b-4096-a45b-e9a89221727c
     file: image_load_dll_pcre_dotnet_dll_load.yml
     path: rules/windows/image_load/image_load_dll_pcre_dotnet_dll_load.yml
+  - id: sigma-load-dll-rstrtmgr-suspicious-load
+    rule_id: b48492dc-c5ef-4572-8dff-32bc241c15c8
+    file: image_load_dll_rstrtmgr_suspicious_load.yml
+    path: rules/windows/image_load/image_load_dll_rstrtmgr_suspicious_load.yml
+  - id: sigma-load-dll-rstrtmgr-uncommon-load
+    rule_id: 3669afd2-9891-4534-a626-e5cf03810a61
+    file: image_load_dll_rstrtmgr_uncommon_load.yml
+    path: rules/windows/image_load/image_load_dll_rstrtmgr_uncommon_load.yml
   - id: sigma-load-dll-sdiageng-load-by-msdt
     rule_id: ec8c4047-fad9-416a-8c81-0f479353d7f6
     file: image_load_dll_sdiageng_load_by_msdt.yml
     path: rules/windows/image_load/image_load_dll_sdiageng_load_by_msdt.yml
+  - id: sigma-load-dll-system-management-automation-susp-load
+    rule_id: 092bc4b9-3d1d-43b4-a6b4-8c8acd83522f
+    file: image_load_dll_system_management_automation_susp_load.yml
+    path: rules/windows/image_load/image_load_dll_system_management_automation_susp_load.yml
   - id: sigma-load-dll-tttracer-module-load
     rule_id: e76c8240-d68f-4773-8880-5c6f63595aaf
     file: image_load_dll_tttracer_module_load.yml
@@ -1289,6 +1333,14 @@ rules:
     rule_id: 48bfd177-7cf2-412b-ad77-baf923489e82
     file: image_load_dll_vsstrace_susp_load.yml
     path: rules/windows/image_load/image_load_dll_vsstrace_susp_load.yml
+  - id: sigma-load-hktl-sharpevtmute
+    rule_id: 49329257-089d-46e6-af37-4afce4290685
+    file: image_load_hktl_sharpevtmute.yml
+    path: rules/windows/image_load/image_load_hktl_sharpevtmute.yml
+  - id: sigma-load-hktl-silenttrinity-stager
+    rule_id: 75c505b1-711d-4f68-a357-8c3fe37dbf2d
+    file: image_load_hktl_silenttrinity_stager.yml
+    path: rules/windows/image_load/image_load_hktl_silenttrinity_stager.yml
   - id: sigma-load-iexplore-dcom-iertutil-dll-hijack
     rule_id: f354eba5-623b-450f-b073-0b5b2773b6aa
     file: image_load_iexplore_dcom_iertutil_dll_hijack.yml
@@ -1457,6 +1509,10 @@ rules:
     rule_id: 829a3bdf-34da-4051-9cf4-8ed221a8ae4f
     file: image_load_side_load_office_dlls.yml
     path: rules/windows/image_load/image_load_side_load_office_dlls.yml
+  - id: sigma-load-side-load-python
+    rule_id: d36f7c12-14a3-4d48-b6b8-774b9c66f44d
+    file: image_load_side_load_python.yml
+    path: rules/windows/image_load/image_load_side_load_python.yml
   - id: sigma-load-side-load-rcdll
     rule_id: 6e78b74f-c762-4800-82ad-f66787f10c8a
     file: image_load_side_load_rcdll.yml
@@ -1541,6 +1597,10 @@ rules:
     rule_id: 9e9a9002-56c4-40fd-9eff-e4b09bfa5f6c
     file: image_load_susp_dll_load_system_process.yml
     path: rules/windows/image_load/image_load_susp_dll_load_system_process.yml
+  - id: sigma-load-susp-python-image-load
+    rule_id: cbb56d62-4060-40f7-9466-d8aaf3123f83
+    file: image_load_susp_python_image_load.yml
+    path: rules/windows/image_load/image_load_susp_python_image_load.yml
   - id: sigma-load-susp-script-dotnet-clr-dll-load
     rule_id: 4508a70e-97ef-4300-b62b-ff27992990ea
     file: image_load_susp_script_dotnet_clr_dll_load.yml
@@ -6617,6 +6677,10 @@ rules:
     rule_id: 460479f3-80b7-42da-9c43-2cc1d54dbccd
     file: registry_event_add_local_hidden_user.yml
     path: rules/windows/registry/registry_event/registry_event_add_local_hidden_user.yml
+  - id: sigma-reg-add-persistence-disk-cleanup-handler-entry
+    rule_id: d4f4e0be-cf12-439f-9e25-4e2cdcf7df5a
+    file: registry_add_persistence_disk_cleanup_handler_entry.yml
+    path: rules/windows/registry/registry_add/registry_add_persistence_disk_cleanup_handler_entry.yml
   - id: sigma-reg-bypass-via-wsreset
     rule_id: 6ea3bf32-9680-422d-9f50-e90716b12a66
     file: registry_event_bypass_via_wsreset.yml
@@ -6625,6 +6689,18 @@ rules:
     rule_id: b6d235fc-1d38-4b12-adbe-325f06728f37
     file: registry_event_cmstp_execution_by_registry.yml
     path: rules/windows/registry/registry_event/registry_event_cmstp_execution_by_registry.yml
+  - id: sigma-reg-delete-enable-windows-recall
+    rule_id: 5dfc1465-8f65-4fde-8eb5-6194380c6a62
+    file: registry_delete_enable_windows_recall.yml
+    path: rules/windows/registry/registry_delete/registry_delete_enable_windows_recall.yml
+  - id: sigma-reg-delete-exploit-guard-protected-folders
+    rule_id: 272e55a4-9e6b-4211-acb6-78f51f0b1b40
+    file: registry_delete_exploit_guard_protected_folders.yml
+    path: rules/windows/registry/registry_delete/registry_delete_exploit_guard_protected_folders.yml
+  - id: sigma-reg-delete-mstsc-history-cleared
+    rule_id: 07bdd2f5-9c58-4f38-aec8-e101bb79ef8d
+    file: registry_delete_mstsc_history_cleared.yml
+    path: rules/windows/registry/registry_delete/registry_delete_mstsc_history_cleared.yml
   - id: sigma-reg-delete-removal-amsi-registry-key
     rule_id: 41d1058a-aea7-4952-9293-29eaaf516465
     file: registry_delete_removal_amsi_registry_key.yml
@@ -6641,6 +6717,10 @@ rules:
     rule_id: acd74772-5f88-45c7-956b-6a7b36c294d2
     file: registry_delete_schtasks_hide_task_via_sd_value_removal.yml
     path: rules/windows/registry/registry_delete/registry_delete_schtasks_hide_task_via_sd_value_removal.yml
+  - id: sigma-reg-disable-security-events-logging-adding-reg-key-minint
+    rule_id: 919f2ef0-be2d-4a7a-b635-eb2b41fde044
+    file: registry_event_disable_security_events_logging_adding_reg_key_minint.yml
+    path: rules/windows/registry/registry_event/registry_event_disable_security_events_logging_adding_reg_key_minint.yml
   - id: sigma-reg-disable-wdigest-credential-guard
     rule_id: 1a2d6c47-75b0-45bd-b133-2c0be75349fd
     file: registry_event_disable_wdigest_credential_guard.yml
@@ -6653,6 +6733,10 @@ rules:
     rule_id: a6b33c02-8305-488f-8585-03cb2a7763f2
     file: registry_event_hack_wce_reg.yml
     path: rules/windows/registry/registry_event/registry_event_hack_wce_reg.yml
+  - id: sigma-reg-hybridconnectionmgr-svc-installation
+    rule_id: ac8866c7-ce44-46fd-8c17-b24acff96ca8
+    file: registry_event_hybridconnectionmgr_svc_installation.yml
+    path: rules/windows/registry/registry_event/registry_event_hybridconnectionmgr_svc_installation.yml
   - id: sigma-reg-mal-azorult
     rule_id: f7f9ab88-7557-4a69-b30e-0a8f91b3a0e7
     file: registry_event_mal_azorult.yml
@@ -6665,6 +6749,10 @@ rules:
     rule_id: 67a6c006-3fbe-46a7-9074-2ba3b82c3000
     file: registry_event_modify_screensaver_binary_path.yml
     path: rules/windows/registry/registry_event/registry_event_modify_screensaver_binary_path.yml
+  - id: sigma-reg-narrator-feedback-persistance
+    rule_id: f663a6d9-9d1b-49b8-b2b1-0637914d199a
+    file: registry_event_narrator_feedback_persistance.yml
+    path: rules/windows/registry/registry_event/registry_event_narrator_feedback_persistance.yml
   - id: sigma-reg-net-ntlm-downgrade
     rule_id: d67572a0-e2ec-45d6-b8db-c100d14b8ef2
     file: registry_event_net_ntlm_downgrade.yml
@@ -6685,6 +6773,10 @@ rules:
     rule_id: 295a59c1-7b79-4b47-a930-df12c15fc9c2
     file: registry_event_office_trust_record_modification.yml
     path: rules/windows/registry/registry_event/registry_event_office_trust_record_modification.yml
+  - id: sigma-reg-persistence-recycle-bin
+    rule_id: 277efb8f-60be-4f10-b4d3-037802f37167
+    file: registry_event_persistence_recycle_bin.yml
+    path: rules/windows/registry/registry_event/registry_event_persistence_recycle_bin.yml
   - id: sigma-reg-portproxy-registry-key
     rule_id: a54f842a-3713-4b45-8c84-5f136fdebd3c
     file: registry_event_portproxy_registry_key.yml
@@ -7449,6 +7541,10 @@ rules:
     rule_id: bbf59793-6efb-4fa1-95ca-a7d288e52c88
     file: registry_set_winlogon_notify_key.yml
     path: rules/windows/registry/registry_set/registry_set_winlogon_notify_key.yml
+  - id: sigma-reg-shell-open-keys-manipulation
+    rule_id: 152f3630-77c1-4284-bcc0-4cc68ab2f6e7
+    file: registry_event_shell_open_keys_manipulation.yml
+    path: rules/windows/registry/registry_event/registry_event_shell_open_keys_manipulation.yml
   - id: sigma-reg-silentprocessexit-lsass
     rule_id: 55e29995-75e7-451a-bef0-6225e2f13597
     file: registry_event_silentprocessexit_lsass.yml

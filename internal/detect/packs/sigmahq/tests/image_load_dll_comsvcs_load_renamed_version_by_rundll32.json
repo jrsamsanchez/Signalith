@@ -1,0 +1,6 @@
+{"rule": "8cde342c-ba48-4b74-b615-172c330f2e93", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Hashes":"IMPHASH=407ca0f7b523319d758a40d7c0193699","Image":"\\rundll32.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Hashes":"IMPHASH=407ca0f7b523319d758a40d7c0193699","Image":"\\rundll32.exe","ImageLoaded":"\\comsvcs.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"\\rundll32.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Hashes":"IMPHASH=407ca0f7b523319d758a40d7c0193699"}}
+]}

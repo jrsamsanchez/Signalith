@@ -796,14 +796,25 @@ detection:
 	if want := `datamodel=Script (sourcetype=WinEventLog:* AND signature_id IN (4104)) script_block_text=*Invoke-Mimikatz*`; r.Detection.Query != want {
 		t.Errorf("query = %s\nwant    %s", r.Detection.Query, want)
 	}
-	// In image_load, Description is the DLL's, not the process's: no mapping.
-	if _, err := ConvertSigmaWith([]byte(`title: x
+	// In image_load, Description is the DLL's, not the process's.
+	r, err = ConvertSigmaWith([]byte(`title: x
 logsource: {product: windows, category: image_load}
 detection:
   sel:
     Description: 'x'
   condition: sel
-`), SigmaOptions{Strict: true}); err == nil || !strings.Contains(err.Error(), "Description has no Signalith mapping in image_load") {
+`), SigmaOptions{Strict: true})
+	if err != nil || !strings.Contains(r.Detection.Query, "loaded_file_description=x") {
+		t.Errorf("image_load Description = %v %+v", err, r)
+	}
+	// Sysmon records no command line there: no mapping.
+	if _, err := ConvertSigmaWith([]byte(`title: x
+logsource: {product: windows, category: image_load}
+detection:
+  sel:
+    CommandLine: 'x'
+  condition: sel
+`), SigmaOptions{Strict: true}); err == nil || !strings.Contains(err.Error(), "CommandLine has no Signalith mapping in image_load") {
 		t.Errorf("err = %v", err)
 	}
 }

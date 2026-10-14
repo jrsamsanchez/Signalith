@@ -85,7 +85,9 @@ var knownFields = func() map[string]string {
 		// access, where a remote thread starts, and a registry rename's new
 		// name.
 		"call_trace": kw, "start_address": kw, "start_module": kw, "start_function": kw,
-		"registry_new_path": kw,
+		"registry_new_path": kw, "registry_event_type": kw,
+		"loaded_file_hash": kw, "loaded_original_file_name": kw, "loaded_file_description": kw,
+		"loaded_file_product": kw, "loaded_file_company": kw,
 		// PowerShell script blocks: which part of a long script an event is,
 		// and its text. Script blocks run to 20,000 characters, past what a
 		// keyword indexes, and rules match words inside them, so the text is

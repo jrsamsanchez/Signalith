@@ -748,7 +748,7 @@ changes and more, plus two risk incident rules); 19 are on by default.
 - **Import Sigma rule** converts a [Sigma](https://github.com/SigmaHQ/sigma) rule to a
   Signalith query and lists anything it had to approximate. Imported rules start
   disabled so you can test them first.
-- **Content packs** add community rules, off until you turn them on: 2,004 tested
+- **Content packs** add community rules, off until you turn them on: 2,028 tested
   [SigmaHQ](https://github.com/SigmaHQ/sigma) Windows and Linux rules and 855 Windows and Linux detections
   from Splunk's open source
   [security_content](https://github.com/splunk/security_content) (Apache 2.0). With

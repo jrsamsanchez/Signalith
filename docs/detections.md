@@ -242,8 +242,8 @@ Content packs are rule sets from other open source projects, shipped unchanged
 inside Signalith and converted when it starts. Every pack detection is **off** until
 an admin turns it on.
 
-**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,004 rules from
-[SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 1,890 Windows rules
+**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,028 rules from
+[SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 1,914 Windows rules
 for these Sysmon, Security, PowerShell and System log sources, and 114 Linux rules (see
 [Linux endpoints](#linux-endpoints-sysmon-for-linux)):
 
@@ -586,13 +586,17 @@ converts a rule and shows the result for review. Supported:
 - For `ps_script`, `ScriptBlockText` maps to `script_block_text`, `ScriptBlockId` to
   `script_block_id` and `Path` to `script_path`.
 - For the Sysmon log sources other than process creation, fields map by log source:
-  `TargetFilename` to `file_path`; `TargetObject` to `registry_path` and `Details` to
-  `registry_value_data`; `QueryName` to `query` and `QueryResults` to `answer`;
+  `TargetFilename` to `file_path`; `TargetObject` to `registry_path`, `Details` to
+  `registry_value_data` and `EventType` (`SetValue`, `CreateKey`...) to
+  `registry_event_type`; `QueryName` to `query` and `QueryResults` to `answer`;
   `ImageLoaded` to `loaded_file_path` with `Signed`, `Signature` and
-  `SignatureStatus`; `SourceImage`, `TargetImage`, `GrantedAccess`, `CallTrace`,
+  `SignatureStatus`, and the loaded file's `Hashes` to `loaded_file_hash` (for DLLs,
+  also `OriginalFileName`, `Description`, `Product` and `Company` to
+  `loaded_original_file_name`, `loaded_file_description`, `loaded_file_product` and
+  `loaded_file_company`); `SourceImage`, `TargetImage`, `GrantedAccess`, `CallTrace`,
   `StartAddress`, `StartModule` and `StartFunction` for process access and remote
-  threads. A field not listed for its log source (such as `Description` in
-  `image_load`, which describes the DLL there, not the process) has no mapping.
+  threads. A field not listed for its log source (such as `CommandLine` in
+  `image_load`, which Sysmon does not record there) has no mapping.
 - Sysmon and Windows Security field names, mapped to Signalith fields (`Image` to
   `process_path`, or `process_name` for `endswith` a file name; `CommandLine` to
   `process`; `OriginalFileName` to `original_file_name`; `ParentUser`,
