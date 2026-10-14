@@ -206,7 +206,7 @@ const dxDots = (...items) => {
   return out;
 };
 const dxKv = (pairs) => el('dl', { class: 'kv dx-kv' }, ...pairs.filter(Boolean).flatMap(([k, v]) => [el('dt', {}, k), el('dd', {}, v)]));
-const dxPlural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+const dxPlural = (n, word) => `${typeof n === 'number' ? n.toLocaleString() : n} ${word}${n === 1 ? '' : 's'}`;
 const dxClock = (t) => new Date(t).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 // dxAge is a short age for table columns: now, 4m, 3h, 2d.
 function dxAge(t) {
@@ -1062,7 +1062,7 @@ const packShort = (name) => ({ sigmahq: 'SigmaHQ', splunk: 'Splunk' }[name] || n
 // (Splunk's TTP rules raise findings; its anomalies only add risk).
 const PACK_INFO = {
   sigmahq: { icon: 'sigma', by: 'By the SigmaHQ authors named on each rule, under the ', license: 'Detection Rule License 1.1', home: 'SigmaHQ on GitHub',
-    desc: 'Windows rules for Sysmon, Security and PowerShell events, and Linux rules for Sysmon for Linux, each tested before it ships. Off until you turn them on.',
+    desc: 'Windows rules for Sysmon and the Security, PowerShell, System, Application, Defender and Code Integrity logs, and Linux rules for Sysmon for Linux and the audit log, each tested before it ships. Off until you turn them on.',
     strong: (d) => d.severity === 'high' || d.severity === 'critical', strongName: 'high and critical rule' },
   splunk: { icon: 'layers', by: 'By Splunk’s Threat Research Team and the authors named on each rule, under the ', license: 'Apache License 2.0', home: 'security_content on GitHub',
     desc: 'Splunk’s Windows and Linux process, file, registry and PowerShell detections, each tested before it ships. TTP rules raise findings; anomalies add risk. Off until you turn them on.',
@@ -1408,7 +1408,7 @@ function renderDetections() {
   const pills = DET_SHOW.map(([v, label]) => {
     const n = scoped.filter((d) => detShows(d, v)).length;
     if (v && !n && det.show !== v) return null;
-    const b = el('button', { class: 'pill', type: 'button', 'aria-pressed': String(det.show === v) }, v ? null : icon('crosshair'), label, el('span', { class: 'num' }, String(n)));
+    const b = el('button', { class: 'pill', type: 'button', 'aria-pressed': String(det.show === v) }, v ? null : icon('crosshair'), label, el('span', { class: 'num' }, n.toLocaleString()));
     b.addEventListener('click', () => { det.show = det.show === v ? '' : v; renderDetections(); });
     return b;
   });

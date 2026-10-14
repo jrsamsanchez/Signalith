@@ -34,6 +34,10 @@ type Catalog struct {
 	Version    string      `json:"version"`
 	Tactics    []Tactic    `json:"tactics"`
 	Techniques []Technique `json:"techniques"`
+	// Revoked maps technique IDs ATT&CK has retired to the technique that
+	// replaced them (T1562.001 Disable or Modify Tools is T1685 since
+	// version 19), so rules written for an older version still count.
+	Revoked map[string]string `json:"revoked"`
 
 	byID map[string]*Technique
 }
@@ -59,9 +63,14 @@ func ATTACK() *Catalog {
 	return catalog
 }
 
-// Technique looks up a technique by ID.
+// Technique looks up a technique by ID, or by an ID ATT&CK has retired
+// for the technique that replaced it.
 func (c *Catalog) Technique(id string) (*Technique, bool) {
-	t, ok := c.byID[strings.ToUpper(id)]
+	id = strings.ToUpper(id)
+	if t, ok := c.byID[id]; ok {
+		return t, true
+	}
+	t, ok := c.byID[c.Revoked[id]]
 	return t, ok
 }
 
@@ -71,7 +80,7 @@ type Coverage struct {
 	Version string            `json:"version"`
 	Tactics []TacticCoverage  `json:"tactics"`
 	Summary CoverageSummary   `json:"summary"`
-	Unknown map[string]string `json:"unknown,omitempty"` // technique ID -> detection that used it
+	Unknown map[string]string `json:"unknown,omitempty"` // technique ID -> enabled detection that used it
 }
 
 // TacticCoverage is one column.
@@ -117,13 +126,19 @@ func ComputeCoverage(ds []*Detection) *Coverage {
 	out := &Coverage{Version: c.Version}
 	for _, d := range ds {
 		for _, id := range d.MITRE {
-			if _, ok := c.Technique(id); !ok {
-				if out.Unknown == nil {
-					out.Unknown = map[string]string{}
+			t, ok := c.Technique(id)
+			if !ok {
+				// Only a detection that runs is worth a warning: content
+				// packs are off until turned on.
+				if d.Enabled {
+					if out.Unknown == nil {
+						out.Unknown = map[string]string{}
+					}
+					out.Unknown[id] = d.ID
 				}
-				out.Unknown[id] = d.ID
 				continue
 			}
+			id = t.ID
 			parent, _, isSub := strings.Cut(id, ".")
 			x := get(parent)
 			if isSub {

@@ -1846,6 +1846,9 @@ body:has(.page.active .inspector:not([hidden], .hidden)) #toast { bottom: 88px; 
   #page-detections .table--stack .dx-meta { margin: 0; }
   #page-detections .table--stack td[data-col="last"] .dx-meta:not(.dx-fail) { display: none; }
   #page-detections .table--stack .dx-rowlink { white-space: normal; }
+  /* the ID and ATT&CK chips wrap onto more lines instead of running into the schedule */
+  #page-detections .table--stack .cell-sub { height: auto; }
+  #page-detections .table--stack .cell-sub .dx-id { overflow-wrap: anywhere; }
 }
 /* ==== end page:detections ==== */
 
@@ -4267,23 +4270,26 @@ body:has(#page-settings.active .st-savebar:not([hidden])) #toast { bottom: 88px;
 
 /* Content packs on the Detections page */
 #page-detections .dx-packs { display: grid; gap: var(--sp-3); }
-#page-detections .dx-pack { display: flex; align-items: center; gap: 14px; padding: 14px 16px; }
+/* The body takes the room it needs to read well; when the actions (more of
+   them while a pack is browsed) leave it less, they wrap below it. */
+#page-detections .dx-pack { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding: 14px 16px; }
 #page-detections .dx-pack__mark { flex: none; display: grid; place-items: center; width: 36px; height: 36px; border-radius: var(--r-md); background: var(--accent-soft, var(--sunken)); color: var(--accent); }
-#page-detections .dx-pack__body { flex: 1; min-width: 0; display: grid; gap: 2px; }
+#page-detections .dx-pack__body { flex: 1 1 420px; min-width: 0; display: grid; gap: 2px; }
 #page-detections .dx-pack__head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
 #page-detections .dx-pack__head b { font-weight: 600; color: var(--text); }
 #page-detections .dx-pack__head .dx-meta { display: inline; margin: 0; }
 #page-detections .dx-pack__desc { color: var(--text-2); font-size: var(--fs-sm); line-height: 1.45; }
 #page-detections .dx-pack__credit { color: var(--text-3); font-size: var(--fs-xs); line-height: 1.4; }
 #page-detections .dx-pack__credit a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
-#page-detections .dx-pack__actions { flex: none; display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+#page-detections .dx-pack__actions { flex: 0 1 auto; margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 #page-detections .dx-more { display: flex; justify-content: center; padding: 10px; box-shadow: inset 0 1px 0 var(--line-subtle); }
 #page-detections .dx-refs { display: grid; gap: 2px; }
 #page-detections .dx-refs a { overflow-wrap: anywhere; }
 :is(#page-findings, #page-detections) .dx-credit { color: var(--text-3); font-size: var(--fs-xs); }
 @media (max-width: 720px) {
-  #page-detections .dx-pack { flex-wrap: wrap; align-items: flex-start; }
-  #page-detections .dx-pack__actions { width: 100%; justify-content: flex-start; }
+  #page-detections .dx-pack { align-items: flex-start; }
+  #page-detections .dx-pack__body { flex-basis: 0; }
+  #page-detections .dx-pack__actions { width: 100%; margin-left: 0; justify-content: flex-start; }
 }
 
 /* ==== page:respond (styles for this page only) ==== */

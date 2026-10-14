@@ -421,17 +421,25 @@ func TestCoverage(t *testing.T) {
 		{ID: "b", MITRE: []string{"T1110"}, Enabled: false},
 		{ID: "c", MITRE: []string{"T1490"}, Enabled: false},
 		{ID: "d", MITRE: []string{"T9999"}, Enabled: true},
+		{ID: "e", MITRE: []string{"T9998"}, Enabled: false},
+		// Retired in ATT&CK 19: T1574.002 DLL Side-Loading is T1574.001
+		// DLL.
+		{ID: "f", MITRE: []string{"T1574.002"}, Enabled: true},
 	}
 	cov := ComputeCoverage(ds)
-	if cov.Summary.Enabled != 1 || cov.Summary.Available != 1 || cov.Summary.Techniques < 150 {
+	if cov.Summary.Enabled != 2 || cov.Summary.Available != 1 || cov.Summary.Techniques < 150 {
 		t.Errorf("summary = %+v", cov.Summary)
 	}
-	if cov.Unknown["T9999"] != "d" {
+	// A detection that is off is not worth a warning.
+	if cov.Unknown["T9999"] != "d" || len(cov.Unknown) != 1 {
 		t.Errorf("unknown = %v", cov.Unknown)
 	}
 	var found bool
 	for _, tac := range cov.Tactics {
 		for _, te := range tac.Techniques {
+			if te.ID == "T1574" && (len(te.Enabled) != 1 || te.Subs[0] != "T1574.001") {
+				t.Errorf("T1574 = %+v", te)
+			}
 			if te.ID == "T1110" {
 				found = true
 				if tac.Short != "credential-access" || len(te.Enabled) != 1 || len(te.Disabled) != 1 || te.Subs[0] != "T1110.003" {
