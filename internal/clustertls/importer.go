@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -24,8 +25,9 @@ type ImporterOptions struct {
 	// Local is the founder's own certificate authority.
 	Local LocalCA
 	// Servers lists the servers as their heartbeats say, for the
-	// certificate authorities they use.
-	Servers func() []Server
+	// certificate authorities they use; an error when they cannot be read,
+	// and then nothing is published.
+	Servers func(context.Context) ([]Server, error)
 	// Node is this server's name, for PublishedBy.
 	Node string
 	Log  *slog.Logger
@@ -38,7 +40,9 @@ type ImporterOptions struct {
 // server seen in the last day uses that one (or none of its own). With
 // several, it publishes nothing and leaves the choice to an admin. It is
 // recorded as done either way: an error stops the importers after it, so
-// it never returns one just to wait.
+// it never returns one just to wait. When the heartbeats cannot be read
+// it cannot tell, so it publishes nothing and returns the error, and the
+// import is tried again.
 func Importer(o ImporterOptions) shared.Importer {
 	log := o.Log
 	if log == nil {
@@ -72,9 +76,12 @@ func Importer(o ImporterOptions) shared.Importer {
 				return nil
 			}
 			fp := tlsauto.Fingerprint(ca.Raw)
-			var servers []Server
-			if o.Servers != nil {
-				servers = o.Servers()
+			if o.Servers == nil {
+				return errors.New("the servers' certificate authorities cannot be read")
+			}
+			servers, err := o.Servers(ctx)
+			if err != nil {
+				return fmt.Errorf("the servers' heartbeats cannot be read, so it is not known whether they use the same certificate authority: %w", err)
 			}
 			for _, root := range Roots(servers, now()) {
 				if root != fp {
@@ -84,7 +91,7 @@ func Importer(o ImporterOptions) shared.Importer {
 				}
 			}
 			certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: ca.Raw})
-			err := o.TLS.Publish(ctx, by, o.Node, certPEM, key, names)
+			err = o.TLS.Publish(ctx, by, o.Node, certPEM, key, names)
 			if errors.Is(err, ErrOtherCA) {
 				return nil
 			}

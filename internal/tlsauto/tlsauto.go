@@ -381,6 +381,19 @@ func (m *Manager) EnsureName(host string) error {
 	if err != nil || name == "" {
 		return err
 	}
+	for range 3 {
+		done, err := m.ensureName(name)
+		if done || err != nil {
+			return err
+		}
+	}
+	return errors.New("the certificate authority in use changed while the name was being added; try again")
+}
+
+// ensureName is EnsureName for name, normalised; done is false when the
+// store in use changed meanwhile (the cluster's was taken), so the name
+// was not added and EnsureName tries again.
+func (m *Manager) ensureName(name string) (done bool, err error) {
 	// The cluster keeps the names of its certificate authority: they are
 	// saved there first, over the network, without the lock.
 	persist := m.persister()
@@ -389,13 +402,18 @@ func (m *Manager) EnsureName(host string) error {
 		err := persist(ctx, name)
 		cancel()
 		if err != nil {
-			return err
+			return true, err
 		}
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.inCluster() != (persist != nil) {
+		// UseStore ran in between: the name goes where the store in use
+		// now keeps it.
+		return false, nil
+	}
 	if m.Covers(name) {
-		return nil
+		return true, nil
 	}
 	m.added = slices.DeleteFunc(m.added, func(n string) bool { return n == name })
 	m.added = append(m.added, name)
@@ -404,14 +422,14 @@ func (m *Manager) EnsureName(host string) error {
 	}
 	if persist == nil {
 		if err := m.writeNames(); err != nil {
-			return err
+			return true, err
 		}
 	}
 	if err := m.issue(); err != nil {
-		return err
+		return true, err
 	}
 	m.log().Info("HTTPS certificate now also covers "+name, "names", strings.Join(certNames(m.Leaf()), ", "))
-	return nil
+	return true, nil
 }
 
 // persister returns how EnsureName keeps a name with the cluster's
@@ -813,15 +831,65 @@ func (m *Manager) loadOrIssue() error {
 	}
 	if m.caKey == nil {
 		// The cluster's CA, without its key for now: serve what there is.
+		// Without a certificate from it either (deleted, unreadable or
+		// expired), the server still starts: it serves a stand-in that
+		// no client trusts, kept in memory only, until the cluster's
+		// certificate authority is in reach and UseStore issues one. It
+		// never makes a certificate authority.
 		kept, err := m.keptLeaf()
 		if err != nil {
-			return errNoCAKey
+			if kept, err = m.standIn(); err != nil {
+				return err
+			}
+			m.log().Error("HTTPS: " + errNoCAKey.Error() + "; until then this server's certificate is a stand-in that agents and browsers refuse")
+		} else {
+			m.log().Error("HTTPS: " + errNoCAKey.Error())
 		}
-		m.log().Error("HTTPS: " + errNoCAKey.Error())
 		m.cert.Store(kept)
 		return nil
 	}
 	return m.issue()
+}
+
+// standInValidity is how long a stand-in certificate lasts (see standIn).
+const standInValidity = 24 * time.Hour
+
+// standIn is a self-signed certificate for wantNames, which no client
+// trusts and nothing writes to disk: what a server that uses the
+// cluster's certificate authority serves while it has neither the
+// authority's key nor a certificate from it. It is not a certificate
+// authority. The caller holds m.mu.
+func (m *Manager) standIn() (*tls.Certificate, error) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return nil, err
+	}
+	names := m.wantNames()
+	tmpl := &x509.Certificate{
+		SerialNumber:          serial(),
+		Subject:               pkix.Name{CommonName: names[0], Organization: []string{"Signalith"}},
+		NotBefore:             m.now().Add(-time.Hour),
+		NotAfter:              m.now().Add(standInValidity),
+		KeyUsage:              x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+	}
+	for _, n := range names {
+		if a, err := netip.ParseAddr(n); err == nil {
+			tmpl.IPAddresses = append(tmpl.IPAddresses, a.AsSlice())
+		} else {
+			tmpl.DNSNames = append(tmpl.DNSNames, n)
+		}
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, key.Public(), key)
+	if err != nil {
+		return nil, err
+	}
+	leaf, err := x509.ParseCertificate(der)
+	if err != nil {
+		return nil, err
+	}
+	return &tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key, Leaf: leaf}, nil
 }
 
 func (m *Manager) usable(leaf *x509.Certificate) bool {

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
@@ -145,9 +146,21 @@ func TestClusterCAAcrossServers(t *testing.T) {
 
 	// The move probe trusts the cluster's certificate authority, and
 	// checks the name.
-	conf := a.r.sharedContent.tls.probeTLS()
+	conf := a.r.sharedContent.tls.probeTLS(false, "")
 	if conf == nil || conf.InsecureSkipVerify {
 		t.Fatalf("probe config %+v", conf)
+	}
+	// The cluster's certificate authority alone, not the system's too.
+	only := x509.NewCertPool()
+	only.AppendCertsFromPEM(caA)
+	if !conf.RootCAs.Equal(only) {
+		t.Fatal("the probe trusts more than the cluster's certificate authority")
+	}
+	// A server with its own certificate files is checked against the
+	// system's and its own root, so B's certificate fails there.
+	if conn, err := tls.Dial("tcp", b.addr, a.r.sharedContent.tls.probeTLS(true, "")); err == nil {
+		conn.Close()
+		t.Fatal("a files-mode probe trusted the cluster's certificate authority")
 	}
 	conn, err := tls.Dial("tcp", b.addr, conf)
 	if err != nil {
@@ -172,6 +185,29 @@ func TestClusterCAAcrossServers(t *testing.T) {
 		m := b2.r.sharedContent.tls.certs.Load()
 		return m != nil && m.Fingerprint() == fpA && b2.r.sharedContent.tls.attached.Load() == m
 	})
+
+	// ca.key leaves the founder's disk only once the document read back
+	// now holds it and the copy in cache.enc does too: with the document
+	// gone from OpenSearch, or tampered with, the key would stay.
+	ctx := context.Background()
+	if !a.r.sharedContent.tls.keyKept(ctx, a.r.shared, certsA) {
+		t.Fatal("keyKept false while the cluster keeps the key")
+	}
+	src := fos.Source(shared.ConfigIndex("signalith"), clustertls.DocID)
+	mac := src["mac"].(string)
+	flip := "0"
+	if strings.HasPrefix(mac, "0") {
+		flip = "1"
+	}
+	src["mac"] = flip + mac[1:]
+	fos.Put(shared.ConfigIndex("signalith"), clustertls.DocID, src)
+	if a.r.sharedContent.tls.keyKept(ctx, a.r.shared, certsA) {
+		t.Error("keyKept with a tampered document")
+	}
+	fos.Delete(shared.ConfigIndex("signalith"), clustertls.DocID)
+	if a.r.sharedContent.tls.keyKept(ctx, a.r.shared, certsA) {
+		t.Error("keyKept with the document gone")
+	}
 }
 
 func mustJSON(t *testing.T, v any) []byte {

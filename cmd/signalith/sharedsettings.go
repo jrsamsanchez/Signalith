@@ -699,19 +699,35 @@ func (r *runner) confirmProbe(req *http.Request, token string) bool {
 // probeMoves follows a restart request this server made and probes the
 // new address of each server whose restart moved its web page, which
 // confirms the move there. Once the cluster has its one certificate
-// authority, the probe checks the certificate against it, and the name.
-// Until then it does not check the certificate: the token, which only the
-// request holds, reaching the new address is the proof, and a probe can
-// confirm a move, nothing else.
+// authority, the probe checks the certificate, and the name: against the
+// cluster's certificate authority alone, or for a server whose heartbeat
+// says it has its own certificate files, against those this system
+// trusts. Until then it does not check the certificate: the token, which
+// only the request holds, reaching the new address is the proof, and a
+// probe can confirm a move, nothing else.
 func (r *runner) probeMoves(id string) {
 	ctx, cancel := context.WithTimeout(r.backgroundContext(context.Background()), 2*time.Hour)
 	defer cancel()
-	tlsConf := &tls.Config{InsecureSkipVerify: true} //nolint:gosec // the move token is the proof (see above)
-	if pinned := r.sharedContent.tls.probeTLS(); pinned != nil {
-		tlsConf = pinned
+	clients := map[string]*http.Client{}
+	clientFor := func(node string) *http.Client {
+		files, root := r.filesMode(node)
+		key := fmt.Sprint(files, root)
+		if c := clients[key]; c != nil {
+			return c
+		}
+		tlsConf := &tls.Config{InsecureSkipVerify: true} //nolint:gosec // the move token is the proof (see above)
+		if pinned := r.sharedContent.tls.probeTLS(files, root); pinned != nil {
+			tlsConf = pinned
+		}
+		c := &http.Client{Timeout: 3 * time.Second, Transport: &http.Transport{TLSClientConfig: tlsConf}}
+		clients[key] = c
+		return c
 	}
-	client := &http.Client{Timeout: 3 * time.Second, Transport: &http.Transport{TLSClientConfig: tlsConf}}
-	defer client.CloseIdleConnections()
+	defer func() {
+		for _, c := range clients {
+			c.CloseIdleConnections()
+		}
+	}()
 	for {
 		req, ok, err := r.shared.Requests().Get(ctx, id)
 		if err == nil && (!ok || req.Over()) {
@@ -719,12 +735,12 @@ func (r *runner) probeMoves(id string) {
 		}
 		var res clustercfg.RestartResults
 		if err == nil && json.Unmarshal(req.Result, &res) == nil {
-			for _, p := range res {
+			for node, p := range res {
 				if p.Move == nil || p.Move.Confirmed || p.Move.Token == "" || p.Move.To == "" {
 					continue
 				}
 				u := strings.TrimRight(p.Move.To, "/") + "/readyz?move=" + url.QueryEscape(p.Move.Token)
-				if resp, err := client.Get(u); err == nil {
+				if resp, err := clientFor(node).Get(u); err == nil {
 					resp.Body.Close()
 				}
 			}

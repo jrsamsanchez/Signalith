@@ -79,11 +79,16 @@ func (s *Server) clusterTLSReport(ctx context.Context) clusterTLSReport {
 	for _, sv := range st.Servers {
 		if sv.Detail != nil {
 			hb := *sv.Detail
-			// The page's own clock decides who was seen in the last day.
-			hb.HeartbeatAt = sv.HeartbeatAt
+			// The page's own clock decides who was seen in the last day,
+			// and this server's view who runs now.
+			hb.HeartbeatAt, hb.State = sv.HeartbeatAt, sv.State
+			if sv.State != cluster.StateOffline && sv.State != cluster.StateStopped {
+				// It runs, as this server sees it: whatever its clock says.
+				hb.HeartbeatAt = in.Now
+			}
 			in.Heartbeats = append(in.Heartbeats, hb)
 		} else {
-			in.Heartbeats = append(in.Heartbeats, cluster.Heartbeat{NodeID: sv.NodeID, Name: sv.Name, HeartbeatAt: sv.HeartbeatAt})
+			in.Heartbeats = append(in.Heartbeats, cluster.Heartbeat{NodeID: sv.NodeID, Name: sv.Name, HeartbeatAt: sv.HeartbeatAt, State: sv.State})
 		}
 	}
 	out := clusterTLSReport{On: true}
@@ -152,6 +157,11 @@ func (s *Server) handleClusterTLSChoose(w http.ResponseWriter, r *http.Request) 
 	}
 	if c == nil {
 		writeError(w, http.StatusBadRequest, fmt.Errorf("no server seen in the last day uses the certificate authority %s", req.CASHA256))
+		return
+	}
+	if !c.Up {
+		writeError(w, http.StatusServiceUnavailable, fmt.Errorf("%s is offline, and only a server that holds the certificate authority can publish it: start it first",
+			strings.Join(c.Servers, ", ")))
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)

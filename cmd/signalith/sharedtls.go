@@ -8,7 +8,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
-	"fmt"
+	"errors"
 	"log/slog"
 	"net/url"
 	"sync"
@@ -103,21 +103,21 @@ func (s *sharedTLS) importer(f clustercfg.Files) shared.Importer {
 	return clustertls.Importer(clustertls.ImporterOptions{
 		TLS:   s.tls,
 		Local: s.local(f.Config),
-		Servers: func() []clustertls.Server {
+		Servers: func(ctx context.Context) ([]clustertls.Server, error) {
 			if f.Client == nil {
-				return nil
+				return nil, errors.New("no OpenSearch to read them from")
 			}
 			cl, prefix := f.Client()
 			if cl == nil {
-				return nil
+				return nil, errors.New("no OpenSearch to read them from")
 			}
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 			defer cancel()
 			hbs, err := readHeartbeats(ctx, cl, prefix)
 			if err != nil {
-				return nil
+				return nil, err
 			}
-			return clustertls.FromHeartbeats(hbs, "")
+			return clustertls.FromHeartbeats(hbs, "", time.Now()), nil
 		},
 		Node: f.Node,
 		Log:  f.Log,
@@ -272,7 +272,10 @@ func (s *sharedTLS) sync(ctx context.Context, rt *shared.Runtime, m *tlsauto.Man
 			s.etag = etag
 		}
 	}
-	if s.keyDone != m && s.keyKept(ctx, rt) {
+	if s.keyDone != m && !m.KeepsKey() {
+		s.keyDone = m
+	}
+	if s.keyDone != m && s.keyKept(ctx, rt, m) {
 		if err := m.DropLocalKey(); err != nil {
 			log.Warn("could not delete ca.key now that the cluster keeps the certificate authority's key; it tries again", "err", err)
 		} else {
@@ -281,24 +284,45 @@ func (s *sharedTLS) sync(ctx context.Context, rt *shared.Runtime, m *tlsauto.Man
 	}
 }
 
-// keyKept reports whether the cluster keeps the certificate authority's
-// key safely: the tls document read back from OpenSearch opens, and this
-// server's copy of the shared settings (cache.enc) was written since.
-func (s *sharedTLS) keyKept(ctx context.Context, rt *shared.Runtime) bool {
+// keyKept reports whether the cluster keeps the key of m's certificate
+// authority safely, before ca.key leaves the disk: the tls document, read
+// back from OpenSearch now, is there, verifies, names m's certificate
+// authority and its sealed key opens to that certificate's key; and this
+// server's copy of the shared settings (cache.enc), written and read back
+// now, holds the same sealed key.
+func (s *sharedTLS) keyKept(ctx context.Context, rt *shared.Runtime, m *tlsauto.Manager) bool {
 	d := s.tls.Doc()
-	if d == nil {
+	if d == nil || rt == nil {
 		return false
 	}
 	lctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	if err := d.Load(lctx); err != nil {
+	if err := d.Load(lctx); err != nil || d.Missing() {
 		return false
 	}
+	for _, p := range rt.Hub().Problems() {
+		if p.ID == clustertls.DocID {
+			return false
+		}
+	}
+	b, ok := d.Get()
+	if !ok || !clustertls.SameFingerprint(b.CASHA256, m.Fingerprint()) {
+		return false
+	}
+	// Opened from the copy just read, never from memory.
 	ca, key, err := s.tls.Store().Load()
-	if err != nil || ca == nil || key == nil {
+	if err != nil || ca == nil || key == nil || !clustertls.SameFingerprint(tlsauto.Fingerprint(ca.Raw), b.CASHA256) {
 		return false
 	}
-	return rt.FlushCache() == nil
+	body, err := rt.FlushCacheBody(clustertls.DocID)
+	if err != nil {
+		return false
+	}
+	var cached clustertls.Body
+	if json.Unmarshal([]byte(body), &cached) != nil {
+		return false
+	}
+	return cached.CAKey == b.CAKey && clustertls.SameFingerprint(cached.CASHA256, b.CASHA256)
 }
 
 // setErr records why this server has not taken the cluster's certificate
@@ -338,22 +362,44 @@ func (s *sharedTLS) retiredPins(m *tlsauto.Manager) []string {
 }
 
 // probeTLS is how the move probe checks the certificate of the server it
-// probes: against the cluster's certificate authority (and the system's,
-// for a server with its own certificate files), with its name. It is nil
-// while the cluster has none, so the probe goes on without a check.
-func (s *sharedTLS) probeTLS() *tls.Config {
+// probes, with its name: against the cluster's certificate authority
+// alone, or for a server with its own certificate files (files), against
+// the certificate authorities this system trusts and the root its
+// heartbeat reports (filesRoot, PEM, "" for none). It is nil while the
+// cluster has none, so the probe goes on without a check.
+func (s *sharedTLS) probeTLS(files bool, filesRoot string) *tls.Config {
 	b, ok := s.tls.Get()
 	if !ok || b.CACertPEM == "" {
 		return nil
 	}
-	pool, err := x509.SystemCertPool()
-	if err != nil || pool == nil {
-		pool = x509.NewCertPool()
+	if files {
+		pool, err := x509.SystemCertPool()
+		if err != nil || pool == nil {
+			pool = x509.NewCertPool()
+		}
+		pool.AppendCertsFromPEM([]byte(filesRoot))
+		return &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}
 	}
+	pool := x509.NewCertPool()
 	if !pool.AppendCertsFromPEM([]byte(b.CACertPEM)) {
 		return nil
 	}
 	return &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}
+}
+
+// filesMode reports whether the server node's heartbeat says its HTTPS
+// certificate comes from the admin's own certificate files, and the root
+// it reports for them (PEM, "" for none).
+func (r *runner) filesMode(node string) (bool, string) {
+	if r.node == nil {
+		return false, ""
+	}
+	for _, sv := range r.node.Status().Servers {
+		if sv.NodeID == node && sv.Detail != nil && sv.Detail.TLS != nil && sv.Detail.TLS.Mode == clustertls.ModeFiles {
+			return true, sv.Detail.TLS.CACertPEM
+		}
+	}
+	return false, ""
 }
 
 // tlsAPI is the cluster's certificate authority as the API uses it
@@ -377,7 +423,7 @@ func (a tlsAPI) Off() string {
 		return "This server doesn't use the cluster's shared settings now (" + cmp.Or(why, m.Text()) + "), so each server keeps its own certificate authority."
 	}
 	if !a.rt.SharedTLS() {
-		return fmt.Sprintf("Every server keeps its own certificate authority until all of them run a version that shares one (cluster level %d).", shared.LevelSharedTLS)
+		return "Every server keeps its own certificate authority until all of them are upgraded to a version that shares one."
 	}
 	return ""
 }
@@ -392,5 +438,5 @@ func (a tlsAPI) Founder() string {
 func (a tlsAPI) Writable() error { return a.rt.Writable() }
 
 func (a tlsAPI) Publish(ctx context.Context, node, fp, by string) (*shared.Request, error) {
-	return a.rt.Requests().Submit(ctx, clustertls.RequestPublish, node, clustertls.PublishArgs{CASHA256: fp}, by)
+	return a.s.tls.SubmitPublish(ctx, a.rt.Requests(), node, fp, by)
 }

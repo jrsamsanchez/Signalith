@@ -21,33 +21,48 @@ import (
 // tlsState reads the cluster's certificate authority, the servers'
 // certificates and, while none is chosen, the candidates.
 func (x *clusterCLI) tlsState(ctx context.Context) (*shared.Runtime, *clustertls.Report, error) {
+	rt, st, _, err := x.tlsReport(ctx)
+	return rt, st, err
+}
+
+// tlsReport is tlsState, and why the agents could not be read ("" when
+// they were, or need not be).
+func (x *clusterCLI) tlsReport(ctx context.Context) (*shared.Runtime, *clustertls.Report, string, error) {
 	rt := x.runtime(true, "")
 	if m, why := rt.Mode(); m != shared.ModeMember {
-		return nil, nil, fmt.Errorf("this server cannot use the cluster's shared settings now (%s)", cmp.Or(why, m.Text()))
+		return nil, nil, "", fmt.Errorf("this server cannot use the cluster's shared settings now (%s)", cmp.Or(why, m.Text()))
 	}
 	if !rt.SharedTLS() {
-		return nil, nil, fmt.Errorf("the cluster does not keep one certificate authority yet: every server must run a version that reads level %d first", shared.LevelSharedTLS)
+		return nil, nil, "", errors.New("the cluster does not keep one certificate authority yet: every server must first be upgraded to a version that shares one")
 	}
 	hbs, err := x.heartbeats(ctx)
 	if err != nil {
-		return nil, nil, fmt.Errorf("the servers' heartbeats cannot be read: %w", err)
+		return nil, nil, "", fmt.Errorf("the servers' heartbeats cannot be read: %w", err)
 	}
 	cb, _ := rt.Cluster().Get()
 	in := clustertls.ReportInput{Heartbeats: hbs, Founder: cb.CreatedByID, Now: time.Now()}
+	unread := ""
 	if b, ok := x.tls.tls.Get(); ok {
 		in.Body = b
 	} else {
-		in.Agents, _, _ = (&agentinv.Inventory{Client: x.cl, Prefix: x.prefix()}).List(ctx)
+		var err error
+		in.Agents, _, err = (&agentinv.Inventory{Client: x.cl, Prefix: x.prefix()}).List(ctx)
+		if err != nil {
+			unread = err.Error()
+		}
 	}
 	out := clustertls.BuildReport(in)
-	return rt, out, nil
+	return rt, out, unread, nil
 }
 
 // tlsStatus prints the cluster's certificate authority.
 func (x *clusterCLI) tlsStatus(ctx context.Context, asJSON bool) error {
-	_, st, err := x.tlsState(ctx)
+	_, st, unread, err := x.tlsReport(ctx)
 	if err != nil {
 		return err
+	}
+	if unread != "" {
+		fmt.Fprintf(x.errOut, "warning: the agents couldn't all be read from OpenSearch, so the counts may be short: %s\n", unread)
 	}
 	if asJSON {
 		enc := json.NewEncoder(x.out)
@@ -93,8 +108,12 @@ func (x *clusterCLI) tlsStatus(ctx context.Context, asJSON bool) error {
 			if c.Preselected {
 				mark = "*"
 			}
-			fmt.Fprintf(x.out, " %s %s, used by %s: %d agents; %d would need a new configuration\n", mark, c.CASHA256,
-				strings.Join(c.Servers, ", "), c.AgentCount, c.BreakCount)
+			off := ""
+			if !c.Up {
+				off = " (offline: start it to choose this one)"
+			}
+			fmt.Fprintf(x.out, " %s %s, used by %s%s: %d agents; %d would need a new configuration\n", mark, c.CASHA256,
+				strings.Join(c.Servers, ", "), off, c.AgentCount, c.BreakCount)
 			for _, u := range c.CannotCover {
 				fmt.Fprintf(x.out, "     cannot sign %s's names: %s\n", u.Server, strings.Join(u.Names, ", "))
 			}
@@ -107,7 +126,7 @@ func (x *clusterCLI) tlsStatus(ctx context.Context, asJSON bool) error {
 // (a server's name or node id, or a fingerprint) to publish it as the
 // cluster's, and waits for it.
 func (x *clusterCLI) tlsChoose(ctx context.Context, what string, yes bool) error {
-	rt, st, err := x.tlsState(ctx)
+	rt, st, unread, err := x.tlsReport(ctx)
 	if err != nil {
 		return err
 	}
@@ -118,6 +137,16 @@ func (x *clusterCLI) tlsChoose(ctx context.Context, what string, yes bool) error
 	if !ok {
 		return fmt.Errorf("no server seen in the last day uses a certificate authority %q names; signalith cluster tls lists them", what)
 	}
+	if !c.Up {
+		return fmt.Errorf("%s is offline, and only a server that holds the certificate authority can publish it: start it first", strings.Join(c.Servers, ", "))
+	}
+	if unread != "" {
+		// The counts of agents the choice breaks may be short.
+		if !yes {
+			return fmt.Errorf("the agents couldn't all be read from OpenSearch, so Signalith can't tell how many need a new configuration (%s). Try again, or add -yes to choose anyway", unread)
+		}
+		fmt.Fprintf(x.errOut, "warning: the agents couldn't all be read from OpenSearch, so the counts may be short: %s\n", unread)
+	}
 	q := fmt.Sprintf("Keep %s's certificate authority (%s) for the whole cluster? The other servers take it within seconds", c.Servers[0], c.CASHA256)
 	if c.BreakCount > 0 {
 		q += fmt.Sprintf(", and %d agents need a new configuration", c.BreakCount)
@@ -125,7 +154,7 @@ func (x *clusterCLI) tlsChoose(ctx context.Context, what string, yes bool) error
 	if err := x.confirm(q+".", yes); err != nil {
 		return err
 	}
-	req, err := rt.Requests().Submit(ctx, clustertls.RequestPublish, c.NodeIDs[0], clustertls.PublishArgs{CASHA256: c.CASHA256}, x.by)
+	req, err := x.tls.tls.SubmitPublish(ctx, rt.Requests(), c.NodeIDs[0], c.CASHA256, x.by)
 	if err != nil {
 		return err
 	}

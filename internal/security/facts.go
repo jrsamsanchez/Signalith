@@ -121,6 +121,9 @@ type TLSFacts struct {
 	PublicHost        string
 	CAMissing         bool // the file does not include its CA, and it is not public
 	// Auto mode.
+	// ClusterCA is true when the certificate authority is the one all
+	// the cluster's servers share: it cannot be changed here yet.
+	ClusterCA  bool
 	CA         *tlsauto.CAInfo
 	Next       *tlsauto.CAInfo
 	Previous   *tlsauto.CAInfo

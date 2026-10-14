@@ -76,8 +76,9 @@ func TestReportChoice(t *testing.T) {
 			t.Errorf("found %q", what)
 		}
 	}
-	// The files server's root still counts for the importer.
-	if roots := Roots(FromHeartbeats(hbs, "n_a"), now); len(roots) != 3 {
+	// The files server keeps its own whatever is chosen: its root does
+	// not hold the importer back.
+	if roots := Roots(FromHeartbeats(hbs, "n_a", now), now); len(roots) != 2 {
 		t.Errorf("roots %v", roots)
 	}
 }

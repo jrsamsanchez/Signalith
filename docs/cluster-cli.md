@@ -263,7 +263,7 @@ signalith cluster tls        [-c file] [-json]
 signalith cluster tls choose [-c file] [-yes] <server or fingerprint>
 ```
 
-Once every server reads level 4, the servers of a cluster share one certificate
+Once every server runs a version that shares one, the servers of a cluster share one certificate
 authority: each issues its own HTTPS certificate from it, so an agent set up against one
 server trusts them all. A cluster that grew from one server keeps that server's, so
 nothing changes for its agents. When servers that were set up separately meet, each
@@ -278,7 +278,9 @@ then the founder's. `-json` prints the same as JSON.
 
 `tls choose` keeps the certificate authority of a server (its name or node id) or with
 that fingerprint for the whole cluster. It asks first unless you add `-yes`, then asks
-the server holding it to publish it and waits for it. The other servers take it within
+the server holding it to publish it and waits for it. A server that is offline can't
+publish it: start it first. When the agents can't all be read from OpenSearch, the
+counts may be short, so it refuses unless you add `-yes`. The other servers take it within
 seconds: each keeps its old one in `tls/retired` in its state folder, and the agents set
 up with an old one are marked as needing a new configuration. The choice is made once:
 changing the cluster's certificate authority comes in a later version.

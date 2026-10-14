@@ -366,7 +366,7 @@ Every server that serves HTTPS with its own certificate (**HTTPS** set to Automa
 gets it from a certificate authority (CA), which agents, syslog devices and browsers
 trust (see [https.md](https.md#trust-the-certificate)). On a server of its own that CA
 is in `tls/ca.pem` and `tls/ca.key` in its state folder. Once every server of the
-cluster runs this version (cluster level 4), the servers share **one** CA, so one CA
+cluster runs a version that shares one, the servers share **one** CA, so one CA
 file works for every server, and an agent set up for one server also sends to the
 others.
 
@@ -379,11 +379,15 @@ agent was set up with on Add data, up to 32), so no server has to be up for anot
 renew. No server keeps `ca.key` on disk any more: it is deleted once the shared copy has
 been read back from OpenSearch and the server's copy of the shared settings
 (`cluster/cache.enc`) was written. While OpenSearch can't be reached, servers renew
-from that copy. A server that has neither keeps serving the certificate it has and never
-makes a new CA.
+from that copy. A server that has neither keeps serving the certificate it has (or, if
+that is gone or expired, a stand-in that agents and browsers refuse, until it can reach
+the shared CA) and never makes a new CA.
 
 **A cluster that grew from one server.** The server that makes the cluster shares its
-own CA when no other server seen in the last day uses another one. Nothing changes for
+own CA when no other server seen in the last day uses another one of Signalith's own
+(a server with your own certificate files doesn't count: it keeps them whatever the
+cluster uses). If the servers' heartbeats can't be read at that moment, it shares
+nothing and tries again. Nothing changes for
 agents and browsers: same fingerprint, same CA file. A server that joins later takes the
 shared CA within seconds, issues itself a new certificate from it, and retires its own
 CA (below).
@@ -395,7 +399,8 @@ server that holds it:
 
 - how many agents trust each one (from the agents' configurations, or, for older agents
   that don't say, the servers they reached over HTTPS in the last week), and which agents
-  would need a new configuration if it is kept;
+  would need a new configuration if it is kept (agents that only reach servers with your
+  own certificate files are never among them);
 - the servers whose names it may not vouch for: a standard CA vouches only for private
   names and its own server's names, and a strict one only for its server's
   ([How far the certificate authority reaches](https.md#how-far-the-certificate-authority-reaches)).
@@ -406,8 +411,11 @@ server that holds it:
 
 **Keep this one** asks the server that holds it to share it (`signalith cluster tls
 choose` does the same from a command line; see [cluster-cli.md](cluster-cli.md#tls)).
-Only that server can, and only while its CA is still the one you chose. Once one is
-shared, choosing another is refused: changing the cluster's CA comes in a later version.
+Only that server can, only while it runs (a CA whose servers are all offline is marked
+so, and can't be kept until one is started), and only while its CA is still the one you
+chose. The request is signed with the cluster key, so only a server of the cluster can
+ask for it. Once one is shared, choosing another is refused: changing the cluster's CA
+comes in a later version.
 
 **Retired CAs.** A server that takes the cluster's CA keeps a copy of its old `ca.pem`
 in `tls/retired/<date>-<fingerprint>/` and deletes its old `ca.key`, so the old CA never
@@ -438,7 +446,7 @@ each one's `warnings`, and, while none is chosen, `candidates` with their agents
 holding that CA to share it and answers `202` with a `request_id` that
 `GET /api/requests/{id}` follows; `409` when the cluster already shares one, `400` when
 no server seen in the last day uses that CA, `503` when the shared settings can't be
-changed now. Each choice is written to the audit log.
+changed now or no server holding that CA runs (each candidate's `up` says). Each choice is written to the audit log.
 
 ## Shared feeds and retention policies
 

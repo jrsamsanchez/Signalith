@@ -75,3 +75,22 @@ func TestSharedTLSGate(t *testing.T) {
 		t.Fatalf("import %+v, tls %v", body.Import, a.rt.SharedTLS())
 	}
 }
+
+// FlushCacheBody says when this server keeps no copy of the shared
+// settings, rather than nil: here the runtime is stepped by hand, so its
+// cache writer never starts. (The server that publishes its certificate
+// authority reads the copy back before deleting ca.key: see
+// TestClusterCAAcrossServers in cmd/signalith.)
+func TestFlushCacheBodyWithoutCopy(t *testing.T) {
+	e := newEnv(t)
+	a := e.server("siem-a", nil)
+	if _, err := a.rt.FlushCacheBody(ClusterDocID); !errors.Is(err, ErrNoCache) {
+		t.Fatalf("before the cluster: %v", err)
+	}
+	a.holds.Store(true)
+	a.step()
+	a.wantMode(ModeMember)
+	if _, err := a.rt.FlushCacheBody(ClusterDocID); !errors.Is(err, ErrNoCache) {
+		t.Fatalf("a member without a copy: %v", err)
+	}
+}

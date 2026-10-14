@@ -399,6 +399,52 @@ func TestCAScope(t *testing.T) {
 				t.Errorf("%q", c.Details)
 			}
 		}},
+		// The certificate authority all servers share can't be changed
+		// yet: no step says to make a new one, and no button leads there.
+		{name: "cluster's, unconstrained", set: func(f *Facts) {
+			f.Runtime.ClusterServer, f.TLS.ClusterCA, f.TLS.CA.Scope = "siem-1", true, "unconstrained"
+		}, state: Attention, fix: func(t *testing.T, c *Check) {
+			noChange(t, c.Fix)
+			if len(c.Details) != 1 || !strings.Contains(c.Details[0], "All the cluster's servers share") {
+				t.Errorf("%q", c.Details)
+			}
+		}},
+		{name: "cluster's, mismatch", set: func(f *Facts) { f.TLS.ClusterCA, f.TLS.ScopeSetup = true, "strict" }, state: Attention,
+			line: "You chose a strict certificate authority, but the one all servers share is standard.",
+			fix:  func(t *testing.T, c *Check) { noChange(t, c.Fix) }},
+		{name: "cluster's, standard", set: func(f *Facts) { f.TLS.ClusterCA = true }, state: Good, fix: func(t *testing.T, c *Check) {
+			noChange(t, c.Tip)
+			if strings.Contains(strings.Join(c.Tip.Steps, " "), "from this server") {
+				t.Errorf("tip %q", c.Tip.Steps)
+			}
+		}},
+	})
+}
+
+// noChange checks a fix offers no change of the cluster's certificate
+// authority: no button, and no step to make a new one.
+func noChange(t *testing.T, f *Fix) {
+	t.Helper()
+	if f == nil {
+		t.Fatal("no fix")
+	}
+	text := strings.Join(f.Steps, " ")
+	if f.Action != "" || strings.Contains(text, "Make a new") || strings.Contains(text, "switch to") {
+		t.Errorf("fix %+v", f)
+	}
+}
+
+func TestClusterCACertificate(t *testing.T) {
+	runCases(t, "transit.certificate", []checkCase{
+		{name: "outside", set: func(f *Facts) { f.TLS.ClusterCA, f.TLS.Outside = true, []string{"siem.example.com"} }, state: Attention,
+			fix: func(t *testing.T, c *Check) { noChange(t, c.Fix) }},
+		{name: "expiring", set: func(f *Facts) { f.TLS.ClusterCA, f.TLS.CA.NotAfter = true, now.AddDate(0, 3, 0) }, state: Attention,
+			fix: func(t *testing.T, c *Check) {
+				noChange(t, c.Fix)
+				if !strings.Contains(c.Line, "all servers share expires") {
+					t.Errorf("line %q", c.Line)
+				}
+			}},
 	})
 }
 

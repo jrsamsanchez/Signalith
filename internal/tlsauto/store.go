@@ -222,22 +222,19 @@ func (m *Manager) Store() string {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.store == nil {
+		// A Manager that only reads the folder (the command line's).
+		if readMark(m.opts.Dir) != "" {
+			return KindCluster
+		}
+		return KindFiles
+	}
 	return m.store.Kind()
 }
 
 // inCluster reports whether the certificate authority is the cluster's.
 // The caller holds m.mu.
 func (m *Manager) inCluster() bool { return m.store != nil && m.store.Kind() == KindCluster }
-
-// clusterCA reports whether the certificate authority is the cluster's.
-func (m *Manager) clusterCA() bool {
-	if !m.LocalCA() {
-		return false
-	}
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.inCluster()
-}
 
 // UseStore makes s, the cluster's certificate authority, the one in use:
 // it loads it and issues a certificate from it, and only then retires the
@@ -402,6 +399,11 @@ func (m *Manager) Retired() []CAInfo {
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].At.After(out[j].At) })
 	return out
+}
+
+// KeepsKey reports whether ca.key is still on this server's disk.
+func (m *Manager) KeepsKey() bool {
+	return m.LocalCA() && exists(m.path(caKeyFile))
 }
 
 // DropLocalKey deletes ca.key once the cluster keeps the certificate

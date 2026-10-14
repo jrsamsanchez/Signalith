@@ -37,7 +37,13 @@ func TestStatusAndHeartbeats(t *testing.T) {
 	servers := FromHeartbeats([]cluster.Heartbeat{
 		{NodeID: "n_a", Name: "siem-a", HeartbeatAt: now, TLS: st},
 		{NodeID: "n_b", Name: "siem-b", HeartbeatAt: now},
-	}, "n_a")
+		{NodeID: "n_c", Name: "siem-c", HeartbeatAt: now.Add(-time.Hour)},
+		{NodeID: "n_d", Name: "siem-d", HeartbeatAt: now, State: cluster.StateStopped},
+	}, "n_a", now)
+	if len(servers) != 4 || !servers[0].Up || !servers[1].Up || servers[2].Up || servers[3].Up {
+		t.Errorf("up %+v", servers)
+	}
+	servers = servers[:2]
 	if len(servers) != 2 || !servers[0].Founder || servers[1].Founder || servers[0].CACertPEM == "" || servers[1].CACertPEM != "" ||
 		!slices.Contains(servers[0].Names, "siem-a.lan") {
 		t.Fatalf("servers %+v", servers)

@@ -101,7 +101,60 @@ type clusterTLS struct {
 		CASHA256    string   `json:"ca_sha256"`
 		Servers     []string `json:"servers"`
 		Preselected bool     `json:"preselected"`
+		Up          bool     `json:"up"`
+		AgentCount  int      `json:"agent_count"`
 	} `json:"candidates"`
+}
+
+// agentToken is the ingest token the servers of these tests accept.
+const agentToken = "integration-token-0123"
+
+// agentYAML gives a server that token.
+const agentYAML = "ingest:\n  tokens: [\"" + agentToken + "\"]\n"
+
+// sendAgent posts one batch to the server as the agent name would, over
+// HTTPS trusting only caPEM (the CA file of its configuration), with its
+// configuration's pin of fp, and returns the status (0 when the TLS
+// handshake or the request failed).
+func (s *testServer) sendAgent(name string, caPEM []byte, fp string) int {
+	pool := x509.NewCertPool()
+	pool.AppendCertsFromPEM(caPEM)
+	cl := &http.Client{Timeout: 10 * time.Second, Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool}}}
+	defer cl.CloseIdleConnections()
+	body := fmt.Sprintf(`[{"log":%q}]`, time.Now().UTC().Format(time.Stamp)+" "+name+" sshd[1]: Accepted password for agenttest from 192.0.2.7 port 1 ssh2")
+	req, _ := http.NewRequest(http.MethodPost, fmt.Sprintf("https://127.0.0.1:%d/api/ingest", s.port), strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+agentToken)
+	req.Header.Set("X-Signalith-Tag", "linux.auth")
+	req.Header.Set("X-Signalith-Agent", name)
+	pin := strings.ToLower(strings.ReplaceAll(fp, ":", ""))[:16]
+	req.Header.Set("X-Signalith-Config", "ca="+pin+";v=1")
+	resp, err := cl.Do(req)
+	if err != nil {
+		return 0
+	}
+	_, _ = io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
+	return resp.StatusCode
+}
+
+// agentsNeeding lists, by name, the agents the server lists as needing a
+// new configuration for the reason why.
+func (s *testServer) agentsNeeding(why string) []string {
+	var out struct {
+		Agents []struct {
+			Name        string   `json:"name"`
+			NeedsConfig []string `json:"needs_config"`
+		} `json:"agents"`
+	}
+	s.call(http.MethodGet, "/api/agents", nil, &out)
+	var names []string
+	for _, a := range out.Agents {
+		if slices.Contains(a.NeedsConfig, why) {
+			names = append(names, a.Name)
+		}
+	}
+	slices.Sort(names)
+	return names
 }
 
 func (s *testServer) clusterTLS() (clusterTLS, bool) {
@@ -117,7 +170,7 @@ func (s *testServer) clusterTLS() (clusterTLS, bool) {
 // cluster key keeps its own as before.
 func TestClusterTLSOneCA(t *testing.T) {
 	h := newClusterHarness(t)
-	a := h.startLeader("siem-a", serverOptions{})
+	a := h.startLeader("siem-a", serverOptions{yaml: agentYAML})
 	fpA := a.ownCA()
 	caA, err := os.ReadFile(filepath.Join(a.dir, "tls", "ca.pem"))
 	if err != nil || fpA == "" {
@@ -135,7 +188,7 @@ func TestClusterTLSOneCA(t *testing.T) {
 		t.Fatal("siem-a's certificate authority changed when it was shared")
 	}
 
-	b := h.start("siem-b", serverOptions{noJobs: true})
+	b := h.start("siem-b", serverOptions{noJobs: true, yaml: agentYAML})
 	waitUntil(t, 60*time.Second, "siem-b takes the cluster's certificate authority", func() bool {
 		return b.ownCA() == fpA && b.chainsTo(caA, "127.0.0.1")
 	})
@@ -156,6 +209,11 @@ func TestClusterTLSOneCA(t *testing.T) {
 	}
 	if caFingerprintPEM(pemB) != fpA {
 		t.Errorf("siem-b gives out %q, not the cluster's", caFingerprintPEM(pemB))
+	}
+	// And a real agent request with siem-a's CA file and pin reaches
+	// siem-b.
+	if code := b.sendAgent("web-1", caA, fpA); code != http.StatusOK {
+		t.Errorf("an agent set up on siem-a sending to siem-b: %d", code)
 	}
 	waitUntil(t, 30*time.Second, "the retired certificate authority is listed", func() bool {
 		v, ok := a.clusterTLS()
@@ -203,19 +261,31 @@ func TestClusterTLSChoice(t *testing.T) {
 	h := newClusterHarness(t)
 	// siem-b starts first, with its own certificate authority, before
 	// there is a cluster; siem-a then makes the cluster and sees two.
-	b := h.start("siem-b", serverOptions{noJobs: true})
+	b := h.start("siem-b", serverOptions{noJobs: true, yaml: agentYAML})
 	fpB := b.ownCA()
 	caB, _ := os.ReadFile(filepath.Join(b.dir, "tls", "ca.pem"))
-	a := h.startLeader("siem-a", serverOptions{})
+	a := h.startLeader("siem-a", serverOptions{yaml: agentYAML})
 	fpA := a.ownCA()
+	caA, _ := os.ReadFile(filepath.Join(a.dir, "tls", "ca.pem"))
 	if fpA == fpB || fpA == "" {
 		t.Fatal("the servers share a certificate authority from the start")
 	}
+	// Two agents set up for siem-b, one for siem-a.
+	for _, ag := range []struct {
+		s    *testServer
+		name string
+		ca   []byte
+		fp   string
+	}{{b, "b-web-1", caB, fpB}, {b, "b-web-2", caB, fpB}, {a, "a-web-1", caA, fpA}} {
+		if code := ag.s.sendAgent(ag.name, ag.ca, ag.fp); code != http.StatusOK {
+			t.Fatalf("agent %s: %d", ag.name, code)
+		}
+	}
 	var v clusterTLS
-	waitUntil(t, 60*time.Second, "both certificate authorities offered", func() bool {
+	waitUntil(t, 60*time.Second, "both certificate authorities offered, with siem-b's agents", func() bool {
 		var ok bool
-		v, ok = a.clusterTLS()
-		return ok && v.On && len(v.Candidates) == 2
+		v, ok = b.clusterTLS()
+		return ok && v.On && len(v.Candidates) == 2 && v.Candidates[0].AgentCount >= 2
 	})
 	if v.Published {
 		t.Fatal("a certificate authority was shared before anyone chose")
@@ -225,33 +295,41 @@ func TestClusterTLSChoice(t *testing.T) {
 			t.Errorf("%s lost its ca.key before the choice", s.name)
 		}
 	}
-	// No agents either way: siem-a made the cluster, so its is suggested.
-	if !v.Candidates[0].Preselected || v.Candidates[0].CASHA256 != fpA {
+	// The one most agents use is suggested, over the founder's.
+	if !v.Candidates[0].Preselected || v.Candidates[0].CASHA256 != fpB || !v.Candidates[0].Up {
 		t.Errorf("suggested %+v", v.Candidates[0])
 	}
 	if code := a.call(http.MethodPost, "/api/cluster/tls/choose", map[string]string{"ca_sha256": "AB:CD"}, nil); code != http.StatusBadRequest {
 		t.Errorf("an unknown certificate authority: %d", code)
 	}
+	// The admin keeps siem-a's anyway.
 	var out map[string]any
-	if code := a.call(http.MethodPost, "/api/cluster/tls/choose", map[string]string{"ca_sha256": fpB}, &out); code != http.StatusAccepted || out["request_id"] == nil {
+	if code := a.call(http.MethodPost, "/api/cluster/tls/choose", map[string]string{"ca_sha256": fpA}, &out); code != http.StatusAccepted || out["request_id"] == nil {
 		t.Fatalf("choose: %d %v", code, out)
 	}
-	waitUntil(t, 60*time.Second, "siem-a takes siem-b's certificate authority", func() bool {
-		return a.ownCA() == fpB && a.chainsTo(caB, "127.0.0.1")
+	waitUntil(t, 60*time.Second, "siem-b takes siem-a's certificate authority", func() bool {
+		return b.ownCA() == fpA && b.chainsTo(caA, "127.0.0.1")
 	})
 	v, _ = a.clusterTLS()
-	if !v.Published || v.CA.CASHA256 != fpB || v.CA.PublishedBy != "siem-b" {
+	if !v.Published || v.CA.CASHA256 != fpA || v.CA.PublishedBy != "siem-a" {
 		t.Errorf("after the choice %+v", v)
 	}
-	if code := a.call(http.MethodPost, "/api/cluster/tls/choose", map[string]string{"ca_sha256": fpA}, nil); code != http.StatusConflict {
+	if code := a.call(http.MethodPost, "/api/cluster/tls/choose", map[string]string{"ca_sha256": fpB}, nil); code != http.StatusConflict {
 		t.Errorf("a second choice: %d", code)
 	}
-	waitUntil(t, 30*time.Second, "siem-b's ca.key leaves the disk", func() bool {
-		_, err := os.Stat(filepath.Join(b.dir, "tls", "ca.key"))
+	waitUntil(t, 30*time.Second, "siem-a's ca.key leaves the disk", func() bool {
+		_, err := os.Stat(filepath.Join(a.dir, "tls", "ca.key"))
 		return os.IsNotExist(err)
 	})
-	if b.ownCA() != fpB {
-		t.Error("siem-b's certificate authority changed when it was shared")
+	if a.ownCA() != fpA {
+		t.Error("siem-a's certificate authority changed when it was shared")
+	}
+	// siem-b's agents trust only its retired certificate authority.
+	waitUntil(t, 30*time.Second, "siem-b's agents need a new configuration", func() bool {
+		return slices.Equal(b.agentsNeeding("retired_ca"), []string{"b-web-1", "b-web-2"})
+	})
+	if got := a.agentsNeeding("retired_ca"); slices.Contains(got, "a-web-1") {
+		t.Errorf("siem-a's agent flagged: %v", got)
 	}
 }
 

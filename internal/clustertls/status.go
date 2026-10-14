@@ -1,6 +1,8 @@
 package clustertls
 
 import (
+	"time"
+
 	"github.com/jrsamsanchez/signalith/internal/cluster"
 	"github.com/jrsamsanchez/signalith/internal/tlsauto"
 )
@@ -36,14 +38,20 @@ func StatusOf(m *tlsauto.Manager, sharedHost, adoptErr string) *cluster.TLSStatu
 	return st
 }
 
+// UpWithin is how fresh a heartbeat must be for its server to count as
+// running: twice the time after which servers count one as offline, for
+// clocks a little apart.
+var UpWithin = 2 * cluster.DefaultTiming.Offline
+
 // FromHeartbeats turns the servers' heartbeats into what Candidates and
 // the importer read; founder is the node id of the server that founded
-// the cluster. A heartbeat without a TLS status has no certificate
-// authority of its own to offer.
-func FromHeartbeats(hbs []cluster.Heartbeat, founder string) []Server {
+// the cluster, now the time the heartbeats' ages count from. A heartbeat
+// without a TLS status has no certificate authority of its own to offer.
+func FromHeartbeats(hbs []cluster.Heartbeat, founder string, now time.Time) []Server {
 	out := make([]Server, 0, len(hbs))
 	for _, hb := range hbs {
-		s := Server{NodeID: hb.NodeID, Name: hb.Name, Founder: founder != "" && hb.NodeID == founder, SeenAt: hb.HeartbeatAt}
+		s := Server{NodeID: hb.NodeID, Name: hb.Name, Founder: founder != "" && hb.NodeID == founder, SeenAt: hb.HeartbeatAt,
+			Up: hb.State != cluster.StateStopped && hb.State != cluster.StateOffline && now.Sub(hb.HeartbeatAt) <= UpWithin}
 		if hb.TLS != nil {
 			s.CACertPEM = hb.TLS.CACertPEM
 			s.Files = hb.TLS.Mode == ModeFiles

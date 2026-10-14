@@ -243,7 +243,8 @@ func TestStoreWithManager(t *testing.T) {
 }
 
 func hb(name string, ca testCA, seen time.Time, founder bool, names ...string) Server {
-	return Server{NodeID: "n_" + name, Name: name, SeenAt: seen, CACertPEM: string(ca.pem), Founder: founder, Names: names}
+	return Server{NodeID: "n_" + name, Name: name, SeenAt: seen, CACertPEM: string(ca.pem), Founder: founder, Names: names,
+		Up: time.Since(seen) < time.Hour}
 }
 
 func agent(key string, pins []string, servers []string, last time.Time) agentinv.Agent {
@@ -262,7 +263,7 @@ func TestCandidates(t *testing.T) {
 		// Not seen for two days: it counts for nothing.
 		hb("siem-gone", makeCA(t, "gone", now, "x.example.com"), now.Add(-48*time.Hour), false, "x.example.com"),
 		// Its own certificate files: no candidate.
-		{NodeID: "n_siem-f", Name: "siem-f", SeenAt: now},
+		{NodeID: "n_siem-f", Name: "siem-f", SeenAt: now, Files: true, Up: true, CACertPEM: string(makeCA(t, "corp", now).pem)},
 	}
 	agents := []agentinv.Agent{
 		agent("a1", []string{pin(old)}, []string{"siem-a"}, now),
@@ -274,6 +275,10 @@ func TestCandidates(t *testing.T) {
 		agent("stale", nil, []string{"siem-c"}, now.Add(-8*24*time.Hour)),
 		{Key: "plain", Transports: []string{agentinv.TransportPlain}, Servers: []string{"siem-a"}, LastSeen: now, CA: []string{}},
 		{Key: "refusing", Refusing: true, Transports: []string{agentinv.TransportTLS}, LastSeen: now},
+		// Sends only to the server with its own certificate files: no
+		// choice changes it, so it breaks under none.
+		agent("files", nil, []string{"siem-f"}, now),
+		agent("files-pinned", []string{"0123456789abcdef"}, []string{"siem-f"}, now),
 	}
 	cs := Candidates(servers, agents, now)
 	if len(cs) != 2 {
@@ -330,6 +335,26 @@ func TestCandidates(t *testing.T) {
 	if cs := Candidates(servers[:1], nil, now); len(cs) != 1 || !cs[0].Preselected || len(cs[0].Breaks) != 0 {
 		t.Errorf("one: %+v", cs)
 	}
+	// One CA and a server with its own files: its agents break under
+	// neither.
+	if cs := Candidates([]Server{servers[0], servers[4]}, agents, now); len(cs) != 1 || cs[0].BreakCount != 0 {
+		t.Errorf("one and files: %+v", cs)
+	}
+	// The servers that run come first, to publish it; with none running,
+	// it cannot be published now.
+	down := slices.Clone(servers)
+	down[1].Up = false
+	for _, c := range Candidates(down, agents, now) {
+		if c.CASHA256 == young.fp && (!c.Up || c.NodeIDs[0] != "n_siem-c" || c.Servers[0] != "siem-c") {
+			t.Errorf("running first: %+v %v", c.NodeIDs, c.Up)
+		}
+	}
+	down[2].Up = false
+	for _, c := range Candidates(down, agents, now) {
+		if c.CASHA256 == young.fp && c.Up {
+			t.Error("up with no server running")
+		}
+	}
 	if cs := Candidates(servers[4:], nil, now); len(cs) != 0 {
 		t.Errorf("files mode: %+v", cs)
 	}
@@ -354,7 +379,9 @@ func TestImporter(t *testing.T) {
 
 	// Two CAs among the servers: nothing published, and no error.
 	servers := []Server{hb("siem-a", ca, now, true), hb("siem-b", other, now, false)}
-	im = Importer(ImporterOptions{TLS: tl, Local: local(ca), Servers: func() []Server { return servers }, Node: "siem-a"})
+	var readErr error
+	im = Importer(ImporterOptions{TLS: tl, Local: local(ca), Node: "siem-a",
+		Servers: func(context.Context) ([]Server, error) { return servers, readErr }})
 	if h, _ := im.Source(); h != ca.fp {
 		t.Errorf("source %q", h)
 	}
@@ -365,9 +392,25 @@ func TestImporter(t *testing.T) {
 		t.Fatal("published with two CAs")
 	}
 
+	// The heartbeats cannot be read: nothing published, and an error, so
+	// the import is tried again.
+	servers, readErr = nil, errors.New("timeout")
+	if err := im.Run(ctx, "admin"); err == nil {
+		t.Fatal("no error when the heartbeats cannot be read")
+	}
+	if _, ok := tl.Get(); ok {
+		t.Fatal("published without the heartbeats")
+	}
+	readErr = nil
+	if err := Importer(ImporterOptions{TLS: tl, Local: local(ca)}).Run(ctx, "admin"); err == nil {
+		t.Fatal("no error without a way to read the heartbeats")
+	}
+
 	// One (the other server has none of its own, or is long gone): it
 	// publishes the founder's.
-	servers = []Server{hb("siem-a", ca, now, true), hb("siem-b", other, now.Add(-48*time.Hour), false), {Name: "siem-f", SeenAt: now}}
+	servers = []Server{hb("siem-a", ca, now, true), hb("siem-b", other, now.Add(-48*time.Hour), false), {Name: "siem-f", SeenAt: now},
+		// Its own certificate files, from another root: it keeps them.
+		{Name: "siem-g", SeenAt: now, Files: true, CACertPEM: string(other.pem)}}
 	if err := im.Run(ctx, "admin"); err != nil {
 		t.Fatal(err)
 	}
@@ -389,9 +432,46 @@ func TestPublishRequest(t *testing.T) {
 	tl, _ := e.server("siem-b")
 	cur := ca
 	h := Handler(tl, func() (*x509.Certificate, crypto.Signer, []string) { return cur.cert, cur.key, nil }, "siem-b", nil)
-	req := func(fp string) *shared.Request {
-		raw, _ := json.Marshal(PublishArgs{CASHA256: fp})
-		return &shared.Request{ID: "rq_1", Type: RequestPublish, Args: raw, RequestedBy: "admin"}
+	signed := func(fp string, at time.Time, edit func(*PublishArgs)) *shared.Request {
+		a, err := tl.publishArgs("n_b", fp, "admin", at)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if edit != nil {
+			edit(&a)
+		}
+		raw, _ := json.Marshal(a)
+		return &shared.Request{ID: "rq_1", Type: RequestPublish, Target: "n_b", Args: raw, RequestedBy: "admin"}
+	}
+	req := func(fp string) *shared.Request { return signed(fp, time.Now(), nil) }
+	// Not signed with the cluster key, or signed for something else, or
+	// long ago: refused, nothing published.
+	unsigned, _ := json.Marshal(PublishArgs{CASHA256: ca.fp, Target: "n_b", By: "admin", At: time.Now()})
+	other2, _ := shared.NewClusterKey()
+	for name, r := range map[string]*shared.Request{
+		"unsigned":   {ID: "rq_0", Target: "n_b", Args: unsigned, RequestedBy: "admin"},
+		"other user": signed(ca.fp, time.Now(), func(a *PublishArgs) { a.By = "mallory" }),
+		"other fp":   signed(ca.fp, time.Now(), func(a *PublishArgs) { a.CASHA256 = other.fp }),
+		"other key":  signed(ca.fp, time.Now(), func(a *PublishArgs) { a.KeyID = other2.ID() }),
+		"old":        signed(ca.fp, time.Now().Add(-2*time.Hour), nil),
+		"ahead":      signed(ca.fp, time.Now().Add(time.Hour), nil),
+	} {
+		if err := h(ctx, r); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+	forged := req(ca.fp)
+	forged.RequestedBy = "mallory"
+	if err := h(ctx, forged); err == nil {
+		t.Error("requester changed: accepted")
+	}
+	forged = req(ca.fp)
+	forged.Target = "n_c"
+	if err := h(ctx, forged); err == nil {
+		t.Error("target changed: accepted")
+	}
+	if _, ok := tl.Get(); ok {
+		t.Fatal("published on a request not signed for it")
 	}
 	// Chosen when this server had another CA: refused.
 	if err := h(ctx, req(other.fp)); err == nil || !strings.Contains(err.Error(), "changed since it was chosen") {

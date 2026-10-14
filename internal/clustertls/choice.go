@@ -32,9 +32,13 @@ type Server struct {
 	CACertPEM string
 	// Names are the names its certificate should cover.
 	Names []string
-	// Files is true for a server with the admin's certificate files: its
-	// root counts among the roots, but it has no key to publish.
+	// Files is true for a server with the admin's certificate files: it
+	// keeps them whatever is chosen, and has no key to publish.
 	Files bool
+	// Up is true while the server runs: its heartbeat is fresh and it
+	// did not stop. Only a server that runs can publish its certificate
+	// authority.
+	Up bool
 }
 
 // AgentRef names an agent in a candidate's lists.
@@ -60,15 +64,21 @@ type Candidate struct {
 	NotBefore time.Time `json:"not_before"`
 	NotAfter  time.Time `json:"not_after"`
 	// Servers are the names of the servers that use it now, and NodeIDs
-	// their node ids, in the same order: the first one publishes it.
+	// their node ids, in the same order, those that run first: the first
+	// one publishes it.
 	Servers []string `json:"servers"`
 	NodeIDs []string `json:"node_ids"`
+	// Up is false when none of its servers runs now, so none can publish
+	// it until one is started again.
+	Up bool `json:"up"`
 	// Founder is true when the founder uses it.
 	Founder bool `json:"founder,omitempty"`
 	// Agents are the agents whose configuration trusts it, or (for one
 	// that sends no pin) that reached one of its servers over HTTPS in the
-	// last week. Breaks are the other agents that send over HTTPS: they
-	// need a new configuration if it is kept.
+	// last week. Breaks are the agents that use another candidate and not
+	// this one: they need a new configuration if it is kept. Agents of
+	// servers with the admin's certificate files are in neither, since
+	// no choice changes those.
 	Agents []AgentRef `json:"agents"`
 	Breaks []AgentRef `json:"breaks"`
 	// AgentCount and BreakCount count them all, where a report lists only
@@ -83,6 +93,7 @@ type Candidate struct {
 	Preselected bool `json:"preselected,omitempty"`
 
 	ca *x509.Certificate
+	up []bool // per NodeIDs
 }
 
 // Candidates lists the certificate authorities in use among the servers
@@ -112,18 +123,28 @@ func Candidates(servers []Server, agents []agentinv.Agent, now time.Time) []Cand
 			byFP[fp] = c
 			order = append(order, fp)
 		}
-		c.Servers = append(c.Servers, s.Name)
-		c.NodeIDs = append(c.NodeIDs, s.NodeID)
+		// The servers that run first: the first one publishes it.
+		at := len(c.Servers)
+		if s.Up {
+			at = 0
+			for at < len(c.NodeIDs) && c.up[at] {
+				at++
+			}
+		}
+		c.Servers = slices.Insert(c.Servers, at, s.Name)
+		c.NodeIDs = slices.Insert(c.NodeIDs, at, s.NodeID)
+		c.up = slices.Insert(c.up, at, s.Up)
+		c.Up = c.Up || s.Up
 		c.Founder = c.Founder || s.Founder
 	}
-	// Which candidates each agent uses.
+	// Which candidates each agent uses: an agent that uses none (it sends
+	// only to servers with the admin's certificate files, or trusts only
+	// a certificate authority no server uses) is not changed by the
+	// choice.
 	tlsAgents := map[string]bool{}
 	for _, a := range agents {
 		if a.Refusing {
 			continue
-		}
-		if overTLS(a, now) {
-			tlsAgents[a.Key] = true
 		}
 		for _, fp := range order {
 			c := byFP[fp]
@@ -208,15 +229,6 @@ func usesCA(a agentinv.Agent, c *Candidate, now time.Time) bool {
 	return slices.ContainsFunc(a.Servers, func(s string) bool { return slices.Contains(c.Servers, s) })
 }
 
-// overTLS reports whether a depends on a certificate authority: its
-// configuration pins one, or it sent over HTTPS in the last week.
-func overTLS(a agentinv.Agent, now time.Time) bool {
-	if slices.ContainsFunc(a.CA, func(p string) bool { return p != "" }) {
-		return true
-	}
-	return now.Sub(a.LastSeen) <= AgentSeen && slices.Contains(a.Transports, agentinv.TransportTLS)
-}
-
 func refOf(a agentinv.Agent) AgentRef {
 	r := AgentRef{Key: a.Key, Name: a.Name}
 	if len(a.Addresses) > 0 {
@@ -237,12 +249,14 @@ func parsePEM(s string) *x509.Certificate {
 	return c
 }
 
-// Roots lists the fingerprints of the certificate authorities in use
-// among the servers seen since now-ServerSeen, once each.
+// Roots lists the fingerprints of Signalith's own certificate authorities
+// in use among the servers seen since now-ServerSeen, once each. A server
+// with the admin's certificate files keeps them whatever the cluster
+// uses, so its root is not among them.
 func Roots(servers []Server, now time.Time) []string {
 	var out []string
 	for _, s := range servers {
-		if now.Sub(s.SeenAt) > ServerSeen {
+		if now.Sub(s.SeenAt) > ServerSeen || s.Files {
 			continue
 		}
 		if ca := parsePEM(s.CACertPEM); ca != nil {

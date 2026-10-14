@@ -10,7 +10,9 @@
 
 (function () {
   const REFRESH_MS = 15000;
-  const S = { rep: null, at: 0, busy: false, seq: 0, ticker: null, failed: null, choice: '', asking: null };
+  // touched is set once the admin picks a radio: until then the choice
+  // follows the suggestion, which may change as the counts come in.
+  const S = { rep: null, at: 0, busy: false, seq: 0, ticker: null, failed: null, choice: '', touched: false, asking: null };
   const SCOPE = { standard: 'standard', strict: 'strict', unconstrained: 'older, unlimited' };
   const DAY = { day: 'numeric', month: 'short', year: 'numeric' };
   const dayText = (t) => new Date(t).toLocaleDateString('en-GB', DAY);
@@ -88,7 +90,13 @@
   function subline(rep) {
     if (!rep.on) return 'Each server keeps its own for now.';
     if (rep.published) return 'Every server’s HTTPS certificate comes from the cluster’s certificate authority, so one CA file works for agents and browsers on every server.';
-    if (!(rep.candidates || []).length) return 'No server has a certificate authority of its own to share yet.';
+    const cands = rep.candidates || [];
+    if (!cands.length) return 'No server has a certificate authority of its own to share yet.';
+    if (cands.length === 1) {
+      const files = (rep.servers || []).filter((s) => s.mode === 'files').map((s) => s.name);
+      const why = files.length ? `${listWords(files)} ${files.length === 1 ? 'uses' : 'use'} your own certificate files, so ` : '';
+      return cap(`${why}Signalith didn’t share ${cands[0].servers[0]}’s certificate authority by itself. Keep it to use it on every server.`);
+    }
     return 'The servers were set up separately, so each has its own certificate authority. Choose the one every server should use.';
   }
 
@@ -163,11 +171,15 @@
   function choice(rep) {
     const cands = rep.candidates || [];
     if (!cands.length) return [serverAlerts(rep), el('p', { class: 'ca-text' }, 'Servers that use your own certificate files never share a certificate authority. A server that makes its own offers it here.')];
-    if (!S.choice || !cands.some((c) => c.ca_sha256 === S.choice)) S.choice = (cands.find((c) => c.preselected) || cands[0]).ca_sha256;
+    if (!S.touched || !cands.some((c) => c.ca_sha256 === S.choice)) {
+      S.choice = (cands.find((c) => c.preselected) || cands[0]).ca_sha256;
+      S.touched = false;
+    }
     const radios = cands.map((c, i) => candidate(c, i));
     const chosen = cands.find((c) => c.ca_sha256 === S.choice);
     const go = el('button', { type: 'button', class: 'btn btn--primary btn--sm', 'data-focus': 'ca-keep', onclick: () => confirmChoice(chosen) }, 'Keep this one…');
-    go.disabled = !!S.asking;
+    // Only a server that runs can publish its certificate authority.
+    go.disabled = !!S.asking || !chosen || !chosen.up;
     return [
       rep.agents_unread ? alertBox('warning', 'The agent counts may be short', rep.agents_unread) : null,
       el('fieldset', { class: 'ca-choice' },
@@ -186,7 +198,7 @@
     const more = c.servers.slice(1);
     const radio = el('input', { type: 'radio', name: 'ca-cand', id, value: c.ca_sha256, 'data-focus': 'cand:' + c.ca_sha256 });
     radio.checked = c.ca_sha256 === S.choice;
-    radio.addEventListener('change', () => { S.choice = c.ca_sha256; render(); });
+    radio.addEventListener('change', () => { S.choice = c.ca_sha256; S.touched = true; render(); });
     const breaks = c.breaks || [];
     const lines = [
       el('span', { class: 'ca-cand__counts' },
@@ -194,6 +206,10 @@
         c.break_count ? el('span', { class: 'ca-warn' }, ` · ${plural(c.break_count, 'agent', 'agents')} would need a new configuration`) : ' · no agent would need a new configuration'),
       el('span', { class: 'ca-muted' }, [more.length ? `Also used by ${listWords(more)}` : '', `${more.length ? 'made' : 'Made'} ${dayText(c.not_before)}`, c.scope ? SCOPE[c.scope] || c.scope : ''].filter(Boolean).join(' · '), ' · ', fpEl(c.ca_sha256)),
     ];
+    if (!c.up) {
+      lines.push(el('span', { class: 'ca-bad' }, icon('circle-alert', 'icon--sm'),
+        `${listWords(c.servers)} ${c.servers.length === 1 ? 'is' : 'are'} offline. Start ${c.servers.length === 1 ? 'it' : 'one of them'} to keep this certificate authority.`));
+    }
     for (const u of c.cannot_cover || []) {
       lines.push(el('span', { class: 'ca-bad' }, icon('circle-alert', 'icon--sm'),
         `It can’t vouch for ${u.server}’s ${u.names.length === 1 ? 'name' : 'names'} ${listWords(u.names)}, so ${u.server}’s certificate would leave ${u.names.length === 1 ? 'it' : 'them'} out.`));
@@ -214,7 +230,7 @@
   }
 
   function confirmChoice(c) {
-    if (!c) return;
+    if (!c || !c.up) return;
     const owner = c.servers[0];
     const d = modalDialog('ca-confirm');
     const text = c.break_count

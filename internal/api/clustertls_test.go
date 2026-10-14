@@ -63,6 +63,8 @@ func (f *fakeClusterTLS) Publish(_ context.Context, node, fp, _ string) (*shared
 // tlsCluster is two servers with their certificates' heartbeats.
 type tlsCluster struct {
 	a, b *cluster.TLSStatus
+	// aOffline marks siem-a offline.
+	aOffline bool
 }
 
 func (c *tlsCluster) RunsJobs() bool    { return false }
@@ -72,8 +74,12 @@ func (c *tlsCluster) Status() cluster.Status {
 	now := time.Now()
 	a := &cluster.Heartbeat{NodeID: "n_a", Name: "siem-a", HeartbeatAt: now, TLS: c.a}
 	b := &cluster.Heartbeat{NodeID: "n_b", Name: "siem-b", HeartbeatAt: now, TLS: c.b}
+	stateA := cluster.StateReady
+	if c.aOffline {
+		stateA = cluster.StateOffline
+	}
 	return cluster.Status{Self: "n_b", Servers: []cluster.ServerStatus{
-		{NodeID: "n_a", Name: "siem-a", State: cluster.StateReady, HeartbeatAt: now, Detail: a},
+		{NodeID: "n_a", Name: "siem-a", State: stateA, HeartbeatAt: now, Detail: a},
 		{NodeID: "n_b", Name: "siem-b", Self: true, State: cluster.StateReady, HeartbeatAt: now, Detail: b},
 	}}
 }
@@ -137,7 +143,7 @@ func TestClusterTLSOff(t *testing.T) {
 func TestClusterTLSChoose(t *testing.T) {
 	a, b := newCertManager(t), newCertManager(t)
 	ct := &fakeClusterTLS{}
-	ts, _ := newClusterTLSServer(t, ct, a, b)
+	ts, cl := newClusterTLSServer(t, ct, a, b)
 	code, out := do(t, ts, "GET", "/api/cluster/tls", "", true)
 	if code != 200 || out["on"] != true || out["published"] != false {
 		t.Fatalf("GET %d %v", code, out)
@@ -167,6 +173,23 @@ func TestClusterTLSChoose(t *testing.T) {
 		t.Errorf("not writable: %d %v", code, out)
 	}
 	ct.writable = nil
+	// siem-a is offline: its certificate authority is listed, but it
+	// cannot publish it now.
+	cl.aOffline = true
+	_, out = do(t, ts, "GET", "/api/cluster/tls", "", true)
+	for _, c := range out["candidates"].([]any) {
+		if c := c.(map[string]any); c["ca_sha256"] == a.Fingerprint() && c["up"] != false {
+			t.Errorf("offline candidate %v", c)
+		}
+	}
+	if code, out := do(t, ts, "POST", "/api/cluster/tls/choose", `{"ca_sha256":"`+a.Fingerprint()+`"}`, true); code != http.StatusServiceUnavailable ||
+		!strings.Contains(out["error"].(string), "siem-a is offline") {
+		t.Errorf("offline: %d %v", code, out)
+	}
+	if len(ct.asked) != 0 {
+		t.Fatalf("asked an offline server %v", ct.asked)
+	}
+	cl.aOffline = false
 	// Written without colons, in lower case: the same fingerprint.
 	fp := strings.ToLower(strings.ReplaceAll(b.Fingerprint(), ":", ""))
 	code, out = do(t, ts, "POST", "/api/cluster/tls/choose", `{"ca_sha256":"`+fp+`"}`, true)

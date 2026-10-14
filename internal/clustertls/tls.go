@@ -133,10 +133,6 @@ type TLS struct {
 	hub  *shared.Hub
 	doc  *shared.Doc[Body]
 	subs []func(old, new *Body)
-	// opened is the key last opened, for the fingerprint openedFP: the key
-	// stays in memory only.
-	opened   crypto.Signer
-	openedFP string
 }
 
 // New returns the holder; Track makes the document.
@@ -279,12 +275,9 @@ func (t *TLS) open(b *Body) (*x509.Certificate, crypto.Signer, error) {
 	if !SameFingerprint(fp, b.CASHA256) {
 		return nil, nil, errors.New("the tls document's fingerprint does not match its certificate")
 	}
+	// Opened each time, from the copy held now, and never kept here: the
+	// HTTPS certificate's Manager is the one place the key stays.
 	t.mu.Lock()
-	if t.opened != nil && t.openedFP == fp {
-		k := t.opened
-		t.mu.Unlock()
-		return ca, k, nil
-	}
 	h := t.hub
 	t.mu.Unlock()
 	if h == nil {
@@ -303,9 +296,6 @@ func (t *TLS) open(b *Body) (*x509.Certificate, crypto.Signer, error) {
 	if !samePublicKey(ca.PublicKey, key.Public()) {
 		return nil, nil, errors.New("the cluster's certificate authority key does not belong to its certificate")
 	}
-	t.mu.Lock()
-	t.opened, t.openedFP = key, fp
-	t.mu.Unlock()
 	return ca, key, nil
 }
 

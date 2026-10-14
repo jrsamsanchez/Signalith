@@ -494,3 +494,76 @@ func fileCount(t *testing.T, dir string) int {
 	}
 	return len(entries)
 }
+
+// A server that uses the cluster's CA and has lost its certificate (or
+// whose certificate expired while it was off) still starts, without the
+// CA's key: it serves a stand-in no client trusts, makes no CA, and the
+// cluster's store gives it a real certificate.
+func TestDetachedStartWithoutLeaf(t *testing.T) {
+	fakeMachine(t)
+	c := &clock{time.Now()}
+	a := newAuto(t, filepath.Join(t.TempDir(), "a"), c)
+	s := storeOf(t, a)
+	for _, lose := range []string{"deleted", "expired"} {
+		t.Run(lose, func(t *testing.T) {
+			c := &clock{c.t}
+			dir := filepath.Join(t.TempDir(), "b")
+			b := newAuto(t, dir, c, "siem-b.corp.lan")
+			if err := b.UseStore(s); err != nil {
+				t.Fatal(err)
+			}
+			if lose == "deleted" {
+				if err := os.Remove(filepath.Join(dir, certFile)); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				c.t = b.Leaf().NotAfter.Add(time.Hour)
+			}
+			d, err := New(Options{Dir: dir, Names: []string{"siem-b.corp.lan"}, Now: c.now})
+			if err != nil {
+				t.Fatalf("start: %v", err)
+			}
+			leaf := d.Leaf()
+			if leaf == nil || leaf.IsCA || leaf.CheckSignatureFrom(a.ca) == nil {
+				t.Fatal("no stand-in, or one from the cluster's CA")
+			}
+			if d.Fingerprint() != a.Fingerprint() || exists(filepath.Join(dir, caKeyFile)) {
+				t.Error("a CA was made")
+			}
+			if lose == "deleted" && exists(filepath.Join(dir, certFile)) {
+				t.Error("the stand-in was written to disk")
+			}
+			if err := d.UseStore(s); err != nil {
+				t.Fatal(err)
+			}
+			if err := d.Leaf().CheckSignatureFrom(a.ca); err != nil {
+				t.Errorf("not reissued from the cluster's CA: %v", err)
+			}
+		})
+	}
+}
+
+// A change of CA started while the cluster's CA is taken is refused once
+// it is: the check is under the same lock as UseStore.
+func TestPrepareRacesUseStore(t *testing.T) {
+	fakeMachine(t)
+	c := &clock{time.Now()}
+	a := newAuto(t, filepath.Join(t.TempDir(), "a"), c)
+	s := storeOf(t, a)
+	for range 20 {
+		dir := t.TempDir()
+		b := newAuto(t, dir, c)
+		var wg sync.WaitGroup
+		var prepErr, useErr error
+		wg.Add(2)
+		go func() { defer wg.Done(); prepErr = b.Prepare(ScopeStandard) }()
+		go func() { defer wg.Done(); useErr = b.UseStore(s) }()
+		wg.Wait()
+		switch {
+		case useErr == nil && prepErr == nil:
+			t.Fatal("both a change of CA and the cluster's CA went ahead")
+		case useErr == nil && exists(filepath.Join(dir, nextDir)):
+			t.Fatal("next/ left behind under the cluster's CA")
+		}
+	}
+}

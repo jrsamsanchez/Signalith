@@ -140,7 +140,7 @@ func BuildReport(in ReportInput) *Report {
 	}
 	slices.SortFunc(r.Servers, func(a, b ServerView) int { return cmp.Compare(a.Name, b.Name) })
 	if !r.Published {
-		r.Candidates = Candidates(FromHeartbeats(in.Heartbeats, in.Founder), in.Agents, now)
+		r.Candidates = Candidates(FromHeartbeats(in.Heartbeats, in.Founder, now), in.Agents, now)
 		for i := range r.Candidates {
 			c := &r.Candidates[i]
 			if len(c.Agents) > MaxListed {
