@@ -8337,10 +8337,26 @@ rules:
     rule_id: f6c68d5f-e101-4b86-8c84-7d96851fd65c
     file: win_security_wmiprvse_wbemcomn_dll_hijack.yml
     path: rules/windows/builtin/security/win_security_wmiprvse_wbemcomn_dll_hijack.yml
+  - id: sigma-win-system-adcs-enrollment-request-denied
+    rule_id: 994bfd6d-0a2e-481e-a861-934069fcf5f5
+    file: win_system_adcs_enrollment_request_denied.yml
+    path: rules/windows/builtin/system/microsoft_windows_certification_authority/win_system_adcs_enrollment_request_denied.yml
+  - id: sigma-win-system-application-sysmon-crash
+    rule_id: 4d7f1827-1637-4def-8d8a-fd254f9454df
+    file: win_system_application_sysmon_crash.yml
+    path: rules/windows/builtin/system/application_popup/win_system_application_sysmon_crash.yml
   - id: sigma-win-system-cobaltstrike-service-installs
     rule_id: 5a105d34-05fc-401e-8553-272b45c1522d
     file: win_system_cobaltstrike_service_installs.yml
     path: rules/windows/builtin/system/service_control_manager/win_system_cobaltstrike_service_installs.yml
+  - id: sigma-win-system-defender-disabled
+    rule_id: 6c0a7755-6d31-44fa-80e1-133e57752680
+    file: win_system_defender_disabled.yml
+    path: rules/windows/builtin/system/service_control_manager/win_system_defender_disabled.yml
+  - id: sigma-win-system-eventlog-cleared
+    rule_id: a62b37e0-45d3-48d9-a517-90c1a1b0186b
+    file: win_system_eventlog_cleared.yml
+    path: rules/windows/builtin/system/microsoft_windows_eventlog/win_system_eventlog_cleared.yml
   - id: sigma-win-system-hack-smbexec
     rule_id: 52a85084-6989-40c3-8f32-091e12e13f09
     file: win_system_hack_smbexec.yml
@@ -8389,10 +8405,26 @@ rules:
     rule_id: 14bcba49-a428-42d9-b943-e2ce0f0f7ae6
     file: win_system_invoke_obfuscation_via_var_services.yml
     path: rules/windows/builtin/system/service_control_manager/win_system_invoke_obfuscation_via_var_services.yml
+  - id: sigma-win-system-kdcsvc-cert-use-no-strong-mapping
+    rule_id: 993c2665-e6ef-40e3-a62a-e1a97686af79
+    file: win_system_kdcsvc_cert_use_no_strong_mapping.yml
+    path: rules/windows/builtin/system/microsoft_windows_kerberos_key_distribution_center/win_system_kdcsvc_cert_use_no_strong_mapping.yml
+  - id: sigma-win-system-kdcsvc-tgs-no-suitable-encryption-key-found
+    rule_id: b1e0b3f5-b62e-41be-886a-daffde446ad4
+    file: win_system_kdcsvc_tgs_no_suitable_encryption_key_found.yml
+    path: rules/windows/builtin/system/microsoft_windows_kerberos_key_distribution_center/win_system_kdcsvc_tgs_no_suitable_encryption_key_found.yml
   - id: sigma-win-system-krbrelayup-service-installation
     rule_id: e97d9903-53b2-41fc-8cb9-889ed4093e80
     file: win_system_krbrelayup_service_installation.yml
     path: rules/windows/builtin/system/service_control_manager/win_system_krbrelayup_service_installation.yml
+  - id: sigma-win-system-lpe-indicators-tabtip
+    rule_id: bc2e25ed-b92b-4daa-b074-b502bdd1982b
+    file: win_system_lpe_indicators_tabtip.yml
+    path: rules/windows/builtin/system/microsoft_windows_distributed_com/win_system_lpe_indicators_tabtip.yml
+  - id: sigma-win-system-lsasrv-ntlmv1
+    rule_id: e9d4ab66-a532-4ef7-a502-66a9e4a34f5d
+    file: win_system_lsasrv_ntlmv1.yml
+    path: rules/windows/builtin/system/lsasrv/win_system_lsasrv_ntlmv1.yml
   - id: sigma-win-system-mal-creddumper
     rule_id: 4976aa50-8f41-45c6-8b15-ab3fc10e79ed
     file: win_system_mal_creddumper.yml
@@ -8481,6 +8513,34 @@ rules:
     rule_id: 26481afe-db26-4228-b264-25a29fe6efc7
     file: win_system_service_install_uncommon.yml
     path: rules/windows/builtin/system/service_control_manager/win_system_service_install_uncommon.yml
+  - id: sigma-win-system-service-terminated-error-generic
+    rule_id: acfa2210-0d71-4eeb-b477-afab494d596c
+    file: win_system_service_terminated_error_generic.yml
+    path: rules/windows/builtin/system/service_control_manager/win_system_service_terminated_error_generic.yml
+  - id: sigma-win-system-service-terminated-error-important
+    rule_id: d6b5520d-3934-48b4-928c-2aa3f92d6963
+    file: win_system_service_terminated_error_important.yml
+    path: rules/windows/builtin/system/service_control_manager/win_system_service_terminated_error_important.yml
+  - id: sigma-win-system-service-terminated-unexpectedly
+    rule_id: 56abae0c-6212-4b97-adc0-0b559bb950c3
+    file: win_system_service_terminated_unexpectedly.yml
+    path: rules/windows/builtin/system/service_control_manager/win_system_service_terminated_unexpectedly.yml
+  - id: sigma-win-system-susp-critical-hive-location-access-bits-cleared
+    rule_id: 39f919f3-980b-4e6f-a975-8af7e507ef2b
+    file: win_system_susp_critical_hive_location_access_bits_cleared.yml
+    path: rules/windows/builtin/system/microsoft_windows_kernel_general/win_system_susp_critical_hive_location_access_bits_cleared.yml
+  - id: sigma-win-system-susp-dhcp-config
+    rule_id: 13fc89a9-971e-4ca6-b9dc-aa53a445bf40
+    file: win_system_susp_dhcp_config.yml
+    path: rules/windows/builtin/system/microsoft_windows_dhcp_server/win_system_susp_dhcp_config.yml
+  - id: sigma-win-system-susp-dhcp-config-failed
+    rule_id: 75edd3fd-7146-48e5-9848-3013d7f0282c
+    file: win_system_susp_dhcp_config_failed.yml
+    path: rules/windows/builtin/system/microsoft_windows_dhcp_server/win_system_susp_dhcp_config_failed.yml
+  - id: sigma-win-system-susp-eventlog-cleared
+    rule_id: 100ef69e-3327-481c-8e5c-6d80d9507556
+    file: win_system_susp_eventlog_cleared.yml
+    path: rules/windows/builtin/system/microsoft_windows_eventlog/win_system_susp_eventlog_cleared.yml
   - id: sigma-win-system-susp-rtcore64-service-install
     rule_id: 91c49341-e2ef-40c0-ac45-49ec5c3fe26c
     file: win_system_susp_rtcore64_service_install.yml
@@ -8497,3 +8557,7 @@ rules:
     rule_id: 70f00d10-60b2-4f34-b9a0-dc3df3fe762a
     file: win_system_susp_service_installation_script.yml
     path: rules/windows/builtin/system/service_control_manager/win_system_susp_service_installation_script.yml
+  - id: sigma-win-system-vul-cve-2020-1472
+    rule_id: a0cb7110-edf0-47a4-9177-541a4083128a
+    file: win_system_vul_cve_2020_1472.yml
+    path: rules/windows/builtin/system/netlogon/win_system_vul_cve_2020_1472.yml

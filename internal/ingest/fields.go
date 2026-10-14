@@ -150,6 +150,12 @@ var knownFields = func() map[string]string {
 		"ntlm_status": kw, "dns_host_name": kw, "service_principal_names": "wildcard", "old_object": kw,
 		"cert_request_id": kw, "cert_requester": kw, "cert_attributes": "wildcard", "cert_disposition": kw,
 		"cert_subject_key_id": kw, "cert_subject": kw, "device": kw,
+		// The data of the System log events the parser reads besides
+		// services installed (systemEvents), by name (SystemDataField).
+		"system_param1": kw, "system_param2": kw, "system_param3": kw, "system_param4": kw, "system_binary": kw,
+		"system_subject_user_name": kw, "system_subject_domain_name": kw, "system_channel": kw,
+		"system_backup_path": kw, "system_hive_name_length": kw, "system_hive_name": kw, "system_keys_updated": kw,
+		"system_dirty_pages": kw, "system_caption": kw, "system_message": "wildcard",
 		// Linux audit records (auditd.go): each field as auditd names it,
 		// the names of an ENRICHED record's numbers (auditd_uid_name), and
 		// a program's arguments one by one and joined, which rules search

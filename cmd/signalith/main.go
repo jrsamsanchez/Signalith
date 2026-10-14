@@ -80,6 +80,7 @@ Usage:
   signalith initial-password [-c file]    print the first admin password the Docker quick start or a package made
   signalith query     [-c file] [-explain] "<query>"   run a query from the shell
   signalith ask       [-c file] [-ai] "<question>"     turn a question into a query
+  signalith mcp       [-url URL] [-user name] [-check]  read-only MCP server for AI tools such as Claude Desktop
   signalith archive   list|verify|restore [-c file] ...  list, check or restore archived days
   signalith sample-data load|remove|status [-c file] [-size ...]  load or remove a week of sample data to try
   signalith tokens    list|create|rename|revoke|legacy [-c file] ...  the tokens agents send with
@@ -144,6 +145,8 @@ func main() {
 		err = cmdQuery(args)
 	case "ask":
 		err = cmdAsk(args)
+	case "mcp":
+		err = cmdMCP(args)
 	case "service":
 		err = cmdService(args)
 	case "archive":

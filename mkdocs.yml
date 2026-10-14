@@ -129,6 +129,7 @@ nav:
       - Query language: query-language.md
       - Detections: detections.md
       - Investigate with AI: investigate.md
+      - AI tools (MCP): ai-tools.md
       - Threat intel: threat-intel.md
       - Dashboards: dashboards.md
       - Response actions: response-actions.md

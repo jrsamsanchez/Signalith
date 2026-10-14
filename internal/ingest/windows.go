@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
 )
 
 // Fluent Bit's winevtlog input emits records with these keys: Channel,
@@ -86,6 +87,12 @@ func parseWindowsWith(r map[string]any, named map[string]string) Event {
 		parseWindowsSecurity(eventID, in, &ev)
 	case channel == SystemChannel:
 		parseWindowsSystem(eventID, str(r, "ProviderName"), in, &ev)
+		if b := str(r, "Binary"); b != "" && ev.Model == "Other" {
+			// The event's binary data, which the OpenTelemetry
+			// Collector sends: for a service event, the service's name
+			// in UTF-16 hex.
+			f["system_binary"] = strings.ToLower(b)
+		}
 	case strings.EqualFold(channel, "Microsoft-Windows-Sysmon/Operational"):
 		kv := keyValues(str(r, "Message"))
 		for k, v := range named {
@@ -761,15 +768,17 @@ const SystemChannel = "System"
 const ServiceControlManager = "Service Control Manager"
 
 // parseWindowsSystem reads the System log events the parser knows: a
-// service installed (7045). Event IDs belong to their provider, so only
-// the Service Control Manager's 7045 is one; a record without a provider
-// is taken as its.
+// service installed (7045), and the data of the other events
+// systemEvents lists. Event IDs belong to their provider, so only the
+// Service Control Manager's 7045 is one; a record without a provider is
+// taken as its.
 func parseWindowsSystem(eventID, provider string, in []string, ev *Event) {
 	f := ev.Fields
 	if provider != "" {
 		f["provider"] = provider
 	}
 	if eventID != "7045" || (provider != "" && !strings.EqualFold(provider, ServiceControlManager)) {
+		parseSystemEvent(eventID, provider, in, ev)
 		return
 	}
 	f["provider"] = ServiceControlManager
@@ -783,6 +792,92 @@ func parseWindowsSystem(eventID, provider string, in []string, ev *Event) {
 	f["service_type"] = at(in, 2)
 	f["service_start_type"] = at(in, 3)
 	f["service_account"] = at(in, 4)
+}
+
+// systemEvent is a System log event the parser reads the data of: what
+// it is, and the names of its data values in schema order.
+type systemEvent struct {
+	signature string
+	data      []string
+}
+
+// systemEvents are the System log events, other than a service installed
+// (7045), whose data the parser keeps, by provider (lower case) and
+// event ID. Each data value is stored as SystemDataField names it.
+var systemEvents = map[string]systemEvent{
+	"service control manager|7023": {"A service terminated with an error", []string{"param1", "param2"}},
+	"service control manager|7034": {"A service terminated unexpectedly", []string{"param1", "param2"}},
+	"service control manager|7036": {"A service changed state", []string{"param1", "param2"}},
+	"service control manager|7040": {"A service's start type changed", []string{"param1", "param2", "param3", "param4"}},
+	"microsoft-windows-eventlog|104": {"An event log was cleared",
+		[]string{"SubjectUserName", "SubjectDomainName", "Channel", "BackupPath"}},
+	"microsoft-windows-kernel-general|16": {"A registry hive's access history was cleared",
+		[]string{"HiveNameLength", "HiveName", "KeysUpdated", "DirtyPages"}},
+	"application popup|26":                   {"An application popup was shown", []string{"Caption", "Message"}},
+	"microsoft-windows-distributedcom|10001": {"A DCOM server could not start", []string{"param1", "param2", "param3"}},
+}
+
+// systemEventFor is the System log event of a provider ("" for the
+// Service Control Manager) and event ID, if the parser reads its data.
+func systemEventFor(provider, eventID string) (systemEvent, bool) {
+	if provider == "" {
+		provider = ServiceControlManager
+	}
+	e, ok := systemEvents[strings.ToLower(provider)+"|"+eventID]
+	return e, ok
+}
+
+// SystemDataField is the stored field of a System log event's data value
+// (param1 is system_param1, HiveName system_hive_name), for the values
+// of the events the parser reads and their binary data (Binary).
+func SystemDataField(name string) (string, bool) {
+	f := systemField(name)
+	return f, systemDataFields[f]
+}
+
+// systemField is system_ and a data value's name in snake case.
+func systemField(name string) string {
+	var b strings.Builder
+	b.WriteString("system_")
+	for i, r := range name {
+		if unicode.IsUpper(r) && i > 0 && !unicode.IsUpper(rune(name[i-1])) {
+			b.WriteByte('_')
+		}
+		b.WriteRune(unicode.ToLower(r))
+	}
+	return b.String()
+}
+
+// systemDataFields are the fields SystemDataField names.
+var systemDataFields = func() map[string]bool {
+	out := map[string]bool{"system_binary": true}
+	for _, e := range systemEvents {
+		for _, n := range e.data {
+			out[systemField(n)] = true
+		}
+	}
+	return out
+}()
+
+// parseSystemEvent keeps the data of a System log event systemEvents
+// lists, by name; the event stays in Other, found by its provider and ID.
+func parseSystemEvent(eventID, provider string, in []string, ev *Event) {
+	e, ok := systemEventFor(provider, eventID)
+	if !ok {
+		return
+	}
+	f := ev.Fields
+	f["signature"] = e.signature
+	for i, n := range e.data {
+		if v := at(in, i); v != "" {
+			f[systemField(n)] = v
+		}
+	}
+	if eventID == "104" {
+		// The account that cleared the log.
+		f["user"] = at(in, 0)
+		f["user_domain"] = at(in, 1)
+	}
 }
 
 // accessRightNames are the names Windows shows for the access codes of

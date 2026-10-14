@@ -24,28 +24,5 @@ python3 -m http.server "$port" --bind 127.0.0.1 --directory "$tmp/site" >/dev/nu
 server=$!
 for i in $(seq 1 20); do curl -sf -o /dev/null "$url/apt/signalith.asc" && break; sleep 0.5; done
 
-# The commands docs/install-packages.md gives, with the test address.
-for image in ubuntu:24.04 debian:12; do
-  echo "== apt on $image"
-  docker run --rm --network host "$image" sh -euc "
-    apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq curl ca-certificates > /dev/null
-    install -d -m 0755 /etc/apt/keyrings
-    curl -fsSL -o /etc/apt/keyrings/signalith.asc $url/apt/signalith.asc
-    echo 'deb [signed-by=/etc/apt/keyrings/signalith.asc] $url/apt stable main' > /etc/apt/sources.list.d/signalith.list
-    apt-get update 2>&1 | tee /tmp/update.txt
-    if grep -E '^(W|E):' /tmp/update.txt | grep -qF '$url'; then echo 'apt warned about the repository'; exit 1; fi
-    DEBIAN_FRONTEND=noninteractive apt-get install -y signalith
-    signalith version | grep -F '$want'
-  "
-done
-for image in rockylinux:9 fedora:42; do
-  echo "== dnf on $image"
-  docker run --rm --network host "$image" sh -euc "
-    curl -fsSL -o /etc/yum.repos.d/signalith.repo $url/rpm/signalith.repo
-    grep -qx 'gpgcheck=1' /etc/yum.repos.d/signalith.repo
-    grep -qx 'repo_gpgcheck=1' /etc/yum.repos.d/signalith.repo
-    dnf install -y --disablerepo='*' --enablerepo=signalith signalith
-    signalith version | grep -F '$want'
-  "
-done
+"$here/install-from-repos.sh" "$url" "$want"
 echo "Signalith installs from the signed apt and dnf repositories."

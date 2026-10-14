@@ -456,9 +456,13 @@ func ConvertSigmaWith(src []byte, opt SigmaOptions) (*SigmaResult, error) {
 	if product, _ := r.Logsource["product"].(string); category == "" && strings.EqualFold(product, "windows") {
 		switch service, _ := r.Logsource["service"].(string); strings.ToLower(service) {
 		case "system":
-			// The System log's events Signalith reads are services
-			// installed (7045).
+			// Services installed (7045), in Change; a rule about other
+			// System log events finds them in Other, by provider and
+			// event ID, with the data of the events the parser reads.
 			category = "system"
+			if ids := sigmaEventIDs(r.Detection); len(ids) > 0 && !slices.Contains(ids, "7045") {
+				category = "system_event"
+			}
 		case "windefend":
 			// Microsoft Defender Antivirus's own log, each rule naming
 			// the events it is about.
@@ -617,6 +621,9 @@ func productScope(ls map[string]any, category string) query.Expr {
 	p, _ := ls["product"].(string)
 	switch strings.ToLower(p) {
 	case "windows":
+		if category == "system_event" {
+			return &query.Compare{Field: "sourcetype", Op: "=", Value: "WinEventLog:" + ingest.SystemChannel}
+		}
 		st := &query.Compare{Field: "sourcetype", Op: "=", Value: windowsSourcetypes}
 		if ids := sigmaWindowsEvents[category]; len(ids) > 0 {
 			return and([]query.Expr{st, &query.In{Field: "signature_id", Values: ids}})
@@ -656,6 +663,8 @@ func (c *sigmaConv) datamodel(ls map[string]any) string {
 		return "Script"
 	case "system":
 		return "Change"
+	case "system_event":
+		return "Other"
 	case "auditd":
 		return "Other"
 	case "windefend":
@@ -674,6 +683,9 @@ func (c *sigmaConv) field(name string) string {
 	if c.category == "auditd" {
 		return c.auditdField(name)
 	}
+	if c.category == "system_event" {
+		return c.systemField(name)
+	}
 	if m, ok := sigmaEventFields[c.category]; ok {
 		if f := m[strings.ToLower(name)]; f != "" {
 			return f
@@ -686,6 +698,25 @@ func (c *sigmaConv) field(name string) string {
 	}
 	c.approx("field %s has no Signalith mapping and is searched as-is", name)
 	return name
+}
+
+// systemField is the stored field of a System log event's field: its
+// provider, ID and host, or its data (see ingest.SystemDataField).
+func (c *sigmaConv) systemField(name string) string {
+	switch strings.ToLower(name) {
+	case "provider_name":
+		return "provider"
+	case "eventid":
+		return "signature_id"
+	case "computer", "computername":
+		return "host"
+	}
+	f, ok := ingest.SystemDataField(name)
+	if !ok {
+		c.approx("field %s is not data Signalith reads from System log events", name)
+		return name
+	}
+	return f
 }
 
 // auditdField is the stored field of an audit record's field (see

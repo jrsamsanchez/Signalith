@@ -13,7 +13,8 @@ import (
 // schema order for the Security, System and PowerShell events the parser
 // reads, and for Sysmon a rendered message of "Name: Value" lines. A
 // Provider_Name value is the event's provider rather than its data; a
-// System event without one is the Service Control Manager's. Tests,
+// System event without one is the Service Control Manager's, and its
+// Binary value is its binary data. Tests,
 // sample data and the detection content checks use it to put events
 // through the real parser.
 func WinEventRecord(channel, eventID, computer string, t time.Time, data map[string]string) map[string]any {
@@ -23,13 +24,13 @@ func WinEventRecord(channel, eventID, computer string, t time.Time, data map[str
 	}
 	names := make([]string, 0, len(data))
 	for k := range data {
-		if k != "Provider_Name" {
+		if k != "Provider_Name" && k != "Binary" {
 			names = append(names, k)
 		}
 	}
 	sort.Strings(names)
 	var inserts []any
-	if schema, ok := windowsSchemaFor(channel, eventID); ok {
+	if schema, ok := windowsSchemaFor(channel, provider, eventID); ok {
 		for _, n := range schema {
 			inserts = append(inserts, data[n])
 		}
@@ -57,7 +58,7 @@ func WinEventRecord(channel, eventID, computer string, t time.Time, data map[str
 	} else {
 		msg.WriteString("Windows event " + eventID)
 	}
-	return map[string]any{
+	rec := map[string]any{
 		"Channel":       channel,
 		"Computer":      computer,
 		"EventID":       eventID,
@@ -66,6 +67,12 @@ func WinEventRecord(channel, eventID, computer string, t time.Time, data map[str
 		"Message":       msg.String(),
 		"StringInserts": inserts,
 	}
+	if b, ok := data["Binary"]; ok && channel == SystemChannel {
+		// A System event's binary data, as the collectors that send it
+		// do.
+		rec["Binary"] = b
+	}
+	return rec
 }
 
 // LinuxSysmonChannel is Sysmon for Linux's channel, as its events name it.

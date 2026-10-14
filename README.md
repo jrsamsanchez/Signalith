@@ -796,7 +796,7 @@ changes and more, plus two risk incident rules); 19 are on by default.
 - **Import Sigma rule** converts a [Sigma](https://github.com/SigmaHQ/sigma) rule to a
   Signalith query and lists anything it had to approximate. Imported rules start
   disabled so you can test them first.
-- **Content packs** add community rules, off until you turn them on: 2,122 tested
+- **Content packs** add community rules, off until you turn them on: 2,138 tested
   [SigmaHQ](https://github.com/SigmaHQ/sigma) Windows and Linux rules and 988 Windows and Linux detections
   from Splunk's open source
   [security_content](https://github.com/splunk/security_content) (Apache 2.0). With
@@ -841,6 +841,14 @@ It sends event data to the model, so it is off until an admin turns it on in **S
 fields (replaced with stand-ins such as `masked-user-1`), and a model on your own
 hardware, such as Ollama, keeps everything on site. See
 [docs/investigate.md](docs/investigate.md).
+
+### AI tools (MCP)
+
+`signalith mcp` is a read-only MCP server, so AI tools such as Claude Desktop, Claude
+Code or VS Code can search Signalith and read findings, cases, detections, assets and
+risk while you chat. It has no tool that changes anything, and it signs in as a
+Signalith user (a Viewer account is enough), so that user's role applies. See
+[docs/ai-tools.md](docs/ai-tools.md).
 
 ## Notifications
 
