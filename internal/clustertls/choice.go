@@ -32,6 +32,9 @@ type Server struct {
 	CACertPEM string
 	// Names are the names its certificate should cover.
 	Names []string
+	// Files is true for a server with the admin's certificate files: its
+	// root counts among the roots, but it has no key to publish.
+	Files bool
 }
 
 // AgentRef names an agent in a candidate's lists.
@@ -68,6 +71,10 @@ type Candidate struct {
 	// need a new configuration if it is kept.
 	Agents []AgentRef `json:"agents"`
 	Breaks []AgentRef `json:"breaks"`
+	// AgentCount and BreakCount count them all, where a report lists only
+	// the first MaxListed of each.
+	AgentCount int `json:"agent_count"`
+	BreakCount int `json:"break_count"`
 	// CannotCover lists the servers whose names its name constraints
 	// forbid: their certificates would leave those names out.
 	CannotCover []Uncovered `json:"cannot_cover"`
@@ -91,7 +98,7 @@ func Candidates(servers []Server, agents []agentinv.Agent, now time.Time) []Cand
 		}
 		seen = append(seen, s)
 		ca := parsePEM(s.CACertPEM)
-		if ca == nil {
+		if ca == nil || s.Files {
 			continue
 		}
 		fp := tlsauto.Fingerprint(ca.Raw)
@@ -138,6 +145,10 @@ func Candidates(servers []Server, agents []agentinv.Agent, now time.Time) []Cand
 			}
 		}
 		for _, s := range seen {
+			if s.Files {
+				// It keeps the admin's certificate files whatever is chosen.
+				continue
+			}
 			var out []string
 			for _, n := range s.Names {
 				if n, ok := tlsauto.NormalizeName(n); ok && !tlsauto.CAAllows(c.ca, n) && !slices.Contains(out, n) {
@@ -151,10 +162,12 @@ func Candidates(servers []Server, agents []agentinv.Agent, now time.Time) []Cand
 	}
 	out := make([]Candidate, 0, len(order))
 	for _, fp := range order {
-		out = append(out, *byFP[fp])
+		c := byFP[fp]
+		c.AgentCount, c.BreakCount = len(c.Agents), len(c.Breaks)
+		out = append(out, *c)
 	}
 	slices.SortStableFunc(out, func(a, b Candidate) int {
-		if c := cmp.Compare(len(b.Agents), len(a.Agents)); c != 0 {
+		if c := cmp.Compare(b.AgentCount, a.AgentCount); c != 0 {
 			return c
 		}
 		if a.Founder != b.Founder {

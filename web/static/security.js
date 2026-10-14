@@ -260,7 +260,7 @@
     fill(box,
       renderSummary(rep),
       renderOthers(rep),
-      renderCAPanel(rep),
+      rep.ca_owner === 'cluster' ? renderClusterCA(rep) : renderCAPanel(rep),
       ...rep.groups.map((g) => renderGroup(rep, g)),
       renderAlways(rep),
       renderNotChecked(rep),
@@ -433,6 +433,8 @@
     const ca = S.rep.ca;
     if (!fix.action || !ca || !ca.current) return null;
     const focus = { 'data-focus': 'act:' + kind + ':' + c.id };
+    // The cluster's certificate authority is not changed here.
+    if (S.rep.ca_owner === 'cluster') return btn('secondary', 'Open Servers', () => showPage('servers'), focus);
     if (fix.action === 'ca.panel' || ca.next || ca.previous) return btn('secondary', 'Continue above', goToPanel, focus);
     if (fix.action !== 'ca.prepare') return null;
     if (kind === 'tip' && c.id === 'transit.ca_scope') {
@@ -473,6 +475,25 @@
         el('p', { class: 'sc-more__lead' }, 'Signalith can’t see these from where it runs, so they’re worth checking yourself.'),
         el('ul', { class: 'sc-list sc-list--plain', role: 'list' }, ...(rep.not_checked || []).map((t) => el('li', {}, el('span', {}, t)))),
         el('p', { class: 'sc-more__link' }, docLink(docsURL('security.md', 'not-checked-here'), 'How to check these yourself'))));
+  }
+
+  // ---------- the cluster's certificate authority ----------
+  // renderClusterCA replaces the change panel on a server whose
+  // certificate authority is the cluster's: every server shares it, so it
+  // is not prepared or switched here, and the Servers page says more.
+  function renderClusterCA(rep) {
+    const cur = rep.ca && rep.ca.current;
+    return el('section', { class: 'card sc-group sc-cluster-ca', id: 'sc-cluster-ca', 'aria-labelledby': 'sc-cluster-ca-title' },
+      el('div', { class: 'sc-group__head' },
+        el('span', { class: 'sc-group__icon' }, icon('shield-check')),
+        el('div', { class: 'sc-group__heading' },
+          el('h2', { class: 'sc-group__title', id: 'sc-cluster-ca-title' }, 'Cluster certificate authority'),
+          el('p', { class: 'sc-group__desc' }, 'This server’s HTTPS certificate comes from the certificate authority every server of the cluster shares, so agents and browsers trust one file for all of them. It isn’t changed here: changing it comes in a later version.'))),
+      el('div', { class: 'sc-cluster-ca__body' },
+        cur ? el('p', { class: 'sc-cluster-ca__fp' }, el('span', { class: 'sc-others__label' }, 'Fingerprint'), el('span', { class: 'mono' }, cur.fingerprint)) : null,
+        el('div', { class: 'sc-actions' },
+          btn('secondary', 'Open Servers', () => showPage('servers'), { 'data-focus': 'cluster-ca:servers' }),
+          el('a', { class: 'btn btn--ghost btn--sm', href: 'api/tls/ca.pem', download: 'signalith-ca.pem', 'data-focus': 'cluster-ca:download' }, icon('download'), 'Download it'))));
   }
 
   // ---------- the certificate authority panel ----------

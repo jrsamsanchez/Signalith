@@ -179,6 +179,9 @@ type Server struct {
 	// how old an event's own time may be in the pipeline and syslog. nil
 	// leaves the age the server started with.
 	EventAge EventAge
+	// ClusterTLS is the cluster's one certificate authority; nil on a
+	// server that is not a member of a cluster.
+	ClusterTLS ClusterTLS
 
 	authOnce     sync.Once
 	creds        credCache  // recently checked Basic credentials
@@ -291,6 +294,7 @@ func (s *Server) Handler() http.Handler {
 	s.routeVulns(api)
 	s.routeSettings(api)
 	s.routeCluster(api)
+	s.routeClusterTLS(api)
 	s.routeTokens(api)
 	s.routeAgents(api)
 	if s.UI != nil {
@@ -1136,6 +1140,10 @@ func (s *Server) tlsInfo() map[string]any {
 	if s.TLS.CAPEM() != nil {
 		t["ca_sha256"] = s.TLS.Fingerprint()
 		t["own_ca"] = s.TLS.LocalCA()
+		if s.clusterCAOwner() != "" {
+			// The cluster's: every server's certificate comes from it.
+			t["cluster_ca"] = true
+		}
 	}
 	if ca := s.TLS.CAInfo(); ca != nil {
 		t["ca_scope"] = ca.Scope

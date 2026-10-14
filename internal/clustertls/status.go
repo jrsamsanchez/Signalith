@@ -46,6 +46,7 @@ func FromHeartbeats(hbs []cluster.Heartbeat, founder string) []Server {
 		s := Server{NodeID: hb.NodeID, Name: hb.Name, Founder: founder != "" && hb.NodeID == founder, SeenAt: hb.HeartbeatAt}
 		if hb.TLS != nil {
 			s.CACertPEM = hb.TLS.CACertPEM
+			s.Files = hb.TLS.Mode == ModeFiles
 			s.Names = append(append(s.Names, hb.TLS.Names...), hb.TLS.Outside...)
 		}
 		out = append(out, s)

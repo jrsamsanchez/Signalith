@@ -240,7 +240,7 @@ func TestClusterCAChoice(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cluster tls: %v\n%s", err, out)
 	}
-	var st clusterTLSStatus
+	var st clustertls.Report
 	if err := json.Unmarshal([]byte(out[:strings.LastIndex(out, "}")+1]), &st); err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}

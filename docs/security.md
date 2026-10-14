@@ -138,6 +138,14 @@ that refused the new certificate (from failed TLS handshakes, over HTTPS and sys
 **To fix:** follow
 [Switching to a new certificate authority](https.md#switching-to-a-new-certificate-authority).
 
+On a server that uses the certificate authority the servers of a cluster share, the page
+shows a **Cluster certificate authority** card with its fingerprint instead of the steps
+to change it, and the buttons that would change it open the Servers page: the cluster's
+certificate authority isn't changed on one server (see
+[One certificate authority](servers.md#one-certificate-authority)). `GET /api/security`
+then says `"ca_owner": "cluster"`, and `POST /api/security/ca` answers `409`. Its key
+isn't in `tls/ca.key`, so the command below shows the copy of its certificate.
+
 **How to check by hand:**
 
 ```sh

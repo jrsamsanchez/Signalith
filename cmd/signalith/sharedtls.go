@@ -1,12 +1,14 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"crypto"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
+	"fmt"
 	"log/slog"
 	"net/url"
 	"sync"
@@ -14,6 +16,7 @@ import (
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/agentinv"
+	"github.com/jrsamsanchez/signalith/internal/api"
 	"github.com/jrsamsanchez/signalith/internal/cluster"
 	"github.com/jrsamsanchez/signalith/internal/clustercfg"
 	"github.com/jrsamsanchez/signalith/internal/clustertls"
@@ -351,4 +354,43 @@ func (s *sharedTLS) probeTLS() *tls.Config {
 		return nil
 	}
 	return &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}
+}
+
+// tlsAPI is the cluster's certificate authority as the API uses it
+// (api.ClusterTLS).
+type tlsAPI struct {
+	rt *shared.Runtime
+	s  *sharedTLS
+}
+
+// clusterTLSAPI returns the API's view of the cluster's certificate
+// authority, nil on a server that does not use the shared settings.
+func (r *runner) clusterTLSAPI() api.ClusterTLS {
+	if r.shared == nil || r.sharedContent == nil {
+		return nil
+	}
+	return tlsAPI{rt: r.shared, s: r.sharedContent.tls}
+}
+
+func (a tlsAPI) Off() string {
+	if m, why := a.rt.Mode(); m != shared.ModeMember {
+		return "This server doesn't use the cluster's shared settings now (" + cmp.Or(why, m.Text()) + "), so each server keeps its own certificate authority."
+	}
+	if !a.rt.SharedTLS() {
+		return fmt.Sprintf("Every server keeps its own certificate authority until all of them run a version that shares one (cluster level %d).", shared.LevelSharedTLS)
+	}
+	return ""
+}
+
+func (a tlsAPI) CA() (*clustertls.Body, bool) { return a.s.tls.Get() }
+
+func (a tlsAPI) Founder() string {
+	cb, _ := a.rt.Cluster().Get()
+	return cb.CreatedByID
+}
+
+func (a tlsAPI) Writable() error { return a.rt.Writable() }
+
+func (a tlsAPI) Publish(ctx context.Context, node, fp, by string) (*shared.Request, error) {
+	return a.rt.Requests().Submit(ctx, clustertls.RequestPublish, node, clustertls.PublishArgs{CASHA256: fp}, by)
 }
