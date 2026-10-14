@@ -1,0 +1,6 @@
+{"rule": "496a0e47-0a33-4dca-b009-9e6ca3591f39", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4769","data":{"TicketEncryptionType":"0x17","TicketOptions":"0x40810000"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4769","data":{"ServiceName":"$","TicketEncryptionType":"0x17","TicketOptions":"0x40810000"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4769","data":{"TicketOptions":"0x40810000"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4769","data":{"TicketEncryptionType":"0x17"}}
+]}

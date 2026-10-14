@@ -1,0 +1,7 @@
+{"rule": "17d619c1-e020-4347-957e-1d1207455c93", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4662","data":{"Properties":"1131f6ad-9c07-11d1-f79f-00c04fc2dcd2"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4662","data":{"Properties":"1131f6ad-9c07-11d1-f79f-00c04fc2dcd2","SubjectUserName":"$"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4662","data":{"Properties":"1131f6ad-9c07-11d1-f79f-00c04fc2dcd2","SubjectDomainName":"Window Manager"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4662","data":{"Properties":"1131f6ad-9c07-11d1-f79f-00c04fc2dcd2","SubjectUserName":"MSOL_"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4662","data":{}}
+]}

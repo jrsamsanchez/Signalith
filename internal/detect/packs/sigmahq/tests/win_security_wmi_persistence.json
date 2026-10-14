@@ -1,0 +1,5 @@
+{"rule": "f033f3f3-fd24-4995-97d8-a3bb17550a88", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4662","data":{"ObjectName":"subscription","ObjectType":"WMI Namespace"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4662","data":{"ObjectType":"WMI Namespace"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4662","data":{"ObjectName":"subscription"}}
+]}

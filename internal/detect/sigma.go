@@ -135,6 +135,13 @@ var sigmaEventFields = func() map[string]map[string]string {
 		"workstationname": "src_host", "ipaddress": "src", "ipport": "src_port", "processname": "process_path",
 		"computer": "host", "computername": "host", "eventid": "signature_id",
 	}
+	kerberos := map[string]string{
+		"targetusername": "user", "targetdomainname": "user_domain", "targetsid": "user_sid",
+		"servicename": "kerberos_service", "servicesid": "kerberos_service_sid", "ticketoptions": "ticket_options",
+		"status": "kerberos_status", "ticketencryptiontype": "ticket_encryption_type", "preauthtype": "pre_auth_type",
+		"ipaddress": "src", "ipport": "src_port", "certissuername": "cert_issuer", "certserialnumber": "cert_serial",
+		"certthumbprint": "cert_thumbprint", "computer": "host", "computername": "host", "eventid": "signature_id",
+	}
 	return map[string]map[string]string{
 		"file_event": file, "file_delete": file,
 		"registry_add": registry, "registry_delete": registry, "registry_set": registry, "registry_event": registry,
@@ -149,6 +156,25 @@ var sigmaEventFields = func() map[string]map[string]string {
 			"objectname": "object_path", "objecttype": "object_type", "accesslist": "access_names",
 			"accessmask": "access_mask", "processname": "process_path",
 		}),
+		"security_4656": security(map[string]string{
+			"subjectusersid": "user_sid", "objectserver": "object_server", "objectname": "object_path", "objecttype": "object_type",
+			"accesslist": "access_names", "accessmask": "access_mask", "processname": "process_path",
+		}),
+		"security_4657": security(map[string]string{
+			"subjectusersid": "user_sid", "objectname": "object_path", "objectvaluename": "registry_value_name", "operationtype": "registry_operation",
+			"oldvalue": "registry_old_value_data", "newvalue": "registry_value_data", "newvaluetype": "registry_value_type",
+			"processname": "process_path",
+		}),
+		"security_4661": security(map[string]string{
+			"subjectusersid": "user_sid", "objectserver": "object_server", "objectname": "object_path", "objecttype": "object_type",
+			"accesslist": "access_names", "accessmask": "access_mask", "properties": "object_properties", "processname": "process_path",
+		}),
+		"security_4662": security(map[string]string{
+			"subjectusersid": "user_sid", "objectserver": "object_server", "objectname": "object", "objecttype": "object_type",
+			"accesslist": "access_names", "accessmask": "access_mask", "properties": "object_properties",
+		}),
+		"security_4768": kerberos,
+		"security_4769": kerberos,
 		"security_4697": security(map[string]string{
 			"servicename": "service_name", "servicefilename": "service_path", "servicetype": "service_type",
 			"servicestarttype": "service_start_type", "serviceaccount": "service_account",
@@ -196,7 +222,13 @@ var sigmaWindowsEvents = map[string][]string{
 	"system":               {"7045"},
 	"security_4624":        {"4624"},
 	"security_4625":        {"4625"},
+	"security_4656":        {"4656"},
+	"security_4657":        {"4657"},
+	"security_4661":        {"4661"},
+	"security_4662":        {"4662"},
 	"security_4663":        {"4663"},
+	"security_4768":        {"4768"},
+	"security_4769":        {"4769"},
 	"security_4697":        {"4697"},
 	"security_4698":        {"4698"},
 	"security_5136":        {"5136"},
@@ -204,17 +236,24 @@ var sigmaWindowsEvents = map[string][]string{
 }
 
 // sigmaSecurityModels are the Security log events Security log rules
-// (service: security) convert for, with each one's data model: an object
-// access is a file's (Filesystem) or a registry key's (Registry), so its
-// rules search any.
+// (service: security) convert for, with each one's data model: a handle
+// request or an object access is a file's (Filesystem), a registry key's
+// (Registry) or another object's, so its rules search any.
 var sigmaSecurityModels = map[string]string{
-	"4624": "Authentication", "4625": "Authentication", "4663": "", "4697": "Change", "4698": "Change",
+	"4624": "Authentication", "4625": "Authentication", "4656": "", "4657": "Registry", "4661": "", "4662": "Change",
+	"4663": "", "4697": "Change", "4698": "Change", "4768": "Authentication", "4769": "Authentication",
 	"5136": "Change", "5145": "Filesystem",
 }
 
 // anyModel reports whether the rule's events land in more than one data
 // model, so it searches them all.
-func (c *sigmaConv) anyModel() bool { return c.category == "security_4663" }
+func (c *sigmaConv) anyModel() bool {
+	switch c.category {
+	case "security_4656", "security_4661", "security_4663":
+		return true
+	}
+	return false
+}
 
 // sigmaEventIDs returns the event IDs a rule's selections name (EventID
 // without modifiers), sorted.

@@ -1,0 +1,4 @@
+{"rule": "46a68649-f218-4f86-aea1-16a759d81820", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4657","data":{"ObjectName":"\\Microsoft\\Windows Defender\\Exclusions\\"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4657","data":{}}
+]}

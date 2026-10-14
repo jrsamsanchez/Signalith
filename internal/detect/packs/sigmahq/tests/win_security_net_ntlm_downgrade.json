@@ -1,0 +1,5 @@
+{"rule": "d3abac66-f11c-4ed0-8acb-50cc29c97eed", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4657","data":{"ObjectName":"\\REGISTRY\\MACHINE\\SYSTEM \\Control\\Lsa ControlSet","ObjectValueName":"LmCompatibilityLevel"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4657","data":{"ObjectValueName":"LmCompatibilityLevel"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4657","data":{"ObjectName":"\\REGISTRY\\MACHINE\\SYSTEM \\Control\\Lsa ControlSet"}}
+]}

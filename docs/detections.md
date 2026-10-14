@@ -242,8 +242,8 @@ Content packs are rule sets from other open source projects, shipped unchanged
 inside Signalith and converted when it starts. Every pack detection is **off** until
 an admin turns it on.
 
-**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 1,881 rules from
-[SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 1,771 Windows rules
+**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 1,898 rules from
+[SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 1,788 Windows rules
 for these Sysmon, Security, PowerShell and System log sources, and 110 Linux rules (see
 [Linux endpoints](#linux-endpoints-sysmon-for-linux)):
 
@@ -258,15 +258,21 @@ for these Sysmon, Security, PowerShell and System log sources, and 110 Linux rul
 | `dns_query` | Sysmon 22 | Network_Resolution |
 | `ps_script` | PowerShell 4104 | Script |
 | `service: system` | System 7045 (service installed) | Change |
-| `service: security` | Security 4624 and 4625 (logons); 4697 (service installed); 4698 (scheduled task created); 4663 (object access); 5145 (network share access); 5136 (directory object changed) | Authentication; Change; Change; Filesystem or Registry; Filesystem; Change |
+| `service: security` | Security 4624 and 4625 (logons); 4768 and 4769 (Kerberos tickets); 4697 (service installed); 4698 (scheduled task created); 4656 and 4661 (handle to an object requested); 4663 (object access); 4657 (registry value modified); 5145 (network share access); 5136 (directory object changed); 4662 (operation on a directory object) | Authentication; Authentication; Change; Change; Filesystem, Registry or none; Filesystem or Registry; Registry; Filesystem; Change; Change |
 
 A Security log rule names its event's own fields (`TargetUserName`, `LogonType`,
 `ServiceFileName`, `ObjectName`), so each one converts for the one Security event it
 is about; rules about other Security events, or about several, are left out. Windows
-logs these events with **Audit Logon** (4624, 4625), **Audit Security System
-Extension** (4697), **Audit Other Object Access Events** (4698), **Audit File
-System** or **Audit Registry** (4663), **Audit Detailed File Share** (5145) and **Audit
-Directory Service Changes** (5136, on domain controllers) on. An access list
+logs these events with **Audit Logon** (4624, 4625), **Audit Kerberos Authentication
+Service** and **Audit Kerberos Service Ticket Operations** (4768, 4769, on domain
+controllers), **Audit Security System Extension** (4697), **Audit Other Object Access
+Events** (4698), **Audit Handle Manipulation** (4656), **Audit SAM** (4661), **Audit
+File System** or **Audit Registry** (4656, 4657, 4663), **Audit Detailed File Share**
+(5145), **Audit Directory Service Changes** (5136) and **Audit Directory Service
+Access** (4662, on domain controllers) on. Handle requests and registry value changes
+are logged only for objects whose auditing (SACL) asks for them. Directory object
+types and properties are kept as Windows records them (`%{19195a5b-...}`), so a rule
+that compares one to a bare GUID matches only events that already carry the name. An access list
 (`AccessList`) is searched by its codes (`%%4417`) and by their names (`WriteData`),
 since rules use both. Rules that match a share name with a literal `*`
 (`\\*\IPC$`) are left out: Signalith patterns cannot yet say "a literal asterisk".
@@ -373,7 +379,7 @@ The generator keeps each rule's Signalith ID across runs, rewrites `rules/`,
 
 ### Splunk Security Content
 
-**Splunk Security Content** (`internal/detect/packs/splunk`) holds 832 Windows and
+**Splunk Security Content** (`internal/detect/packs/splunk`) holds 836 Windows and
 Linux detections from Splunk's Threat Research Team
 ([security_content](https://github.com/splunk/security_content)), pinned to one
 commit. They are the production TTP and anomaly rules that search the CIM
@@ -394,6 +400,7 @@ names, so each rule's `where` clause becomes a Signalith filter field for field:
 | `` `wineventlog_system` EventCode=7045 `` (raw search) | System 7045 (service installed) | Change |
 | `` `wineventlog_security` EventCode=5136 `` (raw search) | Security 5136 (directory object changed) | Change |
 | `` `wineventlog_security` EventCode=5145 `` (raw search) | Security 5145 (network share access) | Filesystem |
+| `` `wineventlog_security` EventCode=4768 `` or `4769` (raw search) | Security 4768 and 4769 (Kerberos tickets) | Authentication |
 | `Endpoint.Processes` (Sysmon for Linux rules) | Sysmon for Linux 1 | Endpoint |
 | `Endpoint.Filesystem` (Sysmon for Linux rules) | Sysmon for Linux 11 and 23 | Filesystem |
 
@@ -437,6 +444,14 @@ is `ad_attribute`), its value (`AttributeValue` is `ad_value`) and `OperationTyp
 (`ad_operation`, `%%14674` for a value added). Share access rules (Security 5145)
 search `ShareName` (`share_name`), the path inside the share (`RelativeTargetName` is
 `share_target`), the client (`IpAddress` is `src`), `AccessMask` and `AccessList`.
+
+Kerberos rules (Security 4768 for a ticket-granting ticket, 4769 for a service
+ticket) search the account (`TargetUserName` is `user`), the service
+(`ServiceName` is `kerberos_service`), `TicketOptions` (`ticket_options`),
+`TicketEncryptionType` (`ticket_encryption_type`, `0x17` for RC4), `Status`
+(`kerberos_status`, `0x0` when granted) and the client (`src_ip` is `src`, stored
+without the `::ffff:` Windows puts before an IPv4 address). They are stored in
+Authentication with `app` `win:kerberos`, action `success` or `failure`.
 
 Service install rules (System 7045, from the Sigma `service: system` log source or
 Splunk's `wineventlog_system`) search the service's name (`ServiceName` is

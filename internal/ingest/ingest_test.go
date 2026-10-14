@@ -153,6 +153,55 @@ func TestWindowsObjectAccess(t *testing.T) {
 	})
 }
 
+func TestWindowsHandleRequestsAndRegistryValue(t *testing.T) {
+	sec := func(id string, ins []string) map[string]any {
+		b, _ := json.Marshal(map[string]any{"Channel": "Security", "Computer": "WS1", "EventID": id, "StringInserts": ins})
+		return Normalize("win.security", decode(t, string(b)), now).Document()
+	}
+	expect(t, sec("4656", []string{"S-1-5-21-1", "bob", "CORP", "0x1a2b", "Security", "Key", `\REGISTRY\MACHINE\SAM`, "0x0", "{0}",
+		"%%1538 %%4432", "-", "0x20019", "-", "0", "0x1a4", `C:\Tools\dump.exe`}), map[string]any{
+		"datamodel": "Registry", "action": "read", "object_server": "Security", "object_type": "Key", "registry_path": `\REGISTRY\MACHINE\SAM`,
+		"access_mask": "0x20019", "process_path": `C:\Tools\dump.exe`, "process_id": int64(0x1a4), "signature": "A handle to an object was requested",
+	})
+	expect(t, sec("4661", []string{"S-1-5-21-1", "bob", "CORP", "0x1a2b", "Security Account Manager", "SAM_USER", "S-1-5-21-1-500", "0x0", "{0}",
+		"%%5392\n\t\t\t\t", "0x2d", "-", "{a}\n\t{b}", "0", "0x2b4", `C:\Windows\System32\lsass.exe`}), map[string]any{
+		"object_server": "Security Account Manager", "object_type": "SAM_USER", "object_path": "S-1-5-21-1-500", "access_list": "%%5392",
+		"access_mask": "0x2d", "object_properties": "{a} {b}", "process_name": "lsass.exe",
+	})
+	expect(t, sec("4657", []string{"S-1-5-21-1", "bob", "CORP", "0x1a2b", `\REGISTRY\MACHINE\SYSTEM\ControlSet001\Control\Lsa`,
+		"LmCompatibilityLevel", "0x1f0", "%%1905", "%%1876", "5", "%%1876", "2", "0x1a4", `C:\Windows\regedit.exe`}), map[string]any{
+		"datamodel": "Registry", "action": "modified", "object_path": `\REGISTRY\MACHINE\SYSTEM\ControlSet001\Control\Lsa`,
+		"registry_path": `\REGISTRY\MACHINE\SYSTEM\ControlSet001\Control\Lsa\LmCompatibilityLevel`, "registry_key_name": "Lsa",
+		"registry_value_name": "LmCompatibilityLevel", "registry_old_value_data": "5", "registry_value_data": "2", "process_name": "regedit.exe",
+	})
+}
+
+func TestWindowsDirectoryAccessAndKerberos(t *testing.T) {
+	sec := func(id string, ins []string) map[string]any {
+		b, _ := json.Marshal(map[string]any{"Channel": "Security", "Computer": "DC1", "EventID": id, "StringInserts": ins})
+		return Normalize("win.security", decode(t, string(b)), now).Document()
+	}
+	expect(t, sec("4662", []string{"S-1-5-21-1", "eve", "CORP", "0x1a2b", "DS", "%{19195a5b-6da0-11d0-afd3-00c04fd930c9}",
+		"%{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}", "Object Access", "0x0", "%%7688\n\t\t\t\t", "0x100",
+		"%%7688\n\t\t{1131f6ad-9c07-11d1-f79f-00c04fc2dcd2}\n\t{19195a5b-6da0-11d0-afd3-00c04fd930c9}"}), map[string]any{
+		"datamodel": "Change", "action": "read", "object_category": "directory_object", "object_server": "DS",
+		"object_type": "%{19195a5b-6da0-11d0-afd3-00c04fd930c9}", "object": "%{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}",
+		"access_names": "%%7688 ControlAccess", "access_mask": "0x100",
+		"object_properties": "%%7688 {1131f6ad-9c07-11d1-f79f-00c04fc2dcd2} {19195a5b-6da0-11d0-afd3-00c04fd930c9}",
+	})
+	expect(t, sec("4768", []string{"bob", "CORP", "S-1-5-21-1-1104", "krbtgt", "S-1-5-21-1-502", "0x40810010", "0x0", "0x17", "0",
+		"::ffff:192.0.2.10", "50123", "", "", ""}), map[string]any{
+		"datamodel": "Authentication", "action": "success", "app": "win:kerberos", "user": "bob", "user_sid": "S-1-5-21-1-1104",
+		"kerberos_service": "krbtgt", "ticket_options": "0x40810010", "kerberos_status": "0x0", "ticket_encryption_type": "0x17",
+		"pre_auth_type": "0", "src": "192.0.2.10", "src_port": int64(50123),
+	})
+	expect(t, sec("4769", []string{"bob@CORP.EXAMPLE.COM", "CORP.EXAMPLE.COM", "MSSQLSvc", "S-1-5-21-1-1300", "0x40810000", "0x17",
+		"::ffff:192.0.2.10", "50124", "0x1b"}), map[string]any{
+		"datamodel": "Authentication", "action": "failure", "user": "bob@CORP.EXAMPLE.COM", "kerberos_service": "MSSQLSvc",
+		"ticket_encryption_type": "0x17", "kerberos_status": "0x1b", "src_port": int64(50124),
+	})
+}
+
 func TestSysmonProcessHashes(t *testing.T) {
 	msg := "Process Create:\r\nImage: C:\\Users\\bob\\evil.exe\r\nCommandLine: evil.exe\r\nUser: CORP\\bob\r\nHashes: SHA1=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA,MD5=BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB,SHA256=CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC,IMPHASH=DD"
 	b, _ := json.Marshal(map[string]any{"Channel": "Microsoft-Windows-Sysmon/Operational", "Computer": "WS1", "EventID": 1, "Message": msg})

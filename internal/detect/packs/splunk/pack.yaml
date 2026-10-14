@@ -578,10 +578,22 @@ rules:
     rule_id: 002f1e24-146e-11ec-a470-acde48001122
     file: jscript_execution_using_cscript_app.yml
     path: detections/endpoint/jscript_execution_using_cscript_app.yml
+  - id: splunk-kerberoasting-spn-request-with-rc4-encryption
+    rule_id: 5cc67381-44fa-4111-8a37-7a230943f027
+    file: kerberoasting_spn_request_with_rc4_encryption.yml
+    path: detections/endpoint/kerberoasting_spn_request_with_rc4_encryption.yml
   - id: splunk-kerberos-pre-authentication-flag-disabled-with-powershell
     rule_id: 59b51620-94c9-11ec-b3d5-acde48001122
     file: kerberos_pre_authentication_flag_disabled_with_powershell.yml
     path: detections/endpoint/kerberos_pre_authentication_flag_disabled_with_powershell.yml
+  - id: splunk-kerberos-service-ticket-request-using-rc4-encryption
+    rule_id: 7d90f334-a482-11ec-908c-acde48001122
+    file: kerberos_service_ticket_request_using_rc4_encryption.yml
+    path: detections/endpoint/kerberos_service_ticket_request_using_rc4_encryption.yml
+  - id: splunk-kerberos-tgt-request-using-rc4-encryption
+    rule_id: 18916468-9c04-11ec-bdc6-acde48001122
+    file: kerberos_tgt_request_using_rc4_encryption.yml
+    path: detections/endpoint/kerberos_tgt_request_using_rc4_encryption.yml
   - id: splunk-linux-account-manipulation-of-ssh-config-and-keys
     rule_id: 73a56508-1cf5-4df7-b8d9-5737fbdc27d2
     file: linux_account_manipulation_of_ssh_config_and_keys.yml
@@ -1726,6 +1738,10 @@ rules:
     rule_id: 56fe46ca-ffef-46fe-8f0e-5cd4b7b4cc0c
     file: windows_compatibility_telemetry_suspicious_child_process.yml
     path: detections/endpoint/windows_compatibility_telemetry_suspicious_child_process.yml
+  - id: splunk-windows-computer-account-requesting-kerberos-ticket
+    rule_id: fb3b2bb3-75a4-4279-848a-165b42624770
+    file: windows_computer_account_requesting_kerberos_ticket.yml
+    path: detections/endpoint/windows_computer_account_requesting_kerberos_ticket.yml
   - id: splunk-windows-computerdefaults-spawning-a-process
     rule_id: 697eb4c0-1008-4c3c-b5ae-7bd9b39adbd6
     file: windows_computerdefaults_spawning_a_process.yml

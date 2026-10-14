@@ -187,7 +187,10 @@ var (
 		"powershell": {"4104": "PowerShell"},
 		"sysmon":     {"7": "ImageLoad", "8": "ProcessAccess", "10": "ProcessAccess"},
 		// Security events the Windows parser reads.
-		"wineventlog_security": {"4698": "TaskCreated", "4663": "ObjectAccess", "5136": "DirectoryChange", "5145": "ShareAccess"},
+		"wineventlog_security": {
+			"4698": "TaskCreated", "4663": "ObjectAccess", "5136": "DirectoryChange", "5145": "ShareAccess",
+			"4768": "KerberosTGT", "4769": "KerberosService",
+		},
 		// The Service Control Manager's service installed event.
 		"wineventlog_system": {"7045": "ServiceInstalled"},
 	}
@@ -219,6 +222,16 @@ var (
 			"ShareName": "share_name", "ShareLocalPath": "share_path", "RelativeTargetName": "share_target",
 			"ObjectType": "object_type", "IpAddress": "src", "AccessMask": "access_mask", "AccessList": "access_list",
 			"SubjectUserName": "user",
+		},
+		// Kerberos tickets asked for; the add-on's src_ip is the client
+		// address without its ::ffff: prefix, as Signalith stores src.
+		"KerberosTGT": {
+			"TargetUserName": "user", "TargetSid": "user_sid", "ServiceName": "kerberos_service", "TicketOptions": "ticket_options",
+			"Status": "kerberos_status", "TicketEncryptionType": "ticket_encryption_type", "PreAuthType": "pre_auth_type", "src_ip": "src",
+		},
+		"KerberosService": {
+			"TargetUserName": "user", "ServiceName": "kerberos_service", "TicketOptions": "ticket_options",
+			"Status": "kerberos_status", "TicketEncryptionType": "ticket_encryption_type", "src_ip": "src",
 		},
 		"ServiceInstalled": {
 			"ServiceName": "service_name", "ImagePath": "service_path", "ServiceType": "service_type",

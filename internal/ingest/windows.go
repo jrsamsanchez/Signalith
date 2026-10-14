@@ -207,22 +207,38 @@ func parseWindowsSecurity(eventID string, in []string, ev *Event) {
 		f["service_type"] = at(in, 6)
 		f["service_start_type"] = at(in, 7)
 		f["service_account"] = at(in, 8)
-	case "4663":
-		// An access to an object whose audit rule (SACL) asks for it: a
-		// file goes to Filesystem and a registry key to Registry.
-		f["signature"] = "An attempt was made to access an object"
+	case "4656", "4661", "4663":
+		// A handle to an object asked for (4656, or 4661 for a directory or
+		// SAM object) or an access to it (4663), when its audit rule (SACL)
+		// asks for it: a file goes to Filesystem and a registry key to
+		// Registry. The three share the subject and object, then differ.
+		f["signature"] = map[string]string{
+			"4656": "A handle to an object was requested",
+			"4661": "A handle to an object was requested",
+			"4663": "An attempt was made to access an object",
+		}[eventID]
+		f["user_sid"] = at(in, 0)
 		f["user"] = at(in, 1)
 		f["user_domain"] = at(in, 2)
 		f["logon_id"] = at(in, 3)
+		f["object_server"] = at(in, 4)
 		f["object_type"] = at(in, 5)
 		name := at(in, 6)
 		f["object_path"] = name
 		f["object_name"] = baseName(name)
-		f["access_list"] = strings.Join(strings.Fields(at(in, 8)), " ")
-		f["access_mask"] = at(in, 9)
-		f["process_id"] = atoi(at(in, 10))
-		f["process_path"] = at(in, 11)
-		f["process_name"] = baseName(at(in, 11))
+		list, mask, pid, proc := at(in, 8), at(in, 9), at(in, 10), at(in, 11)
+		switch eventID {
+		case "4656":
+			list, mask, pid, proc = at(in, 9), at(in, 11), at(in, 14), at(in, 15)
+		case "4661":
+			list, mask, pid, proc = at(in, 9), at(in, 10), at(in, 14), at(in, 15)
+			f["object_properties"] = strings.Join(strings.Fields(at(in, 12)), " ")
+		}
+		f["access_list"] = strings.Join(strings.Fields(list), " ")
+		f["access_mask"] = mask
+		f["process_id"] = atoi(pid)
+		f["process_path"] = proc
+		f["process_name"] = baseName(proc)
 		f["access_names"] = accessNames(f["access_list"].(string))
 		f["action"] = objectAccessAction(f["access_list"].(string))
 		switch at(in, 5) {
@@ -234,6 +250,95 @@ func parseWindowsSecurity(eventID string, in []string, ev *Event) {
 			ev.Model = "Registry"
 			f["registry_path"] = name
 			f["registry_key_name"] = baseName(name)
+		}
+	case "4657":
+		// A registry value changed, when the key's audit rule asks for it:
+		// the key, the value's name and its old and new data.
+		ev.Model = "Registry"
+		f["signature"] = "A registry value was modified"
+		f["user_sid"] = at(in, 0)
+		f["user"] = at(in, 1)
+		f["user_domain"] = at(in, 2)
+		f["logon_id"] = at(in, 3)
+		key, value := at(in, 4), at(in, 5)
+		f["object_path"] = key
+		f["registry_path"] = key + `\` + value
+		f["registry_key_name"] = baseName(key)
+		f["registry_value_name"] = value
+		// %%1904 is a value created, %%1905 changed and %%1906 deleted.
+		f["registry_operation"] = at(in, 7)
+		f["action"] = map[string]string{"%%1904": "created", "%%1906": "deleted"}[at(in, 7)]
+		if f["action"] == "" {
+			f["action"] = "modified"
+		}
+		f["registry_value_type"] = at(in, 10)
+		f["registry_old_value_data"] = at(in, 9)
+		f["registry_value_data"] = at(in, 11)
+		f["process_id"] = atoi(at(in, 12))
+		f["process_path"] = at(in, 13)
+		f["process_name"] = baseName(at(in, 13))
+	case "4662":
+		// An operation on an object a directory service or WMI audits
+		// (with Audit Directory Service Access on): reading a property,
+		// say, or a control access right such as replicating changes.
+		// Directory objects and classes are %{GUID}s, kept as recorded.
+		ev.Model = "Change"
+		f["signature"] = "An operation was performed on an object"
+		f["user_sid"] = at(in, 0)
+		f["user"] = at(in, 1)
+		f["user_domain"] = at(in, 2)
+		f["logon_id"] = at(in, 3)
+		f["object_server"] = at(in, 4)
+		f["object_category"] = "object"
+		if at(in, 4) == "DS" {
+			f["object_category"] = "directory_object"
+		}
+		f["object_type"] = at(in, 5)
+		f["object"] = at(in, 6)
+		f["access_list"] = strings.Join(strings.Fields(at(in, 9)), " ")
+		f["access_mask"] = at(in, 10)
+		f["access_names"] = accessNames(f["access_list"].(string))
+		f["object_properties"] = strings.Join(strings.Fields(at(in, 11)), " ")
+		f["action"] = objectAccessAction(f["access_list"].(string))
+	case "4768", "4769":
+		// A Kerberos ticket asked of a domain controller: a ticket-granting
+		// ticket (4768, a logon to the domain) or a service ticket (4769).
+		// Status 0x0 is granted, anything else a failure code. An IPv4
+		// client is recorded as ::ffff:a.b.c.d, stored as a.b.c.d.
+		ev.Model = "Authentication"
+		f["app"] = "win:kerberos"
+		f["authentication_method"] = "Kerberos"
+		f["user"] = at(in, 0)
+		f["user_domain"] = at(in, 1)
+		var status string
+		if eventID == "4768" {
+			f["signature"] = "A Kerberos authentication ticket (TGT) was requested"
+			f["user_sid"] = at(in, 2)
+			f["kerberos_service"] = at(in, 3)
+			f["kerberos_service_sid"] = at(in, 4)
+			f["ticket_options"] = at(in, 5)
+			status = at(in, 6)
+			f["ticket_encryption_type"] = at(in, 7)
+			f["pre_auth_type"] = at(in, 8)
+			f["src"] = strings.TrimPrefix(at(in, 9), "::ffff:")
+			f["src_port"] = atoi(at(in, 10))
+			f["cert_issuer"] = at(in, 11)
+			f["cert_serial"] = at(in, 12)
+			f["cert_thumbprint"] = at(in, 13)
+		} else {
+			f["signature"] = "A Kerberos service ticket was requested"
+			f["kerberos_service"] = at(in, 2)
+			f["kerberos_service_sid"] = at(in, 3)
+			f["ticket_options"] = at(in, 4)
+			f["ticket_encryption_type"] = at(in, 5)
+			f["src"] = strings.TrimPrefix(at(in, 6), "::ffff:")
+			f["src_port"] = atoi(at(in, 7))
+			status = at(in, 8)
+		}
+		f["kerberos_status"] = status
+		f["action"] = "failure"
+		if status == "0x0" {
+			f["action"] = "success"
 		}
 	case "5145":
 		// A file or named pipe on a network share, checked for the access
@@ -330,6 +435,9 @@ func parseWindowsSystem(eventID, provider string, in []string, ev *Event) {
 // accessRightNames are the names Windows shows for the access codes of
 // an object access's access list.
 var accessRightNames = map[string]string{
+	"%%7680": "CreateChild", "%%7681": "DeleteChild", "%%7682": "ListContents", "%%7683": "WriteSelf",
+	"%%7684": "ReadProperty", "%%7685": "WriteProperty", "%%7686": "DeleteTree", "%%7687": "ListObject",
+	"%%7688": "ControlAccess",
 	"%%1537": "DELETE", "%%1538": "READ_CONTROL", "%%1539": "WRITE_DAC", "%%1540": "WRITE_OWNER",
 	"%%1541": "SYNCHRONIZE", "%%1542": "ACCESS_SYS_SEC",
 	"%%4416": "ReadData", "%%4417": "WriteData", "%%4418": "AppendData", "%%4419": "ReadEA",
@@ -351,15 +459,21 @@ func accessNames(list string) string {
 }
 
 // objectAccessAction is what an object access did, from its access list
-// (%%1537 DELETE, %%4417 WriteData, %%4418 AppendData, %%4420
-// WriteExtendedAttributes, %%4424 WriteAttributes); anything else reads.
+// (%%1537 DELETE and %%7686 DeleteTree; %%1539 WRITE_DAC, %%1540
+// WRITE_OWNER, %%4417 WriteData, %%4418 AppendData, %%4420
+// WriteExtendedAttributes, %%4424 WriteAttributes and %%7685
+// WriteProperty); anything else reads.
 func objectAccessAction(list string) string {
 	codes := strings.Fields(list)
 	switch {
-	case slices.Contains(codes, "%%1537"):
+	case slices.Contains(codes, "%%1537") || slices.Contains(codes, "%%7686"):
 		return "deleted"
 	case slices.ContainsFunc(codes, func(c string) bool {
-		return c == "%%4417" || c == "%%4418" || c == "%%4420" || c == "%%4424"
+		switch c {
+		case "%%1539", "%%1540", "%%4417", "%%4418", "%%4420", "%%4424", "%%7685":
+			return true
+		}
+		return false
 	}):
 		return "modified"
 	}

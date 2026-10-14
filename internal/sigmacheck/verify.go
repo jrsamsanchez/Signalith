@@ -135,7 +135,7 @@ var sysmonEvents = map[string]string{
 // SecurityEvents are the Security log events Security log rules
 // (service: security) are checked for; such a rule's category is
 // SecurityCategory of its one event.
-var SecurityEvents = []string{"4624", "4625", "4663", "4697", "4698", "5136", "5145"}
+var SecurityEvents = []string{"4624", "4625", "4656", "4657", "4661", "4662", "4663", "4697", "4698", "4768", "4769", "5136", "5145"}
 
 // SecurityCategory is the category of a Security log rule about one
 // event, as Bases, Cases and Channel know it.
@@ -272,6 +272,40 @@ var Bases = map[string]map[string]string{
 		"FailureReason": "%%2313", "SubStatus": "0xc000006a", "LogonType": "3", "LogonProcessName": "NtLmSsp",
 		"AuthenticationPackageName": "NTLM", "WorkstationName": "WS2", "KeyLength": "0", "ProcessId": "0x0",
 		"IpAddress": "192.0.2.10", "IpPort": "50123",
+	},
+	"security_4656": {
+		"SubjectUserSid": "S-1-5-21-1000-1104", "SubjectUserName": "tester", "SubjectDomainName": "CORP", "SubjectLogonId": "0x1a2b3c",
+		"ObjectServer": "Security", "ObjectType": "File", "ObjectName": `D:\apps\work\output.txt`, "HandleId": "0x0",
+		"TransactionId": "{00000000-0000-0000-0000-000000000000}", "AccessList": "%%4416", "AccessReason": "-", "AccessMask": "0x1",
+		"PrivilegeList": "-", "RestrictedSidCount": "0", "ProcessId": "0x1092", "ProcessName": `D:\apps\launcher\launcher.exe`,
+	},
+	"security_4657": {
+		"SubjectUserSid": "S-1-5-21-1000-1104", "SubjectUserName": "tester", "SubjectDomainName": "CORP", "SubjectLogonId": "0x1a2b3c",
+		"ObjectName": `\REGISTRY\MACHINE\SOFTWARE\ExampleVendor\Launcher`, "ObjectValueName": "Theme", "HandleId": "0x1f0",
+		"OperationType": "%%1905", "OldValueType": "%%1873", "OldValue": "light", "NewValueType": "%%1873", "NewValue": "dark",
+		"ProcessId": "0x1092", "ProcessName": `D:\apps\launcher\launcher.exe`,
+	},
+	"security_4661": {
+		"SubjectUserSid": "S-1-5-21-1000-1104", "SubjectUserName": "tester", "SubjectDomainName": "CORP", "SubjectLogonId": "0x1a2b3c",
+		"ObjectServer": "Security Account Manager", "ObjectType": "SAM_ALIAS", "ObjectName": "S-1-5-21-1000-1201", "HandleId": "0x0",
+		"TransactionId": "{00000000-0000-0000-0000-000000000000}", "AccessList": "%%5400", "AccessMask": "0x4", "PrivilegeList": "-",
+		"Properties": "-", "RestrictedSidCount": "0", "ProcessId": "0x2b4", "ProcessName": `C:\Windows\System32\lsass.exe`,
+	},
+	"security_4662": {
+		"SubjectUserSid": "S-1-5-21-1000-1104", "SubjectUserName": "tester", "SubjectDomainName": "CORP", "SubjectLogonId": "0x1a2b3c",
+		"ObjectServer": "DS", "ObjectType": "bf967a86-0de6-11d0-a285-00aa003049e2", "ObjectName": "CN=WS2,OU=Computers,DC=corp,DC=example,DC=com",
+		"OperationType": "Object Access", "HandleId": "0x0", "AccessList": "%%7684", "AccessMask": "0x10",
+		"Properties": "%%7684 {77b5b886-944a-11d1-aebd-0000f80367c1}",
+	},
+	"security_4768": {
+		"TargetUserName": "tester", "TargetDomainName": "CORP", "TargetSid": "S-1-5-21-1000-1104", "ServiceName": "krbtgt",
+		"ServiceSid": "S-1-5-21-1000-502", "TicketOptions": "0x40810010", "Status": "0x0", "TicketEncryptionType": "0x12",
+		"PreAuthType": "2", "IpAddress": "::ffff:192.0.2.10", "IpPort": "50123",
+	},
+	"security_4769": {
+		"TargetUserName": "tester@CORP.EXAMPLE.COM", "TargetDomainName": "CORP.EXAMPLE.COM", "ServiceName": "svc_report",
+		"ServiceSid": "S-1-5-21-1000-1301", "TicketOptions": "0x40810000", "TicketEncryptionType": "0x12",
+		"IpAddress": "::ffff:192.0.2.10", "IpPort": "50123", "Status": "0x0",
 	},
 	"security_4663": {
 		"SubjectUserSid": "S-1-5-21-1000-1104", "SubjectUserName": "tester", "SubjectDomainName": "CORP", "SubjectLogonId": "0x1a2b3c",

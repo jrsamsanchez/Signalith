@@ -1,0 +1,5 @@
+{"rule": "f8748f2c-89dc-4d95-afb0-5a2dfdbad332", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4656","data":{"ObjectName":"\\SAM","ObjectType":"Key"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4656","data":{"ObjectType":"Key"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4656","data":{"ObjectName":"\\SAM"}}
+]}

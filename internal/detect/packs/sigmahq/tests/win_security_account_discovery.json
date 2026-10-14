@@ -1,0 +1,6 @@
+{"rule": "35ba1d85-724d-42a3-889f-2e2362bcaf23", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4661","data":{"ObjectName":"-520","ObjectType":"SAM_USER"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4661","data":{"ObjectName":"-520","ObjectType":"SAM_USER","SubjectUserName":"$"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4661","data":{"ObjectType":"SAM_USER"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4661","data":{"ObjectName":"-520"}}
+]}

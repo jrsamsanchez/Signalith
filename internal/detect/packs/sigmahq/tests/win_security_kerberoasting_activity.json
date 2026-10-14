@@ -1,0 +1,7 @@
+{"rule": "d04ae2b8-ad54-4de0-bd87-4bc1da66aa59", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4769","data":{"Status":"0x0","TicketEncryptionType":"0x17"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4769","data":{"ServiceName":"$","Status":"0x0","TicketEncryptionType":"0x17"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4769","data":{"Status":"0x0","TargetUserName":"$@","TicketEncryptionType":"0x17"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4769","data":{"TicketEncryptionType":"0x17"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4769","data":{"Status":"0x0"}}
+]}

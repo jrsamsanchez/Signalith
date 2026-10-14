@@ -292,10 +292,12 @@ func TestParseServiceInstalled(t *testing.T) {
 	}
 }
 
-func TestParseDirectoryChangeAndShareAccess(t *testing.T) {
+func TestParseDirectoryShareAndKerberos(t *testing.T) {
 	for src, node := range map[string]string{
-		"`wineventlog_security` EventCode=5136 AttributeLDAPDisplayName=sIDHistory OperationType=\"%%14674\"\n| stats values(ObjectDN) as ObjectDN by _time, Computer": "DirectoryChange",
-		"`wineventlog_security` SubjectUserName=\"ANONYMOUS LOGON\" EventCode=5145 RelativeTargetName=lsarpc\n| stats count by dest, ShareName":                        "ShareAccess",
+		"`wineventlog_security` EventCode=5136 AttributeLDAPDisplayName=sIDHistory OperationType=\"%%14674\"\n| stats values(ObjectDN) as ObjectDN by _time, Computer":      "DirectoryChange",
+		"`wineventlog_security` SubjectUserName=\"ANONYMOUS LOGON\" EventCode=5145 RelativeTargetName=lsarpc\n| stats count by dest, ShareName":                             "ShareAccess",
+		"`wineventlog_security` EventCode=4768 TicketEncryptionType=0x17 ServiceName!=*$\n| stats count by ServiceName src_ip dest":                                         "KerberosTGT",
+		"`wineventlog_security` EventCode=4769 ServiceName!=\"*$\" (TicketOptions=0x40810000 OR TicketOptions=0x40800000) TicketEncryptionType=0x17\n| stats count by user": "KerberosService",
 	} {
 		r, err := Parse(rule(src), nil)
 		if err != nil {
