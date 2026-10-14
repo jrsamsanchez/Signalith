@@ -28,7 +28,7 @@ from the detections, or have them deleted with the sample data, by adding it.
 
 ## Load and remove it
 
-**In the browser (admins):** open **Add data** under Configure. The **Try it
+**In the browser (admins):** open **Add data** under Data. The **Try it
 with sample data** card loads the week, shows its progress, then lists things
 to try (each opens a view covering the whole week) and removes it again behind
 a confirm. While it loads, the detections run over the week so findings and
@@ -119,6 +119,7 @@ counts toward the risk findings below. The table keeps them apart.
 | **Ransomware preparation on the file server** | Using the stolen domain-admin account, the attacker reaches `file-01` over SMB, tries to turn off Defender’s real-time protection (tamper protection blocks it), adds an antivirus exclusion for `C:\ProgramData\SyncSvc`, and deletes the volume shadow copies and recovery configuration. Defender quarantines the first copy of the ransomware; the exclusion lets the second copy run, and controlled folder access stops it changing the finance share. | endpoint-shadow-copy-delete, av-tamper-blocked, av-exclusion-added, malware-ransomware, av-rule-block | |
 | **Trojan spreads from a file share** | A fake “payroll update” (`Trojan:Win32/Fakepay.A`) on `\\file-01\public` is opened on four operations workstations within a quarter of an hour. Defender quarantines it on `ws-ops-01`, `ws-ops-03` and `ws-ops-04`, but fails to on `ws-ops-05`. | malware-detected, malware-outbreak, malware-not-removed | |
 | **Antivirus upkeep** | Definitions updates fail twice on `web-01` (ClamAV) and on `ws-ops-02` (Defender). ClamAV’s nightly scan on `app-01` finds a web shell in an upload folder but only reports it, so the file stays. IT tests Defender on `ws-it-02` with the EICAR test file. | av-definitions-failing; malware-left-clamav and malware-detected for the web shell; malware-detected for the EICAR test, a finding to close as benign | |
+| **Nightly scan finds vulnerable servers** | Signalith's own [vulnerability scan](vulnerabilities.md) of the server network finds Apache httpd 2.4.49 on `web-01` with two vulnerabilities attackers are known to use (CVE-2021-41773 and CVE-2021-42013) and a critical one (CVE-2023-25690), a critical OpenSSH flaw on `app-01` (CVE-2023-38408), and Telnet still open on the jump host `jump-01`. The results are events in Search; the **Vulnerabilities** page lists only your own scans. | vuln-known-exploited, vuln-critical, vuln-cleartext-remote-login | |
 | **Benign activity that looks malicious** | A backup job on `file-01` runs encoded PowerShell, and IT fetches a tool with `certutil`. | endpoint-encoded-powershell on `file-01`: one finding to close as benign | endpoint-lolbin-download on `ws-it-02` |
 
 The risk that builds up then raises two more findings on its own:
@@ -126,7 +127,7 @@ The risk that builds up then raises two more findings on its own:
 - **risk-threshold-exceeded**: a user or host passed the risk threshold;
 - **risk-multiple-tactics**: risk from several ATT&CK tactics on one entity.
 
-So 30 of the 32 built-in detections fire from the sample, all of them on.
+So 33 of the 35 built-in detections fire from the sample, all of them on.
 Each detection adds its risk once per thing it found, so the totals on the
 Risk page and the dashboards are the same every time you load.
 

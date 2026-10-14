@@ -92,8 +92,66 @@ jobs:
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true
 
+  # Authenticode signing of the .msi and signalith.exe through SignPath
+  # Foundation (docs/code-signing.md). It runs for a tag once the repository
+  # has the SIGNPATH_ORGANIZATION_ID variable and the SIGNPATH_API_TOKEN
+  # secret, and waits for a maintainer to approve the request on SignPath.
+  windows-signing:
+    needs: packages
+    if: github.event_name == 'push' && vars.SIGNPATH_ORGANIZATION_ID != ''
+    runs-on: windows-latest
+    permissions:
+      contents: read
+      actions: read
+    env:
+      VERSION: ${{ needs.packages.outputs.version }}
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: '{binaries,windows-packages}'
+          path: built
+          merge-multiple: true
+      - name: Collect the files to sign
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory unsigned | Out-Null
+          Copy-Item "built\signalith-$env:VERSION-x64.msi", built\signalith-windows-amd64.exe unsigned\
+      - id: unsigned
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: windows-unsigned
+          path: unsigned/
+      - uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3.0
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG || 'signalith' }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG || 'release-signing' }}
+          github-artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
+          parameters: |
+            version: "${{ env.VERSION }}"
+          # Time for a maintainer to approve the request on SignPath.
+          wait-for-completion-timeout-in-seconds: 14400
+          output-artifact-directory: signed
+      - name: Check the signatures
+        shell: pwsh
+        run: |
+          $files = Get-ChildItem signed -Include *.msi, *.exe -Recurse
+          if ($files.Count -ne 2) { throw "expected the .msi and the .exe back from SignPath, got $($files.Name -join ', ')" }
+          foreach ($f in $files) {
+            $sig = Get-AuthenticodeSignature $f.FullName
+            Write-Host "$($f.Name): $($sig.Status), $($sig.SignerCertificate.Subject)"
+            if ($sig.Status -ne 'Valid') { throw "$($f.Name) is not validly signed" }
+          }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: windows-signed
+          path: signed/
+
   publish:
-    needs: [packages, image]
+    needs: [packages, image, windows-signing]
+    # Also when windows-signing is skipped (no SignPath set up, or a dry run).
+    if: ${{ !cancelled() && needs.packages.result == 'success' && needs.image.result == 'success' && needs.windows-signing.result != 'failure' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -109,6 +167,12 @@ jobs:
           pattern: '{binaries,linux-packages,windows-packages}'
           path: release
           merge-multiple: true
+      - name: Use the signed Windows files
+        if: needs.windows-signing.result == 'success'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: windows-signed
+          path: release
       - uses: anchore/sbom-action/download-syft@7b36ad622f042cab6f59a75c2ac24ccb256e9b45 # v0.20.4
         id: syft
         with:

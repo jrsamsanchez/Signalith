@@ -2,7 +2,7 @@
 
 Signalith can send a message when a finding is raised. It can send to a Slack channel, a
 Microsoft Teams channel or chat, email, or a webhook such as a SOAR or ticketing system.
-Set this up on the **Notifications** page, under Configure. Only admins see the page.
+Set this up on the **Notifications** tab of **Settings**. Only admins see the page.
 
 There are two parts:
 

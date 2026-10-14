@@ -105,16 +105,30 @@ the secret, and remove the old key in a later release.
 
 ### Windows code signing
 
-The `.msi` is not yet signed with an Authenticode certificate, so Windows SmartScreen
-warns before running it. Free and low-cost routes for an open-source project:
+The **Release** workflow signs the `.msi` and `signalith-windows-amd64.exe` with
+Authenticode through [SignPath Foundation](https://signpath.org), which signs
+open-source projects for free; the [code signing policy](code-signing.md) is the page it
+asks projects to publish. Until SignPath is set up, the Windows files are released
+unsigned and SmartScreen warns before running the installer.
 
-- [SignPath Foundation](https://signpath.org) signs open-source releases for free, after
-  an application.
-- [Azure Trusted Signing](https://learn.microsoft.com/azure/trusted-signing/) is a
-  low-cost monthly service, with identity validation.
+To set it up:
 
-Code-signing certificates bought elsewhere now live on hardware tokens, which a cloud
-build cannot use.
+1. Apply at [signpath.org](https://signpath.org/apply) for the Signalith repository.
+2. Once accepted, in SignPath: create the project `signalith`, connect it to GitHub as
+   its trusted build system, add the artifact configuration from
+   `deploy/windows/signpath/artifact-configuration.xml`, and create the signing policy
+   `release-signing` with yourself as approver. Make an API token for a CI user that
+   may submit requests.
+3. On GitHub, **Settings** > **Secrets and variables** > **Actions**: add the secret
+   `SIGNPATH_API_TOKEN`, and on the **Variables** tab the variable
+   `SIGNPATH_ORGANIZATION_ID`. (`SIGNPATH_PROJECT_SLUG` and
+   `SIGNPATH_SIGNING_POLICY_SLUG` change the two names above if you chose others.)
+
+From then on, each release run sends the two files to SignPath and waits up to four
+hours for you to approve the request there (SignPath emails you), checks the signatures
+on Windows, and publishes the signed files. Every `signalith.exe` carries its name and
+version (made by [go-winres](https://github.com/tc-hib/go-winres) at build time), which
+the artifact configuration requires.
 
 ## Version numbers
 

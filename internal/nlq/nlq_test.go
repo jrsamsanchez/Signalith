@@ -70,6 +70,15 @@ func TestTranslate(t *testing.T) {
 		"attack surface reduction blocks":        `datamodel=Malware type=rule action=blocked`,
 		"malware protection turned off on web1":  `datamodel=Malware type=health action=disabled dest=web1`,
 		"disabled accounts":                      `action=modified`,
+		// Vulnerability scan results.
+		"vulnerabilities on web1":                    `datamodel=Vulnerabilities category=vulnerability dest=web1`,
+		"known exploited vulnerabilities":            `datamodel=Vulnerabilities category=vulnerability known_exploited=true`,
+		"hosts with known exploited vulnerabilities": `datamodel=Vulnerabilities category=vulnerability known_exploited=true | stats count by dest | sort -count`,
+		"critical vulns on dc01 in the last 7 days":  `datamodel=Vulnerabilities category=vulnerability severity=critical dest=dc01 earliest=-7d`,
+		"which hosts have CVE-2021-41773":            `datamodel=Vulnerabilities category=vulnerability cve=CVE-2021-41773 | stats count by dest | sort -count`,
+		"top cves":                                   `datamodel=Vulnerabilities category=vulnerability | top limit=10 cve`,
+		"open ports on web1":                         `datamodel=Vulnerabilities category=open_port dest=web1`,
+		"telnet open ports":                          `datamodel=Vulnerabilities category=open_port app=telnet`,
 	}
 	for in, want := range cases {
 		r, err := Translate(in, hints{})

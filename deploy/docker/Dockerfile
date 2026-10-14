@@ -7,7 +7,17 @@ ARG VERSION=dev
 RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/signalith ./cmd/signalith
 RUN mkdir -p /out/data/detections /out/data/lookups /out/data/dashboards /out/data/archive && chmod 700 /out/data/archive
 
-FROM gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab
+# Debian slim rather than distroless, for Nmap: the Vulnerabilities page
+# scans networks with it (docs/vulnerabilities.md). Only Nmap, the CA
+# certificates (for CVE lookups over HTTPS) and time zones are added, and
+# Signalith runs as the same unprivileged user as before (65532).
+FROM debian:12-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends nmap ca-certificates tzdata \
+ && rm -rf /var/lib/apt/lists/* \
+ && groupadd -g 65532 nonroot \
+ && useradd -u 65532 -g 65532 -d /home/nonroot -m -s /usr/sbin/nologin nonroot
+USER 65532:65532
 COPY --from=build /out/signalith /usr/local/bin/signalith
 # Writable folders for custom detections, lookups, dashboards and archived
 # days, owned by the nonroot user.

@@ -247,6 +247,21 @@ func TestSampleDataEndToEnd(t *testing.T) {
 	if fired["malware-left-clamav"] != 1 {
 		t.Errorf("malware-left-clamav raised %d findings, want 1", fired["malware-left-clamav"])
 	}
+	// The nightly vulnerability scan: one finding per host and CVE, KEV
+	// CVEs only as known exploited, and Telnet only on jump-01.
+	for id, want := range map[string]int{"vuln-known-exploited": 2, "vuln-critical": 2, "vuln-cleartext-remote-login": 1} {
+		if fired[id] != want {
+			t.Errorf("%s raised %d findings, want %d", id, fired[id], want)
+		}
+	}
+	for _, f := range sampleFindings {
+		switch {
+		case f.DetectionID == "vuln-known-exploited" && !strings.Contains(f.Title, "on web-01"),
+			f.DetectionID == "vuln-critical" && strings.Contains(f.Title, "CVE-2021-"),
+			f.DetectionID == "vuln-cleartext-remote-login" && f.Title != "Telnet open on jump-01":
+			t.Errorf("unexpected vulnerability finding %q", f.Title)
+		}
+	}
 
 	if fired["threat-activity"] == 0 || fired["risk-threshold-exceeded"]+fired["risk-multiple-tactics"] == 0 {
 		t.Errorf("threat intel or risk incidents did not fire: %v", fired)

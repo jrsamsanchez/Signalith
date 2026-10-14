@@ -68,7 +68,7 @@ in*).
 
 ## Try it with sample data
 
-No logs to hand? On the **Add data** page (under Configure, admins only), **Load sample
+No logs to hand? On the **Add data** page (under Data, admins only), **Load sample
 data** fills Signalith with a week of made-up activity for a fictional company, with a
 handful of attacks hidden in it, so detections fire, the triage queue fills, risk builds
 up, threat intel matches and the dashboards light up. Everything is fictional and kept

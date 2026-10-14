@@ -418,7 +418,7 @@ func globFold(pattern, s string) bool {
 func TestStories(t *testing.T) {
 	d := genData(t, SizeSmall)
 	want := []string{"linux-ssh-intrusion", "phishing-to-c2", "ransomware-prep", "domain-persistence", "benign-lookalikes",
-		"malware-outbreak", "antivirus-housekeeping"}
+		"malware-outbreak", "antivirus-housekeeping", "vulnerability-scan"}
 	if len(d.Stories) != len(want) {
 		t.Errorf("%d stories, want %d", len(d.Stories), len(want))
 	}
@@ -533,4 +533,68 @@ func TestAntivirusStories(t *testing.T) {
 			}
 		}
 	}
+}
+
+// TestVulnerabilityScanStory: the nightly scan's events are shaped like
+// Signalith's own scans write them, came in through the scanner intake,
+// and give each vulnerability detection exactly the hosts the story names.
+func TestVulnerabilityScanStory(t *testing.T) {
+	d := genData(t, SizeSmall)
+	kev, critical, telnet := map[string]bool{}, map[string]bool{}, map[string]bool{}
+	n := 0
+	for _, e := range d.Events {
+		if e.Model != "Vulnerabilities" {
+			continue
+		}
+		n++
+		if e.Origin.Intake != ingest.IntakeScanner {
+			t.Errorf("scan event with intake %q: %v", e.Origin.Intake, e.Fields)
+		}
+		for _, f := range []string{"category", "dest", "dest_ip", "dest_port", "transport", "severity", "signature", "signature_id", "scan_id", "host", "sourcetype"} {
+			if v := e.Fields[f]; v == nil || v == "" {
+				t.Errorf("scan event without %s: %v", f, e.Fields)
+			}
+		}
+		dest, _ := e.Fields["dest"].(string)
+		switch e.Fields["category"] {
+		case "vulnerability":
+			cvss, ok := e.Fields["cvss"].(float64)
+			if !ok || cvss <= 0 || cvss > 10 || e.Fields["cve"] != e.Fields["signature_id"] {
+				t.Errorf("vulnerability event %v", e.Fields)
+			}
+			switch {
+			case e.Fields["known_exploited"] == "true":
+				kev[dest+" "+e.Fields["cve"].(string)] = true
+			case e.Fields["known_exploited"] == "false" && cvss >= 9:
+				critical[dest+" "+e.Fields["cve"].(string)] = true
+			case e.Fields["known_exploited"] != "false":
+				t.Errorf("known_exploited = %v", e.Fields["known_exploited"])
+			}
+		case "open_port":
+			if e.Fields["severity"] != "informational" || e.Fields["cve"] != nil {
+				t.Errorf("open port event %v", e.Fields)
+			}
+			if e.Fields["app"] == "telnet" {
+				telnet[dest] = true
+			}
+		default:
+			t.Errorf("category %v", e.Fields["category"])
+		}
+	}
+	if n == 0 || n > 60 {
+		t.Errorf("%d scan events", n)
+	}
+	want := func(name string, got map[string]bool, keys ...string) {
+		if len(got) != len(keys) {
+			t.Errorf("%s: %v, want %v", name, got, keys)
+		}
+		for _, k := range keys {
+			if !got[k] {
+				t.Errorf("%s: no %s in %v", name, k, got)
+			}
+		}
+	}
+	want("known exploited", kev, "web-01 CVE-2021-41773", "web-01 CVE-2021-42013")
+	want("critical", critical, "web-01 CVE-2023-25690", "app-01 CVE-2023-38408")
+	want("telnet", telnet, "jump-01")
 }

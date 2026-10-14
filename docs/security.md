@@ -1,6 +1,6 @@
 # Security checks
 
-The **Security** page (**Configure > Security**) and the `signalith security` command
+The **Security** page (**Settings > Security**) and the `signalith security` command
 check how this server is set up: what is encrypted on the network and on disk, who can
 sign in, how passwords and keys are kept, and how Signalith runs on this computer. They
 say what to fix first and how, and they are honest about what Signalith can't see.

@@ -227,18 +227,39 @@ function pageInfo(name) {
   return { title: item ? item.querySelector('span').textContent : name, group: group ? group.dataset.group : 'Help' };
 }
 
-// selectPage shows a page without loading its data.
+// selectPage shows a page without loading its data. The Settings pages
+// (the nav group shown only to the jump box) are all marked by Settings
+// at the foot of the sidebar, and switch with the tabs above them.
 function selectPage(name) {
   currentPage = name;
-  document.querySelectorAll('.nav__item[data-page]').forEach((a) => {
-    if (a.dataset.page === name) a.setAttribute('aria-current', 'page');
+  const { title, group } = pageInfo(name);
+  const inSettings = group === 'Settings';
+  document.querySelectorAll('.nav__item[data-page], .set-tab[data-page]').forEach((a) => {
+    const here = 'settingsHome' in a.dataset ? inSettings : a.dataset.page === name && !a.closest('.nav__group--jump');
+    if (here) a.setAttribute('aria-current', 'page');
     else a.removeAttribute('aria-current');
   });
+  syncSettingsTabs(inSettings);
   document.querySelectorAll('.page').forEach((p) => p.classList.toggle('active', p.id === 'page-' + name));
-  const { title, group } = pageInfo(name);
   $('crumb-group').textContent = group;
   $('crumb-page').textContent = title;
   document.title = title + ' · Signalith';
+}
+
+// syncSettingsTabs shows the Settings tabs above a Settings page, when the
+// role may open more than one of them, and keeps the open one in view
+// where the row scrolls sideways (on a phone).
+function syncSettingsTabs(inSettings) {
+  const bar = $('set-tabs');
+  const tabs = [...bar.querySelectorAll('.set-tab[data-page]')].filter((t) => pageAllowed(t.dataset.page));
+  bar.classList.toggle('hidden', !inSettings || tabs.length < 2);
+  const list = bar.querySelector('.set-tabs__list');
+  const cur = tabs.find((t) => t.hasAttribute('aria-current'));
+  if (!inSettings || !cur || list.scrollWidth <= list.clientWidth) return;
+  const left = cur.offsetLeft - 16;
+  const right = cur.offsetLeft + cur.offsetWidth + 16;
+  if (left < list.scrollLeft) list.scrollLeft = left;
+  else if (right > list.scrollLeft + list.clientWidth) list.scrollLeft = right - list.clientWidth;
 }
 
 // leaveGuards can keep the current page open, as the Settings page does
@@ -253,7 +274,9 @@ function showPage(name, opts = {}) {
   if (!$('page-' + name)) return;
   if (!pageAllowed(name)) {
     const who = pageRole(name) === 'admin' ? 'admins' : 'analysts and admins';
-    if (me && typeof toast === 'function') toast(`${pageInfo(name).title} is only for ${who}.`, null, { tone: 'danger' });
+    const { title, group } = pageInfo(name);
+    const what = group === 'Settings' ? `Settings > ${title}` : title;
+    if (me && typeof toast === 'function') toast(`${what} is only for ${who}.`, null, { tone: 'danger' });
     name = 'search';
     opts = { ...opts, replace: true };
   }
@@ -377,7 +400,7 @@ slideOver.addEventListener('change', syncInspectInert);
 // Ctrl+K (Cmd+K on a Mac), or / when not typing, focuses it.
 const JUMP_WORDS = {
   dashboards: 'home overview posture charts', findings: 'alerts incidents queue triage', cases: 'cases investigations',
-  risk: 'risk scores', search: 'query events logs hunt', intel: 'threat intel ioc indicators feeds',
+  risk: 'risk scores', vulns: 'vulnerabilities cve scan scanner nmap ports open services patch exposure kev exploited', search: 'query events logs hunt', intel: 'threat intel ioc indicators feeds',
   detections: 'rules sigma alerts', coverage: 'mitre attack matrix techniques tactics', assets: 'hosts users identities cmdb priority',
   data: 'ingest agents fluent bit sources onboarding syslog firewall switch router cisco wazuh ossec alerts sample demo test data try example', retention: 'retention rotation archive restore delete storage disk guard policies',
   health: 'status opensearch ingest', help: 'help syntax language commands',
@@ -398,7 +421,10 @@ function jumpMatches() {
   const hits = [];
   document.querySelectorAll('#sidebar .nav__item[data-page]').forEach((a) => {
     const words = [a.textContent, a.dataset.page, JUMP_WORDS[a.dataset.page] || ''].join(' ').toLowerCase();
-    const hit = pageAllowed(a.dataset.page) && (!q || words.includes(q));
+    // The Settings pages show one by one only while something is typed;
+    // Settings itself then stands aside for them.
+    const shown = q ? !('settingsHome' in a.dataset) : !a.closest('.nav__group--jump');
+    const hit = shown && pageAllowed(a.dataset.page) && (!q || words.includes(q));
     a.classList.toggle('hidden', !hit);
     if (hit) hits.push(a);
   });
@@ -667,11 +693,14 @@ function renderHealthCard(h) {
 // outside the Security page.
 function renderSecurityCount(sec) {
   const n = sec && sec.risk > 0 ? sec.risk : 0;
-  const count = $('security-count');
-  if (!count) return;
-  count.classList.toggle('hidden', !n);
-  count.replaceChildren(String(n), el('span', { class: 'sr-only' }, ' at risk'));
-  count.title = n ? `${n} security ${n === 1 ? 'check' : 'checks'} at risk` : '';
+  // On the Security tab, and on Settings in the sidebar, which leads there.
+  for (const count of [$('security-count'), $('settings-count')]) {
+    if (!count) continue;
+    count.classList.toggle('hidden', !n);
+    const what = count.id === 'settings-count' ? ` security ${n === 1 ? 'check' : 'checks'} at risk` : ' at risk';
+    count.replaceChildren(String(n), el('span', { class: 'sr-only' }, what));
+    count.title = n ? `${n} security ${n === 1 ? 'check' : 'checks'} at risk` : '';
+  }
 }
 
 // ---------- app shell: the servers' red problems ----------

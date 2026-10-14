@@ -253,7 +253,7 @@ func TestIndexTemplate(t *testing.T) {
 	for name, want := range map[string]string{
 		"@timestamp": "date", "message": "text", "user": "keyword", "src": "keyword",
 		"src_port": "long", "bytes": "long", "risk_score": "double", "device_time": "keyword", "dropped_fields": "long",
-		"script_block_text": "wildcard",
+		"script_block_text": "wildcard", "cvss": "double",
 	} {
 		p, _ := props[name].(map[string]any)
 		if p == nil || p["type"] != want {

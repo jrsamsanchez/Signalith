@@ -17,7 +17,7 @@ is nothing to set up: the server makes its own certificate the first time it sta
 - [Troubleshooting](#troubleshooting)
 
 Every HTTPS setting described here can also be changed on the **Settings** page
-(**Configure > Settings**, the **HTTPS** card), without editing `signalith.yaml`: see
+(**Settings > Server**, the **HTTPS** card), without editing `signalith.yaml`: see
 [Settings page](#on-the-settings-page) below.
 
 ## What happens by default
@@ -294,7 +294,7 @@ Browsers and agents must trust a new CA before Signalith uses it. So the change 
 few steps, and both CAs are trusted in between. Nothing stops working as long as every
 computer trusts the new one before you switch.
 
-Each step is on the Security page (**Configure > Security**), for the server that
+Each step is on the Security page (**Settings > Security**), for the server that
 serves the page. A script can take the same steps with `POST /api/security/ca`, as an
 admin, with `{"action": "prepare"}` (and `"scope": "standard"` or `"strict"` if you
 want to change it), then `switch`, `rollback`, `discard` or `prune`. Each step goes to

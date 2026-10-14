@@ -1,0 +1,19 @@
+id: vuln-cleartext-remote-login
+title: Telnet open on $dest$
+name: Telnet service open
+description: A vulnerability scan found a Telnet service. Telnet sends user names, passwords and everything typed in clear text, so anyone on the network path can read them, and it is a common way in for attackers on routers, printers and industrial devices.
+query: |
+  datamodel=Vulnerabilities category=open_port app=telnet
+schedule: 15m
+lookback: 30m
+severity: low
+throttle:
+  fields: [dest]
+  window: 7d
+risk:
+  score: 10
+  objects:
+    - {field: dest, type: system}
+enabled: true
+tags: [vulnerability]
+guidance: Turn Telnet off and use SSH instead. If a device can only be managed over Telnet, allow it only from a management network. Search datamodel=Vulnerabilities dest=<host> to see the other services the scan found on it.

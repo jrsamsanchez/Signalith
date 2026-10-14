@@ -60,6 +60,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/syslog"
 	"github.com/jrsamsanchez/signalith/internal/tlsauto"
 	"github.com/jrsamsanchez/signalith/internal/users"
+	"github.com/jrsamsanchez/signalith/internal/vulnscan"
 	"github.com/jrsamsanchez/signalith/web"
 	"golang.org/x/term"
 )
@@ -1099,7 +1100,11 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	// notes the hosts that reach it and writes their last contact in bulk.
 	estore := endpoint.NewStore(cl, c.OpenSearch.IndexPrefix)
 	in.jobs.Go(func() { estore.Run(ctx, 30*time.Second) })
-	in.jobs.Go(func() { feedEndpointAssets(ctx, estore, lists, log) })
+	// Network scans for vulnerabilities, set up on the Vulnerabilities
+	// page. The server that runs the background jobs runs them.
+	vstore := vulnscan.NewStore(cl, c.OpenSearch.IndexPrefix)
+	nvd := vulnscan.NewNVD()
+	in.jobs.Go(func() { feedFoundAssets(ctx, estore, vstore, lists, log) })
 	// Notifications: the channels and rules set on the Notifications
 	// page, and the deliveries index that makes each message go out once.
 	notes, deliveries, senders := newNotify(c, cl, log)
@@ -1206,6 +1211,10 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		lcancel()
 	}
 	in.jobs.Go(func() { tokens.Run(ctx) })
+	scanner := &vulnscan.Scanner{
+		Store: vstore, NVD: nvd, Events: pipeline, Server: sampleServer, Log: log,
+		Checker: &vulnscan.Checker{NVD: nvd, Docker: cluster.InContainer()},
+	}
 	// The agents that send events, for the Endpoints page: counted here,
 	// written once a minute to the runtime index next to the agent
 	// tokens' use, and listed across every server.
@@ -1243,6 +1252,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		Sample:     sampleLoader,
 		Content:    updater,
 		Endpoints:  estore,
+		Vulns:      &api.Vulns{Store: vstore, Scanner: scanner},
 		Background: r.backgroundContext(parent),
 		Assistant:  newAssistant(c),
 		Users:      people,
@@ -1269,7 +1279,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	// which ones are there. Changes to existing indices and the background
 	// jobs are for the one server that runs those.
 	indicesReady := make(chan struct{})
-	var intelOK, casesOK, findingsOK, notifyOK, playbooksOK, respondOK bool
+	var intelOK, casesOK, findingsOK, notifyOK, playbooksOK, respondOK, vulnsOK bool
 	in.jobs.Go(func() {
 		if !ensureTemplate(ctx, cl, c, log) {
 			return
@@ -1294,6 +1304,11 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		}
 		if err := estore.EnsureIndex(ctx); err != nil {
 			log.Error("could not create the endpoints index; osquery hosts cannot enroll", "index", estore.Index, "err", err)
+		}
+		vulnsOK = true
+		if err := vstore.EnsureIndex(ctx); err != nil {
+			log.Error("could not create the vulnerabilities index; network scans will not run", "index", vstore.Index, "err", err)
+			vulnsOK = false
 		}
 		if err := deliveries.EnsureIndex(ctx); err != nil {
 			log.Error("could not create the notifications index; notifications will not be sent", "index", deliveries.Index, "err", err)
@@ -1368,6 +1383,15 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			log.Info("playbooks will run for new findings that match them", "file", c.PlaybooksFile())
 			pbRunner.Run(ctx)
 		}},
+		{Name: "vulnerability scans", Run: func(ctx context.Context) {
+			if !ready(ctx) || !vulnsOK {
+				return
+			}
+			// Networks can be added on the page at any time, so the
+			// scanner runs even with none yet.
+			log.Info("vulnerability scans will run on their schedules")
+			scanner.Run(ctx)
+		}},
 		// Retention keeps running while OpenSearch refuses writes (its
 		// disk is full): its disk guard is what frees space.
 		{Name: "retention", Emergency: true, Run: func(ctx context.Context) {
@@ -1390,6 +1414,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		// run, download or message, so a server that lost the job lease
 		// stops at once, even before its jobs' context ends.
 		sched.Allowed, feeds.Allowed, dispatcher.Allowed, pbRunner.Allowed = r.node.RunsJobs, r.node.RunsJobs, r.node.RunsJobs, r.node.RunsJobs
+		scanner.Allowed = r.node.RunsJobs
 		srv.Cluster = r.node
 		in.node = r.node
 	}
@@ -1789,30 +1814,51 @@ func reloadLookups(ctx context.Context, lists *assets.Store, log *slog.Logger) {
 	}
 }
 
-// feedEndpointAssets puts the osquery hosts on the Endpoints page in the
-// asset list's found hosts every minute, so their names and addresses get
-// asset context (category endpoint and their platform) until the user's
-// own list describes them.
-func feedEndpointAssets(ctx context.Context, es *endpoint.Store, lists *assets.Store, log *slog.Logger) {
+// feedFoundAssets puts the hosts Signalith finds itself in the asset
+// list's found hosts every minute: the osquery hosts on the Endpoints page
+// (category endpoint and their platform) and the hosts vulnerability
+// scans found (category scanned), so their names and addresses get asset
+// context until the user's own list describes them.
+func feedFoundAssets(ctx context.Context, es *endpoint.Store, vs *vulnscan.Store, lists *assets.Store, log *slog.Logger) {
 	t := time.NewTicker(time.Minute)
 	defer t.Stop()
-	failed := false
+	failed, vfailed := false, false
 	for {
+		var as []assets.Asset
+		known := map[string]bool{}
 		nodes, err := es.Nodes(ctx)
 		if err == nil {
-			as := make([]assets.Asset, 0, len(nodes))
 			for _, n := range nodes {
 				a := assets.Asset{Host: []string{n.Hostname}, IP: n.IPs, Category: []string{"endpoint", n.Platform}}
 				if short, _, ok := strings.Cut(n.Hostname, "."); ok && short != "" {
 					a.Host = append(a.Host, short)
 				}
+				for _, ip := range n.IPs {
+					known[ip] = true
+				}
 				as = append(as, a)
 			}
-			lists.SetFound(as)
 			failed = false
 		} else if !failed && ctx.Err() == nil {
 			log.Warn("could not read the osquery hosts for the asset list; trying again every minute", "err", err)
 			failed = true
+		}
+		hosts, verr := vs.Hosts(ctx)
+		if verr == nil {
+			for _, h := range hosts {
+				if known[h.Address] {
+					continue
+				}
+				known[h.Address] = true
+				as = append(as, scannedAsset(h))
+			}
+			vfailed = false
+		} else if !vfailed && ctx.Err() == nil && !errors.Is(verr, context.Canceled) {
+			log.Debug("could not read the scanned hosts for the asset list; trying again every minute", "err", verr)
+			vfailed = true
+		}
+		if err == nil || verr == nil {
+			lists.SetFound(as)
 		}
 		select {
 		case <-ctx.Done():
@@ -1820,6 +1866,18 @@ func feedEndpointAssets(ctx context.Context, es *endpoint.Store, lists *assets.S
 		case <-t.C:
 		}
 	}
+}
+
+// scannedAsset is a host a vulnerability scan found, as an asset.
+func scannedAsset(h *vulnscan.Host) assets.Asset {
+	a := assets.Asset{IP: []string{h.Address}, Category: []string{"scanned"}}
+	if h.Hostname != "" {
+		a.Host = []string{h.Hostname}
+		if short, _, ok := strings.Cut(h.Hostname, "."); ok && short != "" {
+			a.Host = append(a.Host, short)
+		}
+	}
+	return a
 }
 
 // keepTemplate checks every five minutes that the index template in

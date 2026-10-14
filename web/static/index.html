@@ -173,6 +173,7 @@
       <a class="nav__item" href="#findings" data-page="findings"><svg class="icon" aria-hidden="true"><use href="#i-shield-alert"/></svg><span>Findings</span><span id="open-count" class="nav__count hidden"></span></a>
       <a class="nav__item" href="#cases" data-page="cases"><svg class="icon" aria-hidden="true"><use href="#i-briefcase"/></svg><span>Investigations</span><span id="case-count" class="nav__count hidden"></span></a>
       <a class="nav__item" href="#risk" data-page="risk"><svg class="icon" aria-hidden="true"><use href="#i-gauge"/></svg><span>Risk</span></a>
+      <a class="nav__item" href="#vulns" data-page="vulns" data-min-role="analyst"><svg class="icon" aria-hidden="true"><use href="#i-scan-search"/></svg><span>Vulnerabilities</span></a>
       <a class="nav__item" href="#approvals" data-page="approvals" data-min-role="analyst"><svg class="icon" aria-hidden="true"><use href="#i-user-check"/></svg><span>Approvals</span><span id="approval-count" class="nav__count hidden"></span></a>
     </div>
     <div class="nav__group" data-group="Hunt">
@@ -180,30 +181,41 @@
       <a class="nav__item" href="#search" data-page="search"><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg><span>Search</span></a>
       <a class="nav__item" href="#intel" data-page="intel"><svg class="icon" aria-hidden="true"><use href="#i-radar"/></svg><span>Threat intel</span></a>
     </div>
-    <div class="nav__group" data-group="Detect">
-      <div class="nav__label">Detect</div>
+    <div class="nav__group" data-group="Detect &amp; respond">
+      <div class="nav__label">Detect &amp; respond</div>
       <a class="nav__item" href="#detections" data-page="detections"><svg class="icon" aria-hidden="true"><use href="#i-crosshair"/></svg><span>Detections</span></a>
       <a class="nav__item" href="#coverage" data-page="coverage"><svg class="icon" aria-hidden="true"><use href="#i-grid-3x3"/></svg><span>ATT&amp;CK coverage</span></a>
-    </div>
-    <div class="nav__group" data-group="Configure">
-      <div class="nav__label">Configure</div>
-      <a class="nav__item" href="#assets" data-page="assets"><svg class="icon" aria-hidden="true"><use href="#i-fingerprint"/></svg><span>Assets &amp; identities</span></a>
-      <a class="nav__item" href="#endpoints" data-page="endpoints" data-min-role="analyst"><svg class="icon" aria-hidden="true"><use href="#i-laptop"/></svg><span>Endpoints</span></a>
-      <a class="nav__item" href="#data" data-page="data" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-database"/></svg><span>Add data</span></a>
-      <a class="nav__item" href="#retention" data-page="retention" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-hourglass"/></svg><span>Data retention</span></a>
-      <a class="nav__item" href="#notify" data-page="notify" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-bell"/></svg><span>Notifications</span></a>
-      <a class="nav__item" href="#users" data-page="users" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-users"/></svg><span>Users</span></a>
-      <a class="nav__item" href="#respond" data-page="respond" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-zap"/></svg><span>Response actions</span></a>
       <a class="nav__item" href="#playbooks" data-page="playbooks" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-list-checks"/></svg><span>Playbooks</span></a>
-      <a class="nav__item" href="#security" data-page="security" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-shield-check"/></svg><span>Security</span><span id="security-count" class="nav__count hidden" data-critical></span></a>
-      <a class="nav__item" href="#health" data-page="health"><svg class="icon" aria-hidden="true"><use href="#i-activity"/></svg><span>Health</span></a>
+      <a class="nav__item" href="#respond" data-page="respond" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-zap"/></svg><span>Response actions</span></a>
+    </div>
+    <div class="nav__group" data-group="Data">
+      <div class="nav__label">Data</div>
+      <a class="nav__item" href="#data" data-page="data" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-database"/></svg><span>Add data</span></a>
+      <a class="nav__item" href="#endpoints" data-page="endpoints" data-min-role="analyst"><svg class="icon" aria-hidden="true"><use href="#i-laptop"/></svg><span>Endpoints</span></a>
+      <a class="nav__item" href="#assets" data-page="assets"><svg class="icon" aria-hidden="true"><use href="#i-fingerprint"/></svg><span>Assets &amp; identities</span></a>
+    </div>
+    <!-- The Settings pages. They open from Settings at the foot of the
+         sidebar and switch with the tabs above each of them (#set-tabs),
+         so this group shows only while the jump box finds one of them. It
+         still names each page's title and least role, as every nav item
+         does. -->
+    <div class="nav__group nav__group--jump hidden" data-group="Settings">
+      <div class="nav__label">Settings</div>
+      <a class="nav__item" href="#settings" data-page="settings" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-sliders-horizontal"/></svg><span>Server</span></a>
+      <a class="nav__item" href="#users" data-page="users" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-users"/></svg><span>Users</span></a>
+      <a class="nav__item" href="#notify" data-page="notify" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-bell"/></svg><span>Notifications</span></a>
+      <a class="nav__item" href="#retention" data-page="retention" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-hourglass"/></svg><span>Data retention</span></a>
+      <a class="nav__item" href="#security" data-page="security" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-shield-check"/></svg><span>Security</span></a>
       <a class="nav__item" href="#servers" data-page="servers" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-server"/></svg><span>Servers</span></a>
-      <a class="nav__item" href="#settings" data-page="settings" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-settings"/></svg><span>Settings</span></a>
+      <a class="nav__item" href="#health" data-page="health"><svg class="icon" aria-hidden="true"><use href="#i-activity"/></svg><span>Health</span></a>
     </div>
     <p class="nav__empty hidden" id="jump-empty">No page matches.</p>
   </nav>
   <div class="sidebar__foot">
+    <div class="sidebar__links">
       <a class="nav__item" href="#help" data-page="help"><svg class="icon" aria-hidden="true"><use href="#i-book-open"/></svg><span>Query guide</span></a>
+      <a class="nav__item" href="#settings" data-page="settings" data-min-role="admin" data-settings-home><svg class="icon" aria-hidden="true"><use href="#i-settings"/></svg><span>Settings</span><span id="settings-count" class="nav__count hidden" data-critical></span></a>
+    </div>
     <a class="health hidden" id="health-card" href="#health" data-page="health">
       <span class="health__row"><span class="pulse" id="health-pulse"></span><b id="health-title"></b></span>
       <span class="health__meta" id="health-meta"></span>
@@ -238,6 +250,19 @@
   <!-- Problems with the servers that share this OpenSearch that everyone
        should know of, on every page (from api/health). -->
   <div class="cluster-banner hidden" id="cluster-banner" role="alert"></div>
+  <!-- Tabs between the Settings pages, above whichever of them is open.
+       Each tab is hidden from roles its page is not for. -->
+  <nav class="set-tabs hidden" id="set-tabs" aria-label="Settings">
+    <div class="set-tabs__list">
+      <a class="set-tab" href="#settings" data-page="settings" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-sliders-horizontal"/></svg><span>Server</span></a>
+      <a class="set-tab" href="#users" data-page="users" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-users"/></svg><span>Users</span></a>
+      <a class="set-tab" href="#notify" data-page="notify" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-bell"/></svg><span>Notifications</span></a>
+      <a class="set-tab" href="#retention" data-page="retention" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-hourglass"/></svg><span>Data retention</span></a>
+      <a class="set-tab" href="#security" data-page="security" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-shield-check"/></svg><span>Security</span><span id="security-count" class="nav__count hidden" data-critical></span></a>
+      <a class="set-tab" href="#servers" data-page="servers" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-server"/></svg><span>Servers</span></a>
+      <a class="set-tab" href="#health" data-page="health"><svg class="icon" aria-hidden="true"><use href="#i-activity"/></svg><span>Health</span></a>
+    </div>
+  </nav>
   <!-- Search -->
   <section id="page-search" class="page">
     <div class="search-layout">
@@ -1018,6 +1043,32 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
     <dialog id="ep-remove" class="modal" aria-labelledby="ep-remove-title"></dialog>
   </section>
 
+  <!-- Vulnerabilities (analysts and admins): network scans with Nmap -->
+  <section id="page-vulns" class="page">
+    <div class="page-head">
+      <div>
+        <h2 class="page-head__title">Vulnerabilities</h2>
+        <p class="page-head__desc">Hosts on your networks, their open ports, and the known vulnerabilities (CVEs) in the software on them, from scheduled Nmap scans.</p>
+      </div>
+      <div class="page-head__actions">
+        <button id="vs-setup" class="btn btn--secondary" type="button" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-list-checks"/></svg>Scanner setup</button>
+        <button id="vs-add" class="btn btn--primary hidden" type="button"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>Add network</button>
+      </div>
+    </div>
+    <div class="tabs vs-tabs" role="tablist" aria-label="Vulnerabilities">
+      <button class="tab" type="button" role="tab" id="vs-tab-hosts" aria-controls="vs-panel-hosts" aria-selected="true">Hosts <span class="count hidden" id="vs-host-count"></span></button>
+      <button class="tab" type="button" role="tab" id="vs-tab-networks" aria-controls="vs-panel-networks" aria-selected="false" tabindex="-1">Networks <span class="count hidden" id="vs-net-count"></span></button>
+      <button class="tab" type="button" role="tab" id="vs-tab-scans" aria-controls="vs-panel-scans" aria-selected="false" tabindex="-1">Scans</button>
+    </div>
+    <div id="vs-panel-hosts" class="vs-panel" role="tabpanel" aria-labelledby="vs-tab-hosts"></div>
+    <div id="vs-panel-networks" class="vs-panel" role="tabpanel" aria-labelledby="vs-tab-networks" hidden></div>
+    <div id="vs-panel-scans" class="vs-panel" role="tabpanel" aria-labelledby="vs-tab-scans" hidden></div>
+    <dialog id="vs-host" class="modal vs-host" aria-labelledby="vs-host-title"></dialog>
+    <dialog id="vs-net-dialog" class="modal vs-net-dialog" aria-labelledby="vs-net-title"></dialog>
+    <dialog id="vs-setup-dialog" class="modal vs-setup-dialog" aria-labelledby="vs-setup-title"></dialog>
+    <dialog id="vs-confirm" class="modal" aria-labelledby="vs-confirm-title" aria-describedby="vs-confirm-desc"></dialog>
+  </section>
+
   <!-- Notifications (admins) -->
   <section id="page-notify" class="page">
     <div class="page-head">
@@ -1325,7 +1376,7 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
   <section id="page-settings" class="page">
     <div class="page-head">
       <div>
-        <h2 class="page-head__title">Settings</h2>
+        <h2 class="page-head__title">Server settings</h2>
         <p class="page-head__desc">How this server runs. Settings not changed on this page come from signalith.yaml or their defaults.</p>
       </div>
     </div>
@@ -1455,6 +1506,7 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
 <script src="servers.js"></script>
 <script src="security.js"></script>
 <script src="endpoints.js"></script>
+<script src="vulns.js"></script>
 <script src="tokens.js"></script>
 </body>
 </html>

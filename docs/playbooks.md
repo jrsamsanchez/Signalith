@@ -2,7 +2,7 @@
 
 A playbook does the first steps for you when a detection raises a finding: tell the team,
 block the address once an analyst approves it, open a case, set the finding to In progress.
-Set playbooks up on the **Playbooks** page, under Configure. Only admins see that page.
+Set playbooks up on the **Playbooks** page, under Detect & respond. Only admins see that page.
 Analysts approve or reject the steps that wait for them on the **Approvals** page, under
 Monitor.
 

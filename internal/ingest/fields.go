@@ -125,6 +125,10 @@ var knownFields = func() map[string]string {
 
 		// Risk events.
 		"group_key": kw, "risk_score": double, "risk_base_score": double,
+
+		// Vulnerability scans: a CVSS score has a decimal (9.8), which a
+		// long would cut to 9 in sorts, charts and stats.
+		"cvss": double,
 	}
 	add := func(fs []datamodel.Field) {
 		for _, f := range fs {

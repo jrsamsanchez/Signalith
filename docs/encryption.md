@@ -482,7 +482,7 @@ server by encrypting its disks:
 - **OpenSearch snapshots and archives** you copy elsewhere need the same protection
   at their destination.
 
-The Security page (**Configure > Security**) and `signalith security` show whether the
+The Security page (**Settings > Security**) and `signalith security` show whether the
 disk under Signalith's files, its archives and OpenSearch's data is encrypted, as far
 as the server can tell, and how to check by hand where it can't (see
 [Disk encryption](security.md#disk-encryption) in docs/security.md).

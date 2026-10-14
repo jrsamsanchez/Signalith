@@ -11,7 +11,7 @@ Signalith keeps events in daily OpenSearch indices, one per data category and da
 Findings and investigations have their own policy. A **disk guard** keeps
 OpenSearch from filling its disk.
 
-Set everything on the **Data retention** page under Configure (admins only): select a
+Set everything on the **Data retention** tab of **Settings** (admins only): select a
 category to change its policy, or edit the default policy and the disk guard under
 **Defaults**. The dialog shows what saving would delete, archive or compact before you
 save, including days that are already due and go in the same run, and asks again

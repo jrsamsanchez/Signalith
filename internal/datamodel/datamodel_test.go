@@ -59,3 +59,37 @@ func TestEveryFieldHasADescription(t *testing.T) {
 		}
 	}
 }
+
+func TestVulnerabilitiesModel(t *testing.T) {
+	var names []string
+	for _, m := range Models {
+		names = append(names, m.Name)
+	}
+	at := func(name string) int {
+		for i, n := range names {
+			if n == name {
+				return i
+			}
+		}
+		return -1
+	}
+	if v, r := at("Vulnerabilities"), at("Risk"); v < 0 || r != v+1 {
+		t.Errorf("Vulnerabilities is not right before Risk: %v", names)
+	}
+	m, ok := Get("vulnerabilities")
+	if !ok {
+		t.Fatal("no Vulnerabilities model")
+	}
+	seen := map[string]bool{}
+	for _, f := range m.Fields {
+		if seen[f.Name] {
+			t.Errorf("field %s twice", f.Name)
+		}
+		seen[f.Name] = true
+	}
+	for _, want := range []string{"category", "dest", "dest_ip", "dest_port", "cve", "cvss", "severity", "known_exploited"} {
+		if !seen[want] {
+			t.Errorf("Vulnerabilities has no %s field", want)
+		}
+	}
+}

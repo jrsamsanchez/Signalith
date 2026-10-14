@@ -88,6 +88,9 @@ type Server struct {
 	// Endpoints manages the hosts that run osquery (the Endpoints page and
 	// osquery's remote API); nil disables them.
 	Endpoints *endpoint.Store
+	// Vulns backs the Vulnerabilities page (network scans with Nmap); nil
+	// disables it.
+	Vulns *Vulns
 	// Content installs content pack updates; nil disables them.
 	Content *content.Updater
 	// Sample loads and removes the one-click sample data; nil disables the
@@ -252,6 +255,7 @@ func (s *Server) Handler() http.Handler {
 	s.routeRetention(api)
 	s.routeSample(api)
 	s.routeEndpoints(api)
+	s.routeVulns(api)
 	s.routeSettings(api)
 	s.routeCluster(api)
 	s.routeTokens(api)

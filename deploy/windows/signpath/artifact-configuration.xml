@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SignPath artifact configuration for Signalith releases: paste it into the
+  Signalith project on SignPath (Artifact configurations). The Release
+  workflow sends a ZIP with the installer and the Windows program, and the
+  "version" parameter. The program inside the installer is signed too, then
+  the installer itself. SignPath's artifact configuration editor checks it
+  against the schema. See docs/releasing.md.
+-->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <parameters>
+    <parameter name="version" required="true" />
+  </parameters>
+  <zip-file>
+    <msi-file path="signalith-*-x64.msi" product-name="Signalith">
+      <pe-file-set>
+        <include path="**/signalith.exe" product-name="Signalith" product-version="${version}" min-matches="1" max-matches="1" />
+        <for-each>
+          <authenticode-sign />
+        </for-each>
+      </pe-file-set>
+      <authenticode-sign />
+    </msi-file>
+    <pe-file path="signalith-windows-amd64.exe" product-name="Signalith" product-version="${version}">
+      <authenticode-sign />
+    </pe-file>
+  </zip-file>
+</artifact-configuration>

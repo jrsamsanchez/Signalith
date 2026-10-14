@@ -300,6 +300,28 @@ var Models = []Model{
 		},
 	},
 	{
+		Name:        "Vulnerabilities",
+		Description: "Vulnerabilities and open services that network scans found: one event per open port, and one per known vulnerability (CVE) in the software on it.",
+		Fields: []Field{
+			{Name: "category", Type: "string", Description: "Kind of result: open_port (a port that answered) or vulnerability (a CVE that applies to the software on it)", Examples: []string{"open_port", "vulnerability"}},
+			{Name: "dest", Type: "string", Description: "Host that was scanned: its name when it has one, else its address", Examples: []string{"web-01.corp.example"}},
+			{Name: "dest_ip", Type: "ip", Description: "Address of that host", Examples: []string{"192.0.2.15"}},
+			{Name: "dest_port", Type: "number", Description: "Port the service answers on", Examples: []string{"443"}},
+			{Name: "transport", Type: "string", Description: "Protocol of the port", Examples: []string{"tcp"}},
+			{Name: "app", Type: "string", Description: "Service on the port, as the scanner names it", Examples: []string{"ssh", "http", "microsoft-ds"}},
+			{Name: "product", Type: "string", Description: "Software that answers on the port", Examples: []string{"OpenSSH", "Apache httpd"}},
+			{Name: "product_version", Type: "string", Description: "Version of that software", Examples: []string{"8.2p1"}},
+			{Name: "cpe", Type: "string", Description: "Product name in CPE form, which CVEs are matched to", Examples: []string{"cpe:2.3:a:openbsd:openssh:8.2p1:*:*:*:*:*:*:*"}},
+			{Name: "cve", Type: "string", Description: "The vulnerability's CVE ID", Examples: []string{"CVE-2023-38408"}},
+			{Name: "cvss", Type: "number", Description: "CVSS base score, from 0 to 10", Examples: []string{"9.8"}},
+			{Name: "severity", Type: "string", Description: "Severity from the score: critical, high, medium, low, or informational for an open port", Examples: []string{"critical", "high"}},
+			{Name: "known_exploited", Type: "string", Description: "true when the CVE is in CISA's Known Exploited Vulnerabilities catalog: attackers are using it", Examples: []string{"true", "false"}},
+			{Name: "url", Type: "string", Description: "Where to read about the vulnerability", Examples: []string{"https://nvd.nist.gov/vuln/detail/CVE-2023-38408"}},
+			{Name: "scan_id", Type: "string", Description: "Scan that found it"},
+			{Name: "scan_network", Type: "string", Description: "Network the scan covered, as named on the Vulnerabilities page", Examples: []string{"Office LAN"}},
+		},
+	},
+	{
 		Name:        "Risk",
 		Description: "Risk that detections attributed to users and systems; not included in searches unless you ask for datamodel=Risk",
 		Fields: []Field{

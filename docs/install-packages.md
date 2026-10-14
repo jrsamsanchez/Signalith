@@ -89,9 +89,10 @@ the first password, open PowerShell **as Administrator** and run:
 signalith initial-password
 ```
 
-The installer is not yet signed with a Windows code-signing certificate, so Windows
-SmartScreen may say "Windows protected your PC". [Check the download](#check-a-download)
-first, then click **More info** > **Run anyway**.
+The installer is not yet signed with a Windows code-signing certificate (see the
+[code signing policy](code-signing.md)), so Windows SmartScreen may say "Windows
+protected your PC". [Check the download](#check-a-download) first, then click
+**More info** > **Run anyway**.
 
 For a silent install, for example from a deployment tool:
 

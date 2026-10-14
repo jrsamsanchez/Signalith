@@ -1,15 +1,18 @@
 # Server settings
 
-Admins change how the server runs on the **Settings** page: the public address,
+Admins change how the server runs on the **Settings** page (its **Server** tab): the public address,
 the web address and certificate, the OpenSearch connection, search limits, syslog,
 the detection scheduler, the AI assistant and more, without editing
 `signalith.yaml` on the server. Each setting says where its value comes from, and
 whether it applies at once or after a restart, which the page does for you.
 
-Users, directory sign-in, agent tokens, threat intel feeds and data retention keep
-their own pages; the Settings page links to them.
+**Settings**, at the foot of the sidebar, opens this page. Tabs along its top
+lead to the other pages that set Signalith up: **Users** (with directory
+sign-in), **Notifications**, **Data retention**, **Security**, **Servers** and
+**Health**. Agent tokens are on **Add data**, threat intel feeds on **Threat
+intel**; the Settings page links to them too.
 
-Only admins see the page (under **Configure**, or type "settings" in the
+Only admins see the page (**Settings** in the sidebar, or type "settings" in the
 **Jump to** box with Ctrl+K). Viewers and analysts do not see it, and its API
 answers them `403`.
 
