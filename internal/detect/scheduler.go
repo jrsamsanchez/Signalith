@@ -592,7 +592,14 @@ func (s *Scheduler) run(ctx context.Context, d *Detection, now, since time.Time)
 		f.Sample = s.SampleMark
 		f.Context = EntityContext(lists, f.Entities)
 		f.Urgency = Urgency(f.Severity, f.Context)
-		if err := s.Findings.Create(ctx, f); err != nil {
+		// A write whose answer was lost is settled by the store, so the
+		// ID is taken only by another finding: this one gets a new ID.
+		err := s.Findings.Create(ctx, f)
+		for try := 0; errors.Is(err, findings.ErrExists) && try < 3; try++ {
+			f.ID = NewID(now)
+			err = s.Findings.Create(ctx, f)
+		}
+		if err != nil {
 			return nil, err
 		}
 		out.Findings = append(out.Findings, f)

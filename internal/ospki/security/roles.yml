@@ -12,6 +12,7 @@
 #          (servers compare their clocks with OpenSearch's)
 #   GET    _cat/indices/<pattern>                  cluster_monitor, manage
 #   GET    _cat/shards/<pattern>                   cluster_monitor, manage
+#   GET    _index_template/<prefix> (a newer one is kept)
 #   PUT    _index_template/<prefix>, <prefix>_runtime
 #                                                  indices:admin/index_template/*
 #   POST   _bulk (events, threat intel, restores)  cluster_composite_ops, crud
@@ -29,8 +30,8 @@
 #          <prefix>_runtime where servers find each other)
 #                                                  create_index
 #   GET    <index>/_mapping, PUT <index>/_mapping  manage
-#   GET    <index>/_settings, PUT <index>/_settings (write blocks)
-#                                                  manage
+#   GET    <index>/_settings, PUT <index>/_settings (write blocks,
+#          copies on other nodes)                  manage
 #   POST   <index>/_refresh, <index>/_forcemerge   manage
 #   DELETE <index> (retention)                     manage
 #

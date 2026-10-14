@@ -107,6 +107,9 @@ type Docs interface {
 type OpenSearch struct {
 	Client Docs
 	Index  string
+	// Replicas are the index's replicas settings (opensearch.replicas,
+	// see config.Replicas.IndexSettings); nil is auto.
+	Replicas map[string]any
 }
 
 // NewOpenSearch returns the deliveries index of prefix.
@@ -130,7 +133,7 @@ func properties() map[string]any {
 // EnsureIndex creates the index if it does not exist. Any server may.
 func (o *OpenSearch) EnsureIndex(ctx context.Context) error {
 	body := map[string]any{
-		"settings": map[string]any{"number_of_shards": 1, "number_of_replicas": 0},
+		"settings": store.SmallIndexSettings(o.Replicas),
 		"mappings": map[string]any{"dynamic": "false", "properties": properties()},
 	}
 	err := o.Client.Do(ctx, http.MethodPut, "/"+url.PathEscape(o.Index), body, nil)
@@ -139,6 +142,14 @@ func (o *OpenSearch) EnsureIndex(ctx context.Context) error {
 		return nil
 	}
 	return err
+}
+
+// Replicate gives the notification deliveries index, when it was made with
+// no copy on another node, the replicas settings new indices get (see
+// store.Replicate). Only the server that runs the background jobs does,
+// when it starts running them; doing it again changes nothing.
+func (o *OpenSearch) Replicate(ctx context.Context) error {
+	return store.Replicate(ctx, o.Client, o.Index, o.Replicas)
 }
 
 func (o *OpenSearch) Claim(ctx context.Context, d *Delivery) (store.Version, error) {

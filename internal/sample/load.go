@@ -462,7 +462,15 @@ func (l *Loader) buildCase(ctx context.Context, d *Data) []string {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				_ = l.Findings.Save(ctx, f)
+				// Only the link: an analyst may be triaging this finding
+				// at this moment, and their change must stay.
+				_, _ = l.Findings.Modify(ctx, f.ID, func(cur *findings.Finding) (bool, error) {
+					if cur.CaseID == c.ID {
+						return false, nil
+					}
+					cur.CaseID = c.ID
+					return true, nil
+				})
 			}()
 		}
 	}
@@ -798,20 +806,20 @@ func (l *Loader) removeCases(ctx context.Context, id string, sampleFindings map[
 				continue
 			}
 			done[c.ID] = true
-			full, err := l.Cases.Get(ctx, c.ID)
-			if err != nil {
+			_, err := l.Cases.Modify(ctx, c.ID, func(full *cases.Case) (bool, error) {
+				changed := false
+				for _, f := range append([]string(nil), full.Findings...) {
+					if sampleFindings[f] && full.RemoveFinding(f, "sample-data", l.now().UTC()) {
+						changed = true
+					}
+				}
+				return changed, nil
+			})
+			if errors.Is(err, cases.ErrNotFound) {
 				continue
 			}
-			changed := false
-			for _, f := range append([]string(nil), full.Findings...) {
-				if sampleFindings[f] && full.RemoveFinding(f, "sample-data", l.now().UTC()) {
-					changed = true
-				}
-			}
-			if changed {
-				if err := l.Cases.Save(ctx, full); err != nil {
-					return err
-				}
+			if err != nil {
+				return err
 			}
 		}
 	}

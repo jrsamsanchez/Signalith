@@ -100,6 +100,10 @@ func generateOTel(o Options) (*Agent, error) {
 	b.WriteString("\nexporters:\n  otlphttp/signalith:\n")
 	fmt.Fprintf(&b, "    logs_endpoint: %s\n", a.ServerURL+OTelPath)
 	fmt.Fprintf(&b, "    headers:\n      Authorization: %s\n", yamlQuote("Bearer "+o.Token))
+	// What this configuration expects, so the Endpoints page can say when
+	// it needs a new one. The Collector's computer name comes from the
+	// host.name the resourcedetection processor adds to each batch.
+	fmt.Fprintf(&b, "      X-Signalith-Config: %s\n", yamlQuote(ConfigHeader(o.Version, o.CAPin, o.NextCAPin)))
 	if useCA {
 		a.CAPath = OTelLinuxCAPath
 		if host == "windows" {

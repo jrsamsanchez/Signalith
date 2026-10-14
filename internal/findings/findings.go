@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/assets"
+	"github.com/jrsamsanchez/signalith/internal/store"
 )
 
 // Statuses a finding moves through.
@@ -181,9 +182,21 @@ func (f *Finding) EffectiveUrgency() string {
 
 // Store persists findings.
 type Store interface {
+	// Create adds a new finding. It returns ErrExists, and changes
+	// nothing, when a finding with that ID exists.
 	Create(ctx context.Context, f *Finding) error
 	Get(ctx context.Context, id string) (*Finding, error)
+	// Save replaces a whole finding, for callers that own it outright
+	// (sample data). Triage changes go through Modify.
 	Save(ctx context.Context, f *Finding) error
+	// Modify reads a finding, lets change edit a fresh copy and writes it
+	// back if change reports a change, but only if nobody else changed the
+	// finding in between; if someone did, it reads again and reruns change,
+	// so change must be safe to run more than once. It returns the finding
+	// as written (or as read, when nothing changed), ErrNotFound when it is
+	// not there, ErrBusy when others kept changing it, and change's own
+	// error as it is.
+	Modify(ctx context.Context, id string, change func(f *Finding) (bool, error)) (*Finding, error)
 	// Delete removes one finding by ID. A missing finding is not an error.
 	Delete(ctx context.Context, id string) error
 	Search(ctx context.Context, flt Filter) ([]*Finding, int, error)
@@ -193,8 +206,36 @@ type Store interface {
 	Summary(ctx context.Context) (*Summary, error)
 }
 
-// ErrNotFound is returned for unknown finding IDs.
-var ErrNotFound = errors.New("finding not found")
+// Errors returned by stores.
+var (
+	// ErrNotFound is returned for unknown finding IDs.
+	ErrNotFound = errors.New("finding not found")
+	// ErrExists is a Create of an ID that is taken.
+	ErrExists = errors.New("a finding with this ID exists")
+	// ErrBusy is a Modify that lost to other changes of the same finding
+	// on every try.
+	ErrBusy = errors.New("someone else changed this finding at the same moment; try again")
+)
+
+// changeError carries the error of a Modify's change function through
+// the retry loop, so it is returned as it is and never retried.
+type changeError struct{ err error }
+
+func (e changeError) Error() string { return e.err.Error() }
+
+// modifyResult turns the outcome of a Modify loop into its error.
+func modifyResult(err error) error {
+	var ce changeError
+	switch {
+	case errors.As(err, &ce):
+		return ce.err
+	case errors.Is(err, store.ErrConflict):
+		return ErrBusy
+	case errors.Is(err, store.ErrNotFound):
+		return ErrNotFound
+	}
+	return err
+}
 
 // IsOpen reports whether a status still needs work.
 func IsOpen(status string) bool {

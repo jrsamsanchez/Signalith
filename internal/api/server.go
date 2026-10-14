@@ -19,6 +19,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/jrsamsanchez/signalith/internal/agentinv"
 	"github.com/jrsamsanchez/signalith/internal/agents"
 	"github.com/jrsamsanchez/signalith/internal/agenttokens"
 	"github.com/jrsamsanchez/signalith/internal/assets"
@@ -148,6 +149,9 @@ type Server struct {
 	// OpenSearch; nil keeps only the shared tokens of the configuration
 	// (ingest.tokens).
 	Tokens *agenttokens.Registry
+	// Agents counts the agents that send events, for the Endpoints page;
+	// nil keeps no list.
+	Agents *agentinv.Inventory
 
 	authOnce     sync.Once
 	creds        credCache  // recently checked Basic credentials
@@ -251,6 +255,7 @@ func (s *Server) Handler() http.Handler {
 	s.routeSettings(api)
 	s.routeCluster(api)
 	s.routeTokens(api)
+	s.routeAgents(api)
 	if s.UI != nil {
 		api.add(route{Pattern: "GET /", Role: users.Viewer}, revalidate(staticFiles(s.UI, true)))
 	}
@@ -376,6 +381,7 @@ func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 	res, err = s.Pipeline.IngestBody(withOrigin(r, ingest.IntakeAgent, who), tag, body)
 	if res != nil {
 		s.tokens().Note(who.ID, from.String(), res.Indexed+res.Duplicates)
+		s.noteAgent(r, ingest.IntakeAgent, tag, who, res.Indexed+res.Duplicates, nil)
 	}
 	if err != nil {
 		var bad *ingest.BodyError
@@ -874,6 +880,7 @@ func (s *Server) handleAgentConfig(w http.ResponseWriter, r *http.Request) {
 		PowerShell:  v.Get("powershell") == "true",
 		CollectorOS: v.Get("collector"),
 		Platform:    v.Get("platform"),
+		Version:     s.Version,
 	}
 	if certs != nil {
 		// While a new certificate authority is prepared, agents get both,
@@ -883,6 +890,15 @@ func (s *Server) handleAgentConfig(w http.ResponseWriter, r *http.Request) {
 		opts.OwnCA = certs.LocalCA()
 		if leaf := certs.Leaf(); leaf != nil {
 			opts.CertNames = leaf.DNSNames
+		}
+		// The pins name the CAs the agent gets: the current one, and the
+		// next one too while a switch is prepared, so the Endpoints page
+		// still counts the agent as fine after the switch.
+		if opts.CA != "" {
+			opts.CAPin = agentinv.Pin(certs.Fingerprint())
+			if next := certs.Next(); next != nil && certs.LocalCA() {
+				opts.NextCAPin = agentinv.Pin(next.Fingerprint)
+			}
 		}
 	}
 	a, err := agents.Generate(opts)

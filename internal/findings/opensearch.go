@@ -24,6 +24,9 @@ type Doer interface {
 type OpenSearch struct {
 	Client Doer
 	Index  string
+	// Replicas are the index's replicas settings (opensearch.replicas,
+	// see config.Replicas.IndexSettings); nil is auto.
+	Replicas map[string]any
 }
 
 // NewOpenSearch returns a store using index "<prefix>_findings".
@@ -53,7 +56,7 @@ func properties() map[string]any {
 // may, at any time; changes to an index that exists are Upgrade's.
 func (s *OpenSearch) EnsureIndex(ctx context.Context) error {
 	body := map[string]any{
-		"settings": map[string]any{"number_of_shards": 1, "number_of_replicas": 0},
+		"settings": store.SmallIndexSettings(s.Replicas),
 		"mappings": map[string]any{"dynamic": "false", "properties": properties()},
 	}
 	err := s.Client.Do(ctx, http.MethodPut, "/"+url.PathEscape(s.Index), body, nil)
@@ -62,6 +65,14 @@ func (s *OpenSearch) EnsureIndex(ctx context.Context) error {
 		return nil
 	}
 	return err
+}
+
+// Replicate gives the findings index, when it was made with no copy on
+// another node, the replicas settings new indices get (see
+// store.Replicate). Only the server that runs the background jobs does,
+// when it starts running them; doing it again changes nothing.
+func (s *OpenSearch) Replicate(ctx context.Context) error {
+	return store.Replicate(ctx, s.Client, s.Index, s.Replicas)
 }
 
 // Upgrade adds fields introduced since the index was created and fills
@@ -105,17 +116,99 @@ func entityValues(f *Finding) []string {
 	return out
 }
 
-func (s *OpenSearch) put(ctx context.Context, f *Finding) error {
+// versioned is the part of *store.Client that reads and writes documents
+// with their versions. Production always passes a *store.Client; a test
+// may pass a plain Doer, and Modify then writes without a version.
+type versioned interface {
+	Get(ctx context.Context, index, id string) (json.RawMessage, store.Version, bool, error)
+	PutIf(ctx context.Context, index, id string, body any, v store.Version, refresh bool) (store.Version, error)
+	Create(ctx context.Context, index, id string, body any, refresh bool) (store.Version, error)
+}
+
+// body is the document stored for f.
+func body(f *Finding) doc {
 	if f.Urgency == "" {
 		f.Urgency = f.Severity
 	}
-	return s.Client.Do(ctx, http.MethodPut,
-		"/"+url.PathEscape(s.Index)+"/_doc/"+url.PathEscape(f.ID)+"?refresh=wait_for",
-		doc{Finding: f, EntityValues: entityValues(f)}, nil)
+	return doc{Finding: f, EntityValues: entityValues(f)}
 }
 
-func (s *OpenSearch) Create(ctx context.Context, f *Finding) error { return s.put(ctx, f) }
-func (s *OpenSearch) Save(ctx context.Context, f *Finding) error   { return s.put(ctx, f) }
+func (s *OpenSearch) put(ctx context.Context, f *Finding, op string) error {
+	return s.Client.Do(ctx, http.MethodPut,
+		"/"+url.PathEscape(s.Index)+"/"+op+"/"+url.PathEscape(f.ID)+"?refresh=wait_for", body(f), nil)
+}
+
+// Create never replaces an existing finding: OpenSearch answers 409 when
+// the ID is taken, which is ErrExists.
+func (s *OpenSearch) Create(ctx context.Context, f *Finding) error {
+	var err error
+	if vc, ok := s.Client.(versioned); ok {
+		_, err = vc.Create(ctx, s.Index, f.ID, body(f), true)
+	} else {
+		err = s.put(ctx, f, "_create")
+	}
+	var oe *store.Error
+	if errors.Is(err, store.ErrExists) || errors.As(err, &oe) && oe.Status == http.StatusConflict {
+		return ErrExists
+	}
+	return err
+}
+
+func (s *OpenSearch) Save(ctx context.Context, f *Finding) error { return s.put(ctx, f, "_doc") }
+
+// Modify writes the finding back only if it is still at the version read
+// (if_seq_no and if_primary_term), so a change made meanwhile on another
+// server, or in another tab, is never overwritten: change runs again on
+// the newer copy. A write whose answer was lost is settled by the store's
+// write_id check, never by writing again blindly.
+func (s *OpenSearch) Modify(ctx context.Context, id string, change func(f *Finding) (bool, error)) (*Finding, error) {
+	vc, ok := s.Client.(versioned)
+	if !ok {
+		f, err := s.Get(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		changed, err := change(f)
+		if err != nil {
+			return nil, err
+		}
+		if changed {
+			if err := s.put(ctx, f, "_doc"); err != nil {
+				return nil, err
+			}
+		}
+		return f, nil
+	}
+	var out *Finding
+	err := store.RetryConflicts(ctx, func() error {
+		src, v, found, err := vc.Get(ctx, s.Index, id)
+		if err != nil {
+			return err
+		}
+		if !found {
+			return ErrNotFound
+		}
+		var f Finding
+		if err := json.Unmarshal(src, &f); err != nil {
+			return err
+		}
+		changed, err := change(&f)
+		if err != nil {
+			return changeError{err}
+		}
+		if changed {
+			if _, err := vc.PutIf(ctx, s.Index, id, body(&f), v, true); err != nil {
+				return err
+			}
+		}
+		out = &f
+		return nil
+	})
+	if err != nil {
+		return nil, modifyResult(err)
+	}
+	return out, nil
+}
 
 // Delete removes one finding; a missing one is not an error.
 func (s *OpenSearch) Delete(ctx context.Context, id string) error {

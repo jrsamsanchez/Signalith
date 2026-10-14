@@ -26,7 +26,9 @@ opensearch:
   cert_file: /run/signalith-secrets/opensearch-client.pem
   key_file: /run/signalith-secrets/opensearch-client-key.pem
   index_prefix: signalith
-  replicas: 0
+  # auto: a copy of each day's events on a second OpenSearch node once
+  # there is one, none on this single node.
+  replicas: auto
 search:
   default_earliest: -24h
   max_events: 10000

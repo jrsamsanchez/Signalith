@@ -8,16 +8,21 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/jrsamsanchez/signalith/internal/store"
 )
 
 // Memory is an in-memory Store for tests and evaluation.
 type Memory struct {
 	mu   sync.Mutex
 	byID map[string]*Finding
+	// ver counts the writes to each finding, so Modify can tell whether
+	// someone else wrote it while change ran, as OpenSearch's versions do.
+	ver map[string]int64
 }
 
 // NewMemory returns an empty in-memory store.
-func NewMemory() *Memory { return &Memory{byID: map[string]*Finding{}} }
+func NewMemory() *Memory { return &Memory{byID: map[string]*Finding{}, ver: map[string]int64{}} }
 
 func clone(f *Finding) *Finding {
 	b, _ := json.Marshal(f)
@@ -29,7 +34,11 @@ func clone(f *Finding) *Finding {
 func (m *Memory) Create(_ context.Context, f *Finding) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if _, ok := m.byID[f.ID]; ok {
+		return ErrExists
+	}
 	m.byID[f.ID] = clone(f)
+	m.ver[f.ID]++
 	return nil
 }
 
@@ -50,13 +59,56 @@ func (m *Memory) Save(_ context.Context, f *Finding) error {
 		return ErrNotFound
 	}
 	m.byID[f.ID] = clone(f)
+	m.ver[f.ID]++
 	return nil
+}
+
+// Modify runs change without holding the lock, since change may read
+// other stores, or this one, and writes only if the finding was not
+// written meanwhile; otherwise it tries again, like the OpenSearch store.
+func (m *Memory) Modify(ctx context.Context, id string, change func(f *Finding) (bool, error)) (*Finding, error) {
+	var out *Finding
+	err := store.RetryConflicts(ctx, func() error {
+		m.mu.Lock()
+		cur, ok := m.byID[id]
+		var f *Finding
+		if ok {
+			f = clone(cur)
+		}
+		v := m.ver[id]
+		m.mu.Unlock()
+		if !ok {
+			return ErrNotFound
+		}
+		changed, err := change(f)
+		if err != nil {
+			return changeError{err}
+		}
+		if !changed {
+			out = f
+			return nil
+		}
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		if _, ok := m.byID[id]; !ok || m.ver[id] != v {
+			return store.ErrConflict
+		}
+		m.byID[id] = clone(f)
+		m.ver[id]++
+		out = f
+		return nil
+	})
+	if err != nil {
+		return nil, modifyResult(err)
+	}
+	return out, nil
 }
 
 func (m *Memory) Delete(_ context.Context, id string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	delete(m.byID, id)
+	m.ver[id]++
 	return nil
 }
 

@@ -18,6 +18,14 @@ Bit, save Signalith's CA certificate and the generated configuration, and restar
 The configuration already contains the server address and ingest token, and sends over
 HTTPS, checking the server's certificate with that CA.
 
+The configuration also sends two short headers with every batch: the computer's name
+(`X-Signalith-Agent`, which Fluent Bit fills in itself) and which Signalith version made
+the configuration and which certificate authority it trusts (`X-Signalith-Config`). With
+them, the [Endpoints page](endpoints.md#log-agents) lists each agent once, even when it
+sends to several servers, and says when one needs a new configuration. They are labels
+only: the agent token is what lets an agent in. OpenTelemetry Collector configurations
+send the second header only; Signalith takes a Collector's computer name from its events.
+
 Agents on other machines must send to an address they can reach, such as
 `https://192.168.1.20:8080`, not `localhost`. Enter it under **Agents send to** on that
 page (or set `server.public_url` or `SIGNALITH_PUBLIC_URL`), and allow the port, 8080 by
@@ -73,7 +81,10 @@ events.
 Field names that senders choose (JSON keys, syslog structured data, CEF extensions) are
 limited so they cannot fill OpenSearch's mapping: at most 200 fields per event, names of
 up to 128 letters, digits and `_ - @ : /` in at most 5 dot-separated parts, and at most
-1,000 new names per daily index each time Signalith starts. Fields Signalith itself
+1,000 new names per daily index each time Signalith starts. With several servers, those
+1,000 are shared among the servers that stored events in the last 10 minutes (at least
+100 each), and no server adds new names to a day whose index already has 1,600 fields
+(see [Servers](servers.md#field-names-when-several-servers-receive-events)). Fields Signalith itself
 produces are always kept, so an event is never lost to extra fields. Fields left out are
 counted in the event's `dropped_fields` (search `dropped_fields>0`), their values stay in
 `_raw`, and the Health page and `/api/health` show the totals under `ingest`

@@ -373,6 +373,34 @@ func TestFluentBitWindowsPowerShell(t *testing.T) {
 	}
 }
 
+func TestFluentBitSaysWhoItIs(t *testing.T) {
+	for _, os := range []string{"linux", "windows"} {
+		a, err := Generate(Options{OS: os, ServerURL: "https://siem.example.com:8080", Token: "t",
+			CA: "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----", Version: "1.4.0", CAPin: "0123456789abcdef"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Fluent Bit fills in ${HOSTNAME} itself on both systems. The
+		// values have no spaces or quotes, so they need no quoting.
+		for _, want := range []string{
+			"Header               X-Signalith-Agent ${HOSTNAME}\n",
+			"Header               X-Signalith-Config ca=0123456789abcdef;v=1.4.0\n",
+		} {
+			if !strings.Contains(a.Config, want) {
+				t.Errorf("%s: config missing %q:\n%s", os, want, a.Config)
+			}
+		}
+	}
+	// No CA pinned: the version alone.
+	a, err := Generate(Options{OS: "linux", ServerURL: "http://192.0.2.1:8080", Token: "t", Version: "1.4.0"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(a.Config, "X-Signalith-Config v=1.4.0\n") || strings.Contains(a.Config, "ca=") {
+		t.Errorf("no CA:\n%s", a.Config)
+	}
+}
+
 func TestFluentBitLinuxSysmon(t *testing.T) {
 	for _, source := range []string{"file", "journal"} {
 		for _, sysmon := range []bool{false, true} {

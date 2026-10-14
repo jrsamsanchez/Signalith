@@ -99,6 +99,7 @@ func (s *Server) handleOTLPLogs(w http.ResponseWriter, r *http.Request) {
 	res, err = s.Pipeline.IngestOTLP(withOrigin(r, ingest.IntakeOTLP, who), body, isJSON)
 	if res != nil {
 		s.tokens().Note(who.ID, from.String(), res.Indexed)
+		s.noteAgent(r, ingest.IntakeOTLP, "", who, res.Indexed, res.Hosts)
 	}
 	if err != nil {
 		var bad *ingest.BodyError

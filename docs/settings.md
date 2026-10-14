@@ -66,6 +66,17 @@ Turning syslog on is two settings in the **Syslog** card (UDP and TCP address,
 such as `0.0.0.0:514`), then a restart. The **Add data** page's syslog steps send
 you there.
 
+**Replicas**, in the **OpenSearch** card, is how many extra copies of each day's
+events OpenSearch keeps on its other nodes, so losing one node loses no events. It
+is `auto` unless you change it: one copy on another node once OpenSearch has more
+than one node, and none while it has just one (where a copy would have nowhere to
+go). Enter a number instead to choose yourself, such as `0` for no copies. A change
+applies to the next day's events after a restart; days already stored keep the
+copies they have. Findings, investigations and threat intel follow the setting too,
+from when they are first stored; if they were stored by an older version with no
+copy, they get the setting when a server starts running the background jobs.
+Copies someone set on them by hand in OpenSearch are kept.
+
 ## HTTPS
 
 The **HTTPS** card has how Signalith keeps the web page, the API, agents and syslog

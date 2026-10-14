@@ -264,8 +264,10 @@ var Registry = []Setting{
 	{Key: "opensearch.index_prefix", Scope: ScopeBootstrap, Section: "opensearch", Label: "Index prefix", Type: TypeText, Restart: true,
 		Help:    "The start of every index name, as in signalith-authentication-2026.10.12. Lowercase, no spaces.",
 		Confirm: "Signalith will start with empty indices under the new prefix. Events, findings and investigations stored under the current prefix stay in OpenSearch but no longer show in searches or on any page."},
-	{Key: "opensearch.replicas", Scope: ScopeCluster, Section: "opensearch", Label: "Replicas", Type: TypeNumber, Restart: true, Min: intp(0),
-		Help: "Extra copies of each new index on other OpenSearch nodes: 0 for one node, 1 or more for a cluster. Applies to indices created after the restart."},
+	{Key: "opensearch.replicas", Scope: ScopeCluster, Section: "opensearch", Label: "Replicas", Type: TypeText, Restart: true,
+		Help: "Extra copies of each new day's events on other OpenSearch nodes. Automatic (auto) keeps one copy on another node once OpenSearch has more than one node, and none on a single node. " +
+			"Or enter a number: 0 for none. Days already stored keep the copies they have.",
+		Placeholder: "auto", EmptyMeans: "auto", check: checkReplicas},
 
 	{Key: "search.default_earliest", Scope: ScopeCluster, Section: "search", Label: "Default time range", Type: TypeChoice,
 		Help: "The time range the Search page starts with until someone picks another, and of a search sent without one, such as from the API.", check: checkEarliest,
@@ -610,7 +612,8 @@ func ParseValue(s *Setting, raw any) (any, error) {
 		if err := noControl(str); err != nil {
 			return nil, err
 		}
-		return str, nil
+		// As the field's own type, such as Replicas.
+		return reflect.ValueOf(str).Convert(v.Type()).Interface(), nil
 	case reflect.Int:
 		var f float64
 		switch n := raw.(type) {
@@ -683,6 +686,14 @@ func ParseValue(s *Setting, raw any) (any, error) {
 func noControl(s string) error {
 	if strings.IndexFunc(s, unicode.IsControl) >= 0 {
 		return fmt.Errorf("remove the line break, tab or other control character")
+	}
+	return nil
+}
+
+// checkReplicas takes auto or a whole number of 0 or more.
+func checkReplicas(v any) error {
+	if r, _ := v.(Replicas); !r.Valid() {
+		return errors.New("enter auto, or a whole number of 0 or more")
 	}
 	return nil
 }

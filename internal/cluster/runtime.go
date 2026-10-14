@@ -31,7 +31,7 @@ func runtimeMappings() map[string]any {
 		"dynamic": "false",
 		"properties": map[string]any{
 			"kind": kw, "node": kw, "node_id": kw, "state": kw, "target": kw, "detection_id": kw,
-			"group_key": kw, "user": kw, "agent": kw,
+			"group_key": kw, "user": kw, "agent": kw, "name": kw,
 			"epoch": long, "lease_epoch": long,
 			"until": date, "at": date, "last_seen": date, "expires_at": date, "heartbeat_at": date,
 			"body": map[string]any{"type": "object", "enabled": false},
@@ -97,10 +97,13 @@ const (
 	// FeatureSampleData: the background jobs leave the one-click sample
 	// data out (the scheduled detections and the threat intel feeds).
 	FeatureSampleData = "sample_data"
+	// FeatureIndexedAt: the heartbeat says when the server last stored an
+	// event (IndexedAt), so one without it has stored none.
+	FeatureIndexedAt = "indexed_at"
 )
 
 // features are this version's, as its heartbeats list them.
-var features = []string{FeatureSampleData}
+var features = []string{FeatureSampleData, FeatureIndexedAt}
 
 // Server states in heartbeats.
 const (
@@ -177,6 +180,10 @@ type Heartbeat struct {
 	// Features lists what this server's version can do that an older one
 	// cannot, where another server must know it (see FeatureSampleData).
 	Features []string `json:"features,omitempty"`
+	// IndexedAt is the last time this server stored an event; nil before
+	// the first, and from versions before it was kept, which do not list
+	// FeatureIndexedAt (see Node.IndexingServers).
+	IndexedAt *time.Time `json:"indexed_at,omitempty"`
 }
 
 // SecuritySummary is a server's last security check, as its heartbeat

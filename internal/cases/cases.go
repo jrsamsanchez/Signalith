@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/findings"
+	"github.com/jrsamsanchez/signalith/internal/store"
 )
 
 // Cases use the same statuses and severities as findings, so the queue and
@@ -339,7 +340,16 @@ type Store interface {
 	// when a case with that ID exists.
 	Create(ctx context.Context, c *Case) error
 	Get(ctx context.Context, id string) (*Case, error)
+	// Save replaces a whole case. Changes to a case go through Modify.
 	Save(ctx context.Context, c *Case) error
+	// Modify reads a case, lets change edit a fresh copy and writes it back
+	// if change reports a change, but only if nobody else changed the case
+	// in between; if someone did, it reads again and reruns change, so
+	// change must be safe to run more than once. It returns the case as
+	// written (or as read, when nothing changed), ErrNotFound when it is
+	// not there, ErrBusy when others kept changing it, and change's own
+	// error as it is.
+	Modify(ctx context.Context, id string, change func(c *Case) (bool, error)) (*Case, error)
 	// Delete removes one case by ID. A missing case is not an error.
 	Delete(ctx context.Context, id string) error
 	// Search returns matching cases, most recently updated first, without
@@ -352,7 +362,30 @@ var (
 	ErrNotFound      = errors.New("case not found")
 	ErrExists        = errors.New("a case with this ID exists")
 	ErrEntryNotFound = errors.New("timeline entry not found")
+	// ErrBusy is a Modify that lost to other changes of the same case on
+	// every try.
+	ErrBusy = errors.New("someone else changed this investigation at the same moment; try again")
 )
+
+// changeError carries the error of a Modify's change function through
+// the retry loop, so it is returned as it is and never retried.
+type changeError struct{ err error }
+
+func (e changeError) Error() string { return e.err.Error() }
+
+// modifyResult turns the outcome of a Modify loop into its error.
+func modifyResult(err error) error {
+	var ce changeError
+	switch {
+	case errors.As(err, &ce):
+		return ce.err
+	case errors.Is(err, store.ErrConflict):
+		return ErrBusy
+	case errors.Is(err, store.ErrNotFound):
+		return ErrNotFound
+	}
+	return err
+}
 
 // OpenStatuses are the statuses that still need work.
 var OpenStatuses = []string{findings.StatusNew, findings.StatusInProgress, findings.StatusPending}

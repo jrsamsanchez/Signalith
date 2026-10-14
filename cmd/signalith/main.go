@@ -27,6 +27,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jrsamsanchez/signalith/internal/agentinv"
 	"github.com/jrsamsanchez/signalith/internal/agenttokens"
 	"github.com/jrsamsanchez/signalith/internal/api"
 	"github.com/jrsamsanchez/signalith/internal/assets"
@@ -992,6 +993,13 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	ret := newRetention(c, cl, log)
 	maxAge := c.MaxEventAge(retentionKeepDays(ret))
 	pipeline := &ingest.Pipeline{Store: cl, Prefix: c.OpenSearch.IndexPrefix, MaxEventAge: maxAge, Log: log}
+	// Each day's new field names are shared out among the servers that
+	// stored events in the last 10 minutes, and none are added to an index
+	// whose mapping is near OpenSearch's limit. The node lasts across
+	// restarts in place; without one (some tests) this server is alone.
+	indexingServers := func() int { return r.node.IndexingServers(10 * time.Minute) }
+	pipeline.Servers = indexingServers
+	pipeline.FieldCount = ingest.MappingFieldCount(cl)
 	// Closed once the index template is in place, so syslog does not
 	// create the day's first indices with the wrong field types.
 	templateReady := make(chan struct{})
@@ -1001,6 +1009,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			UDP: c.Syslog.UDP, TCP: c.Syslog.TCP, TLS: c.Syslog.TLS,
 			Allow: c.Syslog.AllowList(), Ready: templateReady,
 			MaxAge: maxAge, PublicPort: c.Syslog.PublicPort,
+			Servers: indexingServers,
 		}
 		if certs != nil {
 			sc.GetCertificate = certs.GetCertificate
@@ -1035,6 +1044,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	eng.Assets = lists
 	in.jobs.Go(func() { reloadLookups(ctx, lists, log) })
 	ibackend := intel.NewOpenSearch(cl, c.OpenSearch.IndexPrefix)
+	ibackend.Replicas = c.OpenSearch.Replicas.IndexSettings()
 	indicators := intel.NewStore(ibackend)
 	eng.Intel = indicators
 	feeds := newFeeds(c, indicators, log)
@@ -1082,7 +1092,9 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		}
 	}
 	fstore := findings.NewOpenSearch(cl, c.OpenSearch.IndexPrefix)
+	fstore.Replicas = c.OpenSearch.Replicas.IndexSettings()
 	cstore := cases.NewOpenSearch(cl, c.OpenSearch.IndexPrefix)
+	cstore.Replicas = c.OpenSearch.Replicas.IndexSettings()
 	// Hosts running osquery, managed from the Endpoints page. Each server
 	// notes the hosts that reach it and writes their last contact in bulk.
 	estore := endpoint.NewStore(cl, c.OpenSearch.IndexPrefix)
@@ -1147,6 +1159,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	// case, on whichever server they use, so every server can; each run
 	// is recorded in the <prefix>_actions index.
 	astore := respond.NewOpenSearch(cl, c.OpenSearch.IndexPrefix)
+	astore.Replicas = c.OpenSearch.Replicas.IndexSettings()
 	responder := &respond.Runner{
 		Actions:    &respond.Actions{File: c.ResponseFile(), Log: log},
 		Directory:  dir.Settings,
@@ -1166,6 +1179,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		log.Error("playbooks do not start until the playbooks file is fixed", "err", err)
 	}
 	pruns := playbooks.NewOpenSearch(cl, c.OpenSearch.IndexPrefix)
+	pruns.Replicas = c.OpenSearch.Replicas.IndexSettings()
 	// Sessions and the failed sign-in limits carry over a restart.
 	r.sessions.SetIdle(c.SessionIdle())
 	// Agent tokens: one per agent or group, kept in the runtime index so
@@ -1192,9 +1206,24 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		lcancel()
 	}
 	in.jobs.Go(func() { tokens.Run(ctx) })
+	// The agents that send events, for the Endpoints page: counted here,
+	// written once a minute to the runtime index next to the agent
+	// tokens' use, and listed across every server.
+	agentsInv := &agentinv.Inventory{Client: cl, Prefix: c.OpenSearch.IndexPrefix, Log: log,
+		Node: func() string { return sampleNode }, Server: func() string { return sampleServer },
+		ServerCA: func() string {
+			if certs == nil || !c.Server.HTTPS() {
+				return ""
+			}
+			return agentinv.Pin(certs.Fingerprint())
+		},
+		Leader: func() bool { return r.node != nil && r.node.RunsJobs() }}
+	r.agents.Store(agentsInv)
+	in.jobs.Go(func() { agentsInv.Run(ctx) })
 	srv := &api.Server{
 		Config:     c,
 		Tokens:     tokens,
+		Agents:     agentsInv,
 		Engine:     eng,
 		Pipeline:   pipeline,
 		Syslog:     receiver,
@@ -1240,12 +1269,13 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	// which ones are there. Changes to existing indices and the background
 	// jobs are for the one server that runs those.
 	indicesReady := make(chan struct{})
-	var intelOK, casesOK, findingsOK, notifyOK, playbooksOK bool
+	var intelOK, casesOK, findingsOK, notifyOK, playbooksOK, respondOK bool
 	in.jobs.Go(func() {
 		if !ensureTemplate(ctx, cl, c, log) {
 			return
 		}
 		close(templateReady)
+		in.jobs.Go(func() { keepTemplate(ctx, cl, c, log) })
 		if err := ibackend.EnsureIndex(ctx); err != nil {
 			log.Error("could not create the threat intel index; threat intel will not work", "index", ibackend.Index, "err", err)
 		} else {
@@ -1272,6 +1302,8 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		}
 		if err := astore.EnsureIndex(ctx); err != nil {
 			log.Error("could not create the response actions index; response actions will not run", "index", astore.Index, "err", err)
+		} else {
+			respondOK = true
 		}
 		if err := pruns.EnsureIndex(ctx); err != nil {
 			log.Error("could not create the playbook runs index; playbooks will not run", "index", pruns.Index, "err", err)
@@ -1296,7 +1328,9 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 				return
 			}
 			upgradeIndices(ctx, log, func() bool { return r.node == nil || r.node.RunsJobs() }, []indexUpgrade{
-				{intelOK, ibackend.Index, ibackend.Upgrade}, {casesOK, cstore.Index, cstore.Upgrade}, {findingsOK, fstore.Index, fstore.Upgrade},
+				{intelOK, ibackend.Index, ibackend.Upgrade, ibackend.Replicate}, {casesOK, cstore.Index, cstore.Upgrade, cstore.Replicate},
+				{findingsOK, fstore.Index, fstore.Upgrade, fstore.Replicate}, {notifyOK, deliveries.Index, nil, deliveries.Replicate},
+				{playbooksOK, pruns.Index, nil, pruns.Replicate}, {respondOK, astore.Index, nil, astore.Replicate},
 			})
 		}},
 		{Name: "detections", Run: func(ctx context.Context) {
@@ -1379,6 +1413,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			Eligible: c.Detections.Scheduler, NodeURL: nodeURL(c), Listen: c.Server.Listen,
 			Syslog:       cluster.Syslog{UDP: c.Syslog.UDP, TCP: c.Syslog.TCP, TLS: c.Syslog.TLS},
 			Fingerprints: func() cluster.Fingerprints { return filesFingerprints(c, ret, feeds, notes, pbooks) },
+			Indexed:      pipeline.LastIndexed,
 		})
 		// A server with detections.scheduler off never runs the jobs. It
 		// may still hold the lease from before a restart in place, which
@@ -1412,23 +1447,32 @@ func watchJobs(jobs []cluster.Job, c *config.Config, hook func(string, *config.C
 	return out
 }
 
-// indexUpgrade is an index whose fields the job holder brings up to date.
+// indexUpgrade is an index whose fields and settings the job holder
+// brings up to date.
 type indexUpgrade struct {
 	ok      bool // the index is there
 	name    string
-	upgrade func(context.Context) error
+	upgrade func(context.Context) error // adds new fields; nil for none
+	// replicate gives an index made with no copy on another node the
+	// replicas setting new indices get (see store.Replicate); nil for
+	// none.
+	replicate func(context.Context) error
 }
 
-// upgradeIndices adds fields introduced since the indices were made. Only
-// the server that runs the background jobs does, when it starts running
-// them, rather than every server at every start.
+// upgradeIndices adds fields introduced since the indices were made, and
+// lets OpenSearch keep a copy of each on another node. Only the server
+// that runs the background jobs does, when it starts running them, rather
+// than every server at every start. Both changes are the same the second
+// time, so doing them at each takeover is harmless.
 func upgradeIndices(ctx context.Context, log *slog.Logger, allowed func() bool, list []indexUpgrade) {
 	for _, u := range list {
-		if !u.ok || ctx.Err() != nil || !allowed() {
-			continue
-		}
-		if err := u.upgrade(ctx); err != nil && ctx.Err() == nil {
-			log.Warn("could not bring an index up to date; it is tried again when this server next starts running the background jobs", "index", u.name, "err", err)
+		for _, step := range []func(context.Context) error{u.upgrade, u.replicate} {
+			if step == nil || !u.ok || ctx.Err() != nil || !allowed() {
+				continue
+			}
+			if err := step(ctx); err != nil && ctx.Err() == nil {
+				log.Warn("could not bring an index up to date; it is tried again when this server next starts running the background jobs", "index", u.name, "err", err)
+			}
 		}
 	}
 }
@@ -1710,7 +1754,9 @@ func newNotify(c *config.Config, cl *store.Client, log *slog.Logger) (*notify.Ma
 		senders.Protected = notify.Protected{p}
 	}
 	senders.Hostname, _ = os.Hostname()
-	return &notify.Manager{File: c.NotifyFile(), Log: log}, notify.NewOpenSearch(cl, c.OpenSearch.IndexPrefix), senders
+	deliveries := notify.NewOpenSearch(cl, c.OpenSearch.IndexPrefix)
+	deliveries.Replicas = c.OpenSearch.Replicas.IndexSettings()
+	return &notify.Manager{File: c.NotifyFile(), Log: log}, deliveries, senders
 }
 
 // ensureScriptsDir makes the response scripts folder, private to the
@@ -1776,11 +1822,34 @@ func feedEndpointAssets(ctx context.Context, es *endpoint.Store, lists *assets.S
 	}
 }
 
+// keepTemplate checks every five minutes that the index template in
+// place is not from an older Signalith, and puts this server's back when
+// it is: during an upgrade, an older server that started at the same time
+// as this one may have written its template over this one's.
+func keepTemplate(ctx context.Context, cl *store.Client, c *config.Config, log *slog.Logger) {
+	t := time.NewTicker(5 * time.Minute)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		put, err := ingest.RestoreIndexTemplate(ctx, cl, c.OpenSearch.IndexPrefix, c.OpenSearch.Replicas.IndexSettings(), log)
+		if put {
+			log.Info("the index template from an older Signalith was replaced with this version's", "template", c.OpenSearch.IndexPrefix)
+		}
+		if err != nil && ctx.Err() == nil {
+			log.Debug("could not check the index template; tried again in five minutes", "err", err)
+		}
+	}
+}
+
 // ensureTemplate installs the index template, retrying until OpenSearch is up.
 // It reports false if ctx ended first.
 func ensureTemplate(ctx context.Context, cl *store.Client, c *config.Config, log *slog.Logger) bool {
 	for {
-		err := ingest.PutIndexTemplate(ctx, cl, c.OpenSearch.IndexPrefix, c.OpenSearch.Replicas)
+		err := ingest.PutIndexTemplate(ctx, cl, c.OpenSearch.IndexPrefix, c.OpenSearch.Replicas.IndexSettings(), log)
 		if err == nil {
 			log.Info("opensearch index template ready", "url", redact.URL(c.OpenSearch.URL))
 			return true

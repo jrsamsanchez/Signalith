@@ -90,9 +90,17 @@ type Pipeline struct {
 	// loader sets it, on a pipeline of its own: every other pipeline
 	// removes the marker from what senders send (see Reserved).
 	SampleMark string
+	// Servers returns how many servers share each day's field-name
+	// budgets: those that stored events in the last 10 minutes (see
+	// cluster.Node.IndexingServers). nil is this server alone.
+	Servers func() int
+	// FieldCount returns how many fields an index's mapping has (see
+	// MappingFieldCount); nil does not look.
+	FieldCount func(ctx context.Context, index string) (int, error)
 
 	stats   Stats
 	names   fieldBudget
+	counter fieldCounter
 	slots   chan struct{}
 	slotsMu sync.Mutex
 	warnMu  sync.Mutex
@@ -115,6 +123,8 @@ type Stats struct {
 	Indexed  atomic.Int64
 	Failed   atomic.Int64
 	LastSeen atomic.Int64 // unix seconds
+	// LastIndexed is when an event was last stored (unix seconds).
+	LastIndexed atomic.Int64
 	// Retimed counts events whose own time was too old or too far ahead,
 	// so they were filed under the time they arrived.
 	Retimed atomic.Int64
@@ -132,6 +142,7 @@ type Snapshot struct {
 	Retimed       int64     `json:"retimed"`
 	FieldsDropped int64     `json:"fields_dropped"`
 	LastSeen      time.Time `json:"last_seen,omitzero"`
+	LastIndexed   time.Time `json:"last_indexed,omitzero"`
 }
 
 // Stats returns current counters.
@@ -146,7 +157,17 @@ func (p *Pipeline) Stats() Snapshot {
 	if ls := p.stats.LastSeen.Load(); ls > 0 {
 		s.LastSeen = time.Unix(ls, 0).UTC()
 	}
+	s.LastIndexed = p.LastIndexed()
 	return s
+}
+
+// LastIndexed returns when this pipeline last stored an event, zero
+// before the first.
+func (p *Pipeline) LastIndexed() time.Time {
+	if t := p.stats.LastIndexed.Load(); t > 0 {
+		return time.Unix(t, 0).UTC()
+	}
+	return time.Time{}
 }
 
 func (p *Pipeline) now() time.Time {
@@ -274,6 +295,10 @@ func (p *Pipeline) write(ctx context.Context, events []Event, ids []string) (*Re
 	docs := make([]store.IndexedDoc, 0, len(events))
 	var reserved []string
 	ctxOrigin := OriginFrom(ctx)
+	// Each server's share of the day's new field names, and the indices
+	// whose mapping is near OpenSearch's limit, asked once per index.
+	budget := namesBudget(p.servers())
+	full := map[string]bool{}
 	for i := range events {
 		ev := &events[i]
 		if ev.Fields == nil {
@@ -303,7 +328,12 @@ func (p *Pipeline) write(ctx context.Context, events []Event, ids []string) (*Re
 		}
 		day := dayOf(ev.Time)
 		index := datamodel.IndexName(prefix, ev.Model, day)
-		if n := nReserved + p.names.limit(index, day, oldest, ev.Fields); n > 0 {
+		isFull, asked := full[index]
+		if !asked && hasUnknown(ev.Fields) {
+			isFull = p.mappingFull(ctx, index)
+			full[index] = isFull
+		}
+		if n := nReserved + p.names.limitTo(index, day, oldest, ev.Fields, budget, isFull); n > 0 {
 			ev.Fields["dropped_fields"] = int64(n)
 			res.FieldsDropped += n
 		}
@@ -334,7 +364,7 @@ func (p *Pipeline) write(ctx context.Context, events []Event, ids []string) (*Re
 		errs = append(errs, again...)
 		res.FieldsDropped += removed
 	}
-	errs, res.Duplicates = withoutDuplicates(errs, docs)
+	errs, res.Duplicates = store.WithoutConflicts(errs, docs)
 	res.Rejected = len(errs)
 	res.Indexed = len(docs) - len(errs)
 	for _, e := range errs {
@@ -347,6 +377,9 @@ func (p *Pipeline) write(ctx context.Context, events []Event, ids []string) (*Re
 	}
 	res.Errors = errs
 	p.stats.Indexed.Add(int64(res.Indexed))
+	if res.Indexed > 0 {
+		p.stats.LastIndexed.Store(p.now().Unix())
+	}
 	p.stats.Failed.Add(int64(res.Rejected))
 	p.stats.Retimed.Add(int64(res.Retimed))
 	p.stats.FieldsDropped.Add(int64(res.FieldsDropped))
@@ -419,22 +452,6 @@ func retryable(errs []store.BulkItemError, events []Event, docs []store.IndexedD
 		pos = append(pos, e.Pos)
 	}
 	return retry, pos, removed
-}
-
-// withoutDuplicates drops the errors saying a document with the same ID is
-// already stored (an earlier send of the same request got it in), and
-// reports how many there were.
-func withoutDuplicates(errs []store.BulkItemError, docs []store.IndexedDoc) ([]store.BulkItemError, int) {
-	out := errs[:0]
-	n := 0
-	for _, e := range errs {
-		if e.Type == "version_conflict_engine_exception" && e.Pos >= 0 && e.Pos < len(docs) && docs[e.Pos].ID != "" {
-			n++
-			continue
-		}
-		out = append(out, e)
-	}
-	return out, n
 }
 
 // temporary reports whether OpenSearch turned an event away for a reason

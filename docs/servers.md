@@ -83,6 +83,13 @@ These run on one server only:
 Searching, dashboards, investigations and receiving data work on every server, and
 so does loading or removing the [sample data](sample-data.md#several-servers).
 
+**Working on the same finding or case from two servers.** Analysts on different
+servers (or in two browser tabs) can comment on, triage and add to the same finding
+or investigation at the same moment: each change is saved on top of the others, so
+none is lost. In the rare case that many people change one item in the same instant,
+one of them sees "Someone else changed this investigation at the same moment. Try
+again." Nothing was saved for that person; doing it again works.
+
 **How they move.** The server that runs the jobs confirms every 10 seconds, in
 OpenSearch, that it still does. If it stops confirming (it crashed, its computer
 stopped, or it lost OpenSearch), another server takes the jobs over within about
@@ -251,8 +258,41 @@ Until servers can be added from the Servers page:
    running servers with one name get an amber alert.
 7. Give the OpenSearch user the right to create, read and write
    `<prefix>_runtime` (or `<prefix>_*`), where the servers find each other.
+8. If OpenSearch has only one node, consider adding a second one too. With one
+   node, every server's events, findings and investigations are on that one
+   computer. With **Replicas** at `auto` (the default; see
+   [Server settings](settings.md#using-the-page)), OpenSearch keeps a copy of each
+   new day's events on a second node as soon as there is one, and a copy of
+   findings, investigations and threat intel too. Days stored before then keep the
+   copies they had. Set Replicas the same on every server: the servers share one
+   index template, and the setting of the server that started last is used.
 
 When it starts, it appears on the Servers page of every server.
+
+## Field names when several servers receive events
+
+Each day's events go to one index per data model, and OpenSearch allows at most 2,000
+fields in one index. Signalith's own fields always fit; the names senders choose (JSON
+keys, syslog structured data, CEF extensions) share what is left (see
+[Ingest limits](sending-data.md#ingest-limits)). With several servers:
+
+- The budget of new names per daily index (1,000, and 600 for syslog vendor fields) is
+  shared out equally among the servers that stored events in the last 10 minutes, with
+  at least 100 for each. Each server's heartbeat says when it last stored an event, so
+  the shares follow servers as they start and stop.
+- Before adding new names to an index, a server also looks at how many fields the index
+  really has (checked at most every 30 seconds) and adds none once it has 1,600.
+
+Fields over the limit are not lost: their values stay in the event's raw message
+(`_raw`), and the event says how many were left out in `dropped_fields`. Fields
+Signalith produces itself are always kept.
+
+## Agents across servers
+
+The [Endpoints page](endpoints.md#log-agents) lists every log agent once, whichever
+servers it sends to: each server notes the agents it hears from and saves that in
+OpenSearch once a minute. Agents that need a new configuration, for example because they
+trust a certificate authority the servers no longer use, are marked there.
 
 ## Upgrading servers you set up by hand
 
@@ -267,6 +307,13 @@ upgrade servers that share one OpenSearch, either:
 - first turn off **Run detections on schedule** (`detections.scheduler: false`) on
   every server except one, upgrade them one by one, and turn it back on once all of
   them run this version.
+
+While servers of different versions share one OpenSearch, the newest one decides
+how new days' events are stored (the index template): a server of this version or
+later leaves a newer server's template as it is. A server from before this version
+does not know to do that and puts its older template back when it starts; the next
+start of a newer server puts the newer one back. Upgrade all servers to finish
+this.
 
 ## Load balancers: /readyz and /livez
 

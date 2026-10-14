@@ -7,7 +7,10 @@
 //   - GET /, /_cluster/health and /_nodes/_local/stats/os (with the time of
 //     its own clock);
 //   - PUT, HEAD and DELETE of an index, and PUT /<index>/_mapping;
-//   - PUT /_index_template/<name>;
+//   - PUT and GET /_index_template/<name> (GET answers the template as it
+//     was put, which real OpenSearch words its own way);
+//   - PUT /<index>/_settings (recorded, see Settings) and GET
+//     /<index>/_settings (as created, with those changes);
 //   - GET, PUT and DELETE /<index>/_doc/<id>, PUT /<index>/_create/<id>,
 //     POST /<index>/_update/<id> (each with if_seq_no and if_primary_term);
 //   - POST /_mget;
@@ -73,6 +76,7 @@ type Server struct {
 	mu          sync.Mutex
 	indices     map[string]*index
 	templates   map[string]json.RawMessage
+	settings    map[string][]json.RawMessage
 	primaryTerm int64
 	blocked     bool
 	fault       func(method, path string) *Fault
@@ -128,7 +132,7 @@ type doc struct {
 
 // New starts a fake OpenSearch. It stops when the test ends.
 func New(t interface{ Cleanup(func()) }) *Server {
-	s := &Server{indices: map[string]*index{}, templates: map[string]json.RawMessage{}, primaryTerm: 1}
+	s := &Server{indices: map[string]*index{}, templates: map[string]json.RawMessage{}, settings: map[string][]json.RawMessage{}, primaryTerm: 1}
 	s.Server = httptest.NewServer(http.HandlerFunc(s.serve))
 	t.Cleanup(s.Close)
 	return s
@@ -137,7 +141,7 @@ func New(t interface{ Cleanup(func()) }) *Server {
 // NewHandler returns a fake OpenSearch that is not started, for a server
 // of one's own (a demo, say). Its Server field is nil.
 func NewHandler() (*Server, http.Handler) {
-	s := &Server{indices: map[string]*index{}, templates: map[string]json.RawMessage{}, primaryTerm: 1}
+	s := &Server{indices: map[string]*index{}, templates: map[string]json.RawMessage{}, settings: map[string][]json.RawMessage{}, primaryTerm: 1}
 	return s, http.HandlerFunc(s.serve)
 }
 
@@ -231,6 +235,21 @@ func (s *Server) Templates() []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// Template returns an index template as it was put, or nil.
+func (s *Server) Template(name string) json.RawMessage {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.templates[name]
+}
+
+// Settings returns the bodies of the settings changes made to an index
+// that exists, in order.
+func (s *Server) Settings(indexName string) []json.RawMessage {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]json.RawMessage(nil), s.settings[indexName]...)
 }
 
 // Requests returns the requests made, as "METHOD /path?query", and
@@ -334,6 +353,40 @@ func (s *Server) templateFor(name string) json.RawMessage {
 		}
 	}
 	return best
+}
+
+// indexSettings returns an index's settings as GET /<index>/_settings
+// words them (values as text): those it was created with, then each
+// change. number_of_replicas is 1 unless set, as in OpenSearch, and 0
+// under auto_expand_replicas, as on a single node.
+func indexSettings(created json.RawMessage, changes []json.RawMessage) map[string]any {
+	out := map[string]any{}
+	apply := func(m map[string]any) {
+		if in, ok := m["index"].(map[string]any); ok {
+			m = in
+		}
+		for k, v := range m {
+			out[strings.TrimPrefix(k, "index.")] = fmt.Sprint(v)
+		}
+	}
+	var body struct {
+		Settings map[string]any `json:"settings"`
+	}
+	if json.Unmarshal(created, &body) == nil && body.Settings != nil {
+		apply(body.Settings)
+	}
+	for _, c := range changes {
+		var m map[string]any
+		if json.Unmarshal(c, &m) == nil {
+			apply(m)
+		}
+	}
+	if auto, ok := out["auto_expand_replicas"]; ok && auto != "false" {
+		out["number_of_replicas"] = "0"
+	} else if _, ok := out["number_of_replicas"]; !ok {
+		out["number_of_replicas"] = "1"
+	}
+	return out
 }
 
 // put writes a document; the caller holds s.mu.
@@ -441,6 +494,43 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request, p string, body [
 		s.templates[parts[1]] = body
 		s.mu.Unlock()
 		writeJSON(w, 200, map[string]any{"acknowledged": true})
+	case len(parts) == 2 && parts[0] == "_index_template" && r.Method == http.MethodGet:
+		s.mu.Lock()
+		raw := s.templates[parts[1]]
+		s.mu.Unlock()
+		if raw == nil {
+			writeError(w, 404, "resource_not_found_exception", "index template matching ["+parts[1]+"] not found")
+			return
+		}
+		writeJSON(w, 200, map[string]any{"index_templates": []any{map[string]any{"name": parts[1], "index_template": raw}}})
+	case len(parts) == 2 && parts[1] == "_settings" && r.Method == http.MethodPut:
+		s.mu.Lock()
+		blocked, exists := s.blocked, s.indices[parts[0]] != nil
+		if !blocked && exists {
+			s.settings[parts[0]] = append(s.settings[parts[0]], append(json.RawMessage(nil), body...))
+		}
+		s.mu.Unlock()
+		switch {
+		case blocked:
+			s.blockedError(w, parts[0])
+		case !exists:
+			writeError(w, 404, "index_not_found_exception", "no such index ["+parts[0]+"]")
+		default:
+			writeJSON(w, 200, map[string]any{"acknowledged": true})
+		}
+	case len(parts) == 2 && parts[1] == "_settings" && r.Method == http.MethodGet:
+		s.mu.Lock()
+		ix := s.indices[parts[0]]
+		var flat map[string]any
+		if ix != nil {
+			flat = indexSettings(ix.body, s.settings[parts[0]])
+		}
+		s.mu.Unlock()
+		if ix == nil {
+			writeError(w, 404, "index_not_found_exception", "no such index ["+parts[0]+"]")
+			return
+		}
+		writeJSON(w, 200, map[string]any{parts[0]: map[string]any{"settings": map[string]any{"index": flat}}})
 	case strings.HasPrefix(p, "/_cat/"):
 		writeJSON(w, 200, []any{})
 	case p == "/_plugins/_security/authinfo":

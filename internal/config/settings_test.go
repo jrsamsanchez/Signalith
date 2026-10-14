@@ -389,7 +389,7 @@ func TestCheckEditReportsProblemsByField(t *testing.T) {
 		"auth.session_timeout":    "Must be a duration of at least 5m",
 		"retention.days":          "Data retention has its own page",
 		"no.such":                 "There is no setting",
-		"opensearch.replicas":     "Enter a whole number",
+		"opensearch.replicas":     "Enter auto, or a whole number",
 		"search.default_earliest": "not a time in the past",
 	} {
 		if !strings.Contains(res.Fields[key], want) {

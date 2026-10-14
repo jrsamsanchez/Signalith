@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -532,6 +533,15 @@ func TestLiveCopyWithLastBootStops(t *testing.T) {
 		t.Errorf("a: ready %v (%s), runs jobs %v", ok, why, a.RunsJobs())
 	}
 	until(t, 5*time.Second, "a's heartbeat back", func() bool { return heartbeatOf(t, fos, a.ID()).BootID == a.local.BootID })
+	// a can only tell that a copy was started when the copy wrote its
+	// heartbeat. The copy may see a's heartbeat first and stop before it
+	// writes one; then there is nothing to warn about.
+	cp.mu.Lock()
+	wrote := !cp.hb.ver.IsZero()
+	cp.mu.Unlock()
+	if !wrote {
+		return
+	}
 	found := false
 	for _, w := range a.Status().Warnings {
 		found = found || strings.Contains(w.Text, "A copy of this server's state folder was started")
@@ -1071,4 +1081,68 @@ func TestRefusedAfterRunning(t *testing.T) {
 		s := selfOf(n.Status())
 		return s.State == StateReady && s.Detail.OpenSearch.Problem == ""
 	})
+}
+
+func TestIndexingServers(t *testing.T) {
+	fos := ostest.New(t)
+	c := store.New(store.Config{URL: fos.URL})
+	var nilNode *Node
+	if nilNode.IndexingServers(10*time.Minute) != 1 {
+		t.Error("without a node")
+	}
+	at := func(v *atomic.Int64) func() time.Time {
+		return func() time.Time {
+			if n := v.Load(); n != 0 {
+				return time.Unix(n, 0)
+			}
+			return time.Time{}
+		}
+	}
+	var aAt, bAt atomic.Int64
+	a := testNode(t, t.TempDir(), c, true)
+	a.Use(c, "s", Settings{Eligible: true, Indexed: at(&aAt)})
+	// Alone and not indexing yet: itself.
+	if got := a.IndexingServers(10 * time.Minute); got != 1 {
+		t.Errorf("alone: %d", got)
+	}
+	b := testNode(t, t.TempDir(), c, false)
+	b.Use(c, "s", Settings{Indexed: at(&bAt)})
+	until(t, 5*time.Second, "a sees b", func() bool {
+		a.mu.Lock()
+		defer a.mu.Unlock()
+		return len(a.members) >= 2
+	})
+	// Neither has indexed: never less than 1.
+	if got := a.IndexingServers(10 * time.Minute); got != 1 {
+		t.Errorf("nobody indexing: %d", got)
+	}
+	// A server of a version before indexed_at counts while it is up.
+	stopOld := make(chan struct{})
+	oldDone := make(chan struct{})
+	go func() {
+		defer close(oldDone)
+		for {
+			fos.Put("s_runtime", nodeDocID("n_old"), map[string]any{"kind": "node", "node_id": "n_old", "name": "old",
+				"state": StateReady, "version": "0.9.0", "heartbeat_at": time.Now().UTC().Format(time.RFC3339Nano)})
+			select {
+			case <-stopOld:
+				return
+			case <-time.After(100 * time.Millisecond):
+			}
+		}
+	}()
+	aAt.Store(time.Now().Unix())
+	until(t, 5*time.Second, "a counts itself and the old one", func() bool { return a.IndexingServers(10*time.Minute) == 2 })
+	bAt.Store(time.Now().Add(-2 * time.Minute).Unix())
+	until(t, 5*time.Second, "a sees b's indexed_at", func() bool { return a.IndexingServers(10*time.Minute) == 3 })
+	if hb := heartbeatOf(t, fos, b.ID()); hb.IndexedAt == nil || hb.IndexedAt.Unix() != bAt.Load() {
+		t.Errorf("heartbeat indexed_at: %v", hb.IndexedAt)
+	}
+	// b last indexed 15 minutes ago: it no longer counts.
+	bAt.Store(time.Now().Add(-15 * time.Minute).Unix())
+	until(t, 5*time.Second, "b stops counting", func() bool { return a.IndexingServers(10*time.Minute) == 2 })
+	// The old one goes offline: it no longer counts either.
+	close(stopOld)
+	<-oldDone
+	until(t, 5*time.Second, "the old one goes offline", func() bool { return a.IndexingServers(10*time.Minute) == 1 })
 }

@@ -4393,6 +4393,13 @@ dialog.modal.rp-dialog[open] { display: flex; flex-direction: column; max-height
 .ep-sub { font-size: var(--fs-xs); color: var(--text-3); }
 .ep-online { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; color: var(--text-2); }
 .ep-table td.ep-c-ver, .ep-table td.ep-c-addr { white-space: nowrap; }
+.ep-table td.ep-c-agent { white-space: nowrap; }
+.ep-table td .badge .icon { width: 12px; height: 12px; }
+.ep-agent__why { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-sm); }
+.ep-agent__why li { display: flex; align-items: flex-start; gap: 8px; padding: 8px 10px; border-radius: var(--r-md); color: var(--text); background: var(--warning-soft); }
+.ep-agent__why li[data-tone="info"] { background: var(--hover); }
+.ep-agent__why .icon { flex: none; width: 14px; height: 14px; margin-top: 2px; color: var(--warning); }
+.ep-agent__why li[data-tone="info"] .icon { color: var(--text-2); }
 .ep-host__body { display: flex; flex-direction: column; gap: var(--sp-4); max-height: min(70vh, 640px); overflow-y: auto; }
 dialog.ep-host { width: min(680px, calc(100vw - 32px)); }
 dialog.ep-set { width: min(620px, calc(100vw - 32px)); }

@@ -125,6 +125,13 @@ jobs:
         run: |
           mkdir rpms && cp previous/*.x86_64.rpm rpms/previous.rpm && cp packages/*.x86_64.rpm rpms/new.rpm
           .github/scripts/test-rpm.sh rpms/previous.rpm rpms/new.rpm "$VERSION"
+      - name: Install from the apt and dnf repositories
+        env:
+          VERSION: ${{ needs.versions.outputs.version }}
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq apt-utils createrepo-c rpm
+          .github/scripts/test-repos.sh packages "$VERSION"
 
   windows:
     needs: [versions, binaries]

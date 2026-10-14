@@ -645,15 +645,39 @@ func (s *Store) write(name string, data []byte) ([sha256.Size]byte, error) {
 	if err := os.MkdirAll(s.Dir, 0o750); err != nil {
 		return [sha256.Size]byte{}, err
 	}
-	p := filepath.Join(s.Dir, name)
-	tmp := p + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o640); err != nil {
-		return [sha256.Size]byte{}, err
-	}
-	if err := os.Rename(tmp, p); err != nil {
+	if err := replaceFile(filepath.Join(s.Dir, name), data); err != nil {
 		return [sha256.Size]byte{}, err
 	}
 	return sha256.Sum256(data), nil
+}
+
+// replaceFile writes data to path through a temporary file of its own
+// (a unique name, so two servers or two requests writing the same file
+// never write into each other's), then renames it over path. The
+// temporary file is removed on any failure. os.Rename replaces an
+// existing file on Windows too.
+func replaceFile(path string, data []byte) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+"-*.tmp")
+	if err != nil {
+		return err
+	}
+	name := tmp.Name()
+	_, err = tmp.Write(data)
+	if cerr := tmp.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil {
+		// CreateTemp makes the file readable by its owner only; on Windows
+		// Chmod only sets or clears read-only, which is fine.
+		err = os.Chmod(name, 0o640)
+	}
+	if err == nil {
+		err = os.Rename(name, path)
+	}
+	if err != nil {
+		_ = os.Remove(name)
+	}
+	return err
 }
 
 // CSV returns a list as CSV, for download. Cells a spreadsheet would run

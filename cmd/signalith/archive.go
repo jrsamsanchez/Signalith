@@ -78,7 +78,7 @@ func cmdArchive(args []string) error {
 			// instead of keyword), and searches and stats on these days
 			// would not work like on others. Starting the server later does
 			// not fix indices that already exist.
-			herr = ingest.PutIndexTemplate(hctx, cl, c.OpenSearch.IndexPrefix, c.OpenSearch.Replicas)
+			herr = ingest.PutIndexTemplate(hctx, cl, c.OpenSearch.IndexPrefix, c.OpenSearch.Replicas.IndexSettings(), nil)
 			if herr != nil {
 				herr = fmt.Errorf("could not install the index template, so nothing was restored: %w", herr)
 			}

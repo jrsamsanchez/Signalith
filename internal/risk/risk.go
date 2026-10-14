@@ -48,6 +48,8 @@ func (s *Store) Write(ctx context.Context, events []detect.RiskEvent) error {
 	if err != nil {
 		return err
 	}
+	// A risk event with an ID that is already stored was written before.
+	errs, _ = store.WithoutConflicts(errs, docs)
 	if len(errs) > 0 {
 		return fmt.Errorf("%d risk events were rejected: %s", len(errs), errs[0].Reason)
 	}

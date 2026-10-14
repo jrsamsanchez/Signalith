@@ -498,7 +498,49 @@ type OpenSearch struct {
 	// could read them. Off, that is refused; use https instead.
 	AllowInsecureHTTP bool   `yaml:"allow_insecure_http,omitempty"`
 	IndexPrefix       string `yaml:"index_prefix"`
-	Replicas          int    `yaml:"replicas"`
+	// Replicas is how many extra copies of each new index OpenSearch keeps
+	// on other nodes: "auto" (the default) or a whole number.
+	Replicas Replicas `yaml:"replicas"`
+}
+
+// Replicas is opensearch.replicas: "auto", or a whole number of extra
+// copies, such as "0". Empty means auto, so a configuration from before
+// it could be auto, which leaves the setting out, gets auto too.
+type Replicas string
+
+// ReplicasAuto keeps one copy on another node once OpenSearch has more
+// than one, and none on a single node.
+const ReplicasAuto Replicas = "auto"
+
+// count returns the number of copies, or ok false for auto. A value that
+// is neither auto nor a whole number of 0 or more is not ok either.
+func (r Replicas) count() (n int, auto, ok bool) {
+	s := strings.TrimSpace(string(r))
+	if s == "" || strings.EqualFold(s, string(ReplicasAuto)) {
+		return 0, true, true
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil || n < 0 || strings.HasPrefix(s, "+") {
+		return 0, false, false
+	}
+	return n, false, true
+}
+
+// Valid reports whether r is auto or a whole number of 0 or more.
+func (r Replicas) Valid() bool {
+	_, _, ok := r.count()
+	return ok
+}
+
+// IndexSettings returns the index settings for r: auto_expand_replicas
+// "0-1" for auto, else number_of_replicas. A value that is not valid
+// (Validate refuses it) is taken as auto.
+func (r Replicas) IndexSettings() map[string]any {
+	n, auto, ok := r.count()
+	if auto || !ok {
+		return map[string]any{"auto_expand_replicas": "0-1"}
+	}
+	return map[string]any{"number_of_replicas": n}
 }
 
 // problems checks the connection settings. resolve makes file paths
@@ -1071,7 +1113,7 @@ func (c *Config) StaleAfter() time.Duration {
 func Default() *Config {
 	return &Config{
 		Server:     Server{Listen: "127.0.0.1:8080"},
-		OpenSearch: OpenSearch{URL: "http://127.0.0.1:9200", IndexPrefix: "signalith"},
+		OpenSearch: OpenSearch{URL: "http://127.0.0.1:9200", IndexPrefix: "signalith", Replicas: ReplicasAuto},
 		Search:     Search{DefaultEarliest: "-24h", MaxEvents: 10000},
 		Retention:  Retention{Days: 90},
 		Auth:       Auth{AdminUser: "admin"},
@@ -1731,8 +1773,8 @@ func (c *Config) Validate() error {
 	if c.OpenSearch.IndexPrefix == "" || strings.ToLower(c.OpenSearch.IndexPrefix) != c.OpenSearch.IndexPrefix || strings.ContainsAny(c.OpenSearch.IndexPrefix, `*?"<>|, /\#`) {
 		p = append(p, "opensearch.index_prefix must be lowercase with no spaces or wildcards")
 	}
-	if c.OpenSearch.Replicas < 0 {
-		p = append(p, "opensearch.replicas cannot be negative")
+	if !c.OpenSearch.Replicas.Valid() {
+		p = append(p, "opensearch.replicas must be auto or a whole number of 0 or more")
 	}
 	if c.Search.MaxEvents < 1 || c.Search.MaxEvents > 100000 {
 		p = append(p, "search.max_events must be between 1 and 100000")

@@ -1,13 +1,18 @@
 name: Website
 # Publishes site/ (the project website) to GitHub Pages at https://signalith.io,
-# with the documentation (mkdocs.yml, docs/) built into it at /docs/.
+# with the documentation (mkdocs.yml, docs/) built into it at /docs/, and the
+# signed apt and dnf repositories (deploy/repos) at /apt/ and /rpm/, rebuilt
+# from the newest releases' packages, including after each Release run.
 # Pages must be set to deploy from GitHub Actions (Settings > Pages > Build and
 # deployment > Source), with signalith.io as its custom domain there; with
 # Actions deployments the custom domain is that setting, not a CNAME file.
 on:
   push:
     branches: [main]
-    paths: ['site/**', 'docs/**', 'mkdocs.yml', '.github/workflows/pages.yml']
+    paths: ['site/**', 'docs/**', 'mkdocs.yml', 'deploy/repos/**', '.github/scripts/repo-packages.sh', '.github/workflows/pages.yml']
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
   workflow_dispatch:
 
 permissions:
@@ -21,6 +26,7 @@ concurrency:
 
 jobs:
   deploy:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
@@ -35,6 +41,30 @@ jobs:
           "$RUNNER_TEMP/mkdocs/bin/python" -m pip install --disable-pip-version-check -r docs/requirements.txt
           cp -R site "$RUNNER_TEMP/pages"
           "$RUNNER_TEMP/mkdocs/bin/mkdocs" build --strict -d "$RUNNER_TEMP/pages/docs"
+      # apt and dnf need the repositories signed, so they are left out until
+      # the GPG key is set up (docs/releasing.md).
+      - name: Build the apt and dnf repositories into the website
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GPG_KEY: ${{ secrets.SIGNALITH_GPG_PRIVATE_KEY }}
+          SIGNALITH_GPG_PASSPHRASE: ${{ secrets.SIGNALITH_GPG_PASSPHRASE }}
+        run: |
+          if [ -z "$GPG_KEY" ]; then
+            echo "::warning::No SIGNALITH_GPG_PRIVATE_KEY secret, so the website has no apt and dnf repositories. docs/releasing.md says how to add the key."
+            exit 0
+          fi
+          .github/scripts/repo-packages.sh "$RUNNER_TEMP/repo-packages"
+          if ! ls "$RUNNER_TEMP"/repo-packages/*.deb >/dev/null 2>&1; then
+            echo "::warning::No release has Linux packages yet, so the website has no apt and dnf repositories."
+            exit 0
+          fi
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq apt-utils createrepo-c rpm
+          export GNUPGHOME="$RUNNER_TEMP/gnupg"
+          mkdir -m 700 "$GNUPGHOME"
+          printf '%s\n' "$GPG_KEY" | gpg --batch --import
+          deploy/repos/build.sh "$RUNNER_TEMP/repo-packages" "$RUNNER_TEMP/pages" https://signalith.io
+          rm -rf "$GNUPGHOME"
       - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
         with:
           path: ${{ runner.temp }}/pages
