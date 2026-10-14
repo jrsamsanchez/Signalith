@@ -18,12 +18,12 @@ import (
 // hashes the template says so): a server only replaces a template of a
 // lower version, so an older Signalith started next to a newer one does
 // not put its older template back.
-const TemplateVersion = 10
+const TemplateVersion = 11
 
 // templateHash is the SHA-256 of IndexTemplate("p", auto replicas) as
 // JSON, which TestTemplateVersionBumped compares, so a change to the
 // template cannot go out without a new TemplateVersion.
-const templateHash = "60d50b37f460038a43725b0c32c67798244bc98e85a05a905c74332fcce2c8cd"
+const templateHash = "191adfe035841a42b72de61ff8c480e27e2fec3cb3c0e941ab5b873cb11b0448"
 
 // IndexTemplate returns the OpenSearch index template every Signalith index
 // uses: strings are exact-match keywords (fast filters and stats), the raw

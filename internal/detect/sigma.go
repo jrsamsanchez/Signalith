@@ -80,9 +80,10 @@ var sigmaFields = map[string]string{
 	"processguid":       "process_guid",
 	"parentprocessguid": "parent_process_guid",
 	// Sysmon network fields (event 3); Initiated becomes direction.
-	"sourcehostname": "src_host",
-	"initiated":      "direction",
-	"sourceisipv6":   "src_is_ipv6",
+	"sourcehostname":      "src_host",
+	"initiated":           "direction",
+	"sourceisipv6":        "src_is_ipv6",
+	"destinationportname": "dest_port_name",
 	// The provider that wrote the event, in any log source.
 	"provider_name": "provider",
 	"signature":     "signature",

@@ -3,6 +3,7 @@ package splcheck
 import (
 	"errors"
 	"fmt"
+	"net/netip"
 	"regexp"
 	"slices"
 	"strings"
@@ -38,6 +39,12 @@ func (c *Cmp) matches(p, v string) bool {
 	if c.Regex {
 		re, err := compiled(p)
 		return err == nil && re.MatchString(v)
+	}
+	// Splunk's search matches an address against a range written as
+	// one (dest_ip=10.0.0.0/8).
+	if pre, err := netip.ParsePrefix(p); err == nil {
+		a, err := netip.ParseAddr(v)
+		return err == nil && pre.Contains(a)
 	}
 	return Glob(p, v)
 }
@@ -337,7 +344,7 @@ func (p *parser) field(name string) (string, error) {
 	if !slices.Contains(Nodes[p.node], f) {
 		return "", fmt.Errorf("field %s has no Signalith mapping", name)
 	}
-	return f, nil
+	return nodeField(p.node, f), nil
 }
 
 // Eval reports whether an event, as field values, matches a where clause

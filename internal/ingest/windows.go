@@ -682,6 +682,7 @@ func parseSysmon(eventID string, kv map[string]string, ev *Event) {
 		f["dest"] = kv["DestinationIp"]
 		f["dest_host"] = kv["DestinationHostname"]
 		f["dest_port"] = atoi(kv["DestinationPort"])
+		f["dest_port_name"] = kv["DestinationPortName"]
 		f["process_name"] = baseName(kv["Image"])
 		f["process_path"] = kv["Image"]
 		f["process_guid"] = kv["ProcessGuid"]

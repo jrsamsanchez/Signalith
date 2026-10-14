@@ -84,7 +84,9 @@ func TestParseRefuses(t *testing.T) {
 		"| tstats count from datamodel=Endpoint.Processes where Filesystem.file_name=x by Processes.dest":                  "not a field of",
 		"| tstats count from datamodel=Endpoint.Processes where `nope` by Processes.dest":                                  "not defined",
 		"| tstats count from datamodel=Endpoint.Processes where Processes.process_name IN (\"a\" \"b\") by Processes.dest": "missing )",
-		"| tstats count from datamodel=Network_Traffic.All_Traffic where All_Traffic.dest_port=1 by All_Traffic.dest":      "not a tstats",
+		"| tstats count from datamodel=Network_Traffic.DNS where DNS.query=x by DNS.dest":                                  "not supported",
+		"| tstats count from datamodel=Endpoint.All_Traffic where All_Traffic.dest_port=1 by All_Traffic.dest":             "not supported",
+		"| tstats count from datamodel=Network_Traffic.All_Traffic where All_Traffic.dest=x by All_Traffic.dest":           "no Signalith mapping",
 		"| tstats count from datamodel=Endpoint.Processes where Processes.process_id>4 by Processes.dest":                  "not supported",
 	} {
 		_, err := Parse(rule(search), testMacros)
@@ -380,6 +382,41 @@ func TestParseSysmonFileRegistryProcess(t *testing.T) {
 		}
 		if !found {
 			t.Errorf("%s: no test event matches", c.search)
+		}
+	}
+}
+
+func TestParseNetwork(t *testing.T) {
+	r, err := Parse(rule("| tstats count from datamodel=Network_Traffic.All_Traffic where All_Traffic.app=\"*\\\\certutil.exe\" NOT All_Traffic.dest_ip IN (\"10.0.0.0/8\", \"192.168.0.0/16\") by All_Traffic.dest"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ev := map[string]string{"signature_id": "3", "process_path": `C:\Windows\System32\certutil.exe`, "dest": "93.184.216.34"}
+	if !Eval(r.Where, ev) {
+		t.Error("does not match a public address")
+	}
+	ev["dest"] = "10.1.2.3"
+	if Eval(r.Where, ev) {
+		t.Error("matches a private address")
+	}
+	if r, err = Parse(rule("`sysmon` EventCode=22 QueryName=\"tinyurl.com\" | stats count by dest"), nil); err != nil || r.Node != "DnsQuery" {
+		t.Fatalf("dns: %v %+v", err, r)
+	}
+	if r, err = Parse(rule("`wineventlog_security` EventCode=4624 Logon_Type=10 | stats count by dest"), nil); err != nil || r.Node != "Logon" ||
+		!Eval(r.Where, map[string]string{"signature_id": "4624", "logon_type": "10"}) {
+		t.Fatalf("logon: %v %+v", err, r)
+	}
+	for _, r := range []string{"`sysmon` EventCode=3 DestinationPort=21 | stats count by dest", "`sysmon` EventCode=22 QueryName=\"x.com\" | stats count by dest"} {
+		rr, err := Parse(rule(r), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		found := false
+		for _, c := range Cases(rr) {
+			found = found || c.Expect
+		}
+		if !found {
+			t.Errorf("%s: no test event matches", r)
 		}
 	}
 }

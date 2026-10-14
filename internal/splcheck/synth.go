@@ -5,6 +5,7 @@ import (
 	"html"
 	"maps"
 	"math/rand"
+	"net/netip"
 	"path"
 	"regexp"
 	"slices"
@@ -99,6 +100,14 @@ func line(kids []Expr, neg bool) [][]lit {
 func instantiate(p string) string {
 	if p == "*" {
 		return "x"
+	}
+	// An address range becomes an address in it.
+	if pre, err := netip.ParsePrefix(p); err == nil {
+		a := pre.Masked().Addr()
+		if n := a.Next(); pre.Contains(n) {
+			a = n
+		}
+		return a.String()
 	}
 	// A * at either end becomes a letter so values keep their edges (a
 	// command line does not start with a space); inside, a space.
@@ -416,6 +425,33 @@ func records(node string, ev map[string]string) []sigmacheck.Case {
 			}
 		}
 		return []sigmacheck.Case{{Channel: sigmacheck.SysmonChannel, EventID: id, Data: s}}
+	case "NetworkConnection", "All_Traffic":
+		s := maps.Clone(sigmacheck.Bases["network_connection"])
+		// A public address: rules leave out private and reserved ranges.
+		s["DestinationIp"] = "93.184.216.34"
+		set(s, "Image", imagePath(ev["process_path"], ev["process_name"]))
+		set(s, "DestinationIp", ev["dest"])
+		set(s, "DestinationPort", ev["dest_port"])
+		set(s, "DestinationPortName", ev["dest_port_name"])
+		set(s, "DestinationHostname", ev["dest_host"])
+		set(s, "SourceIp", ev["src"])
+		set(s, "SourcePort", ev["src_port"])
+		return []sigmacheck.Case{{Channel: sigmacheck.SysmonChannel, EventID: "3", Data: s}}
+	case "DnsQuery":
+		s := maps.Clone(sigmacheck.Bases["dns_query"])
+		set(s, "Image", imagePath(ev["process_path"], ev["process_name"]))
+		set(s, "QueryName", ev["query"])
+		return []sigmacheck.Case{{Channel: sigmacheck.SysmonChannel, EventID: "22", Data: s}}
+	case "Logon":
+		s := maps.Clone(sigmacheck.Bases[sigmacheck.SecurityCategory("4624")])
+		set(s, "LogonType", ev["logon_type"])
+		set(s, "TargetUserName", ev["user"])
+		set(s, "AuthenticationPackageName", ev["authentication_method"])
+		set(s, "LogonProcessName", ev["logon_process"])
+		set(s, "IpAddress", ev["src"])
+		set(s, "WorkstationName", ev["src_host"])
+		set(s, "ProcessName", ev["process_path"])
+		return []sigmacheck.Case{{Channel: sigmacheck.SecurityChannel, EventID: "4624", Data: s}}
 	case "ImageLoad":
 		s := map[string]string{"ProcessId": "4242", "ProcessGuid": "{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}"}
 		set(s, "Image", imagePath(ev["process_path"], ev["process_name"]))
@@ -705,7 +741,7 @@ func Cases(r *Rule) []sigmacheck.Case {
 }
 
 // NodeModel is the Signalith data model of each node ("" for any).
-var NodeModel = map[string]string{"Processes": "Endpoint", "Filesystem": "Filesystem", "Registry": "Registry", "PowerShell": "Script", "ImageLoad": "Image_Load", "ProcessAccess": "Endpoint", "TaskCreated": "Change", "ObjectAccess": "", "ServiceInstalled": "Change", "DirectoryChange": "Change", "ShareAccess": "Filesystem", "KerberosTGT": "Authentication", "KerberosService": "Authentication", "UserChanged": "Change", "GroupMemberAdded": "Change"}
+var NodeModel = map[string]string{"Processes": "Endpoint", "Filesystem": "Filesystem", "Registry": "Registry", "PowerShell": "Script", "ImageLoad": "Image_Load", "ProcessAccess": "Endpoint", "NetworkConnection": "Network_Traffic", "All_Traffic": "Network_Traffic", "DnsQuery": "Network_Resolution", "Logon": "Authentication", "TaskCreated": "Change", "ObjectAccess": "", "ServiceInstalled": "Change", "DirectoryChange": "Change", "ShareAccess": "Filesystem", "KerberosTGT": "Authentication", "KerberosService": "Authentication", "UserChanged": "Change", "GroupMemberAdded": "Change"}
 
 // AttackDataSource marks a test event recorded in a real attack (Splunk's
 // attack_data, by internal/detect/attackgen).
@@ -721,21 +757,25 @@ func Reads(r *Rule, c sigmacheck.Case) bool {
 // NodeEvents are the Windows event IDs each node reads (as Splunk's
 // add-ons map them to the data model).
 var NodeEvents = map[string][]string{
-	"Processes":        {"1", "4688"},
-	"Filesystem":       {"11", "23", "26"},
-	"Registry":         {"12", "13", "14"},
-	"PowerShell":       {"4104"},
-	"ImageLoad":        {"7"},
-	"ProcessAccess":    {"8", "10"},
-	"TaskCreated":      {"4698"},
-	"ObjectAccess":     {"4663"},
-	"ServiceInstalled": {"7045"},
-	"DirectoryChange":  {"5136"},
-	"ShareAccess":      {"5145"},
-	"KerberosTGT":      {"4768"},
-	"KerberosService":  {"4769"},
-	"UserChanged":      {"4738"},
-	"GroupMemberAdded": {"4732"},
+	"Processes":         {"1", "4688"},
+	"Filesystem":        {"11", "23", "26"},
+	"Registry":          {"12", "13", "14"},
+	"PowerShell":        {"4104"},
+	"ImageLoad":         {"7"},
+	"ProcessAccess":     {"8", "10"},
+	"NetworkConnection": {"3"},
+	"All_Traffic":       {"3"},
+	"DnsQuery":          {"22"},
+	"Logon":             {"4624"},
+	"TaskCreated":       {"4698"},
+	"ObjectAccess":      {"4663"},
+	"ServiceInstalled":  {"7045"},
+	"DirectoryChange":   {"5136"},
+	"ShareAccess":       {"5145"},
+	"KerberosTGT":       {"4768"},
+	"KerberosService":   {"4769"},
+	"UserChanged":       {"4738"},
+	"GroupMemberAdded":  {"4732"},
 }
 
 // InModel reports whether an event of a data model is one a node reads.

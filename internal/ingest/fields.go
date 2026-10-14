@@ -104,8 +104,9 @@ var knownFields = func() map[string]string {
 		// account, and the log's provider.
 		"service_name": kw, "service_path": kw, "service_type": kw, "service_start_type": kw, "service_account": kw,
 		"provider": kw,
-		// Whether a Sysmon network connection's source is an IPv6 address.
-		"src_is_ipv6": kw,
+		// Whether a Sysmon network connection's source is an IPv6 address,
+		// and the service name of its destination port (smtp, ftp).
+		"src_is_ipv6": kw, "dest_port_name": kw,
 		// A logon's (Security 4624 and 4625) logon process and account SID,
 		// and for a 4624 the SID of the account that asked for it, its key
 		// length, impersonation level, elevation and outbound account.

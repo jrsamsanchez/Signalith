@@ -391,7 +391,7 @@ The generator keeps each rule's Signalith ID across runs, rewrites `rules/`,
 
 ### Splunk Security Content
 
-**Splunk Security Content** (`internal/detect/packs/splunk`) holds 892 Windows and
+**Splunk Security Content** (`internal/detect/packs/splunk`) holds 903 Windows and
 Linux detections from Splunk's Threat Research Team
 ([security_content](https://github.com/splunk/security_content)), pinned to one
 commit. They are the production TTP and anomaly rules that search the CIM
@@ -404,12 +404,16 @@ names, so each rule's `where` clause becomes a Signalith filter field for field:
 | `Endpoint.Processes` | Sysmon 1, Security 4688 | Endpoint |
 | `Endpoint.Filesystem` | Sysmon 11, 23 and 26 | Filesystem |
 | `Endpoint.Registry` | Sysmon 12, 13 and 14 | Registry |
+| `Network_Traffic.All_Traffic` | Sysmon 3 (`app` is the program's path, `dest_ip` and `src_ip` are `dest` and `src`) | Network_Traffic |
 | `` `powershell` EventCode=4104 `` (raw search) | PowerShell 4104 | Script |
 | `` `sysmon` EventCode=1 `` (raw search) | Sysmon 1 | Endpoint |
+| `` `sysmon` EventCode=3 `` (raw search) | Sysmon 3 | Network_Traffic |
 | `` `sysmon` EventCode=7 `` (raw search) | Sysmon 7 | Image_Load |
+| `` `sysmon` EventCode=22 `` (raw search) | Sysmon 22 | Network_Resolution |
 | `` `sysmon` EventCode=11 ``, `23` or `26` (raw search) | Sysmon 11, 23 and 26 | Filesystem |
 | `` `sysmon` EventCode=12 ``, `13` or `14` (raw search) | Sysmon 12, 13 and 14 | Registry |
 | `` `sysmon` EventCode=8 `` or `10` (raw search) | Sysmon 8 and 10 | Endpoint |
+| `` `wineventlog_security` EventCode=4624 `` (raw search) | Security 4624 (successful logon) | Authentication |
 | `` `wineventlog_security` EventCode=4698 `` (raw search) | Security 4698 (scheduled task created) | Change |
 | `` `wineventlog_security` EventCode=4663 `` (raw search) | Security 4663 (object access) | Filesystem for a file, Registry for a key |
 | `` `wineventlog_system` EventCode=7045 `` (raw search) | System 7045 (service installed) | Change |
@@ -499,7 +503,7 @@ the real Windows parser, the converted detection agrees with Splunk's reading of
 clause on every event. A regular expression converts when it is also valid in Go's
 syntax (no lookarounds) and OpenSearch can search it exactly (no word boundaries).
 A value with a `?`, which Splunk reads literally, is searched as a regular expression
-too. Raw searches that test an access mask bit by bit (`eval m = tonumber(GrantedAccess, 16)`,
+too. An address range (`dest_ip IN ("10.0.0.0/8", ...)`) matches the addresses in it, as in Splunk. Raw searches that test an access mask bit by bit (`eval m = tonumber(GrantedAccess, 16)`,
 `bit_and(m, 16)` and a `where` on the result being the mask, 0 or not 0) convert to a regular
 expression over the mask's hex digits. Searches with other `eval`s, `rex`, `lookup`, and other
 raw searches are left out for now; `internal/detect/packs/splunk/REPORT.md` lists

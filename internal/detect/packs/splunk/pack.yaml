@@ -234,6 +234,10 @@ rules:
     rule_id: 72170ec5-f7d2-42f5-aefb-2b8be6aad15f
     file: detect_regasm_spawning_a_process.yml
     path: detections/endpoint/detect_regasm_spawning_a_process.yml
+  - id: splunk-detect-regasm-with-network-connection
+    rule_id: 07921114-6db4-4e2e-ae58-3ea8a52ae93f
+    file: detect_regasm_with_network_connection.yml
+    path: detections/endpoint/detect_regasm_with_network_connection.yml
   - id: splunk-detect-regasm-with-no-command-line-arguments
     rule_id: c3bc1430-04e7-4178-835f-047d8e6e97df
     file: detect_regasm_with_no_command_line_arguments.yml
@@ -242,6 +246,10 @@ rules:
     rule_id: bc477b57-5c21-4ab6-9c33-668772e7f114
     file: detect_regsvcs_spawning_a_process.yml
     path: detections/endpoint/detect_regsvcs_spawning_a_process.yml
+  - id: splunk-detect-regsvcs-with-network-connection
+    rule_id: e3e7a1c0-f2b9-445c-8493-f30a63522d1a
+    file: detect_regsvcs_with_network_connection.yml
+    path: detections/endpoint/detect_regsvcs_with_network_connection.yml
   - id: splunk-detect-regsvcs-with-no-command-line-arguments
     rule_id: 6b74d578-a02e-4e94-a0d1-39440d0bf254
     file: detect_regsvcs_with_no_command_line_arguments.yml
@@ -1038,6 +1046,14 @@ rules:
     rule_id: 4c38c264-1f74-11ec-b5fa-acde48001122
     file: logon_script_event_trigger_execution.yml
     path: detections/endpoint/logon_script_event_trigger_execution.yml
+  - id: splunk-lolbas-network-connection-on-uncommon-port
+    rule_id: a6628e6d-be28-4278-b17d-6b5a32968eea
+    file: lolbas_network_connection_on_uncommon_port.yml
+    path: detections/endpoint/lolbas_network_connection_on_uncommon_port.yml
+  - id: splunk-lolbas-rare-network-connection
+    rule_id: d09b66cc-269b-4675-81b5-a3dabe4f5ac2
+    file: lolbas_rare_network_connection.yml
+    path: detections/endpoint/lolbas_rare_network_connection.yml
   - id: splunk-mailsniper-invoke-functions
     rule_id: a36972c8-b894-11eb-9f78-acde48001122
     file: mailsniper_invoke_functions.yml
@@ -2050,6 +2066,10 @@ rules:
     rule_id: 347e0892-e8f3-4512-afda-dc0e3fa996f3
     file: windows_dns_gather_network_info.yml
     path: detections/endpoint/windows_dns_gather_network_info.yml
+  - id: splunk-windows-dns-query-request-to-tinyurl
+    rule_id: b1ea79da-719c-437c-acaf-5c93f838f425
+    file: windows_dns_query_request_to_tinyurl.yml
+    path: detections/endpoint/windows_dns_query_request_to_tinyurl.yml
   - id: splunk-windows-dnsadmins-new-member-added
     rule_id: 27e600aa-77f8-4614-bc80-2662a67e2f48
     file: windows_dnsadmins_new_member_added.yml
@@ -2158,6 +2178,10 @@ rules:
     rule_id: a44c0be1-d7ab-41e4-92fd-aa9af4fe232c
     file: windows_file_share_discovery_with_powerview.yml
     path: detections/endpoint/windows_file_share_discovery_with_powerview.yml
+  - id: splunk-windows-file-transfer-protocol-in-non-common-process-path
+    rule_id: 0f43758f-1fe9-470a-a9e4-780acc4d5407
+    file: windows_file_transfer_protocol_in_non_common_process_path.yml
+    path: detections/endpoint/windows_file_transfer_protocol_in_non_common_process_path.yml
   - id: splunk-windows-files-and-dirs-access-rights-modification-via-ica
     rule_id: c76b796c-27e1-4520-91c4-4a58695c749e
     file: windows_files_and_dirs_access_rights_modification_via_icacls.yml
@@ -2434,6 +2458,10 @@ rules:
     rule_id: 48cc1605-538c-4223-8382-e36bee5b540d
     file: windows_lsa_secrets_nolmhash_registry.yml
     path: detections/endpoint/windows_lsa_secrets_nolmhash_registry.yml
+  - id: splunk-windows-mail-protocol-in-non-common-process-path
+    rule_id: ac3311f5-661d-4e99-bd1f-3ec665b05441
+    file: windows_mail_protocol_in_non_common_process_path.yml
+    path: detections/endpoint/windows_mail_protocol_in_non_common_process_path.yml
   - id: splunk-windows-mark-of-the-web-bypass
     rule_id: 8ca13343-7405-4916-a2d1-ae34ce0c28ae
     file: windows_mark_of_the_web_bypass.yml
@@ -2666,6 +2694,10 @@ rules:
     rule_id: 125f96f9-6f34-418b-b868-c4a8d7fb865f
     file: windows_netsupport_rmm_dll_loaded_by_uncommon_process.yml
     path: detections/endpoint/windows_netsupport_rmm_dll_loaded_by_uncommon_process.yml
+  - id: splunk-windows-network-connection-from-program-in-suspect-locati
+    rule_id: 90fd571b-78d4-409e-a2de-0f0a80c75a84
+    file: windows_network_connection_from_program_in_suspect_location.yml
+    path: detections/endpoint/windows_network_connection_from_program_in_suspect_location.yml
   - id: splunk-windows-network-sniffing-tool-executed
     rule_id: 0c594353-e12d-4867-92f6-2a1b8a1faf5f
     file: windows_network_sniffing_tool_executed.yml
@@ -2702,6 +2734,10 @@ rules:
     rule_id: b1ce9a72-73cf-11ec-981b-acde48001122
     file: windows_non_system_account_targeting_lsass.yml
     path: detections/endpoint/windows_non_system_account_targeting_lsass.yml
+  - id: splunk-windows-non-system-process-querying-definition-update
+    rule_id: 9d375cfd-c9a5-48ff-b875-9bcaf6b63265
+    file: windows_non_system_process_querying_definition_update.yml
+    path: detections/endpoint/windows_non_system_process_querying_definition_update.yml
   - id: splunk-windows-northstar-c2-agent-execution
     rule_id: 5f13d5b2-5181-487b-89eb-e2b471522202
     file: windows_northstar_c2_agent_execution.yml
@@ -3014,6 +3050,10 @@ rules:
     rule_id: 1af84ac8-05ea-4f11-8541-b2d1e45a7744
     file: windows_rdp_client_launched_with_admin_session.yml
     path: detections/endpoint/windows_rdp_client_launched_with_admin_session.yml
+  - id: splunk-windows-rdp-login-session-was-established
+    rule_id: 00ca7f9e-88ab-4841-a6c2-83979ab1ed29
+    file: windows_rdp_login_session_was_established.yml
+    path: detections/endpoint/windows_rdp_login_session_was_established.yml
   - id: splunk-windows-rdp-server-registry-deletion
     rule_id: 1a058296-7c68-4d66-9560-464764d6e26c
     file: windows_rdp_server_registry_deletion.yml
@@ -3462,6 +3502,10 @@ rules:
     rule_id: 5c7ee6ad-baf4-44fb-b2f0-0cfeddf82dbc
     file: windows_user_execution_malicious_url_shortcut_file.yml
     path: detections/endpoint/windows_user_execution_malicious_url_shortcut_file.yml
+  - id: splunk-windows-visual-basic-commandline-compiler-dnsquery
+    rule_id: 8976744a-ae7a-46a4-8128-690df85c2af4
+    file: windows_visual_basic_commandline_compiler_dnsquery.yml
+    path: detections/endpoint/windows_visual_basic_commandline_compiler_dnsquery.yml
   - id: splunk-windows-vssvc-process-accessing-defender-engine
     rule_id: 0c398be7-e33a-4882-9546-12166ceaf73c
     file: windows_vssvc_process_accessing_defender_engine.yml

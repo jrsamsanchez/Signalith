@@ -108,11 +108,29 @@ var Nodes = map[string][]string{
 		"registry_path", "registry_key_name", "registry_value_name", "registry_value_data", "action",
 		"process_name", "process_path", "user",
 	},
+	// Network_Traffic.All_Traffic, as Sysmon's network connections (3)
+	// fill it.
+	"All_Traffic": {"app", "dest_ip", "dest_port", "src_ip", "src_port", "transport"},
+}
+
+// NodeRenames are the node fields Signalith stores under another name:
+// a connection's app is its program's path, and its addresses are dest
+// and src.
+var NodeRenames = map[string]map[string]string{
+	"All_Traffic": {"app": "process_path", "dest_ip": "dest", "src_ip": "src"},
+}
+
+// nodeField is the Signalith field a node's field is stored as.
+func nodeField(node, f string) string {
+	if r, ok := NodeRenames[node][f]; ok {
+		return r
+	}
+	return f
 }
 
 // The stages after the where clause that only reshape the results.
 var (
-	tstatsRe    = regexp.MustCompile(`(?is)^\|\s*tstats\s+.*?\bfrom\s+datamodel=Endpoint\.(\w+)\s+where\s+(.*?)\s+by\s+[^|]*$`)
+	tstatsRe    = regexp.MustCompile(`(?is)^\|\s*tstats\s+.*?\bfrom\s+datamodel=(Endpoint|Network_Traffic)\.(\w+)\s+where\s+(.*?)\s+by\s+[^|]*$`)
 	harmlessRe  = regexp.MustCompile("^`(drop_dm_object_name|security_content_ctime)\\([^`]*\\)`$")
 	filterRe    = regexp.MustCompile("^`[\\w-]+_filter`$")
 	summariesRe = regexp.MustCompile("`security_content_summariesonly`")
@@ -150,22 +168,22 @@ func Parse(src []byte, macros map[string]*Macro) (*Rule, error) {
 	if m == nil {
 		return nil, errors.New("search is not a tstats search of Endpoint.Processes, Filesystem or Registry")
 	}
-	r.Node = m[1]
+	r.Node = m[2]
 	fields, ok := Nodes[r.Node]
-	if !ok {
-		return nil, fmt.Errorf("data model node Endpoint.%s is not supported", r.Node)
+	if !ok || (m[1] == "Network_Traffic") != (r.Node == "All_Traffic") {
+		return nil, fmt.Errorf("data model node %s.%s is not supported", m[1], r.Node)
 	}
 	var present []Expr
 	for _, s := range stages[1:] {
 		if nn := notNullRe.FindStringSubmatch(s); nn != nil && slices.Contains(fields, nn[1]) {
-			present = append(present, &Cmp{Field: nn[1], Values: []string{"*"}})
+			present = append(present, &Cmp{Field: nodeField(r.Node, nn[1]), Values: []string{"*"}})
 			continue
 		}
 		e, ok, err := regexStage(s, func(f string) (string, error) {
 			if !slices.Contains(fields, f) {
 				return "", fmt.Errorf("field %s has no Signalith mapping", f)
 			}
-			return f, nil
+			return nodeField(r.Node, f), nil
 		})
 		if err != nil {
 			return nil, err
@@ -178,7 +196,7 @@ func Parse(src []byte, macros map[string]*Macro) (*Rule, error) {
 			return nil, fmt.Errorf("search has a later stage Signalith does not run: %s", firstWords(s))
 		}
 	}
-	where, err := ParseWhere(m[2], r.Node, macros)
+	where, err := ParseWhere(m[3], r.Node, macros)
 	if err != nil {
 		return nil, err
 	}
@@ -199,12 +217,13 @@ var (
 	rawNodes = map[string]map[string]string{
 		"powershell": {"4104": "PowerShell"},
 		"sysmon": {
-			"1": "Processes", "7": "ImageLoad", "8": "ProcessAccess", "10": "ProcessAccess",
+			"1": "Processes", "3": "NetworkConnection", "7": "ImageLoad", "8": "ProcessAccess", "10": "ProcessAccess",
+			"22": "DnsQuery",
 			"11": "Filesystem", "23": "Filesystem", "26": "Filesystem", "12": "Registry", "13": "Registry", "14": "Registry",
 		},
 		// Security events the Windows parser reads.
 		"wineventlog_security": {
-			"4698": "TaskCreated", "4663": "ObjectAccess", "5136": "DirectoryChange", "5145": "ShareAccess",
+			"4624": "Logon", "4698": "TaskCreated", "4663": "ObjectAccess", "5136": "DirectoryChange", "5145": "ShareAccess",
 			"4768": "KerberosTGT", "4769": "KerberosService", "4738": "UserChanged", "4732": "GroupMemberAdded",
 		},
 		// The Service Control Manager's service installed event.
@@ -234,6 +253,19 @@ var (
 			"ParentCommandLine": "parent_process", "parent_process": "parent_process", "IntegrityLevel": "process_integrity_level",
 			"CurrentDirectory": "process_current_directory",
 		},
+		// A network connection (3) and a DNS query (22), with the add-on's
+		// names: dest_ip and src_ip are the addresses Signalith keeps as
+		// dest and src.
+		"NetworkConnection": {
+			"Image": "process_path", "process_path": "process_path", "process_name": "process_name",
+			"DestinationIp": "dest", "dest_ip": "dest", "DestinationPort": "dest_port", "dest_port": "dest_port",
+			"DestinationPortName": "dest_port_name", "DestinationHostname": "dest_host",
+			"SourceIp": "src", "src_ip": "src", "SourcePort": "src_port", "src_port": "src_port",
+		},
+		"DnsQuery": {
+			"QueryName": "query", "query": "query", "Image": "process_path", "process_path": "process_path",
+			"process_name": "process_name",
+		},
 		"Filesystem": {
 			"TargetFilename": "file_path", "file_path": "file_path", "file_name": "file_name", "action": "action",
 			"Image": "process_path", "process_path": "process_path", "process_name": "process_name",
@@ -246,6 +278,12 @@ var (
 		"ProcessAccess": {
 			"SourceImage": "process_path", "TargetImage": "target_process_path",
 			"GrantedAccess": "granted_access", "CallTrace": "call_trace", "SourceUser": RawUser,
+		},
+		// A successful logon; the add-on names the logon type Logon_Type.
+		"Logon": {
+			"LogonType": "logon_type", "Logon_Type": "logon_type", "TargetUserName": "user",
+			"AuthenticationPackageName": "authentication_method", "LogonProcessName": "logon_process",
+			"IpAddress": "src", "WorkstationName": "src_host", "ProcessName": "process_path",
 		},
 		"TaskCreated": {"TaskName": "task_name", "TaskContent": "task_content", "user": "user"},
 		"ObjectAccess": {
