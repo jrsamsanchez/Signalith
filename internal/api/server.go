@@ -196,6 +196,7 @@ type Server struct {
 	background   sync.WaitGroup // directory checks still running
 	settingsMu   sync.Mutex     // serializes saves on the Settings page
 	testMu       sync.Mutex     // one connection test at a time
+	aiModels     modelCache     // model lists read from the AI model's service
 	sampleJob    sampleJob      // the one running sample-data load or remove
 	pageCache    pages          // index.html and login.html, rendered
 	// live holds Config with the settings saved on the Settings page that

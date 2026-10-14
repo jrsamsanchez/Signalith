@@ -150,17 +150,42 @@ func (r *runner) loadSetAside(keys []string, reason string) (*config.Config, err
 
 // importOwn moves this server's own settings out of settings.yaml into
 // its nodecfg document, once (clustercfg.ImportOwn), when OpenSearch takes
-// writes; until then layer reads them from settings.yaml.
+// writes; until then layer reads them from settings.yaml. It holds ownMu
+// from reading settings.yaml to rewriting it, so a save on the Settings
+// page of the start running now, which may still keep them in
+// settings.yaml, comes before the move (and moves with them) or after it
+// (and goes to the shared settings): see settingsStore.HoldFile.
 func (r *runner) importOwn(c *config.Config) {
 	if r.shared.Writable() != nil {
 		return
 	}
-	r.sharedContent.cfg.Store(c)
+	ct := r.sharedContent
+	ct.ownMu.Lock()
+	defer ct.ownMu.Unlock()
+	ct.cfg.Store(c)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	if _, err := clustercfg.ImportOwn(ctx, r.shared, r.sharedContent.docs, c, r.log); err != nil {
+	if _, err := clustercfg.ImportOwn(ctx, r.shared, ct.docs, c, r.log); err != nil {
 		r.log.Warn("could not move this server's own settings from settings.yaml into the shared settings; trying again at the next start", "err", err)
 	}
+	if hook := importOwnHook; hook != nil {
+		hook(r)
+	}
+}
+
+// importOwnHook, when set (tests), runs as importOwn ends, still holding
+// ownMu.
+var importOwnHook func(*runner)
+
+// ownMoved reports whether this server's own settings moved out of
+// settings.yaml into the shared settings: they are shared, and its
+// nodecfg records the move.
+func (r *runner) ownMoved() bool {
+	if !r.settingsShared() {
+		return false
+	}
+	nc, _ := r.shared.NodeCfg().Get()
+	return nc != nil && nc.SettingsImported != ""
 }
 
 // primeShared points the runtime at OpenSearch before the first start of
@@ -772,10 +797,23 @@ func (r *runner) handleSettingsCheck(ctx context.Context, req *shared.Request) e
 }
 
 // settingsStore keeps the Settings page's settings in the shared
-// settings (api.SettingsStore).
-type settingsStore struct{ r *runner }
+// settings (api.SettingsStore). files is a start whose components take
+// them from settings.yaml: its page saves there, but for a save made once
+// this server's own settings moved into the shared settings (HoldFile).
+type settingsStore struct {
+	r     *runner
+	files bool
+}
 
-func (s settingsStore) Shared() bool    { return s.r.sharedContent.settingsOn.Load() }
+func (s settingsStore) Shared() bool { return !s.files && s.r.sharedContent.settingsOn.Load() }
+
+// HoldFile keeps importOwn from moving this server's own settings out of
+// settings.yaml until release, and reports whether they moved already.
+func (s settingsStore) HoldFile() (bool, func()) {
+	ct := s.r.sharedContent
+	ct.ownMu.Lock()
+	return s.r.ownMoved(), ct.ownMu.Unlock
+}
 func (s settingsStore) Writable() error { return s.r.shared.Writable() }
 func (s settingsStore) Self() string    { return s.r.node.ID() }
 func (s settingsStore) ETag() string    { return s.r.sharedContent.docs.Settings().ETag() }

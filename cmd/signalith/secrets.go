@@ -914,6 +914,9 @@ func secretsPrune(c *config.Config, out io.Writer) error {
 			"Enter %s again, or remove %s, then run this again", len(unknown), plural(len(unknown), "value", "values"),
 			strings.Join(unknown, ", "), plural(len(unknown), "it", "them"), plural(len(unknown), "it", "them"))
 	}
+	if err := archivesNeedKey(c, src.OldKeyID, src.OldPath); err != nil {
+		return err
+	}
 	if keyIsCredential {
 		// The running service still has the key it read when it started;
 		// until it restarts it encrypts what it saves with that one.

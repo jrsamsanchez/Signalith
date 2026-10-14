@@ -65,6 +65,10 @@ type sharedContent struct {
 	// applyMu keeps the changes of the files from being applied twice at
 	// once: by a start, and before the next one (runner.applyFiles).
 	applyMu sync.Mutex
+	// ownMu is held while this server's own settings move out of
+	// settings.yaml (runner.importOwn), and by a save there on the
+	// Settings page (settingsStore.HoldFile).
+	ownMu sync.Mutex
 }
 
 type osTarget struct {

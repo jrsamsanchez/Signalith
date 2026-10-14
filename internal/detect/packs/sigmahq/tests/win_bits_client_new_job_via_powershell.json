@@ -1,0 +1,4 @@
+{"rule": "fe3a2d49-f255-4d10-935c-bda7391108eb", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Bits-Client/Operational","event_id":"3","data":{"processPath":"\\powershell.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Bits-Client/Operational","event_id":"3","data":{}}
+]}

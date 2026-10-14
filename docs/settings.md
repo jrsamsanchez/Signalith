@@ -363,8 +363,19 @@ settings aren't loaded, it is too busy, or it took the request but didn't answer
 [When this server can't use OpenSearch](servers.md#when-this-server-cant-use-opensearch)
 says what to do about each. **Test** for the
 AI assistant asks the model one fixed question ("failed logins in the last 24
-hours") and shows the query it wrote. A result is marked out of date as soon as
-one of the settings it used changes.
+hours") and shows the query it wrote, or says what is wrong, such as an unknown
+model or a refused key. A result is marked out of date as soon as one of the
+settings it used changes.
+
+The AI assistant's **Address** lists the usual addresses for the provider chosen:
+the provider's own service, and for OpenAI or compatible also Ollama, LM Studio and
+vLLM on this computer (in Docker, on the computer running Docker) and other
+compatible services. **Other** takes any address. **Model** lists the models the
+provider offers: with an API key saved (or for a model server that needs none), the
+list is read from the provider through this server, so the key never reaches the
+browser; otherwise it shows the models Signalith knows of. **Other** takes any
+model's ID. A model written by its name, such as "Opus 5.5", is sent as its ID,
+`claude-opus-5-5`, and the page offers to save the ID.
 
 ## Exporting settings
 
@@ -605,6 +616,7 @@ from the Signalith page itself.
 | `PUT /api/settings` | Saves changes: `{"values": {key: value}, "clear": [keys], "reset": [keys], "retry": [keys], "reset_all": false}`. With `"check_only": true` it saves nothing and answers `{"ok": true, "changed": [...], "confirm": [...]}`: what to ask before saving |
 | `POST /api/settings/test/opensearch` | Tests OpenSearch with `{"values": {...}}` over the saved settings; one test at a time (`429` `busy` otherwise) |
 | `POST /api/settings/test/assistant` | Tests the AI assistant the same way |
+| `POST /api/settings/assistant/models` | Lists the AI models the provider in `{"values": {...}}` offers: `{"models": [{"id", "name"}], "live": true}` when read from the provider, or the models Signalith knows of with `live` false and a `message` saying why |
 | `POST /api/settings/restart` | Restarts with the saved settings; answers 202 at once. `409` with `code` `restarting`, `awaiting` (a move waits for confirmation), `settings_invalid`, or `local_only` (send `{"local_only": true}` to go ahead) |
 | `POST /api/settings/restart/confirm` | From the new address after a move: confirms it (`GET /api/me` by an admin does too) |
 | `GET /api/settings/export` | `{"yaml": "...", "filename": "signalith-settings.yaml"}`; `?download=1` downloads the file. On servers that share their settings, `?server=` limits the commented part to one server |

@@ -353,14 +353,19 @@ config file. Each disk is reported once.
 Shown when the archive folder holds archives, or a retention policy archives days.
 
 **Looks at:** the archive folder (`retention.archive_dir`): how many days it holds and
-their size, who can read it, and the disk under it, as for
-[Disk encryption](#disk-encryption). Signalith doesn't encrypt archives itself.
+their size, how many are plain files rather than encrypted, who can read it, and,
+when some are plain, the disk under it, as for [Disk encryption](#disk-encryption).
+Signalith encrypts archives unless `retention.encrypt_archives` is `false`; days
+archived before it did stay plain (see [Encryption](retention.md#encryption)).
 
-- Good: on an encrypted disk, readable only by Signalith.
-- Needs attention: other accounts can read the archives, or the disk isn't encrypted.
-- Can't tell: Signalith can't see the disk or share under them.
+- Good: every archive is encrypted, or the plain ones are on an encrypted disk, and
+  only Signalith can read the folder.
+- Needs attention: other accounts can read the archives, or plain archives are on a
+  disk that isn't encrypted.
+- Can't tell: Signalith can't see the disk or share under plain archives.
 
-**To fix:** keep the archive folder on an encrypted disk, readable only by Signalith; see
+**To fix:** keep the archive folder readable only by Signalith, and keep plain
+archives on an encrypted disk or leave archive encryption on; see
 [Archives](retention.md#archives). Copies of archives you move elsewhere are only as safe
 as where you put them.
 

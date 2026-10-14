@@ -825,7 +825,7 @@ func TestDisk(t *testing.T) {
 
 func TestArchives(t *testing.T) {
 	arch := func(f *Facts) {
-		f.Archive = &ArchiveFacts{Dir: "/var/lib/signalith/archive", Count: 120, Bytes: 3 << 30, Disk: Disk{Kind: DiskEncrypted}, Perm: &Perm{}}
+		f.Archive = &ArchiveFacts{Dir: "/var/lib/signalith/archive", Count: 120, Bytes: 3 << 30, Disk: Disk{Kind: DiskEncrypted}, Perm: &Perm{}, Encrypting: true, Plain: 120}
 	}
 	runCases(t, "rest.archives", []checkCase{
 		{name: "none", state: ""},
@@ -848,9 +848,20 @@ func TestArchives(t *testing.T) {
 			}
 		}},
 		{name: "plain disk", set: func(f *Facts) { arch(f); f.Archive.Disk.Kind = DiskPlain }, state: Attention,
-			line: "120 archived days (3 GB) are kept as plain files in /var/lib/signalith/archive, on a disk that isn't encrypted. Signalith doesn't encrypt archives itself."},
+			line: "120 archived days (3 GB) are kept as plain files in /var/lib/signalith/archive, on a disk that isn't encrypted. They were written before Signalith encrypted archives; new archives are encrypted."},
+		{name: "encrypted", set: func(f *Facts) { arch(f); f.Archive.Disk.Kind = DiskPlain; f.Archive.Plain = 0 }, state: Good,
+			line: "120 archived days (3 GB) in /var/lib/signalith/archive are encrypted, readable only by Signalith."},
+		{name: "some plain", set: func(f *Facts) { arch(f); f.Archive.Disk.Kind = DiskPlain; f.Archive.Plain = 20 }, state: Attention,
+			line: "20 of the 120 archived days (3 GB) are kept as plain files in /var/lib/signalith/archive, on a disk that isn't encrypted. They were written before Signalith encrypted archives; new archives are encrypted."},
+		{name: "encryption off", set: func(f *Facts) { arch(f); f.Archive.Disk.Kind = DiskPlain; f.Archive.Encrypting = false }, state: Attention,
+			line: "120 archived days (3 GB) are kept as plain files in /var/lib/signalith/archive, on a disk that isn't encrypted. Archive encryption is turned off (retention.encrypt_archives: false).",
+			fix: func(t *testing.T, c *Check) {
+				if len(c.Fix.Steps) != 2 {
+					t.Errorf("%q", c.Fix.Steps)
+				}
+			}},
 		{name: "share", set: func(f *Facts) { arch(f); f.Archive.Disk = Disk{Kind: DiskNetwork, Source: "nas:/a"} }, state: Unknown,
-			line: "120 archived days (3 GB) are kept as plain files in /var/lib/signalith/archive. Signalith can't see whether the share under them is encrypted."},
+			line: "120 archived days (3 GB) are kept as plain files in /var/lib/signalith/archive. Signalith can't see whether the share under them is encrypted. They were written before Signalith encrypted archives; new archives are encrypted."},
 		{name: "many", set: func(f *Facts) { arch(f); f.Archive.Count, f.Archive.More = archiveMaxFiles, true }, state: Good,
 			fix: func(t *testing.T, c *Check) {
 				if !strings.HasPrefix(c.Line, "100,000+ archived days") {

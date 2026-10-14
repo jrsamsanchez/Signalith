@@ -155,7 +155,8 @@ index is deleted:
 1. The index is made read-only and refreshed, so the copy holds every event,
    including those written in the last seconds before.
 2. Every event is written to `<index>.ndjson.gz`, one `{"_id": ..., "_source": ...}`
-   per line, then flushed to disk with fsync.
+   per line, encrypted (see [Encryption](#encryption)), then flushed to disk with
+   fsync.
 3. A manifest `<index>.json` is written beside it, with the event count, file size,
    SHA-256 and creation time.
 4. The file is read back and checked against the manifest. Its event count must also
@@ -191,9 +192,8 @@ index notes the archives it was restored from.
 The archive folder is `retention.archive_dir`, `SIGNALITH_ARCHIVE_DIR`, or an
 `archive` folder next to `lookups.dir`. Docker images and the systemd unit use
 `/var/lib/signalith/archive`; in Docker, mount a volume there to keep archives
-outside the container. Archives are plain gzip and JSON, so `zcat file.ndjson.gz | head` works
-and any tool can read them. Move older files to cheaper storage as you like:
-retention never deletes archive files.
+outside the container. Move older files to cheaper storage as you like: retention
+never deletes archive files.
 
 Example manifest:
 
@@ -209,9 +209,53 @@ Example manifest:
   "bytes": 211630580,
   "index_bytes": 1073741824,
   "sha256": "ace69f8245...",
-  "created": "2026-10-04T03:00:12Z"
+  "created": "2026-10-04T03:00:12Z",
+  "encryption": "aes-256-gcm/sglarc1",
+  "kid": "3f9c1a7e2b40,c0d81e55a9f2"
 }
 ```
+
+### Encryption
+
+Archive files are encrypted, so a copy of the archive folder, a backup of it or a
+stolen disk doesn't give away the events. Each file gets its own random key, and the
+file is encrypted with AES-256-GCM in parts, so a file that was changed, cut short or
+put together from parts of others is refused. The file's key is stored in the file,
+itself encrypted with:
+
+- this server's master key, the one that encrypts the passwords and keys in its
+  settings (see [The master key](encryption.md#the-master-key)), and
+- on servers that share their settings, the cluster key, so every server of the
+  cluster can read every archive.
+
+The manifest names the scheme (`encryption`) and the keys (`kid`). The SHA-256 in the
+manifest is of the encrypted file, so it can be checked without the keys. Archives
+written before encryption, or with it turned off, stay plain gzip and are read as
+before.
+
+Other tools can't read an encrypted file directly. To get the plain gzip, use the CLI
+on a server that has the keys:
+
+```sh
+signalith archive decrypt signalith-endpoint-2026.07.01 | zcat | head
+signalith archive decrypt signalith-endpoint-2026.07.01 > signalith-endpoint-2026.07.01.ndjson.gz
+```
+
+Keep the keys as long as the archives. An archive opens only with its master key or
+the cluster key it was encrypted with, so back up the master key (see
+[Backing up the key](encryption.md#backing-up-the-key)). After a rotation,
+`signalith secrets rotate-master -prune` keeps the previous master key while an
+archive in the archive folder was encrypted with it alone.
+
+To write plain gzip archives instead, for tools that read the files directly, set
+this in signalith.yaml (it can't be set from the page):
+
+```yaml
+retention:
+  encrypt_archives: false
+```
+
+Archives already encrypted stay encrypted and still read.
 
 ### Restoring
 
@@ -228,6 +272,7 @@ You can also use the CLI on the server:
 ```sh
 signalith archive list
 signalith archive verify signalith-endpoint-2026.07.01
+signalith archive decrypt signalith-endpoint-2026.07.01 > day.ndjson.gz
 signalith archive restore -keep-days 30 signalith-endpoint-2026.07.01
 ```
 
@@ -354,6 +399,7 @@ retention:
 | `retention.days` | `90` | Default `keep_days` for event categories without a policy, until a default is saved on the page |
 | `retention.interval` | `1h` | How often policies are enforced (5m to 24h) |
 | `retention.archive_dir` | `archive` next to `lookups.dir` | Archive folder; relative paths are relative to signalith.yaml. `SIGNALITH_ARCHIVE_DIR` overrides it |
+| `retention.encrypt_archives` | `true` | Encrypt archive files ([Encryption](#encryption)); only signalith.yaml can turn it off |
 | `retention.default` | none | Default event policy: `keep_days`, `max_size_gb`, `compact_after_days`, `archive` |
 | `retention.policies.<id>` | none | Policy for one category (IDs above). Findings and cases accept only `keep_days` |
 | `retention.guard.enabled` | `true` | Disk guard on or off |

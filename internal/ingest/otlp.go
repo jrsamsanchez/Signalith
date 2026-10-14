@@ -420,6 +420,9 @@ func windowsSchemaFor(channel, provider, eventID string) ([]string, bool) {
 		return e.data, ok
 	case strings.EqualFold(channel, PowerShellChannel) && eventID == "4104":
 		return scriptBlockSchema, true
+	case IsNamedChannel(channel):
+		e, ok := namedChannelEvent(channel, eventID)
+		return e.data, ok
 	}
 	return nil, false
 }

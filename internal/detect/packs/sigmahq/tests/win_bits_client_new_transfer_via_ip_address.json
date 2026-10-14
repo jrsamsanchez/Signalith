@@ -1,0 +1,6 @@
+{"rule": "90f138c1-f578-4ac3-8c49-eecfd847c8b7", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Bits-Client/Operational","event_id":"16403","data":{"RemoteName":"https://9"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Bits-Client/Operational","event_id":"16403","data":{"RemoteName":"://172.27. https://9"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Bits-Client/Operational","event_id":"16403","data":{"RemoteName":"https://9 http://7-"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Bits-Client/Operational","event_id":"16403","data":{}}
+]}

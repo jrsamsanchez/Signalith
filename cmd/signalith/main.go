@@ -1071,6 +1071,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		}
 	}
 	ret := newRetention(c, cl, log)
+	archiveCrypto(ret.Archive, c, r.clusterKey)
 	if sharedOn {
 		r.sharedContent.sharedRetention(ret)
 	}
@@ -1587,8 +1588,12 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			srv.Shared = sharedAPI{rt: r.shared, on: sharedOn}
 			srv.ClusterTLS = r.clusterTLSAPI()
 			srv.ConfigToken = configToken{rt: r.shared}
+			// A start that keeps the settings in settings.yaml has the
+			// store too, so a save there holds off the move of this
+			// server's own settings into the shared settings, and goes
+			// there once they moved (settingsStore.HoldFile).
+			srv.Settings = settingsStore{r: r, files: !settingsOn}
 			if settingsOn {
-				srv.Settings = settingsStore{r: r}
 				// The shared settings and this server's own are followed
 				// while this start runs: what applies at once is applied,
 				// and the rest waits for a restart. The settings set aside

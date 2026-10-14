@@ -178,6 +178,80 @@ func TestWindowsApplicationEvents(t *testing.T) {
 	}
 }
 
+func TestWindowsFirewallAndBitsEvents(t *testing.T) {
+	// A firewall rule added on Windows 11 (2097), its data in template
+	// order, as SigmaHQ recorded it.
+	ins := make([]string, 28)
+	ins[0], ins[1], ins[3], ins[9] = "{503b3c4a-422a-49ff-a2a8-bf8e24605adf}", "RDPPORTLatest-TCP-In", "", "3"
+	ins[8], ins[21], ins[22] = "*", "S-1-5-21-1-2-3-1001", `C:\Windows\System32\wbem\WmiPrvSE.exe`
+	rec := map[string]any{"Channel": FirewallChannel, "Computer": "WS1", "EventID": "2097",
+		"ProviderName": "Microsoft-Windows-Windows Firewall With Advanced Security", "StringInserts": ins}
+	b, _ := json.Marshal(rec)
+	ev := Normalize("win.events", decode(t, string(b)), now)
+	expect(t, ev.Document(), map[string]any{
+		"datamodel": "Other", "signature_id": "2097", "sourcetype": "WinEventLog:" + FirewallChannel,
+		"signature": "A firewall rule was added", "firewall_rule_name": "RDPPORTLatest-TCP-In", "firewall_action": "3",
+		"firewall_remote_ports": "*", "firewall_modifying_user": "S-1-5-21-1-2-3-1001",
+		"firewall_modifying_application": `C:\Windows\System32\wbem\WmiPrvSE.exe`,
+	})
+	if _, ok := ev.Fields["firewall_application_path"]; ok {
+		t.Errorf("empty value kept: %v", ev.Fields)
+	}
+	// A BITS transfer started, from the OpenTelemetry Collector by name.
+	ev = otlpWindows(map[string]any{"channel": BitsChannel, "computer": "WS1", "event_id": map[string]any{"id": "16403"},
+		"provider": map[string]any{"name": "Microsoft-Windows-Bits-Client"}, "event_data": map[string]any{
+			"jobTitle": "myDownloadJob", "RemoteName": "https://www.7-zip.org/a/7z2301-x64.exe", "LocalName": `C:\Users\Public\7zip.exe`}})
+	if ev.Fields["bits_remote_name"] != "https://www.7-zip.org/a/7z2301-x64.exe" || ev.Fields["bits_local_name"] != `C:\Users\Public\7zip.exe` ||
+		ev.Fields["bits_job_title"] != "myDownloadJob" || ev.Fields["signature"] != "A BITS transfer started" {
+		t.Errorf("otlp bits = %v", ev.Fields)
+	}
+	// Every data field is in the index template.
+	for f := range namedChannelFields {
+		if _, ok := knownFields[f]; !ok {
+			t.Errorf("%s is not a declared field", f)
+		}
+	}
+	for name, want := range map[string]string{"ApplicationPath": "firewall_application_path", "applicationpath": "firewall_application_path",
+		"Store Type": "firewall_store_type", "RuleId": "firewall_rule_id"} {
+		if f, ok := ChannelDataField(FirewallChannel, name); !ok || f != want {
+			t.Errorf("ChannelDataField(%s) = %s %v", name, f, ok)
+		}
+	}
+	if f, ok := ChannelDataField(BitsChannel, "processPath"); !ok || f != "bits_process_path" {
+		t.Errorf("ChannelDataField(processPath) = %s %v", f, ok)
+	}
+	if _, ok := ChannelDataField(BitsChannel, "Nope"); ok {
+		t.Error("ChannelDataField(Nope) is known")
+	}
+	// Names that differ only in case are one field, as Sigma matches
+	// names without case.
+	for ch, c := range namedChannels {
+		seen := map[string]string{}
+		for _, e := range c.events {
+			for _, n := range e.data {
+				if f, ok := seen[strings.ToLower(n)]; ok && f != snakeField(c.prefix, n) {
+					t.Errorf("%s: %s is %s and %s", ch, n, f, snakeField(c.prefix, n))
+				}
+				seen[strings.ToLower(n)] = snakeField(c.prefix, n)
+			}
+		}
+	}
+	// Every log has its Sigma service.
+	for service, ch := range NamedChannelServices {
+		if !IsNamedChannel(ch) {
+			t.Errorf("%s: %s is not read by name", service, ch)
+		}
+	}
+	// An app package file downloaded (AppX 854).
+	rec = map[string]any{"Channel": AppxChannel, "Computer": "WS1", "EventID": "854",
+		"ProviderName": "Microsoft-Windows-AppXDeployment-Server", "StringInserts": []string{"https://example.org/app.msix"}}
+	b, _ = json.Marshal(rec)
+	expect(t, Normalize("win.events", decode(t, string(b)), now).Document(), map[string]any{
+		"datamodel": "Other", "signature_id": "854", "appx_path": "https://example.org/app.msix",
+		"signature": "An app package file was downloaded",
+	})
+}
+
 // The search engine knows every wildcard field, as it takes backslashes
 // in them literally.
 func TestWildcardFieldsKnownToSearch(t *testing.T) {

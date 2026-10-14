@@ -5,6 +5,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -208,18 +209,26 @@ func TestSamePortOnAnotherAddressIsRefused(t *testing.T) {
 // this one.
 func TestSyslogPortHeldWithTheOtherProtocol(t *testing.T) {
 	rs := startRunner(t, nil, nil)
-	// A port free for UDP, for syslog.udp.
+	// A port free for UDP, for syslog.udp. Another program (on Windows,
+	// often the system itself) can take a port between the check and the
+	// restart, so a refused port is tried again with another one.
 	var addr string
-	for range 20 {
-		addr = freeAddr(t)
-		if pc, err := net.ListenPacket("udp", addr); err == nil {
-			pc.Close()
+	for try := 0; ; try++ {
+		for range 20 {
+			addr = freeAddr(t)
+			if pc, err := net.ListenPacket("udp", addr); err == nil {
+				pc.Close()
+				break
+			}
+		}
+		rs.save(`{"syslog.udp":"` + addr + `"}`)
+		_, res := rs.restart()
+		if res.OK {
 			break
 		}
-	}
-	rs.save(`{"syslog.udp":"` + addr + `"}`)
-	if _, res := rs.restart(); !res.OK {
-		t.Fatalf("syslog.udp %+v\n%s", res, rs.logs.String())
+		if try == 4 || !slices.Contains(res.Refused, "syslog.udp") {
+			t.Fatalf("syslog.udp %+v\n%s", res, rs.logs.String())
+		}
 	}
 	// Another program takes the same port over TCP.
 	held, err := net.Listen("tcp", addr)

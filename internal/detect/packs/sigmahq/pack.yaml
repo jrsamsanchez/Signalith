@@ -7897,10 +7897,66 @@ rules:
     rule_id: 6c82cf5c-090d-4d57-9188-533577631108
     file: win_application_msmpeng_crash_wer.yml
     path: rules/windows/builtin/application/windows_error_reporting/win_application_msmpeng_crash_wer.yml
+  - id: sigma-win-appxdeployment-server-applocker-block
+    rule_id: 6ae53108-c3a0-4bee-8f45-c7591a2c337f
+    file: win_appxdeployment_server_applocker_block.yml
+    path: rules/windows/builtin/appxdeployment_server/win_appxdeployment_server_applocker_block.yml
+  - id: sigma-win-appxdeployment-server-appx-downloaded-from-file-sharin
+    rule_id: 8b48ad89-10d8-4382-a546-50588c410f0d
+    file: win_appxdeployment_server_appx_downloaded_from_file_sharing_domains.yml
+    path: rules/windows/builtin/appxdeployment_server/win_appxdeployment_server_appx_downloaded_from_file_sharing_domains.yml
+  - id: sigma-win-appxdeployment-server-appx-package-deployment-failed-s
+    rule_id: 898d5fc9-fbc3-43de-93ad-38e97237c344
+    file: win_appxdeployment_server_appx_package_deployment_failed_signing_requirements.yml
+    path: rules/windows/builtin/appxdeployment_server/win_appxdeployment_server_appx_package_deployment_failed_signing_requirements.yml
+  - id: sigma-win-appxdeployment-server-appx-package-in-staging-director
+    rule_id: 5cdeaf3d-1489-477c-95ab-c318559fc051
+    file: win_appxdeployment_server_appx_package_in_staging_directory.yml
+    path: rules/windows/builtin/appxdeployment_server/win_appxdeployment_server_appx_package_in_staging_directory.yml
+  - id: sigma-win-appxdeployment-server-mal-appx-names
+    rule_id: 09d3b48b-be17-47f5-bf4e-94e7e75d09ce
+    file: win_appxdeployment_server_mal_appx_names.yml
+    path: rules/windows/builtin/appxdeployment_server/win_appxdeployment_server_mal_appx_names.yml
+  - id: sigma-win-appxdeployment-server-policy-block
+    rule_id: e021bbb5-407f-41f5-9dc9-1864c45a7a51
+    file: win_appxdeployment_server_policy_block.yml
+    path: rules/windows/builtin/appxdeployment_server/win_appxdeployment_server_policy_block.yml
+  - id: sigma-win-appxdeployment-server-uncommon-package-locations
+    rule_id: c977cb50-3dff-4a9f-b873-9290f56132f1
+    file: win_appxdeployment_server_uncommon_package_locations.yml
+    path: rules/windows/builtin/appxdeployment_server/win_appxdeployment_server_uncommon_package_locations.yml
   - id: sigma-win-audit-cve
     rule_id: 48d91a3a-2363-43ba-a456-ca71ac3da5c2
     file: win_audit_cve.yml
     path: rules/windows/builtin/application/microsoft-windows_audit_cve/win_audit_cve.yml
+  - id: sigma-win-bits-client-new-job-via-bitsadmin
+    rule_id: 1ff315dc-2a3a-4b71-8dde-873818d25d39
+    file: win_bits_client_new_job_via_bitsadmin.yml
+    path: rules/windows/builtin/bits_client/win_bits_client_new_job_via_bitsadmin.yml
+  - id: sigma-win-bits-client-new-job-via-powershell
+    rule_id: fe3a2d49-f255-4d10-935c-bda7391108eb
+    file: win_bits_client_new_job_via_powershell.yml
+    path: rules/windows/builtin/bits_client/win_bits_client_new_job_via_powershell.yml
+  - id: sigma-win-bits-client-new-transfer-saving-susp-extensions
+    rule_id: b85e5894-9b19-4d86-8c87-a2f3b81f0521
+    file: win_bits_client_new_transfer_saving_susp_extensions.yml
+    path: rules/windows/builtin/bits_client/win_bits_client_new_transfer_saving_susp_extensions.yml
+  - id: sigma-win-bits-client-new-transfer-via-file-sharing-domains
+    rule_id: d635249d-86b5-4dad-a8c7-d7272b788586
+    file: win_bits_client_new_transfer_via_file_sharing_domains.yml
+    path: rules/windows/builtin/bits_client/win_bits_client_new_transfer_via_file_sharing_domains.yml
+  - id: sigma-win-bits-client-new-transfer-via-ip-address
+    rule_id: 90f138c1-f578-4ac3-8c49-eecfd847c8b7
+    file: win_bits_client_new_transfer_via_ip_address.yml
+    path: rules/windows/builtin/bits_client/win_bits_client_new_transfer_via_ip_address.yml
+  - id: sigma-win-bits-client-new-transfer-via-uncommon-tld
+    rule_id: 6d44fb93-e7d2-475c-9d3d-54c9c1e33427
+    file: win_bits_client_new_transfer_via_uncommon_tld.yml
+    path: rules/windows/builtin/bits_client/win_bits_client_new_transfer_via_uncommon_tld.yml
+  - id: sigma-win-bits-client-new-trasnfer-susp-local-folder
+    rule_id: f8a56cb7-a363-44ed-a82f-5926bb44cd05
+    file: win_bits_client_new_trasnfer_susp_local_folder.yml
+    path: rules/windows/builtin/bits_client/win_bits_client_new_trasnfer_susp_local_folder.yml
   - id: sigma-win-builtin-remove-application
     rule_id: 570ae5ec-33dc-427c-b815-db86228ad43e
     file: win_builtin_remove_application.yml
@@ -8001,6 +8057,30 @@ rules:
     rule_id: 94dc4390-6b7c-4784-8ffc-335334404650
     file: win_esent_ntdsutil_abuse_susp_location.yml
     path: rules/windows/builtin/application/esent/win_esent_ntdsutil_abuse_susp_location.yml
+  - id: sigma-win-firewall-as-add-rule-susp-folder
+    rule_id: 9e2575e7-2cb9-4da1-adc8-ed94221dca5e
+    file: win_firewall_as_add_rule_susp_folder.yml
+    path: rules/windows/builtin/firewall_as/win_firewall_as_add_rule_susp_folder.yml
+  - id: sigma-win-firewall-as-add-rule-wmiprvse
+    rule_id: eca81e8d-09e1-4d04-8614-c91f44fd0519
+    file: win_firewall_as_add_rule_wmiprvse.yml
+    path: rules/windows/builtin/firewall_as/win_firewall_as_add_rule_wmiprvse.yml
+  - id: sigma-win-firewall-as-delete-all-rules
+    rule_id: 79609c82-a488-426e-abcf-9f341a39365d
+    file: win_firewall_as_delete_all_rules.yml
+    path: rules/windows/builtin/firewall_as/win_firewall_as_delete_all_rules.yml
+  - id: sigma-win-firewall-as-failed-load-gpo
+    rule_id: 7ec15688-fd24-4177-ba43-1a950537ee39
+    file: win_firewall_as_failed_load_gpo.yml
+    path: rules/windows/builtin/firewall_as/win_firewall_as_failed_load_gpo.yml
+  - id: sigma-win-firewall-as-reset-config
+    rule_id: 04b60639-39c0-412a-9fbe-e82499c881a3
+    file: win_firewall_as_reset_config.yml
+    path: rules/windows/builtin/firewall_as/win_firewall_as_reset_config.yml
+  - id: sigma-win-firewall-as-setting-change
+    rule_id: 00bb5bd5-1379-4fcf-a965-a5b6f7478064
+    file: win_firewall_as_setting_change.yml
+    path: rules/windows/builtin/firewall_as/win_firewall_as_setting_change.yml
   - id: sigma-win-msi-install-from-susp-locations
     rule_id: c7c8aa1c-5aff-408e-828b-998e3620b341
     file: win_msi_install_from_susp_locations.yml
@@ -8665,3 +8745,7 @@ rules:
     rule_id: a0cb7110-edf0-47a4-9177-541a4083128a
     file: win_system_vul_cve_2020_1472.yml
     path: rules/windows/builtin/system/netlogon/win_system_vul_cve_2020_1472.yml
+  - id: sigma-win-wmi-activity-nteventlogfile-cleareventlog
+    rule_id: d4f1a2b3-7c8e-4d5f-b6a9-1e0c2d3f4e5b
+    file: win_wmi_activity_nteventlogfile_cleareventlog.yml
+    path: rules/windows/builtin/wmi/win_wmi_activity_nteventlogfile_cleareventlog.yml

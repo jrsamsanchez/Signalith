@@ -657,6 +657,11 @@ type Retention struct {
 	Policies map[string]retention.Policy `yaml:"policies,omitempty"`
 	// Guard deletes the oldest days when OpenSearch's disk gets too full.
 	Guard *retention.Guard `yaml:"guard,omitempty"`
+	// EncryptArchives encrypts archive files with the master key (and
+	// the cluster key, on servers that share their settings). Default
+	// true; false writes plain gzip files, for tools that read them
+	// directly. Archives already written stay as they are.
+	EncryptArchives *bool `yaml:"encrypt_archives,omitempty"`
 }
 
 // RetentionInterval returns retention.interval as a duration (1h if unset
@@ -674,6 +679,12 @@ func (c *Config) ArchiveDir() string {
 		return c.resolve(c.Retention.ArchiveDir)
 	}
 	return filepath.Join(filepath.Dir(filepath.Clean(c.LookupsDir())), "archive")
+}
+
+// ArchiveEncryption reports whether new archive files are encrypted
+// (retention.encrypt_archives, true unless set false).
+func (c *Config) ArchiveEncryption() bool {
+	return c.Retention.EncryptArchives == nil || *c.Retention.EncryptArchives
 }
 
 // RetentionPolicies returns the retention settings for the retention

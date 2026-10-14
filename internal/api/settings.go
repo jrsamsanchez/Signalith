@@ -2,6 +2,8 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,6 +15,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/assistant"
@@ -34,6 +37,7 @@ func (s *Server) routeSettings(api *router) {
 	api.admin("PUT /api/settings", s.handlePutSettings)
 	api.admin("POST /api/settings/test/opensearch", s.handleTestOpenSearch)
 	api.admin("POST /api/settings/test/assistant", s.handleTestAssistant)
+	api.admin("POST /api/settings/assistant/models", s.handleAssistantModels)
 	api.admin("POST /api/settings/restart", s.handleRestart)
 	api.admin("POST /api/settings/restart/confirm", s.handleConfirmMove)
 	api.admin("GET /api/settings/export", s.handleExportSettings)
@@ -395,6 +399,12 @@ func (s *Server) settingsView() (map[string]any, error) {
 	}
 	if w := unencryptedWarning(saved.Config); w != "" && warnings["server.tls.mode"] == "" {
 		warnings["server.tls.mode"] = w
+	}
+	if a := saved.Config.Assistant; warnings["assistant.model"] == "" {
+		if id, ok := assistant.ModelID(a.Provider, a.Model); ok {
+			warnings["assistant.model"] = fmt.Sprintf("%q is the model's display name, not its ID. Signalith uses %s in its place.", a.Model, id)
+			suggest["assistant.model"] = id
+		}
 	}
 	pending := pendingSettings(running, saved.Config)
 	waiting := map[string]bool{}
@@ -859,6 +869,18 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		s.handlePutSharedSettings(w, r, raw)
 		return
 	}
+	if s.Settings != nil {
+		// This server's own settings may be moving into the shared
+		// settings right now: the save waits for the move, and goes to
+		// the shared settings once they are there.
+		moved, release := s.Settings.HoldFile()
+		if moved {
+			release()
+			s.handlePutSharedSettings(w, r, raw)
+			return
+		}
+		defer release()
+	}
 	var req settingsRequest
 	if err := decodeJSON(raw, &req); err != nil {
 		writeError(w, http.StatusBadRequest, err)
@@ -1304,7 +1326,9 @@ type assistantReport struct {
 	// Query is the model's answer, when it gave one.
 	Query   string `json:"query,omitempty"`
 	Message string `json:"message"`
-	TookMS  int64  `json:"took_ms"`
+	// Field is the setting a failure points at, when one does.
+	Field  string `json:"field,omitempty"`
+	TookMS int64  `json:"took_ms"`
 }
 
 // handleTestAssistant asks the model in the form one fixed question and
@@ -1348,7 +1372,7 @@ func (s *Server) handleTestAssistant(w http.ResponseWriter, r *http.Request) {
 	q, err := client.Translate(ctx, assistantQuestion, "")
 	rep.TookMS = time.Since(start).Milliseconds()
 	if err != nil {
-		rep.Message = explainAssistant(err)
+		rep.Message, rep.Field = explainAssistant(err, client.Model)
 	} else {
 		rep.OK, rep.Query = true, q
 		rep.Message = fmt.Sprintf("The model answered in %.1f seconds.", time.Since(start).Seconds())
@@ -1357,18 +1381,130 @@ func (s *Server) handleTestAssistant(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, rep)
 }
 
-// explainAssistant words a failed assistant test.
-func explainAssistant(err error) string {
+// explainAssistant words a failed assistant test, and names the setting
+// it points at.
+func explainAssistant(err error, model string) (string, string) {
 	msg := err.Error()
-	switch {
-	case strings.Contains(msg, "returned 401"), strings.Contains(msg, "returned 403"):
-		return "The model's service refused the API key. Check the key. (" + msg + ")"
-	case strings.Contains(msg, "returned 404"):
-		return "The model's service answered \"not found\": check the address and the model's name. (" + msg + ")"
-	case strings.Contains(msg, "did not parse"):
-		return "The model answered, but not with a query Signalith understands. A larger model may do better."
+	var ae *assistant.APIError
+	if errors.As(err, &ae) {
+		switch {
+		case ae.Status == http.StatusUnauthorized || ae.Status == http.StatusForbidden:
+			return "The model's service refused the API key. Check the key. (" + msg + ")", "assistant.api_key"
+		case ae.UnknownModel():
+			return fmt.Sprintf("Unknown model: the service has no model called %q. Choose one from the Model list. (%s)", model, msg), "assistant.model"
+		case ae.Status == http.StatusNotFound:
+			return "The address answered \"not found\": check the address. (" + msg + ")", "assistant.url"
+		}
 	}
-	return sentence(msg)
+	switch {
+	case strings.Contains(msg, "could not reach"):
+		return sentence(msg), "assistant.url"
+	case strings.Contains(msg, "did not parse"):
+		return "The model answered, but not with a query Signalith understands. A larger model may do better.", "assistant.model"
+	}
+	return sentence(msg), ""
+}
+
+// modelCache keeps model lists for a few minutes, by provider, address
+// and a hash of the key, so the Settings page does not ask the service
+// each time it is opened.
+type modelCache struct {
+	mu   sync.Mutex
+	byID map[string]cachedModels
+}
+
+type cachedModels struct {
+	models []assistant.Model
+	at     time.Time
+}
+
+const modelCacheFor = 10 * time.Minute
+
+// modelsReport is what POST /api/settings/assistant/models answers.
+type modelsReport struct {
+	Models []assistant.Model `json:"models"`
+	// Live is true when the list came from the service; otherwise it is
+	// the models Signalith knows of, and Message says why.
+	Live    bool   `json:"live"`
+	Message string `json:"message,omitempty"`
+}
+
+// handleAssistantModels lists the models the provider in the form offers:
+// read from the service with the form's address and key (or the saved
+// key, only for the address it was saved for), or, when that fails, the
+// ones Signalith knows of. The key never reaches the page.
+func (s *Server) handleAssistantModels(w http.ResponseWriter, r *http.Request) {
+	c, fields, err := s.testValues(r, "assistant.provider", "assistant.url", "assistant.api_key")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	a := c.Assistant
+	if _, ok := fields["assistant.api_key"]; ok && len(fields) == 1 {
+		// The saved key belongs to another address; many model servers on
+		// your own hardware need none.
+		delete(fields, "assistant.api_key")
+		a.APIKey = ""
+	}
+	rep := modelsReport{Models: assistant.KnownModels(a.Provider, a.URL)}
+	switch {
+	case a.Provider != assistant.Anthropic && a.Provider != assistant.OpenAI:
+		writeJSON(w, http.StatusOK, rep)
+		return
+	case len(fields) > 0:
+		rep.Message = "Fix the address or API key to see the provider's own list."
+		writeJSON(w, http.StatusOK, rep)
+		return
+	case a.URL != "" && config.Origin(a.URL) == "":
+		rep.Message = "Enter a whole address, such as http://localhost:11434/v1, to see its models."
+		writeJSON(w, http.StatusOK, rep)
+		return
+	case a.Provider == assistant.Anthropic && a.APIKey == "":
+		rep.Message = "Save an API key to see every model your account can use."
+		writeJSON(w, http.StatusOK, rep)
+		return
+	}
+	client := assistant.New(a.Provider, a.URL, "", a.APIKey)
+	sum := sha256.Sum256([]byte(a.APIKey))
+	id := a.Provider + "\x00" + client.URL + "\x00" + hex.EncodeToString(sum[:])
+	s.aiModels.mu.Lock()
+	hit, ok := s.aiModels.byID[id]
+	s.aiModels.mu.Unlock()
+	if ok && time.Since(hit.at) < modelCacheFor {
+		writeJSON(w, http.StatusOK, modelsReport{Models: hit.models, Live: true})
+		return
+	}
+	client.HTTP.Timeout = 10 * time.Second
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	models, err := client.ListModels(ctx)
+	if err == nil && len(models) == 0 {
+		err = errors.New("the service listed no models")
+	}
+	if err != nil {
+		why := "Couldn't read the provider's list of models"
+		var ae *assistant.APIError
+		switch {
+		case errors.As(err, &ae) && (ae.Status == http.StatusUnauthorized || ae.Status == http.StatusForbidden):
+			why = "The provider refused the API key"
+		case strings.Contains(err.Error(), "could not reach"):
+			why = "Couldn't reach the address"
+		}
+		if len(rep.Models) > 0 {
+			rep.Message = why + ", so these are the models Signalith knows of."
+		} else {
+			rep.Message = why + ". Enter the model's ID under Other."
+		}
+		writeJSON(w, http.StatusOK, rep)
+		return
+	}
+	s.aiModels.mu.Lock()
+	if s.aiModels.byID == nil || len(s.aiModels.byID) > 50 {
+		s.aiModels.byID = map[string]cachedModels{}
+	}
+	s.aiModels.byID[id] = cachedModels{models: models, at: time.Now()}
+	s.aiModels.mu.Unlock()
+	writeJSON(w, http.StatusOK, modelsReport{Models: models, Live: true})
 }
 
 // sentence makes an error message a sentence.

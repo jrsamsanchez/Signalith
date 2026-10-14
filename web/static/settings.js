@@ -35,8 +35,31 @@
     // the one answering), cards the section cards of each group, and cluster
     // the restart of servers asked for here, as GET api/requests/<id> has it.
     server: '', cards: [], cluster: null,
+    // The AI model pickers: models is the last model list read for the
+    // form ({ models, live, message }, or { loading }), modelsFor the
+    // form values it was read for, and other the pickers switched to
+    // Other before anything was typed there.
+    models: null, modelsFor: '', other: {},
   };
   const DEFAULT_AI_URL = { anthropic: 'https://api.anthropic.com', openai: 'https://api.openai.com/v1' };
+  // The usual addresses of each AI provider: '' is the provider's own.
+  // local ones run on this computer, or in Docker on the computer running
+  // Docker.
+  const AI_ADDRESSES = {
+    anthropic: [{ value: '', label: 'Anthropic' }],
+    openai: [
+      { value: '', label: 'OpenAI' },
+      { value: 'http://localhost:11434/v1', label: 'Ollama', local: true },
+      { value: 'http://localhost:1234/v1', label: 'LM Studio', local: true },
+      { value: 'http://localhost:8000/v1', label: 'vLLM', local: true },
+      { value: 'https://openrouter.ai/api/v1', label: 'OpenRouter' },
+      { value: 'https://api.groq.com/openai/v1', label: 'Groq' },
+      { value: 'https://api.mistral.ai/v1', label: 'Mistral AI' },
+      { value: 'https://generativelanguage.googleapis.com/v1beta/openai', label: 'Google Gemini' },
+    ],
+  };
+  const AI_DEFAULT_MODEL = { anthropic: 'claude-sonnet-5-5' };
+  const PICKERS = new Set(['assistant.url', 'assistant.model']);
   const RESTART_NOTE = 'signalith.settingsRestarted';
   // Settings shown in a monospaced font: addresses, paths and names.
   const MONO = new Set(['url', 'address', 'list']);
@@ -293,6 +316,7 @@
     for (const k of Object.keys(S.fields)) syncRow(k);
     syncAll();
     syncActive();
+    loadModels();
   }
 
   // cardsOf makes the section cards: one per section, or with shared
@@ -551,6 +575,7 @@
     const d = S.drafts[f.key];
     const ro = readOnly(f);
     if (f.type === 'secret') return secretControl(f, id);
+    if (PICKERS.has(f.key) && !ro && current('assistant.provider')) return pickerControl(f, id);
     const value = d && d.kind === 'value' && d.raw != null ? d.raw : rawOf(f, current(f.key));
     let n;
     if (f.type === 'bool') {
@@ -652,6 +677,11 @@
     return box;
   }
 
+  // setValue records a new value without the follow-up of edited.
+  function setValue(f, v) {
+    if (same(v, f.value)) delete S.drafts[f.key]; else S.drafts[f.key] = { kind: 'value', value: v, raw: v };
+  }
+
   // edited records a change typed or picked in a control.
   function edited(f, raw) {
     const v = parse(f, raw);
@@ -665,6 +695,171 @@
     if (S.saveErr && S.saveErr.fields[f.key]) delete S.saveErr.fields[f.key];
     syncRow(f.key);
     syncAll();
+    aiChanged(f.key);
+  }
+
+  // ---- the AI address and model pickers ----
+  // Each is a list of the usual choices with Other at the end, which shows
+  // a box for any value. The setting keeps the real address or model ID.
+
+  // aiAddresses are the usual addresses for the provider in the form, with
+  // the address a local one has from inside Docker.
+  function aiAddresses() {
+    const p = current('assistant.provider');
+    const docker = !!(S.view.about || {}).container;
+    return (AI_ADDRESSES[p] || []).map((a) => Object.assign({}, a, {
+      value: a.local && docker ? a.value.replace('localhost', 'host.docker.internal') : a.value,
+      url: a.value === '' ? DEFAULT_AI_URL[p] : (a.local && docker ? a.value.replace('localhost', 'host.docker.internal') : a.value),
+    }));
+  }
+  // sameAddress compares two addresses as the server sends to them.
+  function sameAddress(a, b) {
+    const p = current('assistant.provider');
+    const norm = (u) => {
+      u = String(u || '').trim().replace(/\/+$/, '').toLowerCase();
+      if (u === '') u = String(DEFAULT_AI_URL[p] || '');
+      if (p === 'anthropic') u = u.replace(/\/v1$/, '');
+      return u.replace('://127.0.0.1', '://localhost');
+    };
+    return norm(a) === norm(b);
+  }
+
+  // pickerChoices lists a picker's choices as { key, value, label }, and
+  // which one the value in the form is ('other' for none of them).
+  function pickerChoices(f) {
+    const v = current(f.key) == null ? '' : String(current(f.key));
+    let list = [];
+    if (f.key === 'assistant.url') {
+      list = aiAddresses().map((a) => ({ value: a.value, label: a.local ? a.label + ' on ' + (a.url.includes('host.docker.internal') ? 'the Docker computer' : 'this computer') : a.label, hint: a.url }));
+    } else {
+      const p = current('assistant.provider');
+      const m = (S.models && S.models.models) || [];
+      if (AI_DEFAULT_MODEL[p]) {
+        const def = m.find((x) => x.id === AI_DEFAULT_MODEL[p]);
+        list.push({ value: '', label: 'Default: ' + (def ? def.name : AI_DEFAULT_MODEL[p]), hint: AI_DEFAULT_MODEL[p] });
+      }
+      for (const x of m) list.push({ value: x.id, label: x.name && x.name !== x.id ? x.name : x.id, hint: x.id });
+    }
+    const at = () => list.findIndex((c) => (f.key === 'assistant.url' ? sameAddress(c.value, v) : c.value === v));
+    // While the list loads, the model chosen stays shown as it is.
+    if (f.key === 'assistant.model' && S.models && S.models.loading && v !== '' && at() < 0) list.push({ value: v, label: v, hint: v });
+    let chosen = S.other[f.key] ? -1 : at();
+    // An empty model with no default to fall back on: nothing chosen yet.
+    if (chosen < 0 && v === '' && !S.other[f.key]) chosen = -2;
+    return { list, chosen, value: v };
+  }
+
+  function pickerControl(f, id) {
+    const { list, chosen, value } = pickerChoices(f);
+    const loading = f.key === 'assistant.model' && S.models && S.models.loading;
+    const sel = el('select', { id, class: 'select select--block' });
+    if (chosen === -2) sel.append(el('option', { value: '', disabled: '', selected: '' }, loading ? 'Loading models…' : 'Choose a model'));
+    list.forEach((c, i) => {
+      const o = el('option', { value: 'p' + i }, c.label);
+      if (i === chosen) o.selected = true;
+      sel.append(o);
+    });
+    if (loading && chosen !== -2) sel.append(el('option', { value: '', disabled: '' }, 'Loading models…'));
+    const oth = el('option', { value: 'other' }, 'Other…');
+    if (chosen === -1) oth.selected = true;
+    sel.append(oth);
+    const box = inputFor(f, id + '-other', chosen === -1 ? value : '');
+    box.setAttribute('aria-label', f.key === 'assistant.url' ? 'Other address' : 'Other model’s ID');
+    box.placeholder = f.key === 'assistant.url' ? 'e.g. http://192.168.1.20:11434/v1' : 'e.g. ' + (current('assistant.provider') === 'anthropic' ? 'claude-opus-5-5' : 'llama3.1');
+    box.hidden = chosen !== -1;
+    box.addEventListener('input', () => edited(f, box.value));
+    sel.addEventListener('change', () => {
+      if (sel.value === 'other') {
+        S.other[f.key] = true;
+        box.hidden = false;
+        box.value = value;
+        box.focus();
+        syncRow(f.key);
+        return;
+      }
+      delete S.other[f.key];
+      box.hidden = true;
+      const c = list[Number(sel.value.slice(1))];
+      if (c) edited(f, c.value);
+    });
+    S.controls[f.key] = sel;
+    describe(sel, f);
+    describe(box, f);
+    return el('div', { class: 'st-picker' }, sel, box);
+  }
+
+  // pickerNote says under a picker where its choice sends to, or which
+  // model ID it is, and where the model list came from.
+  function pickerNote(key) {
+    const f = S.fields[key];
+    if (!f || readOnly(f) || !current('assistant.provider')) return [];
+    const { list, chosen } = pickerChoices(f);
+    const out = [];
+    if (key === 'assistant.url' && chosen >= 0) {
+      out.push(el('p', { class: 'st-hint' }, 'Sends to ', el('span', { class: 'mono' }, list[chosen].hint), '.'));
+    }
+    if (key === 'assistant.model') {
+      if (chosen >= 0 && list[chosen].hint && list[chosen].label !== list[chosen].hint) {
+        out.push(el('p', { class: 'st-hint' }, 'Model ID ', el('span', { class: 'mono' }, list[chosen].hint), '.'));
+      }
+      const m = S.models;
+      if (m && !m.loading && m.message) out.push(el('p', { class: 'st-hint' }, icon('info', 'icon--xs'), ' ', m.message));
+      else if (m && !m.loading && m.live) out.push(el('p', { class: 'st-hint' }, 'Listed by the provider.'));
+    }
+    return out;
+  }
+
+  // loadModels reads the model list for the provider, address and key in
+  // the form, through the server, so the key stays there.
+  let modelsTimer = 0;
+  function loadModels(soon) {
+    clearTimeout(modelsTimer);
+    const f = S.fields['assistant.model'];
+    if (!f || readOnly(f) || !current('assistant.provider')) return;
+    const body = testPayload('assistant');
+    delete body.values['assistant.model'];
+    const want = JSON.stringify(body);
+    if (want === S.modelsFor && S.models) return;
+    modelsTimer = setTimeout(async () => {
+      S.modelsFor = want;
+      S.models = Object.assign({}, S.models, { loading: true, message: '' });
+      rerenderPicker('assistant.model');
+      let r;
+      try {
+        r = await api('api/settings/assistant/models', body);
+      } catch (e) {
+        r = { models: [], live: false, message: sentence(e.message) };
+      }
+      if (S.modelsFor !== want) return;
+      S.models = r;
+      rerenderPicker('assistant.model');
+    }, soon ? 600 : 0);
+  }
+  // rerenderPicker draws a picker again, keeping focus where it was.
+  function rerenderPicker(key) {
+    const c = S.controls[key];
+    const had = c && document.activeElement && c.parentElement && c.parentElement.contains(document.activeElement);
+    rerenderRow(key, had);
+  }
+
+  // aiChanged follows a change of the provider, address or key: the
+  // address and model lists depend on them.
+  function aiChanged(key) {
+    if (key === 'assistant.provider') {
+      delete S.other['assistant.url'];
+      delete S.other['assistant.model'];
+      S.models = null;
+      S.modelsFor = '';
+      if (current(key)) {
+        // Another provider's own address and models don't carry over.
+        const url = S.fields['assistant.url'];
+        if (url && !readOnly(url) && Object.values(DEFAULT_AI_URL).some((u) => sameAddress(u, current('assistant.url')) || u === String(current('assistant.url') || '').replace(/\/+$/, ''))) setValue(url, '');
+        const model = S.fields['assistant.model'];
+        if (model && !readOnly(model) && current('assistant.model')) setValue(model, '');
+      }
+      for (const k of PICKERS) if (S.fields[k]) rerenderRow(k);
+    }
+    if (key === 'assistant.provider' || key === 'assistant.url' || key === 'assistant.api_key') loadModels(key !== 'assistant.provider');
   }
 
   // syncRow fills in a setting's notes: where its value comes from when
@@ -778,7 +973,9 @@
         out.push(el('p', { class: 'st-hint' }, 'Only sent to ', el('span', { class: 'mono' }, f.sent_to), '.'));
       }
     }
-    if (key === 'assistant.model' && !ro) {
+    if (PICKERS.has(key) && !ro && current('assistant.provider')) {
+      out.push(...pickerNote(key));
+    } else if (key === 'assistant.model' && !ro) {
       // Only Anthropic has a model to fall back on.
       const v = current(key);
       if (v === '' && current('assistant.provider') === 'anthropic') out.push(el('p', { class: 'st-hint' }, 'When empty: ' + f.empty_means + '.'));
@@ -1238,7 +1435,7 @@
         el('p', {}, 'Asked: ', el('q', {}, r.question)),
         el('pre', { class: 'st-test__query mono' }, r.query))));
     } else {
-      const key = /API key/i.test(r.message) ? 'assistant.api_key' : /not found/i.test(r.message) ? 'assistant.url' : '';
+      const key = r.field || (/API key/i.test(r.message) ? 'assistant.api_key' : '');
       kids.push(dxAlert('danger', 'The model didn’t answer', r.message, settingLink(key)));
     }
     return el('div', { class: 'st-result' }, ...kids);

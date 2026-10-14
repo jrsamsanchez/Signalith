@@ -1,0 +1,9 @@
+{"rule": "c977cb50-3dff-4a9f-b873-9290f56132f1", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-AppXDeploymentServer/Operational","event_id":"854","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-AppXDeploymentServer/Operational","event_id":"854","data":{"Path":":\\Windows\\SystemApps\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-AppXDeploymentServer/Operational","event_id":"854","data":{"Path":"microsoft.com"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-AppXDeploymentServer/Operational","event_id":"854","data":{"Path":"AppData\\Local\\Microsoft\\OneDrive\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-AppXDeploymentServer/Operational","event_id":"854","data":{"Path":"AppData\\Local\\Temp\\WinGet\\Microsoft.Winget.Source"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-AppXDeploymentServer/Operational","event_id":"854","data":{"Path":"x-windowsupdate://"}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-AppXDeploymentServer/Operational","event_id":"854","data":{"Path":"file:///C:/WINDOWS/InboxApps/Microsoft.StartExperiencesApp_8wekyb3d8bbwe.msixbundle file:///C:/WINDOWS/InboxApps/Microsoft.StartExperiencesApp_8wekyb3d8bbwe.msixbundle\\MicrosoftStartFeedPackage_1.151.0.0_x64.msix file:///C:/WINDOWS/InboxApps/Microsoft.StartExperiencesApp_8wekyb3d8bbwe.msixbundle\\MicrosoftStartFeedPackage_1.151.0.0_language-fr.msix"}}
+]}

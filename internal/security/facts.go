@@ -258,6 +258,11 @@ type ArchiveFacts struct {
 	Disk     Disk
 	Policies bool // a retention policy archives
 	Volume   string
+	// Encrypting is true when new archives are encrypted
+	// (retention.encrypt_archives), and Plain counts the archived days
+	// that are not, such as those written before.
+	Encrypting bool
+	Plain      int
 }
 
 // OpenSearchFacts is about OpenSearch, as the probes found it.

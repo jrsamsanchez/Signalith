@@ -158,6 +158,37 @@ var knownFields = func() map[string]string {
 		"system_dirty_pages": kw, "system_caption": kw, "system_message": "wildcard",
 		// An Application log event's data values, one per line.
 		"event_data": "wildcard",
+		// The data of Windows Firewall, BITS, AppX deployment and WMI
+		// events, by name (ChannelDataField): firewall rules and settings
+		// changed, transfer jobs, app packages installed and WMI
+		// subscriptions.
+		"firewall_action": kw, "firewall_active": kw, "firewall_application_path": kw, "firewall_direction": kw,
+		"firewall_edge_traversal": kw, "firewall_embedded_context": kw, "firewall_error_code": kw, "firewall_flags": kw,
+		"firewall_local_addresses": kw, "firewall_local_only_mapped": kw, "firewall_local_ports": kw,
+		"firewall_loose_source_mapped": kw, "firewall_modifying_application": kw, "firewall_modifying_user": kw,
+		"firewall_origin": kw, "firewall_policy_app_id": kw, "firewall_profiles": kw, "firewall_protocol": kw,
+		"firewall_remote_addresses": kw, "firewall_remote_machine_authorization_list": kw, "firewall_remote_ports": kw,
+		"firewall_remote_user_authorization_list": kw, "firewall_rule_id": kw, "firewall_rule_name": kw,
+		"firewall_rule_status": kw, "firewall_schema_version": kw, "firewall_security_options": kw,
+		"firewall_service_name": kw, "firewall_setting_type": kw, "firewall_setting_value": kw,
+		"firewall_setting_value_display": kw, "firewall_setting_value_size": kw, "firewall_setting_value_string": kw,
+		"firewall_store_type":           kw,
+		"bits_client_process_start_key": kw, "bits_file_count": kw, "bits_job_id": kw, "bits_job_owner": kw,
+		"bits_job_title": kw, "bits_local_name": kw, "bits_process_id": kw, "bits_process_path": kw,
+		"bits_remote_name": kw, "bits_user": kw,
+		"appx_calling_process": kw, "appx_deployment_operation": kw, "appx_deployment_options": kw,
+		"appx_detailed_message_info": kw, "appx_error_code": kw, "appx_error_file_info": kw, "appx_external_location": kw,
+		"appx_flags": kw, "appx_flags_high": kw, "appx_has_full_trust": kw, "appx_has_win32alacarte": kw,
+		"appx_is_centennial": kw, "appx_is_in_place_update": kw, "appx_is_in_related_set": kw, "appx_is_optional": kw,
+		"appx_is_package_encrypted": kw, "appx_is_package_using_bdc": kw, "appx_is_streaming_package": kw,
+		"appx_main_package_family_name": kw, "appx_mount_point": kw, "appx_package_display_name": kw,
+		"appx_package_flags": kw, "appx_package_flags2": kw, "appx_package_full_name": kw, "appx_package_source_uri": kw,
+		"appx_package_type": kw, "appx_path": kw, "appx_policy_reason": kw, "appx_rollback_detailed_message_info": kw,
+		"appx_rollback_error_file_info": kw, "appx_storage_id": kw, "appx_system_volume": kw, "appx_target_platform": kw,
+		"wmi_client_machine": kw, "wmi_client_process_id": kw, "wmi_component": kw, "wmi_consumer": kw, "wmi_ess": kw,
+		"wmi_id": kw, "wmi_namespace": kw, "wmi_namespace_name": kw, "wmi_operation": kw, "wmi_possible_cause": kw,
+		"wmi_processid": kw, "wmi_provider_name": kw, "wmi_query": kw, "wmi_queryid": kw, "wmi_result_code": kw,
+		"wmi_user": kw,
 		// Linux audit records (auditd.go): each field as auditd names it,
 		// the names of an ENRICHED record's numbers (auditd_uid_name), and
 		// a program's arguments one by one and joined, which rules search

@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"io"
 	"io/fs"
@@ -17,7 +18,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jrsamsanchez/signalith/internal/archivecrypt"
 	"github.com/jrsamsanchez/signalith/internal/config"
+	"github.com/jrsamsanchez/signalith/internal/retention"
 	"github.com/jrsamsanchez/signalith/internal/secrets"
 	"github.com/jrsamsanchez/signalith/internal/securefile"
 	"github.com/jrsamsanchez/signalith/internal/shared"
@@ -690,6 +693,30 @@ func TestPruneKeepsAKeyThatMayBeNeeded(t *testing.T) {
 		t.Errorf("prune with an undecryptable value: %v", err)
 	}
 	os.WriteFile(dirFile, good, 0o600)
+
+	// An archive encrypted with the previous key alone needs it; one also
+	// encrypted with a cluster key does not.
+	c, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	src, err := c.Keyring().Source()
+	if err != nil || src.OldKeyID == "" {
+		t.Fatal(src, err)
+	}
+	oldID := src.OldKeyID
+	archived := func(id, kid string) {
+		os.MkdirAll(c.ArchiveDir(), 0o700)
+		b, _ := json.Marshal(retention.Manifest{Format: retention.ArchiveFormat, ID: id, Index: id, File: id + ".ndjson.gz", Encryption: archivecrypt.Scheme, KID: kid})
+		os.WriteFile(filepath.Join(c.ArchiveDir(), id+".json"), b, 0o600)
+	}
+	archived("signalith-endpoint-2026.07.01", oldID+",c1usterk3y00")
+	archived("signalith-endpoint-2026.07.02", oldID)
+	if _, err := runCmd(t, "", "rotate-master", "-prune", "-c", path); err == nil || !strings.Contains(err.Error(), "1 archived day") ||
+		!strings.Contains(err.Error(), "2026.07.02") || strings.Contains(err.Error(), "2026.07.01") {
+		t.Errorf("prune with an archive that needs the key: %v", err)
+	}
+	os.RemoveAll(c.ArchiveDir())
 
 	// With the key as a systemd credential, the service must have
 	// restarted since the rotation.

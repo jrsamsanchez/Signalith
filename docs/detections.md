@@ -242,9 +242,9 @@ Content packs are rule sets from other open source projects, shipped unchanged
 inside Signalith and converted when it starts. Every pack detection is **off** until
 an admin turns it on.
 
-**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,164 rules from
-[SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 2,010 Windows rules
-for these Sysmon, Security, PowerShell, System, Application, Code Integrity and Defender log sources, and 154 Linux rules (see
+**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,185 rules from
+[SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 2,031 Windows rules
+for these Sysmon, Security, PowerShell, System, Application, Code Integrity, Windows Firewall, BITS, AppX deployment, WMI activity and Defender log sources, and 154 Linux rules (see
 [Linux endpoints](#linux-endpoints-sysmon-for-linux) and
 [the Linux audit log](#linux-audit-log-auditd)):
 
@@ -265,6 +265,10 @@ for these Sysmon, Security, PowerShell, System, Application, Code Integrity and 
 | `service: system` | Other System events, by provider and event ID (see below) | Other |
 | `service: application` | Application events, by provider and event ID (see below) | Other |
 | `service: codeintegrity-operational` | Code Integrity events (unsigned, revoked and blocked drivers and images), by event ID | Other |
+| `service: firewall-as` | Windows Firewall events (rules added and deleted, settings changed, reset), by event ID and data (see below) | Other |
+| `service: bits-client` | BITS events (jobs created, transfers started), by event ID and data (see below) | Other |
+| `service: appxdeployment-server` | App package (MSIX, AppX) events (deployed, downloaded, blocked), by event ID and data (see below) | Other |
+| `service: wmi` | WMI activity events (operations failed, event subscriptions registered), by event ID and data (see below) | Other |
 | `service: windefend` | Microsoft Defender Antivirus events (threats, attack surface reduction blocks, protection turned off, settings changed; `Path` is `file_path`, `ProcessName` `process_path`, `NewValue` `new_value`, `SourceName` `detection_source`, a 5013's `Value` `setting`) | Malware |
 | `service: security` | The Security log events in the next table | See the next table |
 
@@ -586,6 +590,17 @@ The Windows agent collects the Application log. A rule about the rendered messag
 Code Integrity rules (`Microsoft-Windows-CodeIntegrity/Operational`, which the Windows
 agent collects) find their events the same way, with the event's data values as
 `event_data`; a rule about a named value (`FileNameBuffer`) is left out of the pack.
+
+Windows Firewall rules (`Microsoft-Windows-Windows Firewall With Advanced Security/Firewall`),
+BITS rules (`Microsoft-Windows-Bits-Client/Operational`), app package rules
+(`Microsoft-Windows-AppXDeploymentServer/Operational`) and WMI activity rules
+(`Microsoft-Windows-WMI-Activity/Operational`) find their events in Other by event ID,
+and name their data the way Windows does: each value is `firewall_`, `bits_`, `appx_` or
+`wmi_` and its name in snake case (`ApplicationPath` is `firewall_application_path`,
+`RemoteName` `bits_remote_name`, `PackageFullName` `appx_package_full_name`, `Operation`
+`wmi_operation`). The Windows agent collects these logs, which Windows keeps by default.
+A rule that searches an event's free text (the WMI persistence rule) is left out of the
+pack.
 
 Registry values that Sysmon writes as `DWORD (0x00000001)` compare as `0x00000001`,
 the way Splunk's Sysmon add-on reads them.
