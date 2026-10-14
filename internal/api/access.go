@@ -247,11 +247,17 @@ func (s *Server) principalFor(name string) *principal {
 // holding its hash, or is "" for users without one here (the built-in
 // admin and directory users).
 func (s *Server) passwordStamp(name string) string {
-	v := s.userStore().PasswordVersion(name)
-	if v == "" {
+	return PasswordStamp(s.userStore().PasswordVersion(name))
+}
+
+// PasswordStamp is what a session made in this server's memory records
+// of the password hash h its user signed in with (auth.Session.Version):
+// "" for none.
+func PasswordStamp(h string) string {
+	if h == "" {
 		return ""
 	}
-	sum := sha256.Sum256([]byte(v))
+	sum := sha256.Sum256([]byte(h))
 	return hex.EncodeToString(sum[:16])
 }
 

@@ -29,7 +29,7 @@ import (
 // (internal/clusterauth). Until then, and on any server that is not a
 // member, they stay in this server's files and memory, as before. Which
 // one is decided at each start of the components; a change restarts them
-// in place, which signs everyone out once.
+// in place; the sessions made before carry over (carry).
 
 // sharedUsers links the shared users' documents to the components of each
 // start. Like the runtime, it belongs to the process: its session cache
@@ -135,6 +135,49 @@ func (ua *sharedUsers) start(ctx context.Context, rt *shared.Runtime, node *clus
 func (ua *sharedUsers) use(p *usersParts) {
 	ua.cur.Store(p)
 	ua.on.Store(p != nil)
+}
+
+// carry moves the sign-in sessions this server made while it kept its
+// users in its own files (legacy, for the users of people and the
+// built-in admin of c) into the shared sessions when it starts using the
+// shared users, so the switch signs out only those whom the shared
+// settings do not have as they were here (clusterauth.Sessions.Carry).
+func (p *usersParts) carry(ctx context.Context, legacy *auth.Sessions, people *users.Store, c *config.Config, log *slog.Logger) {
+	held := legacy.Take()
+	if len(held) == 0 {
+		return
+	}
+	list := make([]clusterauth.Carried, 0, len(held))
+	for _, h := range held {
+		cr := clusterauth.Carried{Held: h}
+		switch {
+		case h.Method == users.SourceBuiltin:
+			if !strings.EqualFold(h.User, c.Auth.AdminUser) {
+				continue
+			}
+			cr.Role, cr.PasswordHash = users.Admin, c.Auth.AdminPasswordHash
+		case people != nil:
+			u, ok := people.Get(h.User)
+			if !ok || u.Disabled || u.Source != h.Method {
+				continue
+			}
+			cr.Role = u.Role
+			if u.Source == users.SourceLocal {
+				cr.PasswordHash = people.PasswordVersion(u.Username)
+				if h.Version != "" && h.Version != api.PasswordStamp(cr.PasswordHash) {
+					continue
+				}
+			}
+		default:
+			continue
+		}
+		list = append(list, cr)
+	}
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+	n, dropped := p.sessions.Carry(ctx, list)
+	dropped += len(held) - len(list)
+	log.Info("kept the sign-in sessions made before the users were shared", "audit", true, "kept", n, "ended", dropped)
 }
 
 // api is what the API needs of p.

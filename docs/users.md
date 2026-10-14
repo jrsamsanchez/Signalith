@@ -562,8 +562,13 @@ Give the OpenSearch user the right to create, read and write `<prefix>_sessions`
   days, the server that runs the jobs does it instead, and the Servers page names the
   servers whose users differed from its own. Users that only another server had are not brought in: add them again on
   the Users page. `users.json` and `directory.json` stay as they were, unused.
-- **Everyone signs in once more** when the users become shared, since the sessions
-  each server kept are not carried over.
+- **Sessions carry over** when the users become shared: a browser signed in to a
+  server stays signed in to it, as long as the shared users have its user as they were
+  there (same source, role and password, enabled). The others, such as a server's own
+  users that were not brought in, or a built-in admin whose password differed, sign in
+  once more. A carried session works on the server that made it, until it ends as any
+  session does (a new password, disabled, signed out, idle, 7 days) or that server
+  stops; signing in again gives a session that works on every server.
 
 What stays per server: `auth.session_timeout` (each server ends idle sessions after its
 own value) and the Basic auth cache. `auth.admin_user` is taken from the server that
@@ -760,6 +765,7 @@ Servers that share their users also log these:
 
 | Message | Fields |
 | --- | --- |
+| `kept the sign-in sessions made before the users were shared` | `kept`, `ended`: when this server starts using the shared users (see [When the users become shared](#when-the-users-become-shared)) |
 | `signed in while OpenSearch cannot be written; …` | `user`, `method`, `client`: a session kept on this server only (see [When OpenSearch cannot be used](#when-opensearch-cannot-be-used)) |
 | `wrote through a session made while OpenSearch could not be written` | `user` |
 | `a session made while OpenSearch could not be written ended: …` | `user` |

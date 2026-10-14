@@ -160,13 +160,16 @@ type SessionCache struct {
 	neg      map[string]time.Time
 	degraded map[string]*entry
 	pending  []string
+	// carried holds the ids of the sessions Carry brought over from this
+	// server's own sessions, whose cookies keep their old form.
+	carried map[string]bool
 	// watch is the version of watch:sessions last seen.
 	watch store.Version
 }
 
 // NewSessionCache returns an empty cache.
 func NewSessionCache() *SessionCache {
-	return &SessionCache{pos: map[string]*entry{}, neg: map[string]time.Time{}, degraded: map[string]*entry{}}
+	return &SessionCache{pos: map[string]*entry{}, neg: map[string]time.Time{}, degraded: map[string]*entry{}, carried: map[string]bool{}}
 }
 
 // Sessions keeps the sign-in sessions of a cluster in OpenSearch. It has
@@ -366,7 +369,7 @@ func (s *Sessions) forget(id string) {
 // they are now. used marks it used, so it does not end for being idle; a
 // request a page makes on its own passes false.
 func (s *Sessions) Lookup(ctx context.Context, cookie string, used bool) (auth.Session, bool) {
-	if cookie == "" || ParseCookie(s.Docs.keys(), s.Docs.ClusterID(), cookie) != nil {
+	if !s.known(cookie) {
 		return auth.Session{}, false
 	}
 	id := SessionID(cookie)
@@ -431,6 +434,78 @@ func (s *Sessions) Lookup(ctx context.Context, cookie string, used bool) (auth.S
 	}
 	c.mu.Unlock()
 	return cur.session(), true
+}
+
+// known reports whether a cookie may have a session, without reading
+// OpenSearch: a cookie this cluster made, or one of a session Carry
+// brought over on this server.
+func (s *Sessions) known(cookie string) bool {
+	if cookie == "" {
+		return false
+	}
+	if ParseCookie(s.Docs.keys(), s.Docs.ClusterID(), cookie) == nil {
+		return true
+	}
+	s.Cache.mu.Lock()
+	defer s.Cache.mu.Unlock()
+	return s.Cache.carried[SessionID(cookie)]
+}
+
+// Carried is a sign-in session a server made while it kept its users in
+// its own files, with what its user was there.
+type Carried struct {
+	auth.Held
+	// Role is the user's role, and PasswordHash their password hash (the
+	// built-in admin's for its sessions; "" for a directory user).
+	Role         users.Role
+	PasswordHash string
+}
+
+// Carry writes the sessions this server made while it kept its users in
+// its own files into the shared sessions, when it starts using the shared
+// users, so the browsers signed in stay signed in. A session is carried
+// only when the shared settings have its user as they were here: the same
+// source, role and password hash, enabled and not refused; it then joins
+// the user's current session epoch, so a new password or disabling the
+// user on any server ends it as it ends any other. The cookies keep
+// their old form, so they work on this server only (where they were
+// made), until the session ends or the process stops. It returns how many
+// sessions were carried and how many were not.
+func (s *Sessions) Carry(ctx context.Context, list []Carried) (carried, dropped int) {
+	k := s.Docs.key()
+	if k == nil || s.Docs.ClusterID() == "" || s.degradedNow() {
+		return 0, len(list)
+	}
+	now := s.now()
+	cl, index := s.index()
+	for _, c := range list {
+		user := users.NormalizeUsername(c.User)
+		u, _, ok := s.Docs.Users().Get(user)
+		if !ok || u.Disabled || u.Refused != "" || u.Source != c.Method || u.Role != c.Role || u.PasswordHash != c.PasswordHash ||
+			u.Source == users.SourceDirectory && (s.DirectoryOn == nil || !s.DirectoryOn()) || now.Sub(c.Created) >= MaxAge {
+			dropped++
+			continue
+		}
+		id := b64.EncodeToString(c.Hash[:])
+		at := c.Created.UTC().Format(time.RFC3339Nano)
+		doc := &sessionDoc{User: user, Epoch: u.SessionEpoch, Created: at, LastSeen: c.LastSeen.UTC().Format(time.RFC3339Nano),
+			Remember: c.Remember, Node: s.Node, Method: c.Method, Born: bornText(u)}
+		doc.sign(k, id)
+		if _, err := cl.Create(ctx, index, id, doc, false); err != nil {
+			dropped++
+			continue
+		}
+		created, _ := time.Parse(time.RFC3339Nano, at)
+		e := &entry{user: user, epoch: u.SessionEpoch, created: created, remember: c.Remember, method: c.Method, born: doc.Born,
+			stored: c.LastSeen, local: c.LastSeen, confirmed: now}
+		s.Cache.mu.Lock()
+		s.Cache.carried[id] = true
+		s.Cache.pos[id] = e
+		delete(s.Cache.neg, id)
+		s.Cache.mu.Unlock()
+		carried++
+	}
+	return carried, dropped
 }
 
 // read reads the session id from OpenSearch and caches it. When
@@ -530,11 +605,12 @@ func maxTime(a, b time.Time) time.Time {
 // one poll. While OpenSearch cannot be written, the document is deleted
 // once it can.
 func (s *Sessions) Delete(ctx context.Context, cookie string) {
-	if cookie == "" || ParseCookie(s.Docs.keys(), s.Docs.ClusterID(), cookie) != nil {
+	if !s.known(cookie) {
 		return
 	}
 	id := SessionID(cookie)
 	s.Cache.mu.Lock()
+	delete(s.Cache.carried, id)
 	_, inMemory := s.Cache.degraded[id]
 	delete(s.Cache.degraded, id)
 	delete(s.Cache.pos, id)
@@ -709,7 +785,7 @@ func (s *Sessions) Recover(ctx context.Context) {
 		doc := &sessionDoc{User: e.user, Epoch: e.epoch, Created: at, LastSeen: maxTime(e.local, e.stored).UTC().Format(time.RFC3339Nano),
 			Remember: e.remember, Node: s.Node, Method: e.method, Degraded: true, Born: bornText(u)}
 		doc.sign(k, id)
-		if _, err := cl.Create(ctx, index, id, doc, false); err != nil && !errors.Is(err, store.ErrExists) {
+		if _, err := cl.Create(ctx, index, id, doc, false); err != nil {
 			continue
 		}
 		e.degraded, e.confirmed, e.born = false, now, doc.Born

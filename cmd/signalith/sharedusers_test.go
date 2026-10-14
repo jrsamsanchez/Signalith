@@ -33,7 +33,7 @@ func (rs *running) signInAs(user, pass string) int {
 }
 
 // usersShared waits for rs to keep its users in the shared settings, and
-// signs in again: the switch signs everyone out once.
+// signs in again, for a session made in the shared settings.
 func (rs *running) usersShared() {
 	rs.t.Helper()
 	eventually(rs.t, rs.r.node.Name()+" keeps its users in the shared settings", func() bool {
@@ -160,4 +160,25 @@ func TestPasswdOnAMember(t *testing.T) {
 		t.Errorf("A's -local password on B: %d", code)
 	}
 	fos.Block(false)
+}
+
+// The switch to shared users keeps the sessions made before it: the
+// admin signed in on a new server just before it founded the cluster and
+// switched stays signed in, with the cookie of before.
+func TestSwitchKeepsSessions(t *testing.T) {
+	t.Setenv(clusterKeyFileEnv, "")
+	rs := startRunnerWith(t, runOptions{scheduler: true, server: plainHTTP})
+	if strings.Contains(rs.cookie, "=s1.") {
+		t.Skip("the server switched to shared users before the first sign-in")
+	}
+	eventually(t, "the users are shared", func() bool {
+		return rs.r.sharedContent.users.on.Load() && rs.r.sharedContent.users.cur.Load() != nil
+	})
+	if code, out, err := rs.call("", "GET", "/api/me", ""); err != nil || code != http.StatusOK || out["username"] != "admin" {
+		t.Fatalf("the session made before the switch: %d %v %v\n%s", code, out, err, rs.logs.String())
+	}
+	if l := rs.logs.String(); !strings.Contains(l, `msg="kept the sign-in sessions made before the users were shared"`) ||
+		!strings.Contains(l, "audit=true kept=1 ended=0") {
+		t.Errorf("the session was not logged as kept:\n%s", l)
+	}
 }

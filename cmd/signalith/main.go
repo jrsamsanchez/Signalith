@@ -1172,6 +1172,9 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	var people *users.Store
 	var dir *users.Directory
 	if parts != nil {
+		// The sessions made while this server kept its users in its own
+		// files carry over.
+		parts.carry(ctx, r.sessions, r.people, c, log)
 		people, dir = parts.store, parts.dir
 		n := people.Count()
 		log.Info("users loaded from the shared settings", "local", n[users.SourceLocal], "directory", n[users.SourceDirectory])

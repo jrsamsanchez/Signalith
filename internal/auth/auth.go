@@ -194,6 +194,30 @@ func (s *Sessions) Users() []string {
 	return out
 }
 
+// Held is a session as the store keeps it, under the SHA-256 of its
+// token.
+type Held struct {
+	Hash [32]byte
+	Session
+}
+
+// Take removes every session and returns those that have not expired:
+// for a server that moves them to another store when it starts keeping
+// its sessions elsewhere.
+func (s *Sessions) Take() []Held {
+	now := s.Now()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []Held
+	for id, ss := range s.byID {
+		if !s.expired(ss, now) {
+			out = append(out, Held{Hash: id, Session: *ss})
+		}
+	}
+	clear(s.byID)
+	return out
+}
+
 // Len reports how many sessions are stored.
 func (s *Sessions) Len() int {
 	s.mu.Lock()
