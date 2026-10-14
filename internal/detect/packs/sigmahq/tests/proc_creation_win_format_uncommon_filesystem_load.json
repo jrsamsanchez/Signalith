@@ -1,0 +1,10 @@
+{"rule": "9fb6b26e-7f9e-4517-a48b-8cac4a1b6c60", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/fs:","Image":"\\format.com"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"/fs:","NewProcessName":"\\format.com","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/fs: /fs:ReFS","Image":"\\format.com"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"/fs: /fs:ReFS","NewProcessName":"\\format.com","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\format.com"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"\\format.com","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/fs:"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"/fs:","SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

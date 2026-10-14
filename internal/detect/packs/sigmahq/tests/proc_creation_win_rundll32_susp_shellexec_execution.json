@@ -1,0 +1,6 @@
+{"rule": "d87bd452-6da1-456e-8155-7dc988157b7d", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"ShellExec_RunDLL iex"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"ShellExec_RunDLL iex","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

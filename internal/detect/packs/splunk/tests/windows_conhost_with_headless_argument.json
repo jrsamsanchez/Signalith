@@ -1,0 +1,12 @@
+{"rule": "d5039508-998d-4cfc-8b5e-9dcd679d9a62", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x --headless  x","Image":"C:\\Windows\\System32\\conhost.exe","ParentProcessId":"4000","ProcessId":"4242"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"x --headless  x","NewProcessId":"0x1092","NewProcessName":"C:\\Windows\\System32\\conhost.exe","ProcessId":"0xfa0","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x --headless  y","Image":"C:\\Windows\\System32\\conhost.exe","ParentProcessId":"4000","ProcessId":"4242"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"x --headless  y","NewProcessId":"0x1092","NewProcessName":"C:\\Windows\\System32\\conhost.exe","ProcessId":"0xfa0","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x --headless  x","Image":"C:\\Windows\\System32\\conhost.exf","ParentProcessId":"4000","ProcessId":"4242"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"x --headless  x","NewProcessId":"0x1092","NewProcessName":"C:\\Windows\\System32\\conhost.exf","ProcessId":"0xfa0","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x --headless  x","ParentProcessId":"4000","ProcessId":"4242"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"x --headless  x","NewProcessId":"0x1092","ProcessId":"0xfa0","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"C:\\Windows\\System32\\conhost.exe","ParentProcessId":"4000","ProcessId":"4242"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessId":"0x1092","NewProcessName":"C:\\Windows\\System32\\conhost.exe","ProcessId":"0xfa0","SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

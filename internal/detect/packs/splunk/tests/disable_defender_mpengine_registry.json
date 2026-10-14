@@ -1,0 +1,9 @@
+{"rule": "cc391750-3024-11ec-955a-acde48001122", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Policies\\Microsoft\\Windows Defender\\MpEngine x\\MpEnablePus"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Policies\\Microsoft\\Windows Defender\\MpEngine y\\MpEnablePus"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)","EventType":"SetValue","ProcessId":"4242","TargetObject":"HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run\\MpEnablePus"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Policies\\Microsoft\\Windows Defender\\MpEngine x\\MpEnablePut"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Policies\\Microsoft\\Windows Defender\\MpEngine x"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Policies\\Microsoft\\Windows Defender\\MpEngine x\\MpEnablePus"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Policies\\Microsoft\\Windows Defender\\MpEngine x\\MpEnablePus"}}
+]}

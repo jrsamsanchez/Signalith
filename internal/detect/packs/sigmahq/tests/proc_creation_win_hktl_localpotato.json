@@ -1,0 +1,6 @@
+{"rule": "6bd75993-9888-4f91-9404-e1e4e4e34b77", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":".exe -i C:\\-o Windows\\"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Hashes":"IMPHASH=E1742EE971D6549E8D4D81115F88F1FC"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\LocalPotato.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{}}
+]}

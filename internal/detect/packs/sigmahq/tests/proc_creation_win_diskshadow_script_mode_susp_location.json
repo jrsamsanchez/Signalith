@@ -1,0 +1,5 @@
+{"rule": "fa1a7e52-3d02-435b-81b8-00da14dd66c1", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"—s  \\Users\\Public\\","OriginalFileName":"diskshadow.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"diskshadow.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"—s  \\Users\\Public\\"}}
+]}

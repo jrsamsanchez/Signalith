@@ -14,6 +14,8 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/jrsamsanchez/signalith/internal/agenttokens"
+	"github.com/jrsamsanchez/signalith/internal/api"
 	"github.com/jrsamsanchez/signalith/internal/cluster"
 	"github.com/jrsamsanchez/signalith/internal/config"
 	"github.com/jrsamsanchez/signalith/internal/intel"
@@ -94,6 +96,7 @@ func securityReport(ctx context.Context, path string, info io.Writer) (*security
 	saveBitLocker(ctx, c.StateDir(), info)
 	f := security.NewFacts(h, time.Now(), security.ServerInfoFor(h, cliServerName(c), version))
 	cliFacts(f, c)
+	f.AgentTokens = cliTokenFacts(ctx, c)
 	collectors := append(security.HostCollectors(h, archiving(c)), security.OpenSearchCollectors(c, h.InContainer, c.StateDir())...)
 	return security.Run(ctx, f, collectors), nil
 }
@@ -188,4 +191,14 @@ func archiving(c *config.Config) bool {
 		}
 	}
 	return false
+}
+
+// cliTokenFacts reads the agent tokens from OpenSearch for the check;
+// when it can't, the check says so.
+func cliTokenFacts(ctx context.Context, c *config.Config) *security.AgentTokenFacts {
+	reg := &agenttokens.Registry{Client: newStore(c), Prefix: c.OpenSearch.IndexPrefix, Legacy: func() []agenttokens.Legacy { return api.LegacyTokens(c) }}
+	lctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	_ = reg.Load(lctx)
+	return api.TokenFacts(lctx, reg)
 }

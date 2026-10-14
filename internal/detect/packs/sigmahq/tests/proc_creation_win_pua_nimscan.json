@@ -1,0 +1,4 @@
+{"rule": "4fd6b1c7-19b8-4488-97f6-00f0924991a3", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\NimScan.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{}}
+]}

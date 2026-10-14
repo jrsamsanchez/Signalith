@@ -1,0 +1,15 @@
+{"rule": "55502381-5cce-491b-9277-7cb1d10bc0df", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Environment x\\COMPlus_ETWEnabled"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"0","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Environment x\\COMPlus_ETWEnabled"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Environment y\\COMPlus_ETWEnabled"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"0","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Environment y\\COMPlus_ETWEnabled"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)","EventType":"SetValue","ProcessId":"4242","TargetObject":"HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run\\COMPlus_ETWEnabled"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Environment x\\COMPlus_ETWEnablee"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Environment x"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Environment x\\COMPlus_ETWEnabled"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Environment x\\COMPlus_ETWEnabled"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"0","EventType":"SetValue","ProcessId":"4242","TargetObject":"HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run\\COMPlus_ETWEnabled"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"0","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Environment x\\COMPlus_ETWEnablee"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"0","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Environment x"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"1","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Environment x\\COMPlus_ETWEnabled"}}
+]}

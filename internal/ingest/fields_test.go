@@ -2,10 +2,14 @@ package ingest
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"strings"
 	"testing"
@@ -249,6 +253,7 @@ func TestIndexTemplate(t *testing.T) {
 	for name, want := range map[string]string{
 		"@timestamp": "date", "message": "text", "user": "keyword", "src": "keyword",
 		"src_port": "long", "bytes": "long", "risk_score": "double", "device_time": "keyword", "dropped_fields": "long",
+		"script_block_text": "wildcard",
 	} {
 		p, _ := props[name].(map[string]any)
 		if p == nil || p["type"] != want {
@@ -301,5 +306,32 @@ func TestParsersEmitKnownFields(t *testing.T) {
 			}
 			return true
 		})
+	}
+}
+
+// OpenSearch before 2.15 refuses the wildcard type; the template then maps
+// those fields as keywords.
+func TestPutIndexTemplateWithoutWildcard(t *testing.T) {
+	var got []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var tmpl map[string]any
+		json.NewDecoder(r.Body).Decode(&tmpl)
+		props := tmpl["template"].(map[string]any)["mappings"].(map[string]any)["properties"].(map[string]any)
+		typ := props["script_block_text"].(map[string]any)["type"].(string)
+		got = append(got, typ)
+		if typ == "wildcard" {
+			w.WriteHeader(http.StatusBadRequest)
+			io.WriteString(w, `{"error":{"type":"mapper_parsing_exception","reason":"No handler for type [wildcard] declared on field [script_block_text]"},"status":400}`)
+			return
+		}
+		io.WriteString(w, `{"acknowledged":true}`)
+	}))
+	defer srv.Close()
+	cl := store.New(store.Config{URL: srv.URL})
+	if err := PutIndexTemplate(context.Background(), cl, "sig", 0); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(got, ",") != "wildcard,keyword" {
+		t.Errorf("tried %v", got)
 	}
 }

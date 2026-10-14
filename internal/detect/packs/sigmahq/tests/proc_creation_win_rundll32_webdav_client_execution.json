@@ -1,0 +1,6 @@
+{"rule": "2dbd9d3d-9e27-42a8-b8df-f13825c6c3d5", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"C:\\windows\\system32\\davclnt.dll,DavSetCookie","OriginalFileName":"RUNDLL32.EXE","ParentImage":"\\svchost.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"RUNDLL32.EXE","ParentImage":"\\svchost.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"C:\\windows\\system32\\davclnt.dll,DavSetCookie","ParentImage":"\\svchost.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"C:\\windows\\system32\\davclnt.dll,DavSetCookie","OriginalFileName":"RUNDLL32.EXE"}}
+]}

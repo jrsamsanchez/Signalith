@@ -449,6 +449,11 @@ func TestHTTP2StreamsCountAgainstTheClient(t *testing.T) {
 			t.Fatalf("only %d of the extra requests were refused; %d running", refused, running.Load())
 		}
 	}
+	// The refusals can arrive before the last admitted handler has
+	// started, so give it a moment.
+	for deadline := time.Now().Add(5 * time.Second); running.Load() < 4 && time.Now().Before(deadline); {
+		time.Sleep(10 * time.Millisecond)
+	}
 	if n := running.Load(); n != 4 {
 		t.Errorf("%d requests running, want 4", n)
 	}

@@ -1,0 +1,18 @@
+{"rule": "dcdbc940-0bff-46b2-95f3-2d73f848e33b", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\bitsadmin.exe","IntegrityLevel":"S-1-16-16384","ParentImage":"\\spoolsv.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\net.exe","IntegrityLevel":"System","ParentImage":"\\spoolsv.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\cmd.exe","IntegrityLevel":"S-1-16-16384","ParentImage":"\\spoolsv.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\netsh.exe","IntegrityLevel":"S-1-16-16384","ParentImage":"\\spoolsv.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"IntegrityLevel":"S-1-16-16384","ParentImage":"\\spoolsv.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\bitsadmin.exe","ParentImage":"\\spoolsv.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\bitsadmin.exe","IntegrityLevel":"S-1-16-16384"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"start","Image":"\\net.exe","IntegrityLevel":"System","ParentImage":"\\spoolsv.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"IntegrityLevel":"System","ParentImage":"\\spoolsv.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\net.exe","ParentImage":"\\spoolsv.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\net.exe","IntegrityLevel":"System"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"route add","Image":"\\cmd.exe","IntegrityLevel":"S-1-16-16384","ParentImage":"\\spoolsv.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\cmd.exe","ParentImage":"\\spoolsv.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\cmd.exe","IntegrityLevel":"S-1-16-16384"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"add portopening","Image":"\\netsh.exe","IntegrityLevel":"S-1-16-16384","ParentImage":"\\spoolsv.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\netsh.exe","ParentImage":"\\spoolsv.exe"}}
+]}

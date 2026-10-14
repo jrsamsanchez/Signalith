@@ -3,7 +3,6 @@ package api
 
 import (
 	"context"
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,12 +20,14 @@ import (
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/agents"
+	"github.com/jrsamsanchez/signalith/internal/agenttokens"
 	"github.com/jrsamsanchez/signalith/internal/assets"
 	"github.com/jrsamsanchez/signalith/internal/assistant"
 	"github.com/jrsamsanchez/signalith/internal/auth"
 	"github.com/jrsamsanchez/signalith/internal/cases"
 	"github.com/jrsamsanchez/signalith/internal/clientaddr"
 	"github.com/jrsamsanchez/signalith/internal/config"
+	"github.com/jrsamsanchez/signalith/internal/content"
 	"github.com/jrsamsanchez/signalith/internal/dashboards"
 	"github.com/jrsamsanchez/signalith/internal/datamodel"
 	"github.com/jrsamsanchez/signalith/internal/detect"
@@ -77,12 +78,17 @@ type Server struct {
 	Cases cases.Store
 	// Respond runs response actions; nil disables them.
 	Respond *respond.Runner
+	// Playbooks backs the Playbooks and Approvals pages; nil disables
+	// them.
+	Playbooks *Playbooks
 	// Retention enforces data retention policies; nil disables the Data
 	// retention page.
 	Retention *retention.Manager
 	// Endpoints manages the hosts that run osquery (the Endpoints page and
 	// osquery's remote API); nil disables them.
 	Endpoints *endpoint.Store
+	// Content installs content pack updates; nil disables them.
+	Content *content.Updater
 	// Sample loads and removes the one-click sample data; nil disables the
 	// sample-data card and its endpoints.
 	Sample *sample.Loader
@@ -138,6 +144,10 @@ type Server struct {
 	// Security runs the Security page's checks and keeps the last
 	// report; it carries over a restart in place. nil makes one.
 	Security *SecurityChecker
+	// Tokens are the agent tokens, shared by every server on the same
+	// OpenSearch; nil keeps only the shared tokens of the configuration
+	// (ingest.tokens).
+	Tokens *agenttokens.Registry
 
 	authOnce     sync.Once
 	creds        credCache  // recently checked Basic credentials
@@ -163,6 +173,8 @@ type Server struct {
 	sec           *SecurityChecker
 	caMu          sync.Mutex // one change of certificate authority at a time
 	blockedLog    logOnce    // blocked osquery hosts that tried to enroll
+	tokensOnce    sync.Once
+	tokenRate     tokenRate // agent token creation
 }
 
 // liveModel is the assistant after a change on the Settings page; nil
@@ -195,6 +207,7 @@ func (s *Server) model() *assistant.Client {
 // docs/users.md.
 func (s *Server) Handler() http.Handler {
 	s.sessions()
+	s.tokens()
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/ingest", s.handleIngest)
 	mux.HandleFunc(otlpLogsRoute, s.handleOTLPLogs)
@@ -211,7 +224,8 @@ func (s *Server) Handler() http.Handler {
 	api.viewer("GET /api/fields", s.handleFields)
 	api.viewer("GET /api/fields/values", s.handleFieldValues)
 	api.viewer("GET /api/language", s.handleLanguage)
-	// Agent configs carry the ingest token.
+	// Agent configs hold a placeholder the page fills with a new agent
+	// token (POST /api/agent-tokens).
 	api.admin("GET /api/agents/config", s.handleAgentConfig)
 	// Adds the address agents or syslog devices send to to the HTTPS
 	// certificate.
@@ -228,12 +242,14 @@ func (s *Server) Handler() http.Handler {
 	s.routeDashboards(api)
 	s.routeCases(api)
 	s.routeRespond(api)
+	s.routePlaybooks(api)
 	s.routeUsers(api)
 	s.routeRetention(api)
 	s.routeSample(api)
 	s.routeEndpoints(api)
 	s.routeSettings(api)
 	s.routeCluster(api)
+	s.routeTokens(api)
 	if s.UI != nil {
 		api.add(route{Pattern: "GET /", Role: users.Viewer}, revalidate(staticFiles(s.UI, true)))
 	}
@@ -316,7 +332,8 @@ func decodeJSON(b []byte, v any) error {
 
 func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 	from := clientaddr.Parse(r.RemoteAddr)
-	if !s.validToken(r) && !s.retiredTokenAccepted(w, r) {
+	who, ok := s.agentIdentity(w, r)
+	if !ok {
 		return
 	}
 	// Only agents that hold a token count: anyone can send a request.
@@ -355,7 +372,10 @@ func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 	if tag == "" {
 		tag = r.URL.Query().Get("tag")
 	}
-	res, err = s.Pipeline.IngestBody(r.Context(), tag, body)
+	res, err = s.Pipeline.IngestBody(withOrigin(r, ingest.IntakeAgent, who), tag, body)
+	if res != nil {
+		s.tokens().Note(who.ID, from.String(), res.Indexed+res.Duplicates)
+	}
 	if err != nil {
 		var bad *ingest.BodyError
 		if errors.As(err, &bad) {
@@ -518,19 +538,6 @@ func (b *batchBody) Read(p []byte) (int, error) {
 	return n, err
 }
 
-func (s *Server) validToken(r *http.Request) bool {
-	tok := bearerToken(r)
-	if tok == "" {
-		return false
-	}
-	for _, t := range s.conf().Ingest.Tokens {
-		if subtle.ConstantTimeCompare([]byte(t), []byte(tok)) == 1 {
-			return true
-		}
-	}
-	return false
-}
-
 func bearerToken(r *http.Request) string {
 	return strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
 }
@@ -562,7 +569,7 @@ func (s *Server) retiredTokenAccepted(w http.ResponseWriter, r *http.Request) bo
 		return false
 	}
 	s.Pipeline.NoteRefused(from, ingest.RefusedToken)
-	writeError(w, http.StatusUnauthorized, errors.New("missing or invalid ingest token"))
+	writeError(w, http.StatusUnauthorized, errors.New("missing or invalid agent token"))
 	return false
 }
 
@@ -855,13 +862,15 @@ func (s *Server) handleAgentConfig(w http.ResponseWriter, r *http.Request) {
 			addName = u.Hostname()
 		}
 	}
-	token := s.agentToken()
 	opts := agents.Options{
-		OS:          v.Get("os"),
-		ServerURL:   server,
-		Token:       token,
+		OS:        v.Get("os"),
+		ServerURL: server,
+		// The page puts a new agent token in its place when the
+		// configuration is copied or downloaded.
+		Token:       agents.TokenPlaceholder,
 		LinuxSource: v.Get("source"),
 		Sysmon:      v.Get("sysmon") == "true",
+		PowerShell:  v.Get("powershell") == "true",
 		CollectorOS: v.Get("collector"),
 		Platform:    v.Get("platform"),
 	}
@@ -884,7 +893,7 @@ func (s *Server) handleAgentConfig(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	out := agentConfig{Agent: a, AddName: addName}
+	out := agentConfig{Agent: a, AddName: addName, TokenPlaceholder: agents.TokenPlaceholder}
 	if a.CA != "" {
 		a.CAFingerprint = certs.Fingerprint()
 		if next := certs.Next(); next != nil {
@@ -902,22 +911,9 @@ type agentConfig struct {
 	// NextCAFingerprint is the new certificate authority's, while
 	// Signalith is switching: the CA file holds both.
 	NextCAFingerprint string `json:"next_ca_fingerprint,omitempty"`
-}
-
-// agentToken is the ingest token new agents get: the first that is not
-// the example token from an older docker-compose.yml, which anyone can
-// look up (kept only for agents that still use it).
-func (s *Server) agentToken() string {
-	tokens := s.conf().Ingest.Tokens
-	for _, t := range tokens {
-		if !config.IsPublicIngestToken(t) {
-			return t
-		}
-	}
-	if len(tokens) > 0 {
-		return tokens[0]
-	}
-	return ""
+	// TokenPlaceholder stands for the agent token in the configuration
+	// and steps, until the page makes one.
+	TokenPlaceholder string `json:"token_placeholder"`
 }
 
 // handleTLSName adds the address agents or syslog devices are being set up
@@ -990,8 +986,8 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	}
 	out["opensearch"] = osOut
 	warnings := s.conf().Warnings()
-	if len(s.conf().Ingest.Tokens) == 0 {
-		warnings = append(warnings, "No ingest tokens are configured, so agents cannot send data. Add one under ingest.tokens.")
+	if active, shared := s.tokens().Counts(); active == 0 && shared == 0 && s.tokens().Loaded() {
+		warnings = append(warnings, "No agent can send data yet, because there are no agent tokens. Copy or download an agent configuration on the Add data page and Signalith makes one.")
 	}
 	since := time.Now().Add(-plaintextWindow)
 	docker := s.inContainer()
@@ -1114,7 +1110,7 @@ func refusedWarnings(refused []ingest.Sender, docker bool) []string {
 		by[x.Reason] = append(by[x.Reason], x)
 	}
 	var out []string
-	for _, reason := range []string{ingest.RefusedPlaintext, ingest.RefusedOldToken, ingest.RefusedToken} {
+	for _, reason := range []string{ingest.RefusedPlaintext, ingest.RefusedOldToken, ingest.RefusedRevoked, ingest.RefusedToken} {
 		list := by[reason]
 		if len(list) == 0 {
 			continue
@@ -1129,11 +1125,14 @@ func refusedWarnings(refused []ingest.Sender, docker bool) []string {
 		case ingest.RefusedPlaintext:
 			msg = agent + " turned away for sending over plain HTTP (server.tls.plaintext_ingest is deny): " + names + ". " +
 				"They keep their events and send them again. On the Add data page, get a new configuration, which uses HTTPS, and put it on each."
+		case ingest.RefusedRevoked:
+			msg = agent + " turned away for sending with a revoked or no longer accepted token: " + names + ". " +
+				"Fluent Bit drops what is refused this way. On the Add data page, get a new configuration and put it on each."
 		case ingest.RefusedOldToken:
 			msg = agent + " turned away for sending the example ingest token from an older docker-compose.yml: " + names + ". " +
 				"They keep their events and send them again. On the Add data page, get a new configuration and put it on each."
 		default:
-			msg = agent + " turned away for a wrong or missing ingest token: " + names + ". " +
+			msg = agent + " turned away for a wrong or missing agent token: " + names + ". " +
 				"Fluent Bit drops what is refused this way. On the Add data page, get a new configuration and put it on each."
 		}
 		out = append(out, msg+dockerNote(list, docker))

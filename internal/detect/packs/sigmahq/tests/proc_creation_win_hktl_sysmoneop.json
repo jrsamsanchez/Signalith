@@ -1,0 +1,5 @@
+{"rule": "8a7e90c5-fe6e-45dc-889e-057fe4378bd9", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Hashes":"IMPHASH=22F4089EB8ABA31E1BB162C6D9BF72E5"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\SysmonEOP.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{}}
+]}

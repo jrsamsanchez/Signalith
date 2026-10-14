@@ -1,0 +1,10 @@
+{"rule": "f1f3bf22-deb2-418d-8cce-e1a45e46a5bd", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"-Embedding","Image":"\\mmc.exe","ParentImage":"\\svchost.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"-Embedding","NewProcessName":"\\mmc.exe","ParentProcessName":"\\svchost.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\mmc.exe","ParentImage":"\\svchost.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"\\mmc.exe","ParentProcessName":"\\svchost.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"-Embedding","ParentImage":"\\svchost.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"-Embedding","ParentProcessName":"\\svchost.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"-Embedding","Image":"\\mmc.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"-Embedding","NewProcessName":"\\mmc.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

@@ -1,0 +1,4 @@
+{"rule": "4c0aaedc-154c-4427-ada0-d80ef9c9deb6", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"\\TrolleyExpress.exe 7"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{}}
+]}

@@ -1,0 +1,6 @@
+{"rule": "b97cd4b1-30b8-4a9d-bd72-6293928d52bc", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"ParentImage":"\\pcwrun.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"ParentProcessName":"\\pcwrun.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

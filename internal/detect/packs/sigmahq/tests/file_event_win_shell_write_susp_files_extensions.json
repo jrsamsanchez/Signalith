@@ -1,0 +1,11 @@
+{"rule": "b8fd0e93-ff58-4cbd-8f48-1c114e342e62", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\smss.exe","TargetFilename":".txt"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\rundll32.exe","TargetFilename":".hta"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"C:\\Windows\\system32\\svchost.exe","TargetFilename":".ps1C:\\Program Files\\WindowsApps\\Clipchamp.txt"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":".txt"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\smss.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"C:\\Windows\\system32\\svchost.exe","TargetFilename":".ps1 C:\\Program Files\\WindowsApps\\Clipchamp .hta"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":".hta"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\rundll32.exe"}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"CreationUtcTime":"2026-08-12 17:39:15.956","Image":"C:\\Users\\frack113\\AppData\\Local\\Temp\\svchost.exe","ProcessGuid":"570E49AA-AFC3-6A7C-4705-000000001400","ProcessId":"3664","RuleName":"-","TargetFilename":"C:\\Users\\frack113\\AppData\\Local\\Temp\\IXP000.TMP\\T1036_~1.BAT","User":"SigmaCatchVm\\frack113","UtcTime":"2026-08-12 17:39:15.958"}}
+]}

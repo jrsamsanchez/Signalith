@@ -1,0 +1,5 @@
+{"rule": "6b98b92b-4f00-4f62-b4fe-4d1920215771", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":":\\Windows\\System32\\shellchromeapi.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":":\\Windows\\System32\\shellchromeapi.dll","Signature":"Microsoft Windows","SignatureStatus":"Valid","Signed":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{}}
+]}

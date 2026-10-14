@@ -1,0 +1,5 @@
+{"rule": "a0edd39f-a0c6-4c17-8141-261f958e8d8f", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"New-PSSession-ComputerName x"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"MessageNumber":"1","MessageTotal":"1","Path":"","ScriptBlockId":"5ca93016-ed70-4136-94ef-d16e6383565e","ScriptBlockText":"\u0026 {New-PSSession -ComputerName $env:COMPUTERNAME\nTest-Connection $env:COMPUTERNAME\nSet-Content -Path $env:TEMP\\T1086_PowerShell_Session_Creation_and_Use -Value \"T1086 PowerShell Session Creation and Use\"\nGet-Content -Path $env:TEMP\\T1086_PowerShell_Session_Creation_and_Use\nRemove-Item -Force $env:TEMP\\T1086_PowerShell_Session_Creation_and_Use}"}}
+]}

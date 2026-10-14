@@ -1,0 +1,6 @@
+{"rule": "e88a6ddc-74f7-463b-9b26-f69fc0d2ce85", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Services\\W32Time\\TimeProviders \\DllName"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"C:\\Windows\\SYSTEM32\\w32time.DLL","TargetObject":"\\Services\\W32Time\\TimeProviders \\DllName"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"C:\\Users\\Public\\AtomicTest.dll","EventType":"SetValue","Image":"C:\\WINDOWS\\system32\\reg.exe","ProcessGuid":"570E49AA-8B65-6A75-5D05-000000001200","ProcessId":"3116","RuleName":"-","TargetObject":"HKLM\\System\\CurrentControlSet\\Services\\W32Time\\TimeProviders\\AtomicTest\\DllName","User":"SigmaCatchVm\\frack113","UtcTime":"2026-08-07 07:38:13.333"}}
+]}

@@ -1,0 +1,12 @@
+{"rule": "ed550c19-712e-43f6-bd19-6f58f61b3a5e", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x Get-DomainComputer x","Image":"C:\\Windows\\System32\\powershell.exe","ParentProcessId":"4000","ProcessId":"4242"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"x Get-DomainComputer x","NewProcessId":"0x1092","NewProcessName":"C:\\Windows\\System32\\powershell.exe","ProcessId":"0xfa0","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x Get-DomainComputer y","Image":"C:\\Windows\\System32\\powershell.exe","ParentProcessId":"4000","ProcessId":"4242"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"x Get-DomainComputer y","NewProcessId":"0x1092","NewProcessName":"C:\\Windows\\System32\\powershell.exe","ProcessId":"0xfa0","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x Get-DomainComputer x","Image":"C:\\Windows\\System32\\powershell.exf","ParentProcessId":"4000","ProcessId":"4242"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"x Get-DomainComputer x","NewProcessId":"0x1092","NewProcessName":"C:\\Windows\\System32\\powershell.exf","ProcessId":"0xfa0","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x Get-DomainComputer x","ParentProcessId":"4000","ProcessId":"4242"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"x Get-DomainComputer x","NewProcessId":"0x1092","ProcessId":"0xfa0","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"C:\\Windows\\System32\\powershell.exe","ParentProcessId":"4000","ProcessId":"4242"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessId":"0x1092","NewProcessName":"C:\\Windows\\System32\\powershell.exe","ProcessId":"0xfa0","SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

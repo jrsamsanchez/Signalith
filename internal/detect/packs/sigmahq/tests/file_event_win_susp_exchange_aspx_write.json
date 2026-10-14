@@ -1,0 +1,5 @@
+{"rule": "7280c9f3-a5af-45d0-916a-bc01cb4151c9", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\MSExchangeMailboxReplication.exe","TargetFilename":".aspx"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":".aspx"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\MSExchangeMailboxReplication.exe"}}
+]}

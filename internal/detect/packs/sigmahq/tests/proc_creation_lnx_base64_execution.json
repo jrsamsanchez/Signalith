@@ -1,0 +1,4 @@
+{"rule": "ba592c6d-6888-43c3-b8c6-689b8fe47337", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"base64 | bash x"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{}}
+]}

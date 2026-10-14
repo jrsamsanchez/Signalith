@@ -1,0 +1,5 @@
+{"rule": "99cf1e02-00fb-4c0d-8375-563f978dfd37", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":";SUsdsetD;","OriginalFileName":"sc.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"sc.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":";SUsdsetD;"}}
+]}

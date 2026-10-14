@@ -1,0 +1,16 @@
+{"rule": "5589ab4f-a767-433c-961d-c91f3f704db1", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":".exe -c \"{ }\" -z"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":".exe -c \"{ }\" -z","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"Juicy Potato"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"Juicy Potato","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"Invoke-Tater"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"Invoke-Tater","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":".exe -c \"{}\" -z","Image":"HotPotatoes7"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":".exe -c \"{}\" -z","NewProcessName":"HotPotatoes7","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"Juicy Potato HotPotatoes7"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"Juicy Potato HotPotatoes7","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"Invoke-Tater","Image":"HotPotatoes7"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"Invoke-Tater","NewProcessName":"HotPotatoes7","SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

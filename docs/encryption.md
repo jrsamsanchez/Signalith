@@ -1,6 +1,6 @@
 # Encryption
 
-Signalith keeps passwords and API keys: the OpenSearch password, ingest tokens, the
+Signalith keeps passwords and API keys: the OpenSearch password, shared agent tokens, the
 AI model's API key, the directory (Active Directory or LDAP) service account
 password, and the keys and passwords of threat intel feeds. This page covers how
 they and your events are protected:
@@ -13,8 +13,8 @@ they and your events are protected:
 
 ## In transit
 
-Signalith serves the web UI and the API (agents send events over it, with the
-ingest token) over HTTPS by default, with a certificate from a small certificate
+Signalith serves the web UI and the API (agents send events over it, each with its own
+[agent token](agent-tokens.md)) over HTTPS by default, with a certificate from a small certificate
 authority of its own; [docs/https.md](https.md) covers trusting it, using your own
 certificate, and syslog over TLS. Use TLS for syslog where devices support it,
 `https://` for OpenSearch, and `ldaps://` or StartTLS for directory sign-in.
@@ -26,11 +26,14 @@ machine unless you allow it, and warns while certificate checks are off.
 ### What Signalith encrypts
 
 Every password and API key Signalith keeps in its settings files is encrypted (files
-that hold a key on their own are not; see [below](#not-encrypted-by-the-master-key)):
+that hold a key on their own are not; see [below](#not-encrypted-by-the-master-key)).
+Per-agent tokens made on **Add data** are not kept anywhere: OpenSearch holds only a
+SHA-256 hash of each (see [agent-tokens.md](agent-tokens.md#how-tokens-work)).
+
 
 | File | Encrypted values | Written by |
 | --- | --- | --- |
-| `signalith.yaml` | `opensearch.password`, `assistant.api_key`, `auth.ldap.bind_password`, each of `ingest.tokens`, and `intel.feeds[].password` and header values | You, `signalith init` and `signalith secrets`. The server never changes this file |
+| `signalith.yaml` | `opensearch.password`, `assistant.api_key`, `auth.ldap.bind_password`, each of `ingest.tokens` (shared agent tokens from older setups), and `intel.feeds[].password` and header values | You, `signalith init` and `signalith secrets`. The server never changes this file |
 | `settings.yaml` (lookups folder, or `SIGNALITH_SETTINGS_FILE`) | The OpenSearch password and the AI model's API key saved on the **Settings** page | The server, and `signalith settings reset` |
 | `directory.json` (lookups folder) | The service account password of directory sign-in set up on the **Users** page | The server |
 | `intel_feeds.yaml` (lookups folder) | Passwords and header values (API keys) of feeds added on the **Threat intel** page | The server |
@@ -111,8 +114,9 @@ of backups that many people can read, as you keep the master key:
   guessing that account's password (see [failed sign-in limits](users.md#signing-in)).
   Whoever has it can make such cookies, but still needs the password to sign in.
 - **The Docker quick start's `signalith-secrets` volume**, made by its setup step: the
-  first admin password (`initial-admin-password`), the agents' ingest token
-  (`ingest-token`) and Signalith's OpenSearch client key (`opensearch-client-key.pem`).
+  first admin password (`initial-admin-password`), the shared agent token
+  agents set up before per-agent tokens use (`ingest-token`; see
+  [Replace a shared token](agent-tokens.md#replace-a-shared-token)) and Signalith's OpenSearch client key (`opensearch-client-key.pem`).
   OpenSearch's own keys are in the `opensearch-certs` volume.
 - **Files named by `SIGNALITH_*_FILE` variables** (`SIGNALITH_OPENSEARCH_PASSWORD_FILE`
   and the others), such as Docker or Kubernetes secrets and systemd credentials.
@@ -258,7 +262,7 @@ In the Docker quick start the key is `/var/lib/signalith/keys/master.key` in the
 `settings.yaml`. A backup of the volume therefore holds both the key and the values it
 decrypts. The same volume holds Signalith's HTTPS keys (`tls/ca.key` and
 `tls/server.key`), and the `signalith-secrets` volume the first admin password, the
-ingest token and Signalith's OpenSearch client key, none of them encrypted (see
+shared agent token and Signalith's OpenSearch client key, none of them encrypted (see
 [above](#not-encrypted-by-the-master-key)): keep backups of both volumes as private as
 the key. Copy the key out and keep it apart (in a password manager or a vault). From the
 repository folder, in a shell or PowerShell:
@@ -351,8 +355,9 @@ server keeps running. Enter them again:
   it); the web pages, syslog and other tokens keep working.
 
   `signalith secrets set opensearch.password` (or `assistant.api_key`,
-  `auth.ldap.bind_password`) replaces a value; for an ingest token, remove the line
-  and add one with `signalith secrets set ingest.tokens`. While the file holds
+  `auth.ldap.bind_password`) replaces a value; for a shared agent token, remove the
+  line and add one with `signalith secrets set ingest.tokens` (or, better, give the
+  agents their own tokens; see [agent-tokens.md](agent-tokens.md)). While the file holds
   values encrypted with a key that is not found, `set` and `encrypt` stop rather
   than make a new key, since the key may only be elsewhere (such as in a variable
   the service has and your shell does not). When it really is lost, add `-new-key`
@@ -417,7 +422,7 @@ rotated by Signalith: change the variable yourself, or move the key to a file.
 | --- | --- |
 | `signalith secrets status [-c file]` | Where the master key is, and how each stored password or key is kept |
 | `signalith secrets encrypt [-c file]` | Encrypts plain values (and values still under the previous key), changing nothing else in the files |
-| `signalith secrets set <setting> [-c file]` | Stores `opensearch.password`, `assistant.api_key`, `auth.ldap.bind_password`, or another of `ingest.tokens`, encrypted. It asks twice without showing what you type, or reads one line from a pipe; for an ingest token, press Enter to have one made |
+| `signalith secrets set <setting> [-c file]` | Stores `opensearch.password`, `assistant.api_key`, `auth.ldap.bind_password`, or another of `ingest.tokens` (a shared agent token; per-agent tokens come from `signalith tokens create`), encrypted. It asks twice without showing what you type, or reads one line from a pipe; for an agent token, press Enter to have one made |
 | `signalith secrets encrypt -new-key`, `set <setting> -new-key` | The same, making a new master key although the files hold values encrypted with one that is not found (when that key is lost) |
 | `signalith secrets rotate-master [-c file]` | Makes a new master key and encrypts every stored value again with it |
 | `signalith secrets rotate-master -prune [-c file]` | Removes the previous master key once nothing needs it |

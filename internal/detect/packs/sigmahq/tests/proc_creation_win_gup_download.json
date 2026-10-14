@@ -1,0 +1,6 @@
+{"rule": "44143844-0631-49ab-97a0-96387d6b2d7c", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"http -unzipTo x","OriginalFileName":"gup.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"http -unzipTo x","OriginalFileName":"gup.exe","ParentImage":"\\notepad++.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"gup.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"http -unzipTo x"}}
+]}

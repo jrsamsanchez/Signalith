@@ -1,0 +1,8 @@
+{"rule": "9976fa64-2804-423c-8a5b-646ade840773", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationPort":"2525","Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationPort":"2525","Image":"\\thunderbird.exe","Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationPort":"2525","Image":"C:\\Program Files\\Microsoft\\Exchange Server\\","Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationPort":"2525","Image":"C:\\Program Files\\WindowsApps\\microsoft.windowscommunicationsapps_ \\HxTsr.exe","Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationPort":"2525"}}
+]}

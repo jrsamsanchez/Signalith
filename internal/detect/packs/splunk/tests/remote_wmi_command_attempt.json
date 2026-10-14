@@ -1,0 +1,16 @@
+{"rule": "272df6de-61f1-4784-877c-1fbc3e2d0838", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x node x","Image":"C:\\Windows\\System32\\wmic.exe","ParentProcessId":"4000","ProcessId":"4242"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"x node x","NewProcessId":"0x1092","NewProcessName":"C:\\Windows\\System32\\wmic.exe","ProcessId":"0xfa0","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x node x","OriginalFileName":"wmic.exe","ParentProcessId":"4000","ProcessId":"4242"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x node y","Image":"C:\\Windows\\System32\\wmic.exe","ParentProcessId":"4000","ProcessId":"4242"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"x node y","NewProcessId":"0x1092","NewProcessName":"C:\\Windows\\System32\\wmic.exe","ProcessId":"0xfa0","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x node y","OriginalFileName":"wmic.exe","ParentProcessId":"4000","ProcessId":"4242"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x node x","Image":"C:\\Windows\\System32\\wmic.exf","ParentProcessId":"4000","ProcessId":"4242"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"x node x","NewProcessId":"0x1092","NewProcessName":"C:\\Windows\\System32\\wmic.exf","ProcessId":"0xfa0","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x node x","ParentProcessId":"4000","ProcessId":"4242"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"x node x","NewProcessId":"0x1092","ProcessId":"0xfa0","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"C:\\Windows\\System32\\wmic.exe","ParentProcessId":"4000","ProcessId":"4242"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessId":"0x1092","NewProcessName":"C:\\Windows\\System32\\wmic.exe","ProcessId":"0xfa0","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x node x","OriginalFileName":"wmic.exf","ParentProcessId":"4000","ProcessId":"4242"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"wmic.exe","ParentProcessId":"4000","ProcessId":"4242"}}
+]}

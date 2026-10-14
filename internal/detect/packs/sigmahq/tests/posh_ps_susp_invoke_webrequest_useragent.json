@@ -1,0 +1,5 @@
+{"rule": "d4488827-73af-4f8d-9244-7b7662ef046e", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"-UserAgent  Invoke-RestMethod"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"MessageNumber":"1","MessageTotal":"1","Path":"","ScriptBlockId":"4a68ab81-6aac-4629-9229-9b01c38ed72e","ScriptBlockText":"\u0026 {Invoke-WebRequest www.google.com -UserAgent \"HttpBrowser/1.0\" | out-null\nInvoke-WebRequest www.google.com -UserAgent \"Wget/1.9+cvs-stable (Red Hat modified)\" | out-null\nInvoke-WebRequest www.google.com -UserAgent \"Opera/8.81 (Windows NT 6.0; U; en)\" | out-null\nInvoke-WebRequest www.google.com -UserAgent \"*\u003c|\u003e*\" | out-null}"}}
+]}

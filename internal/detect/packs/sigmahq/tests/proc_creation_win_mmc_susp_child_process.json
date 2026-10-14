@@ -1,0 +1,8 @@
+{"rule": "05a2ab7e-ce11-4b63-86db-ab32e763e11d", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\BITSADMIN","ParentImage":"\\mmc.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"\\BITSADMIN","ParentProcessName":"\\mmc.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"ParentImage":"\\mmc.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"ParentProcessName":"\\mmc.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\BITSADMIN"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"\\BITSADMIN","SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

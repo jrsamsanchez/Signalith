@@ -1,0 +1,5 @@
+{"rule": "6db5eaf9-88f7-4ed9-af7d-9ef2ad12f236", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Image":"\\winget.exe","TargetObject":"\\REGISTRY\\A\\ \\LocalState\\admin_settings"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\REGISTRY\\A\\ \\LocalState\\admin_settings"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Image":"\\winget.exe"}}
+]}

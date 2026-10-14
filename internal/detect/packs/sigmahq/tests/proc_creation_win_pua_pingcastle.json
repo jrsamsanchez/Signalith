@@ -1,0 +1,4 @@
+{"rule": "b1cb4ab6-ac31-43f4-adf1-d9d08957419c", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"--no-enum-limit"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{}}
+]}

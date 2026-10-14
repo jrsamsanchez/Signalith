@@ -39,7 +39,8 @@ secret (readable only by root, or SYSTEM and Administrators), and `osquery.flags
 points osquery at Signalith. It then restarts osquery. The host appears on the
 **Endpoints** page within a minute.
 
-The script holds an ingest token, so keep it private. osquery always checks Signalith's
+The script holds an [agent token](agent-tokens.md) of its own, made when you copy or
+download it on Add data, so keep it private. osquery always checks Signalith's
 certificate. It checks it against the address it connects to, so use a host name the
 certificate covers; an IP address works only with the certificate Signalith makes itself.
 
@@ -117,7 +118,7 @@ osquery uses its TLS remote API with these routes on Signalith's HTTPS port:
 
 | Route | Use |
 | --- | --- |
-| `POST /api/osquery/enroll` | The host sends the enroll secret (an ingest token) and gets its own node key |
+| `POST /api/osquery/enroll` | The host sends the enroll secret (an [agent token](agent-tokens.md)) and gets its own node key |
 | `POST /api/osquery/config` | The host fetches what to collect, every five minutes |
 | `POST /api/osquery/log` | Results and osquery's own status messages |
 | `POST /api/osquery/distributed/read` | The host asks for live queries, every ten seconds |
@@ -128,5 +129,8 @@ stores only their hash. Hosts and settings are kept in OpenSearch (the `<prefix>
 index), so every Signalith server knows every host, and a host sending to another server
 runs each live query once.
 
-Removing an ingest token does not remove the hosts that enrolled with it; remove them on
-the Endpoints page.
+Revoking the agent token a host enrolled with, or choosing **Stop accepting** on a shared
+token, removes every host enrolled with it, on every server, and their next request is
+refused at once. A host whose shared token was deleted from signalith.yaml or the
+environment is refused too. They enroll again with an active token. See
+[agent-tokens.md](agent-tokens.md#osquery-hosts).

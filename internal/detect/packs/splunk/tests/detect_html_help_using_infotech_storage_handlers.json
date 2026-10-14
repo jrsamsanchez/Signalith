@@ -1,0 +1,18 @@
+{"rule": "0b2eefa5-5508-450d-b970-3dd2fb761aec", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x its: x","Image":"C:\\Windows\\System32\\hh.exe","ParentProcessId":"4000","ProcessId":"4242"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"x its: x","NewProcessId":"0x1092","NewProcessName":"C:\\Windows\\System32\\hh.exe","ProcessId":"0xfa0","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x mk:@MSITStore: x","OriginalFileName":"HH.EXE","ParentProcessId":"4000","ProcessId":"4242"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x its: y","Image":"C:\\Windows\\System32\\hh.exe","ParentProcessId":"4000","ProcessId":"4242"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"x its: y","NewProcessId":"0x1092","NewProcessName":"C:\\Windows\\System32\\hh.exe","ProcessId":"0xfa0","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x mk:@MSITStore: y","OriginalFileName":"HH.EXE","ParentProcessId":"4000","ProcessId":"4242"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x its: x","Image":"C:\\Windows\\System32\\hh.exf","ParentProcessId":"4000","ProcessId":"4242"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"x its: x","NewProcessId":"0x1092","NewProcessName":"C:\\Windows\\System32\\hh.exf","ProcessId":"0xfa0","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x its: x","ParentProcessId":"4000","ProcessId":"4242"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"x its: x","NewProcessId":"0x1092","ProcessId":"0xfa0","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"C:\\Windows\\System32\\hh.exe","ParentProcessId":"4000","ProcessId":"4242"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessId":"0x1092","NewProcessName":"C:\\Windows\\System32\\hh.exe","ProcessId":"0xfa0","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x mk:@MSITStore: x","OriginalFileName":"HH.EXF","ParentProcessId":"4000","ProcessId":"4242"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x mk:@MSITStore: x","ParentProcessId":"4000","ProcessId":"4242"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"x mk:@MSITStore: x","NewProcessId":"0x1092","ProcessId":"0xfa0","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"HH.EXE","ParentProcessId":"4000","ProcessId":"4242"}}
+]}

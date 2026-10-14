@@ -1,0 +1,12 @@
+{"rule": "f164bc6f-ecbe-45e0-aaa6-f5c4d8c84b9a", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"C:\\Windows\\System32\\tor.exe","ParentProcessId":"4000","ProcessId":"4242"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessId":"0x1092","NewProcessName":"C:\\Windows\\System32\\tor.exe","ProcessId":"0xfa0","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"x \\BraveSoftware\\Brave-Browser x x \\tor- x","ParentProcessId":"4000","ProcessId":"4242"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessId":"0x1092","NewProcessName":"x \\BraveSoftware\\Brave-Browser x x \\tor- x","ProcessId":"0xfa0","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"x \\BraveSoftware\\Brave-Browser x x \\tor- y","ParentProcessId":"4000","ProcessId":"4242"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessId":"0x1092","NewProcessName":"x \\BraveSoftware\\Brave-Browser x x \\tor- y","ProcessId":"0xfa0","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"C:\\Windows\\System32\\tor.exf","ParentProcessId":"4000","ProcessId":"4242"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessId":"0x1092","NewProcessName":"C:\\Windows\\System32\\tor.exf","ProcessId":"0xfa0","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"ParentProcessId":"4000","ProcessId":"4242"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessId":"0x1092","ProcessId":"0xfa0","SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

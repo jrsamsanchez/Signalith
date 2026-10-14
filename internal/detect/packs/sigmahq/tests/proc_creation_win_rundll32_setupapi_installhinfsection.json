@@ -1,0 +1,6 @@
+{"rule": "285b85b1-a555-4095-8652-a8a4106af63f", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\runonce.exe","ParentCommandLine":"InstallHinfSectionsetupapi.dll","ParentImage":"\\rundll32.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"ParentCommandLine":"InstallHinfSectionsetupapi.dll","ParentImage":"\\rundll32.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\runonce.exe","ParentImage":"\\rundll32.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\runonce.exe","ParentCommandLine":"InstallHinfSectionsetupapi.dll"}}
+]}

@@ -1,6 +1,7 @@
 package ingest
 
 import (
+	"encoding/xml"
 	"net/netip"
 	"regexp"
 	"strconv"
@@ -186,6 +187,8 @@ func ParseProgram(host, program, pid, msg, sourcetype string) Event {
 			delete(f, "app")
 			delete(f, "process_id")
 		}
+	case "sysmon":
+		parseLinuxSysmon(msg, &ev)
 	case "usermod", "gpasswd":
 		if m := groupAdd.FindStringSubmatch(msg); m != nil {
 			ev.Model = "Change"
@@ -200,6 +203,53 @@ func ParseProgram(host, program, pid, msg, sourcetype string) Event {
 		f["vendor_product"] = "Linux"
 	}
 	return ev
+}
+
+// SysmonLinuxSourcetype is the sourcetype of Sysmon for Linux events.
+const SysmonLinuxSourcetype = "sysmon:linux"
+
+// linuxSysmonEvent is the XML event Sysmon for Linux writes to syslog.
+type linuxSysmonEvent struct {
+	System struct {
+		EventID  string `xml:"EventID"`
+		Computer string `xml:"Computer"`
+	} `xml:"System"`
+	Data []struct {
+		Name  string `xml:"Name,attr"`
+		Value string `xml:",chardata"`
+	} `xml:"EventData>Data"`
+}
+
+// parseLinuxSysmon reads a Sysmon for Linux event: the same events and
+// fields as Sysmon on Windows (process creation, network connections,
+// file creation and deletion), so they land in the same data models.
+func parseLinuxSysmon(msg string, ev *Event) {
+	msg = strings.TrimSpace(msg)
+	if !strings.HasPrefix(msg, "<Event") {
+		return
+	}
+	var x linuxSysmonEvent
+	if err := xml.Unmarshal([]byte(msg), &x); err != nil || x.System.EventID == "" {
+		return
+	}
+	kv := make(map[string]string, len(x.Data))
+	for _, d := range x.Data {
+		// Sysmon for Linux writes - for a value it does not have.
+		if d.Value != "-" {
+			kv[d.Name] = d.Value
+		}
+	}
+	f := ev.Fields
+	f["sourcetype"] = SysmonLinuxSourcetype
+	f["signature_id"] = x.System.EventID
+	if c := truncateUTF8(x.System.Computer, maxHostLen); c != "" {
+		f["host"], f["dest"] = c, c
+	}
+	// The program and its process ID are Sysmon's own.
+	delete(f, "app")
+	delete(f, "process_id")
+	parseSysmon(x.System.EventID, kv, ev)
+	f["vendor_product"] = "Sysmon for Linux"
 }
 
 // ambiguousSSH reports whether an Accepted or Failed line's source cannot

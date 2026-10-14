@@ -1,0 +1,5 @@
+{"rule": "9f0a8bf3-a65b-440a-8c1e-5cb1547c8e70", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":".dllREGSVR x","OriginalFileName":"odbcconf.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"odbcconf.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":".dllREGSVR x"}}
+]}

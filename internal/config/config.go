@@ -52,6 +52,7 @@ type Config struct {
 	Intel      Intel      `yaml:"intel"`
 	Notify     Notify     `yaml:"notify,omitempty"`
 	Response   Response   `yaml:"response,omitempty"`
+	Playbooks  Playbooks  `yaml:"playbooks,omitempty"`
 	Cluster    Cluster    `yaml:"cluster,omitempty"`
 
 	// path is where the file was loaded from.
@@ -72,6 +73,10 @@ type Config struct {
 	// publicURLFromEnv is set when SIGNALITH_PUBLIC_URL set
 	// server.public_url.
 	publicURLFromEnv bool
+	// envTokens are the sources of the ingest tokens that came from the
+	// environment, which follow those in the file in Ingest.Tokens:
+	// SIGNALITH_INGEST_TOKEN_FILE or SIGNALITH_INGEST_TOKEN.
+	envTokens []string
 	// httpPublicURL is the http:// public_url Validate read as https://,
 	// for Warnings.
 	httpPublicURL string
@@ -687,8 +692,10 @@ func (c *Config) SessionIdle() time.Duration {
 
 // Ingest controls agent access.
 type Ingest struct {
-	// Tokens agents present in the Authorization header. Rotate by adding a
-	// new token, updating agents, then removing the old one.
+	// Tokens are shared agent tokens, from older setups and the Docker
+	// quick start, that agents present in the Authorization header. They
+	// stay accepted; new agents get a token of their own on the Add data
+	// page (signalith tokens create), kept in OpenSearch.
 	Tokens []string `yaml:"tokens"`
 	// MaxEventAge is how old an event's own time (from an agent or syslog)
 	// may be and still be its event time, such as 7d. Older events, and
@@ -834,6 +841,31 @@ type Detections struct {
 	Scheduler bool `yaml:"scheduler"`
 	// MaxFindingsPerRun caps findings one run can raise.
 	MaxFindingsPerRun int `yaml:"max_findings_per_run"`
+	// ContentUpdates is how newer content pack rules arrive: manual (an
+	// admin checks or uploads on the Detections page) or daily (checked
+	// and installed every day). Empty means manual.
+	ContentUpdates string `yaml:"content_updates,omitempty"`
+	// ContentURL is where the signed content bundle is downloaded from;
+	// its signature is at the same address plus .sig. Empty means
+	// DefaultContentURL.
+	ContentURL string `yaml:"content_url,omitempty"`
+}
+
+// Content update modes.
+const (
+	ContentManual = "manual"
+	ContentDaily  = "daily"
+)
+
+// DefaultContentURL is where Signalith's own content bundle is published.
+const DefaultContentURL = "https://github.com/jrsamsanchez/Signalith/releases/download/content/signalith-content.tar.gz"
+
+// ContentUpdateURL is the content bundle's address.
+func (d Detections) ContentUpdateURL() string {
+	if u := strings.TrimSpace(d.ContentURL); u != "" {
+		return u
+	}
+	return DefaultContentURL
 }
 
 // Cluster is about this server among the Signalith servers that share
@@ -965,6 +997,23 @@ func (c *Config) ResponseFile() string {
 		return c.resolve(c.Response.File)
 	}
 	return filepath.Join(c.LookupsDir(), "response.yaml")
+}
+
+// Playbooks sets where the playbooks set on the Playbooks page are kept
+// (see docs/playbooks.md).
+type Playbooks struct {
+	// File keeps the playbooks. Default: playbooks.yaml in lookups.dir. A
+	// relative path is relative to the folder this config file is in.
+	File string `yaml:"file,omitempty"`
+}
+
+// PlaybooksFile returns the file that keeps the playbooks set on the
+// Playbooks page.
+func (c *Config) PlaybooksFile() string {
+	if c.Playbooks.File != "" {
+		return c.resolve(c.Playbooks.File)
+	}
+	return filepath.Join(c.LookupsDir(), "playbooks.yaml")
 }
 
 // ResponseScriptsDir returns the folder script actions run programs from.
@@ -1518,6 +1567,10 @@ func (c *Config) applyEnv() error {
 		c.Response.File = v
 		c.fromEnv("response.file", "SIGNALITH_RESPONSE_FILE")
 	}
+	if v := os.Getenv("SIGNALITH_PLAYBOOKS_FILE"); v != "" {
+		c.Playbooks.File = v
+		c.fromEnv("playbooks.file", "SIGNALITH_PLAYBOOKS_FILE")
+	}
 	if v := os.Getenv("SIGNALITH_RESPONSE_SCRIPTS_DIR"); v != "" {
 		c.Response.ScriptsDir = v
 		c.fromEnv("response.scripts_dir", "SIGNALITH_RESPONSE_SCRIPTS_DIR")
@@ -1541,6 +1594,13 @@ func (c *Config) applyEnv() error {
 		slices.Reverse(v)
 		c.Ingest.Tokens = append(c.Ingest.Tokens, v...)
 		c.fromEnv("ingest.tokens", from)
+		c.envTokens = nil
+		if os.Getenv("SIGNALITH_INGEST_TOKEN_FILE") != "" {
+			c.envTokens = append(c.envTokens, "SIGNALITH_INGEST_TOKEN_FILE")
+		}
+		if os.Getenv("SIGNALITH_INGEST_TOKEN") != "" {
+			c.envTokens = append(c.envTokens, "SIGNALITH_INGEST_TOKEN")
+		}
 	}
 	// "off" turns a syslog listener off, since an empty variable is
 	// indistinguishable from an unset one.
@@ -1748,6 +1808,16 @@ func (c *Config) Validate() error {
 	if c.Detections.MaxFindingsPerRun < 1 || c.Detections.MaxFindingsPerRun > 10000 {
 		p = append(p, "detections.max_findings_per_run must be between 1 and 10000")
 	}
+	switch c.Detections.ContentUpdates {
+	case "", ContentManual, ContentDaily:
+	default:
+		p = append(p, "detections.content_updates must be manual or daily")
+	}
+	if u := c.Detections.ContentURL; u != "" {
+		if pu, err := url.Parse(u); err != nil || pu.Scheme != "https" || pu.Host == "" {
+			p = append(p, fmt.Sprintf("detections.content_url %q must be https://host/path", redact.URL(u)))
+		}
+	}
 	for i, t := range c.Ingest.Tokens {
 		if len(t) < 16 {
 			p = append(p, fmt.Sprintf("ingest.tokens[%d] is shorter than 16 characters", i))
@@ -1788,12 +1858,8 @@ func (c *Config) Warnings() []string {
 	}
 	for _, t := range c.Ingest.Tokens {
 		if IsPublicIngestToken(t) {
-			fix := "Give each agent a new configuration from the Add data page, which has this server's own token, then remove " + t
-			if len(c.Ingest.Tokens) == 1 {
-				fix = "Add a token of your own under ingest.tokens (signalith init makes one), give each agent a new configuration from the Add data page, then remove " + t
-			}
 			w = append(w, "ingest.tokens includes "+t+", the example token in an older docker-compose.yml, which anyone can look up and use to send events. "+
-				fix+" (in ingest.tokens or SIGNALITH_INGEST_TOKEN).")
+				"Give each agent a new configuration from the Add data page (each gets its own token), then remove "+t+" from ingest.tokens or SIGNALITH_INGEST_TOKEN.")
 		}
 	}
 	if c.httpPublicURL != "" {
@@ -1813,6 +1879,17 @@ func (c *Config) Warnings() []string {
 			"or list the proxy's address under server.trusted_proxies.")
 	}
 	return append(w, c.secretWarnings()...)
+}
+
+// IngestTokenSource says where the i-th of Ingest.Tokens came from:
+// signalith.yaml, SIGNALITH_INGEST_TOKEN or SIGNALITH_INGEST_TOKEN_FILE.
+// These are the shared agent tokens of older setups and the Docker quick
+// start; new agents get their own (see internal/agenttokens).
+func (c *Config) IngestTokenSource(i int) string {
+	if fromEnv := i - (len(c.Ingest.Tokens) - len(c.envTokens)); fromEnv >= 0 && fromEnv < len(c.envTokens) {
+		return c.envTokens[fromEnv]
+	}
+	return "signalith.yaml"
 }
 
 // Secrets from older example files, which anyone can look up. Warnings
@@ -2027,7 +2104,8 @@ const header = `# Signalith configuration.
 # retention.days     days of events to keep (0 = forever) until a default is saved on the
 #                    Data retention page; per-category policies, the disk guard and
 #                    archiving are set there too (or here: see docs/retention.md)
-# ingest.tokens      tokens agents send; see the Add data page for agent setup
+# ingest.tokens      shared agent tokens from older setups (legacy); new agents get their
+#                    own token on the Add data page, so most installs need none
 # ingest.max_event_age  events older than this (default 7d) are filed under the time
 #                    they arrived, with their own time in device_time
 # syslog.udp, .tcp   receive syslog from devices without an agent, e.g. 0.0.0.0:514
@@ -2056,6 +2134,8 @@ const header = `# Signalith configuration.
 # response.scripts_dir  the only folder script actions may run programs from
 #                    (default: scripts in the state folder; only this file or
 #                    SIGNALITH_RESPONSE_SCRIPTS_DIR can set it)
+# playbooks.file     where the Playbooks page keeps its playbooks (default
+#                    lookups.dir/playbooks.yaml; SIGNALITH_PLAYBOOKS_FILE overrides it)
 # cluster.node_name  this server's name on the Servers page (default: this computer's
 #                    name; SIGNALITH_NODE_NAME overrides it)
 # server.node_url    the address other Signalith servers reach this one at (default:

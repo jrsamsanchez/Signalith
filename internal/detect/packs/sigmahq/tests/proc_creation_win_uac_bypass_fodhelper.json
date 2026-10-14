@@ -1,0 +1,6 @@
+{"rule": "7f741dcf-fc22-4759-87b4-9ae8376676a2", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"ParentImage":"\\fodhelper.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"ParentProcessName":"\\fodhelper.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

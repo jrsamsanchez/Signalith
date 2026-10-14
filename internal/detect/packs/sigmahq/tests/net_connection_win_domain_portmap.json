@@ -1,0 +1,5 @@
+{"rule": "07837ab9-60e1-481f-a74d-c31fb496a94c", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":".portmap.io","Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":".portmap.io"}}
+]}

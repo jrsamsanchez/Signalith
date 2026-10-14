@@ -1,0 +1,6 @@
+{"rule": "8150732a-0c9d-4a99-82b9-9efb9b90c40c", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"http –q –package","OriginalFileName":"msiexec.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"Installation Files\\openoffice–packagehttp\\AppData\\Local\\Temp\\OpenOffice–q","OriginalFileName":"msiexec.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"msiexec.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"http –q –package"}}
+]}

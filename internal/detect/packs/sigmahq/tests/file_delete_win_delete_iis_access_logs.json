@@ -1,0 +1,4 @@
+{"rule": "3eb8c339-a765-48cc-a150-4364c04652bf", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"26","data":{"TargetFilename":"\\inetpub\\logs\\LogFiles\\ .log"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"26","data":{}}
+]}

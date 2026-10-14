@@ -18,7 +18,8 @@ The **Release** workflow (`.github/workflows/release.yml`) runs when a tag such 
 3. Builds the container image for amd64 and arm64, pushes it to
    `ghcr.io/jrsamsanchez/signalith:<version>` (and `:latest` unless the version has a
    `-` suffix such as `-rc.1`), signs it with Sigstore and attaches its SBOM and
-   provenance.
+   provenance. (Between releases, the **Image (main)** workflow publishes the same kind
+   of signed image as `:main` on every push to `main`; the Docker quick start runs it.)
 4. Writes the SBOM (SPDX and CycloneDX, made by [Syft](https://github.com/anchore/syft)
    from the Linux program), `SHA256SUMS`, its Sigstore signature, its GPG signature when
    the key is set up (below), and GitHub build provenance for every file.
@@ -72,6 +73,29 @@ Then on GitHub: the repository's **Settings** > **Secrets and variables** > **Ac
 that file somewhere safe and offline, then delete it from the computer. If the key has a
 passphrase, add it as `SIGNALITH_GPG_PASSPHRASE`. The key expires after three years;
 make a new one before then.
+
+### Content updates
+
+The weekly **Content** workflow (`.github/workflows/content.yml`) rebuilds the SigmaHQ
+and Splunk packs from the newest upstream rules, runs every pack check, and publishes
+them as a signed bundle on the `content` release, which servers check for (see
+[Content updates](detections.md#content-updates)). It signs with an Ed25519 key in the
+`SIGNALITH_CONTENT_KEY` secret; without the secret it builds and tests but publishes
+nothing. Servers only take bundles signed by a key listed in
+`internal/content/trusted.keys`, so a new key reaches them with the next release.
+
+To make the key (with Docker, on any computer; the same line works in PowerShell):
+
+```sh
+docker run --rm alpine:3.20 sh -c 'apk add -q openssl && openssl genpkey -algorithm ed25519 -outform DER -out /k && echo private: $(tail -c 32 /k | base64) && echo public: $(openssl pkey -inform DER -in /k -pubout -outform DER | tail -c 32 | base64)'
+```
+
+(`signalith content keygen` prints the same pair.) Then on GitHub: the repository's **Settings** > **Secrets and variables** > **Actions** >
+**New repository secret**, name `SIGNALITH_CONTENT_KEY`, and paste the private key line.
+Add the public key line to `internal/content/trusted.keys` (the workflow log also prints
+it, and warns while it is missing). Keep a copy of the private key somewhere safe and
+offline. To replace a key, add the new public key next to the old one, release, switch
+the secret, and remove the old key in a later release.
 
 ### Windows code signing
 

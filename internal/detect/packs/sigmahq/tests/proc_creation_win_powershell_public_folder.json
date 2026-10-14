@@ -1,0 +1,8 @@
+{"rule": "fb9d3ff7-7348-46ab-af8c-b55f5fbf39b4", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"-file \"C:\\Users\\Public","Image":"\\pwsh.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"-file \"C:\\Users\\Public","NewProcessName":"\\pwsh.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\pwsh.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"\\pwsh.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"-file \"C:\\Users\\Public"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"-file \"C:\\Users\\Public","SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

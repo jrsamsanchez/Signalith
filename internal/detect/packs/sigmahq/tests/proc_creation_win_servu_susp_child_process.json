@@ -1,0 +1,8 @@
+{"rule": "58f4ea09-0fc2-4520-ba18-b85c540b0eaf", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\bash.exe","ParentImage":"\\Serv-U.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"\\bash.exe","ParentProcessName":"\\Serv-U.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"ParentImage":"\\Serv-U.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"ParentProcessName":"\\Serv-U.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\bash.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"\\bash.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

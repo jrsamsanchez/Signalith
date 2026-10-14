@@ -1,0 +1,6 @@
+{"rule": "974515da-6cc5-4c95-ae65-f97f9150ec7f", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)","TargetObject":"\\Services\\SharedAccess\\Parameters\\FirewallPolicy\\ \\EnableFirewall"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Services\\SharedAccess\\Parameters\\FirewallPolicy\\ \\EnableFirewall"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)"}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)","EventType":"SetValue","Image":"C:\\Windows\\system32\\reg.exe","ProcessGuid":"5AA13A44-6A2F-68FE-0857-000000004002","ProcessId":"9720","RuleName":"-","TargetObject":"HKLM\\System\\CurrentControlSet\\Services\\SharedAccess\\Parameters\\FirewallPolicy\\PublicProfile\\EnableFirewall","User":"ATTACKRANGE\\Administrator","UtcTime":"2025-10-26 18:36:31.258"}}
+]}

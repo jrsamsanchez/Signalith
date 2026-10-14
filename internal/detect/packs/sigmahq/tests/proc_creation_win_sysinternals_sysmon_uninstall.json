@@ -1,0 +1,5 @@
+{"rule": "6a5f68d1-c4b5-46b9-94ee-5324892ea939", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"―u","Description":"System activity monitor"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Description":"System activity monitor"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"―u"}}
+]}

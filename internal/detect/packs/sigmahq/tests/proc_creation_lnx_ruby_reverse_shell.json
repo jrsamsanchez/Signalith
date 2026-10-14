@@ -1,0 +1,5 @@
+{"rule": "b8bdac18-c06e-4016-ac30-221553e74f59", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"TCPSocketrsocket -e bsh","Image":"ruby"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"ruby"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"TCPSocketrsocket -e bsh"}}
+]}

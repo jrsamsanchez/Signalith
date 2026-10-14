@@ -1,0 +1,5 @@
+{"rule": "edadb1e5-5919-4e4c-8462-a9e643b02c4b", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"fullmemdmp  -o x","Image":"\\rdrleakdiag.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\rdrleakdiag.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"fullmemdmp  -o x"}}
+]}

@@ -108,7 +108,7 @@ func buildSampleLoader(ctx context.Context, c *config.Config, log *slog.Logger) 
 		return nil, err
 	}
 	tctx, tcancel := context.WithTimeout(ctx, 30*time.Second)
-	terr := cl.PutIndexTemplate(tctx, c.OpenSearch.IndexPrefix, ingest.IndexTemplate(c.OpenSearch.IndexPrefix, c.OpenSearch.Replicas))
+	terr := ingest.PutIndexTemplate(tctx, cl, c.OpenSearch.IndexPrefix, c.OpenSearch.Replicas)
 	tcancel()
 	if terr != nil {
 		return nil, fmt.Errorf("could not install the index template: %w", terr)

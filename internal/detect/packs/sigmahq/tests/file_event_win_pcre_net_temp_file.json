@@ -1,0 +1,4 @@
+{"rule": "6e90ae7a-7cd3-473f-a035-4ebb72d961da", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"\\AppData\\Local\\Temp\\ba9ea7344a4a5f591d6e5dc32a13494b\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{}}
+]}

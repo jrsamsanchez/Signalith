@@ -1,0 +1,5 @@
+{"rule": "ddb26b76-4447-4807-871f-1b035b2bfa5d", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"/etc/sudoers"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"11","data":{"Image":"/usr/bin/dpkg","TargetFilename":"/etc/sudoers.d/README.dpkg-new"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"11","data":{}}
+]}

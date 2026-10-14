@@ -512,28 +512,54 @@ out for being idle; every sign-in ends after 7 days at most.
 
 ### Agent tokens
 
-Shown when agent tokens are set (`ingest.tokens`).
+Shown when there are agent tokens: tokens made on **Add data** or with
+`signalith tokens`, or shared tokens from signalith.yaml (`ingest.tokens`),
+`SIGNALITH_INGEST_TOKEN` or `SIGNALITH_INGEST_TOKEN_FILE`. See
+[agent-tokens.md](agent-tokens.md).
 
-**Looks at:** whether a token is the public example token, and how long each token is.
-All agents share a token, so one taken from any agent works for all of them until it is
-replaced.
+**Looks at:** whether a shared token (one every agent uses) is still accepted, when an
+agent last sent with it, how long it is, and whether it is the public example token. A
+shared token copied from any one agent works for all of them, and can't be turned off
+for one agent alone.
 
-- Good: every token has 24 characters or more. Tokens Signalith makes have 48.
-- Needs attention: a token is shorter than 24 characters.
-- At risk: the example token `change-this-ingest-token`, which anyone can look up. On a
-  Docker quick start upgraded from an older version, whose agents all have it, Signalith
-  accepts it from them over plain HTTP while **Agents on plain HTTP** accepts them, even
-  when it isn't in `ingest.tokens`. Choose **Refuse them** once every agent has its
-  configuration from **Add data**; that ends it for good.
+- Good: no shared token is accepted; each agent group sends with its own token
+  ("Each agent group sends with its own token (N active)."). A shared token you chose
+  **Stop accepting** on counts as retired, even while it is still in the configuration.
+- Good, with a tip: a shared token is accepted but no agent has ever sent with it, and
+  either agent tokens exist or this is the Docker quick start, whose setup step makes one
+  ("No agent sends with a shared token, though one is still accepted."). The tip says to
+  choose **Stop accepting** on it.
+- Needs attention:
+  - a shared token is accepted and an agent sent with it in the last 7 days ("Some agents
+    still send with a shared token, so a copy taken from any one of them works for all of
+    them.");
+  - a shared token is accepted though no agent has used it in the last 7 days;
+  - a shared token is shorter than 24 characters;
+  - a shared token is accepted and the tokens couldn't be read from OpenSearch, so how it
+    was used isn't known.
+- At risk: the example token `change-this-ingest-token`, which anyone can look up, is
+  accepted. On a Docker quick start upgraded from an older version, whose agents all have
+  it, Signalith accepts it from them over plain HTTP while **Agents on plain HTTP**
+  accepts them, even when it isn't in `ingest.tokens`. Choose **Refuse them** once every
+  agent has its configuration from **Add data**; that ends it for good.
+- Can't tell: the agent tokens couldn't be read from OpenSearch (for example when
+  `signalith security` runs while OpenSearch is down).
 
 On the Docker quick start the check also says why the old example token is refused: the
 install started new, it was upgraded and agents on plain HTTP were refused since a date,
 or Signalith couldn't yet ask OpenSearch which it is. See
 [The Docker quick start's old example token](https.md#the-docker-quick-starts-old-example-token).
 
-**To fix:** add a new token with `sudo signalith secrets set ingest.tokens` (press Enter
-to have one made), give each agent a new configuration from **Add data**, then remove the
-old token. See [Commands](encryption.md#commands).
+**To fix:**
+
+1. Open **Add data** and give each agent a configuration with its own token.
+2. Under **Agent tokens**, choose **Stop accepting** on the shared token once its
+   **Last used** is older than the last agent you updated.
+3. That's all. You may also delete it from signalith.yaml (`ingest.tokens`) or
+   `SIGNALITH_INGEST_TOKEN`; on the Docker quick start, leave `docker-compose.yml` as it
+   is.
+
+See [Replace a shared token](agent-tokens.md#replace-a-shared-token).
 
 ### Signalith's OpenSearch account
 

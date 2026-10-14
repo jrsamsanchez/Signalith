@@ -1,0 +1,5 @@
+{"rule": "ac1c92b4-ac81-405a-9978-4604d78cc47e", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"start  /launch:","Image":"\\VSDiagnostics.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\VSDiagnostics.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"start  /launch:"}}
+]}

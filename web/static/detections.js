@@ -915,6 +915,8 @@ function renderFindingDetail(box, data, opts = {}) {
     d ? { icon: 'crosshair', label: 'Open the detection', run: () => focusDetection(f.detection_id) } : null,
     d ? { icon: 'list-filter', label: 'Findings from this detection', run: () => { fnd.detection = f.detection_id; fnd.urgency.clear(); loadFindings(); } } : null,
     can('analyst') ? { icon: 'zap', label: 'Respond…', run: () => { const b = box.querySelector('[data-action="respond"]'); if (b) b.click(); } } : null,
+    d && can('admin') ? 'sep' : null,
+    d && can('admin') ? { icon: 'bell-off', label: 'Don’t alert on this again…', run: () => suppressFinding(f, d) } : null,
   ]);
 
   const sev = sevBadge(u);
@@ -955,7 +957,9 @@ function renderFindingDetail(box, data, opts = {}) {
     dxTabs(prefix, tabs, fnd.tab, setTab),
     el('div', { class: 'inspector__body' },
       dxPanel(prefix, 'overview', fnd.tab,
+        typeof pbFindingBanner === 'function' ? pbFindingBanner(f.id) : null,
         f.description ? el('p', { class: 'dx-lede' }, f.description) : null,
+        f.credit ? el('p', { class: 'dx-credit' }, f.credit) : null,
         d && d.guidance ? el('div', { class: 'callout' }, icon('lightbulb'), el('div', {}, el('b', {}, 'How to triage. '), d.guidance)) : null,
         (f.mitre || []).length ? techRow(f.mitre) : null,
         err,
@@ -1030,12 +1034,17 @@ let schedulerOn = true;
 // off. schedulerHere is this server's own scheduler setting.
 let runsOn = null;
 let schedulerHere = true;
-const det = { show: '', open: null, closed: false, list: [], counts24: null, loaded: false, seq: 0, msg: null, test: null, running: null };
+const det = { show: '', open: null, closed: false, list: [], counts24: null, loaded: false, seq: 0, msg: null, test: null, running: null,
+  // source: '' shows Signalith's and your own detections plus pack rules
+  // that are on; 'pack:<name>' browses one content pack; 'all' is every one.
+  source: '', packs: [], limit: 0 };
+// The list draws this many rows at first; Show more adds as many again.
+const DET_PAGE = 150;
 // d-show is a group of pills; other pages set it like a select ($('d-show').value = '').
 Object.defineProperty($('d-show'), 'value', { configurable: true, get: () => det.show, set: (v) => { det.show = v || ''; } });
 const DET_SHOW = [['', 'All'], ['enabled', 'On'], ['disabled', 'Off'], ['custom', 'Custom or edited'], ['errors', 'Failing']];
 const detShows = (d, show) => (show === 'enabled' ? d.enabled : show === 'disabled' ? !d.enabled
-  : show === 'custom' ? d.source !== 'builtin' : show === 'errors' ? !!(d.state && d.state.last_error) : true);
+  : show === 'custom' ? d.source === 'custom' || d.source === 'override' : show === 'errors' ? !!(d.state && d.state.last_error) : true);
 const plainTitle = (t) => t.replace(/\$([^$]+)\$/g, '$1');
 // detTitle shows $field$ tokens as quiet code.
 function detTitle(t) {
@@ -1043,18 +1052,37 @@ function detTitle(t) {
   t.split(/(\$[A-Za-z_][A-Za-z0-9_.()]*\$)/).forEach((part, i) => { if (part) out.push(i % 2 ? el('span', { class: 'dx-tok' }, part) : part); });
   return out;
 }
-const SOURCE_LABEL = { builtin: 'Built-in', custom: 'Custom', override: 'Edited' };
+const SOURCE_LABEL = { builtin: 'Built-in', custom: 'Custom', override: 'Edited', pack: 'Content pack' };
+const sourceLabel = (d) => (d.source === 'pack' && d.origin ? packShort(d.origin.pack) : SOURCE_LABEL[d.source] || d.source);
+const packShort = (name) => ({ sigmahq: 'SigmaHQ', splunk: 'Splunk' }[name] || name);
+// PACK_INFO is how each pack's card reads: who wrote the rules, under
+// which licence, and which of its rules the one-click button turns on
+// (Splunk's TTP rules raise findings; its anomalies only add risk).
+const PACK_INFO = {
+  sigmahq: { icon: 'sigma', by: 'By the SigmaHQ authors named on each rule, under the ', license: 'Detection Rule License 1.1', home: 'SigmaHQ on GitHub',
+    desc: 'Windows rules for Sysmon, Security and PowerShell events, and Linux rules for Sysmon for Linux, each tested before it ships. Off until you turn them on.',
+    strong: (d) => d.severity === 'high' || d.severity === 'critical', strongName: 'high and critical rule' },
+  splunk: { icon: 'layers', by: 'By Splunk’s Threat Research Team and the authors named on each rule, under the ', license: 'Apache License 2.0', home: 'security_content on GitHub',
+    desc: 'Splunk’s Windows and Linux process, file, registry and PowerShell detections, each tested before it ships. TTP rules raise findings; anomalies add risk. Off until you turn them on.',
+    strong: (d) => (d.tags || []).includes('ttp'), strongName: 'TTP rule' },
+};
+const packInfo = (p) => PACK_INFO[p.name] || { icon: 'layers', by: 'Under the ', license: p.license, home: 'Source', desc: p.description, strong: () => false, strongName: 'rule' };
+const inSource = (d, src) => (src === 'all' ? true : src.startsWith('pack:') ? !!d.origin && d.origin.pack === src.slice(5) : !d.origin || d.enabled);
 
 async function loadDetections() {
   const seq = ++det.seq;
   if (!det.loaded) renderDetectionsSkeleton();
   try {
-    const [res, f24] = await Promise.all([
+    const [res, f24, packs, contentInfo] = await Promise.all([
       api('api/detections'),
       api('api/findings?since=24h&limit=1000').catch(() => null),
+      api('api/detections/packs').catch(() => null),
+      api('api/detections/content').catch(() => null),
     ]);
     if (seq !== det.seq) return;
     detections = res.detections;
+    det.packs = packs ? packs.packs : [];
+    det.content = contentInfo;
     schedulerOn = res.scheduler;
     runsOn = typeof res.runs_on === 'string' ? res.runs_on : null;
     schedulerHere = res.scheduler_here !== false;
@@ -1146,7 +1174,9 @@ function detectionRow(d) {
   sw.addEventListener('change', () => setDetectionEnabled(d, sw.checked, sw));
   const n24 = det.counts24 ? (det.counts24[d.id] || 0) : null;
   const sub = [el('span', { class: 'dx-id' }, d.id), ...(d.mitre || []).slice(0, 3).map((t) => el('span', { class: 'chip' }, t))];
-  if (d.source !== 'builtin') sub.splice(1, 0, el('span', { class: 'badge' }, SOURCE_LABEL[d.source] || d.source));
+  // While a pack is browsed every row is from it, so its badge would only
+  // repeat the card above.
+  if (d.source !== 'builtin' && !(d.source === 'pack' && det.source.startsWith('pack:'))) sub.splice(1, 0, el('span', { class: 'badge' }, sourceLabel(d)));
   if (d.risk && d.risk.only) sub.push(el('span', { class: 'badge', title: 'Records risk without raising findings' }, 'Risk only'));
   const tr = el('tr', { 'data-id': d.id, 'aria-selected': String(det.open === d.id), class: d.enabled ? '' : 'dx-off' },
     el('td', { 'data-col': 'sev' }, sevBadge(d.severity)),
@@ -1164,13 +1194,160 @@ function detectionRow(d) {
   return tr;
 }
 
+// renderPacks draws a card per content pack: what it is, how many of its
+// rules are on, and (for admins) one click to turn on its strongest rules.
+// While a pack is browsed, the card turns into the bar for that view.
+function renderPacks(list) {
+  const box = $('d-packs');
+  const admin = can('admin');
+  const browsing = det.source.startsWith('pack:') ? det.packs.find((p) => 'pack:' + p.name === det.source) : null;
+  const cards = det.packs.map((p) => {
+    if (browsing && browsing !== p) return null;
+    const rules = detections.filter((d) => d.origin && d.origin.pack === p.name);
+    const on = rules.filter((d) => d.enabled).length;
+    const info = packInfo(p);
+    const strong = rules.filter((d) => !d.enabled && info.strong(d));
+    const credit = el('p', { class: 'dx-pack__credit' }, info.by,
+      el('a', { href: p.license_url, target: '_blank', rel: 'noopener' }, info.license), ' · ',
+      el('a', { href: p.source, target: '_blank', rel: 'noopener' }, info.home));
+    const actions = [];
+    if (browsing) {
+      actions.push(dxBtn('ghost', 'Back to your detections', () => { det.source = ''; det.limit = DET_PAGE; renderDetections(); }, { sm: true, icon: 'arrow-left' }));
+      if (admin && list.length) {
+        const off = list.filter((d) => !d.enabled), onNow = list.filter((d) => d.enabled);
+        if (off.length) actions.push(dxBtn('secondary', `Turn on ${off.length === list.length ? 'all ' : ''}${dxPlural(off.length, 'shown rule')}`, (ev) => bulkEnable(off, true, ev.currentTarget), { sm: true, icon: 'power' }));
+        if (onNow.length) actions.push(dxBtn('ghost', `Turn off ${dxPlural(onNow.length, 'shown rule')}`, (ev) => bulkEnable(onNow, false, ev.currentTarget), { sm: true }));
+      }
+    } else {
+      actions.push(dxBtn('secondary', 'Browse rules', () => { det.source = 'pack:' + p.name; det.show = ''; det.limit = DET_PAGE; renderDetections(); }, { sm: true, icon: 'list-filter' }));
+      if (admin && strong.length) actions.push(dxBtn('ghost', `Turn on ${dxPlural(strong.length, info.strongName)}`, (ev) => bulkEnable(strong, true, ev.currentTarget), { sm: true, icon: 'power' }));
+    }
+    return el('div', { class: 'card dx-pack' },
+      el('div', { class: 'dx-pack__mark', 'aria-hidden': 'true' }, icon(info.icon)),
+      el('div', { class: 'dx-pack__body' },
+        el('div', { class: 'dx-pack__head' }, el('b', {}, p.title),
+          el('span', { class: 'dx-meta' }, `${p.rules.toLocaleString()} rules · ${on ? on.toLocaleString() + ' on' : 'all off'}`)),
+        el('p', { class: 'dx-pack__desc' }, browsing ? 'Filter by name, ATT&CK ID or tag, then turn on what fits your systems.'
+          : info.desc),
+        credit),
+      el('div', { class: 'dx-pack__actions' }, ...actions));
+  });
+  fill(box, ...cards, browsing ? null : contentBar());
+  box.classList.toggle('hidden', !det.packs.length);
+}
+
+// contentVersion turns a content version (20261013140000) into a date.
+function contentDate(v) {
+  if (!v || v.length < 8) return '';
+  const d = new Date(Date.UTC(+v.slice(0, 4), +v.slice(4, 6) - 1, +v.slice(6, 8)));
+  return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' });
+}
+
+// contentBar says how new the pack rules are and, for admins, checks for
+// signed updates or takes one uploaded (for servers without internet).
+function contentBar() {
+  const c = det.content;
+  if (!c) return null;
+  const st = c.status;
+  const admin = can('admin');
+  const parts = [st.updated ? `Rules updated ${contentDate(st.version)}` : `Rules from ${contentDate(st.version)}, built into Signalith`];
+  if (c.mode === 'daily') parts.push('checked daily');
+  if (st.last_check) parts.push(`last checked ${dxClock(st.last_check)}${st.last_result === 'up to date' ? ', up to date' : ''}`);
+  const lines = [el('span', {}, parts.join(' · '))];
+  if (st.skipped) lines.push(el('span', { class: 'dx-content__warn', title: (st.skipped_reasons || []).join('\n') }, `${dxPlural(st.skipped, 'new rule')} need a newer Signalith.`));
+  if (st.last_error) lines.push(el('span', { class: 'dx-content__err' }, sentence(st.last_error)));
+  const actions = [];
+  if (admin && st.ready) {
+    actions.push(dxBtn('ghost', 'Check for updates', (ev) => contentAction(ev.currentTarget, () => api('api/detections/content/check', {})), { sm: true, icon: 'refresh-cw' }));
+    const pick = el('input', { type: 'file', multiple: '', accept: '.gz,.sig', class: 'hidden', 'aria-label': 'Content update and its signature' });
+    pick.addEventListener('change', () => uploadContent(pick, upBtn));
+    const upBtn = dxBtn('ghost', 'Upload update…', () => pick.click(), { sm: true, icon: 'upload' });
+    upBtn.title = 'For a server without internet access: choose signalith-content.tar.gz and signalith-content.tar.gz.sig together';
+    actions.push(pick, upBtn);
+    if (st.updated) actions.push(dxBtn('ghost', 'Use built-in rules', (ev) => contentAction(ev.currentTarget, () => api('api/detections/content', undefined, 'DELETE')), { sm: true }));
+  } else if (admin) {
+    lines.push(el('span', { class: 'dx-meta' }, 'This build of Signalith cannot take content updates.'));
+  }
+  return el('div', { class: 'dx-content' }, el('span', { class: 'dx-content__icon', 'aria-hidden': 'true' }, icon('cloud-download')),
+    el('div', { class: 'dx-content__text' }, ...lines), actions.length ? el('div', { class: 'dx-content__actions' }, ...actions) : null);
+}
+
+async function contentAction(btn, call) {
+  btn.disabled = true;
+  try {
+    det.content = await call();
+    const st = det.content.status;
+    toast(st.last_result === 'installed' ? `Rules updated to ${contentDate(st.version)}.` : st.updated ? 'Rules are up to date.' : 'Using the rules built into Signalith.');
+    loadDetections();
+  } catch (e) {
+    toastError('Content update failed', e);
+    if (det.content) det.content = await api('api/detections/content').catch(() => det.content);
+    renderDetections();
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function uploadContent(pick, btn) {
+  const files = [...pick.files];
+  pick.value = '';
+  const sig = files.find((f) => f.name.endsWith('.sig'));
+  const bundle = files.find((f) => !f.name.endsWith('.sig'));
+  if (!sig || !bundle) {
+    toast('Choose both files: the update (.tar.gz) and its signature (.sig).', null, { tone: 'danger', title: 'Two files needed' });
+    return;
+  }
+  const form = new FormData();
+  form.append('bundle', bundle);
+  form.append('signature', sig);
+  await contentAction(btn, async () => {
+    const resp = await fetch('api/detections/content/upload', { method: 'POST', body: form });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(data.error || resp.statusText);
+    return data;
+  });
+}
+
+// bulkEnable turns many detections on or off at once, after a check when
+// it is more than a handful.
+async function bulkEnable(ds, on, btn) {
+  if (!ds.length) return;
+  if (on && ds.length > 20) {
+    const ok = await dxConfirm({
+      title: `Turn on ${dxPlural(ds.length, 'rule')}?`,
+      text: `They start running on their schedules and raise findings for what they match. You can turn any of them off again here.`,
+      confirm: 'Turn on',
+    });
+    if (!ok) return;
+  }
+  if (btn) { dxKeep(btn); btn.disabled = true; }
+  const ids = ds.map((d) => d.id);
+  try {
+    await api('api/detections/enable', { ids, enabled: on });
+    await loadDetections();
+    dxNotify(`${dxPlural(ids.length, 'rule')} turned ${on ? 'on' : 'off'}.`, {
+      label: 'Undo',
+      run: async () => {
+        try { await api('api/detections/enable', { ids, enabled: !on }); await loadDetections(); dxNotify('Change undone.'); }
+        catch (e) { dxNotify('Couldn’t undo: ' + e.message, null, { tone: 'danger' }); }
+      },
+    });
+  } catch (e) {
+    dxNotify(`Couldn’t turn ${on ? 'on' : 'off'} the rules: ${e.message}`, null, { tone: 'danger' });
+    if (btn) btn.disabled = false;
+  }
+}
+
 function renderDetections() {
   const term = $('d-filter').value.trim().toLowerCase();
-  const list = detections.filter((d) => detShows(d, det.show)
+  if (!det.limit) det.limit = DET_PAGE;
+  const scoped = detections.filter((d) => inSource(d, det.source));
+  const list = scoped.filter((d) => detShows(d, det.show)
     && (!term || [d.id, d.title, d.description, ...(d.mitre || []), ...(d.tags || [])].join(' ').toLowerCase().includes(term)));
   det.list = list;
+  renderPacks(list);
   const pills = DET_SHOW.map(([v, label]) => {
-    const n = detections.filter((d) => detShows(d, v)).length;
+    const n = scoped.filter((d) => detShows(d, v)).length;
     if (v && !n && det.show !== v) return null;
     const b = el('button', { class: 'pill', type: 'button', 'aria-pressed': String(det.show === v) }, v ? null : icon('crosshair'), label, el('span', { class: 'num' }, String(n)));
     b.addEventListener('click', () => { det.show = det.show === v ? '' : v; renderDetections(); });
@@ -1184,23 +1361,31 @@ function renderDetections() {
       ? dxEmpty({ icon: 'filter-x', title: 'No detections match', text: 'Try another name or ATT&CK ID, or show every detection.', action: { label: 'Clear filters', run: () => { $('d-filter').value = ''; det.show = ''; renderDetections(); } } })
       : dxEmpty({ icon: 'crosshair', title: 'No detections yet', text: can('admin') ? 'Write one with New detection, import a Sigma rule, or use Save as detection on the Search page.' : 'Detections an admin adds appear here.' }));
   } else {
-    box.replaceChildren(el('table', { class: 'table table--stack dx-detections' }, detectionsHead(), el('tbody', {}, ...list.map(detectionRow))));
+    // Long lists (a whole content pack) draw in pages, keeping the open
+    // detection's row in view.
+    const openAt = det.open ? list.findIndex((d) => d.id === det.open) : -1;
+    if (openAt >= det.limit) det.limit = Math.ceil((openAt + 1) / DET_PAGE) * DET_PAGE;
+    const shown = list.slice(0, det.limit);
+    const more = list.length > shown.length
+      ? el('div', { class: 'dx-more' }, dxBtn('ghost', `Show ${Math.min(DET_PAGE, list.length - shown.length)} more of ${list.length.toLocaleString()}`, () => { det.limit += DET_PAGE; renderDetections(); }, { sm: true }))
+      : null;
+    box.replaceChildren(el('table', { class: 'table table--stack dx-detections' }, detectionsHead(), el('tbody', {}, ...shown.map(detectionRow))), ...(more ? [more] : []));
   }
   const foot = $('d-foot');
   foot.classList.toggle('hidden', !detections.length);
   fill(foot,
-    el('span', {}, `${enabled} of ${dxPlural(detections.length, 'detection')} on`),
+    el('span', {}, `${enabled.toLocaleString()} of ${dxPlural(detections.length, 'detection')} on`),
     det.counts24 ? el('span', {}, det.counts24Partial ? '24h counts the newest 1000 findings' : '24h is findings raised in the last 24 hours') : null,
     el('span', { class: 'spacer' }),
     list.length ? el('span', { class: 'shortcuts hide-sm', 'aria-hidden': 'true' }, el('kbd', {}, 'J'), el('kbd', {}, 'K'), el('span', {}, 'move')) : null);
   // Keep the open detection; on wide screens open the first one.
-  if (det.open && detections.some((d) => d.id === det.open)) {
+  if (det.open && list.some((d) => d.id === det.open)) {
     openDetection(det.open, { focus: false, slide: det.slide });
     det.slide = false;
   } else if (!det.closed && !dxSlideOver.matches && list.length && currentPage === 'detections') openDetection(list[0].id, { focus: false });
   else closeDetectionInspector({ keepState: true });
 }
-$('d-filter').addEventListener('input', renderDetections);
+$('d-filter').addEventListener('input', () => { det.limit = DET_PAGE; renderDetections(); });
 
 async function setDetectionEnabled(d, on, input) {
   // the list and inspector are redrawn, so note where focus was to put it back
@@ -1215,12 +1400,11 @@ async function setDetectionEnabled(d, on, input) {
       const again = $('d-list').querySelector(`tr[data-id="${CSS.escape(d.id)}"] input[role="switch"]`);
       if (again) again.focus({ preventScroll: true });
     }
-    // Undo puts back exactly what was there: a built-in comes back by
-    // removing the saved copy, anything else by saving it as it was.
+    // Undo puts back exactly what was there by saving it as it was (for a
+    // built-in or pack rule that only records on or off again).
     const undo = async () => {
       try {
-        if (d.source === 'builtin') await api('api/detections/' + encodeURIComponent(d.id), undefined, 'DELETE');
-        else await api('api/detections/' + encodeURIComponent(d.id), body, 'PUT');
+        await api('api/detections/' + encodeURIComponent(d.id), body, 'PUT');
         await loadDetections();
         dxNotify('Change undone.');
       } catch (e) { dxNotify('Couldn’t undo: ' + e.message, null, { tone: 'danger' }); }
@@ -1321,7 +1505,7 @@ function renderDetectionInspector() {
       const n = res.findings.length;
       det.msg = {
         id: d.id, tone: 'success', title: n ? `${dxPlural(n, 'new finding')} raised.` : 'Run finished. No new findings.',
-        text: `${dxPlural(res.results, 'result')}, ${res.throttled} held back as repeats${res.risk_events ? `, ${dxPlural(res.risk_events, 'risk event')}` : ''}.`,
+        text: `${dxPlural(res.results, 'result')}, ${res.throttled} held back as repeats${res.suppressed ? `, ${res.suppressed} matched an exception` : ''}${res.risk_events ? `, ${dxPlural(res.risk_events, 'risk event')}` : ''}.`,
         action: n ? { label: 'View findings', run: () => viewDetectionFindings(d.id) } : null,
       };
     } catch (e) {
@@ -1370,7 +1554,7 @@ function renderDetectionInspector() {
       el('h2', { class: 'inspector__title', id: 'dd-title', tabindex: '-1' }, ...detTitle(d.title)),
       el('div', { class: 'row dx-tags' }, sevBadge(d.severity),
         admin ? el('label', { class: 'switch', for: 'dd-enabled' }, sw, d.enabled ? 'On' : 'Off') : el('span', { class: 'badge' }, d.enabled ? 'On' : 'Off'),
-        el('span', { class: 'badge' }, SOURCE_LABEL[d.source] || d.source)),
+        el('span', { class: 'badge' }, sourceLabel(d))),
       el('div', { class: 'inspector__meta' }, ...dxDots(
         el('span', {}, 'Every ' + d.schedule), el('span', {}, 'looks back ' + d.lookback),
         next ? el('span', {}, 'next run ' + next) : null))),
@@ -1387,12 +1571,21 @@ function renderDetectionInspector() {
         el('pre', { class: 'dx-code' }, d.query)),
       dxSection('Last run', dxKv([
         ['When', st.last_run ? el('span', { title: fmtTime(st.last_run) }, ago(st.last_run) + (st.last_duration_ms ? ` · took ${st.last_duration_ms} ms` : '')) : runsOn ? `Not here: it runs on ${runsOn}` : runsOn === '' ? 'Not here' : 'Not run yet'],
-        st.last_run ? ['Results', `${dxPlural(st.last_results, 'result')}, ${dxPlural(st.last_findings, 'new finding')}`] : null,
+        st.last_run ? ['Results', `${dxPlural(st.last_results, 'result')}, ${dxPlural(st.last_findings, 'new finding')}${st.last_suppressed ? `, ${st.last_suppressed} matched an exception` : ''}`] : null,
         lagText(st) ? ['Behind schedule', lagText(st)] : null,
         n24 != null ? ['Last 24 hours', n24 ? el('button', { class: 'link-btn', type: 'button' }, dxPlural(n24, 'finding')) : 'No findings'] : null,
         schedulerOn && d.enabled ? null : ['Schedule', schedulerOn || runsOn != null && !d.enabled ? 'Off, so it does not run'
           : runsOn ? `Runs on ${runsOn}` : runsOn === '' ? 'No server runs detections right now' : 'Scheduler off; runs only with Run now'],
       ])),
+      d.origin ? dxSection('Source', dxKv([
+        ['From', d.origin.pack_title],
+        d.origin.author ? ['Author', d.origin.author] : null,
+        ['Licence', el('a', { href: d.origin.license_url, target: '_blank', rel: 'noopener' }, d.origin.license === 'DRL-1.1' ? 'Detection Rule License 1.1' : d.origin.license)],
+        ['Rule', el('a', { href: d.origin.url, target: '_blank', rel: 'noopener' }, 'View the original rule')],
+        d.origin.status ? ['Maturity', d.origin.status === 'stable' ? 'Stable' : d.origin.status === 'test' ? 'Tested by its authors' : d.origin.status] : null,
+        (d.origin.references || []).length ? ['References', el('div', { class: 'dx-refs' }, ...d.origin.references.slice(0, 5).map((u) => /^https?:\/\//.test(u) ? el('a', { href: u, target: '_blank', rel: 'noopener noreferrer' }, u.replace(/^https?:\/\//, '')) : el('span', {}, u)))] : null,
+      ])) : null,
+      exceptionsSection(d, admin),
       dxSection('Settings', dxKv([
         ['Repeats', (thr.fields || []).length ? `One finding per ${thr.fields.join(', ')}${thr.window ? ' for ' + thr.window : ''}` : thr.window ? `Held back for ${thr.window}` : 'Every result raises a finding'],
         ['Risk', risk ? `+${risk.score} to ${(risk.objects || []).map((o) => o.field).join(', ') || 'nothing'}${risk.only ? ', no findings' : ''}` : 'None'],
@@ -1437,6 +1630,199 @@ function dxConfirm(o) {
   });
 }
 
+// ---- tuning: exceptions ----
+// tuneDialog is the dialog for exceptions. It sits on the body, not in a
+// page, because "Don't alert on this again" opens from the Findings page.
+function tuneDialog() {
+  let dlg = $('d-tune');
+  if (!dlg) {
+    dlg = el('dialog', { class: 'modal', id: 'd-tune', 'aria-labelledby': 'd-tune-title' });
+    document.body.append(dlg);
+  }
+  return dlg;
+}
+const SUPPRESS_FOR = [['24h', 'For 24 hours'], ['7d', 'For 7 days'], ['30d', 'For 30 days'], ['', 'Until removed']];
+// Result fields that are counts, times or the raw event make poor exceptions.
+const SUPPRESS_SKIP = new Set(['_time', '_raw', 'count', 'risk_object', 'risk_object_type', 'earliest', 'latest', 'first_seen', 'last_seen']);
+
+// suppressFields lists the fields of a finding an exception can match on:
+// its entities first, then other single values of its result.
+function suppressFields(f) {
+  const out = [];
+  const seen = new Set();
+  const add = (k, v, entity) => {
+    if (seen.has(k) || SUPPRESS_SKIP.has(k) || k.startsWith('_')) return;
+    if (Array.isArray(v)) { if (v.length !== 1) return; v = v[0]; }
+    if (v == null || typeof v === 'object' || String(v).trim() === '' || String(v).length > 1024) return;
+    seen.add(k);
+    out.push({ field: k, value: String(v), entity });
+  };
+  for (const [k, v] of Object.entries(f.entities || {})) add(k, f.result && f.result[k] != null ? f.result[k] : v, true);
+  for (const [k, v] of Object.entries(f.result || {})) if (typeof v !== 'number') add(k, v, false);
+  return out;
+}
+
+// suppressFinding is "Don't alert on this again": an exception on the
+// finding's detection for the values picked, closing the finding too.
+function suppressFinding(f, d) {
+  const dlg = tuneDialog();
+  const fields = suppressFields(f);
+  const boxes = fields.map((x, i) => {
+    const cb = el('input', { type: 'checkbox', id: 'sf-field-' + i });
+    cb.checked = x.entity && !fields.slice(0, i).some((y) => y.entity);
+    return cb;
+  });
+  const more = el('details', { class: 'dx-sf-more' }, el('summary', {}, 'More fields from the result'));
+  const row = (x, i) => el('label', { class: 'check dx-sf-field' }, boxes[i], el('span', { class: 'mono' }, x.field), el('span', { class: 'mono dx-sf-value', title: x.value }, x.value));
+  const entityRows = fields.map((x, i) => (x.entity ? row(x, i) : null)).filter(Boolean);
+  const otherRows = fields.map((x, i) => (x.entity ? null : row(x, i))).filter(Boolean);
+  more.append(...otherRows);
+  const dur = select('sf-for', SUPPRESS_FOR, '7d');
+  dur.className = 'select select--block';
+  const note = el('textarea', { class: 'textarea', id: 'sf-comment', rows: 2, placeholder: 'Why: a scanner, a known admin script, a test host…' });
+  const close = el('input', { type: 'checkbox', id: 'sf-close' });
+  close.checked = f.status !== 'closed';
+  const disp = select('sf-disposition', Object.entries(DISPOSITION_LABEL).filter(([k]) => k), f.disposition || 'false_positive');
+  disp.className = 'select select--block';
+  const errBox = el('div', {});
+  const cancel = dxBtn('ghost', 'Cancel', () => dlg.close());
+  const ok = dxBtn('primary', 'Stop alerting', null, { icon: 'bell-off' });
+  const preview = el('p', { class: 'dx-hint', 'aria-live': 'polite' });
+  const picked = () => fields.filter((_, i) => boxes[i].checked);
+  const update = () => {
+    const p = picked();
+    ok.disabled = !p.length;
+    preview.textContent = p.length
+      ? `This detection raises no findings where ${p.map((x) => `${x.field} is ${x.value}`).join(' and ')}${dur.value ? ', ' + dur.selectedOptions[0].textContent.toLowerCase() : ''}.`
+      : 'Pick at least one field.';
+  };
+  for (const b of boxes) b.addEventListener('change', update);
+  dur.addEventListener('change', update);
+  ok.addEventListener('click', async () => {
+    ok.disabled = true;
+    fill(errBox);
+    try {
+      const body = { fields: picked().map((x) => x.field), for: dur.value, comment: note.value.trim() };
+      if (close.checked) body.update = { status: 'closed', disposition: disp.value };
+      const res = await api('api/findings/' + encodeURIComponent(f.id) + '/suppress', body);
+      dlg.close();
+      dxNotify(res.warning ? 'Exception saved, but the finding was not updated.' : close.checked ? 'Exception saved and the finding closed.' : 'Exception saved.',
+        { label: 'Undo', run: () => removeException(f.detection_id, res.exception.id) });
+      await loadFindings({ quiet: true });
+      if (openFinding === f.id) showFinding(f.id, { focus: false });
+      if (typeof loadDetections === 'function' && detections.length) loadDetections();
+    } catch (e) {
+      fill(errBox, dxAlert('danger', 'Couldn’t save the exception.', e.message));
+      ok.disabled = false;
+    }
+  });
+  fill(dlg,
+    el('div', { class: 'modal__head' }, el('div', {},
+      el('h2', { class: 'modal__title', id: 'd-tune-title' }, 'Don’t alert on this again'),
+      el('p', { class: 'modal__desc' }, 'Adds an exception to the detection. Matching results raise no finding and add no risk; other results still alert.'))),
+    el('div', { class: 'modal__body' },
+      errBox,
+      fields.length ? el('fieldset', { class: 'dx-sf-fields' }, el('legend', { class: 'label' }, 'Match these values'),
+        ...entityRows, otherRows.length ? (entityRows.length ? more : el('div', {}, ...otherRows)) : null)
+        : dxAlert('warning', 'This finding has no values to match on.', 'Turn the detection off, or edit its query, instead.'),
+      el('div', { class: 'form-grid' }, dxField('How long', dur), dxField('Close as', disp)),
+      el('label', { class: 'check' }, close, 'Close this finding'),
+      dxField('Comment', note),
+      preview),
+    el('div', { class: 'modal__foot' }, cancel, ok));
+  close.addEventListener('change', () => { disp.disabled = !close.checked; });
+  update();
+  dlg.onclose = null;
+  dlg.showModal();
+  (boxes.find((b) => b.checked) || cancel).focus();
+}
+
+async function removeException(detID, exID) {
+  try {
+    await api('api/detections/' + encodeURIComponent(detID) + '/exceptions/' + encodeURIComponent(exID), undefined, 'DELETE');
+    dxNotify('Exception removed.');
+    if (typeof loadDetections === 'function') await loadDetections();
+  } catch (e) { dxNotify('Couldn’t remove the exception: ' + e.message, null, { tone: 'danger' }); }
+}
+
+function exceptionWhen(e) {
+  const now = Date.now();
+  if (e.from && new Date(e.from).getTime() > now) return `From ${dxClock(e.from)}${e.until ? ' to ' + dxClock(e.until) : ''}`;
+  if (e.until) return new Date(e.until).getTime() <= now ? 'Ended ' + ago(e.until) : 'Until ' + dxClock(e.until);
+  return 'Until removed';
+}
+
+// exceptionsSection lists a detection's exceptions; admins add a
+// maintenance window or remove one.
+function exceptionsSection(d, admin) {
+  const es = d.exceptions || [];
+  const items = es.map((e) => {
+    const ended = e.until && new Date(e.until).getTime() <= Date.now();
+    const what = e.match && Object.keys(e.match).length
+      ? Object.entries(e.match).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => el('span', { class: 'badge badge--outline badge--mono', title: `${k} = ${v}` }, `${k}=${v}`))
+      : [el('span', { class: 'badge' }, 'Every result')];
+    return el('li', { class: 'dx-ex' + (ended ? ' dx-ex--ended' : '') },
+      el('div', { class: 'dx-ex__what' }, ...what),
+      el('div', { class: 'dx-ex__meta' }, ...dxDots(el('span', {}, exceptionWhen(e)), e.by ? el('span', {}, 'by ' + e.by) : null,
+        e.added ? el('span', { title: fmtTime(e.added) }, 'added ' + ago(e.added)) : null)),
+      e.comment ? el('p', { class: 'dx-ex__note' }, e.comment) : null,
+      admin ? dxBtn('ghost', '', () => removeException(d.id, e.id), { sm: true, icon: 'trash-2', title: 'Remove this exception', cls: 'dx-ex__del' }) : null);
+  });
+  const add = admin ? dxBtn('ghost', 'Add', () => addException(d), { sm: true, icon: 'plus', title: 'Add an exception or a maintenance window' }) : null;
+  return el('section', { class: 'section' },
+    el('div', { class: 'dx-sec-head' }, el('h3', { class: 'section-title' }, 'Exceptions', es.length ? el('span', { class: 'count' }, String(es.length)) : null), add),
+    es.length ? el('ul', { class: 'dx-exlist' }, ...items)
+      : el('p', { class: 'muted' }, admin ? 'None. Use Don’t alert on this again on a finding, or Add, to stop alerts for a host, user or time window.' : 'None.'));
+}
+
+// addException adds an exception by hand: field values to match, or none
+// for a maintenance window that silences every result.
+function addException(d) {
+  const dlg = tuneDialog();
+  const match = el('textarea', { class: 'textarea mono', id: 'ae-match', rows: 3, spellcheck: 'false', placeholder: 'host=web*\nuser=svc-backup' });
+  const fromIn = el('input', { class: 'input', id: 'ae-from', type: 'datetime-local' });
+  const dur = select('ae-for', [['1h', '1 hour'], ['4h', '4 hours'], ...SUPPRESS_FOR], '7d');
+  dur.className = 'select select--block';
+  const note = el('textarea', { class: 'textarea', id: 'ae-comment', rows: 2, placeholder: 'Why' });
+  const errBox = el('div', {});
+  const cancel = dxBtn('ghost', 'Cancel', () => dlg.close());
+  const ok = dxBtn('primary', 'Add exception', null, { icon: 'plus' });
+  ok.addEventListener('click', async () => {
+    fill(errBox);
+    const m = {};
+    for (const line of match.value.split('\n').map((s) => s.trim()).filter(Boolean)) {
+      const i = line.indexOf('=');
+      if (i < 1) { fill(errBox, dxAlert('danger', 'Write each value as field=value.', line)); return; }
+      m[line.slice(0, i).trim()] = line.slice(i + 1).trim();
+    }
+    const body = { match: m, for: dur.value, comment: note.value.trim() };
+    if (fromIn.value) body.from = new Date(fromIn.value).toISOString();
+    ok.disabled = true;
+    try {
+      await api('api/detections/' + encodeURIComponent(d.id) + '/exceptions', body);
+      dlg.close();
+      dxNotify('Exception added.');
+      await loadDetections();
+    } catch (e) {
+      fill(errBox, dxAlert('danger', 'Couldn’t add the exception.', e.problems ? e.problems.join(' ') : e.message));
+      ok.disabled = false;
+    }
+  });
+  fill(dlg,
+    el('div', { class: 'modal__head' }, el('div', {},
+      el('h2', { class: 'modal__title', id: 'd-tune-title' }, 'Add an exception'),
+      el('p', { class: 'modal__desc' }, 'Results of this detection that match raise no finding and add no risk.'))),
+    el('div', { class: 'modal__body' },
+      errBox,
+      dxField('Match', match, 'One field=value per line; * and ? are wildcards and case is ignored. Leave it empty to silence every result for a maintenance window.'),
+      el('div', { class: 'form-grid' }, dxField('Starting', fromIn, 'Empty starts now.'), dxField('How long', dur)),
+      dxField('Comment', note)),
+    el('div', { class: 'modal__foot' }, cancel, ok));
+  dlg.onclose = null;
+  dlg.showModal();
+  match.focus();
+}
+
 // ---- detection editor ----
 const blankDetection = () => ({
   id: '', title: '', description: '', query: '', schedule: '5m', lookback: '15m', severity: 'medium',
@@ -1474,9 +1860,12 @@ function editDetection(d, opts = {}) {
   const list = (s) => s.split(',').map((x) => x.trim()).filter(Boolean);
   const read = () => ({
     id: id.value.trim(), title: title.value.trim(), description: desc.value.trim(), query: query.value.trim(),
+    // The name (the title without $field$ tokens) was written for this title;
+    // a new title goes without one, and the server derives it.
+    name: d.name && title.value.trim() === d.title ? d.name : undefined,
     schedule: schedule.value.trim(), lookback: lookback.value.trim(), severity: severity.value,
     mitre: list(mitre.value), throttle: { fields: list(tfields.value), window: twindow.value.trim() },
-    enabled: enabled.checked, guidance: guidance.value.trim(), tags: d.tags || [],
+    enabled: enabled.checked, guidance: guidance.value.trim(), tags: d.tags || [], exceptions: d.exceptions || undefined,
     risk: riskScore.value.trim() ? {
       score: parseInt(riskScore.value, 10),
       objects: list(riskObjs.value).map((x) => { const [field, type] = x.split(':').map((s) => s.trim()); return { field, type: type || 'other' }; }),

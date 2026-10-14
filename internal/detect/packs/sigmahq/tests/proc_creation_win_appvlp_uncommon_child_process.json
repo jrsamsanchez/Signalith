@@ -1,0 +1,14 @@
+{"rule": "9c7e131a-0f2c-4ae0-9d43-b04f4e266d43", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"ParentImage":"\\appvlp.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"ParentProcessName":"\\appvlp.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":":\\Windows\\SysWOW64\\rundll32.exe","ParentImage":"\\appvlp.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":":\\Windows\\SysWOW64\\rundll32.exe","ParentProcessName":"\\appvlp.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":":\\Program Files\\Microsoft Office \\msoasb.exe","ParentImage":"\\appvlp.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":":\\Program Files\\Microsoft Office \\msoasb.exe","ParentProcessName":"\\appvlp.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":":\\Program Files\\Microsoft Office \\MSOUC.EXE","ParentImage":"\\appvlp.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":":\\Program Files\\Microsoft Office \\MSOUC.EXE","ParentProcessName":"\\appvlp.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\SkypeSrv\\ :\\Program Files\\Microsoft Office \\SKYPESERVER.EXE","ParentImage":"\\appvlp.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"\\SkypeSrv\\ :\\Program Files\\Microsoft Office \\SKYPESERVER.EXE","ParentProcessName":"\\appvlp.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

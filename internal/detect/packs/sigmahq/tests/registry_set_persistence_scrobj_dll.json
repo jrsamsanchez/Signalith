@@ -1,0 +1,5 @@
+{"rule": "fe20dda1-6f37-4379-bbe0-a98d400cae90", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"C:\\WINDOWS\\system32\\scrobj.dll","TargetObject":"InprocServer32\\(Default)"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"InprocServer32\\(Default)"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"C:\\WINDOWS\\system32\\scrobj.dll"}}
+]}

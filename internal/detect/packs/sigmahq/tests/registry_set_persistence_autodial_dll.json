@@ -1,0 +1,5 @@
+{"rule": "e6fe26ee-d063-4f5b-b007-39e90aaf50e3", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Services\\WinSock2\\Parameters\\AutodialDLL"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"C:\\WINDOWS\\system32\\rasadhlp.dll","EventType":"SetValue","Image":"C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe","ProcessGuid":"570E49AA-6159-6A94-031B-000000001800","ProcessId":"6340","RuleName":"-","TargetObject":"HKLM\\System\\CurrentControlSet\\Services\\WinSock2\\Parameters\\AutodialDLL","User":"SigmaCatchVm\\frack113","UtcTime":"2026-08-30 16:59:07.003"}}
+]}

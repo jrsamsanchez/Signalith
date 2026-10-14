@@ -1,0 +1,6 @@
+{"rule": "602a1f13-c640-4d73-b053-be9a2fa58b96", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\powershell.exe","TargetFilename":".bat"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":".bat"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\powershell.exe"}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"CreationUtcTime":"2026-08-12 17:35:10.165","Image":"C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe","ProcessGuid":"570E49AA-AECD-6A7C-2305-000000001400","ProcessId":"1220","RuleName":"-","TargetFilename":"C:\\Users\\frack113\\Desktop\\evil_batch‮fdp.bat","User":"SigmaCatchVm\\frack113","UtcTime":"2026-08-12 17:35:10.169"}}
+]}

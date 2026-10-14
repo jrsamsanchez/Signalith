@@ -1094,26 +1094,62 @@ func TestSessions(t *testing.T) {
 }
 
 func TestAgentTokens(t *testing.T) {
+	shared := "ingest:\n  tokens: [" + sentinelToken + "]\n"
+	legacy := func(l LegacyTokenFact) func(f *Facts) {
+		return func(f *Facts) {
+			f.AgentTokens = &AgentTokenFacts{Loaded: true, Active: 2, Legacy: []LegacyTokenFact{l}}
+		}
+	}
+	replaceFix := func(t *testing.T, c *Check) {
+		if c.Fix == nil || len(c.Fix.Steps) != 3 || c.Fix.Page == nil || c.Fix.Page.ID != "data" || c.Fix.Docs == nil || c.Fix.Docs.Anchor != "replace-a-shared-token" ||
+			c.Fix.Docs.Label != "Replace a shared token" || !strings.Contains(c.Fix.Steps[2], "Docker quick start, leave docker-compose.yml as it is") {
+			t.Errorf("%+v", c.Fix)
+		}
+	}
 	runCases(t, "accounts.agent_tokens", []checkCase{
 		{name: "none", state: ""},
-		{name: "good", extra: "ingest:\n  tokens: [" + sentinelToken + "]\n", state: Good, line: "Agents send with tokens of 24 characters or more.",
-			fix: func(t *testing.T, c *Check) {
-				if len(c.Details) != 1 {
+		{name: "none, read", set: func(f *Facts) { f.AgentTokens = &AgentTokenFacts{Loaded: true} }, state: ""},
+		{name: "own tokens only", set: func(f *Facts) { f.AgentTokens = &AgentTokenFacts{Loaded: true, Active: 3} }, state: Good,
+			line: "Each agent group sends with its own token (3 active)."},
+		// A refused shared token counts as retired: nobody needs to edit
+		// docker-compose.yml.
+		{name: "shared token refused", set: legacy(LegacyTokenFact{Length: 48, Refused: true, LastUsed: now}), state: Good,
+			line: "Each agent group sends with its own token (2 active).", fix: func(t *testing.T, c *Check) {
+				if len(c.Details) != 2 || !strings.Contains(c.Details[1], "no longer accepted") || !strings.Contains(c.Details[1], "Leaving it there is fine") {
 					t.Errorf("%q", c.Details)
 				}
 			}},
-		{name: "public", extra: "ingest:\n  tokens: [change-this-ingest-token]\n", state: Risk,
-			line: "Agents can send events with change-this-ingest-token, an example token anyone can look up.",
-			fix: func(t *testing.T, c *Check) {
-				if !strings.HasPrefix(c.Fix.Commands["linux"], "sudo signalith secrets set ingest.tokens"+tempConfigArg) {
-					t.Errorf("%q", c.Fix.Commands)
+		{name: "shared token in use", set: legacy(LegacyTokenFact{Length: 48, LastUsed: now.Add(-time.Hour)}), state: Attention,
+			line: "Some agents still send with a shared token.", fix: replaceFix},
+		{name: "shared token unused", set: legacy(LegacyTokenFact{Length: 48, LastUsed: now.Add(-8 * 24 * time.Hour)}), state: Attention,
+			line: "A shared agent token is still accepted, though no agent has used it in the last 7 days.", fix: replaceFix},
+		// The token a new Docker quick start makes, which no agent has:
+		// good, with a tip to stop accepting it.
+		{name: "shared token never used", set: legacy(LegacyTokenFact{Length: 48}), state: Good,
+			line: "No agent sends with a shared token, though one is still accepted.", fix: func(t *testing.T, c *Check) {
+				if c.Fix != nil || c.Tip == nil || c.Tip.Page == nil || c.Tip.Page.ID != "data" || c.Tip.Docs.Label != "Replace a shared token" {
+					t.Errorf("%+v %+v", c.Fix, c.Tip)
 				}
 			}},
+		{name: "shared token never used, new Docker quick start", set: func(f *Facts) {
+			f.Config = f.Config.WithDockerUpgrade(&config.DockerUpgrade{Decided: now})
+			f.InContainer, f.Docker = true, true
+			f.AgentTokens = &AgentTokenFacts{Loaded: true, Legacy: []LegacyTokenFact{{Length: 48, Source: "SIGNALITH_INGEST_TOKEN_FILE"}}}
+		}, state: Good, line: "No agent sends with a shared token, though one is still accepted."},
+		{name: "shared token never used, no agent token", set: func(f *Facts) {
+			f.AgentTokens = &AgentTokenFacts{Loaded: true, Legacy: []LegacyTokenFact{{Length: 48}}}
+		}, state: Attention, line: "A shared agent token is still accepted, though no agent has used it in the last 7 days."},
+		{name: "not read", set: func(f *Facts) { f.AgentTokens = &AgentTokenFacts{} }, state: Unknown, line: "Couldn't read the agent tokens from OpenSearch."},
+		{name: "not read, shared from the configuration", extra: shared, state: Attention,
+			line: "A shared agent token is accepted; how it was used couldn't be read from OpenSearch."},
+		{name: "public", extra: "ingest:\n  tokens: [change-this-ingest-token]\n", state: Risk,
+			line: "Agents can send events with change-this-ingest-token, an example token anyone can look up.", fix: replaceFix},
+		{name: "public refused", set: legacy(LegacyTokenFact{Public: true, Refused: true, Length: 24}), state: Good},
 		// A Docker quick start upgraded from a version whose agents send
 		// the old example token accepts it over plain HTTP while agents on
 		// plain HTTP are (see api.retiredTokenAccepted), whatever tokens
 		// are set.
-		{name: "public token accepted", extra: "ingest:\n  tokens: [" + sentinelToken + "]\n", set: func(f *Facts) {
+		{name: "public token accepted", extra: shared, set: func(f *Facts) {
 			f.Config = f.Config.WithDockerUpgrade(&config.DockerUpgrade{Upgraded: true, Index: "signalith-authentication-2026.09.30",
 				IndexMade: time.Date(2026, 9, 30, 0, 4, 0, 0, time.UTC), Decided: now})
 			f.InContainer, f.Docker, f.PublicTokenAccepted = true, true, true
@@ -1130,32 +1166,33 @@ func TestAgentTokens(t *testing.T) {
 		{name: "public token accepted, no tokens", set: func(f *Facts) { f.PublicTokenAccepted = true }, state: Risk},
 		// Elsewhere on the Docker quick start, the check says why the old
 		// token is refused.
-		{name: "quick start installed new", extra: "ingest:\n  tokens: [" + sentinelToken + "]\n", set: func(f *Facts) {
+		{name: "quick start installed new", set: func(f *Facts) {
 			f.Config = f.Config.WithDockerUpgrade(&config.DockerUpgrade{Decided: now})
 			f.InContainer, f.Docker = true, true
+			f.AgentTokens = &AgentTokenFacts{Loaded: true, Active: 1}
 		}, state: Good, fix: func(t *testing.T, c *Check) {
 			if len(c.Details) != 2 || !strings.Contains(c.Details[1], "change-this-ingest-token, is refused: this install started new") {
 				t.Errorf("%q", c.Details)
 			}
 		}},
-		{name: "quick start not decided yet", extra: "ingest:\n  tokens: [" + sentinelToken + "]\n", set: func(f *Facts) {
+		{name: "quick start not decided yet", extra: shared, set: func(f *Facts) {
 			f.Config = f.Config.WithDockerUpgrade(nil)
 			f.InContainer, f.Docker = true, true
-		}, state: Good, fix: func(t *testing.T, c *Check) {
+		}, state: Attention, fix: func(t *testing.T, c *Check) {
 			if len(c.Details) != 2 || !strings.Contains(c.Details[1], "is refused for now") || !strings.Contains(c.Details[1], "keep their events") {
 				t.Errorf("%q", c.Details)
 			}
 		}},
-		{name: "upgraded quick start, ended", extra: "ingest:\n  tokens: [" + sentinelToken + "]\n", set: func(f *Facts) {
+		{name: "upgraded quick start, ended", extra: shared, set: func(f *Facts) {
 			f.Config = f.Config.WithDockerUpgrade(&config.DockerUpgrade{Upgraded: true, Decided: now, Ended: time.Date(2026, 10, 2, 9, 0, 0, 0, time.UTC)})
 			f.InContainer, f.Docker = true, true
-		}, state: Good, fix: func(t *testing.T, c *Check) {
+		}, state: Attention, fix: func(t *testing.T, c *Check) {
 			if len(c.Details) != 2 || !strings.Contains(c.Details[1], "is refused for good") || !strings.Contains(c.Details[1], "since 2 Oct 2026") {
 				t.Errorf("%q", c.Details)
 			}
 		}},
 		{name: "short", extra: "ingest:\n  tokens: [SENTINEL-short-tok20]\n", state: Attention,
-			line: "An agent token is only 20 characters long, so it's easier to guess. Tokens Signalith makes have 48."},
+			line: "An agent token is only 20 characters long, so it's easier to guess. Tokens Signalith makes have 56."},
 	})
 }
 

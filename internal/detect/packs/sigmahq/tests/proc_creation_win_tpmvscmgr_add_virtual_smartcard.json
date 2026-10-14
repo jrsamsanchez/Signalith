@@ -1,0 +1,6 @@
+{"rule": "c633622e-cab9-4eaa-bb13-66a1d68b3e47", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"create","Image":"\\tpmvscmgr.exe","OriginalFileName":"TpmVscMgr.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\tpmvscmgr.exe","OriginalFileName":"TpmVscMgr.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"create","OriginalFileName":"TpmVscMgr.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"create","Image":"\\tpmvscmgr.exe"}}
+]}

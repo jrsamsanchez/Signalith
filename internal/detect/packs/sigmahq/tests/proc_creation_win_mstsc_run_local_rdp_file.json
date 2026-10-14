@@ -1,0 +1,6 @@
+{"rule": "5fdce3ac-e7f9-4ecd-a3aa-a4d78ebbf0af", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":".rdp\"","Image":"\\mstsc.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"C:\\ProgramData\\Microsoft\\WSL\\wslg.rdp .rdp\"","Image":"\\mstsc.exe","ParentImage":"C:\\Windows\\System32\\lxss\\wslhost.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\mstsc.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":".rdp\""}}
+]}

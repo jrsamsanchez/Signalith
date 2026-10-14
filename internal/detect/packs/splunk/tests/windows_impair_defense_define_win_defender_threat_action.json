@@ -1,0 +1,11 @@
+{"rule": "7215831c-8252-4ae3-8d43-db588e82f952", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Windows Defender\\Threats\\ThreatSeverityDefaultAction x"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"9","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Windows Defender\\Threats\\ThreatSeverityDefaultAction x"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Windows Defender\\Threats\\ThreatSeverityDefaultAction y"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"9","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Windows Defender\\Threats\\ThreatSeverityDefaultAction y"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)","EventType":"SetValue","ProcessId":"4242","TargetObject":"HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000002)","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Windows Defender\\Threats\\ThreatSeverityDefaultAction x"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Windows Defender\\Threats\\ThreatSeverityDefaultAction x"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"9","EventType":"SetValue","ProcessId":"4242","TargetObject":"HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"q","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Windows Defender\\Threats\\ThreatSeverityDefaultAction x"}}
+]}

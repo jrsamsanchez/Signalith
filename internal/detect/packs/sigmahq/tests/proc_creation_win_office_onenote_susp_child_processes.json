@@ -1,0 +1,17 @@
+{"rule": "c27515df-97a9-4162-8a60-dc0eeb51b775", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":".bat","Image":"\\explorer.exe","ParentImage":"\\onenote.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"wmic.exe","ParentImage":"\\onenote.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\Windows\\System32\\Tasks\\","ParentImage":"\\onenote.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":".bat -Embedding","Image":"\\AppData\\Local\\Microsoft\\OneDrive\\\\FileCoAuth.exe","ParentImage":"\\onenote.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":".bat -Embedding","Image":"\\AppData\\Local\\Microsoft\\Teams\\current\\Teams.exe","ParentImage":"\\onenote.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\explorer.exe","ParentImage":"\\onenote.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":".bat","ParentImage":"\\onenote.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":".bat","Image":"\\explorer.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"-Embedding","Image":"\\AppData\\Local\\Microsoft\\OneDrive\\ \\FileCoAuth.exe","OriginalFileName":"wmic.exe","ParentImage":"\\onenote.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"-Embedding","Image":"\\AppData\\Local\\Microsoft\\Teams\\current\\Teams.exe","OriginalFileName":"wmic.exe","ParentImage":"\\onenote.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"ParentImage":"\\onenote.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"wmic.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"-Embedding","Image":"\\AppData\\Local\\Microsoft\\OneDrive\\ \\Windows\\System32\\Tasks\\ \\FileCoAuth.exe","ParentImage":"\\onenote.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"-Embedding","Image":"\\Windows\\System32\\Tasks\\\\AppData\\Local\\Microsoft\\Teams\\current\\Teams.exe","ParentImage":"\\onenote.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\Windows\\System32\\Tasks\\"}}
+]}

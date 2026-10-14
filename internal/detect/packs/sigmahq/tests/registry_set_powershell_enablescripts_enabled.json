@@ -1,0 +1,5 @@
+{"rule": "8218c875-90b9-42e2-b60d-0b0069816d10", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)","TargetObject":"\\Policies\\Microsoft\\Windows\\PowerShell\\EnableScripts"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Policies\\Microsoft\\Windows\\PowerShell\\EnableScripts"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)"}}
+]}

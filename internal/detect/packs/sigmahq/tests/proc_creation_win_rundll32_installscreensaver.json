@@ -1,0 +1,5 @@
+{"rule": "15bd98ea-55f4-4d37-b09a-e7caa0fa2221", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"InstallScreenSaver","OriginalFileName":"RUNDLL32.EXE"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"RUNDLL32.EXE"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"InstallScreenSaver"}}
+]}

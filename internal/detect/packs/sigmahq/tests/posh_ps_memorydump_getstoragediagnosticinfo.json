@@ -1,0 +1,4 @@
+{"rule": "cd185561-4760-45d6-a63e-a51325112cae", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"-IncludeLiveDumpGet-StorageDiagnosticInfo"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}}
+]}

@@ -1,0 +1,5 @@
+{"rule": "8d85cf08-bf97-4260-ba49-986a2a65129c", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"x -noninteractive x","TargetObject":"\\Software\\Microsoft\\Windows\\CurrentVersion\\Run"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Software\\Microsoft\\Windows\\CurrentVersion\\Run"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"x -noninteractive x"}}
+]}

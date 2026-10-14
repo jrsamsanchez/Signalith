@@ -1,0 +1,7 @@
+{"rule": "8b700d7e-54ad-4d7d-81cc-1456c4703306", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Policies\\Microsoft\\AppHVSI\\AuditApplicationGuard"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Policies\\Microsoft\\AppHVSI\\AuditApplicationGuare"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)","EventType":"SetValue","ProcessId":"4242","TargetObject":"HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Policies\\Microsoft\\AppHVSI\\AuditApplicationGuard"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Policies\\Microsoft\\AppHVSI\\AuditApplicationGuard"}}
+]}

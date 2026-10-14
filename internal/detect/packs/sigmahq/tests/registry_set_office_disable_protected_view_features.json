@@ -1,0 +1,8 @@
+{"rule": "a5c7a43f-6009-4a8c-80c5-32abf1c53ecc", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)","TargetObject":"\\Security\\ProtectedView\\ \\SOFTWARE\\Microsoft\\Office\\ \\enableforeigntextfileprotectedview"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)","TargetObject":"\\SOFTWARE\\Microsoft\\Office\\ \\Security\\ProtectedView\\ \\DisableUnsafeLocationsInPV"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Security\\ProtectedView\\ \\SOFTWARE\\Microsoft\\Office\\ \\enableforeigntextfileprotectedview"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\SOFTWARE\\Microsoft\\Office\\ \\Security\\ProtectedView\\ \\DisableUnsafeLocationsInPV"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)"}}
+]}

@@ -26,6 +26,7 @@
 <symbol id="i-arrow-up-right" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></symbol>
 <symbol id="i-ban" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M4.929 4.929 19.07 19.071"/></symbol>
 <symbol id="i-bell" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/></symbol>
+<symbol id="i-bell-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M17 17H4a1 1 0 0 1-.74-1.673C4.59 13.956 6 12.499 6 8a6 6 0 0 1 .258-1.742"/><path d="m2 2 20 20"/><path d="M8.668 3.01A6 6 0 0 1 18 8c0 2.687.77 4.653 1.707 6.05"/></symbol>
 <symbol id="i-book-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v16"/><path d="M20.001 19A2 2 0 0022 17V5a2 2 0 00-1.999-2L16 3.002A5 5 0 0012 5a5 5 0 00-4-2H4a2 2 0 00-2 2v12a2 2 0 001.999 2H8a5 5 0 014 2 5 5 0 014-2z"/></symbol>
 <symbol id="i-bookmark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2 2 0 0 1 2 2v15a1 1 0 0 1-1.496.868l-4.512-2.578a2 2 0 0 0-1.984 0l-4.512 2.578A1 1 0 0 1 5 20V5a2 2 0 0 1 2-2z"/></symbol>
 <symbol id="i-box" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></symbol>
@@ -172,6 +173,7 @@
       <a class="nav__item" href="#findings" data-page="findings"><svg class="icon" aria-hidden="true"><use href="#i-shield-alert"/></svg><span>Findings</span><span id="open-count" class="nav__count hidden"></span></a>
       <a class="nav__item" href="#cases" data-page="cases"><svg class="icon" aria-hidden="true"><use href="#i-briefcase"/></svg><span>Investigations</span><span id="case-count" class="nav__count hidden"></span></a>
       <a class="nav__item" href="#risk" data-page="risk"><svg class="icon" aria-hidden="true"><use href="#i-gauge"/></svg><span>Risk</span></a>
+      <a class="nav__item" href="#approvals" data-page="approvals" data-min-role="analyst"><svg class="icon" aria-hidden="true"><use href="#i-user-check"/></svg><span>Approvals</span><span id="approval-count" class="nav__count hidden"></span></a>
     </div>
     <div class="nav__group" data-group="Hunt">
       <div class="nav__label">Hunt</div>
@@ -192,6 +194,7 @@
       <a class="nav__item" href="#notify" data-page="notify" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-bell"/></svg><span>Notifications</span></a>
       <a class="nav__item" href="#users" data-page="users" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-users"/></svg><span>Users</span></a>
       <a class="nav__item" href="#respond" data-page="respond" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-zap"/></svg><span>Response actions</span></a>
+      <a class="nav__item" href="#playbooks" data-page="playbooks" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-list-checks"/></svg><span>Playbooks</span></a>
       <a class="nav__item" href="#security" data-page="security" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-shield-check"/></svg><span>Security</span><span id="security-count" class="nav__count hidden" data-critical></span></a>
       <a class="nav__item" href="#health" data-page="health"><svg class="icon" aria-hidden="true"><use href="#i-activity"/></svg><span>Health</span></a>
       <a class="nav__item" href="#servers" data-page="servers" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-server"/></svg><span>Servers</span></a>
@@ -212,7 +215,7 @@
 <header class="topbar">
   <button class="btn btn--ghost btn--icon nav-toggle" type="button" id="nav-toggle" aria-label="Open navigation" aria-controls="sidebar" aria-expanded="false"><svg class="icon" aria-hidden="true"><use href="#i-menu"/></svg></button>
   <svg class="topbar__mark" viewBox="0 0 20 28" width="14.3" height="20" aria-hidden="true"><use href="#logo-mark"/></svg>
-  <div class="topbar__title"><span class="topbar__crumb" id="crumb-group">Hunt</span><span class="topbar__sep" aria-hidden="true">/</span><h1 id="crumb-page">Search</h1></div>
+  <div class="topbar__title"><span class="topbar__crumb" id="crumb-group"></span><span class="topbar__sep" aria-hidden="true">/</span><h1 id="crumb-page"></h1></div>
   <div class="topbar__actions">
     <button class="btn btn--ghost btn--icon theme-toggle" type="button" data-theme-toggle aria-label="Switch between light and dark theme" title="Switch theme"><svg class="icon when-light" aria-hidden="true"><use href="#i-moon"/></svg><svg class="icon when-dark" aria-hidden="true"><use href="#i-sun"/></svg></button>
     <details class="menu" id="user-menu">
@@ -236,7 +239,7 @@
        should know of, on every page (from api/health). -->
   <div class="cluster-banner hidden" id="cluster-banner" role="alert"></div>
   <!-- Search -->
-  <section id="page-search" class="page active">
+  <section id="page-search" class="page">
     <div class="search-layout">
       <div class="workspace">
         <div class="card query">
@@ -772,6 +775,7 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
     <div class="alert hidden" data-tone="info" id="d-scheduler-note"><svg class="icon" aria-hidden="true"><use href="#i-info"/></svg><div><b id="d-scheduler-title">The scheduler is off on this server.</b><p id="d-scheduler-text">Detections only run when you choose Run now.</p></div></div>
     <div class="split split--solo" id="d-split">
       <section class="queue" aria-label="Detection list">
+        <div class="dx-packs hidden" id="d-packs"></div>
         <div class="pills" id="d-show" role="group" aria-label="Show"></div>
         <div class="toolbar" role="search">
           <div class="input-wrap"><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg><input class="input" id="d-filter" type="search" placeholder="Filter by name, ATT&amp;CK ID or tag" aria-label="Filter detections" autocomplete="off" spellcheck="false"><kbd aria-hidden="true">/</kbd></div>
@@ -892,13 +896,19 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
                 <option value="darwin">macOS</option>
               </select>
             </label>
-            <label id="linux-opts" class="agent-opt"><span>Read from</span>
-              <select id="linux-source" class="select select--sm">
-                <option value="file">auth.log or secure</option>
-                <option value="journal">systemd journal</option>
-              </select>
-            </label>
-            <label id="windows-opts" class="switch hidden"><input type="checkbox" id="sysmon" checked> Include Sysmon</label>
+            <span id="linux-opts" class="agent-opts">
+              <label class="agent-opt"><span>Read from</span>
+                <select id="linux-source" class="select select--sm">
+                  <option value="file">auth.log or secure</option>
+                  <option value="journal">systemd journal</option>
+                </select>
+              </label>
+              <label class="switch" title="Process, network and file events from Sysmon for Linux, for the Linux endpoint detections"><input type="checkbox" id="sysmon-linux"> Include Sysmon for Linux</label>
+            </span>
+            <span id="windows-opts" class="agent-opts hidden">
+              <label class="switch"><input type="checkbox" id="sysmon" checked> Include Sysmon</label>
+              <label class="switch" title="PowerShell script blocks: the scripts that run, for the PowerShell detections"><input type="checkbox" id="powershell" checked> Include PowerShell</label>
+            </span>
           </div>
         </div>
         <div class="card__body" id="agent-body">
@@ -909,6 +919,17 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
             </div>
             <p id="agent-server-error" class="field-error hidden" role="alert"></p>
             <div id="agent-server-warn" class="alert hidden" data-tone="warning" role="status"></div>
+            <div class="agent-addr__row agent-token" id="agent-token-row">
+              <label class="label" for="agent-token-name" id="agent-token-label">Token for these agents</label>
+              <div class="agent-token__field">
+                <input id="agent-token-name" class="input input--sm" type="text" maxlength="64" autocomplete="off" spellcheck="false" aria-describedby="agent-token-error agent-token-help">
+                <input id="agent-token-paste" class="input input--sm mono hidden" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Paste the token" aria-describedby="agent-token-error agent-token-help">
+                <button class="link-btn agent-token__swap" type="button" id="agent-token-swap">Use a token I already have</button>
+              </div>
+            </div>
+            <p id="agent-token-error" class="field-error hidden" role="alert"></p>
+            <p id="agent-token-help" class="hint agent-token__help">Each group of agents gets its own token, so you can revoke one group without touching the others.</p>
+            <div id="agent-token-made" class="alert hidden" data-tone="success" role="status"></div>
           </div>
           <ol id="agent-steps" class="agent-steps" role="list" aria-busy="true"></ol>
           <p id="wazuh-note" class="hint hidden"><svg class="icon" aria-hidden="true"><use href="#i-info"/></svg><span>Rather not install anything on the manager? It can send alerts itself: add a <code>&lt;syslog_output&gt;</code> block with <code>&lt;format&gt;json&lt;/format&gt;</code> to its <code>ossec.conf</code>, pointed at this server’s <a href="#data" id="wazuh-syslog">syslog address</a>.</span></p>
@@ -954,6 +975,19 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
           </div>
         </div>
         <div class="card__body" id="antivirus-body" aria-busy="true"></div>
+      </div>
+
+      <div class="card tokens-card" id="tokens-card" data-min-role="admin">
+        <div class="card__head tokens-card__head">
+          <div>
+            <h3 class="card__title" id="tokens-title">Agent tokens</h3>
+            <p class="card__sub">Agents prove who they are with these. Each event records the token it came with and the address that sent it.</p>
+          </div>
+          <div class="card__actions">
+            <button class="btn btn--primary btn--sm" type="button" id="tokens-new"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg><span>New token</span></button>
+          </div>
+        </div>
+        <div class="tokens-card__body" id="tokens-body" aria-busy="true" aria-labelledby="tokens-title"></div>
       </div>
     </div>
     <p class="sr-only" id="agent-status" role="status"></p>
@@ -1015,6 +1049,33 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
       </div>
     </div>
     <div id="rp-body"></div>
+  </section>
+
+  <!-- Playbooks (admins) -->
+  <section id="page-playbooks" class="page">
+    <div class="page-head">
+      <div>
+        <h2 class="page-head__title">Playbooks</h2>
+        <p class="page-head__desc">Steps that run on their own when a finding fires: notify the team, run a response action once an analyst approves, open a case.</p>
+      </div>
+      <div class="page-head__actions">
+        <button id="pb-add" class="btn btn--primary hidden" type="button"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>Add playbook</button>
+      </div>
+    </div>
+    <div id="pb-page" class="pb-page" aria-busy="true"></div>
+    <dialog id="pb-dialog" class="modal pb-dialog" aria-labelledby="pb-dialog-title"></dialog>
+    <dialog id="pb-confirm" class="modal" aria-labelledby="pb-confirm-title" aria-describedby="pb-confirm-desc"></dialog>
+  </section>
+
+  <!-- Approvals (analysts) -->
+  <section id="page-approvals" class="page">
+    <div class="page-head">
+      <div>
+        <h2 class="page-head__title">Approvals</h2>
+        <p class="page-head__desc">Playbook steps that wait for an analyst before they run. Nothing happens until someone approves, and a step nobody approves within a day expires.</p>
+      </div>
+    </div>
+    <div id="ap-page" class="ap-page" aria-busy="true"></div>
   </section>
 
   <!-- Users (admins) -->
@@ -1386,11 +1447,13 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
 <script src="respond.js"></script>
 <script src="users.js"></script>
 <script src="notify.js"></script>
+<script src="playbooks.js"></script>
 <script src="retention.js"></script>
 <script src="sample.js"></script>
 <script src="settings.js"></script>
 <script src="servers.js"></script>
 <script src="security.js"></script>
 <script src="endpoints.js"></script>
+<script src="tokens.js"></script>
 </body>
 </html>

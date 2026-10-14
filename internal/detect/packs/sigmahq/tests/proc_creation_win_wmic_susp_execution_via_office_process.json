@@ -1,0 +1,6 @@
+{"rule": "e1693bc8-7168-4eab-8718-cdcaa68a1738", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"processregsvr32createcall","OriginalFileName":"wmic.exe","ParentImage":"\\WINWORD.EXE"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"wmic.exe","ParentImage":"\\WINWORD.EXE"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"processregsvr32createcall","ParentImage":"\\WINWORD.EXE"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"processregsvr32createcall","OriginalFileName":"wmic.exe"}}
+]}

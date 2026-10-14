@@ -437,11 +437,8 @@ func TestInitWritesEncryptedValues(t *testing.T) {
 	if !strings.Contains(out, "Master key:  "+filepath.Join(filepath.Dir(path), "keys")) || !strings.Contains(out, "Back it up") {
 		t.Errorf("init output:\n%s", out)
 	}
-	data, _ := os.ReadFile(path)
-	if !regexp.MustCompile(`tokens:\n\s+- enc:v1:`).Match(data) {
-		t.Errorf("the ingest token is not encrypted:\n%s", data)
-	}
-	if c, err := config.Load(path); err != nil || len(c.Ingest.Tokens[0]) < 16 || len(c.PlainSecrets()) != 0 {
+	// No shared agent token: Add data gives each agent its own.
+	if c, err := config.Load(path); err != nil || len(c.Ingest.Tokens) != 0 || len(c.PlainSecrets()) != 0 {
 		t.Errorf("load: %v", err)
 	}
 }

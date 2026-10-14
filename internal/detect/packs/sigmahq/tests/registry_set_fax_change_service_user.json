@@ -1,0 +1,5 @@
+{"rule": "e3fdf743-f05b-4051-990a-b66919be1743", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"HKLM\\System\\CurrentControlSet\\Services\\Fax\\ObjectName"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"NetworkService","TargetObject":"HKLM\\System\\CurrentControlSet\\Services\\Fax\\ObjectName"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}}
+]}

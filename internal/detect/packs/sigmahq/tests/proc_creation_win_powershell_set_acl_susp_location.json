@@ -1,0 +1,5 @@
+{"rule": "0944e002-e3f6-4eb5-bf69-3a3067b53d73", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"-Path 'C:\\Windows Set-Acl  Allow -AclObject x","Image":"\\powershell.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\powershell.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"-Path 'C:\\Windows Set-Acl  Allow -AclObject x"}}
+]}

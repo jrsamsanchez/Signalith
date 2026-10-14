@@ -1,0 +1,4 @@
+{"rule": "4916a35e-bfc4-47d0-8e25-a003d7067061", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Services\\\\Instances\\Sysmon Instance\\Altitude"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}}
+]}

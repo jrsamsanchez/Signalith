@@ -1,0 +1,5 @@
+{"rule": "25ffa65d-76d8-4da5-a832-3f2b0136e133", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\EulaAccepted"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)","EventType":"SetValue","Image":"C:\\Users\\Administrator\\Downloads\\PsService.exe","ProcessGuid":"5AA13A44-6465-68FD-EF3E-000000004002","ProcessId":"7500","RuleName":"-","TargetObject":"HKU\\S-1-5-21-3960063115-309473240-3247002503-500\\Software\\Sysinternals\\PsService\\EulaAccepted","User":"ATTACKRANGE\\Administrator","UtcTime":"2025-10-25 23:59:35.300"}}
+]}

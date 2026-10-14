@@ -1,0 +1,10 @@
+{"rule": "30e92f50-bb5a-4884-98b5-d20aa80f3d7a", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"powershell .lnk","Image":"C:\\Windows\\System32\\cmd.exe","ParentImage":"C:\\Windows\\explorer.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"powershell .lnk","NewProcessName":"C:\\Windows\\System32\\cmd.exe","ParentProcessName":"C:\\Windows\\explorer.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"C:\\Windows\\System32\\cmd.exe","ParentImage":"C:\\Windows\\explorer.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"C:\\Windows\\System32\\cmd.exe","ParentProcessName":"C:\\Windows\\explorer.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"powershell .lnk","ParentImage":"C:\\Windows\\explorer.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"powershell .lnk","ParentProcessName":"C:\\Windows\\explorer.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"powershell .lnk","Image":"C:\\Windows\\System32\\cmd.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"powershell .lnk","NewProcessName":"C:\\Windows\\System32\\cmd.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

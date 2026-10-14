@@ -1,0 +1,10 @@
+{"rule": "797011dc-44f4-4e6f-9f10-a8ceefbe566b", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"ParentImage":"\\EdgeTransport.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"ParentProcessName":"\\EdgeTransport.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"C:\\Windows\\System32\\conhost.exe","ParentImage":"\\EdgeTransport.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"C:\\Windows\\System32\\conhost.exe","ParentProcessName":"\\EdgeTransport.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"C:\\Program Files\\Microsoft\\Exchange Server\\ \\Bin\\OleConverter.exe","ParentImage":"\\EdgeTransport.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"C:\\Program Files\\Microsoft\\Exchange Server\\ \\Bin\\OleConverter.exe","ParentProcessName":"\\EdgeTransport.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

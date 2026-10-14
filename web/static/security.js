@@ -423,7 +423,7 @@
     }
     const act = caButton(c, fix, kind);
     if (act) acts.push(act);
-    if (fix.docs && fix.docs.url) acts.push(docLink(fix.docs.url));
+    if (fix.docs && fix.docs.url) acts.push(docLink(fix.docs.url, fix.docs.label || undefined));
     return acts.length ? el('div', { class: 'sc-actions' }, ...acts) : null;
   }
 

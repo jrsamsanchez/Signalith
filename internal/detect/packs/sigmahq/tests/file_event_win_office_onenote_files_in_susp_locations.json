@@ -1,0 +1,5 @@
+{"rule": "7fd164ba-126a-4d9c-9392-0d4f7c243df0", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":":\\Temp\\.onepkg"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":":\\Program Files\\Microsoft Office\\ \\ONENOTE.EXE","TargetFilename":":\\Temp\\ .onepkg"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{}}
+]}

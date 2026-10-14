@@ -1,0 +1,4 @@
+{"rule": "fec96f39-988b-4586-b746-b93d59fd1922", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"\\Bin\\ScreenConnect."}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{}}
+]}

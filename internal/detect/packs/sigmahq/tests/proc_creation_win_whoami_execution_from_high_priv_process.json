@@ -1,0 +1,5 @@
+{"rule": "79ce34ca-af29-4d0e-b832-fc1b377020db", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\whoami.exe","User":"TrustedInstaller"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"User":"TrustedInstaller"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\whoami.exe"}}
+]}

@@ -1,0 +1,7 @@
+{"rule": "fc4f4817-0c53-4683-a4ee-b17a64bc1039", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\svchost.exe","TargetFilename":"\\Personalization\\LockScreenImage\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\svchost.exe","TargetFilename":"\\Personalization\\LockScreenImage\\C:\\Windows\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\svchost.exe","TargetFilename":"\\Personalization\\LockScreenImage\\.png"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"\\Personalization\\LockScreenImage\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\svchost.exe"}}
+]}

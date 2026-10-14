@@ -1,0 +1,6 @@
+{"rule": "674202d0-b22a-4af4-ae5f-2eda1f3da1af", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"_Classes\\mscfile\\shell\\open\\command\\(Default)"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"%SystemRoot%\\system32\\mmc.exe \"%1\" %","TargetObject":"_Classes\\mscfile\\shell\\open\\command\\(Default)"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"C:\\Windows\\System32\\cmd.exe","EventType":"SetValue","Image":"C:\\Windows\\system32\\reg.exe","ProcessGuid":"5AA13A44-5DCA-68FE-8B55-000000004002","ProcessId":"9920","RuleName":"-","TargetObject":"HKU\\S-1-5-21-3960063115-309473240-3247002503-500_Classes\\mscfile\\shell\\open\\command\\(Default)","User":"ATTACKRANGE\\Administrator","UtcTime":"2025-10-26 17:43:38.715"}}
+]}

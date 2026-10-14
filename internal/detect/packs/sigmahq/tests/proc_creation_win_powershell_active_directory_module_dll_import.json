@@ -1,0 +1,5 @@
+{"rule": "70bc5215-526f-4477-963c-a47a5c9ebd12", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"Import-Module  Microsoft.ActiveDirectory.Management.dll","OriginalFileName":"PowerShell.EXE"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"PowerShell.EXE"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"Import-Module  Microsoft.ActiveDirectory.Management.dll"}}
+]}

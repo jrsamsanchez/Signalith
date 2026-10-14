@@ -1,0 +1,9 @@
+{"rule": "612e47e9-8a59-43a6-b404-f48683f45bd6", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"ControlSet \\Services\\ \\System\\ \\Parameters\\ServiceDll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"%%systemroot%%\\system32\\ntdsa.dll","Image":"C:\\Windows\\system32\\lsass.exe","TargetObject":"ControlSet \\Services\\ \\System\\ \\Services\\NTDS\\Parameters\\ServiceDll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Image":"C:\\Windows\\System32\\poqexec.exe","TargetObject":"\\Services\\ControlSet\\System\\\\Parameters\\ServiceDll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"C:\\Windows\\system32\\spool\\drivers\\x64\\3\\PrintConfig.dll","TargetObject":"ControlSet\\Services\\\\System\\\\Parameters\\ServiceDll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"C:\\WINDOWS\\System32\\DriverStore\\FileRepository\\ \\arm64\\PrintConfig.dll","Image":"\\regsvr32.exe","TargetObject":"\\System\\ \\Services\\ ControlSet \\Services\\PrintNotify\\Parameters\\ServiceDll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"C:\\Windows\\System32\\STAgent.dll","Image":"\\regsvr32.exe","TargetObject":"\\System\\ ControlSet \\Services\\ \\Parameters\\ServiceDll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}}
+]}

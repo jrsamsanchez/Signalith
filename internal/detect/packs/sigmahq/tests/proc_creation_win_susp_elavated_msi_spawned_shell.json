@@ -1,0 +1,5 @@
+{"rule": "1e53dd56-8d83-4eb4-a43e-b790a05510aa", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"Cmd.Exe","ParentImage":"msi\\Windows\\Installer\\tmp"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"ParentImage":"msi\\Windows\\Installer\\tmp"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"Cmd.Exe"}}
+]}

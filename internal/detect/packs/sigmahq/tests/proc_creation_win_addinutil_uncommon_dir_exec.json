@@ -1,0 +1,5 @@
+{"rule": "6120ac2a-a34b-42c0-a9bd-1fb9f459f348", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"AddInUtil.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":":\\Windows\\Microsoft.NET\\Framework64\\","OriginalFileName":"AddInUtil.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{}}
+]}

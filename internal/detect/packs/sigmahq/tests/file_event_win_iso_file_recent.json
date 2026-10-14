@@ -1,0 +1,4 @@
+{"rule": "4358e5a5-7542-4dcb-b9f3-87667371839b", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"\\Microsoft\\Windows\\Recent\\ .vhdx.lnk"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{}}
+]}

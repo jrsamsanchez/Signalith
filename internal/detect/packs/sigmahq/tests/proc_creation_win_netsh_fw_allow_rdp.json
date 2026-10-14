@@ -1,0 +1,5 @@
+{"rule": "01aeb693-138d-49d2-9403-c4f52d7d3d62", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"firewall add 3389allowtcp x","Image":"\\netsh.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\netsh.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"firewall add 3389allowtcp x"}}
+]}

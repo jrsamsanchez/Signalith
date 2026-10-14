@@ -1,0 +1,5 @@
+{"rule": "e7a2fd40-3ae1-4a85-bf80-15cf624fb1b1", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Software\\Policies\\Microsoft\\Windows\\System\\Scripts\\Shutdown"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"(Empty)","TargetObject":"\\Software\\Policies\\Microsoft\\Windows\\System\\Scripts\\Shutdown"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}}
+]}

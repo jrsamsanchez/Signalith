@@ -1,0 +1,5 @@
+{"rule": "6597be7b-ac61-4ac8-bef4-d3ec88174853", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"c:\\users\\ \\appdata\\local\\temp\\system32\\winsat.exe","TargetObject":"\\Root\\InventoryApplicationFile\\winsat.exe| \\LowerCaseLongPath"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Root\\InventoryApplicationFile\\winsat.exe| \\LowerCaseLongPath"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"c:\\users\\ \\appdata\\local\\temp\\system32\\winsat.exe"}}
+]}

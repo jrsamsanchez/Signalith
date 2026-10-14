@@ -1,0 +1,6 @@
+{"rule": "70e8e9b4-6a93-4cb7-8cde-da69502e7aff", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"\\Windows\\System32\\wbem\\WmiApSrv.exe","ImageLoaded":"\\vmGuestLib.dll\\VMware\\VMware Tools\\vmStatsProvider\\win32"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"\\Windows\\System32\\wbem\\WmiApSrv.exe","ImageLoaded":"\\VMware\\VMware Tools\\vmStatsProvider\\win32\\vmGuestLib.dll","Signed":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"\\vmGuestLib.dll\\VMware\\VMware Tools\\vmStatsProvider\\win32"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"\\Windows\\System32\\wbem\\WmiApSrv.exe"}}
+]}

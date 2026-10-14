@@ -1,0 +1,6 @@
+{"rule": "1070db9a-3e5d-412e-8e7b-7183b616e1b3", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"C:\\windows\\system32\\cmd.exe C:\\windows\\system32\\sethc.execopy /y x"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"C:\\windows\\system32\\cmd.exe C:\\windows\\system32\\sethc.execopy /y x","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

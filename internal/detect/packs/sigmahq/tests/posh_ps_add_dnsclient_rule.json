@@ -1,0 +1,4 @@
+{"rule": "4368354e-1797-463c-bc39-a309effbe8d7", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"-NameSeAdd-DnsClientNrptRule-Namesp"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}}
+]}

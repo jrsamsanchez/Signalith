@@ -1,0 +1,4 @@
+{"rule": "f5d1def8-1de0-4a0e-9794-1f6f27dd605c", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"Win32_QuickFixEngineering HotFixID"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}}
+]}

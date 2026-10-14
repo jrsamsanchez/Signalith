@@ -23,9 +23,11 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
+	"github.com/jrsamsanchez/signalith/internal/agenttokens"
 	"github.com/jrsamsanchez/signalith/internal/api"
 	"github.com/jrsamsanchez/signalith/internal/assets"
 	"github.com/jrsamsanchez/signalith/internal/assistant"
@@ -33,6 +35,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/cases"
 	"github.com/jrsamsanchez/signalith/internal/cluster"
 	"github.com/jrsamsanchez/signalith/internal/config"
+	"github.com/jrsamsanchez/signalith/internal/content"
 	"github.com/jrsamsanchez/signalith/internal/dashboards"
 	"github.com/jrsamsanchez/signalith/internal/detect"
 	"github.com/jrsamsanchez/signalith/internal/endpoint"
@@ -41,6 +44,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/intel"
 	"github.com/jrsamsanchez/signalith/internal/nlq"
 	"github.com/jrsamsanchez/signalith/internal/notify"
+	"github.com/jrsamsanchez/signalith/internal/playbooks"
 	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/redact"
 	"github.com/jrsamsanchez/signalith/internal/respond"
@@ -75,7 +79,9 @@ Usage:
   signalith ask       [-c file] [-ai] "<question>"     turn a question into a query
   signalith archive   list|verify|restore [-c file] ...  list, check or restore archived days
   signalith sample-data load|remove|status [-c file] [-size ...]  load or remove a week of sample data to try
+  signalith tokens    list|create|rename|revoke|legacy [-c file] ...  the tokens agents send with
   signalith secrets   status|encrypt|set|rotate-master [-c file] ...  the master key and stored passwords
+  signalith content   status|install|remove [-c file] ...  content pack updates (newer tested rules)
   signalith security  [-c file] [-json]   print the security report (exit 2 when something is at risk)
   signalith service   install|uninstall|start|stop     manage the Windows service
   signalith opensearch-certs -out DIR [-node name] [-san name]   certificates to secure your own OpenSearch
@@ -140,8 +146,12 @@ func main() {
 		err = cmdArchive(args)
 	case "sample-data":
 		err = cmdSampleData(args)
+	case "tokens":
+		err = cmdTokens(args)
 	case "secrets":
 		err = cmdSecrets(args)
+	case "content":
+		err = cmdContent(args)
 	case "security":
 		err = cmdSecurity(args)
 	case "version", "-v", "--version":
@@ -208,7 +218,8 @@ func cmdInit(args []string) error {
 		return err
 	}
 	c.Auth.AdminPasswordHash = h
-	c.Ingest.Tokens = []string{config.RandomToken(24)}
+	// No shared agent token: Add data gives each agent its own (see
+	// internal/agenttokens).
 	if err := c.Validate(); err != nil {
 		return err
 	}
@@ -238,7 +249,11 @@ func cmdInit(args []string) error {
 	if s := syslogSummary(c); s != "" {
 		fmt.Printf("  Syslog:      %s\n", s)
 	}
-	// Save encrypted the ingest token, so there is a master key now.
+	// Make the master key now (sealing a value makes one when there is
+	// none), so init can say where it is and to back it up.
+	if _, err := c.Keyring().Seal("init", "make the master key"); err != nil {
+		return fmt.Errorf("making the master key: %w", err)
+	}
 	if src, err := c.Keyring().Source(); err == nil {
 		fmt.Printf("  Master key:  %s\n", src)
 		if src.Created {
@@ -452,6 +467,17 @@ func cmdValidate(args []string) error {
 			}
 		}
 		fmt.Printf("%d notification channels and %d rules (%d on), set on the Notifications page.\n", len(s.Channels), len(s.Rules), on)
+	}
+	if list, err := (&playbooks.Manager{File: c.PlaybooksFile()}).List(); err != nil {
+		fmt.Println("Warning:", err)
+	} else if len(list) > 0 {
+		on := 0
+		for _, p := range list {
+			if p.Enabled {
+				on++
+			}
+		}
+		fmt.Printf("%d playbooks (%d on), set on the Playbooks page.\n", len(list), on)
 	}
 	if s := syslogSummary(c); s != "" {
 		allow := "any sender"
@@ -1015,10 +1041,15 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	if err := feeds.Load(); err != nil {
 		log.Error("threat intel feeds added on the Threat intel page cannot be used until the file is fixed", "err", err)
 	}
+	// A content update installed earlier goes into use before the
+	// detections load.
+	updater := &content.Updater{Dir: filepath.Join(c.DetectionsDir(), "content"), Log: log}
+	updater.Start()
 	lib, problems, err := detect.NewLibrary(c.DetectionsDir())
 	if err != nil {
 		return nil, err
 	}
+	updater.Library = lib
 	for _, p := range problems {
 		// One bad file should not stop the SIEM; it is skipped and reported.
 		log.Error("detection skipped", "err", p)
@@ -1128,10 +1159,42 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		responder.Protected = []string{p}
 	}
 	ensureScriptsDir(c.ResponseScriptsDir(), log)
+	// Playbooks: set on the Playbooks page, run by the server that runs
+	// the background jobs; each run is claimed in <prefix>_playbook_runs.
+	pbooks := &playbooks.Manager{File: c.PlaybooksFile()}
+	if err := pbooks.Load(); err != nil {
+		log.Error("playbooks do not start until the playbooks file is fixed", "err", err)
+	}
+	pruns := playbooks.NewOpenSearch(cl, c.OpenSearch.IndexPrefix)
 	// Sessions and the failed sign-in limits carry over a restart.
 	r.sessions.SetIdle(c.SessionIdle())
+	// Agent tokens: one per agent or group, kept in the runtime index so
+	// every server that shares this OpenSearch accepts the same ones and
+	// refuses a revoked one within seconds. Revoking one removes the
+	// osquery hosts enrolled with it.
+	tokens := &agenttokens.Registry{Client: cl, Prefix: c.OpenSearch.IndexPrefix, Log: log, Node: func() string { return sampleNode }}
+	tokens.OnRevoke(estore.RevokeToken)
+	// The shared tokens come from the configuration in use, which the
+	// server holds once it exists; set before the first load so that load
+	// and the server never race to set it.
+	var tokenSrv atomic.Pointer[api.Server]
+	tokens.Legacy = func() []agenttokens.Legacy {
+		if s := tokenSrv.Load(); s != nil {
+			return api.LegacyTokens(s.Running())
+		}
+		return api.LegacyTokens(c)
+	}
+	{
+		lctx, lcancel := context.WithTimeout(ctx, 5*time.Second)
+		if err := tokens.Load(lctx); err != nil {
+			log.Warn("agent tokens could not be read from OpenSearch yet; agents that send with one are asked to send again until they are", "err", err)
+		}
+		lcancel()
+	}
+	in.jobs.Go(func() { tokens.Run(ctx) })
 	srv := &api.Server{
 		Config:     c,
+		Tokens:     tokens,
 		Engine:     eng,
 		Pipeline:   pipeline,
 		Syslog:     receiver,
@@ -1146,8 +1209,10 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		Dashboards: boards,
 		Cases:      cstore,
 		Respond:    responder,
+		Playbooks:  &api.Playbooks{Manager: pbooks, Runs: pruns},
 		Retention:  ret,
 		Sample:     sampleLoader,
+		Content:    updater,
 		Endpoints:  estore,
 		Background: r.backgroundContext(parent),
 		Assistant:  newAssistant(c),
@@ -1164,12 +1229,18 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		Version:    version,
 	}
 	srv.KnownBrowsers = r.browsers
+	in.jobs.Go(func() { srv.RunContentUpdates(ctx) })
+	pbRunner := &playbooks.Runner{
+		Playbooks: pbooks, Findings: fstore, Runs: pruns, Desk: srv.PlaybookDesk(), Respond: responder,
+		Notify: notes, Sender: senders, Server: sampleServer, Log: log,
+		PublicURL: func() string { return c.Server.PublicURL },
+	}
 	// Every server makes the indices it uses when they are missing; the
 	// indicesReady channel is closed once it has tried, and the flags say
 	// which ones are there. Changes to existing indices and the background
 	// jobs are for the one server that runs those.
 	indicesReady := make(chan struct{})
-	var intelOK, casesOK, findingsOK, notifyOK bool
+	var intelOK, casesOK, findingsOK, notifyOK, playbooksOK bool
 	in.jobs.Go(func() {
 		if !ensureTemplate(ctx, cl, c, log) {
 			return
@@ -1201,6 +1272,11 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		}
 		if err := astore.EnsureIndex(ctx); err != nil {
 			log.Error("could not create the response actions index; response actions will not run", "index", astore.Index, "err", err)
+		}
+		if err := pruns.EnsureIndex(ctx); err != nil {
+			log.Error("could not create the playbook runs index; playbooks will not run", "index", pruns.Index, "err", err)
+		} else {
+			playbooksOK = true
 		}
 		close(indicesReady)
 	})
@@ -1249,6 +1325,15 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			log.Info("notifications will be sent for new findings that match a rule", "file", c.NotifyFile())
 			dispatcher.Run(ctx)
 		}},
+		{Name: "playbooks", Run: func(ctx context.Context) {
+			if !ready(ctx) || !playbooksOK || !findingsOK {
+				return
+			}
+			// Playbooks can be added on the page at any time, so the
+			// runner runs even with none yet.
+			log.Info("playbooks will run for new findings that match them", "file", c.PlaybooksFile())
+			pbRunner.Run(ctx)
+		}},
 		// Retention keeps running while OpenSearch refuses writes (its
 		// disk is full): its disk guard is what frees space.
 		{Name: "retention", Emergency: true, Run: func(ctx context.Context) {
@@ -1261,7 +1346,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		in.jobsList = watchJobs(in.jobsList, c, hook)
 	}
 	if !c.Detections.Scheduler {
-		log.Warn("detections.scheduler is off, so this server never runs detections, threat intel downloads, notifications or retention; " +
+		log.Warn("detections.scheduler is off, so this server never runs detections, threat intel downloads, notifications, playbooks or retention; " +
 			"another server that shares its OpenSearch does. The Data retention and feed settings are read-only here")
 	}
 	if r.node != nil {
@@ -1270,10 +1355,11 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		// The scheduler, the feeds and the notifications ask before each
 		// run, download or message, so a server that lost the job lease
 		// stops at once, even before its jobs' context ends.
-		sched.Allowed, feeds.Allowed, dispatcher.Allowed = r.node.RunsJobs, r.node.RunsJobs, r.node.RunsJobs
+		sched.Allowed, feeds.Allowed, dispatcher.Allowed, pbRunner.Allowed = r.node.RunsJobs, r.node.RunsJobs, r.node.RunsJobs, r.node.RunsJobs
 		srv.Cluster = r.node
 		in.node = r.node
 	}
+	tokenSrv.Store(srv)
 	in.srv, in.handler = srv, srv.Handler()
 	// The example ingest token of an older Docker quick start: decide
 	// whether this one was upgraded if that is still open, and end it for
@@ -1292,7 +1378,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		r.node.Use(cl, c.OpenSearch.IndexPrefix, cluster.Settings{
 			Eligible: c.Detections.Scheduler, NodeURL: nodeURL(c), Listen: c.Server.Listen,
 			Syslog:       cluster.Syslog{UDP: c.Syslog.UDP, TCP: c.Syslog.TCP, TLS: c.Syslog.TLS},
-			Fingerprints: func() cluster.Fingerprints { return filesFingerprints(c, ret, feeds, notes) },
+			Fingerprints: func() cluster.Fingerprints { return filesFingerprints(c, ret, feeds, notes, pbooks) },
 		})
 		// A server with detections.scheduler off never runs the jobs. It
 		// may still hold the lease from before a restart in place, which
@@ -1349,11 +1435,12 @@ func upgradeIndices(ctx context.Context, log *slog.Logger, allowed func() bool, 
 
 // filesFingerprints hashes this server's own files that the background
 // jobs use: retention policies, feeds, custom detections, notification
-// channels and rules and, while a policy archives, the archives. A server
-// whose files differ from those of the server that runs the jobs does not
-// take them over by itself.
-func filesFingerprints(c *config.Config, ret *retention.Manager, feeds *intel.Feeds, notes *notify.Manager) cluster.Fingerprints {
-	fp := cluster.Fingerprints{Feeds: feeds.Fingerprint(), Detections: detectionsFingerprint(c.DetectionsDir()), Notify: notes.Fingerprint()}
+// channels and rules, playbooks and, while a policy archives, the
+// archives. A server whose files differ from those of the server that
+// runs the jobs does not take them over by itself.
+func filesFingerprints(c *config.Config, ret *retention.Manager, feeds *intel.Feeds, notes *notify.Manager, pbooks *playbooks.Manager) cluster.Fingerprints {
+	fp := cluster.Fingerprints{Feeds: feeds.Fingerprint(), Detections: detectionsFingerprint(c.DetectionsDir()), Notify: notes.Fingerprint(),
+		Playbooks: pbooks.Fingerprint()}
 	fp.Retention, fp.Archives = ret.Fingerprint()
 	return fp
 }
@@ -1368,9 +1455,15 @@ func detectionsFingerprint(dir string) string {
 	if err != nil {
 		return cluster.Hash([]byte(err.Error()))
 	}
+	// The on and off choices for built-in and pack rules count too.
+	states, err := filepath.Glob(filepath.Join(dir, detect.StateDir, "*.yaml"))
+	if err != nil {
+		return cluster.Hash([]byte(err.Error()))
+	}
 	sort.Strings(files)
+	sort.Strings(states)
 	var parts [][]byte
-	for _, f := range files {
+	for _, f := range append(files, states...) {
 		b, err := os.ReadFile(f)
 		if err != nil {
 			b = []byte("unreadable: " + err.Error())
@@ -1380,7 +1473,11 @@ func detectionsFingerprint(dir string) string {
 		// them.
 		b = bytes.TrimPrefix(b, []byte("\ufeff"))
 		b = bytes.ReplaceAll(b, []byte("\r\n"), []byte("\n"))
-		parts = append(parts, []byte(filepath.Base(f)), b)
+		name := filepath.Base(f)
+		if filepath.Base(filepath.Dir(f)) == detect.StateDir {
+			name = detect.StateDir + "/" + name
+		}
+		parts = append(parts, []byte(name), b)
 	}
 	return cluster.Hash(parts...)
 }
@@ -1682,9 +1779,8 @@ func feedEndpointAssets(ctx context.Context, es *endpoint.Store, lists *assets.S
 // ensureTemplate installs the index template, retrying until OpenSearch is up.
 // It reports false if ctx ended first.
 func ensureTemplate(ctx context.Context, cl *store.Client, c *config.Config, log *slog.Logger) bool {
-	tmpl := ingest.IndexTemplate(c.OpenSearch.IndexPrefix, c.OpenSearch.Replicas)
 	for {
-		err := cl.PutIndexTemplate(ctx, c.OpenSearch.IndexPrefix, tmpl)
+		err := ingest.PutIndexTemplate(ctx, cl, c.OpenSearch.IndexPrefix, c.OpenSearch.Replicas)
 		if err == nil {
 			log.Info("opensearch index template ready", "url", redact.URL(c.OpenSearch.URL))
 			return true

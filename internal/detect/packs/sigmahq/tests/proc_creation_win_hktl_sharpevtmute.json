@@ -1,0 +1,4 @@
+{"rule": "bedfc8ad-d1c7-4e37-a20e-e2b0dbee759c", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"--Filter \"rule x"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{}}
+]}

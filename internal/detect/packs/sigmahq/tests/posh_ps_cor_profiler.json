@@ -1,0 +1,4 @@
+{"rule": "23590215-4702-4a70-8805-8dc9e58314a2", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"$env:COR_ENABLE_PROFILING$env:COR_PROFILER_PATH$env:COR_PROFILER"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}}
+]}

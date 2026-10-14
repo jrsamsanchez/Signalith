@@ -1,0 +1,5 @@
+{"rule": "31e124fb-5dc4-42a0-83b3-44a69c77b271", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)","TargetObject":"\\FilterManager\\FltmgrDevDriveAllowAntivirusFilter"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\FilterManager\\FltmgrDevDriveAllowAntivirusFilter"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)"}}
+]}

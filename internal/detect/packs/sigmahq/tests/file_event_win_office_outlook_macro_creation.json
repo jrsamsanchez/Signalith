@@ -1,0 +1,5 @@
+{"rule": "8c31f563-f9a7-450c-bfa8-35f8f32f1f61", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\outlook.exe","TargetFilename":"\\Microsoft\\Outlook\\VbaProject.OTM"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"\\Microsoft\\Outlook\\VbaProject.OTM"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\outlook.exe"}}
+]}

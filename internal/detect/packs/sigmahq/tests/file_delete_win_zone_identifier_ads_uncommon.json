@@ -1,0 +1,8 @@
+{"rule": "3109530e-ab47-4cc6-a953-cac5ebcc93ae", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"26","data":{"TargetFilename":":Zone.Identifier"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"26","data":{"Image":"C:\\Windows\\explorer.exe","TargetFilename":":Zone.Identifier"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"26","data":{"Image":"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe","TargetFilename":":Zone.Identifier"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"26","data":{"Image":"C:\\Program Files\\Mozilla Firefox\\firefox.exe","TargetFilename":":Zone.Identifier"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"26","data":{"Image":"C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe","TargetFilename":":Zone.Identifier"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"26","data":{}}
+]}

@@ -1,0 +1,4 @@
+{"rule": "e55a5195-4724-480e-a77e-3ebe64bd3759", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":".run\u0026\u0026setmshtavbscript:createobject(window.close)"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}}
+]}

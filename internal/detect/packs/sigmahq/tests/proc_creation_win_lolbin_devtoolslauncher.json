@@ -1,0 +1,8 @@
+{"rule": "cc268ac1-42d9-40fd-9ed3-8c4e1a5b87e6", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"LaunchForDeploy","Image":"\\devtoolslauncher.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"LaunchForDeploy","NewProcessName":"\\devtoolslauncher.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\devtoolslauncher.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"\\devtoolslauncher.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"LaunchForDeploy"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"LaunchForDeploy","SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

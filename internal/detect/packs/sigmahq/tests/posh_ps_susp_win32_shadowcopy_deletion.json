@@ -1,0 +1,5 @@
+{"rule": "c1337eb8-921a-4b59-855b-4ba188ddcc42", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"Win32_ShadowCopygwmiRemove-WmiObject"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"MessageNumber":"1","MessageTotal":"1","Path":"","ScriptBlockId":"76924240-94b1-4cb6-a275-5231f991328d","ScriptBlockText":"\u0026 {Get-WmiObject Win32_Shadowcopy | ForEach-Object {$_.Delete();}}"}}
+]}

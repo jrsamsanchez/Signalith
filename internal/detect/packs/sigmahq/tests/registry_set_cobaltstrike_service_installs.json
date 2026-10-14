@@ -1,0 +1,5 @@
+{"rule": "61a7697c-cb79-42a8-a2ff-5f0cdfae0130", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":".exeADMIN$","TargetObject":"\\System\\CurrentControlSet\\Services"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\System\\CurrentControlSet\\Services"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":".exeADMIN$"}}
+]}

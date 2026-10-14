@@ -1,0 +1,5 @@
+{"rule": "fc014922-5def-4da9-a0fc-28c973f41bfb", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Software\\Microsoft\\WAB\\DLLPath"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"%CommonProgramFiles%\\System\\wab32.dll","TargetObject":"\\Software\\Microsoft\\WAB\\DLLPath"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}}
+]}

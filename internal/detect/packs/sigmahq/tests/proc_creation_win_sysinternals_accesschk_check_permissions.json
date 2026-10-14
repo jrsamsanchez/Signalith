@@ -1,0 +1,5 @@
+{"rule": "c625d754-6a3d-4f65-9c9a-536aea960d37", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"uwcqv x","Description":"Reports effective permissions"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Description":"Reports effective permissions"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"uwcqv x"}}
+]}

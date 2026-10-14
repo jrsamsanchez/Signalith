@@ -1,0 +1,5 @@
+{"rule": "e173ad47-4388-4012-ae62-bd13f71c18a8", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/PhoneDeepLink","OriginalFileName":"deviceenroller.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"deviceenroller.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/PhoneDeepLink"}}
+]}

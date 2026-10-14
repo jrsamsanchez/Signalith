@@ -1,0 +1,5 @@
+{"rule": "65c3ca2c-525f-4ced-968e-246a713d164f", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"Microsoft.NodejsTools.PressAnyKey.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\Microsoft.NodejsTools.PressAnyKey.exe","OriginalFileName":"Microsoft.NodejsTools.PressAnyKey.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{}}
+]}

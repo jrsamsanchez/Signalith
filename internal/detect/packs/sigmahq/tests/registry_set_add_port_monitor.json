@@ -1,0 +1,9 @@
+{"rule": "944e8941-f6f6-4ee8-ac05-1c224e923c0e", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":".dll","TargetObject":"\\Control\\Print\\Monitors\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"cpwmon64_v40.dll","Image":"C:\\Windows\\System32\\spoolsv.exe","TargetObject":"\\Control\\Print\\Monitors\\CutePDF Writer Monitor v4.0\\Driver\\Control\\Print\\Monitors\\","User":"AUTHORI"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":".dll","TargetObject":"\\Control\\Print\\Monitors\\\\Control\\Print\\Monitors\\MONVNC\\Driver"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":".dll","TargetObject":"Control\\Print\\Environments\\\\Control\\Print\\Monitors\\\\Drivers\\\\VNC Printer"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Control\\Print\\Monitors\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":".dll"}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"C:\\AtomicRedTeam\\atomics\\T1547.010\\bin\\PortMonitor.dll","EventType":"SetValue","Image":"C:\\Windows\\system32\\reg.exe","ProcessGuid":"5AA13A44-5B70-68FE-4655-000000004002","ProcessId":"8024","RuleName":"-","TargetObject":"HKLM\\System\\CurrentControlSet\\Control\\Print\\Monitors\\AtomicRedTeam\\Driver","User":"ATTACKRANGE\\Administrator","UtcTime":"2025-10-26 17:33:36.131"}}
+]}

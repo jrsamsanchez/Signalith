@@ -1,5 +1,14 @@
 package ingest
 
+import (
+	"context"
+	"errors"
+	"net/http"
+	"strings"
+
+	"github.com/jrsamsanchez/signalith/internal/store"
+)
+
 // IndexTemplate returns the OpenSearch index template every Signalith index
 // uses: strings are exact-match keywords (fast filters and stats), the raw
 // message is full-text, and ports, IDs and counts stay numeric.
@@ -24,6 +33,13 @@ func IndexTemplate(prefix string, replicas int) map[string]any {
 		switch typ {
 		case "keyword":
 			props[name] = map[string]any{"type": "keyword", "ignore_above": 8191}
+		case "wildcard":
+			// Indexes the whole value however long, for *word* searches
+			// inside it; lowercased so matches ignore case as keywords do.
+			// No doc values (the default): they cannot hold a value over
+			// 32,766 bytes and would refuse the event, so the field cannot
+			// be a stats by field, as when it was text.
+			props[name] = map[string]any{"type": "wildcard", "normalizer": "lowercase"}
 		default:
 			props[name] = map[string]any{"type": typ}
 		}
@@ -53,4 +69,28 @@ func IndexTemplate(prefix string, replicas int) map[string]any {
 			},
 		},
 	}
+}
+
+// PutIndexTemplate installs IndexTemplate. OpenSearch before 2.15 has no
+// wildcard field type, so there the wildcard fields are keywords instead:
+// they still match, except values longer than a keyword indexes.
+func PutIndexTemplate(ctx context.Context, cl *store.Client, prefix string, replicas int) error {
+	tmpl := IndexTemplate(prefix, replicas)
+	err := cl.PutIndexTemplate(ctx, prefix, tmpl)
+	var se *store.Error
+	if errors.As(err, &se) && se.Status == http.StatusBadRequest && strings.Contains(se.Body, "wildcard") {
+		return cl.PutIndexTemplate(ctx, prefix, withoutWildcard(tmpl))
+	}
+	return err
+}
+
+// withoutWildcard maps a template's wildcard fields as keywords.
+func withoutWildcard(tmpl map[string]any) map[string]any {
+	props := tmpl["template"].(map[string]any)["mappings"].(map[string]any)["properties"].(map[string]any)
+	for name, typ := range knownFields {
+		if typ == "wildcard" {
+			props[name] = map[string]any{"type": "keyword", "ignore_above": 8191}
+		}
+	}
+	return tmpl
 }

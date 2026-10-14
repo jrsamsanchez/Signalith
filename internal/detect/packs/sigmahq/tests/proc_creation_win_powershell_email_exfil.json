@@ -1,0 +1,8 @@
+{"rule": "312d0384-401c-4b8b-abdf-685ffba9a332", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"-hidetableheaders Add-PSSnapin -ExpandProperty Get-Recipient SmtpAddress EmailAddresses","Image":"\\pwsh.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"-hidetableheaders Add-PSSnapin -ExpandProperty Get-Recipient SmtpAddress EmailAddresses","NewProcessName":"\\pwsh.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\pwsh.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"\\pwsh.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"-hidetableheaders Add-PSSnapin -ExpandProperty Get-Recipient SmtpAddress EmailAddresses"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"-hidetableheaders Add-PSSnapin -ExpandProperty Get-Recipient SmtpAddress EmailAddresses","SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

@@ -1,0 +1,7 @@
+{"rule": "087790e3-3287-436c-bccf-cbd0184a7db1", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/../../","OriginalFileName":"cmd.exe","ParentCommandLine":"/k"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"\\Tasktop\\keycloak\\bin\\/../../jre\\bin\\java /../../","OriginalFileName":"cmd.exe","ParentCommandLine":"/k"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"cmd.exe","ParentCommandLine":"/k"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/../../","ParentCommandLine":"/k"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/../../","OriginalFileName":"cmd.exe"}}
+]}

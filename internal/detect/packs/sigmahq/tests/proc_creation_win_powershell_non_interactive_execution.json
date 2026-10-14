@@ -1,0 +1,9 @@
+{"rule": "f4bbd493-b796-416e-bbf2-121235348529", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\pwsh.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\pwsh.exe","ParentImage":":\\Windows\\SysWOW64\\explorer.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\pwsh.exe","ParentImage":":\\$WINDOWS.~BT\\Sources\\SetupHost.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\pwsh.exe","ParentImage":":\\Program Files\\Windows Defender Advanced Threat Protection\\SenseIR.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\pwsh.exe","ParentImage":":\\Program Files\\WindowsApps\\Microsoft.WindowsTerminal_\\WindowsTerminal.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\pwsh.exe","ParentCommandLine":"x --ms-enable-electron-run-as-node x","ParentImage":"\\AppData\\Local\\Programs\\Microsoft VS Code\\Code.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{}}
+]}

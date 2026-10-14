@@ -30,7 +30,7 @@ OpenSearch. First the setup step, `signalith bootstrap-docker`, which:
   the container that uses them, and leaves them alone on later runs. If one is missing,
   damaged or due to expire within 30 days, it makes a new set; restart both then with
   `docker compose -f deploy/docker/docker-compose.yml restart opensearch signalith`;
-- makes the first admin password and the agents' ingest token the same way.
+- makes the first admin password and the shared agent token (the quick start's `ingest-token`) the same way.
 
 Then, once OpenSearch has started, the step that loads OpenSearch's security settings
 (the `opensearch-security` service, `deploy/docker/opensearch/load-security.sh`).

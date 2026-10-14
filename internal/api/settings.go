@@ -589,6 +589,7 @@ func (s *Server) aboutServer(c *config.Config) map[string]any {
 		{Key: "notify.file", Label: "Notifications file", Path: c.NotifyFile(), Source: c.Source("notify.file")},
 		{Key: "response.file", Label: "Response actions file", Path: c.ResponseFile(), Source: c.Source("response.file")},
 		{Key: "response.scripts_dir", Label: "Response scripts folder", Path: c.ResponseScriptsDir(), Source: c.Source("response.scripts_dir")},
+		{Key: "playbooks.file", Label: "Playbooks file", Path: c.PlaybooksFile(), Source: c.Source("playbooks.file")},
 	}
 	// Whoever reads the page is not in Signalith's working folder.
 	for i := range paths {
@@ -618,17 +619,18 @@ func settingsFileSource(c *config.Config) config.Source {
 // managedElsewhere points to the pages that manage what this one does
 // not. Page is the app's page name.
 func (s *Server) managedElsewhere(c *config.Config) []map[string]any {
-	tokens := len(c.Ingest.Tokens)
-	detail := fmt.Sprintf("%d agent tokens are set in signalith.yaml or the environment.", tokens)
-	switch tokens {
+	active, shared := s.tokens().Counts()
+	detail := fmt.Sprintf("Agent tokens are on Add data, under Agent tokens: %d active.", active)
+	switch shared {
 	case 0:
-		detail = "No agent token is set, so agents cannot send data. Set one in signalith.yaml (ingest.tokens) or with SIGNALITH_INGEST_TOKEN, then restart."
 	case 1:
-		detail = "1 agent token is set in signalith.yaml or the environment."
+		detail += " 1 shared token from signalith.yaml or the environment is still accepted."
+	default:
+		detail += fmt.Sprintf(" %d shared tokens from signalith.yaml or the environment are still accepted.", shared)
 	}
 	return []map[string]any{
 		{"what": "Users and directory sign-in", "page": "users"},
-		{"what": "Agent setup", "page": "data", "detail": detail},
+		{"what": "Agent setup and tokens", "page": "data", "detail": detail},
 		{"what": "Threat intel feeds", "page": "intel"},
 		{"what": "Data retention", "page": "retention"},
 	}

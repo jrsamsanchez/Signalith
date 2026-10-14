@@ -1,0 +1,8 @@
+{"rule": "9a4ccd1a-3526-4d99-b980-9f9c5d3a6ff3", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x -ip   -u -p   -s x","OriginalFileName":"WerFault.exe","ParentUser":"AUTORI","User":"AUTORI"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x -ip   -s   -u -p x","OriginalFileName":"WerFault.exe","ParentImage":"C:\\Windows\\System32\\lsass.exe","ParentUser":"AUTORI","User":"AUTORI"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"WerFault.exe","ParentUser":"AUTORI","User":"AUTORI"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x -ip   -u -p   -s x","ParentUser":"AUTORI","User":"AUTORI"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x -ip   -u -p   -s x","OriginalFileName":"WerFault.exe","User":"AUTORI"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x -ip   -u -p   -s x","OriginalFileName":"WerFault.exe","ParentUser":"AUTORI"}}
+]}

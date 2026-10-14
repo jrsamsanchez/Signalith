@@ -1,0 +1,8 @@
+{"rule": "dd3ee8cc-f751-41c9-ba53-5a32ed47e563", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"\\ms-settings\\shell\\open\\commandadd","Image":"\\reg.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"New-ItemProperty\\ms-settings\\shell\\open\\command","OriginalFileName":"pwsh.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\reg.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"\\ms-settings\\shell\\open\\commandadd"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"pwsh.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"New-ItemProperty\\ms-settings\\shell\\open\\command"}}
+]}

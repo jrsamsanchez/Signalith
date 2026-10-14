@@ -1,0 +1,6 @@
+{"rule": "00d49ed5-4491-4271-a8db-650a4ef6f8c1", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":".DownloadString(https://onenoteonlinesync.onenote.com/onenoteonlinesync/"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":".DownloadString(https://onenoteonlinesync.onenote.com/onenoteonlinesync/","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

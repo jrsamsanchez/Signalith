@@ -1,0 +1,4 @@
+{"rule": "b7ec41a4-042c-4f31-a5db-d0fcde9fa5c5", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"PS ATTACK!!!"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}}
+]}

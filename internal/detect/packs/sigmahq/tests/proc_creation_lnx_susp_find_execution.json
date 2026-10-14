@@ -1,0 +1,5 @@
+{"rule": "8344c0e5-5783-47cc-9cf9-a0f7fd03e6cf", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"-perm -222","Image":"/find"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/find"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"-perm -222"}}
+]}

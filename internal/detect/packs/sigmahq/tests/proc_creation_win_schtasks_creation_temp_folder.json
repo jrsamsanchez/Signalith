@@ -1,0 +1,8 @@
+{"rule": "39019a4e-317f-4ce3-ae63-309a8c6b53c5", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x /sc once   /create  \\Temp\\","Image":"\\schtasks.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"x /sc once   /create  \\Temp\\","NewProcessName":"\\schtasks.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\schtasks.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"\\schtasks.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x /sc once   /create  \\Temp\\"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"x /sc once   /create  \\Temp\\","SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

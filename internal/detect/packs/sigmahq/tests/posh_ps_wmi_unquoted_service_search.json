@@ -1,0 +1,4 @@
+{"rule": "09658312-bc27-4a3b-91c5-e49ab9046d1b", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"StartModePathNamegwmi  Win32_Service NameDisplayName"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}}
+]}

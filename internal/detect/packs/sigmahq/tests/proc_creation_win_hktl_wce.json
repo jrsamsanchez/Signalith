@@ -1,0 +1,5 @@
+{"rule": "7aa7009a-28b9-4344-8c1f-159489a390df", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Hashes":"IMPHASH=7D490037BF450877E6D0287BDCFF8D2E"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\WCE.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{}}
+]}

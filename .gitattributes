@@ -1,3 +1,7 @@
+# Content pack files are hashed and signed byte for byte: keep them as
+# committed on every system (no CRLF conversion on Windows).
+internal/detect/packs/** -text
+
 # Files that Linux containers read or run keep Unix line endings (LF), also
 # in a checkout on Windows: Docker Desktop mounts them into the containers
 # as they are, and sh cannot run a script with Windows line endings (CRLF).

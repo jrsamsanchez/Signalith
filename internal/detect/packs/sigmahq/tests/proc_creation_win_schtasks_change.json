@@ -1,0 +1,8 @@
+{"rule": "1c0e41cd-21bb-4433-9acc-4a2cd6367b9b", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x /TN   /Change  bitsadmin \\AppData\\Roaming\\","Image":"\\schtasks.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"x /TN   /Change  bitsadmin \\AppData\\Roaming\\","NewProcessName":"\\schtasks.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\schtasks.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"\\schtasks.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x /TN   /Change  bitsadmin \\AppData\\Roaming\\"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"x /TN   /Change  bitsadmin \\AppData\\Roaming\\","SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

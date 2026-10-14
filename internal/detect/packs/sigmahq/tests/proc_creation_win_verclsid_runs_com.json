@@ -1,0 +1,6 @@
+{"rule": "d06be4b9-8045-428b-a567-740a26d9db25", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/C/S","Image":"\\verclsid.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/C } /I { verclsid.exe\" /S /C { /S","Image":"\\verclsid.exe","ParentImage":"C:\\Windows\\System32\\RuntimeBroker.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\verclsid.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/C/S"}}
+]}

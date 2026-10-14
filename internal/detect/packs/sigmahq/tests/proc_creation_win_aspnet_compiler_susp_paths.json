@@ -1,0 +1,8 @@
+{"rule": "9f50fe98-fe5c-4a2d-86c7-fad7f63ed622", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"\\AppData\\Local\\Temp\\","Image":":\\Windows\\Microsoft.NET\\FrameworkArm64\\\\aspnet_compiler.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"\\AppData\\Local\\Temp\\","NewProcessName":":\\Windows\\Microsoft.NET\\FrameworkArm64\\\\aspnet_compiler.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":":\\Windows\\Microsoft.NET\\FrameworkArm64\\\\aspnet_compiler.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":":\\Windows\\Microsoft.NET\\FrameworkArm64\\\\aspnet_compiler.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"\\AppData\\Local\\Temp\\"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"\\AppData\\Local\\Temp\\","SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

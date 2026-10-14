@@ -364,8 +364,8 @@ change off the page.
 | `retention.days` | The data retention page. |
 | `auth.admin_user`, `auth.admin_password_hash` | `signalith.yaml` and `signalith passwd` only: the built-in admin is the break-glass account, so no page can lock everyone out. |
 | `auth.ldap` | The Users page sets up directory sign-in. |
-| `auth.users_file`, `intel.feeds_file`, `notify.file`, `detections.dir`, `dashboards.dir`, `lookups.dir` | `signalith.yaml`: pages save into these files and folders, and the lookups folder holds the Settings page's own file. The page shows where they are. |
-| `ingest.tokens` | `signalith.yaml` (`ingest.tokens`) or `SIGNALITH_INGEST_TOKEN`; **Add data** shows the agent setup that uses them. The page shows how many there are. |
+| `auth.users_file`, `intel.feeds_file`, `notify.file`, `playbooks.file`, `detections.dir`, `dashboards.dir`, `lookups.dir` | `signalith.yaml`: pages save into these files and folders, and the lookups folder holds the Settings page's own file. The page shows where they are. |
+| `ingest.tokens` | Shared agent tokens from older setups and the Docker quick start: `signalith.yaml` (`ingest.tokens`) or `SIGNALITH_INGEST_TOKEN` (`SIGNALITH_INGEST_TOKEN_FILE` in Docker). New agents get their own token on **Add data**, under **Agent tokens**, where shared tokens can also be retired; see [agent-tokens.md](agent-tokens.md). The page shows how many tokens are active and how many shared tokens are still accepted. |
 | `intel.feeds` | The Threat intel page. |
 
 ## Audit log

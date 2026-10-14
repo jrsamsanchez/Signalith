@@ -1,0 +1,5 @@
+{"rule": "7e8f2d3b-9c1a-4f67-b9e8-8d9006e0e51f", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/online WindowsPowerShellWebAccess /enable-feature","OriginalFileName":"DISM.EXE"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"DISM.EXE"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/online WindowsPowerShellWebAccess /enable-feature"}}
+]}

@@ -1,0 +1,5 @@
+{"rule": "71b31e99-9ad0-47d4-aeb5-c0ca3928eeeb", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"\\waveedit.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"C:\\Program Files\\Nero\\Nero Apps\\Nero WaveEditor\\waveedit.exe","ImageLoaded":"C:\\Program Files (x86)\\Nero\\Nero Apps\\Nero WaveEditor\\ \\waveedit.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{}}
+]}

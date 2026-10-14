@@ -1,0 +1,6 @@
+{"rule": "509e84b9-a71a-40e0-834f-05470369bd1e", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Control\\Terminal Server\\WinStations\\RDP-Tcp\\PortNumber"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000d3d)","TargetObject":"\\Control\\Terminal Server\\WinStations\\RDP-Tcp\\PortNumber"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00001189)","EventType":"SetValue","Image":"C:\\Windows\\system32\\reg.exe","ProcessGuid":"5AA13A44-640D-68FE-3756-000000004002","ProcessId":"992","RuleName":"-","TargetObject":"HKLM\\System\\CurrentControlSet\\Control\\Terminal Server\\WinStations\\RDP-Tcp\\PortNumber","User":"ATTACKRANGE\\Administrator","UtcTime":"2025-10-26 18:10:21.071"}}
+]}

@@ -1,0 +1,12 @@
+{"rule": "1816994b-42e1-4fb1-afd2-134d88184f71", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"dpbjMyX0xvZ2dlZE9uVXNlc","OriginalFileName":"pwsh.dll"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"dpbjMyX1Byb2Nlc3","Image":"\\pwsh.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"XAGkAbgAzADIAXwBTAGMAaABlAGQAdQBsAGUAZABKAG8AYg","OriginalFileName":"pwsh.dll"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"cAaQBuADMAMgBfAFMAaABhAGQAbwB3AGMAbwBwAHkA","Image":"\\pwsh.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"pwsh.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"dpbjMyX0xvZ2dlZE9uVXNlc"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\pwsh.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"dpbjMyX1Byb2Nlc3"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"XAGkAbgAzADIAXwBTAGMAaABlAGQAdQBsAGUAZABKAG8AYg"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"cAaQBuADMAMgBfAFMAaABhAGQAbwB3AGMAbwBwAHkA"}}
+]}

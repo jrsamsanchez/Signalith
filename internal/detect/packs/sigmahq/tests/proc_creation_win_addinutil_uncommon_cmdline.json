@@ -1,0 +1,6 @@
+{"rule": "4f2cd9b6-4a17-440f-bb2a-687abb65993a", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"-AddInRoot:","OriginalFileName":"AddInUtil.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"-AddInRoot:-AddInRoot:C:\\Program Files (x86)\\Common Files\\Microsoft Shared\\VSTA","OriginalFileName":"AddInUtil.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"AddInUtil.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"-AddInRoot:"}}
+]}

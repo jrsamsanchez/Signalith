@@ -1,0 +1,6 @@
+{"rule": "cd5cfd80-aa5f-44c0-9c20-108c4ae12e3c", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x firewall   add x","OriginalFileName":"netsh.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x firewall  advfirewall firewall add rule name=Dropbox dir=in action=allow \"program=x:\\Program Files (x86)\\Dropbox\\Client\\Dropbox.exe\" enable=yes profile=Any  add x","OriginalFileName":"netsh.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"netsh.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x firewall   add x"}}
+]}

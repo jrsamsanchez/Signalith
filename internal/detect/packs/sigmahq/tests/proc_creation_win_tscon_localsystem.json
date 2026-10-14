@@ -1,0 +1,5 @@
+{"rule": "9847f263-4a81-424f-970c-875dab15b79b", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\tscon.exe","User":"AUTHORI"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"User":"AUTHORI"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\tscon.exe"}}
+]}

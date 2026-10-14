@@ -1,0 +1,8 @@
+{"rule": "5687f942-867b-4578-ade7-1e341c46e99a", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"PowerShell.EXE","ParentImage":"\\vmtoolsd.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"","Image":"\\cmd.exe","OriginalFileName":"PowerShell.EXE","ParentImage":"\\vmtoolsd.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\cmd.exe","OriginalFileName":"PowerShell.EXE","ParentImage":"\\vmtoolsd.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"\\VMware\\VMware Tools\\poweron-vm-default.bat","Image":"\\cmd.exe","OriginalFileName":"PowerShell.EXE","ParentImage":"\\vmtoolsd.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"ParentImage":"\\vmtoolsd.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"PowerShell.EXE"}}
+]}

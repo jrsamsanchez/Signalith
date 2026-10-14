@@ -239,6 +239,7 @@ func (s *Server) gatherSecurity(ctx context.Context) *security.Report {
 		f.TLS.Seen = security.SeenFrom(ctx, s.TLS)
 	}
 	f.Runtime = s.runtimeFacts(now, h.InContainer)
+	f.AgentTokens = TokenFacts(ctx, s.tokens())
 	f.Users = security.UserFactsFrom(s.userStore(), c.Auth.AdminUser, now)
 	if d := s.dir().Settings(); d.IsEnabled() {
 		f.Directory = &d

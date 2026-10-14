@@ -1,0 +1,5 @@
+{"rule": "044ba588-dff4-4918-9808-3f95e8160606", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":".dmp  \\\\ copy x","Image":"\\cmd.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\cmd.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":".dmp  \\\\ copy x"}}
+]}

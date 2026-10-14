@@ -1,0 +1,5 @@
+{"rule": "2ff692c2-4594-41ec-8fcb-46587de769e0", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)","TargetObject":"SYSTEM\\CurrentControlSet\\Control\\CrashControl"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"SYSTEM\\CurrentControlSet\\Control\\CrashControl"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)"}}
+]}

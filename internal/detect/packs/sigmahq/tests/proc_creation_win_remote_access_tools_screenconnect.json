@@ -1,0 +1,4 @@
+{"rule": "57bff678-25d1-4d6c-8211-8ca106d12053", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Company":"ScreenConnect Software"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{}}
+]}

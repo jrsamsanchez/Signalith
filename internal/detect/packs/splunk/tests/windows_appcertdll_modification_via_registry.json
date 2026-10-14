@@ -1,0 +1,9 @@
+{"rule": "547d98dd-6d6e-4aa4-be91-a1a119f48df3", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"x x","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Control\\Session Manager\\AppCertDLLs\\ x"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"x x","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Control\\Session Manager\\AppCertDLLs\\ x"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"x x","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Control\\Session Manager\\AppCertDLLs\\ x"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"x x","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Control\\Session Manager\\AppCertDLLs\\ y"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"x y","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Control\\Session Manager\\AppCertDLLs\\ x"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"x x","EventType":"SetValue","ProcessId":"4242","TargetObject":"HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Control\\Session Manager\\AppCertDLLs\\ x"}}
+]}

@@ -1,0 +1,4 @@
+{"rule": "4a241dea-235b-4a7e-8d76-50d817b146c4", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"New-MailboxExportRequest -FilePath \\\\ -Mailbox x"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}}
+]}

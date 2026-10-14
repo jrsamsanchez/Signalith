@@ -1,0 +1,6 @@
+{"rule": "1e59c230-6670-45bf-83b0-98903780607e", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x /logon","OriginalFileName":"GPSCRIPT.EXE"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x /logon","OriginalFileName":"GPSCRIPT.EXE","ParentCommandLine":"C:\\windows\\system32\\svchost.exe -k netsvcs -p -s gpsvc"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"GPSCRIPT.EXE"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x /logon"}}
+]}

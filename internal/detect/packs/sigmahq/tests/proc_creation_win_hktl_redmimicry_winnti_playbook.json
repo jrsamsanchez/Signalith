@@ -1,0 +1,8 @@
+{"rule": "95022b85-ff2a-49fa-939a-d7b8f56eeb9b", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"\\Windows\\Temp\\tmp.bat","Image":"\\cmd.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"\\Windows\\Temp\\tmp.bat","NewProcessName":"\\cmd.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\cmd.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"\\cmd.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"\\Windows\\Temp\\tmp.bat"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"\\Windows\\Temp\\tmp.bat","SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

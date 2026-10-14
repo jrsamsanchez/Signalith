@@ -1,0 +1,5 @@
+{"rule": "52753ea4-b3a0-4365-910d-36cff487b789", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\mstsc.exe","TargetFilename":"\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\mstsc.exe"}}
+]}

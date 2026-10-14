@@ -47,7 +47,12 @@ var windowsFailureReasons = map[string]string{
 	"0xc0000224": "password must change",
 }
 
-func parseWindows(r map[string]any) Event {
+func parseWindows(r map[string]any) Event { return parseWindowsWith(r, nil) }
+
+// parseWindowsWith is parseWindows with a Sysmon event's named values
+// already known (the OpenTelemetry Collector sends them); they win over
+// what the rendered message says.
+func parseWindowsWith(r map[string]any, named map[string]string) Event {
 	channel := str(r, "Channel")
 	eventID := str(r, "EventID")
 	computer := str(r, "Computer", "ComputerName")
@@ -73,11 +78,35 @@ func parseWindows(r map[string]any) Event {
 	case channel == "Security":
 		parseWindowsSecurity(eventID, in, &ev)
 	case strings.EqualFold(channel, "Microsoft-Windows-Sysmon/Operational"):
-		parseSysmon(eventID, keyValues(str(r, "Message")), &ev)
+		kv := keyValues(str(r, "Message"))
+		for k, v := range named {
+			kv[k] = v
+		}
+		parseSysmon(eventID, kv, &ev)
 	case strings.EqualFold(channel, DefenderChannel):
 		parseDefender(eventID, str(r, "Message"), in, &ev)
+	case strings.EqualFold(channel, PowerShellChannel) && eventID == "4104":
+		parseScriptBlock(in, &ev)
 	}
 	return ev
+}
+
+// PowerShellChannel is where PowerShell logs script blocks (4104) once
+// script block logging is turned on.
+const PowerShellChannel = "Microsoft-Windows-PowerShell/Operational"
+
+// parseScriptBlock reads a PowerShell script block event (4104). A long
+// script comes as several events, one part each, sharing a block ID.
+func parseScriptBlock(in []string, ev *Event) {
+	ev.Model = "Script"
+	f := ev.Fields
+	f["vendor_product"] = "Microsoft PowerShell"
+	f["signature"] = "Script block logged"
+	f["script_block_text"] = at(in, 2)
+	f["script_block_id"] = strings.Trim(at(in, 3), "{}")
+	f["script_path"] = at(in, 4)
+	f["script_part"] = atoi(at(in, 0))
+	f["script_parts"] = atoi(at(in, 1))
 }
 
 func parseWindowsSecurity(eventID string, in []string, ev *Event) {
@@ -123,6 +152,8 @@ func parseWindowsSecurity(eventID string, in []string, ev *Event) {
 		f["user"] = at(in, 1)
 		f["user_domain"] = at(in, 2)
 		f["process_id"] = atoi(at(in, 4))
+		f["parent_process_id"] = atoi(at(in, 7))
+		f["logon_id"] = at(in, 3)
 		f["process_path"] = at(in, 5)
 		f["process_name"] = baseName(at(in, 5))
 		f["process"] = at(in, 8)
@@ -172,6 +203,20 @@ func parseSysmon(eventID string, kv map[string]string, ev *Event) {
 		f["parent_process"] = kv["ParentCommandLine"]
 		f["parent_process_path"] = kv["ParentImage"]
 		f["parent_process_name"] = baseName(kv["ParentImage"])
+		f["parent_process_id"] = atoi(kv["ParentProcessId"])
+		f["parent_user"] = kv["ParentUser"]
+		// The PE header fields Sigma rules match on: a renamed binary keeps
+		// its OriginalFileName.
+		f["original_file_name"] = kv["OriginalFileName"]
+		f["process_description"] = kv["Description"]
+		f["process_product"] = kv["Product"]
+		f["process_company"] = kv["Company"]
+		f["process_file_version"] = kv["FileVersion"]
+		f["process_integrity_level"] = kv["IntegrityLevel"]
+		f["process_current_directory"] = kv["CurrentDirectory"]
+		f["process_guid"] = kv["ProcessGuid"]
+		f["parent_process_guid"] = kv["ParentProcessGuid"]
+		f["logon_id"] = kv["LogonId"]
 	case "3":
 		ev.Model = "Network_Traffic"
 		f["action"] = "allowed"
@@ -185,7 +230,147 @@ func parseSysmon(eventID string, kv map[string]string, ev *Event) {
 		f["dest_port"] = atoi(kv["DestinationPort"])
 		f["process_name"] = baseName(kv["Image"])
 		f["process_path"] = kv["Image"]
+		f["process_guid"] = kv["ProcessGuid"]
+		f["src_host"] = kv["SourceHostname"]
+		switch strings.ToLower(kv["Initiated"]) {
+		case "true":
+			f["direction"] = "outbound"
+		case "false":
+			f["direction"] = "inbound"
+		}
+	case "6", "7":
+		// Driver load (6) and image (DLL) load (7).
+		ev.Model = "Image_Load"
+		f["signature"] = kv["Signature"]
+		f["signed"] = strings.ToLower(kv["Signed"])
+		f["signature_status"] = kv["SignatureStatus"]
+		f["loaded_file_path"] = kv["ImageLoaded"]
+		f["loaded_file_name"] = baseName(kv["ImageLoaded"])
+		if eventID == "7" {
+			sysmonProcess(kv, f)
+		}
+	case "8", "10":
+		// Remote thread created (8) and process accessed (10): the source
+		// process acts on the target.
+		ev.Model = "Endpoint"
+		f["signature"] = "Process accessed"
+		if eventID == "8" {
+			f["signature"] = "Remote thread created"
+		}
+		f["user"] = kv["SourceUser"]
+		f["process_path"] = kv["SourceImage"]
+		f["process_name"] = baseName(kv["SourceImage"])
+		f["process_id"] = atoi(kv["SourceProcessId"])
+		f["process_guid"] = firstOf(kv["SourceProcessGuid"], kv["SourceProcessGUID"])
+		f["target_process_path"] = kv["TargetImage"]
+		f["target_process_name"] = baseName(kv["TargetImage"])
+		f["target_process_id"] = atoi(kv["TargetProcessId"])
+		f["target_process_guid"] = firstOf(kv["TargetProcessGuid"], kv["TargetProcessGUID"])
+		f["granted_access"] = kv["GrantedAccess"]
+		f["call_trace"] = kv["CallTrace"]
+		f["start_address"] = kv["StartAddress"]
+		f["start_module"] = kv["StartModule"]
+		f["start_function"] = kv["StartFunction"]
+	case "11", "23", "26":
+		// File created (11), deleted and archived (23), deleted (26).
+		ev.Model = "Filesystem"
+		f["action"] = "created"
+		if eventID != "11" {
+			f["action"] = "deleted"
+		}
+		f["file_path"] = kv["TargetFilename"]
+		f["file_name"] = baseName(kv["TargetFilename"])
+		sysmonProcess(kv, f)
+		if h := sysmonHash(kv["Hashes"], "SHA256"); h != "" {
+			f["file_hash"] = h
+		}
+	case "12", "13", "14":
+		// Registry key or value created or deleted (12), value set (13),
+		// key or value renamed (14).
+		ev.Model = "Registry"
+		f["action"] = registryActions[kv["EventType"]]
+		path := kv["TargetObject"]
+		f["registry_path"] = path
+		if eventID == "12" && strings.HasSuffix(kv["EventType"], "Key") || eventID == "14" && kv["EventType"] == "RenameKey" {
+			f["registry_key_name"] = baseName(path)
+		} else {
+			f["registry_value_name"] = baseName(path)
+			f["registry_key_name"] = baseName(parentPath(path))
+		}
+		f["registry_value_data"] = kv["Details"]
+		f["registry_new_path"] = kv["NewName"]
+		sysmonProcess(kv, f)
+	case "22":
+		ev.Model = "Network_Resolution"
+		f["query"] = kv["QueryName"]
+		f["answer"] = kv["QueryResults"]
+		f["reply_code"] = dnsStatus(kv["QueryStatus"])
+		sysmonProcess(kv, f)
 	}
+}
+
+// sysmonProcess sets the acting process of a Sysmon event that names it
+// as Image.
+func sysmonProcess(kv map[string]string, f map[string]any) {
+	f["user"] = kv["User"]
+	f["process_path"] = kv["Image"]
+	f["process_name"] = baseName(kv["Image"])
+	f["process_id"] = atoi(kv["ProcessId"])
+	f["process_guid"] = kv["ProcessGuid"]
+}
+
+// registryActions maps Sysmon's registry EventType onto the Registry
+// data model's action.
+var registryActions = map[string]string{
+	"CreateKey": "created", "DeleteKey": "deleted", "DeleteValue": "deleted",
+	"SetValue": "modified", "RenameKey": "renamed",
+}
+
+// dnsStatus names Sysmon's QueryStatus, a Windows error code (0 for
+// success, 9003 for a name that does not exist), as the reply codes DNS
+// servers log; other codes stay numbers.
+func dnsStatus(code string) string {
+	switch code {
+	case "0":
+		return "NoError"
+	case "9003", "123":
+		return "NXDomain"
+	case "9002":
+		return "ServFail"
+	case "9004":
+		return "NotImp"
+	case "9005":
+		return "Refused"
+	}
+	return code
+}
+
+// parentPath drops the last \-separated part of a path.
+func parentPath(p string) string {
+	if i := strings.LastIndex(p, `\`); i >= 0 {
+		return p[:i]
+	}
+	return ""
+}
+
+func firstOf(vs ...string) string {
+	for _, v := range vs {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// sysmonHash returns one hash, lower case, from a Sysmon Hashes list.
+func sysmonHash(v, kind string) string {
+	for _, part := range strings.Split(v, ",") {
+		k, h, ok := strings.Cut(strings.TrimSpace(part), "=")
+		if ok && strings.EqualFold(k, kind) {
+			return strings.ToLower(h)
+		}
+	}
+	return ""
 }
 
 // splitHashes copies each hash of a Sysmon "SHA256=..,MD5=.." list into
@@ -208,17 +393,33 @@ func splitHashes(v string, f map[string]any) {
 	}
 }
 
-// keyValues parses "Key: Value" lines from a rendered event message.
+// multiLine are the Sysmon fields whose values can run over several
+// lines: a command line can hold a whole script.
+var multiLine = map[string]bool{"CommandLine": true, "ParentCommandLine": true, "Details": true}
+
+// keyValues parses "Key: Value" lines from a rendered event message. The
+// first value of a key is kept. A line that is not a "Key: Value" line
+// continues a multi-line value (a command line with line breaks in it,
+// blank lines included) up to the next key line.
 func keyValues(msg string) map[string]string {
 	out := map[string]string{}
-	for _, line := range strings.Split(msg, "\n") {
-		line = strings.TrimSpace(line)
+	cont := "" // the multi-line key being continued
+	for _, raw := range strings.Split(msg, "\n") {
+		line := strings.TrimSpace(raw)
 		k, v, ok := strings.Cut(line, ":")
-		if !ok || strings.ContainsAny(k, " \t") {
+		isKey := ok && k != "" && !strings.ContainsAny(k, " \t") && (v == "" || v[0] == ' ' || v[0] == '\t')
+		if !isKey {
+			if cont != "" {
+				out[cont] += "\n" + strings.TrimRight(raw, "\r")
+			}
 			continue
 		}
+		cont = ""
 		if _, exists := out[k]; !exists {
 			out[k] = strings.TrimSpace(v)
+			if multiLine[k] {
+				cont = k
+			}
 		}
 	}
 	return out

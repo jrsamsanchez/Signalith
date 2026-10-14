@@ -115,6 +115,9 @@ func (m *Message) Event(sender netip.Addr, received time.Time, maxAge time.Durat
 	}
 	f["host"] = host
 	f["dvc"] = senderIP
+	// A batch mixes devices, so each event carries its own origin; syslog
+	// has no agent token.
+	ev.Origin = ingest.Origin{Intake: ingest.IntakeSyslog, Sender: senderIP}
 	if m.Priority >= 0 {
 		f["facility"] = facilityNames[m.Priority/8]
 	}

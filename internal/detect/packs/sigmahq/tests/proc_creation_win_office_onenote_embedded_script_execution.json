@@ -1,0 +1,10 @@
+{"rule": "84b1706c-932a-44c4-ae28-892b28a25b94", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"\\exported\\","Image":"\\wscript.exe","ParentImage":"\\onenote.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"\\exported\\","NewProcessName":"\\wscript.exe","ParentProcessName":"\\onenote.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\wscript.exe","ParentImage":"\\onenote.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"\\wscript.exe","ParentProcessName":"\\onenote.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"\\exported\\","ParentImage":"\\onenote.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"\\exported\\","ParentProcessName":"\\onenote.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"\\exported\\","Image":"\\wscript.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"\\exported\\","NewProcessName":"\\wscript.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

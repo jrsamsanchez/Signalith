@@ -1,0 +1,6 @@
+{"rule": "e49b5745-1064-4ac1-9a2e-f687bc2dd37e", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"\\gup.exe","ImageLoaded":"\\libcurl.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"\\Notepad++\\updater\\GUP.exe","ImageLoaded":"\\libcurl.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"\\libcurl.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"\\gup.exe"}}
+]}

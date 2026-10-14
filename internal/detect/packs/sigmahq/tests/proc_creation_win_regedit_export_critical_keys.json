@@ -1,0 +1,5 @@
+{"rule": "82880171-b475-4201-b811-e9c826cd5eaa", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"hklm  /E  \\sam","OriginalFileName":"REGEDIT.EXE"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"REGEDIT.EXE"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"hklm  /E  \\sam"}}
+]}

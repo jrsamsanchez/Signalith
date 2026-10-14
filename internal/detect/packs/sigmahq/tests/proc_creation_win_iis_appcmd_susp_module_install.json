@@ -1,0 +1,6 @@
+{"rule": "9465ddf4-f9e4-4ebd-8d98-702df3a93239", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"install―name:module","Image":"\\appcmd.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"install module ―name:","Image":"\\appcmd.exe","ParentImage":"C:\\Windows\\System32\\inetsrv\\iissetup.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\appcmd.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"install―name:module"}}
+]}

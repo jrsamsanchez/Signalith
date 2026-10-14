@@ -1,0 +1,7 @@
+{"rule": "4931188c-178e-4ee7-a348-39e8a7a56821", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"unload","OriginalFileName":"fltMC.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"unloadunload rtp_filter","OriginalFileName":"fltMC.exe","ParentImage":"\\AppData\\Local\\Temp\\\\endpoint-protection-installer-x64.tmp"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"unload unload DFMFilter","OriginalFileName":"fltMC.exe","ParentImage":"C:\\Program Files (x86)\\ManageEngine\\uems_agent\\bin\\dcfaservice64.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"fltMC.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"unload"}}
+]}

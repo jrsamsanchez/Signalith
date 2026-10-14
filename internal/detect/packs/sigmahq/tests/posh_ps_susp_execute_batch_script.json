@@ -1,0 +1,5 @@
+{"rule": "b5522a23-82da-44e5-9c8b-e10ed8955f88", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":".cmdStart-Process"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"MessageNumber":"1","MessageTotal":"1","Path":"","ScriptBlockId":"7db3ef82-7121-4283-9665-f9e8023f8640","ScriptBlockText":"\u0026 {$filepath = [System.IO.Path]::Combine($env:USERPROFILE, \"Desktop\")\n$rtlo = [char]0x202E\n$fileloc = Join-Path \"$filepath\" (\"evil_batch\" + $rtlo + \"fdp.bat\")\n$payload = @\"\n@echo off\necho Hello World!\ntimeout /t 30 /nobreak\nexit\n\"@\nSet-Content -Path $fileloc -Value $payload -Encoding Ascii -Force\nWrite-Host \"Real filename on disk: $fileloc\"\nWrite-Host \"Displays in explorer as: evil_batchtab.pdf\"\nStart-Process -FilePath $fileloc -Wait}"}}
+]}

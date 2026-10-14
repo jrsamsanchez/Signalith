@@ -1,0 +1,5 @@
+{"rule": "4c7f49ee-2638-43bb-b85b-ce676c30b260", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\aspnet_compiler.exe","TargetFilename":"\\Temporary ASP.NET Files\\\\assembly\\tmp\\.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"\\Temporary ASP.NET Files\\\\assembly\\tmp\\.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\aspnet_compiler.exe"}}
+]}

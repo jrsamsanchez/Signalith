@@ -1,0 +1,5 @@
+{"rule": "f0507c0f-a3a2-40f5-acc6-7f543c334993", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":".dll \\DavWWWRoot\\\u0026 start /b  net use http","OriginalFileName":"Cmd.EXE"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"Cmd.EXE"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":".dll \\DavWWWRoot\\\u0026 start /b  net use http"}}
+]}

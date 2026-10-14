@@ -1,0 +1,5 @@
+{"rule": "f8d6a15e-4bc8-4c27-8e5d-2b10f0b73e5b", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"-change  -standby-timeout-","Image":"\\powercfg.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\powercfg.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"-change  -standby-timeout-"}}
+]}

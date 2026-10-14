@@ -1,0 +1,5 @@
+{"rule": "1444443e-6757-43e4-9ea4-c8fc705f79a2", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"recoveryenabled no set","OriginalFileName":"bcdedit.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"bcdedit.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"recoveryenabled no set"}}
+]}

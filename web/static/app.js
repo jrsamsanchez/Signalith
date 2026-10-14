@@ -385,6 +385,8 @@ const JUMP_WORDS = {
   users: 'accounts people roles permissions ldap active directory sign-in passwords',
   notify: 'notifications alerts email slack teams webhook smtp channels rules paging',
   respond: 'response actions respond block ip firewall opnsense pfsense webhook shuffle script isolate disable account soar playbook',
+  playbooks: 'playbooks automation soar workflow runbook automatic response steps',
+  approvals: 'approvals approve reject pending waiting playbook runs',
   security: 'hardening encryption certificate authority ca tls https keys permissions bitlocker luks',
   settings: 'configuration config server opensearch syslog listen address port tls certificate ai assistant model api key restart yaml',
 };
@@ -694,11 +696,15 @@ refreshHealthCard();
 setInterval(refreshHealthCard, 30000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshHealthCard(); });
 
-// The first page: the URL hash, else the last page used, else Search.
-// Shown now so nothing flashes; its data loads once every script is in.
+// The first page: the URL hash, else the last page used, else the home
+// page, Dashboards (where the logo goes too). Signing in always names one
+// (see assets/login.js). No page is marked active in index.html, so none
+// shows before this picks one: picking it now, before the first paint,
+// means nothing flashes; its data loads once every script is in.
+const HOME_PAGE = 'dashboards';
 let firstPage = pageFromHash();
 try { firstPage = firstPage || localStorage.getItem('signalith.page'); } catch (_) { /* ignore */ }
-if (!firstPage || !$('page-' + firstPage)) firstPage = 'search';
+if (!firstPage || !$('page-' + firstPage)) firstPage = HOME_PAGE;
 // A page only some roles may open waits for the role.
 if (!pageRole(firstPage)) selectPage(firstPage);
 document.addEventListener('DOMContentLoaded', () => meReady.then(() => showPage(firstPage, { replace: true })));
@@ -859,6 +865,7 @@ function setQuery(text, fromBuilder) {
   hideExplanation();
   if (!fromBuilder) parseIntoBuilder();
   saveDraft();
+  syncTimePicker();
 }
 function saveDraft() {
   try { localStorage.setItem('signalith.query', queryBox.value); } catch (_) { /* ignore */ }
@@ -1054,6 +1061,7 @@ function onQueryInput() {
   clearQueryError();
   hideExplanation();
   saveDraft();
+  syncTimePicker();
   clearTimeout(parseTimer);
   parseTimer = setTimeout(() => { parseIntoBuilder(); loadFields(); }, 300);
 }
@@ -1204,7 +1212,57 @@ let lastSearch = null; // { query, earliest, res, tab, events, eventsQuery }
 // timeEarliest is the time picker's range for the server: "0" for All
 // time, which the default time range set on the Settings page never
 // replaces (it fills in only an empty one).
-const timeEarliest = () => $('time').value;
+const timeEarliest = () => ($('time').value === QUERY_TIME ? pickedTime : $('time').value);
+
+// The time picker always shows the range a search covers. A query can set
+// its own with earliest= and latest= (a pivot from a finding or an entity
+// searches the last 7 days, and Ask writes the range a question names), and
+// that range wins over the picker's, so the picker then shows it: the
+// matching choice, or "Set in query" (named when it can be, such as "Last
+// 2 hours") for one it has no choice for. Without one it goes back to the
+// range the person picked, which is what is kept for next time. Picking a
+// range takes the query's own out, so the picker's applies.
+const QUERY_TIME = 'query';
+let pickedTime = $('time').value;
+const queryTimePattern = () => /(^|[\s(])(earliest|latest)\s*=\s*("(?:[^"\\]|\\.)*"|[^\s()|]+)/gi;
+function queryTime(query) {
+  const out = {};
+  for (const m of splitPipes(query || '')[0].matchAll(queryTimePattern())) {
+    out[m[2].toLowerCase()] = m[3].replace(/^"(.*)"$/, '$1').replace(/\\(.)/g, '$1');
+  }
+  return out;
+}
+function withoutQueryTime(query) {
+  const [search, rest] = splitPipes(query);
+  const s = search.replace(queryTimePattern(), '$1').replace(/[ \t]+/g, ' ').replace(/\(\s*\)/g, '').trim() || '*';
+  return s + (rest ? '\n' + rest.trim() : '');
+}
+function queryTimeLabel(t) {
+  const units = { s: ['second', 'seconds'], m: ['minute', 'minutes'], h: ['hour', 'hours'], d: ['day', 'days'], w: ['week', 'weeks'] };
+  const m = !t.latest && t.earliest && t.earliest.match(/^-(\d+)([smhdw])$/);
+  if (!m) return 'Set in query';
+  const n = Number(m[1]);
+  return n === 1 ? 'Last ' + units[m[2]][0] : `Last ${n} ${units[m[2]][1]}`;
+}
+function syncTimePicker() {
+  const sel = $('time');
+  let opt = sel.querySelector(`option[value="${QUERY_TIME}"]`);
+  if (!opt) {
+    opt = el('option', { value: QUERY_TIME, hidden: '' });
+    sel.append(opt);
+  }
+  const t = queryTime(queryBox.value);
+  const own = t.earliest != null || t.latest != null;
+  const match = own && t.latest == null && [...sel.options].find((o) => o !== opt && o.value === t.earliest);
+  opt.hidden = !own || !!match;
+  if (!own) sel.value = pickedTime;
+  else if (match) sel.value = match.value;
+  else {
+    opt.textContent = queryTimeLabel(t);
+    sel.value = QUERY_TIME;
+  }
+  sel.title = own ? 'The query sets this time range with ' + Object.keys(t).map((k) => k + '=').join(' and ') + '. Pick another range to replace it.' : '';
+}
 
 async function runSearch() {
   const query = queryBox.value.trim() || '*';
@@ -1240,7 +1298,15 @@ async function runSearch() {
   }
 }
 $('run').addEventListener('click', runSearch);
-$('time').addEventListener('change', () => { try { localStorage.setItem('signalith.time', $('time').value); } catch (_) { /* ignore */ } runSearch(); });
+$('time').addEventListener('change', () => {
+  const v = $('time').value;
+  if (v === QUERY_TIME) return;
+  pickedTime = v;
+  try { localStorage.setItem('signalith.time', v); } catch (_) { /* ignore */ }
+  const t = queryTime(queryBox.value);
+  if (t.earliest != null || t.latest != null) setQuery(withoutQueryTime(queryBox.value));
+  runSearch();
+});
 
 function setSearching(on) {
   $('run').disabled = on;
@@ -2132,6 +2198,7 @@ let agentServerSent = null;
 let agentServerTimer = 0;
 let agentSetupPending = null; // the latest load, which Copy and Download may wait for
 let agentNameAdd = ''; // the address Signalith's certificate doesn't cover yet (from the latest setup)
+let agentSetupData = null; // the latest setup as the server sent it, token placeholder and all
 try {
   // An address saved while this server spoke plain HTTP: agents now send
   // over HTTPS, on the same port.
@@ -2143,6 +2210,8 @@ $('linux-source').addEventListener('change', loadAgentConfig);
 $('otel-host').addEventListener('change', loadAgentConfig);
 $('osquery-platform').addEventListener('change', loadAgentConfig);
 $('sysmon').addEventListener('change', loadAgentConfig);
+$('sysmon-linux').addEventListener('change', loadAgentConfig);
+$('powershell').addEventListener('change', loadAgentConfig);
 $('wazuh-syslog').addEventListener('click', (e) => {
   e.preventDefault();
   const radio = document.querySelector('input[name=os][value=syslog]');
@@ -2158,6 +2227,194 @@ agentServerEl.addEventListener('change', async () => {
   if (!agentServerEl.value.trim()) agentServerEl.value = agentServerGuess; // cleared: back to the default
   if (await agentSetupFresh()) agentEnsureName();
 });
+
+// ---------- add data: the agent token ----------
+// The server writes every config with a placeholder where the token goes
+// (token_placeholder). The page fills it in only when the config leaves
+// the page: the first Copy or Download creates a token named after the
+// "Token for these agents" field (POST api/agent-tokens) and puts it in
+// the config and the steps. The token lives only in this variable, never
+// in storage; changing the name or the source drops it, so the next copy
+// makes a new token. "Use a token I already have" takes a pasted token
+// instead (checked here only).
+const AGENT_TOKEN_DEFAULTS = { linux: 'Linux servers', windows: 'Windows servers', otel: 'OpenTelemetry Collector', osquery: 'osquery hosts' };
+const agentTokenNameKey = 'signalith.agentTokenName.';
+const agentTok = {
+  purpose: '', // linux, windows or otel: what the setup on screen is for
+  secret: '', // the token made on this page for name + purpose
+  madeFor: '', // purpose + name the secret was made for
+  made: null, // the token record of the secret, for the success line
+  creating: null, // the create on its way, so two clicks make one token
+  paste: false, // "Use a token I already have"
+  touched: false, // the name was typed this visit: keep it as it is
+  active: null, // lower-cased names of active tokens (from tokens.js), once known
+};
+const agentTokNameEl = $('agent-token-name');
+const agentTokPasteEl = $('agent-token-paste');
+const agentTokPlaceholder = () => (agentSetupData && agentSetupData.token_placeholder) || '@@AGENT_TOKEN@@';
+// agentTokName is the name as the server will store it: trimmed, inner
+// runs of spaces made one.
+const agentTokName = () => agentTokNameEl.value.trim().replace(/\s+/g, ' ');
+const agentTokKey = () => agentTok.purpose + '\n' + agentTokName().toLowerCase();
+// A pasted token goes into shell, PowerShell and YAML as it is, so a shared
+// token may hold only characters none of them treat specially.
+const agentTokSecretOK = (v) => /^sgl_[a-z2-7]{52}$/.test(v) || (!/^sgl_/i.test(v) && /^[A-Za-z0-9._~+\/=-]{16,256}$/.test(v));
+
+// agentTokenNames is called by tokens.js whenever the token list loads, so
+// the default name can skip names already taken.
+function agentTokenNames(names) {
+  agentTok.active = new Set(names.map((n) => n.toLowerCase()));
+  if (!agentTok.touched && !agentTok.secret) agentTokDefault();
+}
+
+// agentTokDefault fills the name field for the current source: the name
+// last used for it in this browser, else the default, with " 2", " 3" and
+// so on added when an active token already has it.
+function agentTokDefault() {
+  if (!agentTok.purpose) return;
+  let base = AGENT_TOKEN_DEFAULTS[agentTok.purpose] || 'Agents';
+  try { base = localStorage.getItem(agentTokenNameKey + agentTok.purpose) || base; } catch (_) { /* storage may be blocked */ }
+  let name = base;
+  if (agentTok.active) for (let n = 2; agentTok.active.has(name.toLowerCase()) && n < 1000; n++) name = base + ' ' + n;
+  agentTokNameEl.value = name;
+}
+
+// agentTokPurpose follows the source on screen: a new source starts with
+// its own name and no token.
+function agentTokPurpose(purpose) {
+  if (purpose === agentTok.purpose) return;
+  agentTok.purpose = purpose;
+  agentTok.touched = false;
+  agentTokDrop();
+  agentTokDefault();
+}
+
+// agentTokDrop forgets the token made on this page; the config shows the
+// placeholder again.
+function agentTokDrop() {
+  const had = !!agentTok.secret && !agentTok.paste;
+  agentTok.secret = '';
+  agentTok.madeFor = '';
+  agentTok.made = null;
+  $('agent-token-made').classList.add('hidden');
+  $('agent-token-made').replaceChildren();
+  if (had && agentSetupData) agentSetupRender(agentSetupData);
+}
+
+function agentTokError(msg) {
+  const err = $('agent-token-error');
+  const input = agentTok.paste ? agentTokPasteEl : agentTokNameEl;
+  [agentTokNameEl, agentTokPasteEl].forEach((n) => n.removeAttribute('aria-invalid'));
+  if (msg) {
+    input.setAttribute('aria-invalid', 'true');
+    err.replaceChildren(icon('circle-alert'), sentence(msg));
+  } else {
+    err.replaceChildren();
+  }
+  err.classList.toggle('hidden', !msg);
+}
+
+agentTokNameEl.addEventListener('input', () => {
+  agentTok.touched = true;
+  agentTokError('');
+  if (agentTok.secret && agentTok.madeFor !== agentTokKey()) agentTokDrop();
+});
+agentTokNameEl.addEventListener('change', () => {
+  if (!agentTokName()) { agentTok.touched = false; agentTokDefault(); }
+});
+agentTokPasteEl.addEventListener('input', () => {
+  agentTokError('');
+  agentTok.secret = '';
+});
+$('agent-token-swap').addEventListener('click', () => {
+  agentTok.paste = !agentTok.paste;
+  agentTokDrop();
+  agentTokError('');
+  agentTokPasteEl.value = '';
+  agentTokNameEl.classList.toggle('hidden', agentTok.paste);
+  agentTokPasteEl.classList.toggle('hidden', !agentTok.paste);
+  $('agent-token-label').textContent = agentTok.paste ? 'Agent token' : 'Token for these agents';
+  $('agent-token-label').htmlFor = agentTok.paste ? 'agent-token-paste' : 'agent-token-name';
+  $('agent-token-swap').textContent = agentTok.paste ? 'Create a new token instead' : 'Use a token I already have';
+  $('agent-token-help').textContent = agentTok.paste
+    ? 'The token goes into the configuration when you copy or download it. It stays on this page.'
+    : 'Each group of agents gets its own token, so you can revoke one group without touching the others.';
+  (agentTok.paste ? agentTokPasteEl : agentTokNameEl).focus();
+});
+
+// agentTokEnsure makes sure there is a token to put in the config, creating
+// one if needed. It is false when there is none; the field then says why.
+async function agentTokEnsure() {
+  if (agentTok.paste) {
+    const v = agentTokPasteEl.value.trim();
+    if (!agentTokSecretOK(v)) {
+      agentTokError(!v ? 'Paste the token these agents should use.'
+        : /^sgl_/i.test(v) ? 'That doesn’t look like a whole agent token: it is sgl_ and 52 more letters and digits.'
+          : 'That doesn’t look like an agent token. Agent tokens start with sgl_; a shared token has 16 or more letters, digits or . _ ~ + / = -.');
+      agentTokPasteEl.focus();
+      return false;
+    }
+    agentTok.secret = v;
+    return true;
+  }
+  if (agentTok.secret && agentTok.madeFor === agentTokKey()) return true;
+  if (agentTok.creating) return agentTok.creating;
+  const name = agentTokName();
+  if (!name) {
+    agentTokError('Enter a name for the token, such as Linux web servers.');
+    agentTokNameEl.focus();
+    return false;
+  }
+  const key = agentTokKey();
+  agentTok.creating = (async () => {
+    try {
+      const r = await api('api/agent-tokens', { name, purpose: agentTok.purpose });
+      if (key !== agentTokKey()) return false; // the name changed meanwhile: ask again
+      agentTok.secret = r.secret;
+      agentTok.made = r.token || { name };
+      agentTokNameEl.value = agentTok.made.name || name;
+      agentTok.madeFor = agentTokKey();
+      try { localStorage.setItem(agentTokenNameKey + agentTok.purpose, name); } catch (_) { /* storage may be blocked */ }
+      agentTokError('');
+      agentTokMadeNote();
+      if (agentSetupData) agentSetupRender(agentSetupData);
+      if (typeof tokensReload === 'function') tokensReload();
+      return true;
+    } catch (e) {
+      agentTokError(e.message || 'Couldn’t create the token.');
+      agentTokNameEl.focus();
+      return false;
+    } finally {
+      agentTok.creating = null;
+    }
+  })();
+  return agentTok.creating;
+}
+
+function agentTokMadeNote() {
+  const box = $('agent-token-made');
+  box.replaceChildren(icon('circle-check'), el('div', {},
+    el('b', {}, `Created token “${agentTok.made.name}”.`),
+    el('p', {}, 'It’s in the configuration below. Signalith shows it only now, so copy or download the configuration before you leave this page.')));
+  box.classList.remove('hidden');
+}
+
+// agentTokFill puts the token into text, when there is one to put in.
+const agentTokFill = (text) => (agentTok.secret ? String(text).split(agentTokPlaceholder()).join(agentTok.secret) : String(text));
+// agentTokShown is what the page shows for text: the token made here, or
+// a chip where it will go.
+function agentTokShown(text) {
+  const ph = agentTokPlaceholder();
+  if (agentTok.secret && !agentTok.paste) return [agentTokFill(text)];
+  const parts = String(text).split(ph);
+  const out = [parts[0]];
+  for (let i = 1; i < parts.length; i++) {
+    out.push(el('span', { class: 'agent-token-chip', title: 'Signalith puts the agent token here when you copy or download' },
+      icon('key-round', 'icon--xs'), agentTok.paste ? 'your token added when you copy or download' : 'token added when you copy or download'), parts[i]);
+  }
+  return out;
+}
+const agentTokNeeded = (text) => String(text).includes(agentTokPlaceholder());
 
 // agentEnsureName adds the address agents send to to Signalith's HTTPS
 // certificate, once it is entered (the field is left, or Copy or Download
@@ -2200,9 +2457,12 @@ async function agentSetupLoad() {
   // Wazuh: Fluent Bit on the Linux machine that runs the Wazuh manager.
   const wazuh = os === 'wazuh';
   const host = otel ? $('otel-host').value : osq ? '' : os;
+  agentTokPurpose(otel ? 'otel' : osq ? 'osquery' : os);
   $('otel-opts').classList.toggle('hidden', !otel);
   $('osquery-opts').classList.toggle('hidden', !osq);
   $('linux-opts').classList.toggle('hidden', host !== 'linux');
+  // The Collector reads Sysmon for Linux's events with Fluent Bit only.
+  $('sysmon-linux').closest('label').classList.toggle('hidden', otel);
   $('windows-opts').classList.toggle('hidden', host !== 'windows');
   $('wazuh-note').classList.toggle('hidden', !wazuh);
   const osqName = { linux: 'Linux', windows: 'Windows', darwin: 'macOS' }[$('osquery-platform').value];
@@ -2216,7 +2476,7 @@ async function agentSetupLoad() {
   steps.setAttribute('aria-busy', 'true');
   if (!agentSetupConfig) agentSetupSkeleton();
   const q = wazuh ? new URLSearchParams({ os: 'linux', source: 'wazuh' })
-    : new URLSearchParams({ os, source: $('linux-source').value, sysmon: $('sysmon').checked });
+    : new URLSearchParams({ os, source: $('linux-source').value, sysmon: (host === 'linux' ? !otel && $('sysmon-linux').checked : $('sysmon').checked), powershell: $('powershell').checked });
   if (otel) q.set('collector', host);
   if (osq) q.set('platform', $('osquery-platform').value);
   const server = agentServerValue();
@@ -2294,6 +2554,7 @@ function agentServerWarn(a) {
 }
 
 function agentSetupRender(a) {
+  agentSetupData = a;
   if (agentSetupErrEl) agentSetupErrEl.remove();
   agentNameAdd = a.add_name || '';
   agentServerWarn(a);
@@ -2383,8 +2644,22 @@ function caFile(pem, fingerprint, nextFingerprint) {
 
 function agentSetupCommand(cmd, label = 'Copy command') {
   const btn = el('button', { class: 'btn btn--ghost btn--icon btn--sm', type: 'button', 'aria-label': label, title: label }, icon('copy'));
-  btn.addEventListener('click', () => agentSetupCopy(cmd, btn));
-  return el('div', { class: 'agent-cmd' }, el('code', {}, cmd), btn);
+  if (!agentTokNeeded(cmd)) {
+    btn.addEventListener('click', () => agentSetupCopy(cmd, btn));
+    return el('div', { class: 'agent-cmd' }, el('code', {}, cmd), btn);
+  }
+  // A command holding the token: make the token first, then copy the
+  // command again from the page redrawn with it (same place in the list).
+  btn.addEventListener('click', async () => {
+    if (agentSetupStale() && !(await agentSetupFresh())) return;
+    if (!(await agentEnsureName())) return;
+    const all = [...document.querySelectorAll('#agent-steps .agent-cmd button')];
+    const at = all.indexOf(btn);
+    if (!(await agentTokEnsure())) return;
+    const now = document.querySelectorAll('#agent-steps .agent-cmd button')[at];
+    agentSetupCopy(agentTokFill(cmd), now && now.isConnected ? now : btn);
+  });
+  return el('div', { class: 'agent-cmd' }, el('code', {}, ...agentTokShown(cmd)), btn);
 }
 
 // agentSetupEditor shows the config with line numbers and quiet colours:
@@ -2394,7 +2669,11 @@ function agentSetupEditor(config) {
   const out = [];
   lines.forEach((line, i) => {
     let src;
-    if (/^\s*#/.test(line)) src = [el('span', { class: 'agent-c' }, line)];
+    if (agentTokNeeded(line)) {
+      // the line that carries the token: key, then the token or its chip
+      const m = line.match(/^(\s*)(\S+)(\s+)(.*)$/);
+      src = m && !agentTokNeeded(m[2]) ? [m[1], el('span', { class: 'agent-k' }, m[2]), m[3], ...agentTokShown(m[4])] : agentTokShown(line);
+    } else if (/^\s*#/.test(line)) src = [el('span', { class: 'agent-c' }, line)];
     // a Fluent Bit [SECTION], or a top-level key of the Collector's YAML
     else if (/^\s*\[[^\]]+\]\s*$/.test(line) || /^[a-z_]+:\s*$/.test(line)) src = [el('span', { class: 'agent-s' }, line)];
     else {
@@ -2480,13 +2759,16 @@ const agentSetupStale = () => agentServerValue() !== agentServerSent || $('agent
 $('copy-config').addEventListener('click', async () => {
   if (agentSetupStale() && !(await agentSetupFresh())) return;
   if (!(await agentEnsureName())) return;
-  agentSetupCopy(agentSetupConfig, $('copy-config'));
+  if (agentTokNeeded(agentSetupConfig) && !(await agentTokEnsure())) return;
+  agentSetupCopy(agentTokFill(agentSetupConfig), $('copy-config'));
 });
 $('agent-download').addEventListener('click', async () => {
   if (agentSetupStale() && !(await agentSetupFresh())) return;
   if (!agentSetupConfig || !(await agentEnsureName())) return;
-  const url = URL.createObjectURL(new Blob([agentSetupConfig], { type: 'text/plain' }));
-  const a = el('a', { href: url, download: $('agent-path').textContent || 'fluent-bit.conf', class: 'hidden' });
+  if (agentTokNeeded(agentSetupConfig) && !(await agentTokEnsure())) return;
+  const file = $('agent-path').textContent || 'fluent-bit.conf';
+  const url = URL.createObjectURL(new Blob([agentTokFill(agentSetupConfig)], { type: 'text/plain' }));
+  const a = el('a', { href: url, download: file, class: 'hidden' });
   document.body.append(a);
   a.click();
   a.remove();
@@ -3560,7 +3842,9 @@ function healthPageError(e) {
     const d = m && m.search_default_earliest != null ? (m.search_default_earliest || '0') : '';
     if (d && [...$('time').options].some((o) => o.value === d)) $('time').value = d;
   }
+  if ($('time').value !== QUERY_TIME) pickedTime = $('time').value;
   if (saved) setQuery(saved);
+  syncTimePicker();
   updateBuilderVisibility();
   loadFields();
   loadAskInfo();

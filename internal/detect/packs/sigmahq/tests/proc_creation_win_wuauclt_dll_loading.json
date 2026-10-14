@@ -1,0 +1,9 @@
+{"rule": "af77cf95-c469-471c-b6a0-946c685c4798", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"UpdateDeploymentProviderRunHandlerComServer","Image":"\\wuauclt.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x /UpdateDeploymentProvider UpdateDeploymentProvider.dll  UpdateDeploymentProvider RunHandlerComServer","Image":"\\wuauclt.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"UpdateDeploymentProvider :\\Windows\\UUS\\Packages\\Preview\\amd64\\updatedeploy.dll /ClassId RunHandlerComServer","Image":"\\wuauclt.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"UpdateDeploymentProvider \\UpdateDeploy.dll /ClassId  :\\Windows\\WinSxS\\ RunHandlerComServer","Image":"\\wuauclt.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x wuaueng.dll  RunHandlerComServer UpdateDeploymentProvider","Image":"\\wuauclt.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\wuauclt.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"UpdateDeploymentProviderRunHandlerComServer"}}
+]}

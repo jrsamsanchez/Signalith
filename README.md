@@ -33,8 +33,9 @@ docker compose -f deploy/docker/docker-compose.yml up -d
 docker compose -f deploy/docker/docker-compose.yml exec signalith signalith initial-password
 ```
 
-The first command starts OpenSearch and Signalith. On first start a setup step makes the
-admin password, the agents' ingest token and the certificates OpenSearch and Signalith use
+The first command downloads Signalith's ready-made image from GitHub
+(`ghcr.io/jrsamsanchez/signalith`) and starts OpenSearch and Signalith. On first start a setup step makes the
+admin password, a shared agent token and the certificates OpenSearch and Signalith use
 with each other, and keeps them in Docker volumes; no password is written in the compose
 files. Once OpenSearch is up, a second step loads OpenSearch's security settings (who may
 sign in, and what each may do), and Signalith starts after it. If the first command ends
@@ -45,9 +46,19 @@ in as `admin` with it. Signalith serves HTTPS with a certificate it makes for it
 the browser warns until you trust it; the sign-in page has a **Download the server
 certificate** link, and [docs/https.md](docs/https.md) says how to trust it.
 
-Agents get their configuration from the **Add data** page: they send over HTTPS, with the
-ingest token this install made. A new install refuses events sent over plain `http://`,
-and refuses `change-this-ingest-token`, the example token older versions gave every agent.
+Agents get their configuration from the **Add data** page: they send over HTTPS, and each
+group of agents gets its own token when you copy or download its configuration. A new
+install refuses events sent over plain `http://`, and refuses `change-this-ingest-token`,
+the example token older versions gave every agent.
+
+The token the setup step made (`ingest-token` in the `signalith-secrets` volume, passed in
+as `SIGNALITH_INGEST_TOKEN_FILE`) is a **legacy shared token**: every agent set up with it
+uses the same secret. It is kept so agents set up before per-agent tokens keep working.
+To switch, give those agents a new configuration from **Add data**, then, under **Agent
+tokens**, choose **Stop accepting** on the shared token. That's all: you don't need to
+edit `docker-compose.yml`, and the Security page counts the token as retired. On a new
+install no agent has it, so you can choose **Stop accepting** straight away. See
+[Replace a shared token](docs/agent-tokens.md#replace-a-shared-token).
 Coming from an older version? See
 [Upgrading the Docker quick start](#upgrading-the-docker-quick-start).
 
@@ -72,8 +83,8 @@ Settings changed on the **Settings** page are kept in the `signalith-data` volum
 certificate authority, so they survive updates; settings given in `docker-compose.yml`'s
 `environment:` show there locked.
 
-To update, run `git pull` and then the first command again. It rebuilds Signalith from the
-new code each time. If `git pull` says your local changes to
+To update, run `git pull` and then the first command again. It downloads the Signalith
+image built from the newest code each time. If `git pull` says your local changes to
 `deploy/docker/signalith.yaml` would be overwritten, run `git stash` and `git pull` again.
 If the change you had made there was `plaintext_ingest: deny`, add that line back under
 `mode: auto`, indented the same, before you run the first command; otherwise agents on
@@ -83,6 +94,26 @@ Settings > General > "Start Docker Desktop when you sign in". If the computer re
 while the first command was still waiting for the step that loads OpenSearch's security
 settings, Signalith had not started yet and does not start by itself: https://localhost:8080
 doesn't answer. Run `docker compose -f deploy/docker/docker-compose.yml up -d` again then.
+
+#### Running a release, or building the image yourself
+
+The quick start runs the image GitHub builds from `main`, which matches the code `git pull`
+gives you. To run a release instead, check out its tag and set `SIGNALITH_VERSION` to the
+same version before the first command, for example in PowerShell:
+
+```powershell
+git checkout v0.1.0
+$env:SIGNALITH_VERSION = "0.1.0"
+docker compose -f deploy/docker/docker-compose.yml up -d
+```
+
+(in a Linux or macOS terminal: `export SIGNALITH_VERSION=0.1.0`). To build the image
+from the code you checked out, for example to try a change of your own, add
+`-f deploy/docker/docker-compose.build.yml` after the first `-f` in every command:
+
+```sh
+docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.build.yml up -d
+```
 
 #### Upgrading the Docker quick start
 
@@ -103,7 +134,7 @@ same):
    ```sh
    docker compose -f deploy/docker/docker-compose.yml up -d
    ```
-   This rebuilds Signalith, runs the setup step once, restarts OpenSearch with its
+   This downloads the new Signalith image, runs the setup step once, restarts OpenSearch with its
    security plugin on, and then runs the step that loads OpenSearch's security settings;
    Signalith starts after that. The first start takes a minute or two longer, and up to
    about 10 minutes on a slow computer, where that step keeps trying while OpenSearch is
@@ -126,10 +157,10 @@ same):
    such as sample data, never change it.) The **Health** page lists each agent still
    sending over plain `http://` (behind Docker Desktop they share one address, so it names
    them by the computer names in their events). On each of them, install the configuration
-   from the **Add data** page again; it has this server's own token and moves the agent to
+   from the **Add data** page again; it gives the agent a token of its own and moves it to
    HTTPS. Syslog devices need no change. If you had set a token of your own in
    `SIGNALITH_INGEST_TOKEN`, add that line back under `environment:` of the `signalith`
-   service in `docker-compose.yml` and run step 2 again; new agents still get the new
+   service in `docker-compose.yml` and run step 2 again; new agents still get their own
    token.
 6. If you had changed other things, such as ports or `SIGNALITH_PUBLIC_URL`, make the same
    changes in the new files (`SIGNALITH_PUBLIC_URL` now starts with `https://`).
@@ -240,7 +271,8 @@ read encrypted values: before going back to one, run `sudo signalith secrets dec
 
 Open **Add data** in the UI, pick Linux or Windows, and follow the steps: install
 Fluent Bit, save Signalith's CA certificate and the generated configuration, restart it.
-The configuration already contains the server address and ingest token, and sends over
+The configuration already contains the server address and a token of its own for this group
+of agents (made when you copy or download it; see [docs/agent-tokens.md](docs/agent-tokens.md)), and sends over
 HTTPS, checking the server's certificate with that CA. For firewalls, switches and other network
 devices, pick **Syslog** (see [Syslog](#syslog)). Hosts that run an OpenTelemetry Collector, and
 apps with an OpenTelemetry SDK, can send logs over OTLP instead: pick **OpenTelemetry** (see
@@ -263,7 +295,8 @@ Supported sources in Phase 1:
 | Windows Security log: 4624, 4625 logons | Authentication |
 | Windows Security log: 4688 process creation | Endpoint |
 | Windows Security log: 4720, 4726 accounts; 4728, 4732, 4756 group changes | Change |
-| Sysmon: event 1 process create, event 3 network connection | Endpoint, Network_Traffic |
+| Sysmon: 1 process create, 8 remote thread, 10 process access; 3 network connection; 6 driver and 7 DLL load; 11 file create, 23 and 26 file delete; 12, 13, 14 registry; 22 DNS query | Endpoint, Network_Traffic, Image_Load, Filesystem, Registry, Network_Resolution |
+| PowerShell script block logging: 4104 (Microsoft-Windows-PowerShell/Operational; see [Detections](docs/detections.md#powershell-script-blocks)) | Script |
 | Linux sshd, sudo, su (auth.log, secure, or journald) | Authentication |
 | Linux useradd, userdel, usermod, gpasswd | Change |
 | Syslog from any device (see below), including CEF and LEEF | Authentication, Change, Network_Traffic or Other |
@@ -459,6 +492,13 @@ them. All of this, with the commands to trust the CA on Windows, macOS and Linux
   in `opensearch.proxy` or a key in a feed's address cannot be, and is reported. Passwords and
   keys in configured URLs are hidden (`***`) everywhere a URL is shown or logged, and agents get a
   generic error rather than OpenSearch details.
+- **Agent tokens**: each agent group sends with its own token (`sgl_` and 52 more
+  characters), shown once and kept only as a SHA-256 hash in OpenSearch. Revoking one on
+  **Add data** or with `signalith tokens revoke` turns its agents away within seconds on every
+  server. Every event records the token's name and the sender's address
+  (`signalith_token`, `signalith_sender`), and senders can't set those fields. To have a
+  secret scanner find leaked tokens, give it `\bsgl_[a-z2-7]{52}\b`. See
+  [docs/agent-tokens.md](docs/agent-tokens.md).
 - **Memory**: on Linux the server turns off core dumps and keeps other programs from reading its
   memory; the systemd unit also turns off swap for it, hides other processes and limits it to the
   files and system calls it needs. On Windows the service runs as its own account rather than
@@ -532,7 +572,7 @@ are counted for each person's own address, not the proxy's. See
 | `auth.session_timeout` | `12h` | Sign the web UI out after this long without activity ("Keep me signed in" lasts up to 7 days) |
 | `auth.users_file` | `users.json` in `lookups.dir` | Where users added on the Users page are kept; directory settings go in `directory.json` next to it |
 | `auth.ldap` | none | Active Directory or LDAP sign-in, when you would rather not set it up on the Users page; see [docs/users.md](docs/users.md#setting-it-in-signalithyaml) |
-| `ingest.tokens` | one generated | Tokens agents send as `Authorization: Bearer` |
+| `ingest.tokens` | none | Shared tokens (legacy) agents send as `Authorization: Bearer`; still accepted. New agents get their own token on **Add data** (see [docs/agent-tokens.md](docs/agent-tokens.md)) |
 | `ingest.max_event_age` | `7d` (or the shortest retention period if shorter) | Events older than this, or more than an hour ahead, are filed under the time they arrived, with their own time in `device_time`. See [Ingest limits](#ingest-limits) |
 | `syslog.udp`, `syslog.tcp` | off (`init` sets `0.0.0.0:514`) | Addresses to receive syslog on; empty turns a listener off. See [Syslog](#syslog) |
 | `syslog.tls` | off (`init` sets `0.0.0.0:6514`) | Address for syslog over TLS, such as `0.0.0.0:6514`; uses the web UI's certificate |
@@ -553,6 +593,7 @@ are counted for each person's own address, not the proxy's. See
 | `intel.feeds[].tags`, `.description`, `.enabled` | none, `true` | Labels added to every indicator, and on/off |
 | `intel.feeds_file` | `<lookups.dir>/intel_feeds.yaml` | Where feeds added on the page are saved, with their API keys encrypted (file mode 0600) |
 | `notify.file` | `<lookups.dir>/notifications.yaml` | Where notification channels and rules set on the **Notifications** page are saved, with their webhook URLs, header values and passwords encrypted (file mode 0600). See [docs/notifications.md](docs/notifications.md) |
+| `playbooks.file` | `<lookups.dir>/playbooks.yaml` | Where playbooks set on the **Playbooks** page are saved (file mode 0600; they hold no secrets). See [docs/playbooks.md](docs/playbooks.md) |
 | `intel.allow_loopback_feeds` | `false` | Allow feed downloads from this machine (`127.0.0.1`, `::1`), for a feed server on the same host |
 | `cluster.node_name` | the name kept in the state folder, else this computer's name | This server's name in the list of servers and on every log line (`node=`). 1 to 63 letters, digits, dots, dashes or underscores. In Docker, set it (or `SIGNALITH_NODE_NAME`), since a container's name is random. Set in signalith.yaml or the environment only |
 | `dashboards.dir` | `dashboards` | Folder for custom dashboards, one YAML file each, relative to the config file |
@@ -565,13 +606,13 @@ Secrets can come from the environment instead: `SIGNALITH_OPENSEARCH_PASSWORD`,
 `auth.ldap` in this file only; directory sign-in set up on the Users page keeps its own) (also
 `SIGNALITH_OPENSEARCH_URL`, `SIGNALITH_OPENSEARCH_USERNAME`, `SIGNALITH_OPENSEARCH_PROXY`, `SIGNALITH_LISTEN`,
 `SIGNALITH_PUBLIC_URL`, `SIGNALITH_DETECTIONS_DIR`, `SIGNALITH_LOOKUPS_DIR`, `SIGNALITH_DASHBOARDS_DIR`,
-`SIGNALITH_USERS_FILE`, `SIGNALITH_INTEL_FEEDS_FILE`, `SIGNALITH_NOTIFY_FILE`, `SIGNALITH_ARCHIVE_DIR`, `SIGNALITH_ASSISTANT_API_KEY`, and
+`SIGNALITH_USERS_FILE`, `SIGNALITH_INTEL_FEEDS_FILE`, `SIGNALITH_NOTIFY_FILE`, `SIGNALITH_PLAYBOOKS_FILE`, `SIGNALITH_ARCHIVE_DIR`, `SIGNALITH_ASSISTANT_API_KEY`, and
 `SIGNALITH_SYSLOG_UDP` and `SIGNALITH_SYSLOG_TCP`, where `off` turns the listener off, `SIGNALITH_NODE_NAME` and
 `SIGNALITH_NODE_URL`). Secrets can also be read
 from a file, as Docker and Kubernetes secrets are: set `SIGNALITH_OPENSEARCH_PASSWORD_FILE`,
 `SIGNALITH_ADMIN_PASSWORD_FILE`, `SIGNALITH_INGEST_TOKEN_FILE`, `SIGNALITH_LDAP_BIND_PASSWORD_FILE` or
 `SIGNALITH_ASSISTANT_API_KEY_FILE` to the file's path. Setting both forms of one is an error, except for the
-ingest token, where both tokens are accepted (agents set up on Add data get the file's). A setting set by an
+ingest token, where both are accepted as shared tokens (agents set up on Add data get a token of their own). A setting set by an
 environment variable, or by a file one names, is shown locked on the Settings page. When the admin password
 comes from `SIGNALITH_ADMIN_PASSWORD_FILE`, or from `SIGNALITH_ADMIN_PASSWORD` given to the systemd or Windows
 service, `signalith passwd` keeps the new one in `admin-password-hash` in the state folder, where it replaces
@@ -665,7 +706,7 @@ field itself says so).
 sudo signalith secrets status                       # where the key is; how each value is stored
 sudo signalith secrets encrypt                      # encrypt plain values, keeping comments and layout
 sudo signalith secrets set opensearch.password      # asks twice without showing it, or reads a pipe
-sudo signalith secrets set ingest.tokens            # adds a token; press Enter to have one made
+sudo signalith secrets set ingest.tokens            # adds a shared agent token (per-agent ones: signalith tokens create)
 sudo signalith secrets rotate-master                # new master key; everything encrypted again
 sudo signalith secrets rotate-master -prune         # remove the previous key once nothing needs it
 sudo signalith secrets decrypt                      # plain text again, before going back to an older version
@@ -699,6 +740,13 @@ changes and more, plus two risk incident rules); 19 are on by default.
 - **Import Sigma rule** converts a [Sigma](https://github.com/SigmaHQ/sigma) rule to a
   Signalith query and lists anything it had to approximate. Imported rules start
   disabled so you can test them first.
+- **Content packs** add community rules, off until you turn them on: 1,805 tested
+  [SigmaHQ](https://github.com/SigmaHQ/sigma) Windows and Linux rules and 801 Windows and Linux detections
+  from Splunk's open source
+  [security_content](https://github.com/splunk/security_content) (Apache 2.0). With
+  both packs on, detections cover 147 ATT&CK techniques. Newer tested rules arrive as
+  signed content updates, without a new Signalith release (from the internet or as an
+  upload). See [docs/detections.md](docs/detections.md#content-packs).
 - **ATT&CK coverage** shows the Enterprise matrix with techniques covered by enabled
   detections, by disabled ones, and gaps.
 
@@ -860,6 +908,20 @@ the server's scripts folder (`response.scripts_dir`), which no page can change.
 
 See [docs/response-actions.md](docs/response-actions.md) for each kind of action,
 the AD delegation, example isolate scripts and the API.
+
+## Playbooks
+
+A **playbook** does the first steps when a detection fires: notify a channel, run a
+response action, open a case (or add to the one it opened), set the finding's status
+and owner. Admins build them on the **Playbooks** page, step by step, and the page says
+in one sentence what each does. Disruptive actions (block, disable, isolate) always wait
+for an analyst: they show on the **Approvals** page with exactly what will happen, and run
+only once someone approves, within 24 hours. A rejected, expired or failed step stops the
+playbook. Each playbook runs once per finding, only on the server running the background
+jobs, and everything it does is noted on the finding and the case.
+
+See [docs/playbooks.md](docs/playbooks.md) for the steps, the approval flow, an example
+and the API.
 
 ## Dashboards
 
@@ -1091,7 +1153,9 @@ visibility to alerts, response actions and signed packages, is on the
 ## Trademarks
 
 Signalith is an independent open-source project. It is not affiliated with,
-endorsed by or sponsored by Splunk or Cisco, and contains no Splunk code.
+endorsed by or sponsored by Splunk or Cisco, and contains no Splunk software code.
+Its optional Splunk Security Content pack ships detection rules from Splunk's open
+source security_content project under the Apache License 2.0 (see NOTICE).
 Splunk, Splunk Enterprise Security and SPL are trademarks of Splunk LLC; they are
 named here only to describe what Signalith works like. OpenSearch, Fluent Bit,
 Sigma and MITRE ATT&CK are trademarks of their respective owners.

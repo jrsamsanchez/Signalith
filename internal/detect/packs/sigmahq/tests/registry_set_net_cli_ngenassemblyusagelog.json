@@ -1,0 +1,4 @@
+{"rule": "28036918-04d3-423d-91c0-55ecf99fb892", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"SOFTWARE\\Microsoft\\.NETFramework\\NGenAssemblyUsageLog"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}}
+]}

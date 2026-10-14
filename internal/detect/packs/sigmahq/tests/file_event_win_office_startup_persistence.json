@@ -1,0 +1,7 @@
+{"rule": "0e20c89d-2264-44ae-8238-aeeaba609ece", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"\\Microsoft\\Word\\STARTUP.doc"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"\\XLSTART\\Office\\Program Files.xltm"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\WINWORD.exe","TargetFilename":"\\Microsoft\\Word\\STARTUP.doc"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\EXCEL.exe","TargetFilename":"\\XLSTART \\Program Files \\Office .xltm"}}
+]}

@@ -1,0 +1,11 @@
+{"rule": "e0c69ebd-b54f-4aed-8ae3-e3467843f3f0", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"-urltunnel"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"-connector-id cleanup  tunnel x"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Hashes":"SHA256=0409c9b12f9d0eda86e461ed9bdabeefb00172b26322079681a0bdf48e68dc28"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"-credentials-contents   tunnel   run x"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"-url tunnel","Image":"\\cloudflared-windows-386.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"cleanup -connector-id  tunnel x","Image":"\\cloudflared-windows-amd64.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Hashes":"SHA256=0409c9b12f9d0eda86e461ed9bdabeefb00172b26322079681a0bdf48e68dc28","Image":"\\cloudflared-windows-amd64.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x tunnel  -credentials-contents   run x","Image":"\\cloudflared-windows-386.exe"}}
+]}

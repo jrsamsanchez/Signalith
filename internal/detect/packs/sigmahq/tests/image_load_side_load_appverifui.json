@@ -1,0 +1,5 @@
+{"rule": "ee6cea48-c5b6-4304-a332-10fc6446f484", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"\\appverifUI.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"C:\\Windows\\SysWOW64\\appverif.exe","ImageLoaded":"C:\\Windows\\SysWOW64\\ \\appverifUI.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{}}
+]}

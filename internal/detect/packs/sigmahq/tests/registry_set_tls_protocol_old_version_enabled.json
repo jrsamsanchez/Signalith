@@ -1,0 +1,5 @@
+{"rule": "439957a7-ad86-4a8f-9705-a28131c6821b", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)","TargetObject":"\\Control\\SecurityProviders\\SCHANNEL\\Protocols\\TLS 1.0\\\\Enabled"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Control\\SecurityProviders\\SCHANNEL\\Protocols\\TLS 1.0\\\\Enabled"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)"}}
+]}

@@ -1,0 +1,7 @@
+{"rule": "e651795f-b2c9-4a84-a18a-b901018a3bfa", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"12","data":{"EventType":"DeleteValue","ProcessId":"4242","TargetObject":"x \\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\RunMRU x"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"12","data":{"EventType":"DeleteValue","ProcessId":"4242","TargetObject":"x \\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\RunMRU y"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"12","data":{"EventType":"DeleteValue","ProcessId":"4242","TargetObject":"x \\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\RunMRU x"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"12","data":{"EventType":"DeleteValue","ProcessId":"4242","TargetObject":"HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\RunMRU x"}}
+]}

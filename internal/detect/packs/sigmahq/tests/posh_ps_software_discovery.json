@@ -1,0 +1,4 @@
+{"rule": "2650dd1a-eb2a-412d-ac36-83f06c4f2282", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"\\software\\ format-table get-itemProperty select-object"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}}
+]}

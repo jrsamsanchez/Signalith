@@ -1,0 +1,5 @@
+{"rule": "b36d01a3-ddaf-4804-be18-18a6247adfcd", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"Add-WindowsCapabilityOpenSSH.","Image":"\\pwsh.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\pwsh.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"Add-WindowsCapabilityOpenSSH."}}
+]}

@@ -1,0 +1,16 @@
+{"rule": "502b42de-4306-40b4-9596-6f590c81f073", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x /cdir \\Users\\","Image":"\\cmd.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"user","Image":"\\net.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x /l","Image":"\\cmdkey.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"qwinsta.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x /c\\Users\\ rmdir dir x","Image":"\\cmd.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\cmd.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x /cdir \\Users\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/timesuser","Image":"\\net.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\net.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"user"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\cmdkey.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x /l"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"\"C:\\WINDOWS\\System32\\Wbem\\WMIC.exe\" useraccount get /ALL /format:csv","Company":"Microsoft Corporation","CurrentDirectory":"C:\\WINDOWS\\system32\\","Description":"WMI Commandline Utility","FileVersion":"10.0.26100.5074 (WinBuild.160101.0800)","Hashes":"MD5=0C0A46AAA84E8689D9EE731E6799283B,SHA256=2EF794C4940AFEA56C6D6D3B9BC9E66965BC7333E79C5DCB2DEF3C0E36F0834C,IMPHASH=68F5781FF188454492D1B3FD57484D85","Image":"C:\\Windows\\System32\\wbem\\WMIC.exe","IntegrityLevel":"High","LogonGuid":"0197231E-5032-6940-AAE2-070000000000","LogonId":"0x7e2aa","OriginalFileName":"wmic.exe","ParentCommandLine":"\"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe\" -ep bypass","ParentImage":"C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe","ParentProcessGuid":"0197231E-EDAB-693F-1D05-000000000D00","ParentProcessId":"14012","ParentUser":"swachchhanda\\xodih","ProcessGuid":"0197231E-EF3B-693F-3F05-000000000D00","ProcessId":"8932","Product":"Microsoft® Windows® Operating System","RuleName":"-","TerminalSessionId":"1","User":"swachchhanda\\xodih","UtcTime":"2025-12-15 11:21:31.584"}}
+]}

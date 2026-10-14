@@ -1,0 +1,6 @@
+{"rule": "e3845023-ca9a-4024-b2b2-5422156d5527", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"\\PowerShell\\7\\Modules\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"C:\\Windows\\SysWOW64\\msiexec.exe","TargetFilename":"\\PowerShell\\7\\Modules\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":":\\Program Files\\PowerShell\\7\\pwsh.exe","TargetFilename":"\\PowerShell\\7\\Modules\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{}}
+]}

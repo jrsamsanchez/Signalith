@@ -1,0 +1,5 @@
+{"rule": "89a9a0e0-f61a-42e5-8957-b1479565a658", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\wsreset.exe","IntegrityLevel":"High"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"IntegrityLevel":"High"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\wsreset.exe"}}
+]}

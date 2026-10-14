@@ -1,0 +1,11 @@
+{"rule": "8b5901bc-da63-11eb-be43-acde48001122", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\AppX82a6gwre4fdg3bt635tn5ctqjf8msdd2\\Shell\\open\\command x\\(Default)"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\AppX82a6gwre4fdg3bt635tn5ctqjf8msdd2\\Shell\\open\\command x\\DelegateExecute"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\AppX82a6gwre4fdg3bt635tn5ctqjf8msdd2\\Shell\\open\\command y\\(Default)"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\AppX82a6gwre4fdg3bt635tn5ctqjf8msdd2\\Shell\\open\\command y\\DelegateExecute"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run\\(Default)"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\AppX82a6gwre4fdg3bt635tn5ctqjf8msdd2\\Shell\\open\\command x\\(Defaulu)"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\AppX82a6gwre4fdg3bt635tn5ctqjf8msdd2\\Shell\\open\\command x"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run\\DelegateExecute"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\AppX82a6gwre4fdg3bt635tn5ctqjf8msdd2\\Shell\\open\\command x\\DelegateExecutf"}}
+]}

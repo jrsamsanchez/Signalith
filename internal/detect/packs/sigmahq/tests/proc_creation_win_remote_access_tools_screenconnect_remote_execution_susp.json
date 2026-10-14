@@ -1,0 +1,5 @@
+{"rule": "7b582f1a-b318-4c6a-bf4e-66fe49bf55a5", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\nltest.exe","ParentCommandLine":":\\Windows\\TEMP\\ScreenConnect\\run.cmd"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"ParentCommandLine":":\\Windows\\TEMP\\ScreenConnect\\run.cmd"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\nltest.exe"}}
+]}

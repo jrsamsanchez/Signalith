@@ -1,0 +1,5 @@
+{"rule": "6a69f62d-ce75-4b57-8dce-6351eb55b362", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"—r\\Windows\\WebCache","Image":"\\esentutl.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\esentutl.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"—r\\Windows\\WebCache"}}
+]}

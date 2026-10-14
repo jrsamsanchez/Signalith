@@ -298,6 +298,14 @@ var Registry = []Setting{
 		Confirm: "This server will stop running detections, threat intel downloads, notifications and retention. If no other server shares its OpenSearch, none of them run until this is turned on again.", ConfirmWhen: "off"},
 	{Key: "detections.max_findings_per_run", Scope: ScopeCluster, Section: "detections", Label: "Most findings per run", Type: TypeNumber, Min: intp(1), Max: intp(10000),
 		Help: "The most findings one detection run can raise, so a noisy rule cannot flood the queue."},
+	{Key: "detections.content_updates", Scope: ScopeServer, Section: "detections", Label: "Content pack updates", Type: TypeChoice,
+		Help: "Newer SigmaHQ and Splunk rules, tested and signed by the Signalith project, without a new Signalith release. " +
+			"Manual: an admin checks for them on the Detections page, or uploads them on a computer without internet access. " +
+			"Daily: this server checks once a day and installs them. Rules you turned on stay on, and new rules start off.",
+		Choices: []Choice{{ContentManual, "Manual"}, {ContentDaily, "Daily"}}, EmptyMeans: ContentManual},
+	{Key: "detections.content_url", Scope: ScopeCluster, Section: "detections", Label: "Content update address", Type: TypeURL,
+		Help:        "Where content updates are downloaded from, such as a copy on your own web server. Only bundles signed by the Signalith project are installed, wherever they come from.",
+		Placeholder: DefaultContentURL, EmptyMeans: "the Signalith project's GitHub releases"},
 
 	{Key: "assistant.provider", Scope: ScopeCluster, Section: "assistant", Label: "Provider", Type: TypeChoice,
 		Help: "Who runs the model. OpenAI or compatible includes Ollama, LM Studio and vLLM on your own hardware.",
@@ -338,7 +346,7 @@ var Excluded = map[string]Exclusion{
 	"auth.admin_password_hash": {ScopeCluster, "The built-in admin's password is changed on the server with signalith passwd."},
 	"auth.users_file":          {ScopeBootstrap, "The Users page keeps its users there, and a page cannot move a file it depends on. Shown under About this server."},
 	"auth.ldap":                {ScopeCluster, "Directory sign-in is set up on the Users page."},
-	"ingest.tokens":            {ScopeCluster, "Agent tokens are set in signalith.yaml (ingest.tokens) or with SIGNALITH_INGEST_TOKEN; Add data shows the agent setup that uses them. The page shows how many there are."},
+	"ingest.tokens":            {ScopeCluster, "Shared agent tokens from older setups and the Docker quick start: signalith.yaml (ingest.tokens) or SIGNALITH_INGEST_TOKEN(_FILE). New agents get their own token on Add data."},
 	"detections.dir":           {ScopeBootstrap, "Pages save detections there, and a page cannot move a folder it saves into. Shown under About this server."},
 	"lookups.dir":              {ScopeBootstrap, "It holds this page's own settings file, users and lists, so it cannot move from a page. Shown under About this server."},
 	"dashboards.dir":           {ScopeBootstrap, "Pages save dashboards there, and a page cannot move a folder it saves into. Shown under About this server."},
@@ -346,6 +354,7 @@ var Excluded = map[string]Exclusion{
 	"intel.feeds_file":         {ScopeBootstrap, "The Threat intel page keeps its feeds there, and a page cannot move a file it depends on. Shown under About this server."},
 	"notify.file":              {ScopeBootstrap, "The Notifications page keeps its channels and rules there, and a page cannot move a file it depends on. Shown under About this server."},
 	"response.file":            {ScopeBootstrap, "The Response actions page keeps its actions there, and a page cannot move a file it depends on. Shown under About this server."},
+	"playbooks.file":           {ScopeBootstrap, "The Playbooks page keeps its playbooks there, and a page cannot move a file it depends on. Shown under About this server."},
 	"response.scripts_dir":     {ScopeServer, "It decides which programs response actions may run, so only signalith.yaml or SIGNALITH_RESPONSE_SCRIPTS_DIR can set it, never a page. Shown under About this server."},
 	"cluster.node_name":        {ScopeBootstrap, "This server's name is set in signalith.yaml or with SIGNALITH_NODE_NAME, and kept in its state folder once chosen. The Servers page shows it."},
 	"server.node_url":          {ScopeServer, "The address other servers reach this one at is set in signalith.yaml or with SIGNALITH_NODE_URL. The Servers page shows it."},

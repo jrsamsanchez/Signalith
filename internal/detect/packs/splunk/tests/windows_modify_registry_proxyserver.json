@@ -1,0 +1,7 @@
+{"rule": "12bdaa0b-3c59-4489-aae1-bff6d67746ef", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"x","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Internet Settings\\ProxyServer"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"y","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Internet Settings\\ProxyServer"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"x","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Internet Settings\\ProxyServes"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"x","EventType":"SetValue","ProcessId":"4242","TargetObject":"HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Internet Settings\\ProxyServer"}}
+]}

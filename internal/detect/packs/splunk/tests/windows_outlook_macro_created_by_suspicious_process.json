@@ -1,0 +1,5 @@
+{"rule": "3ec347e3-a94a-4a8b-a918-8306ea403182", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x Appdata\\Roaming\\Microsoft\\Outlook\\VbaProject.OTM"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x Appdata\\Roaming\\Microsoft\\Outlook\\VbaProject.OTN"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242"}}
+]}

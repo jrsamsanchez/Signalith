@@ -1,0 +1,5 @@
+{"rule": "060d5ad4-3153-47bb-8382-43e5e29eda92", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"\\AppData\\Local\\Apps\\2.0\\","Signed":"false"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Signed":"false"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"\\AppData\\Local\\Apps\\2.0\\"}}
+]}

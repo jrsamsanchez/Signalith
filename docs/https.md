@@ -1,7 +1,7 @@
 # HTTPS
 
 Signalith serves its web UI, API and agent ingest over HTTPS by default. Passwords,
-sessions, the ingest token and events never cross the network in clear text, and there
+sessions, agent tokens and events never cross the network in clear text, and there
 is nothing to set up: the server makes its own certificate the first time it starts.
 
 - [What happens by default](#what-happens-by-default)
@@ -430,7 +430,10 @@ The Fluent Bit setup on the **Add data** page checks the server's certificate:
 - One of the steps saves the CA next to the configuration. The page shows its fingerprint,
   **Download** and **Copy** buttons, and the certificate itself under **Show certificate**.
 - The steps also make the configuration readable only by root (Linux) or SYSTEM and
-  Administrators (Windows), since it holds the ingest token. On Windows they do the same
+  Administrators (Windows), since it holds the agent token.
+- The configuration carries a token of its own, made when you copy or download it (see
+  [agent-tokens.md](agent-tokens.md#create-a-token)), so one group of agents can be
+  turned away without touching the others. On Windows they do the same
   for the agent's buffer in `C:\ProgramData\fluent-bit`, which holds Security log events
   until they are sent.
 
@@ -595,7 +598,7 @@ New configs from `signalith init` and `install.ps1` already have `mode: auto` an
 
 ### The Docker quick start's old example token
 
-Older versions of the Docker quick start gave every agent the same ingest token,
+Older versions of the Docker quick start gave every agent the same agent token,
 `change-this-ingest-token`, over plain HTTP. Anyone can look it up, so it is accepted only
 where agents may still have it: on a Docker quick start upgraded from such a version.
 
@@ -692,8 +695,9 @@ is older than 3.1. Update Fluent Bit with the install step on Add data.
 while `plaintext_ingest` is `deny`, or with the old example token from an earlier Docker
 quick start. It keeps its events and retries; give it a new configuration from Add data.
 
-**An agent gets 401.** Its ingest token is wrong; on a Docker quick start that started new,
-that includes the old example token `change-this-ingest-token` (see
+**An agent gets 401.** Its agent token is wrong, was revoked, or is a shared token you
+stopped accepting (see [agent-tokens.md](agent-tokens.md)); on a Docker quick start that
+started new, that includes the old example token `change-this-ingest-token` (see
 [The Docker quick start's old example token](#the-docker-quick-starts-old-example-token)).
 Fluent Bit drops what is refused this way. Give it a new configuration from Add data.
 

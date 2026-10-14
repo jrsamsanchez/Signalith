@@ -1,0 +1,5 @@
+{"rule": "12fbff88-16b5-4b42-9754-cd001a789fb3", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x con   cp   select= =1251","OriginalFileName":"MODE.COM"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"MODE.COM"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x con   cp   select= =1251"}}
+]}

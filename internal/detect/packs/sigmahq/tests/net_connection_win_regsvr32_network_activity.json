@@ -1,0 +1,5 @@
+{"rule": "c7e91a02-d771-4a6d-a700-42587e0b1095", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"Image":"\\regsvr32.exe","Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"Image":"\\regsvr32.exe"}}
+]}

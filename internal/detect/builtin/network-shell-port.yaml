@@ -1,5 +1,6 @@
 id: network-shell-port
 title: $process_name$ on $src$ connected to $dest$ on port $dest_port$
+name: Connection on a reverse shell port
 description: A connection to a port commonly used by reverse shells and attack frameworks.
 query: |
   datamodel=Network_Traffic dest_port IN (4444, 4445, 1337, 31337, 8888, 9001, 6666, 6667)

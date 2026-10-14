@@ -1,0 +1,5 @@
+{"rule": "7cd1dcdc-6edf-4896-86dc-d1f19ad64903", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":"protocol-v2.argotunnel.com","Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":"protocol-v2.argotunnel.com"}}
+]}

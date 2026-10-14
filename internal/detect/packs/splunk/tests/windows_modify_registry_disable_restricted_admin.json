@@ -1,0 +1,7 @@
+{"rule": "cee573a0-7587-48e6-ae99-10e8c657e89a", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\System\\CurrentControlSet\\Control\\Lsa\\DisableRestrictedAdmin"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\System\\CurrentControlSet\\Control\\Lsa\\DisableRestrictedAdmio"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)","EventType":"SetValue","ProcessId":"4242","TargetObject":"HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\System\\CurrentControlSet\\Control\\Lsa\\DisableRestrictedAdmin"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\System\\CurrentControlSet\\Control\\Lsa\\DisableRestrictedAdmin"}}
+]}

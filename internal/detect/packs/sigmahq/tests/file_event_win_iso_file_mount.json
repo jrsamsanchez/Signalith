@@ -1,0 +1,5 @@
+{"rule": "2f9356ae-bf43-41b8-b858-4496d83b2acb", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":".zip\\ \\AppData\\Local\\Temp\\ .iso"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"\\AppData\\Local\\Microsoft\\Windows\\INetCache\\Content.Outlook\\.iso"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{}}
+]}

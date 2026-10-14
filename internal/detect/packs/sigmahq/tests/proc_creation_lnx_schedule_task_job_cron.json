@@ -1,0 +1,5 @@
+{"rule": "6b14bac8-3e3a-4324-8109-42f0546a347f", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/tmp/","Image":"crontab"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"crontab"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/tmp/"}}
+]}

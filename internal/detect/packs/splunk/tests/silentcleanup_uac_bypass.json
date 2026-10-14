@@ -1,0 +1,7 @@
+{"rule": "56d7cfcc-da63-11eb-92d4-acde48001122", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"x .exe x","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Environment\\windir"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"x .exe y","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Environment\\windir"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"x .exe x","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Environment\\windis"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"x .exe x","EventType":"SetValue","ProcessId":"4242","TargetObject":"HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Environment\\windir"}}
+]}

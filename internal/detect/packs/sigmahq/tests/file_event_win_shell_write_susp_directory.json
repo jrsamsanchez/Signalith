@@ -1,0 +1,9 @@
+{"rule": "1277f594-a7d1-4f28-a2d3-73af5cbeab43", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\cscript.exe","TargetFilename":"C:\\Users\\Public\\"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\wmic.exe","TargetFilename":"C:\\PerfLogs\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"C:\\Users\\Public\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\cscript.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"C:\\PerfLogs\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\wmic.exe"}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"CreationUtcTime":"2026-08-30 14:42:19.698","Image":"C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe","ProcessGuid":"570E49AA-414A-6A94-680E-000000001800","ProcessId":"9964","RuleName":"technique_id=T1047,technique_name=File System Permissions Weakness","TargetFilename":"C:\\Users\\Public\\Libraries\\yanki","User":"SigmaCatchVm\\frack113","UtcTime":"2026-08-30 14:42:19.704"}}
+]}

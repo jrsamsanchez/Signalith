@@ -1,0 +1,5 @@
+{"rule": "2e4e488a-6164-4811-9ea1-f960c7359c40", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"8","data":{"SourceImage":"\\System32\\cscript.exe","TargetImage":"\\SysWOW64\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"8","data":{"TargetImage":"\\SysWOW64\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"8","data":{"SourceImage":"\\System32\\cscript.exe"}}
+]}

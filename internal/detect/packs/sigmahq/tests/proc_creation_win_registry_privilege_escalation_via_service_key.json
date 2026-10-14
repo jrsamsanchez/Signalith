@@ -1,0 +1,5 @@
+{"rule": "0f9c21f1-6a73-4b0e-9809-cb562cb8d981", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"services \\ImagePath ControlSet","IntegrityLevel":"Medium"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"IntegrityLevel":"Medium"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"services \\ImagePath ControlSet"}}
+]}

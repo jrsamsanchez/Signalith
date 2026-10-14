@@ -1,0 +1,7 @@
+{"rule": "472159c5-31b9-4f56-b794-b766faa8b0a7", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"CallTrace":"seclogon.dll","GrantedAccess":"0x14c0","SourceImage":"\\svchost.exe","TargetImage":"\\lsass.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"GrantedAccess":"0x14c0","SourceImage":"\\svchost.exe","TargetImage":"\\lsass.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"CallTrace":"seclogon.dll","SourceImage":"\\svchost.exe","TargetImage":"\\lsass.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"CallTrace":"seclogon.dll","GrantedAccess":"0x14c0","TargetImage":"\\lsass.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"CallTrace":"seclogon.dll","GrantedAccess":"0x14c0","SourceImage":"\\svchost.exe"}}
+]}

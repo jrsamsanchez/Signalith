@@ -1,0 +1,9 @@
+{"rule": "1547e27c-3974-43e2-a7d7-7f484fb928ec", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"Service","TargetObject":"\\Control\\SafeBoot\\Minimal\\ \\(Default)"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"Service","Image":"C:\\Hexnode\\Hexnode Agent\\Current\\HexnodeAgent.exe","TargetObject":"\\Control\\SafeBoot\\Minimal\\ \\Control\\SafeBoot\\Network\\Hexnode Agent\\(Default)"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"Service","Image":"\\MBAMInstallerService.exe","TargetObject":"\\Control\\SafeBoot\\Minimal\\\\MBAMService\\(Default)"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"Service","Image":"C:\\WINDOWS\\system32\\msiexec.exe","TargetObject":"\\Control\\SafeBoot\\Minimal\\\\Control\\SafeBoot\\Network\\SAVService\\(Default)"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Control\\SafeBoot\\Minimal\\ \\(Default)"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"Service"}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"Service","EventType":"SetValue","Image":"C:\\Windows\\system32\\reg.exe","ProcessGuid":"5AA13A44-5A23-68FE-2155-000000004002","ProcessId":"4400","RuleName":"-","TargetObject":"HKLM\\System\\CurrentControlSet\\Control\\SafeBoot\\Minimal\\AtomicSafeMode\\(Default)","User":"ATTACKRANGE\\Administrator","UtcTime":"2025-10-26 17:28:03.060"}}
+]}

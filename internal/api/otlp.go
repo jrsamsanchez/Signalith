@@ -11,6 +11,7 @@ import (
 	"net/netip"
 	"strings"
 
+	"github.com/jrsamsanchez/signalith/internal/agenttokens"
 	"github.com/jrsamsanchez/signalith/internal/clientaddr"
 	"github.com/jrsamsanchez/signalith/internal/ingest"
 )
@@ -36,9 +37,17 @@ func (s *Server) handleOTLPLogs(w http.ResponseWriter, r *http.Request) {
 		writeOTLPStatus(w, isJSON, status, err.Error())
 	}
 	from := clientaddr.Parse(r.RemoteAddr)
-	if !s.validToken(r) {
+	who, checked := s.tokens().Check(bearerToken(r))
+	if checked != agenttokens.Valid {
+		if status, _, msg, retry, ok := agentRefusal(checked); ok {
+			if checked != agenttokens.NotLoaded {
+				s.Pipeline.NoteRefused(from, ingest.RefusedRevoked)
+			}
+			fail(status, retry, errors.New(msg))
+			return
+		}
 		s.Pipeline.NoteRefused(from, ingest.RefusedToken)
-		fail(http.StatusUnauthorized, "", errors.New("missing or invalid ingest token; send it as Authorization: Bearer <token>"))
+		fail(http.StatusUnauthorized, "", errors.New("missing or invalid agent token; send it as Authorization: Bearer <token>"))
 		return
 	}
 	if ct != "application/x-protobuf" && !isJSON {
@@ -87,7 +96,10 @@ func (s *Server) handleOTLPLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer slot()
-	res, err = s.Pipeline.IngestOTLP(r.Context(), body, isJSON)
+	res, err = s.Pipeline.IngestOTLP(withOrigin(r, ingest.IntakeOTLP, who), body, isJSON)
+	if res != nil {
+		s.tokens().Note(who.ID, from.String(), res.Indexed)
+	}
 	if err != nil {
 		var bad *ingest.BodyError
 		if errors.As(err, &bad) {

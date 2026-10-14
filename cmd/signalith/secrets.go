@@ -33,7 +33,9 @@ const secretsUsage = `Usage:
                                                before going back to a version older than this one
 
 Settings for "set": opensearch.password, assistant.api_key, auth.ldap.bind_password,
-and ingest.tokens (adds a token; leave it empty to have one made).
+and ingest.tokens (adds a shared agent token; leave it empty to have one made).
+New agents get a token of their own instead: signalith tokens create, or the
+Add data page.
 "encrypt" and "set" make the master key if there is none. If the files hold values
 encrypted with a key that cannot be found, they stop instead; add -new-key to make a
 new key anyway, when that one is lost (those values must then be entered again).
@@ -691,7 +693,7 @@ func secretsSet(c *config.Config, field string, newKey bool, in *os.File, out io
 	}
 	label := "New value for " + field + ": "
 	if field == "ingest.tokens" {
-		label = "New ingest token (press Enter to have one made): "
+		label = "New shared agent token (press Enter to have one made): "
 	}
 	value, err := readSecret(in, out, label, field == "ingest.tokens")
 	if err != nil {
@@ -723,9 +725,9 @@ func secretsSet(c *config.Config, field string, newKey bool, in *os.File, out io
 	}
 	if field == "ingest.tokens" {
 		if made {
-			fmt.Fprintf(out, "Added this ingest token, encrypted, to %s:\n\n  %s\n\nIt is shown only now; give it to the agents that send data.\n", c.Path(), value)
+			fmt.Fprintf(out, "Added this shared agent token, encrypted, to %s:\n\n  %s\n\nIt is shown only now. Every agent that has it can send as all of them; for a token of each agent's own, use signalith tokens create or the Add data page.\n", c.Path(), value)
 		} else {
-			fmt.Fprintf(out, "Added the ingest token, encrypted, to %s.\n", c.Path())
+			fmt.Fprintf(out, "Added the shared agent token, encrypted, to %s.\n", c.Path())
 		}
 	} else {
 		fmt.Fprintf(out, "Saved %s, encrypted, in %s.\n", field, c.Path())

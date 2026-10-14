@@ -186,19 +186,13 @@ func (s *Server) handleCreateCase(w http.ResponseWriter, r *http.Request) {
 	if c.Owner != "" {
 		c.Status = findings.StatusInProgress
 	}
-	s.caseMu.Lock()
-	err := s.Cases.Create(r.Context(), c)
-	for try := 0; errors.Is(err, cases.ErrExists) && try < 3; try++ {
-		c.ID = cases.NewID(now) // practically never needed
-		err = s.Cases.Create(r.Context(), c)
-	}
-	s.caseMu.Unlock()
-	if err != nil {
+	if err := s.createCase(r.Context(), c, now); err != nil {
 		writeError(w, http.StatusBadGateway, err)
 		return
 	}
 	failed := map[string]string{}
 	if len(req.Findings) > 0 {
+		var err error
 		c, failed, err = s.addCaseFindings(r.Context(), c.ID, req.Findings, user)
 		if err != nil {
 			writeCaseError(w, err)
@@ -206,6 +200,18 @@ func (s *Server) handleCreateCase(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{"case": c, "failed": failed})
+}
+
+// createCase stores a new case, with a new ID should its own be taken.
+func (s *Server) createCase(ctx context.Context, c *cases.Case, now time.Time) error {
+	s.caseMu.Lock()
+	defer s.caseMu.Unlock()
+	err := s.Cases.Create(ctx, c)
+	for try := 0; errors.Is(err, cases.ErrExists) && try < 3; try++ {
+		c.ID = cases.NewID(now) // practically never needed
+		err = s.Cases.Create(ctx, c)
+	}
+	return err
 }
 
 func (s *Server) handleGetCase(w http.ResponseWriter, r *http.Request) {

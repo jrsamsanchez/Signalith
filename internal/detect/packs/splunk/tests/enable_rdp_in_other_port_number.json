@@ -1,0 +1,9 @@
+{"rule": "99495452-b899-11eb-96dc-acde48001122", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"x","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\CurrentControlSet\\Control\\Terminal Server\\WinStations\\RDP-Tcp x\\PortNumber"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"x","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\CurrentControlSet\\Control\\Terminal Server\\WinStations\\RDP-Tcp y\\PortNumber"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"y","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\CurrentControlSet\\Control\\Terminal Server\\WinStations\\RDP-Tcp x\\PortNumber"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"x","EventType":"SetValue","ProcessId":"4242","TargetObject":"HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run\\PortNumber"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"x","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\CurrentControlSet\\Control\\Terminal Server\\WinStations\\RDP-Tcp x\\PortNumbes"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"x","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\CurrentControlSet\\Control\\Terminal Server\\WinStations\\RDP-Tcp x"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\CurrentControlSet\\Control\\Terminal Server\\WinStations\\RDP-Tcp x\\PortNumber"}}
+]}

@@ -1,0 +1,5 @@
+{"rule": "48a61b29-389f-4032-b317-b30de6b95314", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x -R x","Description":"Command-line SSH, Telnet, and Rlogin client"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Description":"Command-line SSH, Telnet, and Rlogin client"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x -R x"}}
+]}

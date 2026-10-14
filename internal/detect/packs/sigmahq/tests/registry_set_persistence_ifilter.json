@@ -1,0 +1,9 @@
+{"rule": "b23818c7-e575-4d13-8012-332075ec0a2b", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\SOFTWARE\\Classes\\CLSID\\PersistentAddinsRegistered\\{89BCB740-6119-101A-BCB7-00DD010655AF}"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\SOFTWARE\\Classes\\. \\PersistentHandler"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\SOFTWARE\\Classes\\CLSID\\CLSID\\{FB10BD80-A331-4e9e-9EB7-00279903AD99}\\\\PersistentAddinsRegistered\\{89BCB740-6119-101A-BCB7-00DD010655AF}"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Image":"C:\\Program Files (x86)\\","TargetObject":"\\SOFTWARE\\Classes\\CLSID\\PersistentAddinsRegistered\\{89BCB740-6119-101A-BCB7-00DD010655AF}"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\SOFTWARE\\Classes\\. \\PersistentHandler \\CLSID\\{5645C8C4-E277-11CF-8FDA-00AA00A14F93}\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Image":"C:\\Program Files (x86)\\","TargetObject":"\\PersistentHandler \\SOFTWARE\\Classes\\."}}
+]}

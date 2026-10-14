@@ -1,0 +1,17 @@
+{"rule": "7a0dda67-4cc7-4113-b3bd-b3f1489a98bf", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\microsoft shared\\Web Server Extensions\\16\\TEMPLATE\\LAYOUTS x\\spinstall0.aspx"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\microsoft shared\\Web Server Extensions\\15\\TEMPLATE\\LAYOUTS x\\spinstall0.aspx"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\microsoft shared\\Web Server Extensions\\16\\TEMPLATE\\LAYOUTS y\\spinstall0.aspx"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\microsoft shared\\Web Server Extensions\\15\\TEMPLATE\\LAYOUTS y\\spinstall0.aspx"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\microsoft shared\\Web Server Extensions\\16\\TEMPLATE\\LAYOUTS x"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\microsoft shared\\Web Server Extensions\\15\\TEMPLATE\\LAYOUTS x"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\microsoft shared\\Web Server Extensions\\16\\TEMPLATE\\LAYOUTS x"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\microsoft shared\\Web Server Extensions\\16\\TEMPLATE\\LAYOUTS x\\spinstall0.aspy"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\microsoft shared\\Web Server Extensions\\16\\TEMPLATE\\LAYOUTS x"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\microsoft shared\\Web Server Extensions\\16\\TEMPLATE\\LAYOUTS y"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"C:\\Users\\Public\\spinstall0.aspx"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\microsoft shared\\Web Server Extensions\\15\\TEMPLATE\\LAYOUTS x"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\microsoft shared\\Web Server Extensions\\15\\TEMPLATE\\LAYOUTS x\\spinstall0.aspy"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\microsoft shared\\Web Server Extensions\\15\\TEMPLATE\\LAYOUTS x"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\microsoft shared\\Web Server Extensions\\15\\TEMPLATE\\LAYOUTS y"}}
+]}

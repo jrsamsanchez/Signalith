@@ -57,8 +57,27 @@ var knownFields = func() map[string]string {
 		// new-name budget; handleFields leaves it out of the fields rail.
 		datamodel.SampleField: kw,
 
+		// Where each event came from (origin.go): mapped up front so they
+		// survive the known-fields-only retry.
+		IntakeField: kw, TokenField: kw, TokenIDField: kw, SenderField: kw,
+
 		// Windows and Linux parsers.
 		"src_host": kw, "logon_type_name": kw, "member": kw,
+		// Sysmon process fields that Sigma rules match on.
+		"original_file_name": kw, "process_description": kw, "process_product": kw,
+		"process_company": kw, "process_file_version": kw, "process_integrity_level": kw,
+		"process_current_directory": kw, "process_guid": kw, "parent_process_guid": kw,
+		"parent_process_id": long, "parent_user": kw, "logon_id": kw,
+		// Sysmon fields not yet in a data model: the call stack of a process
+		// access, where a remote thread starts, and a registry rename's new
+		// name.
+		"call_trace": kw, "start_address": kw, "start_module": kw, "start_function": kw,
+		"registry_new_path": kw,
+		// PowerShell script blocks: which part of a long script an event is,
+		// and its text. Script blocks run to 20,000 characters, past what a
+		// keyword indexes, and rules match words inside them, so the text is
+		// a wildcard field (see IndexTemplate).
+		"script_part": long, "script_parts": long, "script_block_text": "wildcard",
 		// An sshd line whose client address cannot be told from text the
 		// client sent (see ambiguousSSH).
 		"src_ambiguous": kw,

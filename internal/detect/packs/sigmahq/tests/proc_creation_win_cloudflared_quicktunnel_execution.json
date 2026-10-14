@@ -1,0 +1,7 @@
+{"rule": "222129f7-f4dc-4568-b0d2-22440a9639ba", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"tunnel -url","Hashes":"SHA256=ccd11f2328023a0e7929e845d5b6e7bc783fb4650d65faef3ae090239d4bbce2"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"-no-autoupdate -url"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Hashes":"SHA256=ccd11f2328023a0e7929e845d5b6e7bc783fb4650d65faef3ae090239d4bbce2"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"tunnel -url"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{}}
+]}

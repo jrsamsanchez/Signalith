@@ -1,0 +1,9 @@
+{"rule": "90d6bd71-dffb-4989-8d86-a827fedd6624", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":".exe tunnel"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"code-server.cmd\\servers\\Stable-/d /c x","Image":"\\cmd.exe","ParentCommandLine":"x tunnel"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":".exe tunnel --accept-server-license-terms"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\cmd.exe","ParentCommandLine":"x tunnel"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"code-server.cmd\\servers\\Stable-/d /c x","ParentCommandLine":"x tunnel"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"code-server.cmd\\servers\\Stable-/d /c x","Image":"\\cmd.exe"}}
+]}

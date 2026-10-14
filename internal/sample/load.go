@@ -992,7 +992,9 @@ func (l *Loader) CannotFire() map[string]string {
 		return out
 	}
 	for _, d := range l.Library.List() {
-		if !d.Enabled {
+		// Content pack rules are all off by default and have no sample
+		// stories; only the built-ins are listed.
+		if !d.Enabled && d.Origin == nil {
 			out[d.ID] = "Off by default. The sample has data for it: turn it on, then remove and load the sample data again to see it fire."
 		}
 	}

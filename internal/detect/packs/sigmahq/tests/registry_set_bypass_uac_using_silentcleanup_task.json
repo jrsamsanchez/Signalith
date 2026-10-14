@@ -1,0 +1,6 @@
+{"rule": "724ea201-6514-4f38-9739-e5973c34f49a", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Environment\\windir"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"%SystemRoot%","TargetObject":"\\Environment\\windir"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"cmd /c start powershell\u0026REM","EventType":"SetValue","Image":"C:\\Windows\\system32\\reg.exe","ProcessGuid":"5AA13A44-5F54-68FE-B455-000000004002","ProcessId":"2768","RuleName":"-","TargetObject":"HKU\\S-1-5-21-3960063115-309473240-3247002503-500\\Environment\\windir","User":"ATTACKRANGE\\Administrator","UtcTime":"2025-10-26 17:50:12.565"}}
+]}

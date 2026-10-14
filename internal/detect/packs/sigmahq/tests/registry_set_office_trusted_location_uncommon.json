@@ -1,0 +1,7 @@
+{"rule": "f742bde7-9528-42e5-bd82-84f51a8387d2", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"Security\\Trusted Locations\\Location\\Path"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Image":":\\Program Files\\Microsoft Office\\","TargetObject":"Security\\Trusted Locations\\Location \\Path"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Image":":\\Program Files\\Common Files\\Microsoft Shared\\ClickToRun\\\\OfficeClickToRun.exe","TargetObject":"Security\\Trusted Locations\\Location\\Path"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":":\\Program Files\\Microsoft Office\\Templates\\","TargetObject":"Security\\Trusted Locations\\Location \\Path"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}}
+]}

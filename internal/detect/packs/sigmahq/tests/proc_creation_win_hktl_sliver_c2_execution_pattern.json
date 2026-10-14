@@ -1,0 +1,6 @@
+{"rule": "42333b2c-b425-441c-b70e-99404a17170f", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"-NoExit -Command [Console]::OutputEncoding=[Text.UTF8Encoding]::UTF8"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"-NoExit -Command [Console]::OutputEncoding=[Text.UTF8Encoding]::UTF8","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

@@ -1,0 +1,7 @@
+{"rule": "590a5f4c-6c8c-4f10-8307-89afe9453a9d", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"IntegrityLevel":"System","ParentUser":"AUTHORI\\LOCAL SERVICE","User":"AUTHORI \\СИСТЕМА"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"DavSetCookie","Image":"\\rundll32.exe","IntegrityLevel":"System","ParentUser":"AUTHORI \\LOCAL SERVICE","User":"AUTHORI \\СИСТЕМА"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"ParentUser":"AUTHORI\\LOCAL SERVICE","User":"AUTHORI \\СИСТЕМА"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"IntegrityLevel":"System","User":"AUTHORI \\СИСТЕМА"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"IntegrityLevel":"System","ParentUser":"AUTHORI\\LOCAL SERVICE"}}
+]}

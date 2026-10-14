@@ -195,3 +195,62 @@ func TestHealthWarnsOfLateDetections(t *testing.T) {
 		t.Errorf("scheduler off, warnings = %v", h["warnings"])
 	}
 }
+
+func TestContentPacks(t *testing.T) {
+	ts, _ := newTestServer(t)
+	code, body := do(t, ts, "GET", "/api/detections/packs", "", true)
+	packs, _ := body["packs"].([]any)
+	if code != 200 || len(packs) != 2 {
+		t.Fatalf("packs = %d %v", code, body)
+	}
+	p := packs[0].(map[string]any)
+	if p["name"] != "sigmahq" || p["license"] != "DRL-1.1" || p["rules"].(float64) < 500 || p["enabled"].(float64) != 0 {
+		t.Fatalf("pack = %v", p)
+	}
+	if p := packs[1].(map[string]any); p["name"] != "splunk" || p["license"] != "Apache-2.0" || p["format"] != "splunk" || p["rules"].(float64) < 100 {
+		t.Fatalf("splunk pack = %v", p)
+	}
+
+	// Turn two pack rules and a built-in on or off at once; pack rules keep
+	// coming from the binary, so only the choice is saved.
+	code, body = do(t, ts, "GET", "/api/detections", "", true)
+	var ids []string
+	for _, x := range body["detections"].([]any) {
+		d := x.(map[string]any)
+		if d["source"] == "pack" && len(ids) < 2 {
+			ids = append(ids, d["id"].(string))
+		}
+	}
+	code, body = do(t, ts, "POST", "/api/detections/enable", fmt.Sprintf(`{"ids":["%s","%s"],"enabled":true}`, ids[0], ids[1]), true)
+	if code != 200 || body["changed"].(float64) != 2 {
+		t.Fatalf("enable = %d %v", code, body)
+	}
+	code, body = do(t, ts, "GET", "/api/detections/"+ids[0], "", true)
+	if code != 200 || body["enabled"] != true || body["source"] != "pack" || body["origin"] == nil {
+		t.Fatalf("enabled pack rule = %d %v", code, body)
+	}
+	code, body = do(t, ts, "GET", "/api/detections/packs", "", true)
+	on := 0.0
+	for _, x := range body["packs"].([]any) {
+		on += x.(map[string]any)["enabled"].(float64)
+	}
+	if on != 2 {
+		t.Errorf("packs after enabling = %v", body["packs"])
+	}
+	// An unknown ID changes nothing.
+	code, _ = do(t, ts, "POST", "/api/detections/enable", fmt.Sprintf(`{"ids":["%s","no-such-rule"],"enabled":false}`, ids[0]), true)
+	if code != 404 {
+		t.Errorf("unknown id = %d", code)
+	}
+	code, body = do(t, ts, "GET", "/api/detections/"+ids[0], "", true)
+	if body["enabled"] != true {
+		t.Errorf("a refused request changed %s", ids[0])
+	}
+	if code, _ = do(t, ts, "POST", "/api/detections/enable", `{"ids":[],"enabled":true}`, true); code != 400 {
+		t.Errorf("empty = %d", code)
+	}
+	// Pack rules cannot be deleted.
+	if code, _ = do(t, ts, "DELETE", "/api/detections/"+ids[1], "", true); code != 400 {
+		t.Errorf("delete pack rule = %d", code)
+	}
+}

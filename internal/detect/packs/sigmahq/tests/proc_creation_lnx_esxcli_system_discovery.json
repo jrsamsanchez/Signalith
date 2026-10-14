@@ -1,0 +1,5 @@
+{"rule": "e80273e1-9faf-40bc-bd85-dbaff104c4e9", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"system list","Image":"/esxcli"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/esxcli"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"system list"}}
+]}

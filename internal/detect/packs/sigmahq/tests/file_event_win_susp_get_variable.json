@@ -1,0 +1,4 @@
+{"rule": "0c3fac91-5627-46e8-a6a8-a0d7b9b8ae1b", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"Local\\Microsoft\\WindowsApps\\Get-Variable.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{}}
+]}

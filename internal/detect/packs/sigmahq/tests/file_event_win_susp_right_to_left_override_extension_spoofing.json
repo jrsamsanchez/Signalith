@@ -1,0 +1,5 @@
+{"rule": "979baf41-ca44-4540-9d0c-4fcef3b5a3a4", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"‮ ism."}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"CreationUtcTime":"2026-03-29 09:34:25.019","Image":"C:\\WINDOWS\\Explorer.EXE","ProcessGuid":"0197231E-A4C2-69C9-8C00-000000000D00","ProcessId":"5856","RuleName":"Downloads","TargetFilename":"C:\\Users\\xodih\\Downloads\\Communicaton_Ltr‮fdp.msc","User":"swachchhanda\\xodih","UtcTime":"2026-03-29 09:34:25.019"}}
+]}

@@ -1,0 +1,5 @@
+{"rule": "4b657234-038e-4ad5-997c-4be42340bce4", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":".tunnels.api.visualstudio.com","Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":".tunnels.api.visualstudio.com"}}
+]}

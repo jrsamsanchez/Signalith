@@ -1,0 +1,4 @@
+{"rule": "6c6c6282-7671-4fe9-a0ce-a2dcebdc342b", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":".Load New-Object IEX  System.Xml.XmlDocument"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}}
+]}

@@ -1,0 +1,15 @@
+{"rule": "c3dbbc9f-ef1d-470a-a90a-d343448d5875", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":"api.telegram.org"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":"api.telegram.org","Image":"\\brave.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":"api.telegram.org","Image":"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":"api.telegram.org","Image":"\\WindowsApps\\MicrosoftEdge.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":"api.telegram.org","Image":"C:\\Program Files (x86)\\Microsoft\\EdgeCore\\\\msedge.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":"api.telegram.org","Image":"C:\\Program Files (x86)\\Mozilla Firefox\\firefox.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":"api.telegram.org","Image":"C:\\Program Files\\Internet Explorer\\iexplore.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":"api.telegram.org","Image":"\\maxthon.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":"api.telegram.org","Image":"\\opera.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":"api.telegram.org","Image":"\\safari.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":"api.telegram.org","Image":"\\seamonkey.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":"api.telegram.org","Image":"\\vivaldi.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":"api.telegram.org","Image":"\\whale.exe"}}
+]}

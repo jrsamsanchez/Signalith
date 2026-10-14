@@ -1,0 +1,5 @@
+{"rule": "80915f59-9b56-4616-9de0-fd0dea6c12fe", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/var/spool/mail","Image":"/rmdir"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/rmdir"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/var/spool/mail"}}
+]}

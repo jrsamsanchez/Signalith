@@ -1,0 +1,5 @@
+{"rule": "c420410f-c2d8-4010-856b-dffe21866437", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)","TargetObject":"System\\CurrentControlSet\\Control\\Lsa\\NoLMHash"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"System\\CurrentControlSet\\Control\\Lsa\\NoLMHash"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)"}}
+]}

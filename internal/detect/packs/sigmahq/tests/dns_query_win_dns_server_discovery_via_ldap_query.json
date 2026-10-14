@@ -1,0 +1,9 @@
+{"rule": "a21bcd7e-38ec-49ad-b69a-9ea17e69509e", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"Image":"D:\\apps\\launcher\\launcher.exe","ProcessId":"4242","QueryName":"_ldap.","QueryResults":"::ffff:192.0.2.30;","QueryStatus":"0","User":"CORP\\tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"Image":":\\ProgramData\\Microsoft\\Windows Defender\\Platform\\\\MsMpEng.exe","ProcessId":"4242","QueryName":"_ldap.","QueryResults":"::ffff:192.0.2.30;","QueryStatus":"0","User":"CORP\\tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"Image":":\\Program Files\\","ProcessId":"4242","QueryName":"_ldap.","QueryResults":"::ffff:192.0.2.30;","QueryStatus":"0","User":"CORP\\tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"Image":"\u003cunknown process\u003e","ProcessId":"4242","QueryName":"_ldap.","QueryResults":"::ffff:192.0.2.30;","QueryStatus":"0","User":"CORP\\tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"Image":"C:\\WindowsAzure\\GuestAgent","ProcessId":"4242","QueryName":"_ldap.","QueryResults":"::ffff:192.0.2.30;","QueryStatus":"0","User":"CORP\\tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"Image":"\\opera.exe","ProcessId":"4242","QueryName":"_ldap.","QueryResults":"::ffff:192.0.2.30;","QueryStatus":"0","User":"CORP\\tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"Image":"D:\\apps\\launcher\\launcher.exe","ProcessId":"4242","QueryResults":"::ffff:192.0.2.30;","QueryStatus":"0","User":"CORP\\tester"}}
+]}

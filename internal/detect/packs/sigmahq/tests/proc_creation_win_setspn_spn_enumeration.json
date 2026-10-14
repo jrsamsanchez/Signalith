@@ -1,0 +1,5 @@
+{"rule": "1eeed653-dbc8-4187-ad0c-eeebb20e6599", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x -q x","Description":"Query or reset the computerSPN attribute"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Description":"Query or reset the computerSPN attribute"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x -q x"}}
+]}

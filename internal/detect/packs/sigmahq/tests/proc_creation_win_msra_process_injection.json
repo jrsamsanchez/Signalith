@@ -1,0 +1,6 @@
+{"rule": "744a188b-0415-4792-896f-11ddb0588dbc", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\cmd.exe","ParentCommandLine":"msra.exe","ParentImage":"\\msra.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"ParentCommandLine":"msra.exe","ParentImage":"\\msra.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\cmd.exe","ParentImage":"\\msra.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\cmd.exe","ParentCommandLine":"msra.exe"}}
+]}

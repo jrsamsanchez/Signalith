@@ -94,7 +94,30 @@ func TestLibraryOverrideAndDelete(t *testing.T) {
 	if err != nil || b.Source != "builtin" || !b.Enabled {
 		t.Fatalf("builtin = %+v %v", b, err)
 	}
+	// Turning it off unchanged records only the choice, not a copy.
 	b.Enabled = false
+	if err := lib.Put(b); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "auth-brute-force.yaml")); !os.IsNotExist(err) {
+		t.Fatalf("turning a built-in off wrote an override: %v", err)
+	}
+	lib, _, _ = NewLibrary(dir)
+	got, _ := lib.Get("auth-brute-force")
+	if got.Source != "builtin" || got.Enabled {
+		t.Fatalf("after turning off = %+v", got)
+	}
+	// Back on: the choice equals the default, so its file goes.
+	if err := lib.SetEnabled([]string{"auth-brute-force"}, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, StateDir, "auth-brute-force.yaml")); !os.IsNotExist(err) {
+		t.Fatalf("state file kept: %v", err)
+	}
+
+	// Editing it makes an override.
+	b.Enabled = false
+	b.Severity = "high"
 	if err := lib.Put(b); err != nil {
 		t.Fatal(err)
 	}
@@ -103,8 +126,8 @@ func TestLibraryOverrideAndDelete(t *testing.T) {
 	}
 	// Reload from disk to prove the override persists.
 	lib, _, _ = NewLibrary(dir)
-	got, _ := lib.Get("auth-brute-force")
-	if got.Source != "override" || got.Enabled {
+	got, _ = lib.Get("auth-brute-force")
+	if got.Source != "override" || got.Enabled || got.Severity != "high" {
 		t.Fatalf("override = %+v", got)
 	}
 	if err := lib.Delete("auth-brute-force"); err != nil {
@@ -320,7 +343,7 @@ func TestConvertSigma(t *testing.T) {
 			t.Errorf("query missing %s:\n%s", want, s)
 		}
 	}
-	if !strings.Contains(strings.Join(res.Warnings, "\n"), "renamed binaries") {
+	if len(res.Warnings) != 0 {
 		t.Errorf("warnings = %v", res.Warnings)
 	}
 	if _, err := (&search.Engine{}).Compile(q); err != nil {
@@ -349,8 +372,8 @@ func TestConvertSigmaUnsupported(t *testing.T) {
 		t.Fatal(err)
 	}
 	res2, err := ConvertSigma([]byte("title: W\nlogsource:\n  category: process_creation\ndetection:\n  sel:\n    - Image|endswith: '\\\\whoami.exe'\n    - OriginalFileName: whoami.exe\n  condition: sel\n"))
-	if err != nil || res2.Detection.Query != "datamodel=Endpoint process_name=whoami.exe" {
-		t.Errorf("duplicate branches not merged: %v %+v", err, res2)
+	if err != nil || res2.Detection.Query != "datamodel=Endpoint process_name=whoami.exe OR original_file_name=whoami.exe" {
+		t.Errorf("query = %v %+v", err, res2.Detection.Query)
 	}
 	if !strings.Contains(res.Detection.Query, "signature_id=4625") || !strings.Contains(res.Detection.Query, `"*bad stuff*"`) {
 		t.Errorf("query = %s", res.Detection.Query)
@@ -556,4 +579,113 @@ func mustParse(t *testing.T, s string) *query.Query {
 		t.Fatalf("%s: %v", s, err)
 	}
 	return q
+}
+
+func TestBaseTitle(t *testing.T) {
+	for in, want := range map[string]string{
+		"Encoded PowerShell command on $dest$":                                       "Encoded PowerShell command",
+		"Brute force against $dest$ from $src$":                                      "Brute force",
+		"Malware found on $dest$ ($signature$)":                                      "Malware found",
+		"Account $object$ created on $dest$":                                         "Account created",
+		"Threat intel match on $threat_match_field$ $threat_match_value$ ($source$)": "Threat intel match",
+		"Scheduled task created on $dest$ by $user$":                                 "Scheduled task created",
+		"$user$ logged on with $method$":                                             "Logged on",
+		"$dest$":                                                                     "dest",
+		"No tokens at all":                                                           "No tokens at all",
+		"éclair eaten on $dest$":                                                     "Éclair eaten",
+	} {
+		if got := BaseTitle(in); got != want {
+			t.Errorf("BaseTitle(%q) = %q, want %q", in, got, want)
+		}
+	}
+	d := &Detection{Title: "$a$ did $b$", Name: "Something done"}
+	if d.BaseTitle() != "Something done" {
+		t.Errorf("name not used: %q", d.BaseTitle())
+	}
+}
+
+// Every built-in detection has a clean name for views that count it
+// across hosts: no $field$ tokens, and more than one word, so a title
+// that starts with a token and reads badly without it gets a name.
+func TestBuiltinBaseTitles(t *testing.T) {
+	lib, _, err := NewLibrary("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]string{}
+	for _, d := range lib.List() {
+		if d.Source != "builtin" {
+			continue
+		}
+		b := d.BaseTitle()
+		if strings.Contains(b, "$") || len(strings.Fields(b)) < 2 {
+			t.Errorf("%s: base title %q", d.ID, b)
+		}
+		if other, dup := seen[b]; dup {
+			t.Errorf("%s and %s share the base title %q", d.ID, other, b)
+		}
+		seen[b] = d.ID
+	}
+	bad := &Detection{ID: "abc", Title: "x", Name: "on $dest$", Query: "*", Schedule: "5m", Lookback: "5m", Severity: "low"}
+	if err := bad.Validate(); err == nil || !strings.Contains(err.Error(), "name must not use") {
+		t.Errorf("token in name: %v", err)
+	}
+}
+
+// Sysmon log sources other than process creation map onto their own data
+// models, only see their own event IDs, and map fields by log source.
+func TestConvertSigmaSysmonLogSources(t *testing.T) {
+	r, err := ConvertSigmaWith([]byte(`title: Run key
+logsource: {product: windows, category: registry_set}
+detection:
+  sel:
+    TargetObject|contains: '\CurrentVersion\Run\'
+    Image|endswith: '\powershell.exe'
+    Details|startswith: 'C:\Users\'
+  condition: sel
+`), SigmaOptions{Strict: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `datamodel=Registry (sourcetype=WinEventLog:* AND signature_id IN (13)) (registry_value_data=C:\Users\* AND process_name=powershell.exe AND registry_path=*\CurrentVersion\Run\*)`
+	if r.Detection.Query != want {
+		t.Errorf("query = %s\nwant    %s", r.Detection.Query, want)
+	}
+	r, err = ConvertSigmaWith([]byte(`title: LSASS access
+logsource: {product: windows, category: process_access}
+detection:
+  sel:
+    TargetImage|endswith: '\lsass.exe'
+    GrantedAccess: '0x1410'
+  condition: sel
+`), SigmaOptions{Strict: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if q := r.Detection.Query; !strings.Contains(q, "datamodel=Endpoint") || !strings.Contains(q, "signature_id IN (10)") || !strings.Contains(q, "target_process_name=lsass.exe") {
+		t.Errorf("query = %s", q)
+	}
+	r, err = ConvertSigmaWith([]byte(`title: Mimikatz in a script
+logsource: {product: windows, category: ps_script, definition: 'Script Block Logging must be enabled'}
+detection:
+  sel:
+    ScriptBlockText|contains: 'Invoke-Mimikatz'
+  condition: sel
+`), SigmaOptions{Strict: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := `datamodel=Script (sourcetype=WinEventLog:* AND signature_id IN (4104)) script_block_text=*Invoke-Mimikatz*`; r.Detection.Query != want {
+		t.Errorf("query = %s\nwant    %s", r.Detection.Query, want)
+	}
+	// In image_load, Description is the DLL's, not the process's: no mapping.
+	if _, err := ConvertSigmaWith([]byte(`title: x
+logsource: {product: windows, category: image_load}
+detection:
+  sel:
+    Description: 'x'
+  condition: sel
+`), SigmaOptions{Strict: true}); err == nil || !strings.Contains(err.Error(), "Description has no Signalith mapping in image_load") {
+		t.Errorf("err = %v", err)
+	}
 }

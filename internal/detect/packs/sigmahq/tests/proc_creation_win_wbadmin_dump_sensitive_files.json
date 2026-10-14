@@ -1,0 +1,5 @@
+{"rule": "8b93a509-1cb8-42e1-97aa-ee24224cdc15", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"backup\\config\\SECURITY","OriginalFileName":"WBADMIN.EXE"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"WBADMIN.EXE"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"backup\\config\\SECURITY"}}
+]}

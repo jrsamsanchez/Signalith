@@ -1,0 +1,5 @@
+{"rule": "5d756aee-ad3e-4306-ad95-cb1abec48de2", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"\\AppData\\Local\\Temp\\LogMeInInc\\GoToAssist Remote Support Expert\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"CreationUtcTime":"2026-08-11 08:33:49.469","Image":"C:\\Users\\frack113\\AppData\\Local\\GoToAssist Remote Support Expert\\g2ax_expert_combined_dll_core_win32_x86_1702.exe","ProcessGuid":"570E49AA-DE6C-6A7A-BF15-000000001400","ProcessId":"10912","RuleName":"-","TargetFilename":"C:\\Users\\frack113\\AppData\\Local\\Temp\\LogMeInInc\\GoToAssist Remote Support Expert\\1702\\g2aC644.tmp\\g2ax_installerexpert.exe","User":"SigmaCatchVm\\frack113","UtcTime":"2026-08-11 08:33:49.469"}}
+]}

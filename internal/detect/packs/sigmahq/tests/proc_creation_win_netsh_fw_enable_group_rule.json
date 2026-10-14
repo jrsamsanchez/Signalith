@@ -1,0 +1,5 @@
+{"rule": "347906f3-e207-4d18-ae5b-a9403d6bcdef", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"advfirewallnewfirewallgroup=enable=Yesruleset","OriginalFileName":"netsh.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"netsh.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"advfirewallnewfirewallgroup=enable=Yesruleset"}}
+]}

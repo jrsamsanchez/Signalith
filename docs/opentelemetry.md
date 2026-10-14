@@ -12,7 +12,8 @@ Open **Add data**, pick **OpenTelemetry**, and choose where the Collector runs:
 
 - **Linux**: reads `/var/log/auth.log` or `/var/log/secure`, or the systemd journal,
   like the Fluent Bit agent.
-- **Windows**: reads the Security event log, and Sysmon when **Include Sysmon** is on.
+- **Windows**: reads the Security event log, Sysmon when **Include Sysmon** is on, and
+  PowerShell script blocks when **Include PowerShell** is on.
 
 Either way the Collector also listens on `127.0.0.1:4317` (gRPC) and `127.0.0.1:4318`
 (HTTP) for apps on that host that export OTLP logs, and passes those on too.
@@ -20,7 +21,8 @@ Either way the Collector also listens on `127.0.0.1:4317` (gRPC) and `127.0.0.1:
 The page gives the steps and a complete `config.yaml` for the
 [Collector Contrib](https://github.com/open-telemetry/opentelemetry-collector-releases/releases)
 distribution (`otelcol-contrib`, 0.100 or later): it already holds this server's
-address, the ingest token and, over HTTPS, Signalith's CA certificate to check the
+address, an [agent token](agent-tokens.md) of its own (made when you copy or download
+the configuration) and, over HTTPS, Signalith's CA certificate to check the
 server with. It keeps unsent logs and its place in each log on disk, so a restart or
 an outage of Signalith neither loses nor repeats events.
 
@@ -35,7 +37,7 @@ Any OTLP/HTTP sender works. Point it at:
 | Setting | Value |
 | --- | --- |
 | Logs endpoint | `https://<server>:8080/api/otlp/v1/logs` (or endpoint `https://<server>:8080/api/otlp`, to which the exporter adds `/v1/logs`) |
-| Header | `Authorization: Bearer <ingest token>` |
+| Header | `Authorization: Bearer <agent token>`; make one on **Add data** under **Agent tokens**, or with `signalith tokens create` (see [agent-tokens.md](agent-tokens.md#create-a-token)) |
 | Encoding | protobuf (`application/x-protobuf`, the Collector's default) or JSON (`application/json`) |
 | Compression | gzip (the Collector's default) or none |
 | CA | Signalith's CA certificate (`/api/tls/ca.pem`), unless the server has a certificate your systems trust |
@@ -60,7 +62,7 @@ agent collects them:
 
 | Receiver | Becomes |
 | --- | --- |
-| `windowseventlog` (Security log 4624, 4625, 4688, 4720, 4726, 4728, 4732, 4756; Sysmon 1 and 3) | Authentication, Endpoint, Change, Network_Traffic |
+| `windowseventlog` (Security log 4624, 4625, 4688, 4720, 4726, 4728, 4732, 4756; Sysmon 1, 3, 6, 7, 8, 10, 11, 12, 13, 14, 22, 23, 26; PowerShell 4104) | Authentication, Endpoint, Change, Network_Traffic, Image_Load, Filesystem, Registry, Network_Resolution, Script |
 | `filelog` on `auth.log` or `secure` (or any syslog-format file) | Authentication and Change for sshd, sudo, su and account changes |
 | `journald` | as the agent's journal input |
 | `syslog` | as Signalith's own syslog receiver |

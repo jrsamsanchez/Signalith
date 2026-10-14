@@ -1,0 +1,4 @@
+{"rule": "39b64854-5497-4b57-a448-40977b8c9679", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"6","data":{"ImageLoaded":"\\ktes.sys"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"6","data":{}}
+]}

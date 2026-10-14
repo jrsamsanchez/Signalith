@@ -1,0 +1,5 @@
+{"rule": "7f734ed0-4f47-46c0-837f-6ee62505abd9", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"$IFSash  -c x","Image":"/netcat"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/netcat"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"$IFSash  -c x"}}
+]}

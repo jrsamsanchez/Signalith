@@ -1,0 +1,7 @@
+{"rule": "7d6d30b8-5b91-4b90-a891-46cccaf29598", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"ParentImage":"C:\\Windows\\System32\\OpenSSH\\sshd.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"PermitLocalCommand=yes LocalCommand","Hashes":"IMPHASH=dd335f759b6d5d6a8382b71dd9d65791"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Hashes":"IMPHASH=dd335f759b6d5d6a8382b71dd9d65791"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"PermitLocalCommand=yes LocalCommand"}}
+]}

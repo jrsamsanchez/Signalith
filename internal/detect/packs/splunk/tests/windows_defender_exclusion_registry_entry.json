@@ -1,0 +1,7 @@
+{"rule": "13395a44-4dd9-11ec-9df7-acde48001122", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"x","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\SOFTWARE\\Policies\\Microsoft\\Windows Defender\\Exclusions\\ x"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"x","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\SOFTWARE\\Policies\\Microsoft\\Windows Defender\\Exclusions\\ y"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"y","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\SOFTWARE\\Policies\\Microsoft\\Windows Defender\\Exclusions\\ x"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"x","EventType":"SetValue","ProcessId":"4242","TargetObject":"HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\SOFTWARE\\Policies\\Microsoft\\Windows Defender\\Exclusions\\ x"}}
+]}

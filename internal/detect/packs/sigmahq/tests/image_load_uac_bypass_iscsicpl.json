@@ -1,0 +1,6 @@
+{"rule": "9ed5959a-c43c-4c59-84e3-d28628429456", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"C:\\Windows\\SysWOW64\\iscsicpl.exe","ImageLoaded":"\\iscsiexe.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"C:\\Windows\\SysWOW64\\iscsicpl.exe","ImageLoaded":"C:\\Windows\\iscsiexe.dll\\iscsiexe.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"\\iscsiexe.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"C:\\Windows\\SysWOW64\\iscsicpl.exe"}}
+]}

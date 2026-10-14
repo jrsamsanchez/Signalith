@@ -1,0 +1,9 @@
+{"rule": "d937b75f-a665-4480-88a5-2f20e9f9b22a", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"binPathconfig","Image":"\\sc.exe","IntegrityLevel":"S-1-16-8192"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"commandfailure","Image":"\\sc.exe","IntegrityLevel":"S-1-16-8192"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\sc.exe","IntegrityLevel":"S-1-16-8192"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"binPathconfig","IntegrityLevel":"S-1-16-8192"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"binPathconfig","Image":"\\sc.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"commandfailure","IntegrityLevel":"S-1-16-8192"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"commandfailure","Image":"\\sc.exe"}}
+]}

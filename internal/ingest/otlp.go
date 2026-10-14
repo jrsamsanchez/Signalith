@@ -322,8 +322,8 @@ func otlpSeverityName(n int64) string {
 // values (event_data_format: map, the default in recent versions), or a
 // "data" list of one-entry maps in schema order (array, the only format
 // in older versions). The Windows parser reads Security events by
-// position, so named values are put in schema order with windowsSchema,
-// and Sysmon events from "Name: Value" lines.
+// position, so named values are put in schema order with windowsSchema;
+// Sysmon events are read from the named values directly.
 func otlpWindows(b map[string]any) Event {
 	channel := str(b, "channel")
 	var eventID string
@@ -339,7 +339,6 @@ func otlpWindows(b map[string]any) Event {
 	}
 	message := str(b, "message")
 
-	var names []string
 	values := map[string]string{}
 	var ordered []any
 	if ed, ok := b["event_data"].(map[string]any); ok {
@@ -349,7 +348,6 @@ func otlpWindows(b map[string]any) Event {
 				for k, v := range m { // one entry
 					ordered = append(ordered, otlpText(v))
 					if k != "" {
-						names = append(names, k)
 						values[k] = otlpText(v)
 					}
 				}
@@ -359,13 +357,12 @@ func otlpWindows(b map[string]any) Event {
 				if k == "name" || k == "binary" {
 					continue
 				}
-				names = append(names, k)
 				values[k] = otlpText(v)
 			}
 		}
 	}
 	if ordered == nil {
-		if schema, ok := windowsSchema[eventID]; ok && channel == "Security" {
+		if schema, ok := windowsSchemaFor(channel, eventID); ok {
 			for _, name := range schema {
 				ordered = append(ordered, values[name])
 			}
@@ -380,15 +377,11 @@ func otlpWindows(b map[string]any) Event {
 		"Message":       message,
 		"StringInserts": ordered,
 	}
-	if strings.EqualFold(channel, "Microsoft-Windows-Sysmon/Operational") && len(values) > 0 {
-		// The named values first: keyValues keeps the first of each.
-		var lines strings.Builder
-		for _, k := range names {
-			lines.WriteString(k + ": " + values[k] + "\n")
-		}
-		rec["Message"] = lines.String() + message
+	var named map[string]string
+	if strings.EqualFold(channel, "Microsoft-Windows-Sysmon/Operational") {
+		named = values
 	}
-	ev := parseWindows(rec)
+	ev := parseWindowsWith(rec, named)
 	if message != "" {
 		ev.Fields["message"] = message
 	} else {
@@ -396,6 +389,23 @@ func otlpWindows(b map[string]any) Event {
 	}
 	return ev
 }
+
+// windowsSchemaFor returns the schema order of a channel's event, for the
+// events the Windows parser reads by position.
+func windowsSchemaFor(channel, eventID string) ([]string, bool) {
+	switch {
+	case channel == "Security":
+		s, ok := windowsSchema[eventID]
+		return s, ok
+	case strings.EqualFold(channel, PowerShellChannel) && eventID == "4104":
+		return scriptBlockSchema, true
+	}
+	return nil, false
+}
+
+// scriptBlockSchema is the order of PowerShell's script block event
+// (4104): one part of a script that may be split over several events.
+var scriptBlockSchema = []string{"MessageNumber", "MessageTotal", "ScriptBlockText", "ScriptBlockId", "Path"}
 
 // windowsSchema lists, for the Security events the Windows parser reads,
 // the names of the event's data values in schema order, up to the last

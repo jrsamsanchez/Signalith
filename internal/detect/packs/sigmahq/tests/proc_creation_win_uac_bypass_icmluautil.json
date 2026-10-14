@@ -1,0 +1,6 @@
+{"rule": "49f2f17b-b4c8-4172-a68b-d5bf95d05130", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"ParentCommandLine":"/Processid:{D2E7041B-2927-42FB-8E9F-7CE93B6DC937}","ParentImage":"\\dllhost.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\WerFault.exe","ParentCommandLine":"/Processid:{D2E7041B-2927-42FB-8E9F-7CE93B6DC937}","ParentImage":"\\dllhost.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"ParentImage":"\\dllhost.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"ParentCommandLine":"/Processid:{D2E7041B-2927-42FB-8E9F-7CE93B6DC937}"}}
+]}

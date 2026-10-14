@@ -1,0 +1,6 @@
+{"rule": "4cbef972-f347-4170-b62a-8253f6168e6d", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"IntegrityLevel":"S-1-16-12288","ParentCommandLine":"x /Processid:{12C21EA7-2EB8-4B55-9249-AC243DA8C666}","ParentImage":"\\DllHost.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"ParentCommandLine":"x /Processid:{12C21EA7-2EB8-4B55-9249-AC243DA8C666}","ParentImage":"\\DllHost.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"IntegrityLevel":"S-1-16-12288","ParentImage":"\\DllHost.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"IntegrityLevel":"S-1-16-12288","ParentCommandLine":"x /Processid:{12C21EA7-2EB8-4B55-9249-AC243DA8C666}"}}
+]}

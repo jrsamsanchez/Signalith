@@ -18,6 +18,22 @@ Lucide Icons and Contributors, licensed under the ISC License. Some Lucide icons
 derive from Feather, Copyright (c) 2013-present Cole Bemis, licensed under the
 MIT License. Full license texts are in web/static/assets/licenses/.
 
+The SigmaHQ content pack (internal/detect/packs/sigmahq) contains detection
+rules from the SigmaHQ project (https://github.com/SigmaHQ/sigma), unchanged,
+by the authors named in each rule. They are licensed under the Detection Rule
+License (DRL) 1.1 (https://github.com/SigmaHQ/Detection-Rule-License), whose
+full text is in internal/detect/packs/sigmahq/LICENSE.Detection.Rules.md.
+Findings raised by these rules credit the rule's author and source, as the
+DRL requires.
+
+The Splunk Security Content pack (internal/detect/packs/splunk) contains
+detection rules and search macros from Splunk security_content
+(https://github.com/splunk/security_content), Copyright Splunk Inc., unchanged,
+by the authors named in each rule. They are licensed under the Apache License,
+Version 2.0, whose full text is in internal/detect/packs/splunk/LICENSE.
+Signalith converts them to its own detections when it starts. Signalith is not
+affiliated with or endorsed by Splunk.
+
 The endpoint configuration checks in internal/endpoint/checks are based on
 rules from the SCAP Security Guide (ComplianceAsCode project,
 https://github.com/ComplianceAsCode/content). Signalith uses the SSG rule

@@ -1,0 +1,4 @@
+{"rule": "402e1e1d-ad59-47b6-bf80-1ee44985b3a7", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"Invoke-SMBAutoBrute"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}}
+]}

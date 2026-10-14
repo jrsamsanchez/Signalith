@@ -1,0 +1,4 @@
+{"rule": "f0ca6c24-3225-47d5-b1f5-352bf07ecfa7", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Description":"DefenderCheck"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{}}
+]}

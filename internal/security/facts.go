@@ -34,6 +34,10 @@ type Facts struct {
 	// version whose agents send it, with HTTPS on and agents on plain HTTP
 	// allowed (see config.Config.OldToken and api.retiredTokenAccepted).
 	PublicTokenAccepted bool
+	// AgentTokens are the agent tokens and the shared tokens of the
+	// configuration; nil counts only the shared ones, as not read from
+	// OpenSearch.
+	AgentTokens *AgentTokenFacts
 	// Uptime is how long the server has run (zero in the CLI).
 	Uptime time.Duration
 
@@ -559,4 +563,25 @@ func sizeOf(b int64) string {
 		return itoa(whole) + " GB"
 	}
 	return itoa(whole) + "." + itoa(tenth) + " GB"
+}
+
+// AgentTokenFacts are the agent tokens (see internal/agenttokens).
+type AgentTokenFacts struct {
+	// Loaded is false when they could not be read from OpenSearch.
+	Loaded bool
+	// Active counts the active agent tokens.
+	Active int
+	// Legacy are the shared tokens of the configuration.
+	Legacy []LegacyTokenFact
+}
+
+// LegacyTokenFact is a shared agent token from the configuration.
+type LegacyTokenFact struct {
+	ID, Name, Source string
+	// Public is the example token of an older docker-compose.yml, and
+	// Refused one an admin stopped accepting.
+	Public, Refused bool
+	// LastUsed is when any server last saw it, zero for never.
+	LastUsed time.Time
+	Length   int
 }

@@ -1,0 +1,5 @@
+{"rule": "4ae81040-fc1c-4249-bfa3-938d260214d9", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"S-1-1-0:/deny","Image":"\\icacls.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\icacls.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"S-1-1-0:/deny"}}
+]}

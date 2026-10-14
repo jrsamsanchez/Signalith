@@ -1,0 +1,5 @@
+{"rule": "0f16d9cf-0616-45c8-8fad-becc11b5a41c", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Description":"AutoHotkey"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Description":"AutoHotkey","Image":"\\AutoHotkey64_UIA.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{}}
+]}

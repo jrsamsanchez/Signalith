@@ -1,0 +1,4 @@
+{"rule": "1cbbeaaf-3c8c-4e4c-9d72-49485b6a176b", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"QueryName":"ufile.io"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{}}
+]}

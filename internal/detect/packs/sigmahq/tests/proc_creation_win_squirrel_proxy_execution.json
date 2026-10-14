@@ -1,0 +1,16 @@
+{"rule": "45239e6a-b035-4aaf-b339-8ad379fcb67e", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"--processStartAndWait","Image":"\\update.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"--processStartAndWait","NewProcessName":"\\update.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"Discord.exe--processStart\\AppData\\Local\\Discord\\Update.exe:\\Users\\--processStartAndWait","Image":"\\update.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"Discord.exe--processStart\\AppData\\Local\\Discord\\Update.exe:\\Users\\--processStartAndWait","NewProcessName":"\\update.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":":\\Users\\--processStartAndWaitGitHubDesktop.exe\\AppData\\Local\\GitHubDesktop\\Update.exe--processStartAndWait","Image":"\\update.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":":\\Users\\--processStartAndWaitGitHubDesktop.exe\\AppData\\Local\\GitHubDesktop\\Update.exe--processStartAndWait","NewProcessName":"\\update.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":":\\Users\\--processStartAndWait\\AppData\\Local\\Microsoft\\Teams\\Update.exeTeams.exe--createShortcut","Image":"\\update.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":":\\Users\\--processStartAndWait\\AppData\\Local\\Microsoft\\Teams\\Update.exeTeams.exe--createShortcut","NewProcessName":"\\update.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"--createShortcut\\AppData\\Local\\yammerdesktop\\Update.exeYammer.exe--processStartAndWait:\\Users\\","Image":"\\update.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"--createShortcut\\AppData\\Local\\yammerdesktop\\Update.exeYammer.exe--processStartAndWait:\\Users\\","NewProcessName":"\\update.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\update.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"\\update.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"--processStartAndWait"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"--processStartAndWait","SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

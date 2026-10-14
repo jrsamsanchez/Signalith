@@ -1,0 +1,10 @@
+{"rule": "3dfd06d2-eaf4-4532-9555-68aca59f57c4", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":":\\Windows\\IME\\"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":":\\Windows\\IME\\","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"C:\\Windows\\SysWOW64\\config\\systemprofile\\Citrix\\UpdaterBinaries\\:\\Windows\\IME\\\\CitrixReceiverUpdater.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"C:\\Windows\\SysWOW64\\config\\systemprofile\\Citrix\\UpdaterBinaries\\:\\Windows\\IME\\\\CitrixReceiverUpdater.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"C:\\Users\\Public\\IBM\\ClientSolutions\\Start_Programs\\:\\Windows\\IME\\"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"C:\\Users\\Public\\IBM\\ClientSolutions\\Start_Programs\\:\\Windows\\IME\\","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

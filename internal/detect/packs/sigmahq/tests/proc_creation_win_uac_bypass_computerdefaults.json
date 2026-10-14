@@ -1,0 +1,6 @@
+{"rule": "3c05e90d-7eba-4324-9972-5d7f711a60a8", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"C:\\Windows\\System32\\ComputerDefaults.exe","IntegrityLevel":"S-1-16-12288"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"C:\\Windows\\System32\\ComputerDefaults.exe","IntegrityLevel":"S-1-16-12288","ParentImage":":\\Windows\\System32"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"IntegrityLevel":"S-1-16-12288"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"C:\\Windows\\System32\\ComputerDefaults.exe"}}
+]}

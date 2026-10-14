@@ -134,24 +134,31 @@ func checkSessions(f *Facts) *Check {
 
 // checkAgentTokens: accounts.agent_tokens.
 func checkAgentTokens(f *Facts) *Check {
-	tokens := f.Config.Ingest.Tokens
-	if len(tokens) == 0 && !f.PublicTokenAccepted {
+	t := f.AgentTokens
+	if t == nil {
+		t = &AgentTokenFacts{}
+		for _, tok := range f.Config.Ingest.Tokens {
+			t.Legacy = append(t.Legacy, LegacyTokenFact{Public: config.IsPublicIngestToken(tok), Length: len(tok)})
+		}
+	}
+	var accepted []LegacyTokenFact
+	for _, l := range t.Legacy {
+		if !l.Refused {
+			accepted = append(accepted, l)
+		}
+	}
+	if len(accepted) == 0 && t.Active == 0 && !f.PublicTokenAccepted && (t.Loaded || f.AgentTokens == nil) {
 		return nil
 	}
 	fix := &Fix{Steps: []string{
-		"Add a new token: signalith secrets set ingest.tokens, and press Enter to have one made.",
-		"Give each agent a new configuration from Add data.",
-		"Then remove the old token.",
-	}, Page: &PageLink{ID: "data", Label: "Open Add data"}, Docs: doc(docEncCommands),
-		Commands: signalithCommands(f, "secrets set ingest.tokens")}
-	details := []string{"All agents share a token, so one taken from any agent works for all of them until it's replaced."}
-	shortest := 0
-	for _, t := range tokens {
-		if config.IsPublicIngestToken(t) {
+		"Open Add data and give each agent a configuration with its own token.",
+		"Under Agent tokens, choose Stop accepting on the shared token once its Last used is older than the last agent you updated.",
+		"That's all: a token that is no longer accepted can't be used. You may also delete it from signalith.yaml (ingest.tokens) or SIGNALITH_INGEST_TOKEN; on the Docker quick start, leave docker-compose.yml as it is.",
+	}, Page: &PageLink{ID: "data", Label: "Open Add data"}, Docs: docLabeled(docTokensReplace, "Replace a shared token")}
+	details := []string{"Every agent set up with a shared token uses the same secret, so a copy taken from any one of them works for all of them."}
+	for _, l := range accepted {
+		if l.Public {
 			return &Check{State: Risk, Line: "Agents can send events with change-this-ingest-token, an example token anyone can look up.", Details: details, Fix: fix}
-		}
-		if n := len(t); shortest == 0 || n < shortest {
-			shortest = n
 		}
 	}
 	if f.PublicTokenAccepted {
@@ -169,11 +176,59 @@ func checkAgentTokens(f *Facts) *Check {
 	if f.Docker {
 		details = append(details, oldTokenRefused(f.Config))
 	}
-	if shortest < 24 {
-		return &Check{State: Attention, Line: "An agent token is only " + itoa(shortest) + plural(shortest, " character", " characters") +
-			" long, so it's easier to guess. Tokens Signalith makes have 48.", Details: details, Fix: fix}
+	if len(accepted) > 0 {
+		shortest, recent := 0, false
+		for _, l := range accepted {
+			if shortest == 0 || l.Length < shortest {
+				shortest = l.Length
+			}
+			if !l.LastUsed.IsZero() && f.Now.Sub(l.LastUsed) < 7*24*time.Hour {
+				recent = true
+			}
+		}
+		if shortest < 24 {
+			return &Check{State: Attention, Line: "An agent token is only " + itoa(shortest) + plural(shortest, " character", " characters") +
+				" long, so it's easier to guess. Tokens Signalith makes have 56.", Details: details, Fix: fix}
+		}
+		if !t.Loaded {
+			return &Check{State: Attention, Line: "A shared agent token is accepted; how it was used couldn't be read from OpenSearch.", Details: details, Fix: fix}
+		}
+		if recent {
+			return &Check{State: Attention, Line: "Some agents still send with a shared token.", Details: details, Fix: fix}
+		}
+		if !everUsed(accepted) && (t.Active > 0 || f.Docker) {
+			// A token no agent ever sent with, such as the one the Docker
+			// quick start's setup makes: nothing to replace, only one
+			// secret less to keep.
+			return &Check{State: Good, Line: "No agent sends with a shared token, though one is still accepted.",
+				Details: []string{"Signalith hasn't seen any agent send with it. New agents get their own token from Add data."},
+				Tip: &Fix{Steps: []string{"Under Agent tokens on Add data, choose Stop accepting on the shared token, so a copy of it can never be used."},
+					Page: &PageLink{ID: "data", Label: "Open Add data"}, Docs: docLabeled(docTokensReplace, "Replace a shared token")}}
+		}
+		return &Check{State: Attention, Line: "A shared agent token is still accepted, though no agent has used it in the last 7 days.", Details: details, Fix: fix}
 	}
-	return &Check{State: Good, Line: "Agents send with tokens of 24 characters or more.", Details: details}
+	if !t.Loaded {
+		return &Check{State: Unknown, Line: "Couldn't read the agent tokens from OpenSearch."}
+	}
+	details = []string{"Each token is kept only as a SHA-256 fingerprint, and revoking one refuses it on every server within a few seconds."}
+	if len(t.Legacy) > 0 {
+		details = append(details, "The shared token in the configuration is no longer accepted, so it can't be used. Leaving it there is fine.")
+	}
+	if f.Docker {
+		details = append(details, oldTokenRefused(f.Config))
+	}
+	return &Check{State: Good, Line: "Each agent group sends with its own token (" + itoa(t.Active) + " active).", Details: details,
+		Tip: &Fix{Docs: doc(docTokensHow)}}
+}
+
+// everUsed reports whether any agent has sent with one of these tokens.
+func everUsed(ls []LegacyTokenFact) bool {
+	for _, l := range ls {
+		if !l.LastUsed.IsZero() {
+			return true
+		}
+	}
+	return false
 }
 
 // oldTokenRefused says why a Docker quick start refuses the example token

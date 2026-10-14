@@ -1,0 +1,5 @@
+{"rule": "a24e5861-c6ca-4fde-a93c-ba9256feddf0", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"GrantedAccess":"0x1FFFFF","TargetImage":"\\calculator.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"TargetImage":"\\calculator.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"GrantedAccess":"0x1FFFFF"}}
+]}

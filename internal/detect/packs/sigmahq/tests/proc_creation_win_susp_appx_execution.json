@@ -1,0 +1,16 @@
+{"rule": "f91ed517-a6ba-471d-9910-b3b4a398c0f3", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"Invoke-","ParentImage":"C:\\Program Files\\WindowsApps\\"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"Invoke-","ParentProcessName":"C:\\Program Files\\WindowsApps\\","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\powershell_ise.exe","ParentImage":"C:\\Program Files\\WindowsApps\\"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"\\powershell_ise.exe","ParentProcessName":"C:\\Program Files\\WindowsApps\\","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"Invoke-","Image":"\\cmd.exe","ParentImage":"C:\\Program Files\\WindowsApps\\Microsoft.SysinternalsSuiteC:\\Program Files\\WindowsApps\\"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"Invoke-","NewProcessName":"\\cmd.exe","ParentProcessName":"C:\\Program Files\\WindowsApps\\Microsoft.SysinternalsSuiteC:\\Program Files\\WindowsApps\\","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"Invoke-","Image":"\\powershell.exe","ParentImage":"C:\\Program Files\\WindowsApps\\ :\\Program Files\\WindowsApps\\Microsoft.WindowsTerminal \\WindowsTerminal.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"Invoke-","NewProcessName":"\\powershell.exe","ParentProcessName":"C:\\Program Files\\WindowsApps\\ :\\Program Files\\WindowsApps\\Microsoft.WindowsTerminal \\WindowsTerminal.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"ParentImage":"C:\\Program Files\\WindowsApps\\"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"ParentProcessName":"C:\\Program Files\\WindowsApps\\","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"Invoke-"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"Invoke-","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\powershell_ise.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"\\powershell_ise.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

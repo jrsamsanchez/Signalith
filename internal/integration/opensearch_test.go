@@ -73,7 +73,7 @@ func setup(t *testing.T) (*store.Client, *search.Engine, string) {
 	}
 	// Under signalith*, the indices a secured OpenSearch lets Signalith use.
 	prefix := "signalithtest" + config.RandomToken(3)
-	if err := cl.PutIndexTemplate(ctx, prefix, ingest.IndexTemplate(prefix, 0)); err != nil {
+	if err := ingest.PutIndexTemplate(ctx, cl, prefix, 0); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {

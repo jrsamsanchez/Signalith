@@ -1,0 +1,8 @@
+{"rule": "90dcf730-1b71-4ae7-9ffc-6fcf62bd0132", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/user: /generic:Microsoft_Windows_Shell_ZipFolder:filename= /pass: .zip"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"/user: /generic:Microsoft_Windows_Shell_ZipFolder:filename= /pass: .zip","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"Microsoft_Windows_Shell_ZipFolder:filename=/delete.zip"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"Microsoft_Windows_Shell_ZipFolder:filename=/delete.zip","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

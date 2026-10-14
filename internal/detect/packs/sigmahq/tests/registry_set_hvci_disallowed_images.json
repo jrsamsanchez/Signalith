@@ -1,0 +1,4 @@
+{"rule": "555155a2-03bf-4fe7-af74-d176b3fdbe16", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Control\\CI\\\\HVCIDisallowedImages"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}}
+]}

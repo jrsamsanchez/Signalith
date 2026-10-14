@@ -1,0 +1,7 @@
+{"rule": "c0b40568-b1e9-4b03-8d6c-b096da6da9ab", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x -powershell","OriginalFileName":"AgentExecutor.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x -powershell","OriginalFileName":"AgentExecutor.exe","ParentImage":"\\Microsoft.Management.Services.IntuneWindowsAgent.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"C:\\Windows\\SysWOW64\\WindowsPowerShell\\v1.0\\  -powershell","OriginalFileName":"AgentExecutor.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"AgentExecutor.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x -powershell"}}
+]}

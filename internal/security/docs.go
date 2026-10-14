@@ -69,6 +69,8 @@ var (
 	docSecOSDisk       = DocLink{File: "security.md", Anchor: "where-opensearch-keeps-events"}
 	docSecFiles        = DocLink{File: "security.md", Anchor: "file-permissions"}
 	docSecNotChecked   = DocLink{File: "security.md", Anchor: "not-checked-here"}
+	docTokensHow       = DocLink{File: "agent-tokens.md", Anchor: "how-tokens-work"}
+	docTokensReplace   = DocLink{File: "agent-tokens.md", Anchor: "replace-a-shared-token"}
 )
 
 // AllDocs lists every section of the docs the report may link to.
@@ -77,7 +79,7 @@ func AllDocs() []DocLink {
 		docHTTPSAgents, docHTTPSTrust, docHTTPSOldToken, docOSPoint, docOSLinux, docOSCerts, docOSDocker, docOSNotLoaded, docOSRoles, docEncDocker,
 		docEncElsewhere, docEncKey, docEncChange, docEncBackup, docEncWhat, docEncNot, docEncLosing, docEncDisk,
 		docEncInUse, docEncCommands, docRetArchives, docUsersBuiltin, docUsersLocal, docUsersDirectory, docReadmeLinux,
-		docReadmeWindows, docReadmeDocker, docServersIdentity, docSecSyslog, docSecDisk, docSecOSDisk, docSecFiles,
+		docReadmeWindows, docReadmeDocker, docServersIdentity, docSecSyslog, docSecDisk, docSecOSDisk, docSecFiles, docTokensHow, docTokensReplace,
 		docSecNotChecked}
 }
 
@@ -91,3 +93,9 @@ func NotCheckedDocs(version string) DocLink {
 
 // doc returns a copy of a docs section for a Fix.
 func doc(d DocLink) *DocLink { return &d }
+
+// docLabeled is doc with the link's text.
+func docLabeled(d DocLink, label string) *DocLink {
+	d.Label = label
+	return &d
+}

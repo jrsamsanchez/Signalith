@@ -1,0 +1,5 @@
+{"rule": "77df53a5-1d78-4f32-bc5a-0e7465bd8f41", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Description":"GnuPG’s OpenPGP tool"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Description":"GnuPG’s OpenPGP tool","Image":":\\Program Files (x86)\\GnuPG\\bin\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{}}
+]}

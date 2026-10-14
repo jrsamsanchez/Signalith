@@ -1,0 +1,8 @@
+{"rule": "b57ba453-b384-4ab9-9f40-1038086b4e53", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"SELECT TOP [VeeamBackup].[dbo].[Credentials]","Image":"\\sqlcmd.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"SELECT TOP [VeeamBackup].[dbo].[Credentials]","NewProcessName":"\\sqlcmd.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\sqlcmd.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"\\sqlcmd.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"SELECT TOP [VeeamBackup].[dbo].[Credentials]"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"SELECT TOP [VeeamBackup].[dbo].[Credentials]","SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

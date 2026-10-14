@@ -1,0 +1,4 @@
+{"rule": "a1b1fd53-9c4a-444c-bae0-34a330fc7aa8", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\SYSTEM\\CurrentControlSet\\Control\\ContentIndex\\Language\\\\StemmerClass"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}}
+]}

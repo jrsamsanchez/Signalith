@@ -1,0 +1,8 @@
+{"rule": "696bfb54-227e-4602-ac5b-30d9d2053312", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"From  Ssh_creds VeeamBackup","Image":"\\sqlcmd.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"From  Ssh_creds VeeamBackup","NewProcessName":"\\sqlcmd.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\sqlcmd.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"\\sqlcmd.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"From  Ssh_creds VeeamBackup"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"From  Ssh_creds VeeamBackup","SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

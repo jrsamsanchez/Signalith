@@ -1,0 +1,5 @@
+{"rule": "67a6c006-3fbe-46a7-9074-2ba3b82c3000", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Control Panel\\Desktop\\SCRNSAVE.EXE"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Image":"\\rundll32.exe","TargetObject":"\\Control Panel\\Desktop\\SCRNSAVE.EXE"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}}
+]}

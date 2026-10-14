@@ -1,0 +1,8 @@
+{"rule": "f37b4bce-49d0-4087-9f5b-58bffda77316", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)","TargetObject":"\\Control\\WMI\\Autologger\\\\Defender\\Start"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)","Image":"C:\\ProgramData\\Microsoft\\Windows Defender\\Platform\\\\MsMpEng.exe","TargetObject":"\\Defender\\Control\\WMI\\Autologger\\\\DefenderApiLogger\\\\Start"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)","Image":"C:\\Windows\\system32\\wevtutil.exe","TargetObject":"\\Defender\\Control\\WMI\\Autologger\\\\Start"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Control\\WMI\\Autologger\\\\Defender\\Start"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)"}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)","EventType":"SetValue","Image":"C:\\WINDOWS\\system32\\reg.exe","ProcessGuid":"0197231E-7602-694F-5A02-000000000C00","ProcessId":"3668","RuleName":"-","TargetObject":"HKLM\\System\\CurrentControlSet\\Control\\WMI\\Autologger\\EventLog-Application\\start","User":"swachchhanda\\xodih","UtcTime":"2025-12-27 06:00:34.853"}}
+]}

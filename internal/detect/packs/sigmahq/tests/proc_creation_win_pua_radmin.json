@@ -1,0 +1,4 @@
+{"rule": "5817e76f-4804-41e6-8f1d-5fa0b3ecae2d", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Description":"Radmin Viewer"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{}}
+]}

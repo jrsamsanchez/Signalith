@@ -1,0 +1,6 @@
+{"rule": "a5ea83a7-05a5-44c1-be2e-addccbbd8c03", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"\\dism.exe","ImageLoaded":"\\dismcore.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"\\dism.exe","ImageLoaded":"C:\\Windows\\System32\\Dism\\dismcore.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"\\dismcore.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"\\dism.exe"}}
+]}

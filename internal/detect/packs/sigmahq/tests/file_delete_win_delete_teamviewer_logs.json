@@ -1,0 +1,5 @@
+{"rule": "b1decb61-ed83-4339-8e95-53ea51901720", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"26","data":{"TargetFilename":"\\TeamViewer_.log"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"26","data":{"Image":"C:\\Windows\\system32\\svchost.exe","TargetFilename":"\\TeamViewer_ .log"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"26","data":{}}
+]}

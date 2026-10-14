@@ -1,0 +1,11 @@
+{"rule": "dc057fd6-34db-4c41-b8dd-00463c47bf83", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"/etc/xdg/autostart/ x x .desktop","User":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x /.config/autostart/ x x .desktop","User":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"/etc/xdg/autostart/ x x .desktop","User":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"/etc/xdg/autostart/ x x .desktop","User":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x /.config/autostart/ x x .desktop","User":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x /.config/autostart/ x x .desktop","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"/etc/xdg/autostart/ x x .desktoq","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x /.config/autostart/ x x .desktoq","User":"tester"}}
+]}

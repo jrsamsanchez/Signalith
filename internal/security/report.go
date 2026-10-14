@@ -73,6 +73,9 @@ type DocLink struct {
 	File   string `json:"file"`
 	Anchor string `json:"anchor"`
 	URL    string `json:"url"`
+	// Label is the link's text when "How it works" would not fit, such
+	// as for steps.
+	Label string `json:"label,omitempty"`
 }
 
 // Fix says how to fix a problem ("How to fix"), how to check by hand

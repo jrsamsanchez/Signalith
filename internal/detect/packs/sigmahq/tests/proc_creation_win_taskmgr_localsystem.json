@@ -1,0 +1,5 @@
+{"rule": "9fff585c-c33e-4a86-b3cd-39312079a65f", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\taskmgr.exe","User":"AUTORI"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"User":"AUTORI"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\taskmgr.exe"}}
+]}

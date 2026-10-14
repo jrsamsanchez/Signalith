@@ -1,0 +1,4 @@
+{"rule": "ae9c6a7c-9521-42a6-915e-5aaa8689d529", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"rundll32  .dll ,StartW"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{}}
+]}

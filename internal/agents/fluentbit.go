@@ -14,17 +14,27 @@ import (
 	"unicode"
 )
 
+// TokenPlaceholder stands for the agent token in a configuration made for
+// the Add data page, which puts a new token in its place when the
+// configuration is copied or downloaded (see internal/agenttokens). It
+// needs no quoting in any of the configurations or scripts.
+const TokenPlaceholder = "@@AGENT_TOKEN@@"
+
 // Options select what an agent collects.
 type Options struct {
 	OS        string // "linux", "windows", "otel" (an OpenTelemetry Collector) or "osquery"
 	ServerURL string // Signalith public URL
-	Token     string // ingest token
+	Token     string // agent token (TokenPlaceholder for the Add data page)
 	// LinuxSource is "file" (tail /var/log/auth.log and /var/log/secure),
 	// "journal" (systemd journal, for distros without rsyslog) or "wazuh"
 	// (tail a Wazuh manager's alerts.json; Fluent Bit only).
 	LinuxSource string
-	// Sysmon adds the Sysmon operational channel on Windows.
+	// Sysmon adds the Sysmon operational channel on Windows, and Sysmon
+	// for Linux's events (from the systemd journal) on Linux.
 	Sysmon bool
+	// PowerShell adds Windows PowerShell's operational channel, where
+	// script block logging writes the scripts that run (event 4104).
+	PowerShell bool
 	// CollectorOS is where the OpenTelemetry Collector runs, for OS
 	// "otel": "linux" (the default) or "windows".
 	CollectorOS string
@@ -181,7 +191,7 @@ func Generate(o Options) (*Agent, error) {
 		return nil, fmt.Errorf("server address %q: %w", o.ServerURL, err)
 	}
 	if o.Token == "" {
-		return nil, fmt.Errorf("no ingest token configured; add one under ingest.tokens")
+		return nil, errors.New("no agent token given")
 	}
 	host := u.Hostname()
 	port := u.Port()
@@ -241,7 +251,7 @@ func Generate(o Options) (*Agent, error) {
 				{"storage.type", "filesystem"},
 			}))
 		} else if o.LinuxSource == "journal" {
-			b.WriteString(section("INPUT", [][2]string{
+			journal := [][2]string{
 				{"Name", "systemd"}, {"Tag", "linux.journal"},
 				{"DB", "/var/lib/fluent-bit/signalith-journal.db"},
 				{"Systemd_Filter", "SYSLOG_IDENTIFIER=sshd"},
@@ -256,9 +266,14 @@ func Generate(o Options) (*Agent, error) {
 				{"Systemd_Filter", "SYSLOG_IDENTIFIER=clamd"},
 				{"Systemd_Filter", "SYSLOG_IDENTIFIER=clamonacc"},
 				{"Systemd_Filter", "SYSLOG_IDENTIFIER=freshclam"},
+			}
+			if o.Sysmon {
+				journal = append(journal, [2]string{"Systemd_Filter", "SYSLOG_IDENTIFIER=sysmon"})
+			}
+			b.WriteString(section("INPUT", append(journal, [][2]string{
 				{"Read_From_Tail", "On"},
 				{"storage.type", "filesystem"},
-			}))
+			}...)))
 			// clamd checks its database every few minutes; those lines
 			// say nothing and would be most of the volume.
 			b.WriteString(section("FILTER", [][2]string{
@@ -266,6 +281,17 @@ func Generate(o Options) (*Agent, error) {
 				{"Exclude", "MESSAGE ^SelfCheck"},
 			}))
 		} else {
+			if o.Sysmon {
+				// Sysmon for Linux logs through syslog into the journal; only
+				// its events are read from there.
+				b.WriteString(section("INPUT", [][2]string{
+					{"Name", "systemd"}, {"Tag", "linux.journal"},
+					{"DB", "/var/lib/fluent-bit/signalith-sysmon.db"},
+					{"Systemd_Filter", "SYSLOG_IDENTIFIER=sysmon"},
+					{"Read_From_Tail", "On"},
+					{"storage.type", "filesystem"},
+				}))
+			}
 			b.WriteString(section("INPUT", [][2]string{
 				{"Name", "tail"}, {"Tag", "linux.auth"},
 				{"Path", "/var/log/auth.log,/var/log/secure"},
@@ -292,10 +318,13 @@ func Generate(o Options) (*Agent, error) {
 				{"Exclude", "log SelfCheck"},
 			}))
 		}
-		// Only root may read the config: it holds the ingest token.
+		// Only root may read the config: it holds the agent token.
 		a.Steps = []string{"Install Fluent Bit (3.1 or later): curl https://raw.githubusercontent.com/fluent/fluent-bit/master/install.sh | sh"}
 		if o.LinuxSource == "wazuh" {
 			a.Steps = []string{"On the Wazuh manager (not on each Wazuh agent), install Fluent Bit (3.1 or later): curl https://raw.githubusercontent.com/fluent/fluent-bit/master/install.sh | sh"}
+		}
+		if o.Sysmon && o.LinuxSource != "wazuh" {
+			a.Steps = append(a.Steps, "Install Sysmon for Linux (open source, github.com/Sysinternals/SysmonForLinux) and start it with a configuration (sudo sysmon -accepteula -i config.xml), so process, network and file events are recorded")
 		}
 		if useCA {
 			a.CAPath = LinuxCAPath
@@ -304,10 +333,10 @@ func Generate(o Options) (*Agent, error) {
 		a.Steps = append(a.Steps, "Save the configuration below as fluent-bit.conf.")
 		a.ConfigStep = len(a.Steps)
 		if useCA {
-			a.Steps = append(a.Steps, "From the folder you saved both files in, put them in place. Only root can read the configuration, since it holds the ingest token: "+
+			a.Steps = append(a.Steps, "From the folder you saved both files in, put them in place. Only root can read the configuration, since it holds the agent token: "+
 				"sudo install -m 644 -o root -g root signalith-ca.pem "+LinuxCAPath+" && sudo install -m 600 -o root -g root fluent-bit.conf "+a.ConfigPath)
 		} else {
-			a.Steps = append(a.Steps, "From the folder you saved it in, put it in place. Only root can read it, since it holds the ingest token: "+
+			a.Steps = append(a.Steps, "From the folder you saved it in, put it in place. Only root can read it, since it holds the agent token: "+
 				"sudo install -m 600 -o root -g root fluent-bit.conf "+a.ConfigPath)
 		}
 		done := "Events appear in Search within a minute; check the Health page if they do not."
@@ -324,6 +353,9 @@ func Generate(o Options) (*Agent, error) {
 		channels := "Security,Microsoft-Windows-Windows Defender/Operational"
 		if o.Sysmon {
 			channels += ",Microsoft-Windows-Sysmon/Operational"
+		}
+		if o.PowerShell {
+			channels += ",Microsoft-Windows-PowerShell/Operational"
 		}
 		b.WriteString("# Signalith agent for Windows, generated by Signalith.\n")
 		b.WriteString(section("SERVICE", [][2]string{
@@ -344,6 +376,9 @@ func Generate(o Options) (*Agent, error) {
 		if o.Sysmon {
 			a.Steps = append(a.Steps, "Install Sysmon with a config such as SwiftOnSecurity's sysmon-config, so process and network events are recorded")
 		}
+		if o.PowerShell {
+			a.Steps = append(a.Steps, scriptBlockLoggingStep)
+		}
 		a.Steps = append(a.Steps, "Install Fluent Bit for Windows, 3.1 or later (64-bit installer), from https://docs.fluentbit.io/manual/installation/windows")
 		files := "fluent-bit.conf"
 		if useCA {
@@ -355,13 +390,13 @@ func Generate(o Options) (*Agent, error) {
 		a.ConfigStep = len(a.Steps)
 		// A browser cannot save into Program Files, so the files are
 		// copied there. Only SYSTEM and Administrators may then read the
-		// config, which holds the ingest token (Program Files lets every
+		// config, which holds the agent token (Program Files lets every
 		// user read), and the buffer, which holds Security log events
 		// (ProgramData does too). The accounts are given by their SIDs,
 		// whose names differ in other languages.
 		a.Steps = append(a.Steps,
 			"In an elevated PowerShell, put them in place from your Downloads folder, and let only SYSTEM and Administrators read the configuration and the agent's buffer, "+
-				"since they hold the ingest token and Security log events: "+
+				"since they hold the agent token and Security log events: "+
 				`cd "$env:USERPROFILE\Downloads"`+"\n"+
 				"Copy-Item "+files+` 'C:\Program Files\fluent-bit\conf\' -Force`+"\n"+
 				`icacls '`+a.ConfigPath+`' /inheritance:r /grant:r '*S-1-5-18:F' '*S-1-5-32-544:F'`+"\n"+
@@ -443,3 +478,7 @@ func section(name string, kv [][2]string) string {
 	}
 	return b.String()
 }
+
+// scriptBlockLoggingStep turns on PowerShell script block logging, which
+// is off by default, so the scripts that run are recorded.
+const scriptBlockLoggingStep = `Turn on PowerShell script block logging, so the scripts that run are recorded (or use Group Policy: Administrative Templates > Windows Components > Windows PowerShell > Turn on PowerShell Script Block Logging). In an elevated PowerShell: $k = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging'; New-Item -Path $k -Force | Out-Null; Set-ItemProperty -Path $k -Name EnableScriptBlockLogging -Value 1`

@@ -1,0 +1,16 @@
+{"rule": "cd951fdc-4b2f-47f5-ba99-a33bf61e3770", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"msi\\Windows\\Installer\\tmp","User":"AUTHORI"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\msiexec.exe","IntegrityLevel":"S-1-16-16384","User":"AUTHORI"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"msi\\Windows\\Installer\\tmp","ParentImage":"C:\\Program Files (x86)\\Avast Software\\","User":"AUTHORI"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\Windows\\Installer\\msitmp","ParentImage":"C:\\ProgramData\\Avira\\","User":"AUTHORI"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\Windows\\Installer\\msitmp","ParentImage":"C:\\Program Files (x86)\\Google\\Update\\","User":"AUTHORI"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\Windows\\Installer\\msitmp","ParentImage":"C:\\Windows\\System32\\services.exe","User":"AUTHORI"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"msi \\Windows\\Installer\\ tmp","ParentCommandLine":"\\system32\\msiexec.exe /V","User":"AUTHORI"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\Windows\\Installer\\msitmp","ParentImage":"C:\\ProgramData\\Sophos\\","User":"AUTHORI"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"User":"AUTHORI"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"msi\\Windows\\Installer\\tmp"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\msiexec.exe","IntegrityLevel":"S-1-16-16384","ParentImage":"C:\\Program Files (x86)\\Avast Software\\","User":"AUTHORI"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\msiexec.exe","IntegrityLevel":"S-1-16-16384","ParentImage":"C:\\ProgramData\\Avira\\","User":"AUTHORI"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\msiexec.exe","IntegrityLevel":"S-1-16-16384","ParentImage":"C:\\Program Files\\Google\\Update\\","User":"AUTHORI"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\msiexec.exe","IntegrityLevel":"S-1-16-16384","ParentImage":"C:\\Windows\\System32\\services.exe","User":"AUTHORI"}}
+]}

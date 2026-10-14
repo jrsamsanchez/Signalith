@@ -1,0 +1,5 @@
+{"rule": "992dd79f-dde8-4bb0-9085-6350ba97cfb3", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"4","TargetObject":"\\Software\\Winternals\\BGInfo\\UserFields\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Software\\Winternals\\BGInfo\\UserFields\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"4"}}
+]}

@@ -1,0 +1,5 @@
+{"rule": "bdeb2cff-af74-4094-8426-724dc937f20a", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"Set-Acl  -AclObject  -Path x","OriginalFileName":"PowerShell.EXE"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"PowerShell.EXE"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"Set-Acl  -AclObject  -Path x"}}
+]}

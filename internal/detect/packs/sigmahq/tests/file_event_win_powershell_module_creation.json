@@ -1,0 +1,5 @@
+{"rule": "e36941d0-c0f0-443f-bc6f-cb2952eb69ea", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\powershell.exe","TargetFilename":"\\PowerShell\\7\\Modules\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"\\PowerShell\\7\\Modules\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\powershell.exe"}}
+]}

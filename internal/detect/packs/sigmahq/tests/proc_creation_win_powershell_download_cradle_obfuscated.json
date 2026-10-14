@@ -1,0 +1,8 @@
+{"rule": "44e24481-6202-4c62-9127-5a0ae8e3fe3d", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"Invoke http://127.0.0.1 %{(IRM $_)}","Image":"\\powershell.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"Invoke http://127.0.0.1 %{(IRM $_)}","NewProcessName":"\\powershell.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\powershell.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"\\powershell.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"Invoke http://127.0.0.1 %{(IRM $_)}"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"Invoke http://127.0.0.1 %{(IRM $_)}","SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

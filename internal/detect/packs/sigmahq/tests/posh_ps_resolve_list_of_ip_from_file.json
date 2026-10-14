@@ -1,0 +1,4 @@
+{"rule": "fbc5e92f-3044-4e73-a5c6-1c4359b539de", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"Out-Fileforeach[System.Net.Dns]::GetHostEntryGet-content x"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}}
+]}

@@ -1,0 +1,5 @@
+{"rule": "857c8db3-c89b-42fb-882b-f681c7cf4da2", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"\\lsass.exe","Signed":"false"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Signed":"false"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"\\lsass.exe"}}
+]}

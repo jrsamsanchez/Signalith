@@ -1,0 +1,4 @@
+{"rule": "3bf1d859-3a7e-44cb-8809-a99e066d3478", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"-AclObject -Path 'C:/WindowsSet-Acl FullControl"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}}
+]}

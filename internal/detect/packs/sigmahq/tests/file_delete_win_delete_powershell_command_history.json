@@ -1,0 +1,4 @@
+{"rule": "ff301988-c231-4bd0-834c-ac9d73b86586", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"26","data":{"TargetFilename":"\\PSReadLine\\ConsoleHost_history.txt"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"26","data":{}}
+]}

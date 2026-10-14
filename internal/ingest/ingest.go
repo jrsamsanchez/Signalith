@@ -32,6 +32,11 @@ type Event struct {
 	// time (too old, or too far ahead); the event is then filed under the
 	// time it arrived and this is stored as device_time.
 	DeviceTime time.Time
+	// Origin is where the event came from, when it differs from the
+	// origin of the request (see WithOrigin), as for syslog messages,
+	// whose batches mix devices. It is recorded in the event's
+	// signalith_* fields.
+	Origin Origin
 }
 
 // DefaultMaxEventAge is how old an event's own time may be and still be
@@ -83,7 +88,7 @@ type Pipeline struct {
 	// SampleMark marks every event this pipeline writes as sample data
 	// with this load ID (datamodel.SampleField). Only the sample-data
 	// loader sets it, on a pipeline of its own: every other pipeline
-	// removes the marker from what senders send (see reservedFields).
+	// removes the marker from what senders send (see Reserved).
 	SampleMark string
 
 	stats   Stats
@@ -115,7 +120,7 @@ type Stats struct {
 	Retimed atomic.Int64
 	// FieldsDropped counts fields left out of events: invalid names, too
 	// many fields, names over an index's budget, or names Signalith sets
-	// itself (reservedFields).
+	// itself (Reserved).
 	FieldsDropped atomic.Int64
 }
 
@@ -268,12 +273,22 @@ func (p *Pipeline) write(ctx context.Context, events []Event, ids []string) (*Re
 	res := &Result{Received: len(events)}
 	docs := make([]store.IndexedDoc, 0, len(events))
 	var reserved []string
+	ctxOrigin := OriginFrom(ctx)
 	for i := range events {
 		ev := &events[i]
 		if ev.Fields == nil {
 			ev.Fields = map[string]any{}
 		}
 		nReserved := p.dropReserved(ev.Fields, &reserved)
+		// After the drop, so only Signalith sets these. The sample data
+		// carries its own marker instead.
+		if p.SampleMark == "" {
+			if o := ev.Origin; !o.IsZero() {
+				o.stamp(ev.Fields)
+			} else {
+				ctxOrigin.stamp(ev.Fields)
+			}
+		}
 		if ev.Time.IsZero() {
 			ev.Time = recv
 		} else if !TimeUsable(ev.Time, recv, p.maxAge()) {
@@ -350,25 +365,19 @@ func (p *Pipeline) write(ctx context.Context, events []Event, ids []string) (*Re
 	return res, nil
 }
 
-// reservedFields are the fields Signalith sets on events itself, which a
-// sender must not choose: the event time and data model (from where the
-// event is filed), device_time and dropped_fields (what ingest did to the
-// event), and the sample-data marker. Live detections leave out every
-// event with the marker, and removing the sample data deletes them, so an
-// event that could carry one would hide from detections and then be
-// deleted. Ingest drops these from what senders send rather than refuse
-// the event: the event is real activity that must stay visible, and an
-// agent that is refused sends the same batch again forever.
-var reservedFields = []string{"@timestamp", "datamodel", "device_time", "dropped_fields", datamodel.SampleField}
-
-// dropReserved removes reservedFields from an event's fields, adds the
-// names it found to seen, and returns how many it removed. On the
-// sample-data loader's pipeline it then marks the event with the load's
-// ID; the marker the generator already put there is not counted.
+// dropReserved removes the fields a sender may not set (see Reserved)
+// from an event's fields, adds the names it found to seen, and returns how
+// many it removed. Ingest drops them rather than refuse the event: the
+// event is real activity that must stay visible, and an agent that is
+// refused sends the same batch again forever. An event that could carry
+// the sample-data marker would hide from live detections and be deleted
+// with the sample data. On the sample-data loader's pipeline it then
+// marks the event with the load's ID; the marker the generator already
+// put there is not counted.
 func (p *Pipeline) dropReserved(f map[string]any, seen *[]string) int {
 	n := 0
-	for _, k := range reservedFields {
-		if _, ok := f[k]; !ok {
+	for k := range f {
+		if !Reserved(k) {
 			continue
 		}
 		delete(f, k)
@@ -376,7 +385,7 @@ func (p *Pipeline) dropReserved(f map[string]any, seen *[]string) int {
 			continue
 		}
 		n++
-		if !slices.Contains(*seen, k) {
+		if !slices.Contains(*seen, k) && len(*seen) < 20 {
 			*seen = append(*seen, k)
 		}
 	}

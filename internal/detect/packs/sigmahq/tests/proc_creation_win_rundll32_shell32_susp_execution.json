@@ -1,0 +1,5 @@
+{"rule": "32b96012-7892-429e-b26c-ac2bf46066ff", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"%AppData%shell32.dllControl_RunDLL","OriginalFileName":"RUNDLL32.EXE"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"RUNDLL32.EXE"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"%AppData%shell32.dllControl_RunDLL"}}
+]}

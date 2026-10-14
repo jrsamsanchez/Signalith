@@ -191,6 +191,9 @@ func TestGenerateTrustsTheServerCA(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if strings.Contains(a.Config, "PowerShell") {
+		t.Errorf("PowerShell channel without the option:\n%s", a.Config)
+	}
 	if !strings.Contains(a.Config, `tls.ca_file          C:\Program Files\fluent-bit\conf\signalith-ca.pem`) {
 		t.Errorf("windows config:\n%s", a.Config)
 	}
@@ -354,5 +357,45 @@ func TestGenerateTiesAnIPAddressToTheServer(t *testing.T) {
 		if _, err := Generate(o); err != nil {
 			t.Errorf("http: %v", err)
 		}
+	}
+}
+
+func TestFluentBitWindowsPowerShell(t *testing.T) {
+	a, err := Generate(Options{OS: "windows", ServerURL: "https://siem.example.com:8080", Token: "tok-0123456789abcdef", Sysmon: true, PowerShell: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(a.Config, "Channels             Security,Microsoft-Windows-Windows Defender/Operational,Microsoft-Windows-Sysmon/Operational,Microsoft-Windows-PowerShell/Operational") {
+		t.Errorf("config:\n%s", a.Config)
+	}
+	if !strings.Contains(strings.Join(a.Steps, "\n"), `Set-ItemProperty -Path $k -Name EnableScriptBlockLogging -Value 1`) {
+		t.Errorf("steps: %q", a.Steps)
+	}
+}
+
+func TestFluentBitLinuxSysmon(t *testing.T) {
+	for _, source := range []string{"file", "journal"} {
+		for _, sysmon := range []bool{false, true} {
+			a, err := Generate(Options{OS: "linux", LinuxSource: source, ServerURL: "http://192.168.1.20:8080", Token: "tok-0123456789abcdef", Sysmon: sysmon})
+			if err != nil {
+				t.Fatal(err)
+			}
+			has := strings.Contains(a.Config, "SYSLOG_IDENTIFIER=sysmon")
+			if has != sysmon {
+				t.Errorf("%s, sysmon %v: config reads Sysmon for Linux = %v:\n%s", source, sysmon, has, a.Config)
+			}
+			step := strings.Contains(strings.Join(a.Steps, "\n"), "SysmonForLinux")
+			if step != sysmon {
+				t.Errorf("%s, sysmon %v: install step = %v", source, sysmon, step)
+			}
+		}
+	}
+	// A Wazuh manager's agent only sends alerts.
+	a, err := Generate(Options{OS: "linux", LinuxSource: "wazuh", ServerURL: "http://192.168.1.20:8080", Token: "tok-0123456789abcdef", Sysmon: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(a.Config, "sysmon") {
+		t.Errorf("wazuh config reads Sysmon:\n%s", a.Config)
 	}
 }

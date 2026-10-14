@@ -1,0 +1,5 @@
+{"rule": "9f4662ac-17ca-43aa-8f12-5d7b989d0101", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)","TargetObject":"\\Sophos Endpoint Defense\\TamperProtection\\Config\\SAVEnabled"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Sophos Endpoint Defense\\TamperProtection\\Config\\SAVEnabled"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)"}}
+]}

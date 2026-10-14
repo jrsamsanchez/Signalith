@@ -1,0 +1,5 @@
+{"rule": "9212f354-7775-4e28-9c9f-8f0a4544e664", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"snapshot","Description":"Active Directory Editor"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Description":"Active Directory Editor"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"snapshot"}}
+]}

@@ -303,7 +303,7 @@ func TestAgentConfig(t *testing.T) {
 	ts, _ := newTestServer(t)
 	_, body := do(t, ts, "GET", "/api/agents/config?os=windows&sysmon=true", "", true)
 	cfg := body["config"].(string)
-	for _, want := range []string{"winevtlog", "Microsoft-Windows-Sysmon/Operational", "Bearer tok-0123456789abcdef", "Port                 8080", "Header_Tag"} {
+	for _, want := range []string{"winevtlog", "Microsoft-Windows-Sysmon/Operational", "Bearer @@AGENT_TOKEN@@", "Port                 8080", "Header_Tag"} {
 		if !strings.Contains(cfg, want) {
 			t.Errorf("windows config missing %q:\n%s", want, cfg)
 		}

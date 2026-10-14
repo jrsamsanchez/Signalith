@@ -1,0 +1,9 @@
+{"rule": "631b22a4-70f4-4e2f-9ea8-42f84d9df6d8", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"\\AppData\\Local\\Temp\\ -PipelineRoot:","OriginalFileName":"AddInUtil.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"-AddInRoot:.","CurrentDirectory":"\\AppData\\Local\\Temp\\","OriginalFileName":"AddInUtil.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"AddInUtil.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"\\AppData\\Local\\Temp\\ -PipelineRoot:"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CurrentDirectory":"\\AppData\\Local\\Temp\\","OriginalFileName":"AddInUtil.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"-AddInRoot:.","OriginalFileName":"AddInUtil.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"-AddInRoot:.","CurrentDirectory":"\\AppData\\Local\\Temp\\"}}
+]}

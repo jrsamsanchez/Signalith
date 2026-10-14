@@ -1,0 +1,6 @@
+{"rule": "1723e720-616d-4ddc-ab02-f7e3685a4713", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\rundll32.exe","ParentImage":"\\explorer.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x -localserver 22d8c27b-47a1-48d1-ad08-7da7abd79617","Image":"\\rundll32.exe","ParentImage":"\\explorer.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"ParentImage":"\\explorer.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\rundll32.exe"}}
+]}

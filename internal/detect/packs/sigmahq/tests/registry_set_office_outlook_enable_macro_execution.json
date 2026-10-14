@@ -1,0 +1,5 @@
+{"rule": "e3b50fa5-3c3f-444e-937b-0a99d33731cd", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"0x00000001","TargetObject":"\\Outlook\\Security\\Level"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Outlook\\Security\\Level"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"0x00000001"}}
+]}

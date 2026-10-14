@@ -1,0 +1,12 @@
+{"rule": "ac59298a-8d81-4c02-8c9b-ffdac993891f", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"Binary Data","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Console\\IpDateInfo"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"x .exe","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Console\\SelfPath"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"Binary Data","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Console\\IpDateInfp"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"Binary Data","EventType":"SetValue","ProcessId":"4242","TargetObject":"HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"Binary Datb","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Console\\IpDateInfo"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Console\\IpDateInfo"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"x .exe","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Console\\SelfPati"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"x .exe","EventType":"SetValue","ProcessId":"4242","TargetObject":"HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"x .exf","EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Console\\SelfPath"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Console\\SelfPath"}}
+]}

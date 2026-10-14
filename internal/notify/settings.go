@@ -176,6 +176,15 @@ var Urgencies = findings.Severities
 // urgencyRank orders urgencies; an unknown one ranks lowest.
 func urgencyRank(u string) int { return slices.Index(Urgencies, u) }
 
+// AtLeast reports whether urgency u is at least min; an empty min is
+// DefaultMinUrgency.
+func AtLeast(u, min string) bool {
+	if min == "" {
+		min = DefaultMinUrgency
+	}
+	return urgencyRank(u) >= urgencyRank(min)
+}
+
 // DefaultMinUrgency is a new rule's least urgency.
 const DefaultMinUrgency = "high"
 
@@ -194,11 +203,7 @@ func (r Rule) Matches(f *findings.Finding) bool {
 	if f.Created.Before(r.Since) {
 		return false
 	}
-	min := r.MinUrgency
-	if min == "" {
-		min = DefaultMinUrgency
-	}
-	if urgencyRank(f.EffectiveUrgency()) < urgencyRank(min) {
+	if !AtLeast(f.EffectiveUrgency(), r.MinUrgency) {
 		return false
 	}
 	if len(r.Detections) > 0 && !slices.Contains(r.Detections, f.DetectionID) {

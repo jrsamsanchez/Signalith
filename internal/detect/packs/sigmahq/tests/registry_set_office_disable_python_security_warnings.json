@@ -1,0 +1,5 @@
+{"rule": "17e53739-a1fc-4a62-b1b9-87711c2d5e44", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)","TargetObject":"\\Microsoft\\Office\\ \\Excel\\Security\\PythonFunctionWarnings"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Microsoft\\Office\\ \\Excel\\Security\\PythonFunctionWarnings"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)"}}
+]}

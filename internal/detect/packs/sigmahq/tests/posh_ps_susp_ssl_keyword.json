@@ -1,0 +1,4 @@
+{"rule": "195626f3-5f1b-4403-93b7-e6cfd4d6a078", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":".AuthenticateAsClientSystem.Net.Security.SslStreamNet.Security.RemoteCertificateValidationCallback"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}}
+]}

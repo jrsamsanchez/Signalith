@@ -177,7 +177,7 @@ func TestPlainIngest(t *testing.T) {
 	code, h := do(t, mustServe(t, s), "GET", "/api/health", "", true)
 	warn, _ := json.Marshal(h["warnings"])
 	if code != 200 || !strings.Contains(string(warn), "over plain HTTP, which anyone on the network can read: 127.0.0.1.") || !strings.Contains(string(warn), "plaintext_ingest: deny") || h["plaintext_senders"] == nil ||
-		!strings.Contains(string(warn), "wrong or missing ingest token: 127.0.0.1") {
+		!strings.Contains(string(warn), "wrong or missing agent token: 127.0.0.1") {
 		t.Errorf("health: %d %v", code, h)
 	}
 
@@ -205,7 +205,7 @@ func TestPlainIngest(t *testing.T) {
 	})
 	for _, hdr := range []map[string]string{{"Authorization": "Bearer wrong-token-0123456"}, nil} {
 		resp, body = plainSend(t, "POST", ts.URL+"/api/ingest", batch, hdr)
-		if resp.StatusCode != http.StatusUnauthorized || resp.Header.Get("Retry-After") != "" || !strings.Contains(body, "missing or invalid ingest token") {
+		if resp.StatusCode != http.StatusUnauthorized || resp.Header.Get("Retry-After") != "" || !strings.Contains(body, "missing or invalid agent token") {
 			t.Errorf("plain ingest denied, token %v: %d %s", hdr, resp.StatusCode, body)
 		}
 	}
@@ -306,7 +306,7 @@ func TestOldDockerToken(t *testing.T) {
 		t.Error("a new quick start accepts agents on plain HTTP")
 	}
 	if resp, body := plainSend(t, "POST", ts.URL+"/api/ingest", batch, old); resp.StatusCode != http.StatusUnauthorized || s.Pipeline.Stats().Received != 0 ||
-		resp.Header.Get("Retry-After") != "" || !strings.Contains(body, "missing or invalid ingest token") {
+		resp.Header.Get("Retry-After") != "" || !strings.Contains(body, "missing or invalid agent token") {
 		t.Errorf("new quick start, plain HTTP: %d %s", resp.StatusCode, body)
 	}
 	if code := overHTTPS(s, "change-this-ingest-token"); code != http.StatusUnauthorized {
@@ -396,17 +396,21 @@ func TestOldDockerTokenEnds(t *testing.T) {
 	}
 }
 
-// TestAgentsGetTheServersOwnToken checks that new agent configs never
-// carry the public example token while the server has a token of its own,
-// whichever order they are listed in.
-func TestAgentsGetTheServersOwnToken(t *testing.T) {
+// TestAgentConfigCarriesNoToken checks that new agent configs never
+// carry a shared token, the public example one least of all: they hold
+// the placeholder the page fills with a new agent token, for every OS.
+func TestAgentConfigCarriesNoToken(t *testing.T) {
 	ts, _ := newTestServerWith(t, func(s *Server) {
 		s.Config.Ingest.Tokens = []string{"change-this-ingest-token", "own-token-0123456789abcdef"}
 	})
-	_, body := do(t, ts, "GET", "/api/agents/config?os=linux", "", true)
-	cfg, _ := body["config"].(string)
-	if !strings.Contains(cfg, "Bearer own-token-0123456789abcdef") || strings.Contains(cfg, "change-this") {
-		t.Errorf("config:\n%s", cfg)
+	for _, q := range []string{"os=linux", "os=windows", "os=otel&collector=linux", "os=otel&collector=windows",
+		"os=osquery&platform=linux", "os=osquery&platform=windows", "os=osquery&platform=darwin"} {
+		code, body := do(t, ts, "GET", "/api/agents/config?"+q, "", true)
+		raw, _ := json.Marshal(body)
+		if code != http.StatusOK || body["token_placeholder"] != "@@AGENT_TOKEN@@" || !strings.Contains(string(raw), "@@AGENT_TOKEN@@") ||
+			strings.Contains(string(raw), "own-token") || strings.Contains(string(raw), "change-this") {
+			t.Errorf("%s: %d %s", q, code, raw)
+		}
 	}
 }
 

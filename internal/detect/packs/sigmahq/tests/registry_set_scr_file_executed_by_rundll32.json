@@ -1,0 +1,7 @@
+{"rule": "40b6e656-4e11-4c0c-8772-c1cc6dae34ce", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":".scr","Image":"\\rundll32.exe","TargetObject":"\\Control Panel\\Desktop\\SCRNSAVE.EXE"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"C:\\Windows\\SysWOW64\\.scr","Image":"\\rundll32.exe","TargetObject":"\\Control Panel\\Desktop\\SCRNSAVE.EXE"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Image":"\\rundll32.exe","TargetObject":"\\Control Panel\\Desktop\\SCRNSAVE.EXE"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":".scr","TargetObject":"\\Control Panel\\Desktop\\SCRNSAVE.EXE"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":".scr","Image":"\\rundll32.exe"}}
+]}

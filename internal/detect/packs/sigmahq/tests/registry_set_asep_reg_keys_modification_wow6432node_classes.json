@@ -1,0 +1,5 @@
+{"rule": "18f2065c-d36c-464a-a748-bcf909acb2e3", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Software\\Wow6432Node\\Classes \\AllFileSystemObjects\\ShellEx\\DragDropHandlers"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"(Empty)","TargetObject":"\\Software\\Wow6432Node\\Classes \\AllFileSystemObjects\\ShellEx\\DragDropHandlers"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}}
+]}

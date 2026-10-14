@@ -24,8 +24,11 @@
   // compares the resolved origin, because browsers drop tabs and newlines
   // and read \ as /, which turns "/<tab>/evil.example" into another site.
   // Without ?next, a #page the browser kept through the redirect applies.
+  // With no page named at all, signing in opens the home page, Dashboards
+  // (HOME_PAGE in app.js), rather than whatever page was used last.
+  const HOME = '#dashboards';
   function nextPath() {
-    const home = new URL('./', location.href).pathname + location.hash;
+    const home = new URL('./', location.href).pathname + (location.hash || HOME);
     const next = params.get('next');
     if (!next || !next.startsWith('/')) return home;
     try {
@@ -34,7 +37,7 @@
       // path "//evil.example", which on its own would leave the site.
       if (u.origin !== location.origin) return home;
       // A server redirect cannot see the #page; the browser kept it here.
-      if (!u.hash && location.hash) u.hash = location.hash;
+      if (!u.hash) u.hash = location.hash || (u.pathname === new URL('./', location.href).pathname ? HOME : '');
       return u.href;
     } catch (_) {
       return home;

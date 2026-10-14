@@ -131,9 +131,11 @@ nav:
       - Dashboards: dashboards.md
       - Response actions: response-actions.md
       - Notifications: notifications.md
+      - Playbooks: playbooks.md
   - Administration:
       - Server settings: settings.md
       - Users and sign-in: users.md
+      - Agent tokens: agent-tokens.md
       - Servers: servers.md
       - Data retention: retention.md
   - Security:

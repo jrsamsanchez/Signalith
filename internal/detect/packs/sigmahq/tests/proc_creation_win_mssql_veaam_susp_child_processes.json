@@ -1,0 +1,11 @@
+{"rule": "d55b793d-f847-4eea-b59a-5ab09908ac90", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"DownloadString","Image":"\\cmd.exe","ParentCommandLine":"VEEAMSQL","ParentImage":"\\sqlservr.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\net.exe","ParentCommandLine":"VEEAMSQL","ParentImage":"\\sqlservr.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\cmd.exe","ParentCommandLine":"VEEAMSQL","ParentImage":"\\sqlservr.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"DownloadString","ParentCommandLine":"VEEAMSQL","ParentImage":"\\sqlservr.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"DownloadString","Image":"\\cmd.exe","ParentImage":"\\sqlservr.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"DownloadString","Image":"\\cmd.exe","ParentCommandLine":"VEEAMSQL"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"ParentCommandLine":"VEEAMSQL","ParentImage":"\\sqlservr.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\net.exe","ParentImage":"\\sqlservr.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\net.exe","ParentCommandLine":"VEEAMSQL"}}
+]}

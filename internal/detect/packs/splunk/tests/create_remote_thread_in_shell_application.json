@@ -1,0 +1,19 @@
+{"rule": "10399c1e-f51e-11eb-b920-acde48001122", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"8","data":{"SourceProcessId":"4242","TargetImage":"x \\cmd.exe","TargetProcessId":"640"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"8","data":{"SourceProcessId":"4242","TargetImage":"x \\powershell_ise.exe","TargetProcessId":"640"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"8","data":{"SourceProcessId":"4242","TargetImage":"x \\powershell.exe","TargetProcessId":"640"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"8","data":{"SourceProcessId":"4242","TargetImage":"x \\pwsh.exe","TargetProcessId":"640"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"SourceProcessId":"4242","TargetImage":"x \\cmd.exe","TargetProcessId":"640"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"SourceProcessId":"4242","TargetImage":"x \\cmd.exe","TargetProcessId":"640"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"8","data":{"SourceProcessId":"4242","TargetImage":"x \\cmd.exf","TargetProcessId":"640"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"8","data":{"SourceProcessId":"4242","TargetProcessId":"640"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"SourceProcessId":"4242","TargetImage":"x \\powershell_ise.exe","TargetProcessId":"640"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"SourceProcessId":"4242","TargetImage":"x \\powershell_ise.exe","TargetProcessId":"640"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"8","data":{"SourceProcessId":"4242","TargetImage":"x \\powershell_ise.exf","TargetProcessId":"640"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"SourceProcessId":"4242","TargetImage":"x \\powershell.exe","TargetProcessId":"640"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"SourceProcessId":"4242","TargetImage":"x \\powershell.exe","TargetProcessId":"640"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"8","data":{"SourceProcessId":"4242","TargetImage":"x \\powershell.exf","TargetProcessId":"640"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"SourceProcessId":"4242","TargetImage":"x \\pwsh.exe","TargetProcessId":"640"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"SourceProcessId":"4242","TargetImage":"x \\pwsh.exe","TargetProcessId":"640"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"8","data":{"SourceProcessId":"4242","TargetImage":"x \\pwsh.exf","TargetProcessId":"640"}}
+]}

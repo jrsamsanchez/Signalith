@@ -1,0 +1,5 @@
+{"rule": "84232095-ecca-4015-b0d7-7726507ee793", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"\\Appdata\\Local\\Temp\\  –LoadDLL x","OriginalFileName":"CertOC.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"CertOC.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"\\Appdata\\Local\\Temp\\  –LoadDLL x"}}
+]}

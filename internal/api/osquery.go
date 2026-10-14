@@ -2,9 +2,6 @@ package api
 
 import (
 	"context"
-	"crypto/sha256"
-	"crypto/subtle"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -20,7 +17,7 @@ import (
 )
 
 // osquery's TLS remote API: hosts running osquery enroll here with an
-// ingest token, then fetch their configuration, send results and answer
+// agent token, then fetch their configuration, send results and answer
 // live queries with the node key they got. The flags Add data generates
 // point osquery at these routes.
 const (
@@ -31,7 +28,7 @@ const (
 	osqueryWriteRoute  = "POST /api/osquery/distributed/write"
 )
 
-// osqueryRoutes are public: they take an ingest token (enroll) or a node
+// osqueryRoutes are public: they take an agent token (enroll) or a node
 // key (the rest) instead of a signed-in user.
 var osqueryRoutes = []string{osqueryEnrollRoute, osqueryConfigRoute, osqueryLogRoute, osqueryReadRoute, osqueryWriteRoute}
 
@@ -47,20 +44,9 @@ func (s *Server) routeOsquery(mux *http.ServeMux) {
 }
 
 // enrollToken checks an enroll secret and returns the ID of the token it
-// is: today any ingest token, identified by the start of its hash. When
-// named per-agent tokens arrive, this is the one place that looks them up.
+// is: an active agent token, or an accepted shared one (see EnrollToken).
 func (s *Server) enrollToken(secret string) (string, bool) {
-	secret = strings.TrimSpace(secret)
-	if secret == "" {
-		return "", false
-	}
-	for _, t := range s.conf().Ingest.Tokens {
-		if subtle.ConstantTimeCompare([]byte(t), []byte(secret)) == 1 {
-			sum := sha256.Sum256([]byte(t))
-			return hex.EncodeToString(sum[:6]), true
-		}
-	}
-	return "", false
+	return s.EnrollToken(secret)
 }
 
 // readSmall reads a request that carries no results.
@@ -92,6 +78,11 @@ func (s *Server) osqueryNode(w http.ResponseWriter, r *http.Request, key string)
 	switch {
 	case errors.Is(err, endpoint.ErrNotFound):
 		nodeInvalid(w, "unknown node key; enroll again")
+		return nil
+	case err == nil && !s.TokenActive(n.TokenID):
+		// Checked on every request, so a revoked token ends its hosts at
+		// once on every server, whatever the endpoint store has cached.
+		nodeInvalid(w, "this host's agent token was revoked; enroll it again with a new token")
 		return nil
 	case err != nil:
 		s.Log.Warn("could not look up an osquery host", "err", err)
@@ -141,7 +132,7 @@ func (s *Server) handleOsqueryEnroll(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		s.Pipeline.NoteRefused(from, ingest.RefusedToken)
 		s.Log.Warn("osquery enrollment refused: wrong enroll secret", "client", from.String())
-		writeJSON(w, http.StatusUnauthorized, map[string]any{"node_invalid": true, "error": "the enroll secret is not one of this server's ingest tokens"})
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"node_invalid": true, "error": "the enroll secret is not an active agent token"})
 		return
 	}
 	d := req.HostDetails
@@ -267,13 +258,19 @@ func (s *Server) handleOsqueryLog(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		defer slot()
-		if _, err := s.Pipeline.IngestEvents(r.Context(), b.Events); err != nil {
+		// The ID events record: a host enrolled with a shared token before
+		// shared tokens had keyed IDs holds the old one, never recorded.
+		who, _ := s.tokens().Lookup(n.TokenID)
+		ctx := ingest.WithOrigin(r.Context(), ingest.Origin{Intake: ingest.IntakeOsquery, TokenID: who.ID,
+			TokenName: who.Name, Sender: clientaddr.Parse(r.RemoteAddr).String()})
+		if _, err := s.Pipeline.IngestEvents(ctx, b.Events); err != nil {
 			s.Log.Error("osquery results could not be stored", "host", n.Hostname, "err", err)
 			// osquery keeps the results and sends them again.
 			w.Header().Set("Retry-After", "5")
 			writeError(w, http.StatusServiceUnavailable, errors.New("results could not be stored right now; try again later"))
 			return
 		}
+		s.tokens().Note(who.ID, clientaddr.Parse(r.RemoteAddr).String(), len(b.Events))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{})
 }

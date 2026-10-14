@@ -1,0 +1,5 @@
+{"rule": "a6976974-ea6f-4e97-818e-ea08625c52cb", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\explorer.exe","TargetFilename":"\\Microsoft\\Windows\\Start Menu\\Programs\\Startup.lnk.{0AFACED1-E828-11D1-9187-B532F1E9575D}"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"\\Microsoft\\Windows\\Start Menu\\Programs\\Startup.lnk.{0AFACED1-E828-11D1-9187-B532F1E9575D}"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\explorer.exe"}}
+]}

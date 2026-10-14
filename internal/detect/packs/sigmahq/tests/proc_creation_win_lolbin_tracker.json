@@ -1,0 +1,7 @@
+{"rule": "148431ce-4b70-403d-8525-fcc2993f29ea", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x /c x","Image":"\\tracker.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x /ERRORREPORT:PROMPT  /c x","Image":"\\tracker.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x /c x","Image":"\\tracker.exe","ParentImage":"\\Msbuild\\Current\\Bin\\MSBuild.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\tracker.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x /c x"}}
+]}

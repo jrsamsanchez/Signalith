@@ -1,0 +1,7 @@
+{"rule": "65d4b105-ec52-48ec-ac46-289d0fbf7d96", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"12","data":{"EventType":"DeleteValue","ProcessId":"4242","TargetObject":"x \\Policies\\Microsoft\\Windows Defender"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"12","data":{"EventType":"DeleteValue","ProcessId":"4242","TargetObject":"x \\Policies\\Microsoft\\Windows Defender"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"12","data":{"EventType":"DeleteValue","ProcessId":"4242","TargetObject":"x \\Policies\\Microsoft\\Windows Defendes"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"12","data":{"EventType":"DeleteValue","ProcessId":"4242","TargetObject":"HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","ProcessId":"4242","TargetObject":"x \\Policies\\Microsoft\\Windows Defender"}}
+]}

@@ -1,0 +1,4 @@
+{"rule": "a6b33c02-8305-488f-8585-03cb2a7763f2", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"Services\\WCESERVICE\\Start"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}}
+]}

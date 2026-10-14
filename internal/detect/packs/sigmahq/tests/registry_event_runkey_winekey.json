@@ -1,0 +1,4 @@
+{"rule": "b98968aa-dbc0-4a9c-ac35-108363cbf8d5", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"Software\\Microsoft\\Windows\\CurrentVersion\\Run\\Backup Mgr"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}}
+]}

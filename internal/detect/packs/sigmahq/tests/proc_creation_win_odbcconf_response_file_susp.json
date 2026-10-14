@@ -1,0 +1,7 @@
+{"rule": "2d32dd6f-3196-4093-b9eb-1ad8ab088ca5", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x -f x","OriginalFileName":"odbcconf.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":".rsp -f x","OriginalFileName":"odbcconf.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":".exe /E /F \"C:\\WINDOWS\\system32\\odbcconf.tmp\"  -f x","Image":"C:\\Windows\\System32\\odbcconf.exe","OriginalFileName":"odbcconf.exe","ParentImage":"C:\\Windows\\System32\\runonce.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"odbcconf.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x -f x"}}
+]}

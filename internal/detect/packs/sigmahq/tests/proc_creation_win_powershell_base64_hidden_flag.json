@@ -1,0 +1,5 @@
+{"rule": "f26c6093-6f14-4b12-800f-0fcb46f5ffd0", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"SQBPAC4AQwBvAG0AcAByAGUAcwBzAGkAbwBuA  hidden x","Image":"\\pwsh.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\pwsh.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"SQBPAC4AQwBvAG0AcAByAGUAcwBzAGkAbwBuA  hidden x"}}
+]}

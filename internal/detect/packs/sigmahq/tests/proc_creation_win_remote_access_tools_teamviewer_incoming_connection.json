@@ -1,0 +1,10 @@
+{"rule": "ab70c354-d9ac-4e11-bbb6-ec8e3b153357", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"TeamViewer_Desktop.exe --IPCport 5939 --Module 1","Image":"TeamViewer_Desktop.exe","ParentImage":"TeamViewer_Service.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"TeamViewer_Desktop.exe --IPCport 5939 --Module 1","NewProcessName":"TeamViewer_Desktop.exe","ParentProcessName":"TeamViewer_Service.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"TeamViewer_Desktop.exe","ParentImage":"TeamViewer_Service.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"TeamViewer_Desktop.exe","ParentProcessName":"TeamViewer_Service.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"TeamViewer_Desktop.exe --IPCport 5939 --Module 1","ParentImage":"TeamViewer_Service.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"TeamViewer_Desktop.exe --IPCport 5939 --Module 1","ParentProcessName":"TeamViewer_Service.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"TeamViewer_Desktop.exe --IPCport 5939 --Module 1","Image":"TeamViewer_Desktop.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"TeamViewer_Desktop.exe --IPCport 5939 --Module 1","NewProcessName":"TeamViewer_Desktop.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

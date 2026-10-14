@@ -37,7 +37,10 @@ type Finding struct {
 	DetectionID string `json:"detection_id"`
 	Title       string `json:"title"`
 	Description string `json:"description,omitempty"`
-	Severity    string `json:"severity"`
+	// Credit names the rule's author and licence, for detections from a
+	// content pack whose licence asks for it.
+	Credit   string `json:"credit,omitempty"`
+	Severity string `json:"severity"`
 	// Urgency is severity adjusted by the priority of the assets and
 	// identities involved; the queue sorts and filters on it.
 	Urgency     string         `json:"urgency,omitempty"`

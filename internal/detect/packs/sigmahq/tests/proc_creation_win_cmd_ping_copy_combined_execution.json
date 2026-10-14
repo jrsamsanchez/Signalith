@@ -1,0 +1,5 @@
+{"rule": "ded2b07a-d12f-4284-9b76-653e37b6c8b0", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x ―y pingcopy  ―n x","OriginalFileName":"Cmd.Exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"Cmd.Exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x ―y pingcopy  ―n x"}}
+]}

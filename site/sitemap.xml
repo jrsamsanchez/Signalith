@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The landing page. The docs publish their own sitemap at /docs/sitemap.xml (see robots.txt). -->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://signalith.io/</loc>
+    <lastmod>2026-10-13</lastmod>
+  </url>
+</urlset>

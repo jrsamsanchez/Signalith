@@ -1,0 +1,6 @@
+{"rule": "b1f73849-6329-4069-bc8f-78a604bb8b23", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"\\TEMP\\ScreenConnect\\","Image":"\\cmd.exe","ParentImage":"\\ScreenConnect.ClientService.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\cmd.exe","ParentImage":"\\ScreenConnect.ClientService.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"\\TEMP\\ScreenConnect\\","ParentImage":"\\ScreenConnect.ClientService.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"\\TEMP\\ScreenConnect\\","Image":"\\cmd.exe"}}
+]}

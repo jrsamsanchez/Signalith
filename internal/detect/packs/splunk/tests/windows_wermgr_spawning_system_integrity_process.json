@@ -1,0 +1,16 @@
+{"rule": "d39634c8-7ce7-4503-a5da-73ca3c758fb9", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"IntegrityLevel":"System","ParentImage":"C:\\Windows\\System32\\WerMgr.exe","ParentProcessId":"4000","ProcessId":"4242"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"ParentImage":"C:\\Windows\\System32\\WerMgr.exe","ParentProcessId":"4000","ProcessId":"4242","User":"x $"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"ParentImage":"C:\\Windows\\System32\\WerMgr.exe","ParentProcessId":"4000","ProcessId":"4242","User":"System"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"ParentImage":"C:\\Windows\\System32\\WerMgr.exe","ParentProcessId":"4000","ProcessId":"4242","User":"y $"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"IntegrityLevel":"System","ParentImage":"C:\\Windows\\System32\\WerMgr.exf","ParentProcessId":"4000","ProcessId":"4242"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"IntegrityLevel":"System","ParentProcessId":"4000","ProcessId":"4242"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"IntegrityLevel":"Systen","ParentImage":"C:\\Windows\\System32\\WerMgr.exe","ParentProcessId":"4000","ProcessId":"4242"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"ParentImage":"C:\\Windows\\System32\\WerMgr.exe","ParentProcessId":"4000","ProcessId":"4242"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessId":"0x1092","ParentProcessName":"C:\\Windows\\System32\\WerMgr.exe","ProcessId":"0xfa0","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"ParentImage":"C:\\Windows\\System32\\WerMgr.exf","ParentProcessId":"4000","ProcessId":"4242","User":"x $"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"ParentProcessId":"4000","ProcessId":"4242","User":"x $"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"ParentImage":"C:\\Windows\\System32\\WerMgr.exf","ParentProcessId":"4000","ProcessId":"4242","User":"System"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"ParentProcessId":"4000","ProcessId":"4242","User":"System"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"ParentImage":"C:\\Windows\\System32\\WerMgr.exe","ParentProcessId":"4000","ProcessId":"4242","User":"Systen"}}
+]}

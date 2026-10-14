@@ -1,0 +1,4 @@
+{"rule": "7ec2c172-dceb-4c10-92c9-87c1881b7e18", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"golden /aes256:"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{}}
+]}
