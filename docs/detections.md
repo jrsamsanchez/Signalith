@@ -242,8 +242,8 @@ Content packs are rule sets from other open source projects, shipped unchanged
 inside Signalith and converted when it starts. Every pack detection is **off** until
 an admin turns it on.
 
-**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,190 rules from
-[SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 2,036 Windows rules
+**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,194 rules from
+[SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 2,040 Windows rules
 for these Sysmon, Security, PowerShell, System, Application, Code Integrity, Windows Firewall, BITS, AppX deployment, WMI activity, Remote Desktop session, shell, SMB client, exploit protection and Defender log sources, and 154 Linux rules (see
 [Linux endpoints](#linux-endpoints-sysmon-for-linux) and
 [the Linux audit log](#linux-audit-log-auditd)):
@@ -269,6 +269,7 @@ for these Sysmon, Security, PowerShell, System, Application, Code Integrity, Win
 | `service: bits-client` | BITS events (jobs created, transfers started), by event ID and data (see below) | Other |
 | `service: appxdeployment-server` | App package (MSIX, AppX) events (deployed, downloaded, blocked), by event ID and data (see below) | Other |
 | `service: wmi` | WMI activity events (operations failed, event subscriptions registered), by event ID and data (see below) | Other |
+| `service: sysmon` | Sysmon's own events: files blocked (27, 28) and executables detected (29) in Filesystem with `action` blocked or created, a configuration change (16) in Other | Filesystem, Other |
 | `service: terminalservices-localsessionmanager` | Remote Desktop session events (logon, logoff, disconnect, reconnect), by event ID and data (see below) | Other |
 | `service: shell-core` | Shell events (app shortcuts added to the app resolver cache), by event ID and data (see below) | Other |
 | `service: smbclient-security` | SMB client security events (insecure guest logons refused), by event ID and data (see below) | Other |

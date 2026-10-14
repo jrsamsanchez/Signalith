@@ -447,6 +447,21 @@ func TestSysmonProcessHashes(t *testing.T) {
 	})
 }
 
+// Sysmon's file blocks are file events; its configuration changing stays in
+// Other.
+func TestSysmonFileBlocks(t *testing.T) {
+	msg := "File Block Executable:\r\nImage: C:\\Windows\\System32\\curl.exe\r\nTargetFilename: C:\\Users\\bob\\x.exe\r\nUser: CORP\\bob"
+	b, _ := json.Marshal(map[string]any{"Channel": "Microsoft-Windows-Sysmon/Operational", "Computer": "WS1", "EventID": 27, "Message": msg})
+	expect(t, Normalize("win.sysmon", decode(t, string(b)), now).Document(), map[string]any{
+		"datamodel": "Filesystem", "action": "blocked", "signature": "Executable file creation blocked",
+		"file_path": `C:\Users\bob\x.exe`, "file_name": "x.exe", "process_path": `C:\Windows\System32\curl.exe`,
+	})
+	b, _ = json.Marshal(map[string]any{"Channel": "Microsoft-Windows-Sysmon/Operational", "Computer": "WS1", "EventID": 16, "Message": "Sysmon config state changed:"})
+	expect(t, Normalize("win.sysmon", decode(t, string(b)), now).Document(), map[string]any{
+		"datamodel": "Other", "signature": "Sysmon configuration changed",
+	})
+}
+
 // A command line spanning several lines in the rendered message stays whole,
 // blank lines included, and the fields after it are still read. (A line
 // shaped like "Key: value" ends it: the rendered message cannot tell them

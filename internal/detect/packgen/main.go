@@ -70,10 +70,12 @@ var categories = map[string]string{
 	"code_integrity": "rules/windows/builtin/code_integrity",
 	// Nor these: rules about the logs the parser reads by name
 	// (service: firewall-as, bits-client, appxdeployment-server, wmi).
-	"firewall_as":                          "rules/windows/builtin/firewall_as",
-	"bits_client":                          "rules/windows/builtin/bits_client",
-	"appxdeployment_server":                "rules/windows/builtin/appxdeployment_server",
-	"wmi":                                  "rules/windows/builtin/wmi",
+	"firewall_as":           "rules/windows/builtin/firewall_as",
+	"bits_client":           "rules/windows/builtin/bits_client",
+	"appxdeployment_server": "rules/windows/builtin/appxdeployment_server",
+	"wmi":                   "rules/windows/builtin/wmi",
+	// Nor this: Sysmon's own events (service: sysmon), by event ID.
+	"sysmon_service":                       "rules/windows/sysmon",
 	"terminalservices_localsessionmanager": "rules/windows/builtin/terminalservices",
 	"shell_core":                           "rules/windows/builtin/shell_core",
 	"smbclient_security":                   "rules/windows/builtin/smbclient/security",
@@ -205,6 +207,9 @@ func main() {
 			if cat == "code_integrity" {
 				want["category"], want["service"] = "", "codeintegrity-operational"
 			}
+			if cat == "sysmon_service" {
+				want["category"], want["service"] = "", "sysmon"
+			}
 			for service := range ingest.NamedChannelServices {
 				if cat == ingest.NamedChannelCategory(service) {
 					want["category"], want["service"] = "", service
@@ -217,6 +222,10 @@ func main() {
 			rcat, rbases := cat, bases
 			if cat == "system" {
 				rcat = sigmacheck.SystemCategory(rule.EventIDs()...)
+				rbases = sigmacheck.Bases[rcat]
+			}
+			if cat == "sysmon_service" {
+				rcat = sigmacheck.SysmonServiceCategory(rule.EventIDs()...)
 				rbases = sigmacheck.Bases[rcat]
 			}
 			if cat == "security" {
