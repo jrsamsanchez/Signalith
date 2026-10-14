@@ -187,7 +187,7 @@ var (
 		"powershell": {"4104": "PowerShell"},
 		"sysmon":     {"7": "ImageLoad", "8": "ProcessAccess", "10": "ProcessAccess"},
 		// Security events the Windows parser reads.
-		"wineventlog_security": {"4698": "TaskCreated"},
+		"wineventlog_security": {"4698": "TaskCreated", "4663": "ObjectAccess"},
 	}
 	// RawFields are the event fields a raw search may name on each node,
 	// with the Signalith field each is stored as.
@@ -203,6 +203,11 @@ var (
 			"GrantedAccess": "granted_access", "CallTrace": "call_trace", "SourceUser": "user",
 		},
 		"TaskCreated": {"TaskName": "task_name", "TaskContent": "task_content", "user": "user"},
+		"ObjectAccess": {
+			"ObjectName": "object_path", "object_file_path": "object_path", "object_file_name": "object_name",
+			"ObjectType": "object_type", "AccessList": "access_list", "AccessMask": "access_mask",
+			"ProcessName": "process_path", "process_path": "process_path",
+		},
 	}
 	// XMLKVFields are the fields xmlkv takes from a scheduled task's XML
 	// (TaskCreated), with the Signalith field each is stored as.

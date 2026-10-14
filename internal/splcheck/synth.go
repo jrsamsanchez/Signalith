@@ -402,6 +402,38 @@ func records(node string, ev map[string]string) []sigmacheck.Case {
 		}
 		set(s, "TaskContent", ev["task_content"])
 		return []sigmacheck.Case{{Channel: sigmacheck.SecurityChannel, EventID: "4698", Data: s}}
+	case "ObjectAccess":
+		s := map[string]string{
+			"SubjectUserSid": "S-1-5-21-1004336348-1177238915-682003330-1104", "SubjectUserName": "alice",
+			"SubjectDomainName": "CORP", "SubjectLogonId": "0x3e7", "ObjectServer": "Security", "HandleId": "0x1f4",
+			"AccessList": "%%4416", "AccessMask": "0x1", "ProcessId": "0x1092", "ProcessName": `C:\Tools\tool.exe`,
+			"ObjectType": "File", "ObjectName": `C:\Users\alice\Documents\notes.txt`,
+		}
+		set(s, "ObjectType", ev["object_type"])
+		set(s, "AccessList", ev["access_list"])
+		set(s, "AccessMask", ev["access_mask"])
+		set(s, "ProcessName", ev["process_path"])
+		name := ev["object_path"]
+		// When the rule names the object's file name apart, it ends the path.
+		if n := ev["object_name"]; n != "" && !strings.HasSuffix(strings.ToLower(name), `\`+strings.ToLower(n)) {
+			if name == "" {
+				name = path.Dir(strings.ReplaceAll(s["ObjectName"], `\`, "/"))
+				name = strings.ReplaceAll(name, "/", `\`)
+			}
+			name = strings.TrimRight(name, `\`) + `\` + n
+		}
+		set(s, "ObjectName", name)
+		out := []sigmacheck.Case{{Channel: sigmacheck.SecurityChannel, EventID: "4663", Data: s}}
+		// A rule that does not name the type may be about a registry key.
+		if ev["object_type"] == "" {
+			key := maps.Clone(s)
+			key["ObjectType"] = "Key"
+			if name == "" {
+				key["ObjectName"] = `\REGISTRY\MACHINE\SOFTWARE\Contoso`
+			}
+			out = append(out, sigmacheck.Case{Channel: sigmacheck.SecurityChannel, EventID: "4663", Data: key})
+		}
+		return out
 	}
 	return nil
 }
@@ -512,7 +544,7 @@ func Cases(r *Rule) []sigmacheck.Case {
 		for _, c := range cs {
 			doc, model := Stored(c)
 			c.Source = "synthesized"
-			c.Expect = model == NodeModel[r.Node] && Eval(r.Where, View(doc))
+			c.Expect = InModel(r.Node, model) && Eval(r.Where, View(doc))
 			out = append(out, c)
 		}
 	}
@@ -520,8 +552,18 @@ func Cases(r *Rule) []sigmacheck.Case {
 	return out
 }
 
-// NodeModel is the Signalith data model of each node.
-var NodeModel = map[string]string{"Processes": "Endpoint", "Filesystem": "Filesystem", "Registry": "Registry", "PowerShell": "Script", "ImageLoad": "Image_Load", "ProcessAccess": "Endpoint", "TaskCreated": "Change"}
+// NodeModel is the Signalith data model of each node ("" for any).
+var NodeModel = map[string]string{"Processes": "Endpoint", "Filesystem": "Filesystem", "Registry": "Registry", "PowerShell": "Script", "ImageLoad": "Image_Load", "ProcessAccess": "Endpoint", "TaskCreated": "Change", "ObjectAccess": ""}
+
+// InModel reports whether an event of a data model is one a node reads.
+// An object access is a file's (Filesystem) or a registry key's
+// (Registry), and a rule may be about either.
+func InModel(node, model string) bool {
+	if node == "ObjectAccess" {
+		return model == "Filesystem" || model == "Registry"
+	}
+	return strings.EqualFold(model, NodeModel[node])
+}
 
 // Verify checks a converted detection against a rule's test events: each
 // event, as the real parser stores it, must be read the same way by the
@@ -533,12 +575,12 @@ func Verify(r *Rule, datamodel string, filter query.Expr, tf *sigmacheck.TestFil
 	for i, c := range tf.Cases {
 		where := fmt.Sprintf("case %d (%s %s, expect %v)", i, c.Channel, c.EventID, c.Expect)
 		doc, model := Stored(c)
-		inModel := strings.EqualFold(model, NodeModel[r.Node])
+		inModel := InModel(r.Node, model)
 		if got := inModel && Eval(r.Where, View(doc)); got != c.Expect {
 			errs = append(errs, fmt.Errorf("%s: the Splunk rule says %v for %s", where, got, sigmacheck.String(View(doc))))
 			continue
 		}
-		if !strings.EqualFold(model, datamodel) {
+		if datamodel != "" && !strings.EqualFold(model, datamodel) || !inModel {
 			if c.Expect {
 				errs = append(errs, fmt.Errorf("%s: the parser put the event in %s, not %s", where, model, datamodel))
 			}

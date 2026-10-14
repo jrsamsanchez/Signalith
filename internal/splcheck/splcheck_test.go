@@ -232,6 +232,28 @@ func TestParseScheduledTaskXMLKV(t *testing.T) {
 	}
 }
 
+func TestParseObjectAccess(t *testing.T) {
+	src := rule("`wineventlog_security` EventCode=4663 object_file_path=\"*\\\\WinSCP 2\\\\Configuration\\\\Security*\" NOT process_path IN (\"*\\\\WinSCP.exe\")\n| stats count by object_file_path process_path dest")
+	r, err := Parse(src, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Node != "ObjectAccess" || !InModel(r.Node, "Registry") || !InModel(r.Node, "Filesystem") || InModel(r.Node, "Endpoint") {
+		t.Fatalf("node %s", r.Node)
+	}
+	ev := map[string]string{"signature_id": "4663", "object_path": `\REGISTRY\USER\S-1-5-21-1\Software\Martin Prikryl\WinSCP 2\Configuration\Security`, "process_path": `C:\x\stealer.exe`}
+	if !Eval(r.Where, ev) {
+		t.Error("does not match its own event")
+	}
+	found := false
+	for _, c := range Cases(r) {
+		found = found || c.Expect
+	}
+	if !found {
+		t.Error("no test event matches")
+	}
+}
+
 func TestParseSysmonAccess(t *testing.T) {
 	src := rule("`sysmon` EventCode=10 TargetImage=\"*\\\\lsass.exe\" GrantedAccess IN (\"0x1010\", \"0x1410\") NOT SourceImage=\"*\\\\MsMpEng.exe\"\n| stats count by dest SourceImage")
 	r, err := Parse(src, nil)

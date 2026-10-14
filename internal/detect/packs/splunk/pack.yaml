@@ -1042,6 +1042,14 @@ rules:
     rule_id: c3e05466-5f22-11eb-ae93-0242ac130002
     file: nltest_domain_trust_discovery.yml
     path: detections/endpoint/nltest_domain_trust_discovery.yml
+  - id: splunk-non-chrome-process-accessing-chrome-default-dir
+    rule_id: 81263de4-160a-11ec-944f-acde48001122
+    file: non_chrome_process_accessing_chrome_default_dir.yml
+    path: detections/endpoint/non_chrome_process_accessing_chrome_default_dir.yml
+  - id: splunk-non-firefox-process-access-firefox-profile-dir
+    rule_id: e6fc13b0-1609-11ec-b533-acde48001122
+    file: non_firefox_process_access_firefox_profile_dir.yml
+    path: detections/endpoint/non_firefox_process_access_firefox_profile_dir.yml
   - id: splunk-ntdsutil-export-ntds
     rule_id: da63bc76-61ae-11eb-ae93-0242ac130002
     file: ntdsutil_export_ntds.yml
@@ -1734,6 +1742,18 @@ rules:
     rule_id: 4d14c86d-fdee-4393-94da-238d2706902f
     file: windows_credentials_from_password_stores_chrome_copied_in_temp_dir.yml
     path: detections/endpoint/windows_credentials_from_password_stores_chrome_copied_in_temp_dir.yml
+  - id: splunk-windows-credentials-from-password-stores-chrome-extension
+    rule_id: 2e65afe0-9a75-4487-bd87-ada9a9f1b9af
+    file: windows_credentials_from_password_stores_chrome_extension_access.yml
+    path: detections/endpoint/windows_credentials_from_password_stores_chrome_extension_access.yml
+  - id: splunk-windows-credentials-from-password-stores-chrome-localstat
+    rule_id: 3b1d09a8-a26f-473e-a510-6c6613573657
+    file: windows_credentials_from_password_stores_chrome_localstate_access.yml
+    path: detections/endpoint/windows_credentials_from_password_stores_chrome_localstate_access.yml
+  - id: splunk-windows-credentials-from-password-stores-chrome-login-dat
+    rule_id: 0d32ba37-80fc-4429-809c-0ba15801aeaf
+    file: windows_credentials_from_password_stores_chrome_login_data_access.yml
+    path: detections/endpoint/windows_credentials_from_password_stores_chrome_login_data_access.yml
   - id: splunk-windows-credentials-from-password-stores-creation
     rule_id: c0c5a479-bf57-4ca0-af3a-4c7081e5ba05
     file: windows_credentials_from_password_stores_creation.yml
@@ -2018,6 +2038,10 @@ rules:
     rule_id: 7edb95b6-bccf-4d8c-8ada-d1c5520cf0ed
     file: windows_get_variable_exe_execution_from_windowsapps_folder.yml
     path: detections/endpoint/windows_get_variable_exe_execution_from_windowsapps_folder.yml
+  - id: splunk-windows-grimresource-mmc-process-accessing-apds-dll
+    rule_id: 872d1651-7838-4b47-ad3e-ef5e63453a7f
+    file: windows_grimresource___mmc_process_accessing_apds_dll.yml
+    path: detections/endpoint/windows_grimresource___mmc_process_accessing_apds_dll.yml
   - id: splunk-windows-guest-account-enabled-via-net-exe
     rule_id: 4f8cd681-7583-47a0-9f38-6337b7adf48a
     file: windows_guest_account_enabled_via_net_exe.yml
@@ -2686,6 +2710,10 @@ rules:
     rule_id: bcdc2543-8c33-44c8-a723-5b7b93e06788
     file: windows_process_accessing_ironlanguages_repository_on_github.yml
     path: detections/endpoint/windows_process_accessing_ironlanguages_repository_on_github.yml
+  - id: splunk-windows-process-accessing-windows-recall-directory
+    rule_id: d1d7048e-d095-4fb5-b43b-e570d574a1aa
+    file: windows_process_accessing_windows_recall_directory.yml
+    path: detections/endpoint/windows_process_accessing_windows_recall_directory.yml
   - id: splunk-windows-process-execution-from-rdp-share
     rule_id: 6b1b84c4-3834-4dee-b062-9b79bdb31d15
     file: windows_process_execution_from_rdp_share.yml
@@ -2710,6 +2738,10 @@ rules:
     rule_id: e64399d4-94a8-11ec-a9da-acde48001122
     file: windows_process_with_namedpipe_commandline.yml
     path: detections/endpoint/windows_process_with_namedpipe_commandline.yml
+  - id: splunk-windows-product-key-registry-query
+    rule_id: 977da0c0-c7d5-45de-8b7e-f79e959ca13d
+    file: windows_product_key_registry_query.yml
+    path: detections/endpoint/windows_product_key_registry_query.yml
   - id: splunk-windows-protocol-tunneling-with-plink
     rule_id: 8aac5e1e-0fab-4437-af0b-c6e60af23eed
     file: windows_protocol_tunneling_with_plink.yml
@@ -2730,6 +2762,14 @@ rules:
     rule_id: 64d5263e-0f29-4641-81ed-03b39c27ecd4
     file: windows_putty_suite_utility_execution.yml
     path: detections/endpoint/windows_putty_suite_utility_execution.yml
+  - id: splunk-windows-query-registry-browser-list-application
+    rule_id: 45ebd21c-f4bf-4ced-bd49-d25b6526cebb
+    file: windows_query_registry_browser_list_application.yml
+    path: detections/endpoint/windows_query_registry_browser_list_application.yml
+  - id: splunk-windows-query-registry-uninstall-program-list
+    rule_id: 535fd4fc-7151-4062-9d7e-e896bea77bf6
+    file: windows_query_registry_uninstall_program_list.yml
+    path: detections/endpoint/windows_query_registry_uninstall_program_list.yml
   - id: splunk-windows-raccine-scheduled-task-deletion
     rule_id: c9f010da-57ab-11ec-82bd-acde48001122
     file: windows_raccine_scheduled_task_deletion.yml
@@ -3122,6 +3162,10 @@ rules:
     rule_id: aa9d80d9-ed47-44da-aceb-2909ca4dc19e
     file: windows_unusual_file_creation_in_confluence_directory.yml
     path: detections/endpoint/windows_unusual_file_creation_in_confluence_directory.yml
+  - id: splunk-windows-unusual-intelliform-storage-registry-access
+    rule_id: 99d69078-7dae-4ffe-9f3d-063242772f5a
+    file: windows_unusual_intelliform_storage_registry_access.yml
+    path: detections/endpoint/windows_unusual_intelliform_storage_registry_access.yml
   - id: splunk-windows-unusual-process-load-mozilla-nss-mozglue-module
     rule_id: 1a7e7650-b81d-492e-99d4-d5ab633afbdd
     file: windows_unusual_process_load_mozilla_nss_mozglue_module.yml
@@ -3162,6 +3206,10 @@ rules:
     rule_id: 3b711292-9793-4a88-8e89-6e016cfbc09c
     file: windows_winrar_launched_outside_default_installation_directory.yml
     path: detections/endpoint/windows_winrar_launched_outside_default_installation_directory.yml
+  - id: splunk-windows-winscp-configuration-security-access
+    rule_id: 90013cc4-585b-4437-a95f-099933974f3e
+    file: windows_winscp_configuration_security_access.yml
+    path: detections/endpoint/windows_winscp_configuration_security_access.yml
   - id: splunk-windows-wmi-process-and-service-list
     rule_id: ef3c5ef2-3f6d-4087-aa75-49bf746dc907
     file: windows_wmi_process_and_service_list.yml

@@ -27,6 +27,7 @@ var splunkEvents = map[string][]string{
 	"ImageLoad":     {"7"},
 	"ProcessAccess": {"8", "10"},
 	"TaskCreated":   {"4698"},
+	"ObjectAccess":  {"4663"},
 }
 
 // UseMacros gives a splunk pack the macros its rules' searches use (the
@@ -160,6 +161,19 @@ func splunkSeverity(r *splcheck.Rule) string {
 
 var splunkTechnique = regexp.MustCompile(`^T\d{4}(\.\d{3})?$`)
 
+// splunkThrottle is packThrottle for a Splunk rule: an object access is
+// one a day per host, program and object, a scheduled task per host and
+// task.
+func splunkThrottle(node, dm string) []string {
+	switch node {
+	case "ObjectAccess":
+		return []string{"host", "process_path", "object_path"}
+	case "TaskCreated":
+		return []string{"host", "task_name"}
+	}
+	return packThrottle("", dm)
+}
+
 // SplunkDetection converts one rule of a splunk pack into an off
 // detection: TTP rules raise findings and add risk, anomalies only add
 // risk, as in Splunk's risk-based alerting. A finding is made once a day
@@ -194,7 +208,7 @@ func SplunkDetection(p *Pack, r PackRule, src []byte) (*Detection, error) {
 		Lookback:    "10m",
 		Severity:    splunkSeverity(rule),
 		MITRE:       mitre,
-		Throttle:    Throttle{Window: "24h", Fields: packThrottle("", dm)},
+		Throttle:    Throttle{Window: "24h", Fields: splunkThrottle(rule.Node, dm)},
 		Risk:        &Risk{Score: score, Objects: []RiskObject{{Field: "user", Type: "user"}, {Field: "host", Type: "system"}}, Only: !strings.EqualFold(rule.Type, "TTP")},
 		Tags:        []string{"splunk", p.Name, strings.ToLower(rule.Type), strings.ToLower(rule.Node)},
 	}

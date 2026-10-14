@@ -76,6 +76,24 @@ func TestWindowsScheduledTaskCreated(t *testing.T) {
 	})
 }
 
+func TestWindowsObjectAccess(t *testing.T) {
+	ins := []string{"S-1-5-21-1", "bob", "CORP", "0x3e7", "Security", "File", `C:\Users\bob\AppData\Local\Google\Chrome\User Data\Local State`,
+		"0x1f4", "%%4416\n\t\t\t\t", "0x1", "0x1092", `C:\Tools\steal.exe`}
+	b, _ := json.Marshal(map[string]any{"Channel": "Security", "Computer": "WS1", "EventID": "4663", "StringInserts": ins})
+	ev := Normalize("win.security", decode(t, string(b)), now)
+	expect(t, ev.Document(), map[string]any{
+		"datamodel": "Filesystem", "action": "read", "file_name": "Local State", "object_name": "Local State",
+		"object_type": "File", "access_list": "%%4416", "access_mask": "0x1", "process_name": "steal.exe", "process_id": int64(0x1092),
+	})
+	ins[5], ins[6], ins[8] = "Key", `\REGISTRY\MACHINE\SOFTWARE\Clients\StartMenuInternet`, "%%4432 %%1537"
+	b, _ = json.Marshal(map[string]any{"Channel": "Security", "Computer": "WS1", "EventID": "4663", "StringInserts": ins})
+	ev = Normalize("win.security", decode(t, string(b)), now)
+	expect(t, ev.Document(), map[string]any{
+		"datamodel": "Registry", "action": "deleted", "registry_path": `\REGISTRY\MACHINE\SOFTWARE\Clients\StartMenuInternet`,
+		"object_path": `\REGISTRY\MACHINE\SOFTWARE\Clients\StartMenuInternet`,
+	})
+}
+
 func TestSysmonProcessHashes(t *testing.T) {
 	msg := "Process Create:\r\nImage: C:\\Users\\bob\\evil.exe\r\nCommandLine: evil.exe\r\nUser: CORP\\bob\r\nHashes: SHA1=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA,MD5=BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB,SHA256=CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC,IMPHASH=DD"
 	b, _ := json.Marshal(map[string]any{"Channel": "Microsoft-Windows-Sysmon/Operational", "Computer": "WS1", "EventID": 1, "Message": msg})

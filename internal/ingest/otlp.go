@@ -420,6 +420,8 @@ var windowsSchema = map[string][]string{
 	"4688": {"SubjectUserSid", "SubjectUserName", "SubjectDomainName", "SubjectLogonId", "NewProcessId", "NewProcessName",
 		"TokenElevationType", "ProcessId", "CommandLine", "TargetUserSid", "TargetUserName", "TargetDomainName", "TargetLogonId",
 		"ParentProcessName"},
+	"4663": {"SubjectUserSid", "SubjectUserName", "SubjectDomainName", "SubjectLogonId", "ObjectServer", "ObjectType",
+		"ObjectName", "HandleId", "AccessList", "AccessMask", "ProcessId", "ProcessName"},
 	"4698": {"SubjectUserSid", "SubjectUserName", "SubjectDomainName", "SubjectLogonId", "TaskName", "TaskContent"},
 	"4720": {"TargetUserName", "TargetDomainName", "TargetSid", "SubjectUserSid", "SubjectUserName"},
 	"4726": {"TargetUserName", "TargetDomainName", "TargetSid", "SubjectUserSid", "SubjectUserName"},

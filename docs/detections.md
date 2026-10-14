@@ -308,7 +308,7 @@ The generator keeps each rule's Signalith ID across runs, rewrites `rules/`,
 
 ### Splunk Security Content
 
-**Splunk Security Content** (`internal/detect/packs/splunk`) holds 810 Windows and
+**Splunk Security Content** (`internal/detect/packs/splunk`) holds 822 Windows and
 Linux detections from Splunk's Threat Research Team
 ([security_content](https://github.com/splunk/security_content)), pinned to one
 commit. They are the production TTP and anomaly rules that search the CIM
@@ -325,6 +325,7 @@ names, so each rule's `where` clause becomes a Signalith filter field for field:
 | `` `sysmon` EventCode=7 `` (raw search) | Sysmon 7 | Image_Load |
 | `` `sysmon` EventCode=8 `` or `10` (raw search) | Sysmon 8 and 10 | Endpoint |
 | `` `wineventlog_security` EventCode=4698 `` (raw search) | Security 4698 (scheduled task created) | Change |
+| `` `wineventlog_security` EventCode=4663 `` (raw search) | Security 4663 (object access) | Filesystem for a file, Registry for a key |
 | `Endpoint.Processes` (Sysmon for Linux rules) | Sysmon for Linux 1 | Endpoint |
 | `Endpoint.Filesystem` (Sysmon for Linux rules) | Sysmon for Linux 11 and 23 | Filesystem |
 
@@ -351,6 +352,14 @@ XML definition (`TaskContent` is `task_content`); after `xmlkv`, the command and
 arguments of its first action are `task_command` and `task_arguments`. Splunk keeps that XML escaped
 (`&lt;Hidden&gt;`); Signalith stores it as it is, so the rule's values are unescaped
 to match. Security 4698 is logged when **Audit Other Object Access Events** is on.
+
+Object access rules (Security 4663) search the object's path whatever its type
+(`ObjectName` and `object_file_path` are `object_path`, `object_file_name` is
+`object_name`), the program (`ProcessName` is `process_path`), `ObjectType`,
+`AccessList` and `AccessMask`. Files are stored in Filesystem and registry keys in
+Registry (action `read`, `modified` or `deleted`), and a rule searches both, as in
+Splunk. Windows logs 4663 only for objects whose auditing (SACL) asks for it, with
+**Audit File System** or **Audit Registry** on.
 
 Registry values that Sysmon writes as `DWORD (0x00000001)` compare as `0x00000001`,
 the way Splunk's Sysmon add-on reads them.
