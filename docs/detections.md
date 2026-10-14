@@ -391,7 +391,7 @@ The generator keeps each rule's Signalith ID across runs, rewrites `rules/`,
 
 ### Splunk Security Content
 
-**Splunk Security Content** (`internal/detect/packs/splunk`) holds 839 Windows and
+**Splunk Security Content** (`internal/detect/packs/splunk`) holds 855 Windows and
 Linux detections from Splunk's Threat Research Team
 ([security_content](https://github.com/splunk/security_content)), pinned to one
 commit. They are the production TTP and anomaly rules that search the CIM
@@ -489,10 +489,14 @@ the way Splunk's Sysmon add-on reads them.
 
 A rule is shipped only when its whole search converts exactly (a `tstats` search
 whose later stages only rename fields, format times, keep rows that have a field
-(`where isnotnull(...)`) or apply the rule's empty `_filter` macro) and, on test events made from its `where` clause and passed through
+(`where isnotnull(...)`), keep rows a regular expression matches (`regex field="..."`,
+or `where match(field, "...")` joined by AND or OR) or apply the rule's empty `_filter`
+macro) and, on test events made from its `where` clause and passed through
 the real Windows parser, the converted detection agrees with Splunk's reading of the
-clause on every event. Searches with `eval`, `rex`, `regex`, `lookup`, and other raw searches
-are left out for now; `internal/detect/packs/splunk/REPORT.md` lists
+clause on every event. A regular expression converts when it is also valid in Go's
+syntax (no lookarounds) and OpenSearch can search it exactly (no word boundaries).
+A value with a `?`, which Splunk reads literally, is searched as a regular expression
+too. Searches with `eval`, `rex`, `lookup`, and other raw searches are left out for now; `internal/detect/packs/splunk/REPORT.md` lists
 every rule left out and why. The same CI checks as the SigmaHQ pack run on it.
 
 Each rule is also checked on the real attack it was written for: Splunk records one

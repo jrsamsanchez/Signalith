@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"regexp/syntax"
+	"slices"
 	"strings"
 	"unicode"
 )
@@ -226,4 +227,48 @@ func writeRune(b *strings.Builder, r rune) {
 // value, and . matches any character.
 func luceneRegexp(pattern string) (*regexp.Regexp, error) {
 	return regexp.Compile(`(?s)^(?:` + pattern + `)$`)
+}
+
+// CaseMatters reports whether a regular expression would match a value
+// differently from the same value in other letter case: it has a letter,
+// or a class with a letter but not its other case, outside (?i). Such a
+// pattern cannot be searched exactly on a field Signalith searches
+// ignoring case (WildcardFields).
+func CaseMatters(pattern string) bool {
+	tree, err := syntax.Parse(pattern, syntax.Perl)
+	if err != nil {
+		return true
+	}
+	var walk func(re *syntax.Regexp) bool
+	walk = func(re *syntax.Regexp) bool {
+		switch re.Op {
+		case syntax.OpLiteral:
+			if re.Flags&syntax.FoldCase == 0 && slices.ContainsFunc(re.Rune, foldable) {
+				return true
+			}
+		case syntax.OpCharClass:
+			for i := 0; i+1 < len(re.Rune); i += 2 {
+				for r := re.Rune[i]; r <= re.Rune[i+1] && r <= re.Rune[i]+0x400; r++ {
+					for f := unicode.SimpleFold(r); f != r; f = unicode.SimpleFold(f) {
+						// ASCII letters' other forms (the Kelvin sign for
+						// k) lower-case to ASCII too.
+						if (f < 0x80 || r >= 0x80) && !inRanges(re.Rune, f) {
+							return true
+						}
+					}
+				}
+			}
+		}
+		return slices.ContainsFunc(re.Sub, walk)
+	}
+	return walk(tree)
+}
+
+func inRanges(ranges []rune, r rune) bool {
+	for i := 0; i+1 < len(ranges); i += 2 {
+		if ranges[i] <= r && r <= ranges[i+1] {
+			return true
+		}
+	}
+	return false
 }

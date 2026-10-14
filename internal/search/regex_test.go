@@ -58,3 +58,14 @@ func TestRegexMatchDocAgrees(t *testing.T) {
 		}
 	}
 }
+
+func TestCaseMatters(t *testing.T) {
+	for p, want := range map[string]bool{
+		`(?i)cmd`: false, `cmd`: true, `\x{202E}`: false, `\d+\s`: false, `\w+`: false,
+		`[a-z]`: true, `(?i)[a-z]`: false, `[a-zA-Z]`: false, `x(?i:y)`: true, `\.exe`: true,
+	} {
+		if got := CaseMatters(p); got != want {
+			t.Errorf("CaseMatters(%q) = %v, want %v", p, got, want)
+		}
+	}
+}

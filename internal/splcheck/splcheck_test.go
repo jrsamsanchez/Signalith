@@ -351,3 +351,25 @@ func TestParseSysmonAccess(t *testing.T) {
 		t.Errorf("mixed events: err = %v", err)
 	}
 }
+
+func TestRegexStage(t *testing.T) {
+	field := func(f string) (string, error) { return f, nil }
+	e, ok, err := regexStage(`where match(process, "(?i)cmd\.exe\s+\/Q") AND match(process,"\\\\127\.0\.0\.1\\.*")`, field)
+	if err != nil || !ok {
+		t.Fatal(ok, err)
+	}
+	ev := map[string]string{"process": `CMD.EXE /Q /c echo > \\127.0.0.1\ADMIN$\__out`}
+	if !Eval(e, ev) {
+		t.Errorf("%+v does not match %v", e, ev)
+	}
+	ev["process"] = `cmd.exe /Q /c dir`
+	if Eval(e, ev) {
+		t.Errorf("%+v matches %v", e, ev)
+	}
+	if _, ok, _ := regexStage(`where match(a, "x") AND NOT match(b, "y")`, field); ok {
+		t.Error("NOT match accepted")
+	}
+	if _, ok, err := regexStage(`regex process="(?<!x)y"`, field); !ok || err == nil {
+		t.Errorf("lookbehind: %v %v", ok, err)
+	}
+}

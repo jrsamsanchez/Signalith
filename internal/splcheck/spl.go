@@ -161,6 +161,19 @@ func Parse(src []byte, macros map[string]*Macro) (*Rule, error) {
 			present = append(present, &Cmp{Field: nn[1], Values: []string{"*"}})
 			continue
 		}
+		e, ok, err := regexStage(s, func(f string) (string, error) {
+			if !slices.Contains(fields, f) {
+				return "", fmt.Errorf("field %s has no Signalith mapping", f)
+			}
+			return f, nil
+		})
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			present = append(present, e)
+			continue
+		}
 		if !harmlessRe.MatchString(s) && !filterRe.MatchString(s) {
 			return nil, fmt.Errorf("search has a later stage Signalith does not run: %s", firstWords(s))
 		}
@@ -315,7 +328,18 @@ const xmlkvSuffix = "+xmlkv"
 func parseRaw(r *Rule, source, terms string, later []string, macros map[string]*Macro) (*Rule, error) {
 	filled, counted, xml, renamed := false, false, false, false
 	var searches []string
+	var regexes []Expr
 	for _, s := range later {
+		if !counted && !renamed {
+			e, ok, err := regexStage(s, func(f string) (string, error) { return rawFieldPrefix + f, nil })
+			if err != nil {
+				return nil, err
+			}
+			if ok {
+				regexes = append(regexes, e)
+				continue
+			}
+		}
 		switch {
 		case harmlessRe.MatchString(s) || filterRe.MatchString(s):
 		case xmlkvRe.MatchString(s) && !counted && !filled && !xml && !renamed && len(searches) == 0:
@@ -378,6 +402,7 @@ func parseRaw(r *Rule, source, terms string, later []string, macros map[string]*
 		}
 		top = append(top, e)
 	}
+	top = append(top, regexes...)
 	if len(top) < 2 {
 		return nil, fmt.Errorf("a %s search must name a field besides its event code", source)
 	}
@@ -519,4 +544,84 @@ func pipes(q string) []string {
 		out = append(out, s)
 	}
 	return out
+}
+
+// Regular expression stages: `regex field="re"` keeps the events whose
+// field the expression is found in, and `where match(field, "re")`, with
+// several joined by AND or by OR, does the same.
+var (
+	regexStageRe = regexp.MustCompile(`(?s)^regex\s+(\w+)\s*=\s*"((?:[^"\\]|\\.)*)"\s*$`)
+	matchCallRe  = regexp.MustCompile(`(?s)^match\(\s*(\w+)\s*,\s*"((?:[^"\\]|\\.)*)"\s*\)\s*`)
+	whereRe      = regexp.MustCompile(`(?is)^where\s+(.*)$`)
+	joinRe       = regexp.MustCompile(`^(?i:(AND|OR))\s+`)
+)
+
+// regexStage reads a regex stage or a where of match() calls, with each
+// field as field names it (a raw field marked for its node to resolve).
+func regexStage(s string, field func(string) (string, error)) (Expr, bool, error) {
+	var kids []Expr
+	join := ""
+	add := func(f, p string) error {
+		name, err := field(f)
+		if err != nil {
+			return err
+		}
+		p = splString(p)
+		if _, err := regexp.Compile(p); err != nil {
+			return fmt.Errorf("regular expression %q: %w", p, err)
+		}
+		kids = append(kids, &Cmp{Field: name, Values: []string{p}, Regex: true})
+		return nil
+	}
+	if m := regexStageRe.FindStringSubmatch(s); m != nil {
+		err := add(m[1], m[2])
+		if err != nil {
+			return nil, true, err
+		}
+		return kids[0], true, nil
+	}
+	w := whereRe.FindStringSubmatch(s)
+	if w == nil {
+		return nil, false, nil
+	}
+	rest := strings.TrimSpace(w[1])
+	for {
+		m := matchCallRe.FindStringSubmatch(rest)
+		if m == nil {
+			return nil, false, nil
+		}
+		if err := add(m[1], m[2]); err != nil {
+			return nil, true, err
+		}
+		rest = rest[len(m[0]):]
+		if rest == "" {
+			break
+		}
+		j := joinRe.FindStringSubmatch(rest)
+		if j == nil || join != "" && !strings.EqualFold(j[1], join) {
+			return nil, false, nil
+		}
+		join = j[1]
+		rest = rest[len(j[0]):]
+	}
+	if len(kids) == 1 {
+		return kids[0], true, nil
+	}
+	if strings.EqualFold(join, "OR") {
+		return &Or{Kids: kids}, true, nil
+	}
+	return &And{Kids: kids}, true, nil
+}
+
+// splString is a quoted SPL string's text: \\ is a backslash and \" a
+// quote; any other backslash is kept.
+func splString(s string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\\' && i+1 < len(s) && (s[i+1] == '\\' || s[i+1] == '"') {
+			i++
+		}
+		b.WriteByte(s[i])
+	}
+	return b.String()
 }

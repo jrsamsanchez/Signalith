@@ -3,6 +3,8 @@ package detect
 import (
 	"strings"
 	"testing"
+
+	"github.com/jrsamsanchez/signalith/internal/query"
 )
 
 func TestSplunkDetection(t *testing.T) {
@@ -42,9 +44,31 @@ search: |
 	if d, err := PackDetection(p, PackRule{ID: "splunk-x"}, anomaly); err != nil || !d.Risk.Only || d.Severity != "low" {
 		t.Errorf("anomaly = %v %+v", err, d)
 	}
-	// A ? is literal in Splunk, so such a rule is refused.
+	// A ? is literal in Splunk, so it is searched as a regular
+	// expression.
 	q := []byte(strings.Replace(string(src), "reg.exe", "re?.exe", 1))
-	if _, err := PackDetection(p, PackRule{ID: "splunk-x"}, q); err == nil {
-		t.Error("? accepted")
+	if d, err := PackDetection(p, PackRule{ID: "splunk-x"}, q); err != nil || !strings.Contains(d.Query, `process_name=~"(?is)^re\\?\\.exe$"`) {
+		t.Errorf("? = %v %+v", err, d)
+	}
+	// regex and where match() stages keep the events they match.
+	stages := map[string]string{
+		`| regex process="(?i)reg\\.exe\\s+add"`:                            `process=~"(?i)reg\\.exe\\s+add"`,
+		`| where match(process, "a\\d") AND match(process_path, "^C:\\\\")`: `process=~a\d AND process_path=~^C:\\`,
+	}
+	for stage, want := range stages {
+		r := []byte(strings.Replace(string(src), "by Processes.dest\n", "by Processes.dest\n  | `drop_dm_object_name(Processes)`\n  "+stage+"\n", 1))
+		d, err := PackDetection(p, PackRule{ID: "splunk-x"}, r)
+		if err != nil || !strings.Contains(d.Query, want) {
+			t.Errorf("%s: %v %+v", stage, err, d)
+			continue
+		}
+		if q, err := query.Parse(d.Query); err != nil || q.String() != d.Query {
+			t.Errorf("%s: does not parse back: %v", d.Query, err)
+		}
+	}
+	// Lookarounds are not RE2, so such a rule is refused.
+	r := []byte(strings.Replace(string(src), "by Processes.dest\n", "by Processes.dest\n  | regex process=\"(?<!x)y\"\n", 1))
+	if _, err := PackDetection(p, PackRule{ID: "splunk-x"}, r); err == nil {
+		t.Error("lookbehind accepted")
 	}
 }

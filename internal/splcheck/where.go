@@ -3,8 +3,10 @@ package splcheck
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
+	"sync"
 	"unicode"
 )
 
@@ -21,10 +23,37 @@ type (
 // Cmp compares a field with values: field=v, field!=v or field IN (v...).
 // Values are Splunk patterns: * matches any run of characters, case is
 // ignored, and everything else is literal.
+//
+// A regex stage or match() is a Cmp too, with Regex set: its one value is
+// a regular expression found anywhere in the field's value.
 type Cmp struct {
 	Field  string // without the node prefix
 	Neg    bool   // !=
 	Values []string
+	Regex  bool
+}
+
+// matches reports whether one of a comparison's values matches v.
+func (c *Cmp) matches(p, v string) bool {
+	if c.Regex {
+		re, err := compiled(p)
+		return err == nil && re.MatchString(v)
+	}
+	return Glob(p, v)
+}
+
+var regexCache sync.Map // pattern -> *regexp.Regexp
+
+func compiled(p string) (*regexp.Regexp, error) {
+	if re, ok := regexCache.Load(p); ok {
+		return re.(*regexp.Regexp), nil
+	}
+	re, err := regexp.Compile(p)
+	if err != nil {
+		return nil, err
+	}
+	regexCache.Store(p, re)
+	return re, nil
 }
 
 func (*And) isExpr() {}
@@ -341,7 +370,7 @@ func Eval(e Expr, ev map[string]string) bool {
 		}
 		any := false
 		for _, p := range x.Values {
-			if Glob(p, v) {
+			if x.matches(p, v) {
 				any = true
 				break
 			}

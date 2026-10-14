@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"html"
 	"maps"
+	"math/rand"
 	"path"
 	"regexp"
 	"slices"
@@ -21,7 +22,10 @@ type lit struct {
 	field  string
 	values []string
 	neg    bool // the event must not match
+	re     bool // values are regular expressions
 }
+
+func (l lit) matches(p, v string) bool { return (&Cmp{Regex: l.re}).matches(p, v) }
 
 // terms lists conjunctions of comparisons that together reach every
 // comparison of e: each OR branch and each IN value is in some term. It
@@ -32,19 +36,20 @@ func terms(e Expr, neg bool) [][]lit {
 	case *Not:
 		return terms(x.Kid, !neg)
 	case *Cmp:
+		re := x.Regex
 		if x.Neg {
 			// a != v is "a present and not v".
 			if neg {
-				return [][]lit{{{field: x.Field, values: x.Values}}, {{field: x.Field, values: nil, neg: true}}}
+				return [][]lit{{{field: x.Field, values: x.Values, re: re}}, {{field: x.Field, values: nil, neg: true}}}
 			}
-			return [][]lit{{{field: x.Field, values: []string{"*"}}, {field: x.Field, values: x.Values, neg: true}}}
+			return [][]lit{{{field: x.Field, values: []string{"*"}}, {field: x.Field, values: x.Values, neg: true, re: re}}}
 		}
 		if neg {
-			return [][]lit{{{field: x.Field, values: x.Values, neg: true}}}
+			return [][]lit{{{field: x.Field, values: x.Values, neg: true, re: re}}}
 		}
 		var out [][]lit
 		for _, v := range x.Values {
-			out = append(out, []lit{{field: x.Field, values: []string{v}}})
+			out = append(out, []lit{{field: x.Field, values: []string{v}, re: re}})
 		}
 		return out
 	case *And:
@@ -107,6 +112,19 @@ func instantiate(p string) string {
 	return strings.Join(parts, " ")
 }
 
+// example is a value a comparison's first value matches: a pattern
+// instantiated, or an example of a regular expression.
+func example(l lit, rng *rand.Rand) string {
+	if !l.re {
+		return instantiate(l.values[0])
+	}
+	s, err := sigmacheck.RegexExample(rng, l.values[0])
+	if err != nil {
+		return ""
+	}
+	return s
+}
+
 // mutate makes a value close to v that a pattern written for v should
 // not match: its last letter or digit changed.
 func mutate(v string) string {
@@ -128,8 +146,8 @@ func mutate(v string) string {
 // comparisons and none of its negated ones, or false when it finds none.
 func assign(term []lit) (map[string]string, bool) {
 	ev := map[string]string{}
-	pos := map[string][]string{}
-	neg := map[string][][]string{}
+	pos := map[string][]lit{}
+	neg := map[string][]lit{}
 	absent := map[string]bool{}
 	var fields []string
 	for _, l := range term {
@@ -140,9 +158,9 @@ func assign(term []lit) (map[string]string, bool) {
 		case l.neg && l.values == nil:
 			absent[l.field] = true
 		case l.neg:
-			neg[l.field] = append(neg[l.field], l.values)
+			neg[l.field] = append(neg[l.field], l)
 		default:
-			pos[l.field] = append(pos[l.field], l.values[0])
+			pos[l.field] = append(pos[l.field], lit{field: l.field, values: l.values[:1], re: l.re})
 		}
 	}
 	for _, f := range fields {
@@ -157,23 +175,28 @@ func assign(term []lit) (map[string]string, bool) {
 			continue // only excluded values: leaving it out satisfies them
 		}
 		var cands []string
-		parts := make([]string, len(ps))
-		for i, p := range ps {
-			parts[i] = instantiate(p)
+		// Several tries, since a regular expression's example is picked
+		// at random.
+		rng := rand.New(rand.NewSource(int64(len(f))))
+		for try := 0; try < 8; try++ {
+			parts := make([]string, len(ps))
+			for i, p := range ps {
+				parts[i] = example(p, rng)
+			}
+			cands = append(cands, strings.Join(parts, " "))
+			cands = append(cands, parts...)
 		}
-		cands = append(cands, strings.Join(parts, " "))
-		cands = append(cands, parts...)
 		found := false
 		for _, c := range cands {
 			ok := true
 			for _, p := range ps {
-				if !Glob(p, c) {
+				if !p.matches(p.values[0], c) {
 					ok = false
 				}
 			}
-			for _, vs := range neg[f] {
-				for _, p := range vs {
-					if Glob(p, c) {
+			for _, l := range neg[f] {
+				for _, p := range l.values {
+					if l.matches(p, c) {
 						ok = false
 					}
 				}
@@ -218,7 +241,7 @@ func Events(e Expr) (pos, neg []map[string]string) {
 				// The excluded value itself.
 				for _, p := range l.values {
 					m := maps.Clone(ev)
-					m[l.field] = instantiate(p)
+					m[l.field] = example(lit{values: []string{p}, re: l.re}, rand.New(rand.NewSource(1)))
 					add(&neg, m)
 				}
 				continue

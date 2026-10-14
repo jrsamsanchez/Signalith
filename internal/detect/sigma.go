@@ -1011,7 +1011,7 @@ func (c *sigmaConv) regex(field, key, flags, pattern string) (query.Expr, error)
 	if _, err := search.ParseRegex(pattern); err != nil {
 		return nil, fmt.Errorf("%s: %w", key, err)
 	}
-	if search.WildcardFields[field] && !strings.HasPrefix(pattern, "(?i") && !strings.Contains(flags, "i") {
+	if search.WildcardFields[field] && search.CaseMatters(pattern) {
 		return nil, fmt.Errorf("%s: a case-sensitive regular expression on %s, which is searched ignoring case", key, field)
 	}
 	return &query.Compare{Field: field, Op: "=~", Value: pattern}, nil

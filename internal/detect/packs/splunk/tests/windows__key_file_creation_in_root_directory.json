@@ -1,0 +1,11 @@
+{"rule": "90e71722-8c0f-43b4-937a-6222325976c2", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"A:\\A.key"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"A:\\A.key"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"A:\\A.key"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"A:\\A.key\\x .key"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"A:\\A.key\\x .kez"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"A:\\A.kez"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"A:\\A.kez\\x .key"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"C:\\Users\\Public\\x .key"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"CreationUtcTime":"2022-11-18 15:39:34.752","Image":"c:\\Users\\dadam\\Desktop\\985c20ab57daa2d8135833f83bb48aebbaee96082dabed5e78329b9fe0b902d7.exe","ProcessGuid":"BD1BA16A-A736-6377-4F09-000000000F00","ProcessId":"9968","RuleName":"-","TargetFilename":"C:\\YdMiK89A.key","User":"SNAPATTACK\\snapattack","UtcTime":"2022-11-18 15:39:34.753"}}
+]}
