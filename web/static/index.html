@@ -173,6 +173,7 @@
       <a class="nav__item" href="#findings" data-page="findings"><svg class="icon" aria-hidden="true"><use href="#i-shield-alert"/></svg><span>Findings</span><span id="open-count" class="nav__count hidden"></span></a>
       <a class="nav__item" href="#cases" data-page="cases"><svg class="icon" aria-hidden="true"><use href="#i-briefcase"/></svg><span>Investigations</span><span id="case-count" class="nav__count hidden"></span></a>
       <a class="nav__item" href="#risk" data-page="risk"><svg class="icon" aria-hidden="true"><use href="#i-gauge"/></svg><span>Risk</span></a>
+      <a class="nav__item" href="#vulns" data-page="vulns" data-min-role="analyst"><svg class="icon" aria-hidden="true"><use href="#i-scan-search"/></svg><span>Vulnerabilities</span></a>
       <a class="nav__item" href="#approvals" data-page="approvals" data-min-role="analyst"><svg class="icon" aria-hidden="true"><use href="#i-user-check"/></svg><span>Approvals</span><span id="approval-count" class="nav__count hidden"></span></a>
     </div>
     <div class="nav__group" data-group="Hunt">
@@ -1015,6 +1016,32 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
     <dialog id="ep-remove" class="modal" aria-labelledby="ep-remove-title"></dialog>
   </section>
 
+  <!-- Vulnerabilities (analysts and admins): network scans with Nmap -->
+  <section id="page-vulns" class="page">
+    <div class="page-head">
+      <div>
+        <h2 class="page-head__title">Vulnerabilities</h2>
+        <p class="page-head__desc">Hosts on your networks, their open ports, and the known vulnerabilities (CVEs) in the software on them, from scheduled Nmap scans.</p>
+      </div>
+      <div class="page-head__actions">
+        <button id="vs-setup" class="btn btn--secondary" type="button" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-list-checks"/></svg>Scanner setup</button>
+        <button id="vs-add" class="btn btn--primary hidden" type="button"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>Add network</button>
+      </div>
+    </div>
+    <div class="tabs vs-tabs" role="tablist" aria-label="Vulnerabilities">
+      <button class="tab" type="button" role="tab" id="vs-tab-hosts" aria-controls="vs-panel-hosts" aria-selected="true">Hosts <span class="count hidden" id="vs-host-count"></span></button>
+      <button class="tab" type="button" role="tab" id="vs-tab-networks" aria-controls="vs-panel-networks" aria-selected="false" tabindex="-1">Networks <span class="count hidden" id="vs-net-count"></span></button>
+      <button class="tab" type="button" role="tab" id="vs-tab-scans" aria-controls="vs-panel-scans" aria-selected="false" tabindex="-1">Scans</button>
+    </div>
+    <div id="vs-panel-hosts" class="vs-panel" role="tabpanel" aria-labelledby="vs-tab-hosts"></div>
+    <div id="vs-panel-networks" class="vs-panel" role="tabpanel" aria-labelledby="vs-tab-networks" hidden></div>
+    <div id="vs-panel-scans" class="vs-panel" role="tabpanel" aria-labelledby="vs-tab-scans" hidden></div>
+    <dialog id="vs-host" class="modal vs-host" aria-labelledby="vs-host-title"></dialog>
+    <dialog id="vs-net-dialog" class="modal vs-net-dialog" aria-labelledby="vs-net-title"></dialog>
+    <dialog id="vs-setup-dialog" class="modal vs-setup-dialog" aria-labelledby="vs-setup-title"></dialog>
+    <dialog id="vs-confirm" class="modal" aria-labelledby="vs-confirm-title" aria-describedby="vs-confirm-desc"></dialog>
+  </section>
+
   <!-- Notifications (admins) -->
   <section id="page-notify" class="page">
     <div class="page-head">
@@ -1451,6 +1478,7 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
 <script src="servers.js"></script>
 <script src="security.js"></script>
 <script src="endpoints.js"></script>
+<script src="vulns.js"></script>
 <script src="tokens.js"></script>
 </body>
 </html>

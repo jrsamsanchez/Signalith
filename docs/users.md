@@ -629,6 +629,7 @@ page itself.
 `DELETE /api/dashboards/{id}`, `POST /api/dashboards/{id}/panels`,
 `POST /api/intel/indicators`, `DELETE /api/intel/indicators/{id}`, `GET /api/endpoints`,
 `GET /api/endpoints/{id}`, `GET /api/endpoints/settings`, `GET /api/endpoints/checks`,
+`GET /api/vulns`, `GET /api/vulns/hosts/{id}` (what [vulnerability scans](vulnerabilities.md) found),
 `GET /api/respond/actions`, `GET /api/respond/runs`, `POST /api/respond/run` (running
 [response actions](response-actions.md)), `GET /api/playbooks/runs`,
 `POST /api/playbooks/runs/{id}/approve`, `POST /api/playbooks/runs/{id}/reject`
@@ -653,6 +654,8 @@ status and use of the [agent tokens](agent-tokens.md), never a secret).
 (the one-click [sample data](sample-data.md)), `PUT /api/endpoints/settings`,
 `DELETE /api/endpoints/{id}`, `GET /api/endpoints/blocked`, `DELETE /api/endpoints/blocked/{host}`,
 `POST /api/endpoints/queries`, `GET /api/endpoints/queries/{id}` (the [Endpoints page](endpoints.md)),
+`GET /api/vulns/setup`, `PUT /api/vulns/settings`, `POST /api/vulns/networks/{id}/scan`,
+`POST /api/vulns/scans/{id}/stop` (setting up and running [vulnerability scans](vulnerabilities.md)),
 `GET /api/cluster` (the Servers page; see [servers.md](servers.md)), every
 `/api/notify` route (the Notifications page; see [notifications.md](notifications.md)), every
 `/api/retention` route (see [retention.md](retention.md)), every

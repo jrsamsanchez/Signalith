@@ -377,7 +377,7 @@ slideOver.addEventListener('change', syncInspectInert);
 // Ctrl+K (Cmd+K on a Mac), or / when not typing, focuses it.
 const JUMP_WORDS = {
   dashboards: 'home overview posture charts', findings: 'alerts incidents queue triage', cases: 'cases investigations',
-  risk: 'risk scores', search: 'query events logs hunt', intel: 'threat intel ioc indicators feeds',
+  risk: 'risk scores', vulns: 'vulnerabilities cve scan scanner nmap ports open services patch exposure kev exploited', search: 'query events logs hunt', intel: 'threat intel ioc indicators feeds',
   detections: 'rules sigma alerts', coverage: 'mitre attack matrix techniques tactics', assets: 'hosts users identities cmdb priority',
   data: 'ingest agents fluent bit sources onboarding syslog firewall switch router cisco wazuh ossec alerts sample demo test data try example', retention: 'retention rotation archive restore delete storage disk guard policies',
   health: 'status opensearch ingest', help: 'help syntax language commands',

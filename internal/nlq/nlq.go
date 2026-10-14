@@ -9,6 +9,7 @@ package nlq
 import (
 	"fmt"
 	"net/netip"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -50,6 +51,7 @@ func Translate(question string, hints Hints) (*Result, error) {
 	}
 	t.used = make([]bool, len(t.toks))
 	t.malware = mentionsMalware(t.toks)
+	t.vuln = mentionsVulns(t.toks)
 	for t.i < len(t.toks) {
 		if n := t.step(); n > 0 {
 			for k := t.i; k < t.i+n && k < len(t.toks); k++ {
@@ -244,12 +246,16 @@ var modelWords = map[string]string{
 	"infected": "Malware", "trojan": "Malware", "trojans": "Malware", "ransomware": "Malware", "quarantined": "Malware",
 	"antivirus": "Malware", "anti-virus": "Malware", "av": "Malware", "defender": "Malware", "clamav": "Malware",
 	"threat": "Malware", "threats": "Malware",
+	"vulnerability": "Vulnerabilities", "vulnerabilities": "Vulnerabilities", "vuln": "Vulnerabilities",
+	"vulns": "Vulnerabilities", "vulnerable": "Vulnerabilities", "cve": "Vulnerabilities", "cves": "Vulnerabilities",
+	"kev": "Vulnerabilities",
 }
 
 var modelNames = map[string]string{
 	"Authentication": "logon data (Authentication)", "Endpoint": "process data (Endpoint)",
 	"Network_Traffic": "network data (Network_Traffic)", "Change": "account and group changes (Change)",
-	"Risk": "risk events (Risk)", "Malware": "antivirus data (Malware)", "Filesystem": "file changes (Filesystem)",
+	"Risk": "risk events (Risk)", "Malware": "antivirus data (Malware)",
+	"Vulnerabilities": "vulnerability scan results (Vulnerabilities)", "Filesystem": "file changes (Filesystem)",
 }
 
 var actionWords = map[string]string{
@@ -343,6 +349,14 @@ type translator struct {
 	mwCategory string   // category=
 	mwActions  []string // action=, or action IN (...) when more than one
 	mwVendor   string   // vendor_product=
+
+	// Vulnerability scan questions. vuln is true when the question names
+	// vulnerabilities, CVEs or open ports anywhere, so words such as
+	// "critical" and "exploited" take their vulnerability meaning.
+	vuln         bool
+	vulnCategory string // category=: vulnerability or open_port
+	vulnSeverity string // severity=
+	vulnKEV      bool   // known_exploited=true
 }
 
 func (t *translator) low(k int) string {
@@ -382,7 +396,7 @@ func (t *translator) setModel(m string) {
 // the matching rule consumed.
 func (t *translator) step() int {
 	for _, rule := range []func() int{
-		t.ruleQuoted, t.ruleTime, t.ruleThreshold, t.ruleMalware, t.ruleNegation, t.ruleTop, t.ruleAgg, t.ruleGroup,
+		t.ruleQuoted, t.ruleTime, t.ruleThreshold, t.ruleMalware, t.ruleVulns, t.ruleNegation, t.ruleTop, t.ruleAgg, t.ruleGroup,
 		t.ruleShowFields, t.ruleContains, t.rulePreposition, t.ruleNoun, t.ruleWords, t.ruleValue,
 	} {
 		if n := rule(); n > 0 {
@@ -990,10 +1004,29 @@ func (t *translator) nounAt(k int) (noun, int) {
 			return n, 1
 		}
 	}
+	if t.vuln {
+		if n, ok := vulnNouns[t.low(k)]; ok {
+			return n, 1
+		}
+	}
 	if n, ok := nouns[t.low(k)]; ok {
 		return n, 1
 	}
 	return noun{}, 0
+}
+
+// vulnNouns are field nouns that only apply to vulnerability questions.
+var vulnNouns = map[string]noun{
+	"cve": {field: "cve", name: "CVE", model: "Vulnerabilities"}, "cves": {field: "cve", name: "CVE", model: "Vulnerabilities"},
+	"product": {field: "product", name: "product", model: "Vulnerabilities"}, "products": {field: "product", name: "product", model: "Vulnerabilities"},
+	"software": {field: "product", name: "product", model: "Vulnerabilities"},
+	"service":  {field: "app", name: "service", model: "Vulnerabilities"}, "services": {field: "app", name: "service", model: "Vulnerabilities"},
+}
+
+// vulnServices are services a scan names, in Nmap's words.
+var vulnServices = map[string]string{
+	"telnet": "telnet", "ftp": "ftp", "ssh": "ssh", "http": "http", "https": "https",
+	"rdp": "ms-wbt-server", "smb": "microsoft-ds",
 }
 
 // malwareNouns are field nouns that only apply to antivirus questions.
@@ -1120,7 +1153,7 @@ func hasExt(w string) bool {
 // names no field.
 var defaultEntity = map[string]string{
 	"Authentication": "user", "Endpoint": "process_name", "Network_Traffic": "dest",
-	"Change": "object", "Risk": "risk_object", "Malware": "signature", "": "host",
+	"Change": "object", "Risk": "risk_object", "Malware": "signature", "Vulnerabilities": "dest", "": "host",
 }
 
 func (t *translator) finish() *query.Query {
@@ -1170,6 +1203,9 @@ func (t *translator) finish() *query.Query {
 
 	if model == "Malware" {
 		terms = append(terms, t.malwareTerms()...)
+	}
+	if model == "Vulnerabilities" {
+		terms = append(terms, t.vulnTerms()...)
 	}
 	if a := t.action; a != "" {
 		switch model {
@@ -1272,7 +1308,7 @@ func (t *translator) finish() *query.Query {
 	// "quarantined files on web1", "hosts where antivirus was turned off":
 	// for antivirus data a field noun with nothing else to do lists its
 	// values, most common first.
-	if model == "Malware" && mode == "" && len(by) == 0 && len(t.fields) == 0 && len(t.pending) > 0 {
+	if (model == "Malware" || model == "Vulnerabilities") && mode == "" && len(by) == 0 && len(t.fields) == 0 && len(t.pending) > 0 {
 		mode, by = "stats", []string{resolve(t.pending[0])}
 		t.steps[t.pendStep[0]].Meaning = "one row per " + fieldName(t.pending[0])
 	}
@@ -1512,6 +1548,94 @@ func (t *translator) malwareTerms() []query.Expr {
 	}
 	if t.mwVendor != "" {
 		out = append(out, &query.Compare{Field: "vendor_product", Op: "=", Value: t.mwVendor})
+	}
+	return out
+}
+
+// ---------- vulnerability scans ----------
+
+// cveID matches a CVE ID such as cve-2021-41773, lowercased.
+var cveID = regexp.MustCompile(`^cve-\d{4}-\d{4,}$`)
+
+// mentionsVulns reports whether a question is about vulnerability scan
+// results.
+func mentionsVulns(toks []token) bool {
+	for i, tk := range toks {
+		if tk.quoted {
+			continue
+		}
+		if modelWords[tk.low] == "Vulnerabilities" || cveID.MatchString(tk.low) {
+			return true
+		}
+		if tk.low == "open" && i+1 < len(toks) && (toks[i+1].low == "port" || toks[i+1].low == "ports") {
+			return true
+		}
+	}
+	return false
+}
+
+// ruleVulns handles the vulnerability words, only in vulnerability
+// questions.
+func (t *translator) ruleVulns() int {
+	if !t.vuln {
+		return 0
+	}
+	w := t.low(0)
+	switch w + " " + t.low(1) {
+	case "known exploited", "actively exploited":
+		t.setModel("Vulnerabilities")
+		t.vulnCategory, t.vulnKEV = "vulnerability", true
+		return t.note(2, "vulnerabilities attackers are known to use (CISA KEV)")
+	case "open port", "open ports":
+		t.setModel("Vulnerabilities")
+		if t.vulnCategory == "" {
+			t.vulnCategory = "open_port"
+		}
+		return t.note(2, "open ports a scan found")
+	}
+	if cveID.MatchString(w) {
+		t.setModel("Vulnerabilities")
+		t.vulnCategory = "vulnerability"
+		t.addFilter("cve", strings.ToUpper(w))
+		return t.note(1, "vulnerability %s", strings.ToUpper(w))
+	}
+	switch w {
+	case "vulnerability", "vulnerabilities", "vuln", "vulns", "vulnerable":
+		t.setModel("Vulnerabilities")
+		t.vulnCategory = "vulnerability"
+		return t.note(1, "vulnerabilities a scan found")
+	case "cve", "cves":
+		// Also a field noun: "top CVEs", "CVEs on web1".
+		t.setModel("Vulnerabilities")
+		t.vulnCategory = "vulnerability"
+		return t.ruleNoun()
+	case "kev", "exploited":
+		t.setModel("Vulnerabilities")
+		t.vulnCategory, t.vulnKEV = "vulnerability", true
+		return t.note(1, "vulnerabilities attackers are known to use (CISA KEV)")
+	case "critical", "high", "medium", "low":
+		t.vulnSeverity = w
+		return t.note(1, "only %s severity", w)
+	}
+	if app, ok := vulnServices[w]; ok {
+		t.addFilter("app", app)
+		return t.note(1, "service %s %s", negWord(t.lastNeg()), app)
+	}
+	return 0
+}
+
+// vulnTerms returns the vulnerability filters, in a fixed order:
+// category, severity, known_exploited.
+func (t *translator) vulnTerms() []query.Expr {
+	var out []query.Expr
+	if t.vulnCategory != "" {
+		out = append(out, &query.Compare{Field: "category", Op: "=", Value: t.vulnCategory})
+	}
+	if t.vulnSeverity != "" {
+		out = append(out, &query.Compare{Field: "severity", Op: "=", Value: t.vulnSeverity})
+	}
+	if t.vulnKEV {
+		out = append(out, &query.Compare{Field: "known_exploited", Op: "=", Value: "true"})
 	}
 	return out
 }

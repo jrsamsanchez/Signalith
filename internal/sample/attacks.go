@@ -7,7 +7,7 @@ import (
 
 // attacks weaves the attack stories into the background. Each is designed
 // from a built-in detection's recipe so that every detection that can fire
-// from the seven data models fires at least once, and a few benign
+// from the data models fires at least once, and a few benign
 // look-alikes fire as false positives for triage practice. Every attack
 // uses only the fictional company's hosts and users and the documentation
 // IP ranges, so it is safe.
@@ -19,6 +19,7 @@ func (g *gen) attacks() {
 	g.benignLookalikes()
 	g.malwareOutbreak()
 	g.antivirusHousekeeping()
+	g.vulnerabilityScan()
 }
 
 // day returns a working-hour time n days before the end of the range.

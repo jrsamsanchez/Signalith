@@ -170,6 +170,23 @@ are on by default and raise findings:
 | `av-definitions-failing` | low | Definitions failed to update twice in a day, or are a week old |
 | `av-rule-block` | medium | An attack surface reduction or controlled folder access rule blocked something unusual |
 
+## Vulnerability detections
+
+Three built-in detections read the Vulnerabilities data model, which Signalith's
+own network scans fill (see the **Vulnerabilities** page). All are on by default,
+raise findings and add risk to the scanned host. Each raises one finding per host
+and CVE (or per host, for Telnet) a week: a nightly scan that finds the same
+vulnerability again raises it again only after seven days.
+
+| ID | Severity | Fires when |
+| --- | --- | --- |
+| `vuln-known-exploited` | high | A scan found a vulnerability in CISA's Known Exploited Vulnerabilities catalog (`known_exploited=true`): attackers are using it |
+| `vuln-critical` | medium | A scan found a critical vulnerability (CVSS 9 or higher) that is not known to be exploited yet |
+| `vuln-cleartext-remote-login` | low | A scan found Telnet open, which sends passwords in clear text |
+
+To see everything a scan found on a host, search
+`datamodel=Vulnerabilities dest=<host>`.
+
 ## What a finding contains
 
 The result row, the entities found in it (`user`, `src_user`, `src`, `src_host`,
