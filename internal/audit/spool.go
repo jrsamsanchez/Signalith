@@ -215,6 +215,17 @@ func (s *Sink) SetIdentity(server, nodeID string) {
 	s.server, s.nodeID = server, nodeID
 }
 
+// SetTarget points the sink at another OpenSearch client and index
+// prefix, such as after a restart in place with new settings. A nil
+// client keeps the events spooled.
+func (s *Sink) SetTarget(c Bulker, prefix string) {
+	s.flushing.Lock()
+	defer s.flushing.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.client, s.prefix = c, prefix
+}
+
 // SetEpoch sets the function giving the cluster epoch later events
 // record; nil records none.
 func (s *Sink) SetEpoch(f func() int64) {
@@ -425,12 +436,13 @@ func (s *Sink) Run(ctx context.Context) {
 // later; an event refused for good, such as one OpenSearch cannot parse,
 // is dropped and counted as lost.
 func (s *Sink) Flush(ctx context.Context) error {
-	if s.client == nil {
-		return nil
-	}
 	s.flushing.Lock()
 	defer s.flushing.Unlock()
 	s.mu.Lock()
+	if s.client == nil {
+		s.mu.Unlock()
+		return nil
+	}
 	s.rotateLocked()
 	segs := append([]segment(nil), s.closed...)
 	s.mu.Unlock()
@@ -471,6 +483,9 @@ func (s *Sink) Flush(ctx context.Context) error {
 // flushSegment writes one segment's events. It returns nil once every
 // event is stored or dropped for good.
 func (s *Sink) flushSegment(ctx context.Context, seg segment) error {
+	s.mu.Lock()
+	client, prefix := s.client, s.prefix
+	s.mu.Unlock()
 	data, err := os.ReadFile(filepath.Join(s.dir, seg.name))
 	if errors.Is(err, fs.ErrNotExist) {
 		// Dropped by the cap meanwhile.
@@ -491,12 +506,12 @@ func (s *Sink) flushSegment(ctx context.Context, seg segment) error {
 			bad++
 			continue
 		}
-		docs = append(docs, store.IndexedDoc{Index: IndexName(s.prefix, ev.Time), ID: ev.ID(), Doc: ev.doc()})
+		docs = append(docs, store.IndexedDoc{Index: IndexName(prefix, ev.Time), ID: ev.ID(), Doc: ev.doc()})
 	}
 	for len(docs) > 0 {
 		batch := docs[:min(bulkSize, len(docs))]
 		docs = docs[len(batch):]
-		errs, err := s.client.Bulk(ctx, batch)
+		errs, err := client.Bulk(ctx, batch)
 		if err != nil {
 			return err
 		}

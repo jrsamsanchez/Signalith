@@ -103,6 +103,9 @@ type runner struct {
 	// sharedContent links the shared settings' content (feeds, retention
 	// policies) to the components of each start; nil with shared.
 	sharedContent *sharedContent
+	// audit is the process's audit spool (see sharedaudit.go); nil in
+	// some tests.
+	audit *processAudit
 	// security runs the Security page's checks and keeps the last
 	// report, which a restart keeps.
 	security *api.SecurityChecker
@@ -349,6 +352,9 @@ func (r *runner) followShared(ctx context.Context) {
 			settingsFlip = false
 		}
 		if want == r.sharedContent.on.Load() && wantUsers == r.sharedContent.users.on.Load() && !settingsFlip {
+			if flip, why := r.auditFlip(); flip {
+				_ = r.restartInPlace(why, false)
+			}
 			continue
 		}
 		why := "this server now takes the threat intel feeds and retention policies from the shared settings"

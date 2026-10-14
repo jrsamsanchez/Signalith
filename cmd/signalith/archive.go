@@ -21,7 +21,7 @@ import (
 const archiveUsage = `Usage:
   signalith archive list    [-c file] [-dir folder]
   signalith archive verify  [-c file] [-dir folder] <file or id>...
-  signalith archive restore [-c file] [-dir folder] [-keep-days N] <file or id>...
+  signalith archive restore [-c file] [-dir folder] [-keep-days N] [-confirm] [-offline [-force]] <file or id>...
 
 An archived day is a <index>.ndjson.gz file with a <index>.json manifest
 beside it. Name it by its file path or, for files in the archive folder,
@@ -31,7 +31,13 @@ to lookups.dir; -dir overrides it. Installs that set SIGNALITH_ARCHIVE_DIR
 for the service (the systemd unit sets /var/lib/signalith/archive) need
 the same here, or -dir.
 
-restore installs Signalith's index template first, so restored days get
+On servers that share their archives (a cluster at level 4 or later),
+restore asks the server that runs retention to restore the days and shows
+its progress; -confirm restores even when the disk check asks first.
+-offline restores from the files here instead, for when no server runs:
+it is refused while a server that runs retention is up, unless -force.
+
+restore installs Signalith's index template first, if it is missing, so restored days get
 the same field types as live ones, even on a new OpenSearch.`
 
 func cmdArchive(args []string) error {
@@ -44,6 +50,9 @@ func cmdArchive(args []string) error {
 	path := configFlag(fs)
 	dir := fs.String("dir", "", "archive folder (default: from the config file)")
 	keep := fs.Int("keep-days", retention.DefaultRestoreDays, "days a restored day stays searchable before retention may delete it again")
+	confirm := fs.Bool("confirm", false, "restore even when the disk check asks first (servers that share their archives)")
+	offline := fs.Bool("offline", false, "restore from the files here, not through the server that runs retention")
+	force := fs.Bool("force", false, "with -offline, restore even while a server runs retention")
 	fs.Parse(args[1:])
 	c, err := config.Load(*path)
 	if err != nil {
@@ -78,7 +87,9 @@ func cmdArchive(args []string) error {
 			// instead of keyword), and searches and stats on these days
 			// would not work like on others. Starting the server later does
 			// not fix indices that already exist.
-			herr = ingest.PutIndexTemplate(hctx, cl, c.OpenSearch.IndexPrefix, c.OpenSearch.Replicas.IndexSettings(), nil)
+			// One already there from this version or a later one, which a
+			// server may have saved, is left as it is.
+			_, herr = ingest.RestoreIndexTemplate(hctx, cl, c.OpenSearch.IndexPrefix, c.OpenSearch.Replicas.IndexSettings(), nil)
 			if herr != nil {
 				herr = fmt.Errorf("could not install the index template, so nothing was restored: %w", herr)
 			}
@@ -88,6 +99,21 @@ func cmdArchive(args []string) error {
 		cancel()
 		if herr != nil {
 			return herr
+		}
+		ac, err := openArchiveCluster(ctx, c, cl, os.Stderr)
+		if err != nil {
+			return err
+		}
+		if ac != nil && !*offline {
+			if len(fs.Args()) == 0 {
+				return errors.New("name at least one archive ID; list them with: signalith archive list")
+			}
+			return ac.restore(ctx, fs.Args(), *keep, *confirm, os.Stdout)
+		}
+		if *offline {
+			if err := ac.offlineAllowed(*force); err != nil {
+				return err
+			}
 		}
 		until := time.Now().UTC().AddDate(0, 0, *keep).Format(time.DateOnly)
 		return archiveEach(folder, fs.Args(), func(a *retention.Archive, m retention.Manifest) error {

@@ -44,7 +44,7 @@ func openShared(c *config.Config, node *cluster.Node, log *slog.Logger) (*shared
 		LeaseEpoch: node.Lease().Epoch,
 		Peers:      func() []shared.Peer { return peersOf(node.Status()) },
 		Content:    ct.track,
-		Importers:  clustercfg.Importers(ct.docs, ct.files()),
+		Importers:  append(clustercfg.Importers(ct.docs, ct.files()), auditImporters(ct)...),
 		Log:        log,
 	})
 	ct.rt.Store(rt)
