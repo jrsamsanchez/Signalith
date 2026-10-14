@@ -297,6 +297,10 @@ func (m *Manager) Prepare(scope string) error {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	// Under the lock, so it cannot race UseStore.
+	if m.inCluster() {
+		return ErrClusterCA
+	}
 	if exists(m.path(previousDir)) {
 		return ErrPreviousKept
 	}
@@ -348,6 +352,10 @@ func (m *Manager) Discard() error {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	// Under the lock, so it cannot race UseStore.
+	if m.inCluster() {
+		return ErrClusterCA
+	}
 	if !exists(m.path(nextDir)) {
 		return ErrNothingToCancel
 	}
@@ -366,6 +374,10 @@ func (m *Manager) Prune() error {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	// Under the lock, so it cannot race UseStore.
+	if m.inCluster() {
+		return ErrClusterCA
+	}
 	if !exists(m.path(previousDir)) {
 		return ErrNoPrevious
 	}
@@ -390,6 +402,10 @@ func (m *Manager) Switch() error {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	// Under the lock, so it cannot race UseStore.
+	if m.inCluster() {
+		return ErrClusterCA
+	}
 	if !exists(m.path(nextDir, CAFile)) {
 		return ErrNoNext
 	}
@@ -461,6 +477,10 @@ func (m *Manager) Rollback() error {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	// Under the lock, so it cannot race UseStore.
+	if m.inCluster() {
+		return ErrClusterCA
+	}
 	if !exists(m.path(previousDir, CAFile)) {
 		return ErrNoPrevious
 	}

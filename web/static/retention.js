@@ -22,7 +22,7 @@ const RT_ICON = {
   authentication: 'key-round', endpoint: 'monitor', network_traffic: 'network', change: 'square-pen', malware: 'bug',
   filesystem: 'folder', registry: 'layers', network_resolution: 'globe', image_load: 'cpu', script: 'square-terminal',
   inventory: 'list', configuration_check: 'list-checks', alerts: 'bell',
-  other: 'box', risk: 'gauge', findings: 'shield-alert', cases: 'briefcase', intel: 'radar',
+  other: 'box', risk: 'gauge', findings: 'shield-alert', cases: 'briefcase', intel: 'radar', audit: 'scroll-text',
 };
 const RT_FIELD_NAME = { keep_days: 'Keep', max_size_gb: 'Size cap', compact_after_days: 'Compact after', max_disk_percent: 'Max disk use', min_days: 'Min days' };
 
@@ -64,7 +64,7 @@ function rtCount(n) {
   return `${v.toLocaleString(undefined, { maximumFractionDigits: v < 10 ? 1 : 0 })} ${big[1]}`;
 }
 function rtNoun(id, n) {
-  const nouns = { findings: ['finding', 'findings'], cases: ['investigation', 'investigations'], intel: ['indicator', 'indicators'] };
+  const nouns = { findings: ['finding', 'findings'], cases: ['investigation', 'investigations'], intel: ['indicator', 'indicators'], audit: ['record', 'records'] };
   const [one, many] = nouns[id] || ['event', 'events'];
   return `${rtCount(n)} ${n === 1 ? one : many}`;
 }
@@ -435,7 +435,8 @@ function rtRow(c, ov) {
   if (!c.oldest_day) oldest = el('td', { class: 'rt-c-oldest hide-sm' }, rtDash());
   else {
     const bits = [];
-    if (c.kind === 'events') {
+    if (c.kind === 'monthly') bits.push(c.days === 1 ? '1 month' : `${c.days.toLocaleString()} months`);
+    else if (c.kind === 'events') {
       bits.push(rtDays(c.days));
       if (c.compacted_days) bits.push(`${c.compacted_days.toLocaleString()} compacted`);
       if (c.restored_days) bits.push(`${c.restored_days.toLocaleString()} restored`);
@@ -468,7 +469,7 @@ function rtRow(c, ov) {
       variant('rt-show-wide', [...closing, ...due]), variant('rt-show-md', [...closing, ...md, ...due]), variant('rt-show-phone', [...md, ...due])];
   }
   const compact = el('td', { class: 'rt-c-compact hide-md hide-sm' }, c.kind === 'events' && pol.compact_after_days ? `After ${rtDays(pol.compact_after_days)}` : rtDash());
-  const archive = el('td', { class: 'rt-c-archive hide-md hide-sm' }, c.kind === 'events' && pol.archive ? el('span', { class: 'rt-yes' }, icon('check', 'icon--sm'), 'Yes') : rtDash());
+  const archive = el('td', { class: 'rt-c-archive hide-md hide-sm' }, (c.kind === 'events' || c.kind === 'monthly') && pol.archive ? el('span', { class: 'rt-yes' }, icon('check', 'icon--sm'), 'Yes') : rtDash());
 
   const can = rtCanEdit(c);
   const open = () => rtOpenCategory(c.id);
@@ -556,7 +557,7 @@ function rtGroupActions(acts) {
     const t = new Date(a.time).getTime();
     if (prev === null || Math.abs(prev - t) > 10 * 60 * 1000) burst = new Map();
     prev = t;
-    const key = !a.error && a.day ? [a.action, a.category, a.reason, a.by].join('\u0000') : null;
+    const key = !a.error && a.day ? [a.action, a.category, a.reason, a.by, a.server].join('\u0000') : null;
     const g = key && burst.get(key);
     if (g) {
       g.days.push(a.day);
@@ -626,7 +627,8 @@ function rtActivity(ov) {
     else if (a.bytes) amount = rtBytes(a.bytes);
     const why = failed
       ? el('span', { class: 'rt-bad' }, rtFix(a.error))
-      : [a.reason ? rtSentence(a.reason) : '', a.by ? el('span', { class: 'subtle' }, ` By ${a.by}.`) : null];
+      : [a.reason ? rtSentence(a.reason) : '', a.by ? el('span', { class: 'subtle' }, ` By ${a.by}.`) : null,
+        a.server ? el('span', { class: 'subtle' }, ` On ${a.server}.`) : null];
     const ix = [...a.indices].sort();
     const title = ix.length > 1 ? `${ix[0]} to ${ix[ix.length - 1]}` : ix[0] || '';
     return el('tr', failed ? { 'data-failed': '' } : {},
@@ -904,12 +906,13 @@ function rtOpenCategory(id) {
   rtRememberOpener();
   if (!rtState.opener) rtState.opener = 'row-' + id;
   const records = c.kind === 'records';
-  rtState.edit = { target: 'category', cat: c, mode: c.source === 'ui' ? 'own' : 'default' };
+  // Audit records have no default policy to follow: theirs is built in.
+  rtState.edit = { target: 'category', cat: c, mode: c.source === 'ui' || c.kind === 'monthly' ? 'own' : 'default' };
   $('rt-edit-title').textContent = c.name;
   $('rt-edit-desc').textContent = records
     ? (c.id === 'findings' ? 'Alerts raised by detections. Only resolved and closed findings are ever deleted.' : 'Only resolved and closed investigations are ever deleted.')
     : c.description;
-  rtFillForm(c.policy, records ? 'records' : 'events', c);
+  rtFillForm(c.policy, records ? 'records' : c.kind === 'monthly' ? 'monthly' : 'events', c);
   rtEditOpen();
 }
 function rtOpenDefault() {
@@ -940,6 +943,10 @@ function rtFillForm(p, kind, c) {
     $('rt-keep-hint').textContent = c.id === 'findings'
       ? 'Days since a resolved or closed finding last changed. Open findings stay, and so do findings in an investigation, for as long as the investigation is kept.'
       : 'Days since a resolved or closed investigation last changed. Open ones stay, with their notes and pinned events.';
+  } else if (kind === 'monthly') {
+    $('rt-keep-label').textContent = 'Keep for';
+    $('rt-forever-label').textContent = 'Forever';
+    $('rt-keep-hint').textContent = 'Kept by month: a month is deleted once its last day is older than this. The current month is always kept.';
   } else {
     $('rt-keep-label').textContent = 'Keep searchable for';
     $('rt-forever-label').textContent = 'Forever';
@@ -1039,6 +1046,7 @@ function rtFormBody() {
   const forever = $('rt-forever').checked;
   const keep = forever ? 0 : rtNum($('rt-keep'));
   if (records) return forever ? null : { keep_days: keep };
+  if (e.target === 'category' && e.cat.kind === 'monthly') return { keep_days: keep, archive: $('rt-archive').checked };
   return {
     keep_days: keep,
     max_size_gb: rtNum($('rt-cap'), true) || 0,
@@ -1450,7 +1458,8 @@ async function rtLoadArchive(quiet) {
 const rtArchBusy = (a) => !!a && (a.restores || []).some((r) => r.state === 'queued' || r.state === 'running');
 const rtArchRowBusy = (a) => !!a.restore && (a.restore.state === 'queued' || a.restore.state === 'running');
 // Only the server that runs retention restores.
-const rtCanRestore = () => !!rtState.ov && !rtState.ov.schedule.read_only;
+// Where archives are shared, any server asks it to, and follows along.
+const rtCanRestore = () => !!rtState.ov && (!rtState.ov.schedule.read_only || !!rtState.ov.restore_queued);
 
 function rtArchState(a) {
   const r = a.restore;
@@ -1583,6 +1592,13 @@ function rtRenderArchive() {
   if (ov && ov.archive.same_disk && (res.archives.length || ov.categories.some((c) => c.kind === 'events' && c.policy.archive))) {
     msgs.push(riAlert('info', 'The archive folder looks to be on OpenSearch’s disk.',
       el('p', {}, 'Archiving the days the disk guard picks then takes space on the disk it is trying to free. Point retention.archive_dir at another disk.')));
+  }
+  if (ov && ov.archive.held_back) {
+    msgs.push(riAlert('warning', 'Days that should be archived are kept for now.', el('p', {}, rtSentence(ov.archive.held_back))));
+  }
+  if (ov && (ov.archive.on || []).length) {
+    msgs.push(riAlert('info', `Retention archiving can run on: ${ov.archive.on.join(', ')}.`,
+      el('p', {}, 'These servers reach the shared archive folder. Restores asked on any server run on the one that runs retention.')));
   }
   const msgKey = JSON.stringify(msgs.map((m) => m.textContent));
   if ($('rt-arch-msg').dataset.key !== msgKey) {
@@ -1811,8 +1827,10 @@ $('rt-restore-form').addEventListener('submit', async (ev) => {
     const res = await api('api/retention/archive/restore', { ids, keep_days: keep, confirm: !!chk.needs_confirm }, 'POST');
     $('rt-restore').close();
     rtState.selected.clear();
-    const n = (res.restores || []).length;
-    toast(`Restoring ${rtDays(n)}. Each is searchable as soon as it finishes.`);
+    const n = res.request_id ? ids.length : (res.restores || []).length;
+    toast(res.request_id
+      ? `Asked ${res.queued_on || 'the server that runs retention'} to restore ${rtDays(n)}. Each is searchable as soon as it finishes.`
+      : `Restoring ${rtDays(n)}. Each is searchable as soon as it finishes.`);
     rtLoadArchive(true);
     rtLoad(true);
   } catch (e) {

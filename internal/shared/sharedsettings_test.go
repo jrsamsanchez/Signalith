@@ -51,6 +51,8 @@ func TestLevelSharedSettings(t *testing.T) {
 	a := e.server("siem-a", func(o *RuntimeOptions) {
 		o.KeyFile = writeKeyFile(t, k)
 		o.Peers = peers.get
+		// This test is about level 3; later levels have tests of their own.
+		o.levelMax = LevelSharedSettings
 		o.Importers = append(usersIm(), settingsIm)
 	})
 	a.holds.Store(true)
@@ -66,6 +68,7 @@ func TestLevelSharedSettings(t *testing.T) {
 
 	// The other server is upgraded: the level goes up, but settings are
 	// shared only once their import is done.
+	// It reads level 3, not later ones, so the level stays there.
 	other.LevelMax = LevelSharedSettings
 	peers.set(self, other)
 	a.step()

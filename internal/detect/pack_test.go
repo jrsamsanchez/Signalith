@@ -172,9 +172,15 @@ func TestPackDetections(t *testing.T) {
 		if o.Author == "" || !strings.Contains(o.Credit(), o.Author) {
 			t.Errorf("%s: credit %q", d.ID, o.Credit())
 		}
+		// Its ATT&CK techniques are in the matrix, or retired ones that
+		// were replaced (T1035.009 is a Splunk rule's typo).
+		for _, id := range d.MITRE {
+			if _, ok := ATTACK().Technique(id); !ok && id != "T1035.009" {
+				t.Errorf("%s: technique %s is not in ATT&CK %s", d.ID, id, ATTACK().Version)
+			}
+		}
 		// Each rule reads only its own system's events.
-		if !strings.Contains(d.Query, "sourcetype=WinEventLog:*") && !strings.Contains(d.Query, "sourcetype=WinEventLog:System") &&
-			!strings.Contains(d.Query, "sourcetype=WinEventLog:Application") &&
+		if !strings.Contains(d.Query, "sourcetype=WinEventLog:") && !strings.Contains(d.Query, `sourcetype="WinEventLog:`) &&
 			!strings.Contains(d.Query, "sourcetype=sysmon:linux") && !strings.Contains(d.Query, "sourcetype=linux:audit") {
 			t.Errorf("%s: not limited to Windows, Sysmon for Linux or Linux audit events: %s", d.ID, d.Query)
 		}

@@ -85,6 +85,17 @@ func generateOTel(o Options) (*Agent, error) {
 		// other programs log.
 		b.WriteString("  windowseventlog/application:\n    channel: Application\n    storage: file_storage/signalith\n")
 		receivers = append(receivers, "windowseventlog/application")
+		// Code Integrity: unsigned, revoked and blocked drivers and
+		// images.
+		b.WriteString("  windowseventlog/codeintegrity:\n    channel: Microsoft-Windows-CodeIntegrity/Operational\n    storage: file_storage/signalith\n")
+		receivers = append(receivers, "windowseventlog/codeintegrity")
+		// Windows Firewall's rules and settings changed, BITS's download
+		// and upload jobs, app packages installed and WMI activity.
+		b.WriteString("  windowseventlog/firewall:\n    channel: Microsoft-Windows-Windows Firewall With Advanced Security/Firewall\n    storage: file_storage/signalith\n")
+		b.WriteString("  windowseventlog/bits:\n    channel: Microsoft-Windows-Bits-Client/Operational\n    storage: file_storage/signalith\n")
+		b.WriteString("  windowseventlog/appx:\n    channel: Microsoft-Windows-AppXDeploymentServer/Operational\n    storage: file_storage/signalith\n")
+		b.WriteString("  windowseventlog/wmi:\n    channel: Microsoft-Windows-WMI-Activity/Operational\n    storage: file_storage/signalith\n")
+		receivers = append(receivers, "windowseventlog/firewall", "windowseventlog/bits", "windowseventlog/appx", "windowseventlog/wmi")
 		if o.Sysmon {
 			b.WriteString("  windowseventlog/sysmon:\n    channel: Microsoft-Windows-Sysmon/Operational\n    storage: file_storage/signalith\n")
 			receivers = append(receivers, "windowseventlog/sysmon")

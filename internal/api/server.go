@@ -85,6 +85,8 @@ type Server struct {
 	// Retention enforces data retention policies; nil disables the Data
 	// retention page.
 	Retention *retention.Manager
+	// Audit backs the Audit page; nil leaves it empty.
+	Audit *Audit
 	// Endpoints manages the hosts that run osquery (the Endpoints page and
 	// osquery's remote API); nil disables them.
 	Endpoints *endpoint.Store
@@ -179,6 +181,9 @@ type Server struct {
 	// how old an event's own time may be in the pipeline and syslog. nil
 	// leaves the age the server started with.
 	EventAge EventAge
+	// ClusterTLS is the cluster's one certificate authority; nil on a
+	// server that is not a member of a cluster.
+	ClusterTLS ClusterTLS
 
 	authOnce     sync.Once
 	creds        credCache  // recently checked Basic credentials
@@ -191,6 +196,7 @@ type Server struct {
 	background   sync.WaitGroup // directory checks still running
 	settingsMu   sync.Mutex     // serializes saves on the Settings page
 	testMu       sync.Mutex     // one connection test at a time
+	aiModels     modelCache     // model lists read from the AI model's service
 	sampleJob    sampleJob      // the one running sample-data load or remove
 	pageCache    pages          // index.html and login.html, rendered
 	// live holds Config with the settings saved on the Settings page that
@@ -285,12 +291,14 @@ func (s *Server) Handler() http.Handler {
 	s.routePlaybooks(api)
 	s.routeUsers(api)
 	s.routeRetention(api)
+	s.routeAudit(api)
 	s.routeRequests(api)
 	s.routeSample(api)
 	s.routeEndpoints(api)
 	s.routeVulns(api)
 	s.routeSettings(api)
 	s.routeCluster(api)
+	s.routeClusterTLS(api)
 	s.routeTokens(api)
 	s.routeAgents(api)
 	if s.UI != nil {
@@ -1136,6 +1144,10 @@ func (s *Server) tlsInfo() map[string]any {
 	if s.TLS.CAPEM() != nil {
 		t["ca_sha256"] = s.TLS.Fingerprint()
 		t["own_ca"] = s.TLS.LocalCA()
+		if s.clusterCAOwner() != "" {
+			// The cluster's: every server's certificate comes from it.
+			t["cluster_ca"] = true
+		}
 	}
 	if ca := s.TLS.CAInfo(); ca != nil {
 		t["ca_scope"] = ca.Scope

@@ -86,7 +86,7 @@ func TestRunEnforcesPolicies(t *testing.T) {
 	// The history survives a restart.
 	m2 := &Manager{Cluster: f.mem, Prefix: "signalith", HistoryFile: f.m.HistoryFile, Archive: f.m.Archive, Now: f.m.Now}
 	m2.init()
-	last, acts := m2.hist.get()
+	last, acts, _ := m2.hist.Recent(context.Background())
 	if last == nil || last.Archived != 1 || len(acts) != 3 {
 		t.Fatalf("history = %+v %+v", last, acts)
 	}
@@ -117,7 +117,7 @@ func TestArchiveFailureKeepsTheIndex(t *testing.T) {
 	if !f.exists(a) || f.exists(b) || run.Archived != 1 || len(run.Errors) != 1 || !strings.Contains(run.Errors[0], "so the index was kept") {
 		t.Errorf("run = %+v", run)
 	}
-	_, acts := f.m.hist.get()
+	_, acts, _ := f.m.hist.Recent(context.Background())
 	if acts[0].Index != a || acts[0].Error == "" || acts[1].Index != b || acts[1].Error != "" {
 		t.Errorf("actions = %+v", acts)
 	}
@@ -311,7 +311,7 @@ func TestFindingsAndCasesRetention(t *testing.T) {
 	if n := len(f.mem.Records("signalith_cases")); n != 2 {
 		t.Errorf("cases left = %d", n)
 	}
-	_, acts := f.m.hist.get()
+	_, acts, _ := f.m.hist.Recent(context.Background())
 	if acts[0].Action != ActionDeleteRecords || acts[0].Category != Cases || acts[0].Docs != 1 {
 		t.Errorf("actions = %+v", acts)
 	}
@@ -401,7 +401,7 @@ func TestRestoreRoundTrip(t *testing.T) {
 	if list, _ := f.m.Archives(context.Background()); len(list.Archives) != 1 || list.Archives[0].Restore == nil || list.Archives[0].Restore.State != RestoreDone {
 		t.Errorf("archives = %+v", list)
 	}
-	_, acts := f.m.hist.get()
+	_, acts, _ := f.m.hist.Recent(context.Background())
 	if !slices.ContainsFunc(acts, func(a Action) bool { return a.Action == ActionRestore && a.Docs == 1200 && a.By == "admin" }) {
 		t.Errorf("actions = %+v", acts)
 	}
@@ -550,10 +550,11 @@ func TestOverview(t *testing.T) {
 	}
 
 	// OpenSearch down: the page still gets policies (every category but
-	// "other", which has no events), and says why sizes are missing.
+	// "other" and "audit", which have no data), and says why sizes are
+	// missing.
 	f.mem.Fail["indices"] = errors.New("connection refused")
 	ov = f.m.Overview(context.Background())
-	if !strings.Contains(ov.Error, "connection refused") || len(ov.Categories) != len(Categories())-1 || ov.Guard.Status.State != GuardUnknown {
+	if !strings.Contains(ov.Error, "connection refused") || len(ov.Categories) != len(Categories())-2 || ov.Guard.Status.State != GuardUnknown {
 		t.Errorf("down: %+v", ov)
 	}
 }

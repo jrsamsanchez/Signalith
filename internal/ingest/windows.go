@@ -5,7 +5,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"unicode"
 )
 
 // Fluent Bit's winevtlog input emits records with these keys: Channel,
@@ -85,8 +84,8 @@ func parseWindowsWith(r map[string]any, named map[string]string) Event {
 			f["provider"] = p
 		}
 		parseWindowsSecurity(eventID, in, &ev)
-	case channel == ApplicationChannel:
-		parseWindowsApplication(str(r, "ProviderName"), in, &ev)
+	case channel == ApplicationChannel || strings.EqualFold(channel, CodeIntegrityChannel):
+		parseWindowsEventData(str(r, "ProviderName"), in, &ev)
 	case channel == SystemChannel:
 		parseWindowsSystem(eventID, str(r, "ProviderName"), in, &ev)
 		if b := str(r, "Binary"); b != "" && ev.Model == "Other" {
@@ -106,6 +105,8 @@ func parseWindowsWith(r map[string]any, named map[string]string) Event {
 			f["provider"] = p
 		}
 		parseSysmon(eventID, kv, &ev)
+	case IsNamedChannel(channel):
+		parseNamedChannel(channel, eventID, str(r, "ProviderName"), in, &ev)
 	case strings.EqualFold(channel, DefenderChannel):
 		parseDefender(eventID, str(r, "Message"), in, &ev)
 	case strings.EqualFold(channel, PowerShellChannel) && eventID == "4104":
@@ -838,17 +839,7 @@ func SystemDataField(name string) (string, bool) {
 }
 
 // systemField is system_ and a data value's name in snake case.
-func systemField(name string) string {
-	var b strings.Builder
-	b.WriteString("system_")
-	for i, r := range name {
-		if unicode.IsUpper(r) && i > 0 && !unicode.IsUpper(rune(name[i-1])) {
-			b.WriteByte('_')
-		}
-		b.WriteRune(unicode.ToLower(r))
-	}
-	return b.String()
-}
+func systemField(name string) string { return snakeField("system", name) }
 
 // systemDataFields are the fields SystemDataField names.
 var systemDataFields = func() map[string]bool {
@@ -886,11 +877,15 @@ func parseSystemEvent(eventID, provider string, in []string, ev *Event) {
 // services (SQL Server, Windows Installer, backup tools) log.
 const ApplicationChannel = "Application"
 
-// parseWindowsApplication reads an Application log event: its provider,
-// and its data values one per line as event_data, which rules search for
-// words inside (each provider's events have their own data). The event
-// stays in Other, found by its provider and ID.
-func parseWindowsApplication(provider string, in []string, ev *Event) {
+// CodeIntegrityChannel is where Windows Code Integrity logs drivers and
+// images that are unsigned, revoked or blocked by policy.
+const CodeIntegrityChannel = "Microsoft-Windows-CodeIntegrity/Operational"
+
+// parseWindowsEventData reads an Application or Code Integrity log event:
+// its provider, and its data values one per line as event_data, which
+// rules search for words inside (each provider's events have their own
+// data). The event stays in Other, found by its provider and ID.
+func parseWindowsEventData(provider string, in []string, ev *Event) {
 	f := ev.Fields
 	if provider != "" {
 		f["provider"] = provider

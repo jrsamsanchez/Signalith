@@ -29,6 +29,9 @@ const (
 	needsPlain = "plain"
 	// needsRevoked: its agent token was revoked.
 	needsRevoked = "revoked"
+	// needsRetiredCA: it trusts only a certificate authority a server
+	// retired when it took the cluster's (agentinv.FlagRetired).
+	needsRetiredCA = agentinv.ReasonRetiredCA
 	// needsOld: it was set up before agents said their computer's name.
 	// Only information: it still works.
 	needsOld = "old"
@@ -39,7 +42,7 @@ type agentView struct {
 	agentinv.Agent
 	Silent bool `json:"silent"`
 	// NeedsConfig lists why it needs a new configuration (needsCA,
-	// needsPlain, needsRevoked), and Notes what is worth knowing but
+	// needsRetiredCA, needsPlain, needsRevoked), and Notes what is worth knowing but
 	// needs nothing done now (needsOld).
 	NeedsConfig []string `json:"needs_config"`
 	Notes       []string `json:"notes"`
@@ -144,7 +147,12 @@ func (s *Server) agentFlags(a agentinv.Agent, current, next string, now time.Tim
 			}
 		}
 	}
-	if wrongCA {
+	switch {
+	case a.NeedsConfig && a.Reason == agentinv.ReasonRetiredCA:
+		// The same failure, with its cause: the cluster took one
+		// certificate authority.
+		v.NeedsConfig = append(v.NeedsConfig, needsRetiredCA)
+	case wrongCA:
 		v.NeedsConfig = append(v.NeedsConfig, needsCA)
 	}
 	// Plain HTTP from the server's own computer never crosses the

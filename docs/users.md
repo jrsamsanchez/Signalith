@@ -860,14 +860,17 @@ agents that send events, shown on the [Endpoints page](endpoints.md)), `GET /api
 `GET /api/vulns/setup`, `PUT /api/vulns/settings`, `POST /api/vulns/networks/{id}/scan`,
 `POST /api/vulns/scans/{id}/stop` (setting up and running [vulnerability scans](vulnerabilities.md)),
 `GET /api/cluster` (the Servers page; see [servers.md](servers.md)), `POST /api/cluster/restart`
-(restart servers one at a time to apply the shared settings), `GET /api/requests/{id}`
+(restart servers one at a time to apply the shared settings), `GET /api/cluster/tls`,
+`POST /api/cluster/tls/choose` (the cluster's one certificate authority; see
+[servers.md](servers.md#one-certificate-authority)), `GET /api/requests/{id}`
 (work asked of the server that runs the background jobs, such as a feed download or a retention
 run; see [servers.md](servers.md#shared-feeds-and-retention-policies)), every
 `/api/notify` route (the Notifications page; see [notifications.md](notifications.md)), every
-`/api/retention` route (see [retention.md](retention.md)), every
+`/api/retention` route (see [retention.md](retention.md)), `GET /api/audit` and
+`GET /api/audit/servers` (the [Audit page](audit.md)), every
 `/api/users` and `/api/auth/directory` route below, and every `/api/settings` route
 (`GET` and `PUT /api/settings`, `POST /api/settings/test/opensearch`,
-`POST /api/settings/test/assistant`, `POST /api/settings/restart`,
+`POST /api/settings/test/assistant`, `POST /api/settings/assistant/models`, `POST /api/settings/restart`,
 `GET /api/settings/export`; see [settings.md](settings.md#api)).
 
 A route added without a role is admin-only, and a test fails until it gets one. That

@@ -144,7 +144,13 @@ const dayLayout = "2006.01.02"
 // YYYY.MM.DD, into its category and day. It reports false for every other
 // name, including indices of other prefixes and unknown categories, which
 // retention never touches.
+//
+// It also accepts the monthly indices of KindMonthly categories,
+// <prefix>_<category>-YYYY.MM, whose day is the first of the month.
 func ParseIndex(prefix, name string) (category string, day time.Time, ok bool) {
+	if rest, ok := strings.CutPrefix(name, prefix+"_"); ok {
+		return parseMonthly(rest)
+	}
 	rest, ok := strings.CutPrefix(name, prefix+"-")
 	if !ok || len(rest) < len(dayLayout)+2 || rest[len(rest)-len(dayLayout)-1] != '-' {
 		return "", time.Time{}, false
@@ -160,6 +166,35 @@ func ParseIndex(prefix, name string) (category string, day time.Time, ok bool) {
 	}
 	return category, day, true
 }
+
+// monthLayout is the date suffix of monthly index names.
+const monthLayout = "2006.01"
+
+// parseMonthly splits <category>-YYYY.MM of a KindMonthly category.
+func parseMonthly(rest string) (string, time.Time, bool) {
+	if len(rest) < len(monthLayout)+2 || rest[len(rest)-len(monthLayout)-1] != '-' {
+		return "", time.Time{}, false
+	}
+	ms := rest[len(rest)-len(monthLayout):]
+	category := rest[:len(rest)-len(monthLayout)-1]
+	if c, found := CategoryByID(category); !found || c.Kind != KindMonthly {
+		return "", time.Time{}, false
+	}
+	day, err := time.Parse(monthLayout, ms)
+	if err != nil || day.Format(monthLayout) != ms {
+		return "", time.Time{}, false
+	}
+	return category, day, true
+}
+
+// MonthlyIndexName returns the monthly index of a KindMonthly category
+// that holds t: <prefix>_<category>-YYYY.MM.
+func MonthlyIndexName(prefix, category string, t time.Time) string {
+	return prefix + "_" + category + "-" + t.UTC().Format(monthLayout)
+}
+
+// monthEnd is the last day of the month that starts on day.
+func monthEnd(day time.Time) time.Time { return day.AddDate(0, 1, -1) }
 
 // IndexName returns the daily index of a category, as ingest names it.
 func IndexName(prefix, category string, day time.Time) string {

@@ -1,0 +1,61 @@
+name: Nightly load test
+# The CI-size load scenarios in loadtest/ (S1, S2, S3, S4 and S6) on two
+# servers that share the Docker quick start's secured OpenSearch: ingest
+# with every event checked, idle cost, people on both servers, the leader
+# stalled and killed, and password guessing. Nightly only, never on pull
+# requests, so it does not hold up the runners they share.
+on:
+  schedule:
+    - cron: '30 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  load:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      COMPOSE: docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.build.yml -f ${{ github.workspace }}/ci-opensearch-port.yml
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+      - name: Build
+        run: go build ./cmd/signalith ./cmd/signalith-loadgen
+      - name: Start the Docker quick start's OpenSearch
+        run: |
+          cat > ci-opensearch-port.yml <<'YAML'
+          services:
+            opensearch:
+              ports:
+                - "127.0.0.1:9200:9200"
+          YAML
+          $COMPOSE up -d --build
+          # Signalith's OpenSearch certificate, which the test servers use;
+          # the quick start's own server is not needed.
+          secrets="$RUNNER_TEMP/signalith-secrets"
+          mkdir -p "$secrets"
+          $COMPOSE cp signalith:/run/signalith-secrets/. "$secrets/"
+          $COMPOSE stop signalith
+      # The test starts the servers itself (as the cluster tests do) and
+      # runs each scenario file; any failed criterion fails the job.
+      - name: Load scenarios
+        env:
+          SIGNALITH_TEST_OPENSEARCH: https://localhost:9200
+          SIGNALITH_TEST_OPENSEARCH_CA: ${{ runner.temp }}/signalith-secrets/opensearch-ca.pem
+          SIGNALITH_TEST_OPENSEARCH_CERT: ${{ runner.temp }}/signalith-secrets/opensearch-client.pem
+          SIGNALITH_TEST_OPENSEARCH_KEY: ${{ runner.temp }}/signalith-secrets/opensearch-client-key.pem
+          LOADGEN_REPORT_DIR: ${{ runner.temp }}/load-reports
+        run: go test -tags integration -count=1 -v -run '^TestLoadgen' -timeout 25m ./cmd/signalith-loadgen/
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: load-reports
+          path: ${{ runner.temp }}/load-reports
+          if-no-files-found: ignore
+      - name: Container logs
+        if: failure()
+        run: $COMPOSE logs --no-color

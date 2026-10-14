@@ -1,0 +1,35 @@
+# S5: a large configuration, made through the API. The times each seed
+# step takes are recorded (not pass/fail) until the sizing work measures
+# what to expect; the phase after it shows how the servers do with it.
+name: s5-config
+description: Thousands of users, detections and indicators, then everyday use.
+targets: [https://lb.lab:8443]
+ca_file: lab/ca.pem
+credentials:
+  admin_file: lab/admin.txt
+  token_file: lab/token.txt
+seed:
+  - name: users
+    method: POST
+    path: /api/users
+    count: 5000
+    body: '{"username":"lg-{run}-s{i}","password":"lg-{run}-password-{i}","role":"viewer","must_change_password":false}'
+  - name: detections
+    method: POST
+    path: /api/detections
+    count: 1000
+    body: '{"id":"lg_{run}_{i}","title":"Load test rule {i}","query":"loadgen_run={run} host=agent-{i}","schedule":"15m","lookback":"15m","severity":"low","enabled":true}'
+  - name: indicators
+    method: POST
+    path: /api/intel/indicators
+    count: 20000
+    body: '{"value":"lg-{run}-{i}.example","type":"domain","description":"load test","expires":"7d"}'
+phases:
+  - name: use
+    for: 10m
+    agents: {n: 2000, rate: 20000}
+    users: {n: 20, create: true}
+criteria:
+  - {name: page_p95_ms}
+  - {name: search_p95_ms}
+  - {name: ingest_p99_ms}

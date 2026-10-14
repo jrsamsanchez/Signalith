@@ -1,0 +1,18 @@
+# S6: password guessing spread over every server and many source
+# addresses. Each account should get only a few real password checks in
+# total, whichever server is asked, before sign-ins to it are refused.
+# Locally each source has its own loopback address; through a load
+# balancer that sends PROXY v2, use via_proxy (needs proxy_protocol).
+name: s6-brute
+description: Wrong passwords against 20 accounts from 200 addresses, over all servers.
+targets: [https://localhost:8441, https://localhost:8442]
+ca_files: [loadtest/compose/out/siem-a-ca.pem, loadtest/compose/out/siem-b-ca.pem]
+credentials:
+  admin_file: loadtest/compose/out/admin.txt
+phases:
+  - {name: guess, for: 1m, brute: {accounts: 20, sources: 200, rate: 20}}
+criteria:
+  # About 10 failures per account in total before strangers are slowed
+  # down, plus the few the doubling wait lets through in a minute.
+  - {name: brute_checked_per_account, max: 20}
+  - {name: brute_lockouts}

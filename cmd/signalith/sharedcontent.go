@@ -65,6 +65,10 @@ type sharedContent struct {
 	// applyMu keeps the changes of the files from being applied twice at
 	// once: by a start, and before the next one (runner.applyFiles).
 	applyMu sync.Mutex
+	// ownMu is held while this server's own settings move out of
+	// settings.yaml (runner.importOwn), and by a save there on the
+	// Settings page (settingsStore.HoldFile).
+	ownMu sync.Mutex
 	// library links the shared detections and dashboards (see
 	// sharedlibrary.go).
 	library *sharedLibrary
@@ -289,11 +293,14 @@ var sharedPrints = []func(fp *cluster.Fingerprints, rt *shared.Runtime, s string
 // runs the background jobs: a feed download asked on another server, and
 // a retention run. A new shared feature appends its handlers to the list,
 // each with its own request types.
-func contentHandlers(feeds *intel.Feeds, ret *retention.Manager) map[string]shared.Handler {
+func contentHandlers(feeds *intel.Feeds, ret *retention.Manager, archives map[string]shared.Handler) map[string]shared.Handler {
 	out := map[string]shared.Handler{}
 	for _, hs := range []map[string]shared.Handler{
 		feedHandlers(feeds),
 		retentionHandlers(ret),
+		// Restores of shared archives (sharedaudit.go), nil until they
+		// are shared.
+		archives,
 		// Append a new shared feature's handlers here.
 	} {
 		for k := range hs {

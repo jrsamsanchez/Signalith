@@ -138,6 +138,14 @@ that refused the new certificate (from failed TLS handshakes, over HTTPS and sys
 **To fix:** follow
 [Switching to a new certificate authority](https.md#switching-to-a-new-certificate-authority).
 
+On a server that uses the certificate authority the servers of a cluster share, the page
+shows a **Cluster certificate authority** card with its fingerprint instead of the steps
+to change it, and the buttons that would change it open the Servers page: the cluster's
+certificate authority isn't changed on one server (see
+[One certificate authority](servers.md#one-certificate-authority)). `GET /api/security`
+then says `"ca_owner": "cluster"`, and `POST /api/security/ca` answers `409`. Its key
+isn't in `tls/ca.key`, so the command below shows the copy of its certificate.
+
 **How to check by hand:**
 
 ```sh
@@ -345,14 +353,19 @@ config file. Each disk is reported once.
 Shown when the archive folder holds archives, or a retention policy archives days.
 
 **Looks at:** the archive folder (`retention.archive_dir`): how many days it holds and
-their size, who can read it, and the disk under it, as for
-[Disk encryption](#disk-encryption). Signalith doesn't encrypt archives itself.
+their size, how many are plain files rather than encrypted, who can read it, and,
+when some are plain, the disk under it, as for [Disk encryption](#disk-encryption).
+Signalith encrypts archives unless `retention.encrypt_archives` is `false`; days
+archived before it did stay plain (see [Encryption](retention.md#encryption)).
 
-- Good: on an encrypted disk, readable only by Signalith.
-- Needs attention: other accounts can read the archives, or the disk isn't encrypted.
-- Can't tell: Signalith can't see the disk or share under them.
+- Good: every archive is encrypted, or the plain ones are on an encrypted disk, and
+  only Signalith can read the folder.
+- Needs attention: other accounts can read the archives, or plain archives are on a
+  disk that isn't encrypted.
+- Can't tell: Signalith can't see the disk or share under plain archives.
 
-**To fix:** keep the archive folder on an encrypted disk, readable only by Signalith; see
+**To fix:** keep the archive folder readable only by Signalith, and keep plain
+archives on an encrypted disk or leave archive encryption on; see
 [Archives](retention.md#archives). Copies of archives you move elsewhere are only as safe
 as where you put them.
 

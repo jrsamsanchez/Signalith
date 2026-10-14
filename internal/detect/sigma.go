@@ -471,6 +471,16 @@ func ConvertSigmaWith(src []byte, opt SigmaOptions) (*SigmaResult, error) {
 			// The Application log, each rule naming its provider and
 			// events, and searching their data (Data).
 			category = "application"
+		case "codeintegrity-operational":
+			// Code Integrity's log, each rule naming its events.
+			category = "code_integrity"
+		default:
+			// A log the parser reads by name (Windows Firewall, BITS, AppX
+			// deployment, WMI), each rule naming its events and their
+			// data.
+			if _, ok := ingest.NamedChannelServices[strings.ToLower(service)]; ok {
+				category = ingest.NamedChannelCategory(service)
+			}
 		case "security":
 			// A Security log rule's fields are its event's own, so it
 			// converts for one event, or events with the same data.
@@ -630,6 +640,11 @@ func productScope(ls map[string]any, category string) query.Expr {
 			return &query.Compare{Field: "sourcetype", Op: "=", Value: "WinEventLog:" + ingest.SystemChannel}
 		case "application":
 			return &query.Compare{Field: "sourcetype", Op: "=", Value: "WinEventLog:" + ingest.ApplicationChannel}
+		case "code_integrity":
+			return &query.Compare{Field: "sourcetype", Op: "=", Value: "WinEventLog:" + ingest.CodeIntegrityChannel}
+		}
+		if ch, ok := sigmaNamedChannels[category]; ok {
+			return &query.Compare{Field: "sourcetype", Op: "=", Value: "WinEventLog:" + ch}
 		}
 		st := &query.Compare{Field: "sourcetype", Op: "=", Value: windowsSourcetypes}
 		if ids := sigmaWindowsEvents[category]; len(ids) > 0 {
@@ -670,12 +685,15 @@ func (c *sigmaConv) datamodel(ls map[string]any) string {
 		return "Script"
 	case "system":
 		return "Change"
-	case "system_event", "application":
+	case "system_event", "application", "code_integrity":
 		return "Other"
 	case "auditd":
 		return "Other"
 	case "windefend":
 		return "Malware"
+	}
+	if _, ok := sigmaNamedChannels[c.category]; ok {
+		return "Other"
 	}
 	if id, ok := strings.CutPrefix(c.category, "security_"); ok {
 		return sigmaSecurityModels[id]
@@ -693,8 +711,11 @@ func (c *sigmaConv) field(name string) string {
 	if c.category == "system_event" {
 		return c.systemField(name)
 	}
-	if c.category == "application" {
-		return c.applicationField(name)
+	if c.category == "application" || c.category == "code_integrity" {
+		return c.eventDataField(name)
+	}
+	if ch, ok := sigmaNamedChannels[c.category]; ok {
+		return c.channelField(ch, name)
 	}
 	if m, ok := sigmaEventFields[c.category]; ok {
 		if f := m[strings.ToLower(name)]; f != "" {
@@ -729,9 +750,10 @@ func (c *sigmaConv) systemField(name string) string {
 	return f
 }
 
-// applicationField is the stored field of an Application log event's
-// field: its provider, ID and host, or its data values (Data).
-func (c *sigmaConv) applicationField(name string) string {
+// eventDataField is the stored field of an Application or Code Integrity
+// log event's field: its provider, ID and host, or its data values
+// (Data).
+func (c *sigmaConv) eventDataField(name string) string {
 	switch strings.ToLower(name) {
 	case "provider_name":
 		return "provider"
@@ -742,8 +764,37 @@ func (c *sigmaConv) applicationField(name string) string {
 	case "data":
 		return "event_data"
 	}
-	c.approx("field %s is not data Signalith reads from Application log events", name)
+	c.approx("field %s is not data Signalith reads by name from these log events", name)
 	return name
+}
+
+// sigmaNamedChannels are the Windows logs whose events the parser reads by
+// name (ingest.ChannelDataField), by the category of their rules.
+var sigmaNamedChannels = func() map[string]string {
+	out := map[string]string{}
+	for service, channel := range ingest.NamedChannelServices {
+		out[ingest.NamedChannelCategory(service)] = channel
+	}
+	return out
+}()
+
+// channelField is the stored field of such a log's event's field: its
+// provider, ID and host, or its data (see ingest.ChannelDataField).
+func (c *sigmaConv) channelField(channel, name string) string {
+	switch strings.ToLower(name) {
+	case "provider_name":
+		return "provider"
+	case "eventid":
+		return "signature_id"
+	case "computer", "computername":
+		return "host"
+	}
+	f, ok := ingest.ChannelDataField(channel, name)
+	if !ok {
+		c.approx("field %s is not data Signalith reads from %s events", name, channel)
+		return name
+	}
+	return f
 }
 
 // auditdField is the stored field of an audit record's field (see

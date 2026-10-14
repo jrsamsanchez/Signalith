@@ -218,6 +218,41 @@ type Heartbeat struct {
 	// Restart is the server's restart run by request, nil when it has run
 	// none and runs none now.
 	Restart *RestartStatus `json:"restart,omitempty"`
+	// TLS is the certificate authority the server's HTTPS certificate
+	// comes from, nil from versions before it was reported.
+	TLS *TLSStatus `json:"tls_ca,omitempty"`
+}
+
+// TLSStatus is the certificate authority a server's HTTPS certificate
+// comes from and the names it covers, as its heartbeat carries it, for
+// the choice of the cluster's one certificate authority.
+type TLSStatus struct {
+	// Mode is the server's server.tls.mode: auto (Signalith's own
+	// certificate authority) or files (the admin's certificate).
+	Mode string `json:"mode"`
+	// CASHA256 is the fingerprint of the certificate authority in use and
+	// CACertPEM the certificate itself (its name constraints say which
+	// servers it can vouch for); both empty when the certificate chains
+	// to a public certificate authority.
+	CASHA256  string `json:"ca_sha256,omitempty"`
+	CACertPEM string `json:"ca_cert_pem,omitempty"`
+	// Cluster is true when it is the cluster's certificate authority.
+	Cluster bool `json:"cluster,omitempty"`
+	// Names are the names the certificate covers, and Outside those it
+	// should but the certificate authority may not sign.
+	Names   []string `json:"names,omitempty"`
+	Outside []string `json:"outside,omitempty"`
+	// CoversShared is true when the certificate covers the cluster's
+	// shared address (or there is none).
+	CoversShared bool `json:"covers_shared"`
+	// ChangePending is true while a change of the server's own certificate
+	// authority is prepared or the previous one is kept: it takes the
+	// cluster's only once that is finished or cancelled. AdoptError says
+	// why it has not taken the cluster's, "" when it has or there is none.
+	ChangePending bool   `json:"change_pending,omitempty"`
+	AdoptError    string `json:"adopt_error,omitempty"`
+	// LeafExpires is when the certificate expires.
+	LeafExpires *time.Time `json:"leaf_expires,omitempty"`
 }
 
 // SettingsRev is the revisions of the settings document and of a server's

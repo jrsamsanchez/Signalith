@@ -40,9 +40,18 @@ the run in progress already skips anything the new settings keep. The same setti
 | Risk events | `risk` | `<prefix>-risk-YYYY.MM.DD` | Event policy |
 | Findings | `findings` | `<prefix>_findings` | Delete closed findings after N days |
 | Investigations | `cases` | `<prefix>_cases` | Delete closed cases after N days |
+| Audit records | `audit` | `<prefix>_audit-YYYY.MM` | Kept by month, 400 days by default; listed once it has data or a policy |
 | Threat intel | `intel` | `<prefix>_intel` | Managed by feeds: indicators expire through each feed's `max_age` |
 
 Days are UTC days, the same days the index names use.
+
+**Audit records** are the server's audit log lines (who signed in, who changed a
+user, a setting, a feed or a retention policy), kept in OpenSearch once servers
+share one as a cluster (see [Audit](audit.md)). They are stored by month, not by
+day. Their policy has **Keep** and **Archive before deleting** only: a month is
+deleted, or archived and then deleted, once its last day is more than `keep_days`
+days old, and the current month is never deleted. Size caps, compaction and the
+disk guard leave audit records alone.
 
 ## Event policies
 
@@ -146,7 +155,8 @@ index is deleted:
 1. The index is made read-only and refreshed, so the copy holds every event,
    including those written in the last seconds before.
 2. Every event is written to `<index>.ndjson.gz`, one `{"_id": ..., "_source": ...}`
-   per line, then flushed to disk with fsync.
+   per line, encrypted (see [Encryption](#encryption)), then flushed to disk with
+   fsync.
 3. A manifest `<index>.json` is written beside it, with the event count, file size,
    SHA-256 and creation time.
 4. The file is read back and checked against the manifest. Its event count must also
@@ -182,9 +192,8 @@ index notes the archives it was restored from.
 The archive folder is `retention.archive_dir`, `SIGNALITH_ARCHIVE_DIR`, or an
 `archive` folder next to `lookups.dir`. Docker images and the systemd unit use
 `/var/lib/signalith/archive`; in Docker, mount a volume there to keep archives
-outside the container. Archives are plain gzip and JSON, so `zcat file.ndjson.gz | head` works
-and any tool can read them. Move older files to cheaper storage as you like:
-retention never deletes archive files.
+outside the container. Move older files to cheaper storage as you like: retention
+never deletes archive files.
 
 Example manifest:
 
@@ -200,9 +209,53 @@ Example manifest:
   "bytes": 211630580,
   "index_bytes": 1073741824,
   "sha256": "ace69f8245...",
-  "created": "2026-10-04T03:00:12Z"
+  "created": "2026-10-04T03:00:12Z",
+  "encryption": "aes-256-gcm/sglarc1",
+  "kid": "3f9c1a7e2b40,c0d81e55a9f2"
 }
 ```
+
+### Encryption
+
+Archive files are encrypted, so a copy of the archive folder, a backup of it or a
+stolen disk doesn't give away the events. Each file gets its own random key, and the
+file is encrypted with AES-256-GCM in parts, so a file that was changed, cut short or
+put together from parts of others is refused. The file's key is stored in the file,
+itself encrypted with:
+
+- this server's master key, the one that encrypts the passwords and keys in its
+  settings (see [The master key](encryption.md#the-master-key)), and
+- on servers that share their settings, the cluster key, so every server of the
+  cluster can read every archive.
+
+The manifest names the scheme (`encryption`) and the keys (`kid`). The SHA-256 in the
+manifest is of the encrypted file, so it can be checked without the keys. Archives
+written before encryption, or with it turned off, stay plain gzip and are read as
+before.
+
+Other tools can't read an encrypted file directly. To get the plain gzip, use the CLI
+on a server that has the keys:
+
+```sh
+signalith archive decrypt signalith-endpoint-2026.07.01 | zcat | head
+signalith archive decrypt signalith-endpoint-2026.07.01 > signalith-endpoint-2026.07.01.ndjson.gz
+```
+
+Keep the keys as long as the archives. An archive opens only with its master key or
+the cluster key it was encrypted with, so back up the master key (see
+[Backing up the key](encryption.md#backing-up-the-key)). After a rotation,
+`signalith secrets rotate-master -prune` keeps the previous master key while an
+archive in the archive folder was encrypted with it alone.
+
+To write plain gzip archives instead, for tools that read the files directly, set
+this in signalith.yaml (it can't be set from the page):
+
+```yaml
+retention:
+  encrypt_archives: false
+```
+
+Archives already encrypted stay encrypted and still read.
 
 ### Restoring
 
@@ -219,6 +272,7 @@ You can also use the CLI on the server:
 ```sh
 signalith archive list
 signalith archive verify signalith-endpoint-2026.07.01
+signalith archive decrypt signalith-endpoint-2026.07.01 > day.ndjson.gz
 signalith archive restore -keep-days 30 signalith-endpoint-2026.07.01
 ```
 
@@ -230,7 +284,12 @@ the folder with `-dir`:
 sudo -u signalith signalith archive list -c /etc/signalith/signalith.yaml -dir /var/lib/signalith/archive
 ```
 
-The CLI installs Signalith's index template before it restores, so restored days get
+On servers that share archives, `signalith archive restore` asks the server that
+runs retention to restore the days and shows its progress. Add `-offline` to restore
+from the files directly, for when no server runs; it is refused while a server that
+runs retention is up, unless you add `-force`.
+
+The CLI installs Signalith's index template before it restores, if it is missing, so restored days get
 the same field types as live ones, even on a new OpenSearch that the server has not
 started against yet. It does not check the disk first; use the page for that.
 
@@ -340,6 +399,7 @@ retention:
 | `retention.days` | `90` | Default `keep_days` for event categories without a policy, until a default is saved on the page |
 | `retention.interval` | `1h` | How often policies are enforced (5m to 24h) |
 | `retention.archive_dir` | `archive` next to `lookups.dir` | Archive folder; relative paths are relative to signalith.yaml. `SIGNALITH_ARCHIVE_DIR` overrides it |
+| `retention.encrypt_archives` | `true` | Encrypt archive files ([Encryption](#encryption)); only signalith.yaml can turn it off |
 | `retention.default` | none | Default event policy: `keep_days`, `max_size_gb`, `compact_after_days`, `archive` |
 | `retention.policies.<id>` | none | Policy for one category (IDs above). Findings and cases accept only `keep_days` |
 | `retention.guard.enabled` | `true` | Disk guard on or off |
@@ -361,10 +421,14 @@ server runs retention.
 
 - **Run now** on another server asks the server that runs retention to run: the
   page shows "Asked siem-a to run retention", then whether siem-a started the run
-  or queued it behind one already going. The run is made there, and its result shows
-  on siem-a's Data retention page, as each server keeps its own run history. Saving a
-  change asks siem-a in the same way to apply it now. Restores of archived days are
-  still made on the server that runs retention.
+  or queued it behind one already going. The run is made there. Saving a
+  change asks siem-a in the same way to apply it now.
+- **Restore** on another server asks the server that runs retention to restore the
+  days, after the same disk check; the page follows the restore's progress there.
+- **One history.** The last run and the recent actions are kept as audit records,
+  so every server shows the same history, each action names the server that took
+  it, and the history survives a takeover. `GET /api/retention` says
+  `history_source: "audit"`.
 - **Where each value came from.** Under a policy, the default and the guard, the
   page says where a value that was not set on the page came from, such as
   "Applied from signalith.yaml on siem-b, 2026-10-01" or "Imported from the files
@@ -395,8 +459,19 @@ Archives are written on the server that runs retention, in its archive folder. W
 any policy archives, set `retention.archive_dir` to the same shared folder on every
 server: a server that uses a different folder does not take retention over by
 itself. Signalith names that folder with a small file in it, `.signalith-archive-id`;
-leave it there. Restore from the server that runs retention, or with the CLI after
-copying the files to where you run it.
+leave it there. The page says which servers can archive, and when the server that
+runs retention cannot (its folder is not the shared one, or is missing), it keeps
+the days it would have archived and says so, rather than deleting them unarchived.
+
+Once the cluster keeps audit records (see
+[Audit and archives across servers](servers.md#audit-and-archives-across-servers)),
+the list of archives is kept in OpenSearch as well: each archive is listed there
+before its file is written and marked complete once the file is checked, so every
+server shows the same archives, and two servers can never write the same file.
+Every step that deletes or changes data is also claimed in OpenSearch first, so a
+step a server started before it lost the jobs is never repeated by the next one.
+The CLI restores through the server that runs retention (see
+[Restoring](#restoring)).
 
 Before every step that deletes or changes data, retention checks with OpenSearch
 that its server still runs the background jobs, and stops if not. When OpenSearch's
@@ -441,9 +516,10 @@ error rather than a setting that does nothing.
 | `POST /api/retention/preview` | `{"category":"endpoint","policy":{...}}`, `{"category":"endpoint","policy":null}`, `{"default":{...}}` or `{"guard":{...}}` | What the run that saving starts would do: `summary` and `steps` for the change, `due`, `due_steps` and `due_records` for what is already due, `records`, `deletes_data`, `guard`, `notes` |
 | `POST /api/retention/run` | | `202 {"started":true}`; `409` while a run or restore is going. On a server that does not run retention, with shared settings: `202 {"request_id","queued_on"}` (see below) |
 | `POST /api/retention/policies/confirm` | | Confirms shared policies that wait to be confirmed: `{"confirmed":true,"run_started","run_queued"}`; `409` when none wait |
+| `GET /api/retention/job` | | The restores' progress, as the server that runs them shares it: `{"restores":[...]}` |
 | `GET /api/retention/archive` | | Archived days, with whether each is searchable and its latest restore |
 | `POST /api/retention/archive/preview` | `{"ids":[...],"keep_days":14}` | What the restore does to the disk: `bytes`, `percent_after`, `over_limit`, `flood`, the live days the guard would delete (`steps`, `deletes`, `unarchived`), `needs_confirm` and `message` |
-| `POST /api/retention/archive/restore` | `{"ids":["signalith-endpoint-2026.07.01"],"keep_days":14,"confirm":false}` | `202 {"restores":[...]}` with each restore's state; `409 {"error","check"}` when the restore needs `"confirm":true` |
+| `POST /api/retention/archive/restore` | `{"ids":["signalith-endpoint-2026.07.01"],"keep_days":14,"confirm":false}` | `202 {"restores":[...]}` with each restore's state; `409 {"error","check"}` when the restore needs `"confirm":true`. On a server that does not run retention, once archives are shared: `202 {"request_id","queued_on"}` |
 
 `run_started` is true when saving started a run; `run_queued` when a run or restore
 was going and a new run starts as soon as it ends. With shared settings, saving on a

@@ -360,6 +360,94 @@ cannot be reached (it then answers `/readyz` with `degraded` and pauses changes)
 
 Each change is written to the log as an audit record.
 
+## One certificate authority
+
+Every server that serves HTTPS with its own certificate (**HTTPS** set to Automatic)
+gets it from a certificate authority (CA), which agents, syslog devices and browsers
+trust (see [https.md](https.md#trust-the-certificate)). On a server of its own that CA
+is in `tls/ca.pem` and `tls/ca.key` in its state folder. Once every server of the
+cluster runs a version that shares one, the servers share **one** CA, so one CA
+file works for every server, and an agent set up for one server also sends to the
+others.
+
+**What is shared.** The CA's certificate and its key are kept in the `tls` document of
+the shared settings, signed like the rest, with the key encrypted with the cluster key.
+The key cannot be read from OpenSearch without the cluster key, and it cannot be moved
+under another certificate. Each server still issues and renews its own certificate from
+it, for its own names, its node address, and the names any server added (an address an
+agent was set up with on Add data, up to 32), so no server has to be up for another to
+renew. No server keeps `ca.key` on disk any more: it is deleted once the shared copy has
+been read back from OpenSearch and the server's copy of the shared settings
+(`cluster/cache.enc`) was written. While OpenSearch can't be reached, servers renew
+from that copy. A server that has neither keeps serving the certificate it has (or, if
+that is gone or expired, a stand-in that agents and browsers refuse, until it can reach
+the shared CA) and never makes a new CA.
+
+**A cluster that grew from one server.** The server that makes the cluster shares its
+own CA when no other server seen in the last day uses another one of Signalith's own
+(a server with your own certificate files doesn't count: it keeps them whatever the
+cluster uses). If the servers' heartbeats can't be read at that moment, it shares
+nothing and tries again. Nothing changes for
+agents and browsers: same fingerprint, same CA file. A server that joins later takes the
+shared CA within seconds, issues itself a new certificate from it, and retires its own
+CA (below).
+
+**Servers set up separately.** When servers that each made their own CA meet, nothing is
+shared until an admin chooses which CA to keep, and each server keeps its own meanwhile.
+The **Certificate authority** card on the Servers page lists the CAs in use, one per
+server that holds it:
+
+- how many agents trust each one (from the agents' configurations, or, for older agents
+  that don't say, the servers they reached over HTTPS in the last week), and which agents
+  would need a new configuration if it is kept (agents that only reach servers with your
+  own certificate files are never among them);
+- the servers whose names it may not vouch for: a standard CA vouches only for private
+  names and its own server's names, and a strict one only for its server's
+  ([How far the certificate authority reaches](https.md#how-far-the-certificate-authority-reaches)).
+  Those servers' certificates would leave such names out, and the Servers page shows
+  that in red;
+- a suggestion: the one most agents use, then the one of the server that made the
+  cluster, then the oldest.
+
+**Keep this one** asks the server that holds it to share it (`signalith cluster tls
+choose` does the same from a command line; see [cluster-cli.md](cluster-cli.md#tls)).
+Only that server can, only while it runs (a CA whose servers are all offline is marked
+so, and can't be kept until one is started), and only while its CA is still the one you
+chose. The request is signed with the cluster key, so only a server of the cluster can
+ask for it. Once one is shared, choosing another is refused: changing the cluster's CA
+comes in a later version.
+
+**Retired CAs.** A server that takes the cluster's CA keeps a copy of its old `ca.pem`
+in `tls/retired/<date>-<fingerprint>/` and deletes its old `ca.key`, so the old CA never
+signs again. The cluster also lists it, so every server knows it. An agent whose
+configuration trusts only a retired CA is marked **Needs a new configuration** on the
+[Endpoints page](endpoints.md#log-agents): give it a new configuration from Add data,
+which trusts the cluster's CA. An agent whose configuration trusts both is fine.
+
+**What stays per server.**
+
+- A server with your own certificate files (**HTTPS** set to Your own certificate) never
+  shares its CA and never takes the cluster's. The Servers page warns when its CA differs
+  from the others, since agents set up for the other servers refuse it.
+- The Servers page also warns about a server whose certificate doesn't cover the
+  cluster's shared address (`server.public_url`), which agents sent there by a load
+  balancer would refuse.
+- A server in the middle of a change of its own CA (the Security page's steps) takes the
+  cluster's only once that change is finished or cancelled; until then the Servers page
+  says why it keeps its own. Once a server uses the cluster's CA, the Security page shows
+  **Cluster certificate authority** instead of those steps.
+- Syslog over TLS uses the same certificate, so devices trust the same CA.
+
+From a script, as an admin: `GET /api/cluster/tls` answers what the card shows (`on`
+and `off` say whether the cluster shares a CA yet, then `ca`, `retired`, `servers` with
+each one's `warnings`, and, while none is chosen, `candidates` with their agents, at most
+200 listed with whole counts in `agent_count` and `break_count`).
+`POST /api/cluster/tls/choose` with `{"ca_sha256": "<fingerprint>"}` asks the server
+holding that CA to share it and answers `202` with a `request_id` that
+`GET /api/requests/{id}` follows; `409` when the cluster already shares one, `400` when
+no server seen in the last day uses that CA, `503` when the shared settings can't be
+changed now or no server holding that CA runs (each candidate's `up` says). Each choice is written to the audit log.
+
 ## Shared feeds and retention policies
 
 On the servers of the cluster, the threat intel feeds and the retention policies are
@@ -392,13 +480,44 @@ server's heartbeat (`settings_drift`).
 retention. **Refresh** on a feed, and **Run now** or a policy change on the Data retention
 page, on another server ask it to: the request answers `202` with a `request_id`, which
 `GET /api/requests/{id}` follows until it is `done` or `failed`. Restoring archived days is
-still done on the server that runs the jobs.
+done on the server that runs the jobs; once the cluster keeps audit records, a restore asked
+on another server is sent there the same way (see below).
 
 **Changes at the same moment.** `GET /api/retention` and `GET /api/intel/feeds` (for
 admins) give each item's version (`ETag`, and `etags` for the feeds). A change sent with
 `If-Match` and that version is refused with `412` when someone changed the item meanwhile.
 While a server cannot use the shared settings (OpenSearch cannot be reached, or it misses
 the cluster key), changes there answer `503`.
+
+## Audit and archives across servers
+
+Once every server of the cluster runs this version, the cluster keeps its audit
+records and its archive list in OpenSearch, and `signalith cluster status` shows the cluster at
+level 4. The server that runs the background jobs first moves its retention history and
+its archive manifests into OpenSearch; the other servers keep their own until it is done.
+
+- **Audit records.** Each server writes its audit log lines (sign-ins, changes to users,
+  settings and retention) to monthly indices, `<prefix>_audit-YYYY.MM`, as well as
+  to its log. Lines wait in a small spool on disk (`audit-spool` in the state folder, at
+  most 50 MB) while OpenSearch is away, so none are lost. Search them on the
+  [Audit](audit.md) page. They are kept 400 days by default, by the **Audit records**
+  policy on the Data retention page.
+- **One retention history.** Retention runs and actions are audit records too, so every
+  server shows the same history, with the server that took each action, and it survives
+  a takeover.
+- **One archive list.** Every server lists the same archives. An archive is listed before
+  its file is written and marked complete once the file is checked; an archive left
+  unfinished for 6 hours (its server stopped while writing it) is removed with its file.
+- **No step taken twice.** Before deleting, archiving, compacting or restoring a day, the
+  server that runs retention claims that step in OpenSearch. A server that lost the jobs
+  partway through a run cannot repeat a step its successor already took.
+- **Restores from any server.** **Restore** on the Data retention page of any server, and
+  `signalith archive restore`, ask the server that runs retention to restore, and show its
+  progress.
+
+Set `retention.archive_dir` to the same shared folder on every server that may run the
+jobs. The Data retention page lists which servers can archive. When the server that runs
+retention cannot, it keeps the days it would archive rather than deleting them.
 
 ## Shared users and sign-in
 

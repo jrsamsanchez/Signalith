@@ -19,7 +19,13 @@ export GNUPGHOME=$tmp/gnupg SIGNALITH_GPG_PASSPHRASE=test-passphrase
 mkdir -m 700 "$GNUPGHOME"
 gpg --batch --quiet --pinentry-mode loopback --passphrase "$SIGNALITH_GPG_PASSPHRASE" \
   --quick-gen-key 'Signalith test <test@signalith.invalid>' rsa3072 sign 1d
-"$root/deploy/repos/build.sh" "$pkgs" "$tmp/site" "$url"
+# A release build signs the .rpm files with the real key, which this test
+# cannot check against; drop those signatures so the repository signs the
+# copies with the throwaway key, as it does unsigned CI builds.
+mkdir "$tmp/packages"
+cp "$pkgs"/*.deb "$pkgs"/*.rpm "$tmp/packages/"
+for f in "$tmp"/packages/*.rpm; do rpmsign --delsign "$f" >/dev/null; done
+"$root/deploy/repos/build.sh" "$tmp/packages" "$tmp/site" "$url"
 python3 -m http.server "$port" --bind 127.0.0.1 --directory "$tmp/site" >/dev/null 2>&1 &
 server=$!
 for i in $(seq 1 20); do curl -sf -o /dev/null "$url/apt/signalith.asc" && break; sleep 0.5; done

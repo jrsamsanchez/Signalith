@@ -924,6 +924,10 @@ func serve(ctx context.Context, path string, log *slog.Logger) error {
 	}
 	defer node.Close()
 	defer node.Stop()
+	// The audit spool belongs to the process too, and hears every audit
+	// line logged from here on (see sharedaudit.go).
+	audits, log := openAudit(c, node, log)
+	go audits.sink.Run(ctx)
 	// The first start of the Docker quick start with this version decides
 	// whether it was upgraded from one whose agents send the example
 	// ingest token (see config.Config.OldToken).
@@ -939,6 +943,7 @@ func serve(ctx context.Context, path string, log *slog.Logger) error {
 	}
 	r := newRunner(path, log)
 	r.node = node
+	r.audit = audits
 	// The shared configuration belongs to the process too; each start of
 	// the components points it at their OpenSearch client.
 	r.shared, r.sharedContent = openShared(c, node, log)
@@ -1066,9 +1071,11 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		}
 	}
 	ret := newRetention(c, cl, log)
+	archiveCrypto(ret.Archive, c, r.clusterKey)
 	if sharedOn {
 		r.sharedContent.sharedRetention(ret)
 	}
+	r.useAudit(ctx, in, c, cl, ret)
 	maxAge := c.MaxEventAge(retentionKeepDays(ret))
 	pipeline := &ingest.Pipeline{Store: cl, Prefix: c.OpenSearch.IndexPrefix, MaxEventAge: maxAge, Log: log}
 	// Each day's new field names are shared out among the servers that
@@ -1359,6 +1366,8 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			return agentinv.Pin(certs.Fingerprint())
 		},
 		Leader: func() bool { return r.node != nil && r.node.RunsJobs() }}
+	// The cluster's one certificate authority, once it has one.
+	tlsStatus := r.sharedTLS(ctx, in, c, certs, agentsInv)
 	r.agents.Store(agentsInv)
 	in.jobs.Go(func() { agentsInv.Run(ctx) })
 	srv := &api.Server{
@@ -1540,7 +1549,8 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		}},
 	}
 	if r.shared != nil {
-		in.jobsList = append(in.jobsList, requestsJob(r.shared, contentHandlers(feeds, ret)))
+		in.jobsList = append(in.jobsList, requestsJob(r.shared, contentHandlers(feeds, ret, r.auditHandlers(ret))))
+		in.jobsList = append(in.jobsList, r.auditJobs(c, cl, ret)...)
 	}
 	if parts != nil {
 		// Signed-in directory users are checked again by this one server
@@ -1553,6 +1563,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		in.jobs.Go(func() { r.sharedContent.apply(ctx, r.shared, c) })
 	}
 	in.retention = ret
+	srv.Audit = r.auditAPI(c, cl)
 	if hook := jobStarting; hook != nil {
 		in.jobsList = watchJobs(in.jobsList, c, hook)
 	}
@@ -1580,9 +1591,14 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		if r.shared != nil {
 			srv.Cluster = sharedCluster{Node: r.node, rt: r.shared}
 			srv.Shared = sharedAPI{rt: r.shared, on: sharedOn}
+			srv.ClusterTLS = r.clusterTLSAPI()
 			srv.ConfigToken = configToken{rt: r.shared}
+			// A start that keeps the settings in settings.yaml has the
+			// store too, so a save there holds off the move of this
+			// server's own settings into the shared settings, and goes
+			// there once they moved (settingsStore.HoldFile).
+			srv.Settings = settingsStore{r: r, files: !settingsOn}
 			if settingsOn {
-				srv.Settings = settingsStore{r: r}
 				// The shared settings and this server's own are followed
 				// while this start runs: what applies at once is applied,
 				// and the rest waits for a restart. The settings set aside
@@ -1619,6 +1635,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 				return sharedFingerprints(fp, r.shared, sharedOn)
 			},
 			Indexed: pipeline.LastIndexed,
+			TLS:     tlsStatus,
 		}
 		if rt := r.shared; rt != nil {
 			settings.Shared = func() cluster.SharedStatus { return sharedStatus(rt, r.sharedContent) }

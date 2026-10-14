@@ -13,6 +13,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/splcheck"
 )
@@ -271,9 +272,23 @@ func packThrottle(category, datamodel string) []string {
 	case "windefend":
 		// A Defender event: which one, and the threat, file or setting.
 		return []string{"host", "signature_id", "signature", "file_path", "setting"}
-	case "application":
-		// An Application log event: which program logged which one.
+	case "application", "code_integrity":
+		// An Application or Code Integrity event: which program logged
+		// which one.
 		return []string{"host", "provider", "signature_id"}
+	case "firewall_as":
+		// A firewall rule or setting changed: which change, and the rule
+		// and program.
+		return []string{"host", "signature_id", "firewall_rule_name", "firewall_application_path"}
+	case "bits_client":
+		// A BITS job: what it downloads, where to.
+		return []string{"host", "signature_id", "bits_remote_name", "bits_local_name"}
+	case "appxdeployment_server":
+		// An app package: which event, and which package from where.
+		return []string{"host", "signature_id", "appx_package_full_name", "appx_path"}
+	case "wmi":
+		// A WMI event: which one, and what it ran.
+		return []string{"host", "signature_id", "wmi_operation", "wmi_consumer"}
 	case "system_event":
 		// A System log event: which one, and what it names first (the
 		// service of a service event).
@@ -344,6 +359,12 @@ func PackDetection(p *Pack, r PackRule, src []byte) (*Detection, error) {
 		switch {
 		case service == "auditd", service == "windefend", service == "application":
 			category = service
+		case service == "codeintegrity-operational":
+			category = "code_integrity"
+		default:
+			if _, ok := ingest.NamedChannelServices[service]; ok {
+				category = ingest.NamedChannelCategory(service)
+			}
 		case service == "system" && q.Datamodel == "Other":
 			category = "system_event"
 		}

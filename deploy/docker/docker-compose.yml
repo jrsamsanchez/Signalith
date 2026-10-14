@@ -202,6 +202,11 @@ services:
     # A stop gives the background jobs up to a minute to finish before
     # another server takes them over.
     stop_grace_period: 90s
+    # host.docker.internal is the computer running Docker, for an AI model
+    # server there such as Ollama (Docker Desktop has it already; Linux
+    # needs this line).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       # Web UI, API and agents, over HTTPS (http:// is sent to https://).
       # Open on every network this computer is on. To take them from one

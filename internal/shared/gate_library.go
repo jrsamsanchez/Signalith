@@ -3,7 +3,7 @@ package shared
 // LevelSharedLibrary is the level from which the custom detections, the
 // choices made for shipped ones and the custom dashboards are kept in the
 // shared settings rather than in each server's folders.
-const LevelSharedLibrary = 4
+const LevelSharedLibrary = 6
 
 // The names of the importers of the founder's detections and dashboards
 // in cluster.import.done: they become shared once both ran.

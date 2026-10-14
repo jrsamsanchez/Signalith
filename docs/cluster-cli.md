@@ -26,6 +26,7 @@ others may run while Signalith runs on the same computer.
 | [`found`](#found) | Makes the cluster from this server's files |
 | [`reset-key`](#reset-key) | Makes a new cluster key when every copy of it is lost |
 | [`accept-restore`](#accept-restore) | Accepts the shared settings after an OpenSearch snapshot was restored |
+| [`tls`](#tls) | The cluster's certificate authority and each server's; `tls choose` keeps one for the whole cluster |
 
 `signalith passwd`, which is not a `cluster` command, changes the built-in admin's
 password for every server of a cluster that shares its users; see
@@ -38,7 +39,7 @@ signalith cluster status [-c file] [-json]
 ```
 
 Shows this server's name and identity, its mode, the cluster's name, identity and
-level (3 once every server can read shared settings, 2 once every server can read shared users, 1 before), the cluster key it uses, the servers in the keyring and any problem, such as a
+level (4 once every server keeps audit records and archives in OpenSearch, 3 once every server can read shared settings, 2 once every server can read shared users, 1 before), the cluster key it uses, the servers in the keyring and any problem, such as a
 shared setting that does not check out. `-json` prints the same as JSON, with the
 mode and the cluster under `shared`, and `problems` and `warnings` when there are any:
 
@@ -253,3 +254,80 @@ in a cluster, `-local` writes `admin-password-hash` and needs a restart, as
 | No server can run the background jobs, and you need the cluster now | `found` |
 | The built-in admin's password is lost or must change on every server | `signalith passwd` on any server |
 | You want a password for one server that works while OpenSearch is down | `signalith passwd -local` on that server |
+| Servers set up separately each have their own certificate authority | `tls`, then `tls choose` the one to keep |
+
+## tls
+
+```
+signalith cluster tls        [-c file] [-json]
+signalith cluster tls choose [-c file] [-yes] <server or fingerprint>
+```
+
+Once every server runs a version that shares one, the servers of a cluster share one certificate
+authority: each issues its own HTTPS certificate from it, so an agent set up against one
+server trusts them all. A cluster that grew from one server keeps that server's, so
+nothing changes for its agents. When servers that were set up separately meet, each
+keeps its own until you choose one.
+
+`tls` shows the cluster's certificate authority (its fingerprint, the names every
+server's certificate covers and the ones retired), each server's certificate and, while
+none is chosen, the certificate authorities to choose from: the servers using each, how
+many agents trust it and how many would need a new configuration, and the servers whose
+names it may not sign. The one marked `*` is the one Signalith suggests: most agents,
+then the founder's. `-json` prints the same as JSON.
+
+`tls choose` keeps the certificate authority of a server (its name or node id) or with
+that fingerprint for the whole cluster. It asks first unless you add `-yes`, then asks
+the server holding it to publish it and waits for it. A server that is offline can't
+publish it: start it first. When the agents can't all be read from OpenSearch, the
+counts may be short, so it refuses unless you add `-yes`. The other servers take it within
+seconds: each keeps its old one in `tls/retired` in its state folder, and the agents set
+up with an old one are marked as needing a new configuration. The choice is made once:
+changing the cluster's certificate authority comes in a later version.
+
+## upgrade-check
+
+```
+signalith cluster upgrade-check [-c file] [-json]
+```
+
+Run it on any server before each server's upgrade, with the version installed now. It
+only reads, so it may run while the servers run. It says whether it is safe to stop one
+more server and install the new version on it:
+
+- every server that is up has applied every change of the shared settings;
+- no server is starting, stopping, down or restarting to apply new settings;
+- no retention step is deleting data (OpenSearch runs no delete, reindex or snapshot
+  of the cluster's indices, and the server that runs the jobs is not in delete-only
+  mode);
+- the servers run at most two versions, and each can read the cluster's level of
+  stored data.
+
+It also warns, without blocking, when the server that runs the background jobs is the
+only one that can run them (the jobs then pause for about 40 seconds while it is
+upgraded), when a server is offline, and when an older server does not say how far it
+applied the shared settings. It suggests which server to upgrade next: the ones that
+do not run the jobs first, then the one that does, so the jobs move once, to the new
+version.
+
+| Exit code | Meaning |
+| --- | --- |
+| 0 | Safe to upgrade the next server |
+| 3 | Not safe yet: the output says what to wait for |
+| 1 | The check could not run (OpenSearch not reachable, no identity) |
+
+```
+Server  Version  State  Jobs       Caught up
+siem-a  0.2.0    ready  runs them  yes
+siem-b  0.2.0    ready             yes
+
+Safe to upgrade the next server.
+
+Upgrade siem-b next: it does not run the jobs. Upgrade siem-a, which runs them, last.
+```
+
+With `-json` it prints `safe`, `servers` (each with `name`, `version`, `state`, `live`,
+`jobs`, `caught_up` as `yes`, `no` or `unknown`, and `level_max`), `versions`,
+`cluster_level`, `blockers` and `warnings` (each with a `code`, the `server` and the
+`text`) and `next`. A server that is the only one using its OpenSearch prints that
+it can simply be stopped, upgraded and started, and exits 0.

@@ -34,7 +34,8 @@ func newMemSettings() *memSettings {
 	return &memSettings{sh: (&config.Shared{Self: "siem-a", Server: map[string]*config.PageEntry{}}).Clone()}
 }
 
-func (m *memSettings) Shared() bool { return true }
+func (m *memSettings) Shared() bool             { return true }
+func (m *memSettings) HoldFile() (bool, func()) { return true, func() {} }
 func (m *memSettings) Writable() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

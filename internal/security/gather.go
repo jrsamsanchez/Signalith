@@ -1,6 +1,7 @@
 package security
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"io/fs"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jrsamsanchez/signalith/internal/archivecrypt"
 	"github.com/jrsamsanchez/signalith/internal/config"
 	"github.com/jrsamsanchez/signalith/internal/intel"
 	"github.com/jrsamsanchez/signalith/internal/secrets"
@@ -175,7 +177,7 @@ const archiveMaxFiles = 100000
 // archiveFacts counts the archived days and reads who may read them.
 func archiveFacts(h Host, archiving bool) (*ArchiveFacts, bool) {
 	dir := h.Config.ArchiveDir()
-	a := &ArchiveFacts{Dir: dir, Policies: archiving}
+	a := &ArchiveFacts{Dir: dir, Policies: archiving, Encrypting: h.Config.ArchiveEncryption()}
 	if inVolume(dir) != "" && h.Docker {
 		a.Volume = dockerVolume
 	}
@@ -197,6 +199,9 @@ func archiveFacts(h Host, archiving bool) (*ArchiveFacts, bool) {
 		if info, err := d.Info(); err == nil {
 			a.Bytes += info.Size()
 		}
+		if !archiveEncrypted(p) {
+			a.Plain++
+		}
 		return nil
 	})
 	if err != nil {
@@ -217,6 +222,17 @@ func archiveFacts(h Host, archiving bool) (*ArchiveFacts, bool) {
 		a.Disk = disks[0]
 	}
 	return a, false
+}
+
+// archiveEncrypted reports whether the archive file p is encrypted: it
+// starts as archivecrypt writes it.
+func archiveEncrypted(p string) bool {
+	f, err := os.Open(p)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	return archivecrypt.Encrypted(bufio.NewReaderSize(f, 16))
 }
 
 // secretFileVars name files of secrets the server reads.

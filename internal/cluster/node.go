@@ -62,6 +62,10 @@ type Settings struct {
 	// and the shared settings it could not use, for its heartbeat; nil has
 	// none. It must not call the node.
 	Pending func() (restart, refused []string)
+	// TLS says which certificate authority this server's HTTPS
+	// certificate comes from, for its heartbeat; nil has none. It must not
+	// call the node.
+	TLS func() *TLSStatus
 }
 
 // SharedStatus is how a server uses the shared configuration in
@@ -792,6 +796,9 @@ func (n *Node) heartbeatDoc(state string) Heartbeat {
 		hb.SettingsRev = sh.SettingsRev
 	}
 	hb.Restart, hb.RestartNeeded, hb.SettingsRefused = restart, restartNeeded, refused
+	if f := n.settings.TLS; f != nil {
+		hb.TLS = f()
+	}
 	return hb
 }
 

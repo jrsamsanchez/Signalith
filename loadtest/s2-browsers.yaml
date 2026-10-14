@@ -1,0 +1,23 @@
+# S2, lab size: people using the pages through the load balancer with no
+# sticky sessions, all triaging the same findings and writing in the same
+# case, while agents send. Nobody should be sent back to sign in.
+name: s2-browsers
+description: 100 analysts through the load balancer at about 70% of peak ingest.
+targets: [https://lb.lab:8443]
+ca_file: lab/ca.pem
+credentials:
+  admin_file: lab/admin.txt
+  token_file: lab/token.txt
+phases:
+  - {name: warm, for: 1m, agents: {n: 200, rate: 10000}}
+  - name: busy
+    for: 10m
+    agents: {n: 200, rate: 35000}
+    users: {n: 100, create: true, triage: true, think: 5s}
+criteria:
+  - {name: unexpected_signouts, max: 0}
+  - {name: search_p95_ms, phase: busy, max: 3000}
+  - {name: page_p95_ms, phase: busy, max: 1000}
+  - {name: write_p95_ms, phase: busy}
+  - {name: write_conflicts}
+  - {name: ingest_error_rate, phase: busy, max: 0.01}

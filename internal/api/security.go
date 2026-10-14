@@ -391,7 +391,17 @@ func (s *Server) handleSecurity(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(security.Text(rep)))
 		return
 	}
-	writeJSON(w, http.StatusOK, rep.Typographic())
+	writeJSON(w, http.StatusOK, s.securityBody(rep))
+}
+
+// securityBody is the report as api/security answers it: ca_owner is
+// "cluster" when this server's certificate authority is the cluster's,
+// which the Security page cannot change.
+func (s *Server) securityBody(rep *security.Report) any {
+	return struct {
+		*security.Report
+		CAOwner string `json:"ca_owner,omitempty"`
+	}{rep.Typographic(), s.clusterCAOwner()}
 }
 
 // reportFileName is signalith-security-{server}-{date}.txt, with only
@@ -451,6 +461,11 @@ func (s *Server) handleSecurityCA(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, notAutoError(s.conf()))
 		return
 	}
+	if s.clusterCAOwner() != "" {
+		// Refused before a scope is saved, so a refusal changes nothing.
+		writeError(w, http.StatusConflict, tlsauto.ErrClusterCA)
+		return
+	}
 	s.caMu.Lock()
 	defer s.caMu.Unlock()
 	from := fingerprintOf(m.CAInfo())
@@ -501,6 +516,9 @@ func (s *Server) handleSecurityCA(w http.ResponseWriter, r *http.Request) {
 	}
 	var se *tlsauto.StateError
 	switch {
+	case errors.Is(err, tlsauto.ErrClusterCA):
+		writeError(w, http.StatusConflict, err)
+		return
 	case errors.As(err, &se):
 		writeError(w, http.StatusConflict, err)
 		return
@@ -518,7 +536,7 @@ func (s *Server) handleSecurityCA(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{})
 		return
 	}
-	writeJSON(w, http.StatusOK, rep.Typographic())
+	writeJSON(w, http.StatusOK, s.securityBody(rep))
 }
 
 func notAutoError(c *config.Config) error {

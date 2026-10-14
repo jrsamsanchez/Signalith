@@ -95,6 +95,27 @@ while the first command was still waiting for the step that loads OpenSearch's s
 settings, Signalith had not started yet and does not start by itself: https://localhost:8080
 doesn't answer. Run `docker compose -f deploy/docker/docker-compose.yml up -d` again then.
 
+Signalith stops within a few seconds when an update replaces it, and Docker stops it by
+force after 90 seconds at most. If the first command stays at `Container
+docker-signalith-1 Stopping` for longer than that, and `docker kill docker-signalith-1`
+doesn't help either, Docker itself is stuck, not Signalith. On Windows, quit Docker Desktop
+(right-click its icon by the clock, **Quit Docker Desktop**), run `wsl --shutdown` in
+PowerShell, start Docker Desktop again and run the first command again. Your data is kept.
+If `wsl --shutdown` hangs too, restart the computer, or end WSL in PowerShell run as
+administrator with `taskkill /F /IM wslservice.exe`, then start Docker Desktop again.
+
+This happens most when the computer is short of memory: OpenSearch alone uses about 1.5 GB.
+To keep Docker from taking all of it, give WSL a fixed share in `%UserProfile%\.wslconfig`
+(make the file if there is none), for example on a computer with 16 GB:
+
+```ini
+[wsl2]
+memory=6GB
+```
+
+then run `wsl --shutdown` and start Docker Desktop again. Signalith with OpenSearch needs
+at least 4 GB there.
+
 #### Running a release, or building the image yourself
 
 The quick start runs the image GitHub builds from `main`, which matches the code `git pull`
@@ -796,11 +817,11 @@ changes and more, plus two risk incident rules); 19 are on by default.
 - **Import Sigma rule** converts a [Sigma](https://github.com/SigmaHQ/sigma) rule to a
   Signalith query and lists anything it had to approximate. Imported rules start
   disabled so you can test them first.
-- **Content packs** add community rules, off until you turn them on: 2,156 tested
+- **Content packs** add community rules, off until you turn them on: 2,185 tested
   [SigmaHQ](https://github.com/SigmaHQ/sigma) Windows and Linux rules and 988 Windows and Linux detections
   from Splunk's open source
   [security_content](https://github.com/splunk/security_content) (Apache 2.0). With
-  both packs on, detections cover 148 ATT&CK techniques. Newer tested rules arrive as
+  both packs on, detections cover 156 ATT&CK techniques. Newer tested rules arrive as
   signed content updates, without a new Signalith release (from the internet or as an
   upload). See [docs/detections.md](docs/detections.md#content-packs).
 - **ATT&CK coverage** shows the Enterprise matrix with techniques covered by enabled

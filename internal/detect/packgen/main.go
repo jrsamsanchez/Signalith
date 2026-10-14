@@ -33,6 +33,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/jrsamsanchez/signalith/internal/detect"
+	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/search"
 	"github.com/jrsamsanchez/signalith/internal/sigmacheck"
@@ -64,6 +65,15 @@ var categories = map[string]string{
 	// Nor this: Windows Application log rules (service: application), in
 	// folders by provider.
 	"application": "rules/windows/builtin/application",
+	// Nor this: Code Integrity log rules (service:
+	// codeintegrity-operational).
+	"code_integrity": "rules/windows/builtin/code_integrity",
+	// Nor these: rules about the logs the parser reads by name
+	// (service: firewall-as, bits-client, appxdeployment-server, wmi).
+	"firewall_as":           "rules/windows/builtin/firewall_as",
+	"bits_client":           "rules/windows/builtin/bits_client",
+	"appxdeployment_server": "rules/windows/builtin/appxdeployment_server",
+	"wmi":                   "rules/windows/builtin/wmi",
 	// Nor this: Microsoft Defender Antivirus log rules (service:
 	// windefend).
 	"windefend": "rules/windows/builtin/windefend",
@@ -187,6 +197,14 @@ func main() {
 			want := map[string]string{"product": product, "category": cat, "service": ""}
 			if cat == "system" || cat == "security" || cat == "auditd" || cat == "windefend" || cat == "application" {
 				want["category"], want["service"] = "", cat
+			}
+			if cat == "code_integrity" {
+				want["category"], want["service"] = "", "codeintegrity-operational"
+			}
+			for service := range ingest.NamedChannelServices {
+				if cat == ingest.NamedChannelCategory(service) {
+					want["category"], want["service"] = "", service
+				}
 			}
 			if rule.Logsource["product"] != want["product"] || rule.Logsource["category"] != want["category"] || rule.Logsource["service"] != want["service"] {
 				skip("log source is not plain "+product+" "+cat, rel)
@@ -394,7 +412,9 @@ func regression(root, rel string, rule *sigmacheck.Rule, cat string) []sigmachec
 					c.Data[k] = string(b)
 				}
 			}
-			ok := (strings.EqualFold(c.Channel, sigmacheck.Channel(cat)) && slices.Contains(sysmonIDs, id)) ||
+			// A log read by name: any of its events the rule matches.
+			named := ingest.IsNamedChannel(c.Channel) && strings.EqualFold(c.Channel, sigmacheck.Channel(cat))
+			ok := named || (strings.EqualFold(c.Channel, sigmacheck.Channel(cat)) && slices.Contains(sysmonIDs, id)) ||
 				(cat == "process_creation" && c.Channel == sigmacheck.SecurityChannel && id == "4688")
 			if !ok {
 				continue
