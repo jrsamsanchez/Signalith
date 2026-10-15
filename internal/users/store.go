@@ -753,6 +753,11 @@ func (s *Store) signedIn(ctx context.Context, r Record) {
 // clears Refused. It reports whether anything changed.
 func (s *Store) RefreshDirectoryUser(ctx context.Context, name string, d DirectoryUser) (User, bool, error) {
 	name = NormalizeUsername(name)
+	release, err := s.hold()
+	if err != nil {
+		return User{}, false, err
+	}
+	defer release()
 	changed := false
 	r, err := s.b.Change(ctx, Actor(ctx), name, "", func(r *Record) error {
 		if r.Source != SourceDirectory {
@@ -781,6 +786,11 @@ func (s *Store) RefuseDirectoryUser(ctx context.Context, name, reason string) (U
 	if reason == "" {
 		reason = "refused by the directory"
 	}
+	release, err := s.hold()
+	if err != nil {
+		return User{}, false, err
+	}
+	defer release()
 	changed := false
 	r, err := s.b.Change(ctx, Actor(ctx), name, "", func(r *Record) error {
 		if r.Source != SourceDirectory {
