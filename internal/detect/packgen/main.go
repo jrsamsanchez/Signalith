@@ -117,6 +117,13 @@ var webCategories = map[string]string{
 	"webserver": "rules/web/webserver_generic",
 }
 
+// cloudCategories are the log sources of cloud services, by product, and
+// the folders their rules live in. Not Sigma categories: each is a
+// product's service (product: aws, service: cloudtrail).
+var cloudCategories = map[string][2]string{
+	"cloudtrail": {"aws", "rules/cloud/aws/cloudtrail"},
+}
+
 // networkCategories are the network log sources, and the folders their
 // rules live in: Zeek's own logs (product: zeek, one category per
 // service, zeek_dns), and the generic dns, firewall and proxy categories,
@@ -210,6 +217,9 @@ func main() {
 	for c, dir := range webCategories {
 		sources = append(sources, source{"", c, dir})
 	}
+	for c, pd := range cloudCategories {
+		sources = append(sources, source{pd[0], c, pd[1]})
+	}
 	for c, dir := range networkCategories {
 		sources = append(sources, source{"network", c, dir})
 	}
@@ -253,6 +263,9 @@ func main() {
 			}
 			want := map[string]string{"product": product, "category": cat, "service": ""}
 			if cat == "system" || cat == "security" || cat == "auditd" || cat == "windefend" || cat == "application" {
+				want["category"], want["service"] = "", cat
+			}
+			if _, ok := cloudCategories[cat]; ok {
 				want["category"], want["service"] = "", cat
 			}
 			if cat == "code_integrity" {

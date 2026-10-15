@@ -651,6 +651,8 @@ func Normalize(tag string, r map[string]any, now time.Time) Event {
 		ev = parseZeekRecord(tag, r)
 	case isSuricataTag(tag) || IsSuricataEVE(r):
 		ev = parseSuricataRecord(r)
+	case tag == CloudTrailTag || strings.HasPrefix(tag, CloudTrailTag+".") || IsCloudTrailRecord(r):
+		ev = ParseCloudTrail(r)
 	case isWindowsRecord(tag, r):
 		ev = parseWindows(r)
 	case strings.HasPrefix(tag, "linux.clamav"):

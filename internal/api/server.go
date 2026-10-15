@@ -984,6 +984,9 @@ func (s *Server) handleAgentConfig(w http.ResponseWriter, r *http.Request) {
 		ZeekDir:           strings.TrimSpace(v.Get("zeek_dir")),
 		EVEPath:           strings.TrimSpace(v.Get("eve_path")),
 		SuricataProtocols: v.Get("suricata_protocols") == "true",
+		// AWS CloudTrail: the bucket and queue the Collector reads.
+		AWSBucket:   v.Get("aws_bucket"),
+		AWSQueueURL: v.Get("aws_queue"),
 	}
 	agentTLS(&opts, certs)
 	a, err := agents.Generate(opts)

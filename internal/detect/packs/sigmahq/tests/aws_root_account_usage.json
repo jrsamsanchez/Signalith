@@ -1,0 +1,5 @@
+{"rule": "8ad1600d-e9dc-4251-b0ee-a65268f29add", "cases": [
+  {"expect":true,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"userIdentity.type":"Root"}},
+  {"expect":false,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"eventType":"AwsServiceEvent","userIdentity.type":"Root"}},
+  {"expect":false,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{}}
+]}

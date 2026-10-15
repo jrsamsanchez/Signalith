@@ -1,0 +1,5 @@
+{"rule": "7c797da2-9cf2-4523-ba64-33b06339f0cc", "cases": [
+  {"expect":true,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"eventName":"DeleteCacheSecurityGroup","eventSource":"elasticache.amazonaws.com"}},
+  {"expect":false,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"eventSource":"elasticache.amazonaws.com"}},
+  {"expect":false,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"eventName":"DeleteCacheSecurityGroup"}}
+]}
