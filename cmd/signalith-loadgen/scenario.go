@@ -209,10 +209,12 @@ type CookieFlood struct {
 type Fault struct {
 	// At is from the start of the first phase.
 	At Duration `yaml:"at"`
-	// Kind is kill9, stop, cut_opensearch, clock, fill_disk or cmd.
+	// Kind is kill9, stop, cut_opensearch, clock, fill_disk, cmd or
+	// upgrade. An upgrade takes every server in turn, as the upgrade
+	// check says (upgradeAll), and runs Cmd for each.
 	Kind string `yaml:"kind"`
 	// Target is leader, standby, windows (a Windows server), or a
-	// server name.
+	// server name. An upgrade has none: it takes every server.
 	Target string `yaml:"target"`
 	// For, when set, runs Undo that long after Cmd.
 	For Duration `yaml:"for"`
@@ -224,6 +226,9 @@ type Fault struct {
 	// is a Windows server, which needs other commands to stop.
 	WindowsCmd  string `yaml:"windows_cmd"`
 	WindowsUndo string `yaml:"windows_undo"`
+	// Version is the version an upgrade installs; when empty, any version
+	// other than the one a server ran before counts.
+	Version string `yaml:"version"`
 }
 
 // Criterion is one pass condition. With neither Max nor Min the value is
@@ -274,13 +279,17 @@ var criteria = map[string]string{
 	"server_cpu_cores":               "CPU cores the busiest server used, on average over the phase",
 	"server_memory_mb":               "largest resident memory of any server",
 	"check_failures":                 "checks (commands run after the load) that failed",
+	"servers_not_upgraded":           "servers an upgrade fault did not bring to the new version",
+	"upgrade_server_seconds":         "longest time one server took to upgrade, from drain to resumed",
+	"jobs_moves":                     "times the background jobs moved to another server",
+	"page_reloads_per_user":          "most times one user's open page reloaded because a server of another version answered",
 }
 
 // clusterOnly are criteria that need several servers; against one server
 // they are skipped, never failed.
-var clusterOnly = map[string]bool{"takeover_seconds": true, "leaders_at_once": true, "windows_led_seconds": true}
+var clusterOnly = map[string]bool{"takeover_seconds": true, "leaders_at_once": true, "windows_led_seconds": true, "jobs_moves": true}
 
-var faultKinds = []string{"kill9", "stop", "cut_opensearch", "clock", "fill_disk", "cmd"}
+var faultKinds = []string{"kill9", "stop", "cut_opensearch", "clock", "fill_disk", "cmd", "upgrade"}
 
 // signalFaults need Unix signals, so they are skipped on Windows.
 var signalFaults = map[string]bool{"kill9": true, "stop": true}
@@ -384,6 +393,12 @@ func (s *Scenario) validate() error {
 		}
 		if f.Target == "" && (f.Kind == "kill9" || f.Kind == "stop") {
 			bad("%s: target is required", where)
+		}
+		if f.Kind == "upgrade" && (f.Target != "" || f.For > 0 || f.Undo != "" || f.WindowsUndo != "") {
+			bad("%s: an upgrade takes every server in turn, so it has no target, for or undo", where)
+		}
+		if f.Version != "" && f.Kind != "upgrade" {
+			bad("%s: version is for an upgrade", where)
 		}
 		if f.At.D() >= total && total > 0 {
 			bad("%s: at %s is after the last phase ends (%s)", where, f.At.D(), total)
