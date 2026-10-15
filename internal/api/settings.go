@@ -1137,8 +1137,7 @@ func (s *Server) applyLive(old, saved *config.Config) []string {
 		s.Scheduler.SetCatchUp(next.DetectionsCatchUp())
 	}
 	if changed("assistant.") {
-		a := next.Assistant
-		s.liveAI.Store(&liveModel{c: assistant.New(a.Provider, a.URL, a.Model, a.APIKey)})
+		s.liveAI.Store(&liveModel{c: next.AssistantClient()})
 	}
 	if changed("vulns.") && s.Vulns != nil {
 		s.Vulns.useNVD(next.NVDURL(), next.Vulns.NVDAPIKey)
@@ -1334,7 +1333,7 @@ type assistantReport struct {
 // handleTestAssistant asks the model in the form one fixed question and
 // says whether it answered.
 func (s *Server) handleTestAssistant(w http.ResponseWriter, r *http.Request) {
-	c, fields, err := s.testValues(r, "assistant.provider", "assistant.url", "assistant.model", "assistant.api_key")
+	c, fields, err := s.testValues(r, "assistant.provider", "assistant.url", "assistant.model", "assistant.api_key", "assistant.request_timeout")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
@@ -1363,16 +1362,15 @@ func (s *Server) handleTestAssistant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer done()
-	client := assistant.New(a.Provider, a.URL, a.Model, a.APIKey)
-	client.HTTP.Timeout = 45 * time.Second
+	client := c.AssistantClient()
 	rep := assistantReport{Provider: a.Provider, Model: client.Model, URL: redact.URL(client.URL), Question: assistantQuestion}
 	start := time.Now()
-	ctx, cancel := context.WithTimeout(r.Context(), time.Minute)
+	ctx, cancel := context.WithTimeout(r.Context(), c.AssistantRequestTimeout()+15*time.Second)
 	defer cancel()
 	q, err := client.Translate(ctx, assistantQuestion, "")
 	rep.TookMS = time.Since(start).Milliseconds()
 	if err != nil {
-		rep.Message, rep.Field = explainAssistant(err, client.Model)
+		rep.Message, rep.Field = explainAssistant(err, client.Model, c.AssistantRequestTimeout())
 	} else {
 		rep.OK, rep.Query = true, q
 		rep.Message = fmt.Sprintf("The model answered in %.1f seconds.", time.Since(start).Seconds())
@@ -1383,8 +1381,11 @@ func (s *Server) handleTestAssistant(w http.ResponseWriter, r *http.Request) {
 
 // explainAssistant words a failed assistant test, and names the setting
 // it points at.
-func explainAssistant(err error, model string) (string, string) {
+func explainAssistant(err error, model string, limit time.Duration) (string, string) {
 	msg := err.Error()
+	if errors.Is(err, context.DeadlineExceeded) || strings.Contains(msg, "Client.Timeout exceeded") || strings.Contains(msg, "deadline exceeded") {
+		return fmt.Sprintf("The model did not answer within the answer time limit (%s). A local model on a CPU without a GPU may need 15m or more: raise Answer time limit, or use a faster model.", shortDuration(limit)), "assistant.request_timeout"
+	}
 	var ae *assistant.APIError
 	if errors.As(err, &ae) {
 		switch {
