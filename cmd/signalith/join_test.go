@@ -346,6 +346,41 @@ func TestJoinWritesEverything(t *testing.T) {
 	}
 }
 
+// A scanner's token makes the new server a scanner, which never runs the
+// background jobs.
+func TestJoinAsScanner(t *testing.T) {
+	f := newJoinFixture(t)
+	f.edit = func(b *clusterjoin.Bundle) { b.Role = clusterjoin.RoleScanner }
+	m := newJoinMachine(t)
+	if code := m.join(t, f.tok, "--listen", freeAddr(t)); code != joinExitOK {
+		t.Fatalf("exit %d:\n%s", code, m.out.String())
+	}
+	if !strings.Contains(m.out.String(), "joins as a scanner") {
+		t.Errorf("output %q", m.out.String())
+	}
+	c, err := config.Load(m.config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Cluster.Role != config.RoleScanner || !c.Scanner() || c.LeaderEligible() {
+		t.Errorf("role %q, scanner %v, eligible %v", c.Cluster.Role, c.Scanner(), c.LeaderEligible())
+	}
+}
+
+// A role this version does not know stops the join before anything is
+// written.
+func TestJoinUnknownRole(t *testing.T) {
+	f := newJoinFixture(t)
+	f.edit = func(b *clusterjoin.Bundle) { b.Role = "sensor" }
+	m := newJoinMachine(t)
+	if code := m.join(t, f.tok); code != joinExitFailed || !strings.Contains(m.out.String(), `"sensor"`) {
+		t.Errorf("exit %d: %s", code, m.out.String())
+	}
+	if _, err := os.Stat(m.config); err == nil {
+		t.Error("signalith.yaml was written")
+	}
+}
+
 func TestJoinPinMismatch(t *testing.T) {
 	f := newJoinFixture(t)
 	m := newJoinMachine(t)

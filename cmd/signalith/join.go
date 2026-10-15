@@ -685,6 +685,12 @@ func (j *joiner) join(ctx context.Context) error {
 	if j.key, err = shared.ClusterKeyFrom(b.ClusterKey); err != nil || j.key.ID() != b.KID {
 		return failf(joinExitFailed, "The cluster key the server at %s sent is damaged.", j.tok.URL)
 	}
+	if !config.ValidRole(b.Role) {
+		return failf(joinExitFailed, "The server at %s asks this server to join as a %q, which Signalith %s does not know: install the cluster's version first.", j.tok.URL, b.Role, version)
+	}
+	if b.Role == config.RoleScanner {
+		j.printf("This server joins as a scanner: it scans the networks picked for it and never runs the background jobs.\n")
+	}
 	j.listen = firstSet(j.o.listen, b.Listen, j.c.Server.Listen)
 	return nil
 }
@@ -1004,6 +1010,11 @@ func (j *joiner) writeSettings(path string, files osFiles, now time.Time) error 
 	}
 	if j.o.nodeURL != "" {
 		if err := set("server.node_url", j.o.nodeURL); err != nil {
+			return err
+		}
+	}
+	if r := j.bundle.Role; r != config.RoleServer {
+		if err := set("cluster.role", r); err != nil {
 			return err
 		}
 	}

@@ -216,6 +216,12 @@ type Server struct {
 	// it out from the listen address and this computer's name, except in a
 	// container, which cannot know it. SIGNALITH_NODE_URL overrides it.
 	NodeURL string `yaml:"node_url,omitempty"`
+	// ProxyProtocol accepts a PROXY protocol (v1 or v2) header on the web
+	// port from TrustedProxies, such as a load balancer that passes TCP
+	// connections on, so the client's own address is seen. Peers that are
+	// not trusted proxies may not send one. SIGNALITH_PROXY_PROTOCOL
+	// overrides it.
+	ProxyProtocol bool `yaml:"proxy_protocol,omitempty"`
 
 	// proxied is set by Validate for a config written before HTTPS was the
 	// default whose public_url is https:// although Signalith had no
@@ -885,6 +891,11 @@ type Syslog struct {
 	// 514 to 5514, say. The Add data page puts it in the setup it shows.
 	// Zero means the listen port.
 	PublicPort int `yaml:"public_port,omitempty"`
+	// ProxyProtocol accepts a PROXY protocol (v1 or v2) header on the TCP
+	// and TLS listeners from server.trusted_proxies, so a load balancer in
+	// front still lets Signalith see each device's address.
+	// SIGNALITH_SYSLOG_PROXY_PROTOCOL overrides it.
+	ProxyProtocol bool `yaml:"proxy_protocol,omitempty"`
 }
 
 // Enabled reports whether any syslog listener is set.
@@ -1039,6 +1050,11 @@ type Cluster struct {
 	// on by default. SIGNALITH_LEADER_ELIGIBLE overrides both. See
 	// Config.LeaderEligible.
 	LeaderEligible *bool `yaml:"leader_eligible,omitempty"`
+	// Role is what this server is for: "" (RoleServer) shares the work of
+	// the cluster; RoleScanner only scans the networks picked for it on
+	// the Vulnerabilities page, and never runs the background jobs. Add a
+	// server sets it when the server joins. See Config.LeaderEligible.
+	Role string `yaml:"role,omitempty"`
 	// Name is the name of the servers that share one OpenSearch. They keep
 	// it in OpenSearch; this is only the value the Settings page saves
 	// there.
@@ -1049,10 +1065,25 @@ type Cluster struct {
 	OpenSearchURL string `yaml:"opensearch_url,omitempty"`
 }
 
+// Server roles (cluster.role).
+const (
+	RoleServer  = ""
+	RoleScanner = "scanner"
+)
+
+// ValidRole reports whether r is a server role.
+func ValidRole(r string) bool { return r == RoleServer || r == RoleScanner }
+
+// Scanner reports whether this server is a scanner (cluster.role).
+func (c *Config) Scanner() bool { return c.Cluster.Role == RoleScanner }
+
 // LeaderEligible reports whether this server may run the background jobs:
-// cluster.leader_eligible, or detections.scheduler, its old name, when
-// only that is set.
+// never on a scanner; otherwise cluster.leader_eligible, or
+// detections.scheduler, its old name, when only that is set.
 func (c *Config) LeaderEligible() bool {
+	if c.Scanner() {
+		return false
+	}
 	if c.Cluster.LeaderEligible != nil {
 		return *c.Cluster.LeaderEligible
 	}
@@ -2095,6 +2126,19 @@ func (c *Config) applyEnv() error {
 		c.Syslog.TCP = offToEmpty(v)
 		c.fromEnv("syslog.tcp", "SIGNALITH_SYSLOG_TCP")
 	}
+	for _, e := range []struct {
+		env, key string
+		to       *bool
+	}{{"SIGNALITH_PROXY_PROTOCOL", "server.proxy_protocol", &c.Server.ProxyProtocol}, {"SIGNALITH_SYSLOG_PROXY_PROTOCOL", "syslog.proxy_protocol", &c.Syslog.ProxyProtocol}} {
+		if v := strings.TrimSpace(os.Getenv(e.env)); v != "" {
+			b, err := strconv.ParseBool(v)
+			if err != nil {
+				return fmt.Errorf("%s %q must be true or false", e.env, v)
+			}
+			*e.to = b
+			c.fromEnv(e.key, e.env)
+		}
+	}
 	return nil
 }
 
@@ -2213,6 +2257,9 @@ func (c *Config) Validate() error {
 		if pu, err := url.Parse(u); err != nil || (pu.Scheme != "http" && pu.Scheme != "https") || pu.Host == "" || pu.User != nil {
 			p = append(p, fmt.Sprintf("cluster.opensearch_url %q must be http(s)://host:port, without a username or password", redact.URL(u)))
 		}
+	}
+	if !ValidRole(c.Cluster.Role) {
+		p = append(p, fmt.Sprintf("cluster.role %q must be empty (a cluster server) or scanner", c.Cluster.Role))
 	}
 	if n := c.Cluster.NodeName; n != "" && !ValidNodeName(n) {
 		p = append(p, fmt.Sprintf("cluster.node_name %q must be 1 to 63 letters, digits, dots, dashes or underscores, starting with a letter or digit", n))
@@ -2419,6 +2466,17 @@ func (c *Config) Warnings() []string {
 		w = append(w, "HTTPS is off (server.tls.mode: off) and server.listen accepts connections from other machines, so passwords, sessions, "+
 			"the ingest token and events cross the network unencrypted unless a reverse proxy in front adds HTTPS. Turn it on with server.tls.mode: auto, "+
 			"or list the proxy's address under server.trusted_proxies.")
+	}
+	if (c.Server.ProxyProtocol || c.Syslog.ProxyProtocol) && len(c.Server.TrustedProxyList()) == 0 {
+		w = append(w, "PROXY protocol is on (server.proxy_protocol or syslog.proxy_protocol) but server.trusted_proxies is empty, so no PROXY header is accepted. "+
+			"List your load balancer's address under server.trusted_proxies.")
+	}
+	for _, p := range c.Server.TrustedProxyList() {
+		if p.Bits() == 0 {
+			w = append(w, "server.trusted_proxies includes "+p.String()+", which trusts every address: anyone can then pick the address they are counted and logged under "+
+				"(with X-Forwarded-For, Forwarded or a PROXY header). List only your proxies and load balancers.")
+			break
+		}
 	}
 	if l := c.layers; l != nil && c.file != nil && l.file["detections.scheduler"] {
 		// Both names set in signalith.yaml, or the old one there and the

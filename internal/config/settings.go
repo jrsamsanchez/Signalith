@@ -242,6 +242,10 @@ var Registry = []Setting{
 	{Key: "server.shared_addresses", Scope: ScopeServer, Section: "web", Label: "Proxies and gateways", Type: TypeList, Restart: true,
 		Help:        "IP addresses or ranges of a reverse proxy, load balancer or NAT gateway that many people and agents reach Signalith through. They are not limited like one computer: wrong passwords from them count against each account, and never pause sign-ins from the whole address.",
 		Placeholder: "10.0.0.5", EmptyMeans: "none", check: checkAddressList, problem: listProblem("server.shared_addresses")},
+	{Key: "server.proxy_protocol", Scope: ScopeServer, Section: "web", Label: "PROXY protocol from load balancers", Type: TypeBool, Restart: true,
+		Help: "Accept a PROXY protocol header (v1 or v2) on the web port from the trusted reverse proxies, as a load balancer that passes connections on sends it, so sign-in limits, the audit log and agent limits see each client's own address. " +
+			"Only the trusted reverse proxies may send one; a header from anyone else closes the connection.",
+		Env: "SIGNALITH_PROXY_PROTOCOL"},
 	{Key: "server.node_url", Scope: ScopeServer, Section: "web", Label: "Address for other servers", Type: TypeURL, SharedOnly: true,
 		Help: "The address the other Signalith servers that share this OpenSearch reach this one at, shown on the Servers page. " +
 			"In a container set it, since a container cannot know the address it is reached at.",
@@ -359,6 +363,9 @@ var Registry = []Setting{
 	{Key: "syslog.allow", Scope: ScopeCluster, Section: "syslog", Label: "Allowed senders", Type: TypeList, Restart: true,
 		Help:        "IP addresses or ranges, such as 10.0.0.0/8, that may send syslog. Others are dropped and counted.",
 		Placeholder: "10.0.0.0/8", EmptyMeans: "any sender", check: checkAddressList, problem: listProblem("syslog.allow")},
+	{Key: "syslog.proxy_protocol", Scope: ScopeServer, Section: "syslog", Label: "PROXY protocol from load balancers", Type: TypeBool, Restart: true,
+		Help: "Accept a PROXY protocol header (v1 or v2) on the TCP and TLS addresses from the trusted reverse proxies, so a load balancer in front still lets Signalith see each device's address for Allowed senders, limits and the host field. UDP is not affected.",
+		Env:  "SIGNALITH_SYSLOG_PROXY_PROTOCOL"},
 	{Key: "syslog.public_port", Scope: ScopeCluster, Section: "syslog", Label: "Port devices send to", Type: TypeNumber, Restart: true, Min: intp(0), Max: intp(65535),
 		Help:       "When Docker or a firewall forwards another port to the one Signalith listens on, the port devices send to. Add data shows it.",
 		EmptyMeans: "the listen port"},
@@ -367,9 +374,16 @@ var Registry = []Setting{
 		Help:    "Lets this server run detections, threat intel downloads, notifications and retention. Servers that share one OpenSearch take turns automatically; turn it off only on a server that should never run them.",
 		Env:     "SIGNALITH_LEADER_ELIGIBLE",
 		Confirm: "This server will stop running detections, threat intel downloads, notifications and retention. If no other server shares its OpenSearch, none of them run until this is turned on again.", ConfirmWhen: "off"},
+	{Key: "cluster.role", Scope: ScopeServer, Section: "detections", Label: "Server role", Type: TypeChoice, Restart: true, SharedOnly: true,
+		Help: "A cluster server shares the work: it can run the background jobs and take over when another server stops. " +
+			"A scanner only scans the networks picked for it on the Vulnerabilities page, from inside their zone, and never runs the background jobs. " +
+			"Add a server sets it when the server joins; the Servers page shows it.",
+		Choices: []Choice{{RoleServer, "Cluster server: shares the work"}, {RoleScanner, "Scanner: scans its network zone only"}},
+		Confirm: "As a scanner, this server never runs detections, threat intel downloads, notifications, playbooks or retention; as a cluster server it may take them over. " +
+			"If only scanners are left, none of those jobs run."},
 	{Key: "cluster.leader_eligible", Scope: ScopeServer, Section: "detections", Label: "May run background jobs", Type: TypeBool, Restart: true, SharedOnly: true,
 		Help: "Lets this server run detections, threat intel downloads, notifications, playbooks and retention. The servers take turns automatically, one at a time; " +
-			"turn it off only on a server that should never run them. Its old name in signalith.yaml, detections.scheduler, still works.",
+			"turn it off only on a server that should never run them. A scanner (Server role) never runs them, whatever this says. Its old name in signalith.yaml, detections.scheduler, still works.",
 		Env:     "SIGNALITH_LEADER_ELIGIBLE",
 		Confirm: "This server will stop running detections, threat intel downloads, notifications, playbooks and retention. If no other server may run them, none of them run until this is turned on again.", ConfirmWhen: "off"},
 	{Key: "detections.max_findings_per_run", Scope: ScopeCluster, Section: "detections", Label: "Most findings per run", Type: TypeNumber, Min: intp(1), Max: intp(10000),
