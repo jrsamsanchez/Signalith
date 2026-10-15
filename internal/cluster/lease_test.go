@@ -312,12 +312,17 @@ func TestReleaseGivesUpAfterTheWait(t *testing.T) {
 	a.l.SetJobs([]Job{p.job("stuck", false)})
 	s.run(time.Second)
 	eventually(t, "the job", func() bool { _, r := p.state(); return r == 1 })
+	timers := s.clock.Waiting()
 	released := make(chan struct{})
 	go func() {
 		a.l.Release("the server is stopping")
 		close(released)
 	}()
-	eventually(t, "the release to start", func() bool { return a.l.View().State == "releasing" })
+	// The release says so before it starts its ReleaseWait timer: moving
+	// the clock in between would leave that timer a minute in the future.
+	eventually(t, "the release to wait", func() bool {
+		return a.l.View().State == "releasing" && s.clock.Waiting() > timers
+	})
 	s.run(61 * time.Second)
 	select {
 	case <-released:
