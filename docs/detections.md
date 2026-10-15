@@ -253,6 +253,7 @@ common on their own and matter when they add up (see [Risk](#risk)).
 | `network-http-executable-download` | medium | A host that is not on the internet side downloaded a program or script over plain HTTP, whole or in ranges (status 200 or 206), from outside (Windows Update's and Google's updater addresses are left out) | on |
 | `network-cleartext-credentials` | low | A password crossed the network in clear text: HTTP basic authentication, an FTP sign-in (not anonymous) or an answered Telnet connection that did not come from the internet | on |
 | `network-sensor-packet-loss` | low | Zeek missed more than 5% of the traffic, or Suricata dropped more than 5% of packets (counted once it has received a million) | on |
+| `network-sensor-unhealthy` | medium | A network sensor reported Zeek or Suricata stopped, its capture port down or idle, rules or rule tuning failing or old, or a full disk, or Signalith found it silent. One finding per sensor and problem a day; fix it from **Settings > Network sensors** | on |
 | `network-beaconing` | low | Twelve or more short (a minute or less), small (5 KB or less out) connections from one host to one outside address and port in two hours | off, risk only |
 | `network-tls-untrusted-cert` | low | A TLS session from a host not on the internet side to an outside server with a self-signed or expired certificate | on, risk only |
 | `network-large-outbound-transfer` | medium | One host sent more than 1 GB to one outside address, in connections that started within six hours | on, risk only |
@@ -299,7 +300,7 @@ Choices worth knowing:
 Every network detection is tagged with the compliance controls it is evidence for:
 `pci-dss:10.4.1` (security events reviewed), `pci-dss:11.5.1` (intrusions detected and
 alerted, PCI DSS 3.2.1's 11.4), `nist-800-53:SI-4` (system monitoring) and
-`cis-v8:13.3` (network intrusion detection); the packet loss detection has
+`cis-v8:13.3` (network intrusion detection); the packet loss and sensor health detections have
 `pci-dss:10.7.2` (failures of security controls) and `cis-v8:13.6` instead of 13.3.
 
 `network-shell-port` and `network-remote-admin-port` are about the process that made

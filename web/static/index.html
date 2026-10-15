@@ -214,6 +214,7 @@
       <a class="nav__item" href="#security" data-page="security" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-shield-check"/></svg><span>Security</span></a>
       <a class="nav__item" href="#servers" data-page="servers" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-server"/></svg><span>Servers</span></a>
       <a class="nav__item" href="#scanners" data-page="scanners" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-radar"/></svg><span>Scanners</span></a>
+      <a class="nav__item" href="#sensors" data-page="sensors" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-router"/></svg><span>Network sensors</span></a>
       <a class="nav__item" href="#audit" data-page="audit" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-scroll-text"/></svg><span>Audit</span></a>
       <a class="nav__item" href="#health" data-page="health"><svg class="icon" aria-hidden="true"><use href="#i-activity"/></svg><span>Health</span></a>
     </div>
@@ -270,6 +271,7 @@
       <a class="set-tab" href="#security" data-page="security" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-shield-check"/></svg><span>Security</span><span id="security-count" class="nav__count hidden" data-critical></span></a>
       <a class="set-tab" href="#servers" data-page="servers" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-server"/></svg><span>Servers</span></a>
       <a class="set-tab" href="#scanners" data-page="scanners" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-radar"/></svg><span>Scanners</span></a>
+      <a class="set-tab" href="#sensors" data-page="sensors" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-router"/></svg><span>Network sensors</span></a>
       <a class="set-tab" href="#audit" data-page="audit" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-scroll-text"/></svg><span>Audit</span></a>
       <a class="set-tab" href="#health" data-page="health"><svg class="icon" aria-hidden="true"><use href="#i-activity"/></svg><span>Health</span></a>
     </div>
@@ -1567,6 +1569,22 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
     <div id="sc-page" class="sc-page" aria-busy="true"></div>
   </section>
 
+  <!-- Network sensors (admins): each sensor's health, what to fix, and
+       the rule tuning every sensor fetches -->
+  <section id="page-sensors" class="page">
+    <div class="page-head">
+      <div>
+        <h2 class="page-head__title">Network sensors</h2>
+        <p class="page-head__desc">The sensors that watch your network with Zeek and Suricata: whether each one is healthy, what to fix, and the rule tuning they all fetch.</p>
+      </div>
+      <div class="page-head__actions">
+        <a class="btn btn--secondary" href="#health" data-page="health"><svg class="icon" aria-hidden="true"><use href="#i-activity"/></svg><span>Health</span></a>
+        <a class="btn btn--primary" href="#data?source=sensor"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg><span>Add a sensor</span></a>
+      </div>
+    </div>
+    <div id="ns-page" class="ns-page" aria-busy="true"></div>
+  </section>
+
   <!-- Help -->
   <!-- Audit: who changed what, on every server -->
   <section id="page-apitokens" class="page">
@@ -1684,6 +1702,7 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
 <script src="servers-opensearch.js"></script>
 <script src="security.js"></script>
 <script src="endpoints.js"></script>
+<script src="sensors.js"></script>
 <script src="sensor-setup.js"></script>
 <script src="vulns.js"></script>
 <script src="compliance.js"></script>

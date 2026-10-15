@@ -19,19 +19,23 @@ import (
 // /api/sensor/install.sh, public like Add a server's); the script, holding
 // the sensor's own agent token, fetches the Fluent Bit configuration (GET
 // /api/sensor/config) and waits until its first batch arrived (GET
-// /api/sensor/seen). Those two check the token themselves, as ingest does:
-// the sensor has nothing else to sign in with.
+// /api/sensor/seen). Once set up, the sensor fetches the rule tuning
+// every 10 minutes (GET /api/sensor/tuning, sensors.go). Those three check
+// the token themselves, as ingest does: the sensor has nothing else to
+// sign in with.
 
 // sensorPublicRoutes check the sensor's agent token instead of a sign-in.
 var sensorPublicRoutes = []string{
 	"GET /api/sensor/config",
 	"GET /api/sensor/seen",
+	"GET /api/sensor/tuning",
 }
 
 func (s *Server) routeSensor(mux *http.ServeMux, api *router) {
 	mux.HandleFunc("GET /api/sensor/install.sh", s.handleInstallScript(clusterinstall.ScriptSensor))
 	mux.HandleFunc("GET /api/sensor/config", s.handleSensorConfig)
 	mux.HandleFunc("GET /api/sensor/seen", s.handleSensorSeen)
+	mux.HandleFunc("GET /api/sensor/tuning", s.handleSensorTuningFetch)
 	api.admin("GET /api/sensor/install", s.handleSensorInstall)
 }
 

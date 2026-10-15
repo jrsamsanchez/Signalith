@@ -58,6 +58,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/search"
 	"github.com/jrsamsanchez/signalith/internal/secrets"
 	"github.com/jrsamsanchez/signalith/internal/securefile"
+	"github.com/jrsamsanchez/signalith/internal/sensortune"
 	"github.com/jrsamsanchez/signalith/internal/shared"
 	"github.com/jrsamsanchez/signalith/internal/store"
 	"github.com/jrsamsanchez/signalith/internal/syslog"
@@ -1260,6 +1261,9 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	// notes the hosts that reach it and writes their last contact in bulk.
 	estore := endpoint.NewStore(cl, c.OpenSearch.IndexPrefix)
 	in.jobs.Go(func() { estore.Run(ctx, 30*time.Second) })
+	// The Suricata rule tuning network sensors fetch (Settings > Network
+	// sensors), one document next to the endpoint settings.
+	tuning := sensortune.NewStore(cl, c.OpenSearch.IndexPrefix)
 	// Network scans for vulnerabilities, set up on the Vulnerabilities
 	// page. Every server runs the scans of the networks that name it as
 	// their scanner; the server that runs the background jobs runs the
@@ -1415,48 +1419,60 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	osIdentity := r.osIdentity(ctx, in, c)
 	r.agents.Store(agentsInv)
 	in.jobs.Go(func() { agentsInv.Run(ctx) })
+	// A network sensor gone silent cannot be searched for: the server
+	// that runs the background jobs writes an event for it, which the
+	// built-in detection network-sensor-unhealthy reads.
+	sensorWatch := &agentinv.SensorWatch{Agents: agentsInv, Events: pipeline, Log: log}
+	if r.node != nil {
+		sensorWatch.Leader = r.node.RunsJobs
+	}
+	in.jobs.Go(func() { sensorWatch.Run(ctx) })
 	srv := &api.Server{
-		Config:     c,
-		Tokens:     tokens,
-		Agents:     agentsInv,
-		Engine:     eng,
-		Pipeline:   pipeline,
-		EventAge:   live,
-		Syslog:     receiver,
-		Backend:    cl,
-		Detections: lib,
-		Scheduler:  sched,
-		Findings:   fstore,
-		Assets:     lists,
-		Intel:      indicators,
-		Feeds:      feeds,
-		Notify:     &api.Notify{Settings: notes, Deliveries: deliveries, Sender: senders, Server: sampleServer},
-		Dashboards: boards,
-		Cases:      cstore,
-		Respond:    responder,
-		Playbooks:  &api.Playbooks{Manager: pbooks, Runs: pruns},
-		Retention:  ret,
-		Sample:     sampleLoader,
-		Content:    updater,
-		Endpoints:  estore,
-		Vulns:      &api.Vulns{Store: vstore, Scanner: scanner},
-		Background: r.backgroundContext(parent),
-		Assistant:  newAssistant(c),
-		Users:      people,
-		Directory:  dir,
-		TLS:        certs,
-		Sessions:   r.sessions,
-		Limiter:    r.limiter,
-		Restarter:  r,
-		Security:   r.security,
-		Started:    r.started,
-		UI:         web.FS(),
-		Log:        log,
-		Version:    version,
+		Config:       c,
+		Tokens:       tokens,
+		Agents:       agentsInv,
+		Engine:       eng,
+		Pipeline:     pipeline,
+		EventAge:     live,
+		Syslog:       receiver,
+		Backend:      cl,
+		Detections:   lib,
+		Scheduler:    sched,
+		Findings:     fstore,
+		Assets:       lists,
+		Intel:        indicators,
+		Feeds:        feeds,
+		Notify:       &api.Notify{Settings: notes, Deliveries: deliveries, Sender: senders, Server: sampleServer},
+		Dashboards:   boards,
+		Cases:        cstore,
+		Respond:      responder,
+		Playbooks:    &api.Playbooks{Manager: pbooks, Runs: pruns},
+		Retention:    ret,
+		Sample:       sampleLoader,
+		Content:      updater,
+		Endpoints:    estore,
+		SensorTuning: tuning,
+		Vulns:        &api.Vulns{Store: vstore, Scanner: scanner},
+		Background:   r.backgroundContext(parent),
+		Assistant:    newAssistant(c),
+		Users:        people,
+		Directory:    dir,
+		TLS:          certs,
+		Sessions:     r.sessions,
+		Limiter:      r.limiter,
+		Restarter:    r,
+		Security:     r.security,
+		Started:      r.started,
+		UI:           web.FS(),
+		Log:          log,
+		Version:      version,
 	}
 	followProxyTrust(srv)
 	srv.KnownBrowsers = r.browsers
 	srv.Join = r.sharedJoin(c, certs)
+	if r.shared != nil && r.sharedContent != nil {
+		srv.ComplianceNotes = r.sharedContent.comp
+	}
 	wireFeatures(srv, r.shared)
 	if parts != nil {
 		srv.SessionStore, srv.KnownBrowsers, srv.SharedUsers = parts.sessions, parts.browsers, parts.api(c)

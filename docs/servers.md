@@ -787,6 +787,12 @@ rows the sample data adds stay on the server that loaded it, and lists of up to
 1,000,000 rows are kept in parts, so a server reading a list while it is replaced gets
 the old list or the new one, never a mix.
 
+**Notes on compliance controls.** The notes admins add on the
+[Compliance](compliance.md#controls-handled-elsewhere) page are kept in the shared
+settings too, so every server shows them and puts them in its reports. The server that
+founds the cluster brings the notes in its `compliance-notes.json`. While a server cannot
+use the shared settings, saving a note there answers `503`.
+
 ## Field names when several servers receive events
 
 Each day's events go to one index per data model, and Signalith lets one index hold at

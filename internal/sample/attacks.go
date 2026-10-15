@@ -20,6 +20,7 @@ func (g *gen) attacks() {
 	g.malwareOutbreak()
 	g.antivirusHousekeeping()
 	g.vulnerabilityScan()
+	g.sensorUpkeep()
 	g.dnsTunnel()
 	g.networkHygiene()
 }
