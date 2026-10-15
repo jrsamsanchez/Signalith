@@ -380,6 +380,9 @@ func (r *runner) followShared(ctx context.Context) {
 			{want && r.shared.SharedLibrary(), ct.library.on.Load(), switchWhy(want && r.shared.SharedLibrary(),
 				"the detections and dashboards are now shared by every server of the cluster",
 				"this server now keeps the detections and dashboards in its own folders")},
+			{want && r.shared.SharedLookups(), ct.library.lists.Load(), switchWhy(want && r.shared.SharedLookups(),
+				"the asset and identity lists are now shared by every server of the cluster",
+				"this server now keeps the asset and identity lists in its own folder")},
 			// Append a new shared feature's switch here.
 		}
 		i := slices.IndexFunc(switches, func(s sharedSwitch) bool { return s.want != s.on })
