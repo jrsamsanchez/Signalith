@@ -1,7 +1,8 @@
 # Written by the Signalith sensor install script (deploy/sensor/install.sh).
 # Prepares the capture port @IFACE@ before Zeek and Suricata start: up,
 # listening to every packet (promiscuous), never answering (no ARP, no
-# IPv6), and without the network card offloads that merge packets.
+# IPv6), and without the network card offloads that merge packets. When it
+# stops (and on --uninstall), the port is put back as it was.
 [Unit]
 Description=Signalith sensor: prepare the capture port @IFACE@
 Documentation=https://github.com/jrsamsanchez/Signalith/blob/main/docs/network-sensor.md
@@ -13,9 +14,12 @@ Before=signalith-zeek.service signalith-suricata.service
 Type=oneshot
 RemainAfterExit=yes
 ExecStart=/usr/lib/signalith-sensor/capture-up.sh @IFACE@
+ExecStop=/usr/lib/signalith-sensor/capture-up.sh --undo @IFACE@
 CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW
 NoNewPrivileges=yes
 ProtectSystem=strict
+# What the port was like before.
+ReadWritePaths=/var/lib/signalith-sensor
 ProtectHome=yes
 PrivateTmp=yes
 

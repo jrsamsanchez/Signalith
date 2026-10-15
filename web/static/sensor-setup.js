@@ -91,7 +91,9 @@
       return false;
     }
     $('agent-title').textContent = 'Set up a new network sensor';
-    $('agent-sub').textContent = 'One line installs Zeek, Suricata and the agent on a fresh Linux machine, from their publishers’ signed packages.';
+    $('agent-sub').textContent = S.layout === 'docker'
+      ? 'One line runs Zeek, Suricata and the agent on a fresh Linux machine with Docker, from their publishers’ official images.'
+      : 'One line installs Zeek, Suricata and the agent on a fresh Linux machine, from their publishers’ signed packages.';
     load();
     return true;
   };
@@ -191,7 +193,7 @@
       el('p', { class: 'hint' }, icon('info'), el('span', {}, d.note)),
       ca,
       el('p', { class: 'hint' }, icon('list-checks'), el('span', {}, 'It checks the machine first and lists what it found. Add ', el('code', {}, '--check-only'),
-        ' to the end to only check, or ', el('code', {}, '--dry-run'), ' to see what it would change. ',
+        ' to the end to only check, or ', el('code', {}, '--dry-run /tmp/sensor'), ' to see what it would change (it writes the files under that folder). ',
         el('a', { href: 'https://github.com/jrsamsanchez/Signalith/blob/main/docs/network-sensor.md', target: '_blank', rel: 'noopener' }, 'Network sensor guide', icon('external-link', 'icon--xs')))),
       el('div', { id: 'sensor-wait', role: 'status', 'aria-live': 'polite' }));
     drawWait();

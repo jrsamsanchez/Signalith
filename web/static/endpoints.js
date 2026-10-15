@@ -180,18 +180,23 @@
   // A sensor the install script built sends a status line every 5
   // minutes (a.sensor): versions, the rules' age, the capture port and
   // its drops, and free disk.
+  // Each warning says what to run on the sensor to fix it; logs differ
+  // when the programs run in containers (layout docker).
+  const COMPOSE = 'sudo docker compose -f /etc/signalith-sensor/docker/docker-compose.yml';
+  const logsOf = (s, unit, service) => (s.layout === 'docker' ? COMPOSE + ' logs ' + service : 'sudo journalctl -u ' + unit + ' -n 50');
   const SENSOR_WARNING = {
-    capture_ip: 'The capture port has an IP address: it should only listen.',
-    capture_link: 'The capture port’s link is down: check its cable and the mirror port.',
-    no_traffic: 'No packets reached the capture port since the last check: check the mirror (SPAN) port.',
-    drops: 'It drops more than 5% of packets: give it more cores or memory, or mirror less traffic.',
-    rules_old: 'Its Suricata rules are more than 3 days old.',
-    rules_failed: 'The last Suricata rules update failed.',
-    zeek_stopped: 'Zeek is not running.',
-    suricata_stopped: 'Suricata is not running.',
-    disk_low: 'Less than 10% of its disk is free.',
-    time_not_synced: 'Its clock is not synced: event times may be off.',
+    capture_ip: () => 'The capture port has an IP address: it should only listen. Remove the address in the sensor’s network settings.',
+    capture_link: () => 'The capture port’s link is down: check its cable and the mirror port.',
+    no_traffic: () => 'No packets reached the capture port since the last check: check the mirror (SPAN) port.',
+    drops: () => 'It drops more than 5% of packets: give it more cores or memory, or mirror less traffic.',
+    rules_old: () => 'Its Suricata rules are more than 3 days old. On the sensor, run sudo systemctl start signalith-suricata-update, then see why with sudo journalctl -u signalith-suricata-update.',
+    rules_failed: () => 'The last Suricata rules update failed. On the sensor, see why with sudo journalctl -u signalith-suricata-update, then run sudo systemctl start signalith-suricata-update.',
+    zeek_stopped: (s) => 'Zeek is not running. On the sensor, see why with ' + logsOf(s, 'signalith-zeek', 'zeek') + ', or run the install line again.',
+    suricata_stopped: (s) => 'Suricata is not running. On the sensor, see why with ' + logsOf(s, 'signalith-suricata', 'suricata') + ', or run the install line again.',
+    disk_low: () => 'Less than 10% of its disk is free: give it a bigger disk.',
+    time_not_synced: () => 'Its clock is not synced, so event times may be off. On the sensor, run sudo timedatectl set-ntp true.',
   };
+  const sensorWarning = (w, s) => (SENSOR_WARNING[w] ? SENSOR_WARNING[w](s) : w);
 
   // rulesAge is how old the rules are, as "1 day old", or why there are none.
   function rulesAge(s) {
@@ -214,7 +219,7 @@
   function sensorFacts(s) {
     const fact = (k, v) => (v ? [el('dt', {}, k), el('dd', {}, v)] : []);
     const gb = (b) => (b >= 1073741824 ? Math.round(b / 1073741824).toLocaleString() + ' GB' : Math.round(b / 1048576).toLocaleString() + ' MB');
-    const warnings = (s.warnings || []).map((w) => SENSOR_WARNING[w] || w);
+    const warnings = (s.warnings || []).map((w) => sensorWarning(w, s));
     const tool = (t) => (t ? [t.version, t.running ? 'running' : 'stopped'].filter(Boolean).join(', ') : '');
     const updated = Date.parse(s.rules_updated || '');
     const rules = [s.rules_count ? s.rules_count.toLocaleString() + ' rules' : 'No rules yet',
@@ -356,7 +361,7 @@
           el('div', {}, el('div', { class: 'ep-name' }, label),
             el('div', { class: 'ep-sub' }, a.refusing ? 'Refuses this server’s certificate' : ['Log agent only', plat.label].filter(Boolean).join(' · ')),
             a.sensor && !a.refusing ? el('div', { class: 'ep-sub ep-sensor' }, sensorLine(a.sensor),
-              (a.sensor.warnings || []).length ? el('span', { class: 'ep-sensor__warn', title: a.sensor.warnings.map((w) => SENSOR_WARNING[w] || w).join(' ') }, icon('triangle-alert', 'icon--xs'),
+              (a.sensor.warnings || []).length ? el('span', { class: 'ep-sensor__warn', title: a.sensor.warnings.map((w) => sensorWarning(w, a.sensor)).join(' ') }, icon('triangle-alert', 'icon--xs'),
                 a.sensor.warnings.length === 1 ? '1 warning' : a.sensor.warnings.length + ' warnings') : null) : null))),
         el('td', { 'data-label': 'Status' }, agentStatus(a)),
         el('td', { 'data-label': 'Checks', class: 'ep-c-checks' }, el('span', { class: 'ep-muted' }, '—')),

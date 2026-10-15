@@ -29,8 +29,12 @@ const (
 // SensorStatus is what a sensor's newest status line says, as the agent
 // inventory keeps it for the Endpoints and Health pages.
 type SensorStatus struct {
-	// At is the line's own time.
-	At       time.Time   `json:"at"`
+	// At is the line's own time, never later than when it arrived.
+	At time.Time `json:"at"`
+	// Received is when a server got the line (set by the agent
+	// inventory): which line is newest goes by it, not by At, which the
+	// sensor's clock sets.
+	Received time.Time   `json:"received,omitzero"`
 	Role     string      `json:"role,omitempty"`
 	Version  string      `json:"version,omitempty"`
 	Layout   string      `json:"layout,omitempty"`

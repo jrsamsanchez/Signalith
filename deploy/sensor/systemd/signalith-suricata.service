@@ -1,7 +1,11 @@
 # Written by the Signalith sensor install script (deploy/sensor/install.sh).
 # Suricata starts as root to open the capture port, then runs as the
-# suricata user (run-as in /etc/suricata/signalith-sensor.yaml). It writes
-# only its logs and its rules folder.
+# suricata user (run-as in /etc/suricata/signalith-sensor.yaml). Until then
+# it needs CAP_DAC_OVERRIDE and CAP_CHOWN (it opens its log, in a folder
+# that is the suricata user's, and hands it over) and CAP_SETPCAP (to drop
+# the rest); it keeps only the capture rights after. It writes only its
+# logs and /var/lib/suricata; the rules, in
+# /var/lib/signalith-sensor/suricata/rules, are root's and only read.
 [Unit]
 Description=Signalith sensor: Suricata
 Documentation=https://github.com/jrsamsanchez/Signalith/blob/main/docs/network-sensor.md
@@ -20,7 +24,7 @@ RuntimeDirectory=suricata
 RuntimeDirectoryMode=0750
 # Logs readable by the suricata group, which the agent is in.
 UMask=0027
-CapabilityBoundingSet=CAP_NET_RAW CAP_NET_ADMIN CAP_SETUID CAP_SETGID CAP_SYS_NICE CAP_IPC_LOCK
+CapabilityBoundingSet=CAP_NET_RAW CAP_NET_ADMIN CAP_SETUID CAP_SETGID CAP_SYS_NICE CAP_IPC_LOCK CAP_SETPCAP CAP_CHOWN CAP_DAC_OVERRIDE
 NoNewPrivileges=yes
 ProtectSystem=strict
 ReadWritePaths=/var/log/suricata /var/lib/suricata

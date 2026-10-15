@@ -97,8 +97,9 @@ on a computer without osquery gets a row of its own marked **Log agent only**.
 The **Log agent** column says one of:
 
 - **Sending, 2m ago**: events arrived recently.
-- **Silent since 10:42**: nothing for more than an hour. Check that the agent runs and
-  can reach Signalith.
+- **Silent since 10:42**: nothing for more than an hour (15 minutes for a network sensor
+  the sensor install script built, which sends a status line every 5 minutes). Check that
+  the agent runs and can reach Signalith.
 - **Needs a new configuration**: open the row to see why, in plain words:
   - it trusts a different certificate authority than this server uses, so its
     connections fail (this also shows for a computer that keeps refusing this server's
@@ -123,6 +124,17 @@ the agent is still fine after the switch. Two
 computers with the same name are shown as one row with both addresses. An agent not heard
 from for 30 days is removed from the list. The computer name an agent sends is only a
 label: it never lets anyone in.
+
+### Network sensors
+
+A network sensor built with **Add data > Network sensor > Set up a new sensor** shows as
+**Network sensor**, with a second line on its row: the Zeek and Suricata versions, how old
+the rules are, the capture port and its link, and the share of packets dropped. A
+**warnings** badge counts what its last status line found wrong. Opening it shows a
+**Network sensor** section with the details and each warning with the command to fix it on
+the sensor. For such a sensor, **Get a new configuration** is not the way to repair it: run
+its line from Add data again, which also gives it a new token. See
+[Network sensor: Status](network-sensor.md#status).
 
 ## Configuration checks
 

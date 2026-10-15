@@ -228,8 +228,8 @@ type Result struct {
 	// Hosts are the first few host names in the events, to tell agents
 	// apart in Health page warnings (see NotePlaintext).
 	Hosts []string `json:"-"`
-	// Sensor is the newest sensor status line in the events, nil when
-	// there is none.
+	// Sensor is the last sensor status line among the events that were
+	// stored (in the order they came), nil when there is none.
 	Sensor *SensorStatus `json:"-"`
 }
 
@@ -250,14 +250,12 @@ func (r *Result) noteHost(ev *Event) {
 	r.Hosts = append(r.Hosts, h)
 }
 
-// noteSensor keeps the newest sensor status line of the events.
-func (r *Result) noteSensor(ev *Event) {
-	if s := ev.Sensor; s != nil && (r.Sensor == nil || !s.At.Before(r.Sensor.At)) {
-		r.Sensor = s
-	}
-}
-
 func (r *Result) add(o *Result) {
+	// Batches are written in the order they came: a later one's status
+	// line is the newer.
+	if o.Sensor != nil {
+		r.Sensor = o.Sensor
+	}
 	r.Indexed += o.Indexed
 	r.Rejected += o.Rejected
 	r.Duplicates += o.Duplicates
@@ -281,7 +279,6 @@ func (p *Pipeline) Ingest(ctx context.Context, tag string, records []map[string]
 		events := make([]Event, 0, end-start)
 		for _, r := range records[start:end] {
 			events = append(events, Normalize(tag, r, p.now()))
-			total.noteSensor(&events[len(events)-1])
 		}
 		res, err := p.write(ctx, events, nil)
 		if err != nil {
@@ -400,6 +397,7 @@ func (p *Pipeline) write(ctx context.Context, events []Event, ids []string) (*Re
 	errs, res.Duplicates = store.WithoutConflicts(errs, docs)
 	res.Rejected = len(errs)
 	res.Indexed = len(docs) - len(errs)
+	res.Sensor = storedSensor(events, errs, recv)
 	for _, e := range errs {
 		if temporary(e) {
 			res.Temporary++
@@ -429,6 +427,27 @@ func (p *Pipeline) write(ctx context.Context, events []Event, ids []string) (*Re
 			"fields", strings.Join(reserved, ", "))
 	}
 	return res, nil
+}
+
+// storedSensor returns the last sensor status line among the events that
+// were stored (errs are the ones that were not). Which line is newest
+// goes by the order they came, never by the time a line gives itself: a
+// sensor whose clock ran ahead, or a sender writing a time far ahead,
+// would otherwise keep its status forever. That time is kept for the
+// page, but never later than when the line arrived (recv).
+func storedSensor(events []Event, errs []store.BulkItemError, recv time.Time) *SensorStatus {
+	var out *SensorStatus
+	for i := len(events) - 1; i >= 0 && out == nil; i-- {
+		s := events[i].Sensor
+		if s == nil || slices.ContainsFunc(errs, func(e store.BulkItemError) bool { return e.Pos == i }) {
+			continue
+		}
+		out = s
+	}
+	if out != nil && (out.At.IsZero() || out.At.After(recv)) {
+		out.At = recv
+	}
+	return out
 }
 
 // dropReserved removes the fields a sender may not set (see Reserved)

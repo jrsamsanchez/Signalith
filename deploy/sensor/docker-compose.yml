@@ -31,8 +31,12 @@ services:
     working_dir: /logs/zeek/current
     entrypoint: ["zeek"]
     command: ["-C", "-i", "af_packet::${SIGNALITH_INTERFACE}", "local", "/config/signalith.zeek"]
+    # Only the right packet capture needs: the host already made the port
+    # promiscuous, so Zeek cannot change the network settings. It stays the
+    # image's root user, as Docker gives added rights to root alone; that
+    # root has no other rights, and the image is read-only.
     cap_drop: [ALL]
-    cap_add: [NET_RAW, NET_ADMIN]
+    cap_add: [NET_RAW]
     volumes:
       - zeek-logs:/logs/zeek
       - /etc/signalith-sensor/docker/zeek/signalith.zeek:/config/signalith.zeek:ro

@@ -23,6 +23,10 @@ import (
 type ClusterInstall struct {
 	Files *clusterinstall.Files
 	Gate  *clusterinstall.Gate
+	// ScriptGate limits downloads of the install scripts (Add a server's
+	// and the network sensor's) by address; nil leaves them unlimited.
+	// They hold no secrets, but anyone may ask for them.
+	ScriptGate *clusterinstall.Gate
 	// Deployment is how this server runs: docker, systemd,
 	// windows-service, or "" when it was started by hand.
 	Deployment string
@@ -79,6 +83,15 @@ func (s *Server) handleInstallScript(name string) http.HandlerFunc {
 		if s.Install == nil {
 			writeError(w, http.StatusNotFound, errors.New("this server does not hand out install scripts"))
 			return
+		}
+		if s.Install.ScriptGate != nil {
+			done, ok := s.Install.ScriptGate.Take(s.client(r).Addr.String())
+			if !ok {
+				w.Header().Set("Retry-After", "60")
+				writeError(w, http.StatusTooManyRequests, errors.New("too many downloads of the install script from this address; try again later"))
+				return
+			}
+			defer done()
 		}
 		body, sum, _ := clusterinstall.Script(name)
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")

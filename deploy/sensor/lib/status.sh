@@ -113,13 +113,18 @@ link=$(safe "$(cat "$net/operstate" 2>/dev/null)")
 [ -n "$link" ] || link=missing
 rxp=$(num "$(cat "$net/statistics/rx_packets" 2>/dev/null)")
 rxd=$(num "$(cat "$net/statistics/rx_dropped" 2>/dev/null)")
-kd=$(num "$(printf '%s\n' "$eve" | grep '"event_type":"stats"' | tail -n 1 | sed -n 's/.*"kernel_drops":\([0-9]*\).*/\1/p')")
+kd=$(printf '%s\n' "$eve" | grep '"event_type":"stats"' | tail -n 1 | sed -n 's/.*"kernel_drops":\([0-9]*\).*/\1/p')
 lp=0 ld=0 lk=0 before=no
 if [ -r "$counters" ]; then
   before=yes
   read -r lp ld lk <"$counters" || true
 fi
 lp=$(num "$lp") ld=$(num "$ld") lk=$(num "$lk")
+# No stats line in the end of eve.json read above (a busy link): Suricata's
+# drops are taken as they were at the last line, not as zero, so the next
+# stats line is not counted as all new drops.
+if [ -z "$kd" ]; then kd=$lk; fi
+kd=$(num "$kd")
 dp=$((rxp - lp)) dd=$((rxd - ld)) dk=$((kd - lk))
 # A counter that went down was reset (a restart): count from zero.
 [ "$dp" -ge 0 ] || dp=$rxp

@@ -57,6 +57,10 @@ const (
 	keepFor = 30 * 24 * time.Hour
 	// SilentAfter is how long without events makes an agent silent.
 	SilentAfter = time.Hour
+	// SensorSilentAfter is how long without events makes a network sensor
+	// the install script built silent: it sends its status line every 5
+	// minutes, so three missed are enough to tell.
+	SensorSilentAfter = 15 * time.Minute
 	// minRefusedMinutes is in how many minutes of the last hour an address
 	// that never got a batch through must have refused the certificate to
 	// be listed on its own. An agent keeps trying; a browser shown a
@@ -421,8 +425,15 @@ func (v *Inventory) Note(c Contact) {
 	d.Name, d.Address, d.Tag, d.Intake, d.Transport, d.Local = name, c.Address, c.Tag, c.Intake, transport, c.Local
 	d.Token, d.TokenName, d.CA, d.ConfigVersion, d.ServerCA = c.TokenID, c.TokenName, ca, version, serverCA
 	d.LastSeen = now
-	if c.Sensor != nil && (d.Sensor == nil || !c.Sensor.At.Before(d.Sensor.At)) {
-		d.Sensor = c.Sensor
+	// The status line of the batch that came last, whatever time the line
+	// gives itself (see ingest's storedSensor).
+	if c.Sensor != nil {
+		s := *c.Sensor
+		if s.At.IsZero() || s.At.After(now) {
+			s.At = now
+		}
+		s.Received = now
+		d.Sensor = &s
 	}
 	e.events.add(now, int64(c.Events))
 	e.dirty = true
@@ -915,7 +926,7 @@ func Merge(docs []Doc, now time.Time) []Agent {
 		if l, ok := latest[d.Agent]; !ok || d.LastSeen.After(l.LastSeen) {
 			latest[d.Agent] = d
 		}
-		if d.Sensor != nil && (a.Sensor == nil || d.Sensor.At.After(a.Sensor.At)) {
+		if d.Sensor != nil && (a.Sensor == nil || sensorReceived(d.Sensor).After(sensorReceived(a.Sensor))) {
 			a.Sensor = d.Sensor
 		}
 		addUnique(&a.Addresses, d.Address)
@@ -1010,4 +1021,25 @@ func addUnique(list *[]string, s string) {
 	if s != "" && !slices.Contains(*list, s) {
 		*list = append(*list, s)
 	}
+}
+
+// sensorReceived is when a server got a sensor's status line, for which
+// server's is the newest; a document written before Received was kept
+// gives the line's own time.
+func sensorReceived(s *ingest.SensorStatus) time.Time {
+	if s.Received.IsZero() {
+		return s.At
+	}
+	return s.Received
+}
+
+// Silent says whether agent a is silent at now: nothing from it in
+// SilentAfter, or in SensorSilentAfter for a sensor that sends a status
+// line. The Endpoints and Health pages both go by it.
+func Silent(a Agent, now time.Time) bool {
+	after := SilentAfter
+	if a.Sensor != nil {
+		after = SensorSilentAfter
+	}
+	return now.Sub(a.LastSeen) > after
 }

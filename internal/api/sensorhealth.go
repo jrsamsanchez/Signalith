@@ -14,9 +14,6 @@ import (
 // sends Zeek, Suricata or sensor status batches.
 
 const (
-	// sensorSilentAfter is how long without a batch makes a sensor
-	// silent: it sends its status line every 5 minutes.
-	sensorSilentAfter = 15 * time.Minute
 	// sensorDropping is the share of packets dropped above which a sensor
 	// is dropping packets.
 	sensorDropping = 5.0
@@ -54,7 +51,9 @@ func countSensors(agents []agentinv.Agent, now time.Time) *sensorCounts {
 			continue
 		}
 		c.Total++
-		if now.Sub(a.LastSeen) > sensorSilentAfter {
+		// As the Endpoints page says it (agentinv.Silent): 15 minutes for a
+		// sensor that sends a status line, an hour for one that does not.
+		if agentinv.Silent(a, now) {
 			c.Silent++
 		} else {
 			c.Sending++

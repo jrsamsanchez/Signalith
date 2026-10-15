@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
+	"fmt"
 	"io/fs"
 	"math/big"
 	"os"
@@ -90,9 +91,14 @@ func TestSensorScriptLineEndings(t *testing.T) {
 }
 
 // Every repository signing key the script adds is pinned by its full
-// fingerprint. An empty one means it was not verified when the script
-// was written: this test fails until it is, on purpose, so a release
-// cannot ship a sensor that refuses to install its packages.
+// fingerprint, all in one place near the top of the script. A filled-in
+// one must be a whole fingerprint. An empty one was not checked against
+// its publisher when the script was written: the script then stops in
+// its checklist, before it installs anything, and the Add data page says
+// to use Docker. That is logged here, and fails where
+// SIGNALITH_SENSOR_KEYS=required is set (CI's sensor-script job, which
+// also checks every pin against what its publisher serves), so it is
+// seen until each is filled in.
 func TestSensorKeyFingerprintsSet(t *testing.T) {
 	re := regexp.MustCompile(`(?m)^(KEY_FPR_[A-Z_]+)=(.*)$`)
 	found := re.FindAllStringSubmatch(string(SensorInstallSH), -1)
@@ -100,8 +106,13 @@ func TestSensorKeyFingerprintsSet(t *testing.T) {
 		t.Fatalf("found %d KEY_FPR_ constants, want the 4 publishers' keys", len(found))
 	}
 	hex40 := regexp.MustCompile(`^[0-9A-F]{40}$`)
+	required := os.Getenv("SIGNALITH_SENSOR_KEYS") == "required"
 	for _, m := range found {
-		if v := strings.Trim(m[2], `'"`); !hex40.MatchString(v) {
+		v := strings.Trim(m[2], `'"`)
+		switch {
+		case v == "" && !required:
+			t.Logf("%s is not pinned yet: fill it in from its publisher (docs/network-sensor.md, Signing keys)", m[1])
+		case !hex40.MatchString(v):
 			t.Errorf("%s is %q: it must be the key's full fingerprint, 40 upper-case hexadecimal characters, checked against the publisher (docs/network-sensor.md, Signing keys)", m[1], v)
 		}
 	}
@@ -236,10 +247,16 @@ case "$url" in
 esac
 [ -z "$w" ] || printf '%s' "$code"
 `, 0o755)
+	// ip: the default route through eth0, and an address on each port
+	// named in $STUB_ADDR.
 	mustWrite(t, filepath.Join(bin, "ip"), `#!/bin/sh
 case "$*" in
   *"-6 route"*) ;;
   *route*) echo "default via 10.0.0.1 dev eth0 proto dhcp" ;;
+  *"addr show dev "*)
+    for a in $STUB_ADDR; do
+      case "$*" in *"dev $a "*) echo "3: $a    inet 192.0.2.9/24 scope global $a" ;; esac
+    done ;;
 esac
 `, 0o755)
 	mustWrite(t, filepath.Join(bin, "nproc"), "#!/bin/sh\necho \"${STUB_CORES:-4}\"\n", 0o755)
@@ -423,17 +440,46 @@ func TestSensorScriptDryRun(t *testing.T) {
 		}
 	}
 	for unit, want := range map[string]string{
-		"signalith-zeek.service":       "AmbientCapabilities=CAP_NET_RAW CAP_NET_ADMIN\nCapabilityBoundingSet=CAP_NET_RAW CAP_NET_ADMIN\nNoNewPrivileges=yes\nProtectSystem=strict\n",
-		"signalith-fluent-bit.service": "CapabilityBoundingSet=\nAmbientCapabilities=\nNoNewPrivileges=yes\nProtectSystem=strict\nReadWritePaths=/var/lib/signalith-sensor/agent\n",
-		"signalith-suricata.service":   "CapabilityBoundingSet=CAP_NET_RAW CAP_NET_ADMIN CAP_SETUID CAP_SETGID CAP_SYS_NICE CAP_IPC_LOCK\nNoNewPrivileges=yes\nProtectSystem=strict\n",
+		// Zeek: capture only, not the network settings.
+		"signalith-zeek.service":         "AmbientCapabilities=CAP_NET_RAW\nCapabilityBoundingSet=CAP_NET_RAW\nNoNewPrivileges=yes\nProtectSystem=strict\n",
+		"signalith-zeekctl-cron.service": "AmbientCapabilities=CAP_NET_RAW\nCapabilityBoundingSet=CAP_NET_RAW\nNoNewPrivileges=yes\n",
+		"signalith-fluent-bit.service":   "CapabilityBoundingSet=\nAmbientCapabilities=\nNoNewPrivileges=yes\nProtectSystem=strict\nReadWritePaths=/var/lib/signalith-sensor/agent\n",
+		// Suricata needs SETPCAP, CHOWN and DAC_OVERRIDE until it drops to
+		// its user (libcap-ng's capng_change_id adds SETPCAP).
+		"signalith-suricata.service": "CapabilityBoundingSet=CAP_NET_RAW CAP_NET_ADMIN CAP_SETUID CAP_SETGID CAP_SYS_NICE CAP_IPC_LOCK CAP_SETPCAP CAP_CHOWN CAP_DAC_OVERRIDE\nNoNewPrivileges=yes\nProtectSystem=strict\n",
+		// The rules update writes only root's folders.
+		"signalith-suricata-update.service": "ReadWritePaths=/var/lib/signalith-sensor -/run/suricata -/run/docker.sock\n",
+		"signalith-sensor-capture.service":  "ExecStop=/usr/lib/signalith-sensor/capture-up.sh --undo eth1\n",
 	} {
 		if got := readFile(t, filepath.Join(root, "etc/systemd/system", unit)); !strings.Contains(got, want) {
 			t.Errorf("%s is missing its hardening %q", unit, want)
 		}
 	}
-	for _, h := range []string{"capture-up.sh", "status.sh", "rules-update.sh"} {
+	for _, h := range []string{"capture-up.sh", "status.sh", "rules-update.sh", "install.sh"} {
 		if fi, err := os.Stat(filepath.Join(root, "usr/lib/signalith-sensor", h)); err != nil || fi.Mode().Perm() != 0o755 {
 			t.Errorf("%s: %v", h, err)
+		}
+	}
+	// A copy of the script itself, for --uninstall.
+	if got := readFile(t, filepath.Join(root, "usr/lib/signalith-sensor/install.sh")); got != string(SensorInstallSH) {
+		t.Error("usr/lib/signalith-sensor/install.sh is not the script")
+	}
+	// The rules are root's, in a folder only root writes, never under
+	// /var/lib/suricata, which the suricata user owns.
+	if !strings.Contains(yaml, "default-rule-path: /var/lib/signalith-sensor/suricata/rules\n") {
+		t.Errorf("signalith-sensor.yaml: rules not in /var/lib/signalith-sensor/suricata/rules:\n%s", yaml)
+	}
+	if fi, err := os.Stat(filepath.Join(root, "var/lib/signalith-sensor/suricata/rules/suricata.rules")); err != nil || fi.Mode().Perm() != 0o644 {
+		t.Errorf("the empty suricata.rules for Suricata's first test: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "var/lib/suricata/rules")); err == nil {
+		t.Error("the script made /var/lib/suricata/rules")
+	}
+	// While Zeek's signing key is not pinned, the checklist says so (a
+	// real run stops there), and the end says warnings scrolled past.
+	if strings.Contains(string(SensorInstallSH), "\nKEY_FPR_ZEEK_OBS=''\n") {
+		if !strings.Contains(out, "cannot install Zeek from packages") || !strings.Contains(out, "warning(s) above") {
+			t.Errorf("unpinned Zeek key not in the checklist:\n%s", out)
 		}
 	}
 
@@ -536,7 +582,7 @@ func TestSensorScriptDryRunOptions(t *testing.T) {
 		}
 	}
 	yaml = readFile(t, filepath.Join(root, "etc/signalith-sensor/docker/suricata/signalith-sensor.yaml"))
-	if strings.Contains(yaml, "run-as:") || !strings.Contains(yaml, "default-log-dir: /var/log/suricata/\n") {
+	if strings.Contains(yaml, "run-as:") || !strings.Contains(yaml, "default-log-dir: /var/log/suricata/\n") || !strings.Contains(yaml, "default-rule-path: /var/lib/suricata/rules\n") {
 		t.Errorf("Docker's Suricata configuration: %s", yaml)
 	}
 	if z := readFile(t, filepath.Join(root, "etc/signalith-sensor/docker/zeek/signalith.zeek")); !strings.Contains(z, "redef Site::local_nets += { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, [fd00::]/8 };") {
@@ -652,4 +698,252 @@ func jsonString(t *testing.T, v any) string {
 		t.Fatal(err)
 	}
 	return string(b)
+}
+
+// Signalith hands out one certificate authority at a time: a file with a
+// second one after it is refused, though the first matches the line, and
+// only the certificate the line names is ever kept.
+func TestSensorScriptCAOneCertificate(t *testing.T) {
+	m := newSensorMachine(t)
+	ca := readFile(t, filepath.Join(m.dir, "ca.pem"))
+	args := []string{"--role", "sensor", "--from", "https://siem.example.com:8443", "--ca-sha256", m.caSHA, "--token", "-", "--check-only"}
+	mustWrite(t, filepath.Join(m.dir, "ca.pem"), ca+ca, 0o644)
+	out, err := m.run(t, "4", testToken, append(args, "--dry-run", filepath.Join(m.dir, "two"))...)
+	if err == nil || !strings.Contains(out, "handed out 2 certificates where it hands out one") {
+		t.Errorf("two certificates: %v\n%s", err, out)
+	}
+	// Another kind of block after it (OpenSSL trusts a TRUSTED
+	// CERTIFICATE too): dropped from the CA the sensor keeps.
+	extra := strings.ReplaceAll(ca, "CERTIFICATE", "TRUSTED CERTIFICATE")
+	mustWrite(t, filepath.Join(m.dir, "ca.pem"), "junk before\n"+ca+extra, 0o644)
+	root, _ := m.install(t, "4")
+	if got := readFile(t, filepath.Join(root, "etc/signalith-sensor/ca.pem")); got != ca {
+		t.Errorf("ca.pem kept:\n%s", got)
+	}
+}
+
+// The script picks a capture port on its own only when exactly one is
+// free: not the one the machine reaches the network with, not one in a
+// bridge or bond, not one with an address (storage, backups).
+func TestSensorScriptBusyPorts(t *testing.T) {
+	m := newSensorMachine(t, "eth0", "eth1", "eth2", "eth3")
+	mustWrite(t, filepath.Join(m.dir, "sys/class/net/eth3/master"), "br0\n", 0o644)
+	m.env = []string{"STUB_ADDR=eth1"}
+	root, out := m.install(t, "4")
+	if !strings.Contains(out, "capture port: eth2 (the only port that does not reach the network)") {
+		t.Errorf("eth1 has an address, eth3 is in a bridge: %s", out)
+	}
+	if got := readFile(t, filepath.Join(root, "etc/signalith-sensor/sensor.conf")); !strings.Contains(got, "INTERFACE='eth2'") {
+		t.Errorf("sensor.conf: %s", got)
+	}
+	m.env = []string{"STUB_ADDR=eth1 eth2"}
+	out, err := m.run(t, "4", testToken, "--role", "sensor", "--from", "https://siem.example.com:8443", "--ca-sha256", m.caSHA,
+		"--token", "-", "--dry-run", filepath.Join(m.dir, "busy"))
+	if err == nil || !strings.Contains(out, "No port is free for capture") || !strings.Contains(out, "eth1 eth2 eth3") || !strings.Contains(out, "name it with --interface") {
+		t.Errorf("no free port: %v\n%s", err, out)
+	}
+	// Named with --interface, a port in a bridge is used, with a warning.
+	_, out = m.install(t, "4", "--interface", "eth3")
+	if !strings.Contains(out, "eth3 is part of a bridge or bond") {
+		t.Errorf("--interface eth3: %s", out)
+	}
+}
+
+// A port with "-" in its name: systemd writes its device unit with \x2d,
+// which reaches the unit as it is.
+func TestSensorScriptDashedPort(t *testing.T) {
+	m := newSensorMachine(t, "eth0", "mirror-1")
+	root, _ := m.install(t, "4")
+	unit := readFile(t, filepath.Join(root, "etc/systemd/system/signalith-sensor-capture.service"))
+	if !strings.Contains(unit, `BindsTo=sys-subsystem-net-devices-mirror\x2d1.device`+"\n") || !strings.Contains(unit, "capture-up.sh mirror-1\n") {
+		t.Errorf("capture unit:\n%s", unit)
+	}
+}
+
+// Debian 13 takes Suricata from Debian itself, without backports.
+func TestSensorScriptDebian13(t *testing.T) {
+	m := newSensorMachine(t)
+	m.os("debian", "13")
+	root, out := m.install(t, "4", "--no-zeek")
+	if !strings.Contains(out, "would run: env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends suricata suricata-update") {
+		t.Errorf("Debian 13: %s", out)
+	}
+	if _, err := os.Stat(filepath.Join(root, "etc/apt/sources.list.d/signalith-debian-backports.list")); err == nil {
+		t.Error("Debian 13: backports added")
+	}
+	if got := readFile(t, filepath.Join(root, "etc/apt/sources.list.d/signalith-fluent-bit.list")); !strings.Contains(got, "/debian/trixie trixie main") {
+		t.Errorf("Fluent Bit's repository: %s", got)
+	}
+	m.os("debian", "12")
+	root, out = m.install(t, "4", "--no-zeek")
+	if !strings.Contains(out, "-t bookworm-backports suricata suricata-update") || !strings.Contains(readFile(t, filepath.Join(root, "etc/apt/sources.list.d/signalith-debian-backports.list")), "bookworm-backports main") {
+		t.Errorf("Debian 12: %s", out)
+	}
+}
+
+// Run again: the programs get their publishers' newest packages, and
+// changed rules of your own are loaded now, not at the next daily update.
+func TestSensorScriptRunAgain(t *testing.T) {
+	m := newSensorMachine(t)
+	rules := filepath.Join(m.dir, "my.rules")
+	mustWrite(t, rules, "alert ip any any -> any any (msg:\"one\"; sid:9900001; rev:1;)\n", 0o644)
+	root, out := m.install(t, "4", "--local-rules", rules)
+	if !strings.Contains(out, "downloading the Suricata rules") {
+		t.Errorf("first run downloads the rules: %s", out)
+	}
+	again := func() string {
+		t.Helper()
+		out, err := m.run(t, "4", testToken, "--role", "sensor", "--from", "https://siem.example.com:8443", "--ca-sha256", m.caSHA,
+			"--version", "1.6.0", "--token", "-", "--local-rules", rules, "--dry-run", root)
+		if err != nil {
+			t.Fatalf("again: %v\n%s", err, out)
+		}
+		return out
+	}
+	out = again()
+	if !strings.Contains(out, "would run: env DEBIAN_FRONTEND=noninteractive apt-get install -y --only-upgrade --no-install-recommends zeek-8.0") ||
+		!strings.Contains(out, "--only-upgrade --no-install-recommends fluent-bit") || !strings.Contains(out, "Nothing to change") || strings.Contains(out, "Suricata rules") {
+		t.Errorf("again, unchanged: %s", out)
+	}
+	mustWrite(t, rules, "alert ip any any -> any any (msg:\"two\"; sid:9900002; rev:1;)\n", 0o644)
+	out = again()
+	if !strings.Contains(out, "updating the Suricata rules with your own") || !strings.Contains(out, "the Suricata rules, with your own") {
+		t.Errorf("again, rules changed: %s", out)
+	}
+}
+
+// Root never follows a symbolic link where it writes: one put in place of
+// a file or folder stops the script.
+func TestSensorScriptRefusesLinks(t *testing.T) {
+	m := newSensorMachine(t)
+	root, _ := m.install(t, "4")
+	target := filepath.Join(m.dir, "shadow")
+	mustWrite(t, target, "secret\n", 0o600)
+	conf := filepath.Join(root, "etc/signalith-sensor/sensor.conf")
+	if err := os.Remove(conf); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, conf); err != nil {
+		t.Fatal(err)
+	}
+	out, err := m.run(t, "4", testToken, "--role", "sensor", "--from", "https://siem.example.com:8443", "--ca-sha256", m.caSHA,
+		"--token", "-", "--dry-run", root)
+	if err == nil || !strings.Contains(out, "is a symbolic link, which the script does not follow") {
+		t.Errorf("link: %v\n%s", err, out)
+	}
+	if got := readFile(t, target); got != "secret\n" {
+		t.Errorf("the link's target was written: %q", got)
+	}
+	if fi, _ := os.Stat(target); fi.Mode().Perm() != 0o600 {
+		t.Errorf("the link's target's mode changed: %v", fi.Mode())
+	}
+}
+
+// capture-up.sh keeps what the port was like before, and --undo puts it
+// back: promiscuous mode, ARP, IPv6 and the offloads that were on.
+func TestSensorCaptureUndo(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("POSIX shells only")
+	}
+	dir := t.TempDir()
+	script := filepath.Join(dir, "capture-up.sh")
+	mustWrite(t, script, lf(sensorFile(t, "sensor/lib/capture-up.sh")), 0o755)
+	root := filepath.Join(dir, "root")
+	mustWrite(t, filepath.Join(root, "proc/sys/net/ipv6/conf/eth1/disable_ipv6"), "0\n", 0o644)
+	if err := os.MkdirAll(filepath.Join(root, "var/lib/signalith-sensor"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Up, ARP on, not promiscuous.
+	mustWrite(t, filepath.Join(dir, "sys/class/net/eth1/flags"), "0x1003\n", 0o644)
+	bin := filepath.Join(dir, "bin")
+	calls := filepath.Join(dir, "calls")
+	mustWrite(t, filepath.Join(bin, "ip"), "#!/bin/sh\necho \"ip $*\" >>\"$CALLS\"\n", 0o755)
+	mustWrite(t, filepath.Join(bin, "ethtool"), `#!/bin/sh
+if [ "$1" = -k ]; then
+  printf 'Features for %s:\ngeneric-receive-offload: on\nlarge-receive-offload: off [fixed]\ngeneric-segmentation-offload: on\ntcp-segmentation-offload: off\nrx-gro-hw: off [fixed]\n' "$2"
+  exit 0
+fi
+echo "ethtool $*" >>"$CALLS"
+`, 0o755)
+	run := func(args ...string) string {
+		t.Helper()
+		_ = os.Remove(calls)
+		cmd := exec.Command("sh", append([]string{script}, args...)...)
+		cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "CALLS="+calls,
+			"SIGNALITH_SENSOR_ROOT="+root, "SIGNALITH_SENSOR_SYSFS="+filepath.Join(dir, "sys"))
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("capture-up.sh %v: %v\n%s", args, err, out)
+		}
+		b, _ := os.ReadFile(calls)
+		return string(b)
+	}
+	got := run("eth1")
+	if !strings.Contains(got, "ip link set dev eth1 up promisc on arp off\n") || !strings.Contains(got, "ethtool -K eth1 gro off\n") {
+		t.Errorf("up: %s", got)
+	}
+	saved := filepath.Join(root, "var/lib/signalith-sensor/capture-eth1.before")
+	if s := readFile(t, saved); s != "off on 0 gro,gso\n" {
+		t.Errorf("saved: %q", s)
+	}
+	if v := readFile(t, filepath.Join(root, "proc/sys/net/ipv6/conf/eth1/disable_ipv6")); v != "1\n" {
+		t.Errorf("IPv6: %q", v)
+	}
+	// A restart keeps what it was before the sensor.
+	mustWrite(t, filepath.Join(dir, "sys/class/net/eth1/flags"), "0x1183\n", 0o644)
+	run("eth1")
+	if s := readFile(t, saved); s != "off on 0 gro,gso\n" {
+		t.Errorf("saved after a restart: %q", s)
+	}
+	got = run("--undo", "eth1")
+	if !strings.Contains(got, "ip link set dev eth1 promisc off arp on\n") || !strings.Contains(got, "ethtool -K eth1 gro on\n") ||
+		!strings.Contains(got, "ethtool -K eth1 gso on\n") || strings.Contains(got, "tso on") {
+		t.Errorf("undo: %s", got)
+	}
+	if v := readFile(t, filepath.Join(root, "proc/sys/net/ipv6/conf/eth1/disable_ipv6")); v != "0\n" {
+		t.Errorf("IPv6 after undo: %q", v)
+	}
+	if _, err := os.Stat(saved); err == nil {
+		t.Error("undo kept the saved state")
+	}
+}
+
+// With no stats line in the end of eve.json (a busy link), Suricata's
+// drops count from the last line that had one, not from zero.
+func TestSensorStatusNoStatsLine(t *testing.T) {
+	m := newSensorMachine(t)
+	root, _ := m.install(t, "4", "--name", "nsm-01")
+	if err := os.MkdirAll(filepath.Join(root, "var/log/signalith-sensor"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	eve := filepath.Join(root, "var/log/suricata/signalith/eve.json")
+	status := filepath.Join(root, "usr/lib/signalith-sensor/status.sh")
+	packets := 1000
+	drop := func(eveText string) float64 {
+		t.Helper()
+		packets += 1000
+		mustWrite(t, filepath.Join(m.dir, "sys/class/net/eth1/statistics/rx_packets"), fmt.Sprintf("%d\n", packets), 0o644)
+		mustWrite(t, eve, eveText, 0o644)
+		cmd := exec.Command("sh", status)
+		cmd.Env = append(os.Environ(), "PATH="+m.path, "SIGNALITH_SENSOR_ROOT="+root, "SIGNALITH_SENSOR_SYSFS="+filepath.Join(m.dir, "sys"))
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("status.sh: %v\n%s", err, out)
+		}
+		lines := strings.Split(strings.TrimSpace(readFile(t, filepath.Join(root, "var/log/signalith-sensor/status.json"))), "\n")
+		var v map[string]any
+		if err := json.Unmarshal([]byte(lines[len(lines)-1]), &v); err != nil {
+			t.Fatal(err)
+		}
+		return v["interface"].(map[string]any)["drop_percent"].(float64)
+	}
+	stats := func(n int) string {
+		return fmt.Sprintf(`{"event_type":"stats","stats":{"capture":{"kernel_drops":%d}}}`+"\n", n)
+	}
+	drop(stats(50000))
+	if d := drop(`{"event_type":"alert"}` + "\n"); d != 0 {
+		t.Errorf("no stats line: %v%% dropped", d)
+	}
+	// 10 more drops since the last stats line, over 1000 packets.
+	if d := drop(stats(50010)); d != 1.0 {
+		t.Errorf("next stats line: %v%% dropped, want 1", d)
+	}
 }

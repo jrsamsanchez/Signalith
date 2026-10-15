@@ -15,8 +15,8 @@ ExecStart=/opt/zeek/bin/zeekctl cron
 # A Zeek process it restarts must keep running after this job ends.
 KillMode=process
 UMask=0027
-AmbientCapabilities=CAP_NET_RAW CAP_NET_ADMIN
-CapabilityBoundingSet=CAP_NET_RAW CAP_NET_ADMIN
+AmbientCapabilities=CAP_NET_RAW
+CapabilityBoundingSet=CAP_NET_RAW
 NoNewPrivileges=yes
 ProtectSystem=strict
 ReadWritePaths=/opt/zeek/logs /opt/zeek/spool

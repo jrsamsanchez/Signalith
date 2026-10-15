@@ -35,13 +35,22 @@ func TestSensorLines(t *testing.T) {
 			t.Errorf("line has %q:\n%s", not, c.Linux)
 		}
 	}
-	if !strings.Contains(c.Note, "Ubuntu 22.04") || !strings.Contains(c.Note, "don't share it") {
+	if !strings.Contains(c.Note, "Ubuntu 22.04") || !strings.Contains(c.Note, "don't share it") || !strings.Contains(c.Note, "Zeek's packages are for Ubuntu and Debian only") {
 		t.Errorf("note %q", c.Note)
+	}
+	// A leading space keeps the line, and its token, out of bash's history.
+	if !strings.HasPrefix(c.Linux, " f=$(mktemp) && ") || !strings.Contains(c.Note, "history") {
+		t.Errorf("line %q / note %q", c.Linux, c.Note)
+	}
+	// While Zeek's signing key is not pinned in the script, the note says
+	// to pick Docker or leave Zeek out.
+	if unpinned := strings.Join(SensorUnpinned(), " "); strings.Contains(unpinned, "KEY_FPR_ZEEK_OBS") != strings.Contains(c.Note, "cannot install Zeek from packages yet") {
+		t.Errorf("unpinned %s, note %q", unpinned, c.Note)
 	}
 
 	// A public CA: no pin. Docker, one tool, the next CA, protocols.
 	c, _ = SensorLines(SensorLine{URL: "https://siem.example.com", Version: "dev", Suricata: true, Docker: true})
-	if strings.Contains(c.Linux, "--ca-sha256") || !strings.HasSuffix(c.Linux, "--token - --no-zeek --docker") || !strings.Contains(c.Note, "Docker Desktop") {
+	if strings.Contains(c.Linux, "--ca-sha256") || !strings.HasSuffix(c.Linux, "--token - --no-zeek --docker") || !strings.Contains(c.Note, "Docker Desktop") || strings.Contains(c.Note, "cannot install") {
 		t.Errorf("docker: %s / %s", c.Linux, c.Note)
 	}
 	c, _ = SensorLines(SensorLine{URL: "https://siem:8080", Version: "1.6.0", CASHA256: caSum, NextCASHA256: strings.Repeat("a", 64), Zeek: true})

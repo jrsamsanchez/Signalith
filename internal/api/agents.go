@@ -135,7 +135,7 @@ func (s *Server) handleAgents(w http.ResponseWriter, r *http.Request) {
 // (current and next pins) and the agent tokens.
 func (s *Server) agentFlags(a agentinv.Agent, current, next string, now time.Time) agentView {
 	v := agentView{Agent: a, NeedsConfig: []string{}, Notes: []string{}}
-	v.Silent = now.Sub(a.LastSeen) > agentinv.SilentAfter
+	v.Silent = agentinv.Silent(a, now)
 	// Each entry of a.CA is one configuration's pins: it is fine when it
 	// trusts the current certificate authority or the one prepared to
 	// replace it (a configuration made while a switch was prepared

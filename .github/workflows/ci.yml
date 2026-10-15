@@ -341,12 +341,17 @@ jobs:
           test -z "$out"
       - name: Check the pinned repository keys
         run: .github/scripts/sensor-keys.sh
+      # Fails while a pin is empty (the required test jobs only log it).
+      - name: Check every repository key is pinned
+        if: always()
+        run: SIGNALITH_SENSOR_KEYS=required go test -run 'TestSensorKeyFingerprintsSet$' ./deploy
       # The script's own tests, which run it against a fake machine, in
       # each supported system, with its sh, sed, awk and coreutils.
       - name: Dry runs on Ubuntu, Debian, Rocky and Alma Linux
+        if: always()
         run: |
           CGO_ENABLED=0 go test -c -o "$RUNNER_TEMP/deploy.test" ./deploy
-          for image in ubuntu:22.04 ubuntu:24.04 debian:12 rockylinux:9 almalinux:9; do
+          for image in ubuntu:22.04 ubuntu:24.04 debian:12 debian:13 rockylinux:9 almalinux:9; do
             echo "== $image"
             docker run --rm -v "$PWD:/src:ro" -v "$RUNNER_TEMP/deploy.test:/deploy.test:ro" -w /src/deploy "$image" \
               /deploy.test -test.v -test.run 'TestSensorScript(Parses|Refuses|DryRun|DryRunOptions|PortChoice)$|TestSensorStatusLine'

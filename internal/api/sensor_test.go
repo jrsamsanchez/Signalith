@@ -280,14 +280,17 @@ func TestCountSensors(t *testing.T) {
 	agents := []agentinv.Agent{
 		{Tag: "win.security", LastSeen: now},
 		{Tag: "zeek.conn", LastSeen: now.Add(-time.Minute)},
+		// Silent after an hour without a status line, as on Endpoints...
 		{Tag: "suricata.eve", LastSeen: now.Add(-20 * time.Minute)},
+		// ...and after 15 minutes with one.
+		{Tag: "sensor.status", LastSeen: now.Add(-20 * time.Minute), Sensor: &ingest.SensorStatus{Zeek: &ingest.SensorTool{}}},
 		{Tag: "sensor.status", LastSeen: now, Sensor: &ingest.SensorStatus{DropPercent: 5.1, Suricata: &ingest.SensorTool{}, RulesUpdated: fresh, RulesUpdate: "ok"}},
 		{Tag: "zeek.dns", LastSeen: now, Sensor: &ingest.SensorStatus{Suricata: &ingest.SensorTool{}, RulesUpdated: fresh, RulesUpdate: "failed"}},
 		{Tag: "zeek.dns", LastSeen: now, Sensor: &ingest.SensorStatus{Zeek: &ingest.SensorTool{}}},
 		{Tag: "zeek", Refusing: true},
 	}
 	got := countSensors(agents, now)
-	if got == nil || *got != (sensorCounts{Total: 5, Sending: 4, Silent: 1, Dropping: 1, RulesOld: 1}) {
+	if got == nil || *got != (sensorCounts{Total: 6, Sending: 5, Silent: 1, Dropping: 1, RulesOld: 1}) {
 		t.Errorf("counts: %+v", got)
 	}
 	if countSensors(agents[:1], now) != nil {

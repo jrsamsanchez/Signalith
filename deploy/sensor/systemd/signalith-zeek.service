@@ -1,7 +1,9 @@
 # Written by the Signalith sensor install script (deploy/sensor/install.sh).
-# Zeek, run by zeekctl as the zeek user with only the two rights packet
-# capture needs. The zeek package's files stay read-only; Zeek writes only
-# its logs and its spool folder.
+# Zeek, run by zeekctl as the zeek user with only the right packet capture
+# needs (CAP_NET_RAW; signalith-sensor-capture.service already made the
+# port promiscuous, so Zeek cannot change the network settings). The zeek
+# package's files stay read-only; Zeek writes only its logs and its spool
+# folder.
 [Unit]
 Description=Signalith sensor: Zeek
 Documentation=https://github.com/jrsamsanchez/Signalith/blob/main/docs/network-sensor.md
@@ -20,8 +22,8 @@ ExecStop=/opt/zeek/bin/zeekctl stop
 TimeoutStartSec=300
 # Logs readable by the zeek group, which the agent is in.
 UMask=0027
-AmbientCapabilities=CAP_NET_RAW CAP_NET_ADMIN
-CapabilityBoundingSet=CAP_NET_RAW CAP_NET_ADMIN
+AmbientCapabilities=CAP_NET_RAW
+CapabilityBoundingSet=CAP_NET_RAW
 NoNewPrivileges=yes
 ProtectSystem=strict
 ReadWritePaths=/opt/zeek/logs /opt/zeek/spool

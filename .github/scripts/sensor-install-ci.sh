@@ -93,14 +93,16 @@ step "How the units are locked down (for information)"
 systemd-analyze security --no-pager signalith-zeek.service signalith-suricata.service signalith-fluent-bit.service || true
 
 step "The Emerging Threats Open licence suricata-update downloaded"
-for f in $(sudo find /var/lib/suricata/update/cache -name '*.tar.gz' 2>/dev/null); do
+for f in $(sudo find /var/lib/signalith-sensor/suricata/update/cache -name '*.tar.gz' 2>/dev/null); do
   sudo tar -xzOf "$f" --wildcards '*LICENSE*' 2>/dev/null | head -n 40 || true
 done
 
-step "Uninstall"
-curl -fsS --cacert "$SIGNALITH_CA" -o install.sh "$SIGNALITH/api/sensor/install.sh"
-sudo sh install.sh --uninstall
+step "Uninstall, with the copy of the script the sensor keeps"
+sudo sh /usr/lib/signalith-sensor/install.sh --uninstall
 left=''
+# The capture port is put back as it was: not promiscuous, answering ARP.
+flags=$(cat /sys/class/net/cap0/flags)
+[ $((flags & 256)) -eq 0 ] && [ $((flags & 128)) -eq 0 ] || left="$left cap0-flags:$flags"
 for u in signalith-zeek signalith-suricata signalith-fluent-bit signalith-sensor-status.timer signalith-suricata-update.timer signalith-sensor-capture; do
   [ ! -e "/etc/systemd/system/$u" ] && [ ! -e "/etc/systemd/system/$u.service" ] || left="$left $u"
 done

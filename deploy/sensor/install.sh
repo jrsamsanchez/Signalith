@@ -6,13 +6,15 @@
 # Add data > Network sensor > Set up a new sensor gives one line that
 # downloads this script from Signalith, checks its SHA-256, and runs it:
 #
-#   f=$(mktemp) && curl -fsSk --proto '=https' https://siem:8080/api/sensor/install.sh -o "$f" &&
+#    f=$(mktemp) && curl -fsSk --proto '=https' https://siem:8080/api/sensor/install.sh -o "$f" &&
 #   echo '<sha-256>  '"$f" | sha256sum -c --quiet &&
 #   echo 'sgl_...' | sudo sh "$f" --role sensor --from https://siem:8080 \
 #     --ca-sha256 <hex> --version 1.6.0 --token -
 #
 # "--token -" reads the sensor's agent token from the standard input, so it
-# is never on a command line other users of the machine could see.
+# is never on a command line other users of the machine could see. The
+# line starts with a space, which keeps it out of bash's history where
+# bash is set to (Ubuntu and Debian are; Rocky and Alma are not).
 #
 # What it does, in order, stopping at the first problem with a plain
 # message:
@@ -34,9 +36,11 @@
 #      starts everything, and waits until Signalith has heard from the
 #      sensor.
 #
-# Run it again to repair or upgrade: it changes only what differs, and
-# says "Nothing to change" when nothing does. --uninstall removes what it
-# added (the list is /etc/signalith-sensor/manifest).
+# Run it again to repair, or to upgrade Zeek, Suricata and Fluent Bit to
+# their publishers' newest packages: it changes only what differs, and says
+# "Nothing to change" when nothing does. It keeps a copy of itself in
+# /usr/lib/signalith-sensor/install.sh; --uninstall removes what it added
+# (the list is /etc/signalith-sensor/manifest).
 #
 # For tests only: SIGNALITH_SENSOR_SYSFS (a folder standing for /sys),
 # SIGNALITH_SENSOR_OS_RELEASE (for /etc/os-release),
@@ -60,6 +64,10 @@ KEY_FPR_OISF_PPA=121504ADE276E141AD704A75AC10378CF205C960
 KEY_FPR_ZEEK_OBS=''
 # OISF's Fedora COPR for Rocky and Alma Linux (@oisf/suricata-8.0).
 KEY_FPR_OISF_COPR=''
+# The two empty ones could not be checked against their publishers when
+# this was written. Until they are filled in, the checklist says so before
+# anything is installed (sensor_sources), and points to what works:
+# --docker, or leaving that program out.
 
 # Zeek's long-term support line (OBS package zeek-<LTS>).
 ZEEK_PACKAGE='zeek-8.0'
@@ -76,11 +84,12 @@ IMAGE_FLUENTBIT=fluent/fluent-bit:5.1.4@sha256:a9cc9627aeabb8bb33077ee85b6ec8c0f
 #   Ubuntu 22.04    xUbuntu_22.04    ppa:oisf/suricata-stable  ubuntu/jammy
 #   Ubuntu 24.04    xUbuntu_24.04    ppa:oisf/suricata-stable  ubuntu/noble
 #   Debian 12       Debian_12        bookworm-backports        debian/bookworm
+#   Debian 13       Debian_13        trixie (Debian's own)     debian/trixie
 #   Rocky/Alma 9    (none)           COPR @oisf/suricata-8.0   centos/9
 #
 # Zeek publishes no packages for Rocky, Alma or RHEL: there, use --no-zeek,
 # or --docker.
-SYSTEMS='Ubuntu 22.04 or 24.04, Debian 12, Rocky Linux 9 or AlmaLinux 9'
+SYSTEMS='Ubuntu 22.04 or 24.04, Debian 12 or 13, Rocky Linux 9 or AlmaLinux 9'
 
 role=''
 from=''
@@ -355,8 +364,11 @@ quiet() {
 }
 
 tmp=''
+newfile=''
 cleanup() {
   if [ -n "$tmp" ]; then rm -rf "$tmp"; fi
+  # A file put_file had not finished (the run was stopped).
+  if [ -n "$newfile" ]; then rm -f "$newfile"; fi
 }
 trap cleanup EXIT
 trap 'exit 130' INT TERM
@@ -382,11 +394,23 @@ same_file() {
   [ "$(sha256sum <"$1")" = "$(sha256sum <"$2")" ]
 }
 
+# no_link stops when $1 is a symbolic link: root never follows one where
+# it writes, so a program that owns a folder cannot point root at another
+# file (like /etc/shadow) through it.
+no_link() {
+  if [ -L "$1" ]; then
+    fail "$1 is a symbolic link, which the script does not follow." "Look at what made it (it should be a plain file or folder), remove it, and run the line again."
+  fi
+}
+
 # put_file writes file $1 (mode $2, owner $3) from $4 when it differs from
 # what is there, and notes group $5 as changed (its service restarts). The
 # file it replaces is kept once as <file>.signalith-orig when $6 is orig.
+# The new file is made readable by root only, and gets its mode once it
+# holds the whole content.
 put_file() {
   dest=$R$1
+  no_link "$dest"
   if [ -f "$dest" ] && same_file "$4" "$dest"; then
     set_owner "$dest" "$2" "$3"
     return 0
@@ -400,9 +424,12 @@ put_file() {
       manifest_add "orig $1"
     fi
   fi
-  cp "$4" "$dest.signalith-new"
+  rm -f "$dest.signalith-new"
+  newfile=$dest.signalith-new
+  (umask 077 && cp "$4" "$dest.signalith-new")
   set_owner "$dest.signalith-new" "$2" "$3"
   mv -f "$dest.signalith-new" "$dest"
+  newfile=''
   manifest_has "orig $1" || manifest_add "file $1"
   case " $changed " in
     *" $5 "*) ;;
@@ -411,7 +438,7 @@ put_file() {
 }
 # put writes standard input to a file with put_file.
 put() {
-  cat >"$tmp/put"
+  (umask 077 && cat >"$tmp/put")
   put_file "$1" "$2" "$3" "$tmp/put" "$4" "${5:-}"
 }
 # restore puts back the file put_file replaced in this run.
@@ -424,11 +451,13 @@ restore() {
   fi
 }
 set_owner() {
+  no_link "$1"
   chmod "$2" "$1"
-  [ -n "$dryrun" ] || chown "$3" "$1"
+  [ -n "$dryrun" ] || chown -h "$3" "$1"
 }
 # folder makes a folder with a mode and owner.
 folder() {
+  no_link "$R$1"
   mkdir -p "$R$1"
   set_owner "$R$1" "$2" "$3"
 }
@@ -436,7 +465,7 @@ folder() {
 # --- Common: the machine ----------------------------------------------
 
 os_id='' os_ver='' os_name='' pkg='' codename=''
-zeek_obs='' fb_repo=''
+zeek_obs='' fb_repo='' backports=''
 common_os() {
   [ -r "$os_release" ] || fail "This machine does not say which Linux it is (no /etc/os-release). The sensor runs on $SYSTEMS."
   os_id=$(sed -n 's/^ID="\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' "$os_release" | head -n 1)
@@ -446,7 +475,8 @@ common_os() {
   case "$os_id:$os_ver" in
     ubuntu:22.04) pkg=apt codename=jammy zeek_obs=xUbuntu_22.04 fb_repo=ubuntu/jammy ;;
     ubuntu:24.04) pkg=apt codename=noble zeek_obs=xUbuntu_24.04 fb_repo=ubuntu/noble ;;
-    debian:12*) pkg=apt codename=bookworm zeek_obs=Debian_12 fb_repo=debian/bookworm ;;
+    debian:12*) pkg=apt codename=bookworm zeek_obs=Debian_12 fb_repo=debian/bookworm backports=bookworm-backports ;;
+    debian:13*) pkg=apt codename=trixie zeek_obs=Debian_13 fb_repo=debian/trixie ;;
     rocky:9* | almalinux:9* | rhel:9*) pkg=dnf fb_repo=centos/9 ;;
     *)
       if [ "$docker" = yes ]; then
@@ -480,6 +510,36 @@ common_machine() {
   for tool in curl sha256sum base64 sed awk; do
     command -v "$tool" >/dev/null 2>&1 || fail "This script needs $tool, which this machine does not have." "sudo apt-get install curl coreutils (or sudo dnf install curl coreutils), then run the line again."
   done
+}
+
+# sensor_sources checks, before anything is installed, that each program
+# chosen can come from its publisher's signed packages on this system.
+sensor_sources() {
+  [ "$docker" = no ] || return 0
+  if [ "$zeek" = yes ] && [ "$pkg" = dnf ]; then
+    fail "Zeek publishes no packages for $os_name." "Run the line with --no-zeek (Suricata only), with --docker (Zeek in a container), or on Ubuntu or Debian."
+  fi
+  unpinned=''
+  if [ "$zeek" = yes ] && [ -z "$KEY_FPR_ZEEK_OBS" ]; then unpinned=Zeek; fi
+  if [ "$suricata" = yes ]; then
+    if { [ "$pkg" = dnf ] && [ -z "$KEY_FPR_OISF_COPR" ]; } || { [ "$os_id" = ubuntu ] && [ -z "$KEY_FPR_OISF_PPA" ]; }; then
+      unpinned="${unpinned:+$unpinned, }Suricata"
+    fi
+  fi
+  if [ -z "$KEY_FPR_FLUENTBIT" ]; then unpinned="${unpinned:+$unpinned, }Fluent Bit"; fi
+  if [ -z "$unpinned" ]; then
+    ok "packages: from their publishers' signed repositories"
+    return 0
+  fi
+  how="Run the line with --docker: the programs then run in their publishers' containers."
+  if [ "$unpinned" = Zeek ] && [ "$suricata" = yes ]; then
+    how="Run the line with --no-zeek (Suricata only), or with --docker (Zeek in a container)."
+  fi
+  if [ -n "$dryrun" ]; then
+    warn "dry run: this version of the script cannot install $unpinned from packages, as it has no checked signing key for it; a real run stops here." "$how"
+    return 0
+  fi
+  fail "This version of the script cannot install $unpinned from packages: it has no checked signing key for it, and it installs nothing it cannot check." "$how"
 }
 
 cores=1
@@ -532,7 +592,9 @@ pem_sha256() {
     tr -d '\r\n ' | base64 -d 2>/dev/null | sha256sum | awk '{ print $1 }'
 }
 # fetch_ca downloads one of Signalith's certificate authorities (which=$1)
-# and checks it is the one the line names ($2).
+# and checks it is the one the line names ($2). Signalith hands out one
+# certificate each time: a file with more is refused, as someone in between
+# could add their own after the real one.
 fetch_ca() {
   q=''
   [ "$1" = current ] || q="?which=$1"
@@ -540,8 +602,14 @@ fetch_ca() {
   code=$(curl -sSk --proto '=https' --max-time 30 -o "$tmp/ca-$1.pem" -w '%{http_code}' "$from/api/tls/ca.pem$q") ||
     fail "Could not reach Signalith at $from." "Check that this machine can reach it (curl $from), that the address is right, and that no firewall is in between, then run the line again."
   [ "$code" = 200 ] || fail "Signalith at $from did not hand out its certificate authority (it answered $code)." "Copy the line again from Add data > Network sensor."
+  n=$(grep -c -- '-----BEGIN CERTIFICATE-----' "$tmp/ca-$1.pem") || n=0
+  [ "$n" = 1 ] || fail "Signalith at $from handed out $n certificates where it hands out one." "Copy the line again from Add data > Network sensor; if it still fails, someone may be in between this machine and Signalith."
   got=$(pem_sha256 "$tmp/ca-$1.pem")
   [ "$got" = "$2" ] || fail "This Signalith's certificate authority is not the one the line names." "Copy the line again from Add data > Network sensor; if it still fails, someone may be in between this machine and Signalith."
+  # Only the certificate checked above is kept: nothing else in the file
+  # (another kind of PEM block, say) is ever trusted.
+  awk '/-----BEGIN CERTIFICATE-----/ { f = 1 } f { print } /-----END CERTIFICATE-----/ && f { exit }' "$tmp/ca-$1.pem" | tr -d '\r' >"$tmp/ca-$1.one"
+  mv -f "$tmp/ca-$1.one" "$tmp/ca-$1.pem"
 }
 common_ca() {
   if [ -z "$ca_sha" ]; then
@@ -631,32 +699,54 @@ sample_ports() {
   done
 }
 
+# has_address says whether port $1 has an IP address of its own (not
+# only a link-local one).
+has_address() {
+  command -v ip >/dev/null 2>&1 && [ -n "$(ip -o addr show dev "$1" scope global 2>/dev/null)" ]
+}
+
 ports=''
 sensor_pick_port() {
   default=$(routed | tr '\n' ' ')
   candidates=''
+  busy=''
   ports=''
   for d in "$sysfs"/class/net/*; do
     [ -e "$d/device" ] || continue
     p=${d##*/}
     ports="$ports $p"
     case " $default " in
-      *" $p "*) ;;
-      *) candidates="$candidates $p" ;;
+      *" $p "*) continue ;;
     esac
+    # A port in a bridge or bond, or with an address, carries some other
+    # network (storage, backups, a second uplink): the script never picks
+    # it on its own, as preparing it for capture would cut that off.
+    if [ -e "$d/master" ] || has_address "$p"; then
+      busy="$busy $p"
+    else
+      candidates="$candidates $p"
+    fi
   done
   if [ -n "$iface" ]; then
     [ -d "$sysfs/class/net/$iface" ] || fail "This machine has no network port named $iface." "Name one of its ports with --interface:$(for d in "$sysfs"/class/net/*; do printf ' %s' "${d##*/}"; done)"
     case " $default " in
       *" $iface "*) warn "$iface is the port this machine reaches the network with: listening on it, the sensor can cut you off (SSH may drop)." "Use a second port for capture, plugged into the mirror port or TAP." ;;
     esac
+    if [ -e "$sysfs/class/net/$iface/master" ]; then
+      warn "$iface is part of a bridge or bond, so it carries another network: preparing it for capture can cut that off." "Use a port of its own for capture, plugged into the mirror port or TAP."
+    fi
     ok "capture port: $iface"
     return 0
   fi
   # shellcheck disable=SC2086 # a list of port names
   set -- $candidates
   case $# in
-    0) fail "This machine has no network port for capture besides the one it reaches the network with (${default% })." "Add a second network port, plug it into the switch's mirror (SPAN) port or a TAP, and run the line again; or name a port with --interface." ;;
+    0)
+      if [ -n "$busy" ]; then
+        fail "No port is free for capture: besides the one this machine reaches the network with (${default% }), each has an IP address or is part of a bridge or bond:$busy." "If one of them is plugged into the mirror port or TAP, name it with --interface (and remove its address: a capture port should be silent); otherwise add a network port for capture."
+      fi
+      fail "This machine has no network port for capture besides the one it reaches the network with (${default% })." "Add a second network port, plug it into the switch's mirror (SPAN) port or a TAP, and run the line again; or name a port with --interface."
+      ;;
     1)
       iface=$1
       ok "capture port: $iface (the only port that does not reach the network)"
@@ -698,7 +788,7 @@ sensor_port_checks() {
   else
     warn "$iface received no packets in $sample seconds." "Check that the switch copies traffic to the mirror port $iface is plugged into."
   fi
-  if command -v ip >/dev/null 2>&1 && [ -n "$(ip -o addr show dev "$iface" scope global 2>/dev/null)" ]; then
+  if has_address "$iface"; then
     warn "$iface has an IP address: a capture port should be silent, so nobody can reach the sensor through it." "Remove the address from $iface in the network settings: with netplan, give $iface no addresses and dhcp4: false in /etc/netplan/*.yaml, then sudo netplan apply; with NetworkManager, sudo nmcli device set $iface managed no. The sensor never changes the network settings itself."
   fi
   # shellcheck disable=SC2086 # a list of port names
@@ -715,11 +805,9 @@ sensor_port_checks() {
 # key .asc). $1 names the publisher in messages.
 key_add() {
   if [ -z "$3" ]; then
-    if [ -n "$dryrun" ]; then
-      warn "dry run: no pinned fingerprint for $1's signing key; a real run stops here." "Use a newer version of Signalith, whose script pins it."
-      return 0
-    fi
-    fail "This version of the script has no pinned fingerprint for $1's signing key, so it cannot add that repository safely." "Update Signalith (a newer version pins it), or use --docker."
+    # sensor_sources said so already, before anything was installed.
+    if [ -n "$dryrun" ]; then return 0; fi
+    fail "This version of the script has no pinned fingerprint for $1's signing key, so it cannot add that repository safely." "Run the line with --docker."
   fi
   if [ -n "$dryrun" ]; then
     printf '    would download %s and check its fingerprint is %s\n' "$2" "$3"
@@ -795,7 +883,9 @@ repo_list() {
 common_repos() {
   if [ "$pkg" = apt ]; then
     quiet env DEBIAN_FRONTEND=noninteractive apt-get update || fail "apt-get update failed (see above)."
-    pkg_tools ca-certificates curl gnupg ethtool iproute2
+    # Not curl: the script runs with the machine's own (on Rocky and Alma
+    # often curl-minimal, which a curl package would conflict with).
+    pkg_tools ca-certificates gnupg ethtool iproute2
     run mkdir -p /etc/apt/keyrings
     if [ "$zeek" = yes ]; then
       key_add Zeek "https://download.opensuse.org/repositories/security:zeek/$zeek_obs/Release.key" "$KEY_FPR_ZEEK_OBS" /etc/apt/keyrings/signalith-zeek.gpg
@@ -805,19 +895,16 @@ common_repos() {
       if [ "$os_id" = ubuntu ]; then
         key_add "OISF (Suricata)" "https://keyserver.ubuntu.com/pks/lookup?op=get&options=mr&search=0x$KEY_FPR_OISF_PPA" "$KEY_FPR_OISF_PPA" /etc/apt/keyrings/signalith-oisf.gpg
         repo_list /etc/apt/sources.list.d/signalith-oisf-suricata.list "deb [signed-by=/etc/apt/keyrings/signalith-oisf.gpg] https://ppa.launchpadcontent.net/oisf/suricata-stable/ubuntu $codename main"
-      elif ! grep -rqs "^[^#]*$codename-backports" "$R/etc/apt/sources.list" "$R/etc/apt/sources.list.d"; then
+      elif [ -n "$backports" ] && ! grep -rqs "^[^#]*$backports" "$R/etc/apt/sources.list" "$R/etc/apt/sources.list.d"; then
         # Debian's own backports, signed by Debian's keys.
-        repo_list /etc/apt/sources.list.d/signalith-debian-backports.list "deb http://deb.debian.org/debian $codename-backports main"
+        repo_list /etc/apt/sources.list.d/signalith-debian-backports.list "deb http://deb.debian.org/debian $backports main"
       fi
     fi
     key_add "Fluent Bit" https://packages.fluentbit.io/fluentbit.key "$KEY_FPR_FLUENTBIT" /etc/apt/keyrings/signalith-fluentbit.gpg
     repo_list /etc/apt/sources.list.d/signalith-fluent-bit.list "deb [signed-by=/etc/apt/keyrings/signalith-fluentbit.gpg] https://packages.fluentbit.io/$fb_repo $codename main"
     quiet env DEBIAN_FRONTEND=noninteractive apt-get update || fail "apt-get update failed with the new repositories (see above)." "Check that this machine reaches download.opensuse.org, ppa.launchpadcontent.net and packages.fluentbit.io."
   else
-    if [ "$zeek" = yes ]; then
-      fail "Zeek publishes no packages for $os_name." "Run the line with --no-zeek (Suricata only), with --docker, or on Ubuntu 24.04."
-    fi
-    pkg_tools ca-certificates curl gnupg2 ethtool iproute
+    pkg_tools ca-certificates gnupg2 ethtool iproute
     if [ "$os_id" = rhel ]; then
       pkg_has epel-release || fail "Suricata on RHEL needs EPEL, which is not enabled." "sudo subscription-manager repos --enable codeready-builder-for-rhel-9-$(uname -m)-rpms && sudo dnf install https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm"
     else
@@ -860,6 +947,8 @@ mask_vendor() {
     return 0
   fi
   if [ "$(systemctl is-enabled "$1" 2>/dev/null)" != masked ]; then
+    # --uninstall starts it again.
+    if systemctl is-active --quiet "$1"; then manifest_add "was running $1"; fi
     systemctl mask --now "$1" >/dev/null 2>&1 || true
     manifest_add "mask $1"
   fi
@@ -874,7 +963,7 @@ sensor_packages() {
   if [ "$zeek" = yes ]; then pkg_install "$ZEEK_PACKAGE"; fi
   if [ "$suricata" = yes ]; then
     if [ "$os_id" = debian ]; then
-      apt_release=$codename-backports
+      apt_release=$backports
       pkg_install suricata suricata-update
       apt_release=''
     else
@@ -882,6 +971,68 @@ sensor_packages() {
     fi
   fi
   pkg_install fluent-bit
+  # Run again, the programs that were already here get their publishers'
+  # newest packages (Zeek within its long-term support line).
+  if [ "$zeek" = yes ]; then pkg_upgrade zeek "$ZEEK_PACKAGE"; fi
+  if [ "$suricata" = yes ]; then
+    if [ "$os_id" = debian ]; then
+      apt_release=$backports
+      pkg_upgrade suricata suricata suricata-update
+      apt_release=''
+    else
+      pkg_upgrade suricata suricata
+    fi
+  fi
+  pkg_upgrade agent fluent-bit
+}
+
+# pkg_version prints the version of package $1 that is installed.
+pkg_version() {
+  if [ "$pkg" = apt ]; then
+    dpkg-query -W -f='${Version}' "$1" 2>/dev/null
+  else
+    rpm -q --qf '%{VERSION}-%{RELEASE}' "$1" 2>/dev/null
+  fi
+}
+upgraded=''
+# pkg_upgrade upgrades the packages in $@ that were installed before this
+# run, and notes group $1 as changed (its service restarts) when one
+# was. A failed upgrade keeps the versions there.
+pkg_upgrade() {
+  group=$1
+  shift
+  todo=''
+  for p in "$@"; do
+    case " $installed " in *" $p "*) continue ;; esac
+    if pkg_has "$p"; then todo="$todo $p"; fi
+  done
+  [ -n "$todo" ] || return 0
+  before=''
+  if [ -z "$dryrun" ]; then
+    for p in $todo; do before="$before $(pkg_version "$p")"; done
+  fi
+  if [ "$pkg" = dnf ]; then
+    # shellcheck disable=SC2086 # a list of package names
+    set -- dnf upgrade -y $todo
+  elif [ -n "$apt_release" ]; then
+    # shellcheck disable=SC2086 # a list of package names
+    set -- env DEBIAN_FRONTEND=noninteractive apt-get install -y --only-upgrade --no-install-recommends -t "$apt_release" $todo
+  else
+    # shellcheck disable=SC2086 # a list of package names
+    set -- env DEBIAN_FRONTEND=noninteractive apt-get install -y --only-upgrade --no-install-recommends $todo
+  fi
+  if ! quiet "$@"; then
+    warn "Upgrading$todo failed (see above); the versions installed keep running." "Run the line again later; if it fails again, check that this machine reaches its package repositories."
+    return 0
+  fi
+  [ -z "$dryrun" ] || return 0
+  after=''
+  for p in $todo; do after="$after $(pkg_version "$p")"; done
+  if [ "$before" != "$after" ]; then
+    upgraded="$upgraded$todo"
+    case " $changed " in *" $group "*) ;; *) changed="$changed $group" ;; esac
+    ok "upgraded$todo"
+  fi
 }
 
 # --- Common: accounts --------------------------------------------------
@@ -931,7 +1082,10 @@ sensor_accounts() {
       chmod o+x "$R/var/log/suricata"
       folder /var/log/suricata/signalith 0750 suricata:suricata
       folder /var/lib/suricata 0750 suricata:suricata
-      folder /var/lib/suricata/rules 0755 suricata:suricata
+      # The rules, which root's daily update writes, are root's and only
+      # readable by Suricata: never in a folder Suricata can change.
+      folder /var/lib/signalith-sensor/suricata 0755 root:root
+      folder /var/lib/signalith-sensor/suricata/rules 0755 root:root
     fi
   fi
   ok "accounts and folders"
@@ -1083,9 +1237,11 @@ threads_default() {
 suricata_yaml() {
   logdir=/var/log/suricata/signalith/
   socket=/run/suricata/suricata-command.socket
+  rulesdir=/var/lib/signalith-sensor/suricata/rules
   if [ "$layout" = docker ]; then
     logdir=/var/log/suricata/
     socket=/var/run/suricata/suricata-command.socket
+    rulesdir=/var/lib/suricata/rules
   fi
   cat <<EOF
 %YAML 1.1
@@ -1108,7 +1264,7 @@ EOF
   fi
   cat <<EOF
 default-log-dir: $logdir
-default-rule-path: /var/lib/suricata/rules
+default-rule-path: $rulesdir
 rule-files:
   - suricata.rules
 threshold-file: /etc/suricata/threshold.config
@@ -1238,7 +1394,8 @@ sensor_unit() {
 # Written by the Signalith sensor install script (deploy/sensor/install.sh).
 # Prepares the capture port @IFACE@ before Zeek and Suricata start: up,
 # listening to every packet (promiscuous), never answering (no ARP, no
-# IPv6), and without the network card offloads that merge packets.
+# IPv6), and without the network card offloads that merge packets. When it
+# stops (and on --uninstall), the port is put back as it was.
 [Unit]
 Description=Signalith sensor: prepare the capture port @IFACE@
 Documentation=https://github.com/jrsamsanchez/Signalith/blob/main/docs/network-sensor.md
@@ -1250,9 +1407,12 @@ Before=signalith-zeek.service signalith-suricata.service
 Type=oneshot
 RemainAfterExit=yes
 ExecStart=/usr/lib/signalith-sensor/capture-up.sh @IFACE@
+ExecStop=/usr/lib/signalith-sensor/capture-up.sh --undo @IFACE@
 CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW
 NoNewPrivileges=yes
 ProtectSystem=strict
+# What the port was like before.
+ReadWritePaths=/var/lib/signalith-sensor
 ProtectHome=yes
 PrivateTmp=yes
 
@@ -1263,9 +1423,11 @@ UNIT
     signalith-zeek.service)
       cat <<'UNIT'
 # Written by the Signalith sensor install script (deploy/sensor/install.sh).
-# Zeek, run by zeekctl as the zeek user with only the two rights packet
-# capture needs. The zeek package's files stay read-only; Zeek writes only
-# its logs and its spool folder.
+# Zeek, run by zeekctl as the zeek user with only the right packet capture
+# needs (CAP_NET_RAW; signalith-sensor-capture.service already made the
+# port promiscuous, so Zeek cannot change the network settings). The zeek
+# package's files stay read-only; Zeek writes only its logs and its spool
+# folder.
 [Unit]
 Description=Signalith sensor: Zeek
 Documentation=https://github.com/jrsamsanchez/Signalith/blob/main/docs/network-sensor.md
@@ -1284,8 +1446,8 @@ ExecStop=/opt/zeek/bin/zeekctl stop
 TimeoutStartSec=300
 # Logs readable by the zeek group, which the agent is in.
 UMask=0027
-AmbientCapabilities=CAP_NET_RAW CAP_NET_ADMIN
-CapabilityBoundingSet=CAP_NET_RAW CAP_NET_ADMIN
+AmbientCapabilities=CAP_NET_RAW
+CapabilityBoundingSet=CAP_NET_RAW
 NoNewPrivileges=yes
 ProtectSystem=strict
 ReadWritePaths=/opt/zeek/logs /opt/zeek/spool
@@ -1324,8 +1486,8 @@ ExecStart=/opt/zeek/bin/zeekctl cron
 # A Zeek process it restarts must keep running after this job ends.
 KillMode=process
 UMask=0027
-AmbientCapabilities=CAP_NET_RAW CAP_NET_ADMIN
-CapabilityBoundingSet=CAP_NET_RAW CAP_NET_ADMIN
+AmbientCapabilities=CAP_NET_RAW
+CapabilityBoundingSet=CAP_NET_RAW
 NoNewPrivileges=yes
 ProtectSystem=strict
 ReadWritePaths=/opt/zeek/logs /opt/zeek/spool
@@ -1357,8 +1519,12 @@ UNIT
       cat <<'UNIT'
 # Written by the Signalith sensor install script (deploy/sensor/install.sh).
 # Suricata starts as root to open the capture port, then runs as the
-# suricata user (run-as in /etc/suricata/signalith-sensor.yaml). It writes
-# only its logs and its rules folder.
+# suricata user (run-as in /etc/suricata/signalith-sensor.yaml). Until then
+# it needs CAP_DAC_OVERRIDE and CAP_CHOWN (it opens its log, in a folder
+# that is the suricata user's, and hands it over) and CAP_SETPCAP (to drop
+# the rest); it keeps only the capture rights after. It writes only its
+# logs and /var/lib/suricata; the rules, in
+# /var/lib/signalith-sensor/suricata/rules, are root's and only read.
 [Unit]
 Description=Signalith sensor: Suricata
 Documentation=https://github.com/jrsamsanchez/Signalith/blob/main/docs/network-sensor.md
@@ -1377,7 +1543,7 @@ RuntimeDirectory=suricata
 RuntimeDirectoryMode=0750
 # Logs readable by the suricata group, which the agent is in.
 UMask=0027
-CapabilityBoundingSet=CAP_NET_RAW CAP_NET_ADMIN CAP_SETUID CAP_SETGID CAP_SYS_NICE CAP_IPC_LOCK
+CapabilityBoundingSet=CAP_NET_RAW CAP_NET_ADMIN CAP_SETUID CAP_SETGID CAP_SYS_NICE CAP_IPC_LOCK CAP_SETPCAP CAP_CHOWN CAP_DAC_OVERRIDE
 NoNewPrivileges=yes
 ProtectSystem=strict
 ReadWritePaths=/var/log/suricata /var/lib/suricata
@@ -1400,7 +1566,9 @@ UNIT
       cat <<'UNIT'
 # Written by the Signalith sensor install script (deploy/sensor/install.sh).
 # Downloads the Emerging Threats Open rules, has Suricata test them, and
-# only then loads them; a failed test keeps the rules in use.
+# only then loads them; a failed test keeps the rules in use. It runs as
+# root and writes only root's folders (the rules are in
+# /var/lib/signalith-sensor/suricata), never one the suricata user owns.
 [Unit]
 Description=Signalith sensor: update the Suricata rules
 Documentation=https://github.com/jrsamsanchez/Signalith/blob/main/docs/network-sensor.md
@@ -1414,7 +1582,10 @@ ExecStart=/usr/lib/signalith-sensor/rules-update.sh
 Environment=DOCKER_CONFIG=/var/lib/signalith-sensor/docker
 NoNewPrivileges=yes
 ProtectSystem=strict
-ReadWritePaths=/var/lib/suricata /var/lib/signalith-sensor -/var/log/suricata -/run/suricata -/run/docker.sock
+# The rules are readable by all: they are the public Emerging Threats Open
+# rules, and the suricata user reads them.
+UMask=0022
+ReadWritePaths=/var/lib/signalith-sensor -/run/suricata -/run/docker.sock
 ProtectHome=yes
 PrivateTmp=yes
 ProtectKernelModules=yes
@@ -1535,7 +1706,21 @@ sensor_helper() {
 # (promiscuous), never answering (no ARP, no IPv6), and without the
 # network card offloads that merge packets before Zeek and Suricata see
 # them. Offloads a card does not have are skipped.
+#
+# What the port was like before is kept in
+# /var/lib/signalith-sensor/capture-<port>.before; with --undo (when the
+# service stops, and so on --uninstall) the port is put back that way.
+#
+# SIGNALITH_SENSOR_ROOT and SIGNALITH_SENSOR_SYSFS are for tests only: a
+# folder standing for / and one standing for /sys.
 set -u
+R=${SIGNALITH_SENSOR_ROOT:-}
+sysfs=${SIGNALITH_SENSOR_SYSFS:-/sys}
+undo=no
+if [ "${1:-}" = --undo ]; then
+  undo=yes
+  shift
+fi
 iface=${1:-}
 case "$iface" in
   '' | *[!A-Za-z0-9_.:-]*)
@@ -1543,12 +1728,70 @@ case "$iface" in
     exit 1
     ;;
 esac
-ip link set dev "$iface" up promisc on arp off
-if [ -w "/proc/sys/net/ipv6/conf/$iface/disable_ipv6" ]; then
-  echo 1 >"/proc/sys/net/ipv6/conf/$iface/disable_ipv6"
+saved=$R/var/lib/signalith-sensor/capture-$iface.before
+ipv6=$R/proc/sys/net/ipv6/conf/$iface/disable_ipv6
+features='gro lro gso tso rx-gro-hw'
+have_ethtool=no
+if command -v ethtool >/dev/null 2>&1; then have_ethtool=yes; fi
+
+# offload prints whether offload $1 is on for the port (on or off), by
+# the name ethtool -k shows it under.
+offload() {
+  case "$1" in
+    gro) long=generic-receive-offload ;;
+    lro) long=large-receive-offload ;;
+    gso) long=generic-segmentation-offload ;;
+    tso) long=tcp-segmentation-offload ;;
+    *) long=$1 ;;
+  esac
+  ethtool -k "$iface" 2>/dev/null | sed -n "s/^$long: \\([a-z]*\\).*/\\1/p" | head -n 1
+}
+
+if [ "$undo" = yes ]; then
+  [ -r "$saved" ] || exit 0
+  promisc=off arp=on v6=0 on=''
+  read -r promisc arp v6 on <"$saved" || true
+  case "$promisc" in on | off) ;; *) promisc=off ;; esac
+  case "$arp" in on | off) ;; *) arp=on ;; esac
+  case "$v6" in 0 | 1) ;; *) v6=0 ;; esac
+  ip link set dev "$iface" promisc "$promisc" arp "$arp" || true
+  if [ -w "$ipv6" ]; then echo "$v6" >"$ipv6"; fi
+  if [ "$have_ethtool" = yes ]; then
+    for feature in $(printf '%s' "$on" | tr ',' ' '); do
+      case " $features " in
+        *" $feature "*) ethtool -K "$iface" "$feature" on >/dev/null 2>&1 || true ;;
+      esac
+    done
+  fi
+  rm -f "$saved"
+  exit 0
 fi
-if command -v ethtool >/dev/null 2>&1; then
-  for feature in gro lro gso tso rx-gro-hw; do
+
+# Once, before the first change: a restart keeps what the port was like
+# before the sensor.
+if [ ! -e "$saved" ]; then
+  flags=$(cat "$sysfs/class/net/$iface/flags" 2>/dev/null) || flags=0
+  case "$flags" in 0x[0-9a-fA-F]*) ;; *) flags=0 ;; esac
+  promisc=off arp=on
+  if [ $((flags & 256)) -ne 0 ]; then promisc=on; fi
+  if [ $((flags & 128)) -ne 0 ]; then arp=off; fi
+  v6=$(cat "$ipv6" 2>/dev/null) || v6=0
+  case "$v6" in 0 | 1) ;; *) v6=0 ;; esac
+  on=''
+  if [ "$have_ethtool" = yes ]; then
+    for feature in $features; do
+      if [ "$(offload "$feature")" = on ]; then on="$on${on:+,}$feature"; fi
+    done
+  fi
+  printf '%s %s %s %s\n' "$promisc" "$arp" "$v6" "$on" >"$saved.new" && mv -f "$saved.new" "$saved"
+fi
+
+ip link set dev "$iface" up promisc on arp off
+if [ -w "$ipv6" ]; then
+  echo 1 >"$ipv6"
+fi
+if [ "$have_ethtool" = yes ]; then
+  for feature in $features; do
     ethtool -K "$iface" "$feature" off >/dev/null 2>&1 || true
   done
 fi
@@ -1672,13 +1915,18 @@ link=$(safe "$(cat "$net/operstate" 2>/dev/null)")
 [ -n "$link" ] || link=missing
 rxp=$(num "$(cat "$net/statistics/rx_packets" 2>/dev/null)")
 rxd=$(num "$(cat "$net/statistics/rx_dropped" 2>/dev/null)")
-kd=$(num "$(printf '%s\n' "$eve" | grep '"event_type":"stats"' | tail -n 1 | sed -n 's/.*"kernel_drops":\([0-9]*\).*/\1/p')")
+kd=$(printf '%s\n' "$eve" | grep '"event_type":"stats"' | tail -n 1 | sed -n 's/.*"kernel_drops":\([0-9]*\).*/\1/p')
 lp=0 ld=0 lk=0 before=no
 if [ -r "$counters" ]; then
   before=yes
   read -r lp ld lk <"$counters" || true
 fi
 lp=$(num "$lp") ld=$(num "$ld") lk=$(num "$lk")
+# No stats line in the end of eve.json read above (a busy link): Suricata's
+# drops are taken as they were at the last line, not as zero, so the next
+# stats line is not counted as all new drops.
+if [ -z "$kd" ]; then kd=$lk; fi
+kd=$(num "$kd")
 dp=$((rxp - lp)) dd=$((rxd - ld)) dk=$((kd - lk))
 # A counter that went down was reset (a restart): count from zero.
 [ "$dp" -ge 0 ] || dp=$rxp
@@ -1731,6 +1979,10 @@ HELPER
 # before it writes them; Suricata then loads them without stopping. A
 # failed download or test keeps the rules in use. The result goes to
 # /var/lib/signalith-sensor/rules.state, which the status line reports.
+#
+# With packages, the rules and suricata-update's downloads are kept in
+# /var/lib/signalith-sensor/suricata, which only root writes: this runs as
+# root, so it never works in a folder the suricata user could change.
 set -u
 conf=/etc/signalith-sensor/sensor.conf
 state=/var/lib/signalith-sensor/rules.state
@@ -1765,7 +2017,8 @@ if [ "$layout" = docker ]; then
       dc restart suricata >/dev/null 2>&1 || true
   fi
 else
-  set -- --etopen --suricata-conf /etc/suricata/signalith-sensor.yaml \
+  data=/var/lib/signalith-sensor/suricata
+  set -- --etopen --data-dir "$data" --suricata-conf /etc/suricata/signalith-sensor.yaml \
     --disable-conf /etc/suricata/disable.conf --no-reload --fail
   if [ -s /etc/signalith-sensor/local.rules ]; then
     set -- "$@" --local /etc/signalith-sensor/local.rules
@@ -1773,7 +2026,7 @@ else
   if suricata-update "$@"; then
     result=ok
     updated=$now
-    rules=$(count </var/lib/suricata/rules/suricata.rules)
+    rules=$(count <"$data/rules/suricata.rules")
     if systemctl is-active --quiet signalith-suricata.service; then
       suricatasc -c ruleset-reload-nonblocking /run/suricata/suricata-command.socket >/dev/null 2>&1 ||
         systemctl reload signalith-suricata.service || true
@@ -1830,8 +2083,12 @@ services:
     working_dir: /logs/zeek/current
     entrypoint: ["zeek"]
     command: ["-C", "-i", "af_packet::${SIGNALITH_INTERFACE}", "local", "/config/signalith.zeek"]
+    # Only the right packet capture needs: the host already made the port
+    # promiscuous, so Zeek cannot change the network settings. It stays the
+    # image's root user, as Docker gives added rights to root alone; that
+    # root has no other rights, and the image is read-only.
     cap_drop: [ALL]
-    cap_add: [NET_RAW, NET_ADMIN]
+    cap_add: [NET_RAW]
     volumes:
       - zeek-logs:/logs/zeek
       - /etc/signalith-sensor/docker/zeek/signalith.zeek:/config/signalith.zeek:ro
@@ -1921,6 +2178,8 @@ sensor_units() {
   else
     dev=sys-subsystem-net-devices-$(systemd-escape "$iface").device
   fi
+  # write_unit puts it in with sed, which would read \x2d as "-".
+  dev=$(printf '%s' "$dev" | sed 's/\\/\\\\/g')
   for u in $units; do
     u=${u%:*}
     write_unit "$u"
@@ -1932,6 +2191,10 @@ sensor_units() {
   for h in status.sh rules-update.sh; do
     sensor_helper "$h" | put "/usr/lib/signalith-sensor/$h" 0755 root:root helpers
   done
+  # A copy of this script, for --uninstall (and to run it again).
+  if [ -f "$0" ]; then
+    put_file /usr/lib/signalith-sensor/install.sh 0755 root:root "$0" script
+  fi
   if is_changed units; then run systemctl daemon-reload; fi
   ok "systemd units and helpers in /etc/systemd/system and /usr/lib/signalith-sensor"
 }
@@ -2002,6 +2265,9 @@ sensor_docker_start() {
         dc --profile update run --rm --entrypoint sh suricata-update -c 'mkdir -p /var/lib/suricata/rules && touch /var/lib/suricata/rules/suricata.rules'
       fi
       manifest_add "rules first"
+    elif is_changed rules; then
+      # Your own rules (--local-rules) changed: in use now, not tomorrow.
+      rules_again
     fi
   fi
   first=yes
@@ -2022,9 +2288,9 @@ sensor_docker_start() {
 sensor_test_configs() {
   if [ "$layout" = docker ]; then return 0; fi
   if [ "$suricata" = yes ] && is_changed suricata; then
-    if [ ! -f "$R/var/lib/suricata/rules/suricata.rules" ]; then
+    if [ ! -f "$R/var/lib/signalith-sensor/suricata/rules/suricata.rules" ]; then
       # Suricata's test needs a rule file; the first update fills it.
-      : | put /var/lib/suricata/rules/suricata.rules 0644 suricata:suricata rules
+      : | put /var/lib/signalith-sensor/suricata/rules/suricata.rules 0644 root:root rules
     fi
     if ! quiet suricata -T -c /etc/suricata/signalith-sensor.yaml; then
       restore /etc/suricata/signalith-sensor.yaml
@@ -2048,15 +2314,31 @@ is_changed() {
   return 1
 }
 
+# rules_again updates the rules on a run after the first, when they
+# changed (your own rules, --local-rules); Suricata loads them once they
+# pass its test.
+rules_again() {
+  say "  updating the Suricata rules with your own..."
+  if run /usr/lib/signalith-sensor/rules-update.sh >"$tmp/out" 2>&1; then
+    ok "the Suricata rules, with your own"
+  else
+    warn "The rules update failed: Suricata keeps the rules it had." "See why with: sudo journalctl -u signalith-suricata-update -n 50 (or run sudo /usr/lib/signalith-sensor/rules-update.sh), fix your rules file, and run the line again."
+  fi
+}
+
 sensor_start() {
-  if [ "$suricata" = yes ] && [ "$layout" = packages ] && ! manifest_has "rules first"; then
-    say "  downloading the Suricata rules (Emerging Threats Open)..."
-    if run /usr/lib/signalith-sensor/rules-update.sh >"$tmp/out" 2>&1; then
-      ok "the Suricata rules"
-    else
-      warn "The first rules download failed: Suricata starts with no rules, and the daily update tries again." "sudo systemctl start signalith-suricata-update.service, then see: journalctl -u signalith-suricata-update"
+  if [ "$suricata" = yes ] && [ "$layout" = packages ]; then
+    if ! manifest_has "rules first"; then
+      say "  downloading the Suricata rules (Emerging Threats Open)..."
+      if run /usr/lib/signalith-sensor/rules-update.sh >"$tmp/out" 2>&1; then
+        ok "the Suricata rules"
+      else
+        warn "The first rules download failed: Suricata starts with no rules, and the daily update tries again." "sudo systemctl start signalith-suricata-update.service, then see: journalctl -u signalith-suricata-update"
+      fi
+      manifest_add "rules first"
+    elif is_changed rules; then
+      rules_again
     fi
-    manifest_add "rules first"
   fi
   for e in $units; do
     u=${e%:*}
@@ -2086,6 +2368,7 @@ seen() {
 common_confirm() {
   if [ -n "$dryrun" ]; then
     say "    would wait until Signalith has heard from the sensor (GET /api/sensor/seen)"
+    warnings_note
     return 0
   fi
   say "  waiting for Signalith to hear from the sensor..."
@@ -2095,6 +2378,7 @@ common_confirm() {
     if [ -n "$now" ] && [ "$now" != "$seen_before" ]; then
       say ""
       say "Sensor sends to Signalith. Open Endpoints: $name should show Network sensor, sending."
+      warnings_note
       return 0
     fi
     sleep 5
@@ -2107,6 +2391,13 @@ common_confirm() {
     journalctl -u signalith-fluent-bit -n 20 --no-pager >&2 || true
   fi
   fail "Signalith has not heard from the sensor after 90 seconds (the agent's log is above)." "Check that this machine reaches $from, and that the token was not revoked (Settings > Agent tokens); the agent keeps trying."
+}
+
+# warnings_note repeats, at the end, that warnings scrolled past.
+warnings_note() {
+  if [ "$warned" -gt 0 ]; then
+    say "$warned warning(s) above: the sensor runs, but see the Fix line under each."
+  fi
 }
 
 # --- Uninstall ---------------------------------------------------------
@@ -2132,6 +2423,11 @@ common_uninstall() {
   # shellcheck disable=SC2013 # names, one a line
   for u in $(sed -n 's/^mask //p' "$manifest"); do
     quiet systemctl unmask "$u" || true
+  done
+  # The package's own services that were running before the sensor.
+  # shellcheck disable=SC2013 # names, one a line
+  for u in $(sed -n 's/^was running //p' "$manifest"); do
+    quiet systemctl start "$u" || warn "Could not start $u again, which ran before the sensor (see above)." "sudo systemctl start $u"
   done
   sed -n 's/^orig //p' "$manifest" | while IFS= read -r f; do
     if [ -f "$R$f.signalith-orig" ]; then mv -f "$R$f.signalith-orig" "$R$f"; fi
@@ -2185,6 +2481,7 @@ fi
 common_args
 say "Signalith sensor: checking this machine"
 common_machine
+sensor_sources
 sensor_resources
 if [ "$docker" = yes ]; then sensor_docker_checks; fi
 say ""
@@ -2207,6 +2504,8 @@ fi
 
 seen_before=''
 if [ -z "$dryrun" ]; then seen_before=$(seen); fi
+# Left by a run that was stopped halfway (by a power cut, say).
+rm -f "$R"/etc/signalith-sensor/*.signalith-new
 say "Installing"
 if [ "$docker" = yes ]; then
   layout=docker
@@ -2222,12 +2521,13 @@ common_agent_config
 sensor_units
 sensor_test_configs
 say ""
-if [ -z "$changed" ] && [ -z "$installed" ]; then
+if [ -z "$changed" ] && [ -z "$installed" ] && [ -z "$upgraded" ]; then
   say "Nothing to change: the sensor is set up as the line says."
   if [ -z "$dryrun" ]; then
     last=$(seen)
     if [ -n "$last" ]; then say "Signalith last heard from $name at $last."; fi
   fi
+  warnings_note
   exit 0
 fi
 say "Starting"

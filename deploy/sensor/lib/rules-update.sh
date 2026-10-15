@@ -5,6 +5,10 @@
 # before it writes them; Suricata then loads them without stopping. A
 # failed download or test keeps the rules in use. The result goes to
 # /var/lib/signalith-sensor/rules.state, which the status line reports.
+#
+# With packages, the rules and suricata-update's downloads are kept in
+# /var/lib/signalith-sensor/suricata, which only root writes: this runs as
+# root, so it never works in a folder the suricata user could change.
 set -u
 conf=/etc/signalith-sensor/sensor.conf
 state=/var/lib/signalith-sensor/rules.state
@@ -39,7 +43,8 @@ if [ "$layout" = docker ]; then
       dc restart suricata >/dev/null 2>&1 || true
   fi
 else
-  set -- --etopen --suricata-conf /etc/suricata/signalith-sensor.yaml \
+  data=/var/lib/signalith-sensor/suricata
+  set -- --etopen --data-dir "$data" --suricata-conf /etc/suricata/signalith-sensor.yaml \
     --disable-conf /etc/suricata/disable.conf --no-reload --fail
   if [ -s /etc/signalith-sensor/local.rules ]; then
     set -- "$@" --local /etc/signalith-sensor/local.rules
@@ -47,7 +52,7 @@ else
   if suricata-update "$@"; then
     result=ok
     updated=$now
-    rules=$(count </var/lib/suricata/rules/suricata.rules)
+    rules=$(count <"$data/rules/suricata.rules")
     if systemctl is-active --quiet signalith-suricata.service; then
       suricatasc -c ruleset-reload-nonblocking /run/suricata/suricata-command.socket >/dev/null 2>&1 ||
         systemctl reload signalith-suricata.service || true

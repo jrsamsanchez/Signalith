@@ -3,9 +3,13 @@ package ingest
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jrsamsanchez/signalith/internal/store"
 )
 
 // The status line status.sh writes (testdata/sensor/status.json, which
@@ -88,18 +92,27 @@ func TestSensorStatusOddValues(t *testing.T) {
 	}
 }
 
-// A batch hands the newest status line in it to the agent inventory.
+// A batch hands the last status line in it that was stored to the agent
+// inventory: the last one sent, whatever time it gives itself, which is
+// never kept later than when it arrived.
 func TestSensorStatusResult(t *testing.T) {
-	older := `{"kind":"signalith-sensor-status","v":1,"time":"2026-10-15T11:55:00Z","host":"nsm-01","interface":{"name":"eth1"}}`
-	newer := `{"kind":"signalith-sensor-status","v":1,"time":"2026-10-15T12:00:00Z","host":"nsm-01","interface":{"name":"eth2"}}`
-	body, _ := json.Marshal([]map[string]any{{"log": newer}, {"log": older}})
-	p := &Pipeline{Store: &countingBulk{keep: true}, Now: func() time.Time { return now }}
+	ahead := `{"kind":"signalith-sensor-status","v":1,"time":"2099-01-01T00:00:00Z","host":"nsm-01","interface":{"name":"eth1"}}`
+	last := `{"kind":"signalith-sensor-status","v":1,"time":"2026-10-11T11:55:00Z","host":"nsm-01","interface":{"name":"eth2"}}`
+	refused := `{"kind":"signalith-sensor-status","v":1,"time":"2026-10-11T11:59:00Z","host":"nsm-01","interface":{"name":"eth3"}}`
+	body, _ := json.Marshal([]map[string]any{{"log": ahead}, {"log": last}})
+	bulk := &countingBulk{keep: true, reject: func(d store.IndexedDoc) *store.BulkItemError {
+		if strings.Contains(fmt.Sprint(d.Doc), "eth3") {
+			return &store.BulkItemError{Index: d.Index, Status: http.StatusBadRequest, Reason: "refused"}
+		}
+		return nil
+	}}
+	p := &Pipeline{Store: bulk, Now: func() time.Time { return now }}
 	res, err := p.IngestBody(context.Background(), SensorStatusTag, body)
-	if err != nil || res.Sensor == nil || res.Sensor.Interface != "eth2" {
+	if err != nil || res.Sensor == nil || res.Sensor.Interface != "eth2" || !res.Sensor.At.Equal(now.Add(-5*time.Minute)) {
 		t.Fatalf("IngestBody: %+v %v", res, err)
 	}
-	res, err = p.Ingest(context.Background(), SensorStatusTag, []map[string]any{{"log": older}, {"log": newer}})
-	if err != nil || res.Sensor == nil || res.Sensor.Interface != "eth2" {
+	res, err = p.Ingest(context.Background(), SensorStatusTag, []map[string]any{{"log": last}, {"log": ahead}, {"log": refused}})
+	if err != nil || res.Sensor == nil || res.Sensor.Interface != "eth1" || !res.Sensor.At.Equal(now) {
 		t.Fatalf("Ingest: %+v %v", res, err)
 	}
 	res, err = p.IngestBody(context.Background(), "zeek.conn", []byte(`{"log":"{}"}`))

@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/jrsamsanchez/signalith/deploy"
 	"github.com/jrsamsanchez/signalith/internal/agents"
 )
 
@@ -45,7 +46,7 @@ type SensorCommands struct {
 
 // SensorSystems are the systems the sensor install script supports, as
 // the page and the docs say them.
-const SensorSystems = "Ubuntu 22.04 or 24.04, Debian 12, Rocky Linux 9 or AlmaLinux 9 (64-bit x86 or ARM)"
+const SensorSystems = "Ubuntu 22.04 or 24.04, Debian 12 or 13, Rocky Linux 9 or AlmaLinux 9 (64-bit x86 or ARM)"
 
 var (
 	// ifaceText is a Linux network interface name: at most 15
@@ -53,7 +54,24 @@ var (
 	ifaceText = regexp.MustCompile(`^[A-Za-z0-9_.:-]{1,15}$`)
 	// maxNetworks caps the CIDRs one line carries.
 	maxNetworks = 64
+	// keyPin is a signing key's pinned fingerprint in the sensor script,
+	// '' when it is not pinned yet.
+	keyPin = regexp.MustCompile(`(?m)^(KEY_FPR_[A-Z_]+)=(.*)$`)
 )
+
+// SensorUnpinned lists the repository signing keys the sensor script has
+// no checked fingerprint for (KEY_FPR_ZEEK_OBS and the like): the script
+// stops, before it installs anything, rather than install a program from
+// that repository, so the page says so.
+func SensorUnpinned() []string {
+	var out []string
+	for _, m := range keyPin.FindAllStringSubmatch(string(deploy.SensorInstallSH), -1) {
+		if strings.Trim(m[2], `'" `) == "" {
+			out = append(out, m[1])
+		}
+	}
+	return out
+}
 
 // FieldError is a value the page shows under its field.
 type FieldError struct {
@@ -122,14 +140,16 @@ func (l *SensorLine) check() error {
 // the line is copied). As for Add a server, the download does not check
 // the server's certificate, which the new machine does not trust yet: the
 // SHA-256 checks the script, and the script checks the certificate
-// authority against --ca-sha256 before it trusts it.
+// authority against --ca-sha256 before it trusts it. The line starts with
+// a space, so bash leaves it, and the token in it, out of its history
+// where it is set to (as on Ubuntu and Debian).
 func SensorLines(l SensorLine) (SensorCommands, error) {
 	if err := l.check(); err != nil {
 		return SensorCommands{}, err
 	}
 	base := strings.TrimSuffix(l.URL, "/")
 	sha := scriptSHA.Sensor
-	line := fmt.Sprintf("f=$(mktemp) && curl -fsSk --proto '=https' %s/api/sensor/install.sh -o \"$f\" && echo \"%s  $f\" | sha256sum -c --quiet && echo '%s' | sudo sh \"$f\" --role sensor --from %s",
+	line := fmt.Sprintf(" f=$(mktemp) && curl -fsSk --proto '=https' %s/api/sensor/install.sh -o \"$f\" && echo \"%s  $f\" | sha256sum -c --quiet && echo '%s' | sudo sh \"$f\" --role sensor --from %s",
 		base, sha, agents.TokenPlaceholder, base)
 	if l.CASHA256 != "" {
 		line += " --ca-sha256 " + l.CASHA256
@@ -152,10 +172,42 @@ func SensorLines(l SensorLine) (SensorCommands, error) {
 	case l.Protocols:
 		line += " --suricata-protocols"
 	}
-	note := "Runs on " + SensorSystems + ". The line holds a new token for this sensor: anyone with it can send data as this sensor, so don't share it."
+	note := "Runs on " + SensorSystems + ". Zeek's packages are for Ubuntu and Debian only: on Rocky or Alma Linux, leave Zeek out or pick Docker."
 	if l.Docker {
 		line += " --docker"
-		note = "Runs on Linux with Docker Engine 24 or later and Docker Compose v2 (not Docker Desktop, which cannot listen on a physical port). The line holds a new token for this sensor: anyone with it can send data as this sensor, so don't share it."
+		note = "Runs on Linux with Docker Engine 24 or later and Docker Compose v2 (not Docker Desktop, which cannot listen on a physical port)."
+	} else {
+		note += unpinnedNote(l)
 	}
+	note += " The line holds a new token for this sensor: anyone with it can send data as this sensor, so don't share it. " +
+		"It starts with a space, which keeps it out of the shell's history on Ubuntu and Debian; elsewhere, clear the history after running it (history -c)."
 	return SensorCommands{Linux: line, Note: note, ScriptSHA256: sha}, nil
+}
+
+// unpinnedNote says which programs this version's script cannot install
+// from packages, as their signing key is not pinned in it; "" when it can
+// install them all.
+func unpinnedNote(l SensorLine) string {
+	var zeek, copr, other bool
+	for _, k := range SensorUnpinned() {
+		switch k {
+		case "KEY_FPR_ZEEK_OBS":
+			zeek = l.Zeek
+		case "KEY_FPR_OISF_COPR":
+			copr = l.Suricata
+		default:
+			other = true
+		}
+	}
+	switch {
+	case other:
+		return " This version cannot install the programs from packages yet (a publisher's signing key is not checked in it): pick Docker."
+	case zeek && copr:
+		return " This version cannot install Zeek from packages yet, nor Suricata on Rocky or Alma Linux (their publishers' signing keys are not checked in it): pick Docker, or leave Zeek out on Ubuntu and Debian."
+	case zeek:
+		return " This version cannot install Zeek from packages yet (its publisher's signing key is not checked in it): pick Docker, or leave Zeek out."
+	case copr:
+		return " This version cannot install Suricata from packages on Rocky or Alma Linux yet (its publisher's signing key is not checked in it): pick Docker there."
+	}
+	return ""
 }
