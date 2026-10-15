@@ -963,6 +963,14 @@ func taskElement(task, tag string) string {
 	return strings.TrimSpace(html.UnescapeString(v))
 }
 
+// sysmonFileBlocks are the action and signature of Sysmon's file block
+// events.
+var sysmonFileBlocks = map[string][2]string{
+	"27": {"blocked", "Executable file creation blocked"},
+	"28": {"blocked", "File shredding blocked"},
+	"29": {"created", "Executable file detected"},
+}
+
 func parseSysmon(eventID string, kv map[string]string, ev *Event) {
 	f := ev.Fields
 	f["vendor_product"] = "Microsoft Sysmon"
@@ -1071,6 +1079,22 @@ func parseSysmon(eventID string, kv map[string]string, ev *Event) {
 		if h := sysmonHash(kv["Hashes"], "SHA256"); h != "" {
 			f["file_hash"] = h
 		}
+	case "27", "28", "29":
+		// An executable file's creation blocked (FileBlockExecutable,
+		// 27), a file's deletion by a shredding tool blocked
+		// (FileBlockShredding, 28) and an executable file created
+		// (FileExecutableDetected, 29).
+		ev.Model = "Filesystem"
+		f["action"], f["signature"] = sysmonFileBlocks[eventID][0], sysmonFileBlocks[eventID][1]
+		f["file_path"] = kv["TargetFilename"]
+		f["file_name"] = baseName(kv["TargetFilename"])
+		sysmonProcess(kv, f)
+		if h := sysmonHash(kv["Hashes"], "SHA256"); h != "" {
+			f["file_hash"] = h
+		}
+	case "16":
+		ev.Model = "Other"
+		f["signature"] = "Sysmon configuration changed"
 	case "15":
 		// An alternate data stream written (FileCreateStreamHash), such as
 		// the Zone.Identifier a browser adds to a download: the stream's

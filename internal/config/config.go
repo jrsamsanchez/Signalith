@@ -940,7 +940,18 @@ type Detections struct {
 	// its signature is at the same address plus .sig. Empty means
 	// DefaultContentURL.
 	ContentURL string `yaml:"content_url,omitempty"`
+	// Sync is what the detections and dashboards folders are once the
+	// servers of a cluster share them: inbox (a file added or changed
+	// there is shared; one removed changes nothing) or mirror (one removed
+	// also removes the shared detection or dashboard). Empty means inbox.
+	Sync string `yaml:"sync,omitempty"`
 }
+
+// Folder modes of a shared library (detections.sync).
+const (
+	SyncInbox  = "inbox"
+	SyncMirror = "mirror"
+)
 
 // Content update modes.
 const (
@@ -2144,6 +2155,11 @@ func (c *Config) Validate() error {
 	case "", ContentManual, ContentDaily:
 	default:
 		p = append(p, "detections.content_updates must be manual or daily")
+	}
+	switch c.Detections.Sync {
+	case "", SyncInbox, SyncMirror:
+	default:
+		p = append(p, "detections.sync must be inbox or mirror")
 	}
 	if u := c.Detections.ContentURL; u != "" {
 		if pu, err := url.Parse(u); err != nil || pu.Scheme != "https" || pu.Host == "" {

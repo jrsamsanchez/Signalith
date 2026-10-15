@@ -190,6 +190,14 @@ var sysmonEvents = map[string]string{
 	"bits_client":           "16403",
 	"appxdeployment_server": "400",
 	"wmi":                   "5858",
+	// Sysmon's own events (service: sysmon): a configuration change,
+	// or a file block.
+	"sysmon_event":                         "16",
+	"sysmon_file_block":                    "27",
+	"terminalservices_localsessionmanager": "21",
+	"shell_core":                           "28115",
+	"smbclient_security":                   "31017",
+	"security_mitigations":                 "12",
 	// Defender log rules (service: windefend) name their events; a
 	// threat detected is the first.
 	"windefend": "1116",
@@ -214,6 +222,15 @@ var SecurityGroups = [][]string{{"4656", "4663"}, {"4699", "4701"}}
 // SysmonEventID) for one of SecurityEvents or a group of SecurityGroups.
 func SecurityCategory(eventIDs ...string) string { return "security_" + strings.Join(eventIDs, "_") }
 
+// SysmonServiceCategory is the category of a rule about Sysmon's own
+// events (service: sysmon): its file blocks (27, 28, 29), or others.
+func SysmonServiceCategory(eventIDs ...string) string {
+	if len(eventIDs) > 0 && !slices.ContainsFunc(eventIDs, func(id string) bool { return id != "27" && id != "28" && id != "29" }) {
+		return "sysmon_file_block"
+	}
+	return "sysmon_event"
+}
+
 // SystemCategory is the category of a System log rule (service: system)
 // about its events: services installed (7045), or other events.
 func SystemCategory(eventIDs ...string) string {
@@ -232,6 +249,8 @@ func init() {
 	for service := range ingest.NamedChannelServices {
 		Bases[ingest.NamedChannelCategory(service)] = map[string]string{}
 	}
+	Bases["sysmon_event"] = map[string]string{}
+	Bases["sysmon_file_block"] = Bases["file_event"]
 	// A task disabled has the data of a task deleted.
 	Bases[SecurityCategory("4701")] = Bases[SecurityCategory("4699")]
 	for _, id := range SecurityEvents {

@@ -250,6 +250,13 @@ func TestWindowsFirewallAndBitsEvents(t *testing.T) {
 		"datamodel": "Other", "signature_id": "854", "appx_path": "https://example.org/app.msix",
 		"signature": "An app package file was downloaded",
 	})
+	// A Remote Desktop logon, its channel named in another case.
+	rec = map[string]any{"Channel": "Microsoft-Windows-TerminalServices-LocalSessionManager/operational", "Computer": "WS1",
+		"EventID": "21", "StringInserts": []string{`CORP\alice`, "2", "203.0.113.7"}}
+	b, _ = json.Marshal(rec)
+	expect(t, Normalize("win.events", decode(t, string(b)), now).Document(), map[string]any{
+		"datamodel": "Other", "signature_id": "21", "rdp_user": `CORP\alice`, "rdp_session_id": "2", "rdp_address": "203.0.113.7",
+	})
 }
 
 // The search engine knows every wildcard field, as it takes backslashes
@@ -437,6 +444,21 @@ func TestSysmonProcessHashes(t *testing.T) {
 	ev := Normalize("win.sysmon", decode(t, string(b)), now)
 	expect(t, ev.Document(), map[string]any{
 		"process_md5": strings.Repeat("b", 32), "process_sha1": strings.Repeat("a", 40), "process_sha256": strings.Repeat("c", 64),
+	})
+}
+
+// Sysmon's file blocks are file events; its configuration changing stays in
+// Other.
+func TestSysmonFileBlocks(t *testing.T) {
+	msg := "File Block Executable:\r\nImage: C:\\Windows\\System32\\curl.exe\r\nTargetFilename: C:\\Users\\bob\\x.exe\r\nUser: CORP\\bob"
+	b, _ := json.Marshal(map[string]any{"Channel": "Microsoft-Windows-Sysmon/Operational", "Computer": "WS1", "EventID": 27, "Message": msg})
+	expect(t, Normalize("win.sysmon", decode(t, string(b)), now).Document(), map[string]any{
+		"datamodel": "Filesystem", "action": "blocked", "signature": "Executable file creation blocked",
+		"file_path": `C:\Users\bob\x.exe`, "file_name": "x.exe", "process_path": `C:\Windows\System32\curl.exe`,
+	})
+	b, _ = json.Marshal(map[string]any{"Channel": "Microsoft-Windows-Sysmon/Operational", "Computer": "WS1", "EventID": 16, "Message": "Sysmon config state changed:"})
+	expect(t, Normalize("win.sysmon", decode(t, string(b)), now).Document(), map[string]any{
+		"datamodel": "Other", "signature": "Sysmon configuration changed",
 	})
 }
 
