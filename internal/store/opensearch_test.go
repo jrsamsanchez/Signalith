@@ -220,13 +220,13 @@ func TestUnusedProxyEnvironmentIsExplained(t *testing.T) {
 			for k, v := range tc.env {
 				t.Setenv(k, v)
 			}
-			if h := New(tc.cfg).proxyHint; h != "" {
+			if h := New(tc.cfg).eps.list[0].proxyHint; h != "" {
 				t.Errorf("hint: %s", h)
 			}
 		})
 	}
 	t.Setenv("HTTP_PROXY", "http://p:1")
-	if h := New(Config{URL: "http://os.corp:9200"}).proxyHint; !strings.Contains(h, "HTTP_PROXY is set") {
+	if h := New(Config{URL: "http://os.corp:9200"}).eps.list[0].proxyHint; !strings.Contains(h, "HTTP_PROXY is set") {
 		t.Errorf("plain http with HTTP_PROXY: %q", h)
 	}
 }

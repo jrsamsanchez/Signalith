@@ -59,9 +59,12 @@ func TestJoinTokenURL(t *testing.T) {
 func TestJoinThroughTheServer(t *testing.T) {
 	t.Setenv(clusterKeyFileEnv, "")
 	a := startRunnerWith(t, runOptions{scheduler: true, name: "siem-a"})
-	eventually(t, "A founds the cluster", func() bool {
+	// Founding restarts the components in place, with the shared
+	// sessions: a sign-in before that restart is over is lost.
+	eventually(t, "A founds the cluster and takes its content from it", func() bool {
 		m, _ := a.r.shared.Mode()
-		return m == shared.ModeMember
+		ct := a.r.sharedContent
+		return m == shared.ModeMember && ct.on.Load() && ct.users.on.Load() == a.r.shared.SharedUsers() && !a.r.RestartStatus().InProgress
 	})
 	ca := a.ownCA()
 

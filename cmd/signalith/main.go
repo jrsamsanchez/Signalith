@@ -1257,7 +1257,9 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	estore := endpoint.NewStore(cl, c.OpenSearch.IndexPrefix)
 	in.jobs.Go(func() { estore.Run(ctx, 30*time.Second) })
 	// Network scans for vulnerabilities, set up on the Vulnerabilities
-	// page. The server that runs the background jobs runs them.
+	// page. Every server runs the scans of the networks that name it as
+	// their scanner; the server that runs the background jobs runs the
+	// rest.
 	vstore := vulnscan.NewStore(cl, c.OpenSearch.IndexPrefix)
 	nvd := vulnscan.NewNVD(c.NVDURL(), c.Vulns.NVDAPIKey)
 	in.jobs.Go(func() { feedFoundAssets(ctx, estore, vstore, lists, log) })
@@ -1375,8 +1377,11 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	}
 	in.jobs.Go(func() { tokens.Run(ctx) })
 	scanner := &vulnscan.Scanner{
-		Store: vstore, NVD: nvd, Events: pipeline, Server: sampleServer, Log: log,
+		Store: vstore, NVD: nvd, Events: pipeline, Server: sampleServer, NodeID: sampleNode, Log: log,
 		Checker: &vulnscan.Checker{NVD: nvd, Docker: cluster.InContainer()},
+	}
+	if r.node != nil {
+		scanner.Leader, scanner.Paused = r.node.RunsJobs, r.node.WritesRefused
 	}
 	// The agents that send events, for the Endpoints page: counted here,
 	// written once a minute to the runtime index next to the agent
@@ -1517,6 +1522,16 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			return false
 		}
 	}
+	// Vulnerability scans run on every server, not as a background job:
+	// each runs those of the networks it scans (see vulnscan.Scanner).
+	// Networks can be added on the page at any time, so the scanner runs
+	// even with none yet.
+	in.jobs.Go(func() {
+		if !ready(ctx) || !vulnsOK {
+			return
+		}
+		scanner.Run(ctx)
+	})
 	// The background jobs run only while this server holds the job lease:
 	// of the servers that share one OpenSearch, one runs them.
 	in.jobsList = []cluster.Job{
@@ -1569,15 +1584,6 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			log.Info("playbooks will run for new findings that match them", "file", c.PlaybooksFile())
 			pbRunner.Run(ctx)
 		}},
-		{Name: "vulnerability scans", Run: func(ctx context.Context) {
-			if !ready(ctx) || !vulnsOK {
-				return
-			}
-			// Networks can be added on the page at any time, so the
-			// scanner runs even with none yet.
-			log.Info("vulnerability scans will run on their schedules")
-			scanner.Run(ctx)
-		}},
 		// Retention keeps running while OpenSearch refuses writes (its
 		// disk is full): its disk guard is what frees space.
 		{Name: "retention", Emergency: true, Run: func(ctx context.Context) {
@@ -1623,7 +1629,6 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		// lost the lease cannot write over a newer one's, and slots are
 		// worked out on OpenSearch's clock, which every server shares.
 		sched.Epoch, sched.NodeID, sched.ClusterNow = r.node.Lease().Epoch, r.node.ID(), r.node.ClusterNow
-		scanner.Allowed = r.node.RunsJobs
 		srv.Cluster = r.node
 		srv.NodeURLChanged = func(c *config.Config) { r.node.SetNodeURL(nodeURL(c)) }
 		wireUpgrade(srv, r.node, r.shared, cl, c.OpenSearch.IndexPrefix)

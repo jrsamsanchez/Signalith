@@ -210,6 +210,7 @@
       <a class="nav__item" href="#retention" data-page="retention" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-hourglass"/></svg><span>Data retention</span></a>
       <a class="nav__item" href="#security" data-page="security" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-shield-check"/></svg><span>Security</span></a>
       <a class="nav__item" href="#servers" data-page="servers" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-server"/></svg><span>Servers</span></a>
+      <a class="nav__item" href="#scanners" data-page="scanners" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-radar"/></svg><span>Scanners</span></a>
       <a class="nav__item" href="#audit" data-page="audit" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-scroll-text"/></svg><span>Audit</span></a>
       <a class="nav__item" href="#health" data-page="health"><svg class="icon" aria-hidden="true"><use href="#i-activity"/></svg><span>Health</span></a>
     </div>
@@ -265,6 +266,7 @@
       <a class="set-tab" href="#retention" data-page="retention" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-hourglass"/></svg><span>Data retention</span></a>
       <a class="set-tab" href="#security" data-page="security" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-shield-check"/></svg><span>Security</span><span id="security-count" class="nav__count hidden" data-critical></span></a>
       <a class="set-tab" href="#servers" data-page="servers" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-server"/></svg><span>Servers</span></a>
+      <a class="set-tab" href="#scanners" data-page="scanners" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-radar"/></svg><span>Scanners</span></a>
       <a class="set-tab" href="#audit" data-page="audit" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-scroll-text"/></svg><span>Audit</span></a>
       <a class="set-tab" href="#health" data-page="health"><svg class="icon" aria-hidden="true"><use href="#i-activity"/></svg><span>Health</span></a>
     </div>
@@ -1440,6 +1442,20 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
     <div id="servers-upgrade" class="sv-page"></div>
   </section>
 
+  <!-- Scanners (admins): every server as a vulnerability scanner -->
+  <section id="page-scanners" class="page">
+    <div class="page-head">
+      <div>
+        <h2 class="page-head__title">Scanners</h2>
+        <p class="page-head__desc">The servers that scan your networks for vulnerabilities. Each network is scanned by one server: pick one that can reach it, such as a server inside a segmented network zone.</p>
+      </div>
+      <div class="page-head__actions">
+        <a class="btn btn--secondary" href="#vulns" data-page="vulns"><svg class="icon" aria-hidden="true"><use href="#i-scan-search"/></svg><span>Vulnerabilities</span></a>
+      </div>
+    </div>
+    <div id="sc-page" class="sc-page" aria-busy="true"></div>
+  </section>
+
   <!-- Help -->
   <!-- Audit: who changed what, on every server -->
   <section id="page-apitokens" class="page">
@@ -1553,6 +1569,7 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
 <script src="sample.js"></script>
 <script src="settings.js"></script>
 <script src="servers.js"></script>
+<script src="servers-opensearch.js"></script>
 <script src="security.js"></script>
 <script src="endpoints.js"></script>
 <script src="vulns.js"></script>

@@ -19,18 +19,25 @@ type EventWriter interface {
 	IngestEvents(ctx context.Context, events []ingest.Event) (*ingest.Result, error)
 }
 
-// Scanner runs the scans: the networks' schedules, and Scan now. It runs
-// as one of the background jobs, so of the servers that share one
-// OpenSearch, only the one running those scans.
+// Scanner runs the scans: the networks' schedules, and Scan now. Every
+// server runs one. Each runs the scans of the networks that name it as
+// their scanner, and the server that runs the background jobs also runs
+// those that name none, marks scans whose server stopped, and tidies up.
 type Scanner struct {
 	Store   *Store
 	NVD     *NVD
 	Checker *Checker
 	Events  EventWriter
-	// Server names this server in scans and reports.
+	// Server names this server in scans and reports, and NodeID is its
+	// node ID, which networks name as their scanner.
 	Server string
-	// Allowed reports whether this server may run scans now; nil always.
-	Allowed func() bool
+	NodeID string
+	// Leader reports whether this server runs the background jobs now;
+	// nil always (a server on its own).
+	Leader func() bool
+	// Paused reports whether no scan may start or write now, as while
+	// OpenSearch refuses writes; nil never.
+	Paused func() bool
 	// Loc is the time zone of the schedules; nil is the server's.
 	Loc *time.Location
 	Log *slog.Logger
@@ -40,13 +47,16 @@ type Scanner struct {
 	// seconds).
 	Tick time.Duration
 
-	mu      sync.Mutex
-	current string // the scan running now
+	mu        sync.Mutex
+	running   map[string]bool // the scans running on this server
+	lastPrune time.Time
+	async     bool
 }
 
 // Timings.
 const (
 	reportEvery   = 2 * time.Minute
+	reportRetry   = 30 * time.Second
 	heartbeat     = 15 * time.Second
 	staleAfter    = 3 * time.Minute
 	cveFresh      = 24 * time.Hour
@@ -54,6 +64,10 @@ const (
 	maxScanTime   = 12 * time.Hour
 	eventBatch    = 1000
 	maxScanEvents = 100000
+	pruneEvery    = 10 * time.Minute
+	// OfflineAfter is how long a server may go without checking itself
+	// before its queued scans fail as not picked up.
+	OfflineAfter = 10 * time.Minute
 )
 
 func (s *Scanner) log() *slog.Logger {
@@ -63,29 +77,71 @@ func (s *Scanner) log() *slog.Logger {
 	return slog.Default()
 }
 
-func (s *Scanner) allowed() bool { return s.Allowed == nil || s.Allowed() }
+func (s *Scanner) leader() bool { return s.Leader == nil || s.Leader() }
+func (s *Scanner) paused() bool { return s.Paused != nil && s.Paused() }
 
-// Running returns the ID of the scan running on this server, or "".
-func (s *Scanner) Running() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.current
+// Mine reports whether this server scans t, when leader says whether it
+// runs the background jobs.
+func (s *Scanner) Mine(t Target, leader bool) bool {
+	if t.Scanner == "" {
+		return leader
+	}
+	return s.NodeID != "" && t.Scanner == s.NodeID
 }
 
-// Run scans until ctx ends.
+// Running returns the IDs of the scans running on this server.
+func (s *Scanner) Running() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]string, 0, len(s.running))
+	for id := range s.running {
+		out = append(out, id)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func (s *Scanner) isRunning(id string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.running[id]
+}
+
+func (s *Scanner) busy() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.running) > 0
+}
+
+// Run checks this server and runs its scans until ctx ends. A scan runs
+// in the background, one at a time, while the checks and the tidying go
+// on.
 func (s *Scanner) Run(ctx context.Context) {
 	tick := s.Tick
 	if tick <= 0 {
 		tick = 10 * time.Second
 	}
+	s.mu.Lock()
+	s.async = true
+	s.mu.Unlock()
 	var lastReport time.Time
+	var lastMine string
+	ready := false
 	t := time.NewTicker(tick)
 	defer t.Stop()
 	for {
-		if s.allowed() {
-			if time.Since(lastReport) >= reportEvery {
-				s.CheckNow(ctx)
-				lastReport = time.Now()
+		if !s.paused() {
+			every := reportEvery
+			if !ready {
+				// Someone may be installing Nmap now: look again soon.
+				every = reportRetry
+			}
+			// A network given to this server, or taken away, is checked
+			// at once, so its reach shows on the Scanners page.
+			mine := s.mineKey(ctx)
+			if (time.Since(lastReport) >= every || mine != lastMine) && !s.busy() {
+				ready = s.CheckNow(ctx).Ready
+				lastReport, lastMine = time.Now(), mine
 			}
 			if err := s.Step(ctx); err != nil && ctx.Err() == nil {
 				s.log().Warn("vulnerability scans: could not read or start scans; trying again shortly", "err", err)
@@ -99,19 +155,43 @@ func (s *Scanner) Run(ctx context.Context) {
 	}
 }
 
-// CheckNow checks this server and records the report the page shows.
+// mineKey sums up the networks this server scans and their addresses,
+// from the store's short cache.
+func (s *Scanner) mineKey(ctx context.Context) string {
+	set, err := s.Store.CachedSettings(ctx)
+	if err != nil {
+		return ""
+	}
+	leader := s.leader()
+	var b strings.Builder
+	for _, t := range set.Targets {
+		if s.Mine(t, leader) {
+			b.WriteString(t.ID + "=" + strings.Join(t.Networks, ",") + ";")
+		}
+	}
+	return b.String()
+}
+
+// CheckNow checks this server and records the report the pages show.
 func (s *Scanner) CheckNow(ctx context.Context) *Report {
 	set, err := s.Store.CachedSettings(ctx)
 	if err != nil {
 		set = DefaultSettings()
 	}
-	checks, path := s.checker().Run(ctx, set)
-	r := &Report{Server: s.Server, At: time.Now().UTC(), Checks: checks, Ready: Ready(checks)}
-	if s.Runner == nil || s.Runner.Exec == nil {
-		s.mu.Lock()
-		s.Runner = &Runner{Path: path}
-		s.mu.Unlock()
+	leader := s.leader()
+	var mine []Target
+	for _, t := range set.Targets {
+		if s.Mine(t, leader) {
+			mine = append(mine, t)
+		}
 	}
+	checks, path := s.checker().Run(ctx, set, mine)
+	r := &Report{Server: s.Server, NodeID: s.NodeID, At: time.Now().UTC(), Checks: checks, Ready: Ready(checks)}
+	s.mu.Lock()
+	if s.Runner == nil || s.Runner.Exec == nil {
+		s.Runner = &Runner{Path: path}
+	}
+	s.mu.Unlock()
 	if err := s.Store.PutReport(ctx, r); err != nil && ctx.Err() == nil {
 		s.log().Debug("vulnerability scans: could not record the scanner check", "err", err)
 	}
@@ -125,41 +205,63 @@ func (s *Scanner) checker() *Checker {
 	return &Checker{NVD: s.NVD}
 }
 
-// Step marks scans cut off, queues the scans that are due and runs the
-// oldest queued one.
+// Step queues this server's scans that are due and starts the oldest
+// queued one. On the server that runs the background jobs it also marks
+// scans cut off, fails scans whose server is gone, and tidies up.
 func (s *Scanner) Step(ctx context.Context) error {
-	set, _, err := s.Store.Settings(ctx)
+	leader := s.leader()
+	var set Settings
+	var err error
+	if leader {
+		set, _, err = s.Store.Settings(ctx)
+	} else {
+		// A server that runs no background jobs reads the networks from
+		// the store's short cache, and nothing more unless one is its.
+		set, err = s.Store.CachedSettings(ctx)
+	}
 	if err != nil {
 		return err
+	}
+	targets := map[string]Target{}
+	mine := false
+	for _, t := range set.Targets {
+		targets[t.ID] = t
+		mine = mine || s.Mine(t, leader)
+	}
+	if !leader && !mine {
+		return nil
 	}
 	scans, err := s.Store.Scans(ctx)
 	if err != nil {
 		return err
 	}
 	now := time.Now()
-	targets := map[string]Target{}
-	for _, t := range set.Targets {
-		targets[t.ID] = t
-	}
 	active := map[string]bool{}
 	lastScheduled := map[string]time.Time{}
+	waiting := false
 	for _, sc := range scans {
 		switch sc.State {
 		case StateRunning:
-			if sc.ID != s.Running() && now.Sub(sc.Heartbeat) > staleAfter {
+			if leader && !s.isRunning(sc.ID) && now.Sub(sc.Heartbeat) > staleAfter {
 				s.finish(ctx, sc, StateInterrupted, "The scan stopped because the server running it stopped or restarted. It runs again at its next scheduled time, or click Scan now.")
 				continue
 			}
 			active[sc.TargetID] = true
 		case StateQueued:
 			active[sc.TargetID] = true
+			if t, ok := targets[sc.TargetID]; ok && t.Scanner != "" && !s.Mine(t, leader) && now.Sub(sc.CreatedAt) > OfflineAfter {
+				waiting = true
+			}
 		}
 		if sc.Trigger == TriggerSchedule && sc.CreatedAt.After(lastScheduled[sc.TargetID]) {
 			lastScheduled[sc.TargetID] = sc.CreatedAt
 		}
 	}
+	if leader && waiting {
+		s.failUnclaimed(ctx, scans, targets, now)
+	}
 	for _, t := range set.Targets {
-		if !t.Enabled || t.Scanner != "" || active[t.ID] {
+		if !t.Enabled || !s.Mine(t, leader) || active[t.ID] {
 			continue
 		}
 		slot := t.Schedule.LastSlot(now, s.Loc)
@@ -171,6 +273,12 @@ func (s *Scanner) Step(ctx context.Context) error {
 		}
 		active[t.ID] = true
 		s.log().Info("vulnerability scan queued on schedule", "network", t.Name)
+	}
+	if leader {
+		s.prune(ctx, targets, false)
+	}
+	if s.busy() {
+		return nil
 	}
 	// Re-read: the oldest queued scan, including any just queued.
 	scans, err = s.Store.Scans(ctx)
@@ -184,33 +292,119 @@ func (s *Scanner) Step(ctx context.Context) error {
 		}
 		t, ok := targets[sc.TargetID]
 		if !ok {
-			s.finish(ctx, sc, StateFailed, "The network was removed before the scan started.")
+			if leader {
+				s.finish(ctx, sc, StateFailed, "The network was removed before the scan started.")
+			}
 			continue
 		}
-		if t.Scanner != "" {
+		if !s.Mine(t, leader) {
 			continue
 		}
 		if sc.Stop {
 			s.finish(ctx, sc, StateStopped, "")
 			continue
 		}
-		if !s.allowed() {
+		if s.paused() {
 			return nil
 		}
-		s.runScan(ctx, sc, t, set)
-		ids := map[string]bool{}
-		for id := range targets {
-			ids[id] = true
+		if !s.claim(ctx, sc) {
+			continue
 		}
-		if err := s.Store.PruneScans(ctx, ids); err != nil {
-			s.log().Debug("vulnerability scans: could not prune old scans", "err", err)
+		run := func() {
+			s.runScan(ctx, sc, t, set)
+			if s.leader() {
+				s.prune(ctx, targets, true)
+			}
 		}
-		if err := s.Store.DropHosts(ctx, ids); err != nil {
-			s.log().Debug("vulnerability scans: could not drop hosts of removed networks", "err", err)
+		s.mu.Lock()
+		async := s.async
+		s.mu.Unlock()
+		if async {
+			go run()
+		} else {
+			run()
 		}
 		return nil
 	}
 	return nil
+}
+
+// claim marks a queued scan as running on this server, unless another
+// server got to it first.
+func (s *Scanner) claim(ctx context.Context, sc *Scan) bool {
+	started := time.Now().UTC()
+	ok, err := s.Store.ClaimScan(ctx, sc.ID, map[string]any{"started_at": started, "heartbeat": started, "scanner": s.Server, "scanner_id": s.NodeID})
+	if err != nil {
+		s.log().Warn("vulnerability scans: could not start a scan", "scan", sc.ID, "err", err)
+		return false
+	}
+	if !ok {
+		return false
+	}
+	s.mu.Lock()
+	if s.running == nil {
+		s.running = map[string]bool{}
+	}
+	s.running[sc.ID] = true
+	s.mu.Unlock()
+	sc.State, sc.StartedAt, sc.Heartbeat, sc.Scanner, sc.ScannerID = StateRunning, started, started, s.Server, s.NodeID
+	return true
+}
+
+// failUnclaimed fails the scans queued for a server that has not checked
+// itself for a while: it is stopped, removed or cannot reach OpenSearch.
+func (s *Scanner) failUnclaimed(ctx context.Context, scans []*Scan, targets map[string]Target, now time.Time) {
+	reports, err := s.Store.Reports(ctx)
+	if err != nil {
+		return
+	}
+	seen := map[string]*Report{}
+	for _, r := range reports {
+		if r.NodeID != "" && seen[r.NodeID] == nil {
+			seen[r.NodeID] = r
+		}
+	}
+	for _, sc := range scans {
+		t, ok := targets[sc.TargetID]
+		if sc.State != StateQueued || !ok || t.Scanner == "" || s.Mine(t, true) || now.Sub(sc.CreatedAt) <= OfflineAfter {
+			continue
+		}
+		r := seen[t.Scanner]
+		if r != nil && now.Sub(r.At) <= OfflineAfter {
+			continue
+		}
+		msg := "The scan did not start: the server picked to scan this network has never checked in. Pick another scanner for the network, or start Signalith on that server."
+		if r != nil {
+			msg = fmt.Sprintf("The scan did not start: %s, the server that scans this network, has not checked in since %s. Make sure Signalith runs there and reaches OpenSearch, or pick another scanner for the network.",
+				r.Server, r.At.UTC().Format("2006-01-02 15:04 UTC"))
+		}
+		s.finish(ctx, sc, StateFailed, msg)
+		s.log().Warn("vulnerability scan not picked up by its scanner", "network", t.Name, "scanner", t.Scanner)
+	}
+}
+
+// prune drops old scans and the hosts of removed networks: after a scan
+// this server ran, or now and then.
+func (s *Scanner) prune(ctx context.Context, targets map[string]Target, now bool) {
+	s.mu.Lock()
+	due := now || time.Since(s.lastPrune) >= pruneEvery
+	if due {
+		s.lastPrune = time.Now()
+	}
+	s.mu.Unlock()
+	if !due {
+		return
+	}
+	ids := map[string]bool{}
+	for id := range targets {
+		ids[id] = true
+	}
+	if err := s.Store.PruneScans(ctx, ids); err != nil {
+		s.log().Debug("vulnerability scans: could not prune old scans", "err", err)
+	}
+	if err := s.Store.DropHosts(ctx, ids); err != nil {
+		s.log().Debug("vulnerability scans: could not drop hosts of removed networks", "err", err)
+	}
 }
 
 // finish records a scan's end.
@@ -224,15 +418,14 @@ func (s *Scanner) finish(ctx context.Context, sc *Scan, state, msg string) {
 	}
 }
 
-// runScan runs one scan to its end.
+// runScan runs one scan, already claimed, to its end.
 func (s *Scanner) runScan(parent context.Context, sc *Scan, t Target, set Settings) {
 	s.mu.Lock()
-	s.current = sc.ID
 	runner := s.Runner
 	s.mu.Unlock()
 	defer func() {
 		s.mu.Lock()
-		s.current = ""
+		delete(s.running, sc.ID)
 		s.mu.Unlock()
 	}()
 	if runner == nil || (runner.Path == "" && runner.Exec == nil) {
@@ -241,15 +434,13 @@ func (s *Scanner) runScan(parent context.Context, sc *Scan, t Target, set Settin
 		runner = s.Runner
 		s.mu.Unlock()
 	}
-	if runner == nil || runner.Path == "" {
-		s.finish(parent, sc, StateFailed, "Nmap is not installed on "+s.Server+". Open Setup on the Vulnerabilities page to see what is needed.")
+	if runner == nil || (runner.Path == "" && runner.Exec == nil) {
+		s.finish(parent, sc, StateFailed, "Nmap is not installed on "+s.Server+". Open Settings > Scanners to see what is needed.")
 		return
 	}
-	started := time.Now().UTC()
-	if err := s.Store.UpdateScan(parent, sc.ID, map[string]any{"state": StateRunning, "started_at": started, "heartbeat": started, "scanner": s.Server}); err != nil {
-		s.log().Warn("vulnerability scans: could not start a scan", "scan", sc.ID, "err", err)
-		return
-	}
+	// A network with no scanner of its own is scanned by the server that
+	// runs the background jobs, only while it does.
+	keep := func() bool { return t.Scanner != "" || s.leader() }
 	s.log().Info("vulnerability scan started", "network", t.Name, "scan", sc.ID, "trigger", sc.Trigger)
 	ctx, cancel := context.WithTimeout(parent, maxScanTime)
 	defer cancel()
@@ -272,7 +463,7 @@ func (s *Scanner) runScan(parent context.Context, sc *Scan, t Target, set Settin
 			pmu.Unlock()
 			_ = s.Store.UpdateScan(ctx, sc.ID, map[string]any{"heartbeat": time.Now().UTC(), "progress": p})
 			cur, _, err := s.Store.Scan(ctx, sc.ID)
-			if (err == nil && cur.Stop) || errors.Is(err, ErrNotFound) || !s.allowed() {
+			if (err == nil && cur.Stop) || errors.Is(err, ErrNotFound) || !keep() {
 				pmu.Lock()
 				stopped = true
 				pmu.Unlock()
