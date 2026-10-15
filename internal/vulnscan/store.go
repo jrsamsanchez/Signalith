@@ -401,6 +401,37 @@ func (s *Store) ClaimScan(ctx context.Context, id string, fields map[string]any)
 	return true, nil
 }
 
+// RequeueScan puts a scan this server was running back in the queue, so
+// it runs again from the start: on this server once it is back, or on the
+// one that takes the network. ok is false when the scan is no longer this
+// server's to give back (it ended, was stopped or removed, or another
+// server holds it).
+func (s *Store) RequeueScan(ctx context.Context, id, nodeID string) (ok bool, err error) {
+	src, v, found, err := s.Docs.Get(ctx, s.Index, scanDocID(id))
+	if err != nil || !found {
+		return false, err
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(src, &doc); err != nil {
+		return false, err
+	}
+	holder, _ := doc["scanner_id"].(string)
+	if doc["state"] != StateRunning || doc["stop"] == true || holder != nodeID {
+		return false, nil
+	}
+	for _, k := range []string{"started_at", "heartbeat", "scanner", "scanner_id", "progress"} {
+		delete(doc, k)
+	}
+	doc["state"] = StateQueued
+	if _, err := s.Docs.PutIf(ctx, s.Index, scanDocID(id), doc, v, true); err != nil {
+		if errors.Is(err, store.ErrConflict) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
 // UpdateScan changes some fields of a scan.
 func (s *Store) UpdateScan(ctx context.Context, id string, fields map[string]any) error {
 	_, err := s.Docs.Update(ctx, s.Index, scanDocID(id), fields, true)
