@@ -13,9 +13,9 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/shared"
 )
 
-// joinEnv is the join token a new Docker server is started with
+// joinTokenEnv is the join token a new Docker server is started with
 // (deploy/docker/docker-compose.server.yml).
-const joinEnv = "SIGNALITH_JOIN"
+const joinTokenEnv = "SIGNALITH_JOIN"
 
 // The program and the download limit belong to the process, so a restart
 // in place keeps the limit's count.
@@ -32,15 +32,15 @@ func clusterInstall() *api.ClusterInstall {
 
 // joinFromEnv joins this server to a cluster with the token in
 // SIGNALITH_JOIN, once: when its state folder has no cluster key yet. It
-// runs "signalith join <token> --no-start -c <path>" as a child, the same
+// runs "signalith join --no-start --yes -c <path>" as a child, which reads
+// the token from SIGNALITH_JOIN (never from its command line), the same
 // command as install.sh and install.ps1, and returns its failure, so the
 // container stops with the reason and Docker starts it again (a token
 // used by a join that failed after its checks then fails the same way,
 // and the message says to make a new one). Later starts ignore the
 // token.
 func joinFromEnv(path string, log *slog.Logger) error {
-	token := os.Getenv(joinEnv)
-	if token == "" {
+	if os.Getenv(joinTokenEnv) == "" {
 		return nil
 	}
 	// A new server has no config yet: join makes it.
@@ -54,15 +54,15 @@ func joinFromEnv(path string, log *slog.Logger) error {
 		joined = joined || len(shared.ClusterKeyFiles(c.StateDir())) > 0
 	}
 	if joined {
-		log.Info(joinEnv + " is ignored: this server has joined its cluster. Remove it from the .env file.")
+		log.Info(joinTokenEnv + " is ignored: this server has joined its cluster. Remove it from the .env file.")
 		return nil
 	}
 	exe, err := os.Executable()
 	if err != nil {
 		return err
 	}
-	log.Info("joining the cluster with the token in " + joinEnv)
-	cmd := exec.Command(exe, "join", token, "--no-start", "-c", path)
+	log.Info("joining the cluster with the token in " + joinTokenEnv)
+	cmd := exec.Command(exe, "join", "--no-start", "--yes", "-c", path)
 	cmd.Stdout, cmd.Stderr = os.Stderr, os.Stderr
 	err = cmd.Run()
 	var exit *exec.ExitError

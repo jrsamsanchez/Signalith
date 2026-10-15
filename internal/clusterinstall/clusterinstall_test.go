@@ -24,7 +24,7 @@ func TestLines(t *testing.T) {
 	}
 	sha := ScriptSHA256()
 	for _, want := range []string{"https://siem-a:8443/api/cluster/join/install.sh", sha.SH + "  $f", "sha256sum -c", "--from https://siem-a:8443",
-		"--version 1.5.0", "--sha256 " + bin, "--join '" + token + "'", "sudo sh"} {
+		"--version 1.5.0", "--sha256 " + bin, "echo '" + token + "' | sudo sh", "--join -"} {
 		if !strings.Contains(c.Linux, want) {
 			t.Errorf("linux line has no %q:\n%s", want, c.Linux)
 		}

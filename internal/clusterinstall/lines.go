@@ -73,7 +73,7 @@ func (l Line) check() error {
 // Lines makes the pasted lines.
 //
 // Linux: the line downloads install.sh, checks its SHA-256 and runs it
-// with sudo. The script downloads the issuer's program when the issuer
+// with sudo, giving it the token on its standard input. The script downloads the issuer's program when the issuer
 // runs Linux on the same processor, and checks it too.
 //
 // Windows (an elevated PowerShell, Windows PowerShell 5.1 or PowerShell
@@ -93,14 +93,17 @@ func Lines(l Line) (Commands, error) {
 	sha := ScriptSHA256()
 	var c Commands
 
-	linux := fmt.Sprintf("f=$(mktemp) && curl -fsSk --proto '=https' %s/api/cluster/join/install.sh -o \"$f\" && echo \"%s  $f\" | sha256sum -c --quiet && sudo sh \"$f\" --from %s --version %s",
-		base, sha.SH, base, l.Version)
+	// The token reaches the script on its standard input (echo is built
+	// into the shell), so it is never on a command line in the process
+	// list.
+	linux := fmt.Sprintf("f=$(mktemp) && curl -fsSk --proto '=https' %s/api/cluster/join/install.sh -o \"$f\" && echo \"%s  $f\" | sha256sum -c --quiet && echo '%s' | sudo sh \"$f\" --from %s --version %s",
+		base, sha.SH, l.Token, base, l.Version)
 	if l.GOOS == "linux" && l.BinarySHA256 != "" {
 		linux += " --sha256 " + l.BinarySHA256
 	} else {
 		c.LinuxNote = fmt.Sprintf("This server runs %s, so it cannot hand out the Linux program: install the Signalith %s package on the new server first (%s), then run the line.", platformName(l.GOOS), l.Version, docsInstall)
 	}
-	c.Linux = linux + " --join '" + l.Token + "'"
+	c.Linux = linux + " --join -"
 
 	// $ProgressPreference: Windows PowerShell 5.1 downloads many times
 	// slower while it draws a progress bar.

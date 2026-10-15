@@ -266,12 +266,15 @@ if ($Join) {
   # is none); the service is installed and started below.
   Write-Host ""
   Write-Host "Joining the cluster"
-  $joinArgs = @("join", $Join, "-c", $config, "--no-start")
+  # The token reaches join in SIGNALITH_JOIN, never on its command line,
+  # which other users of the computer could see in the process list.
+  $joinArgs = @("join", "-c", $config, "--no-start", "--yes")
   if ($Name) { $joinArgs += @("--name", $Name) }
   if ($NodeUrl) { $joinArgs += @("--node-url", $NodeUrl) }
   # The same port as the firewall rule below.
   $joinArgs += @("--listen", $Listen)
-  & $exe @joinArgs
+  $env:SIGNALITH_JOIN = $Join
+  try { & $exe @joinArgs } finally { Remove-Item Env:SIGNALITH_JOIN -ErrorAction SilentlyContinue }
   switch ($LASTEXITCODE) {
     0 { }
     { $_ -in 2, 3 } { throw "The join was refused (see above). Nothing was changed by it." }

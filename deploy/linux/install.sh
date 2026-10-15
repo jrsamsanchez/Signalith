@@ -6,8 +6,11 @@
 # The Servers page's "Add a server" dialog gives one line that downloads
 # this script from a server of the cluster, checks it, and runs it:
 #
-#   sudo sh install.sh --from https://siem-a:8080 --version 1.5.0 \
-#     --sha256 <program's SHA-256> --join 'SJ1....'
+#   echo 'SJ1....' | sudo sh install.sh --from https://siem-a:8080 \
+#     --version 1.5.0 --sha256 <program's SHA-256> --join -
+#
+# "--join -" reads the token from the standard input, so it is never on a
+# command line other users of the machine could see in the process list.
 #
 # A first server, with no cluster to join:
 #
@@ -52,13 +55,14 @@ fail() {
 }
 usage() {
   cat <<'USAGE'
-Usage: sudo sh install.sh [--join 'SJ1....' --from https://<server>:8080]
+Usage: sudo sh install.sh [--join - --from https://<server>:8080]
                           [--version <v>] [--sha256 <hex>] [--binary <file>]
                           [--name <server name>] [--listen <addr:port>]
                           [--node-url https://<this server>:8080]
 
-  --join      The token from Servers > Add a server. Without it this machine
-              becomes a first server of its own.
+  --join      The token from Servers > Add a server, or - to read it from
+              the standard input. Without it this machine becomes a first
+              server of its own.
   --from      The server the token came from: the program is downloaded from
               it when this machine has none of the same version.
   --version   The version the cluster runs; this machine must run the same.
@@ -123,6 +127,10 @@ case "$sha256" in
   *[!0-9a-fA-F]*) fail "--sha256 must be 64 hexadecimal characters." ;;
   *) [ ${#sha256} -eq 64 ] || fail "--sha256 must be 64 hexadecimal characters." ;;
 esac
+if [ "$token" = - ]; then
+  IFS= read -r token || [ -n "$token" ] || fail "No join token on the standard input. Copy the whole line from Servers > Add a server again."
+  token=$(printf '%s' "$token" | tr -d '[:space:]')
+fi
 if [ -n "$token" ]; then
   case "$token" in
     SJ1.*) ;;
@@ -345,12 +353,14 @@ if [ -n "$token" ]; then
   fi
   say ""
   say "Joining the cluster"
-  set -- join "$token" -c "$config"
+  # The token goes to join on its standard input, never as an argument.
+  set -- join - --yes -c "$config"
   [ -z "$name" ] || set -- "$@" --name "$name"
   [ -z "$listen" ] || set -- "$@" --listen "$listen"
   [ -z "$node_url" ] || set -- "$@" --node-url "$node_url"
   status=0
-  "$bin" "$@" || status=$?
+  printf '%s\n' "$token" | "$bin" "$@" || status=$?
+  token=''
   case "$status" in
     0) exit 0 ;;
     2 | 3) fail "The join was refused (see above). Nothing was changed on this machine." ;;

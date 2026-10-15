@@ -408,7 +408,9 @@ signalith cluster token [-c file] -revoke <id>
 ```
 
 Makes a join token, as **Servers → Add a server** does, and prints it with the line
-to run on the new server for Linux, Windows and Docker. The token works once and
+to run on the new server for Linux, Windows and Docker: the same one-line installs as
+the dialog, which install Signalith when the new computer has none and then join (see
+[Adding servers](multi-server.md)). The token works once and
 for `-ttl` (60 minutes by default, at most 24 hours). It names this server's https
 address (`-url`, else `server.node_url`, else `server.public_url`; one only this
 computer reaches is refused) and the fingerprint of its HTTPS certificate authority,

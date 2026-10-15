@@ -28,6 +28,31 @@ type ClusterInstall struct {
 	Deployment string
 }
 
+// lines are the one-line installs of a new server that joins with the
+// token tok, made on the server at url: install.sh and install.ps1 with
+// their SHA-256 checked, and this server's program when the new server is
+// the same kind of machine. sums are the SHA-256 of the scripts and the
+// program the lines name.
+func (ci *ClusterInstall) lines(url, tok, version string) (joinCommands, map[string]string, error) {
+	if ci == nil || ci.Files == nil {
+		return joinCommands{}, nil, errors.New("this server does not hand out install scripts")
+	}
+	goos, goarch := ci.Files.Platform()
+	// Without its program (a build that cannot read itself) the lines
+	// still install from a package.
+	bin := ci.Files.BinarySHA256()
+	c, err := clusterinstall.Lines(clusterinstall.Line{URL: url, Token: tok, Version: version, GOOS: goos, GOARCH: goarch, BinarySHA256: bin})
+	if err != nil {
+		return joinCommands{}, nil, err
+	}
+	sha := clusterinstall.ScriptSHA256()
+	sums := map[string]string{clusterinstall.ScriptSH: sha.SH, clusterinstall.ScriptPS1: sha.PS1}
+	if bin != "" {
+		sums[goos+"/"+goarch] = bin
+	}
+	return joinCommands{Linux: c.Linux, LinuxNote: c.LinuxNote, Windows: c.Windows, WindowsNote: c.WindowsNote, Docker: c.Docker, DockerRun: c.DockerRun}, sums, nil
+}
+
 // installRoutes are public: a new server fetches them before it has
 // anything to sign in with. They hand out only the open-source program
 // and its scripts, never settings or keys.

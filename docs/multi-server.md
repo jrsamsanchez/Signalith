@@ -49,11 +49,12 @@ In a terminal on the new computer. It asks for your sudo password:
 ```sh
 f=$(mktemp) && curl -fsSk --proto '=https' https://siem-a:8080/api/cluster/join/install.sh -o "$f" \
   && echo "<script's SHA-256>  $f" | sha256sum -c --quiet \
-  && sudo sh "$f" --from https://siem-a:8080 --version 1.5.0 --sha256 <program's SHA-256> --join 'SJ1....'
+  && echo 'SJ1....' | sudo sh "$f" --from https://siem-a:8080 --version 1.5.0 --sha256 <program's SHA-256> --join -
 ```
 
 The line downloads the install script from your server and checks its SHA-256 before running
-it. The script ([deploy/linux/install.sh](https://github.com/jrsamsanchez/Signalith/blob/main/deploy/linux/install.sh)):
+it. The token goes to the script on its standard input, so it never shows in the list of
+running programs other users of the computer can see. The script ([deploy/linux/install.sh](https://github.com/jrsamsanchez/Signalith/blob/main/deploy/linux/install.sh)):
 
 1. Checks the computer: root, systemd, the processor (amd64 or arm64).
 2. Finds the program. When the `signalith` .deb or .rpm package is installed, it uses the
@@ -199,8 +200,9 @@ For servers set up by a script or image, without the dialog:
 - `signalith cluster token` makes a token and prints the same lines (see
   [signalith cluster](cluster-cli.md)).
 - The install scripts take the token and the other values as options:
-  `sudo sh install.sh --join 'SJ1....' [--name siem-c] [--node-url https://10.0.0.7:8080]`
-  and `.\install.ps1 -Join 'SJ1....' [-Name siem-c] [-NodeUrl https://10.0.0.7:8080]`.
+  `sudo sh install.sh --join - [--name siem-c] [--node-url https://10.0.0.7:8080] < token.txt`
+  (`--join -` reads the token from the standard input) and
+  `.\install.ps1 -Join 'SJ1....' [-Name siem-c] [-NodeUrl https://10.0.0.7:8080]`.
   Each release also carries `install.sh` and a Windows zip with `signalith.exe` and
   `install.ps1`, covered by its checksums.
 - A cluster key file still works too: see [Adding a server by hand](servers.md#adding-a-server-by-hand).

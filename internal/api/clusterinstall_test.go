@@ -212,3 +212,37 @@ func TestServerCheck(t *testing.T) {
 		t.Errorf("unknown server: %d", code)
 	}
 }
+
+// A join token's answer carries the one-line installs, with the SHA-256
+// of the scripts and of this server's program they check.
+func TestInstallLines(t *testing.T) {
+	exe := filepath.Join(t.TempDir(), "signalith")
+	if err := os.WriteFile(exe, []byte("program"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ci := &ClusterInstall{Files: &clusterinstall.Files{Exe: exe, GOOS: "linux", GOARCH: "amd64"}}
+	const tok = "SJ1.eyJ1IjoiaHR0cHM6Ly9zaWVtLWE6ODA4MCJ9"
+	c, sums, err := ci.lines("https://siem-a:8080", tok, "1.5.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sha := clusterinstall.ScriptSHA256()
+	bin := ci.Files.BinarySHA256()
+	if sums["install.sh"] != sha.SH || sums["install.ps1"] != sha.PS1 || sums["linux/amd64"] != bin || bin == "" {
+		t.Errorf("sums = %v", sums)
+	}
+	if !strings.Contains(c.Linux, "echo '"+tok+"' | sudo sh") || !strings.Contains(c.Linux, "--sha256 "+bin) || c.LinuxNote != "" {
+		t.Errorf("linux = %q (%q)", c.Linux, c.LinuxNote)
+	}
+	if !strings.Contains(c.Windows, "-Join '"+tok+"'") || c.WindowsNote == "" || c.DockerRun == "" || !strings.Contains(c.Docker, "SIGNALITH_JOIN="+tok) {
+		t.Errorf("windows = %q (%q), docker = %q %q", c.Windows, c.WindowsNote, c.Docker, c.DockerRun)
+	}
+	// Without install files, or for an address a line cannot carry, there
+	// are none: the answer keeps the plain join lines.
+	if _, _, err := (*ClusterInstall)(nil).lines("https://siem-a:8080", tok, "1.5.0"); err == nil {
+		t.Error("lines without install files")
+	}
+	if _, _, err := ci.lines("https://siem-a:8080/x;rm", tok, "1.5.0"); err == nil {
+		t.Error("lines for a bad address")
+	}
+}

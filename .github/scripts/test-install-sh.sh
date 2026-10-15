@@ -35,6 +35,11 @@ if out=$(sh "$script" --binary "$program" --join 'not-a-token' 2>&1); then
   fail "a bad token was accepted"
 fi
 echo "$out" | grep -q "not a Signalith join token" || fail "bad token: $out"
+# The same on the standard input, as the pasted line gives it.
+if out=$(echo 'not-a-token' | sh "$script" --binary "$program" --join - 2>&1); then
+  fail "a bad token on the standard input was accepted"
+fi
+echo "$out" | grep -q "not a Signalith join token" || fail "bad token on the standard input: $out"
 
 # A first server: the program, the account, the folders, the unit, the
 # config, and the service turned on.
