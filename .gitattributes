@@ -21,3 +21,9 @@ deploy/linux/*.sh text eol=lf
 # line, so they keep Unix line endings on Windows too.
 internal/ingest/testdata/zeek/** text eol=lf
 internal/ingest/testdata/suricata/** text eol=lf
+
+# The network sensor's install script, units, helpers and Compose file:
+# the script's SHA-256 is checked by the line pasted on the sensor, and it
+# carries the others byte for byte.
+deploy/sensor/** text eol=lf
+internal/ingest/testdata/sensor/** text eol=lf

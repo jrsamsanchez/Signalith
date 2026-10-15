@@ -95,7 +95,7 @@ func TestReleased(t *testing.T) {
 }
 
 func TestScripts(t *testing.T) {
-	for _, name := range []string{ScriptSH, ScriptPS1} {
+	for _, name := range []string{ScriptSH, ScriptPS1, ScriptSensor} {
 		body, sum, ok := Script(name)
 		h := sha256.Sum256(body)
 		if !ok || len(body) == 0 || sum != hex.EncodeToString(h[:]) {

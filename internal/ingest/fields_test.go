@@ -267,7 +267,7 @@ func TestIndexTemplate(t *testing.T) {
 // template and exempt from the budget.
 func TestParsersEmitKnownFields(t *testing.T) {
 	fset := token.NewFileSet()
-	for _, file := range []string{"windows.go", "linux.go", "ingest.go", "defender.go", "clamav.go", "malware.go", "zeek.go", "suricata.go", "netsensor.go"} {
+	for _, file := range []string{"windows.go", "linux.go", "ingest.go", "defender.go", "clamav.go", "malware.go", "zeek.go", "suricata.go", "netsensor.go", "sensorstatus.go"} {
 		f, err := parser.ParseFile(fset, file, nil, 0)
 		if err != nil {
 			t.Fatal(err)
@@ -356,6 +356,9 @@ func TestSensorFieldsAreKnown(t *testing.T) {
 	}
 	for _, line := range sensorLines(t, "suricata", "eve.json") {
 		evs = append(evs, Normalize("suricata.eve", map[string]any{"log": line, "hostname": "nsm-01"}, now))
+	}
+	for _, line := range sensorLines(t, "sensor", "status.json") {
+		evs = append(evs, Normalize(SensorStatusTag, map[string]any{"log": line, "hostname": "nsm-01"}, now))
 	}
 	for _, ev := range evs {
 		for k := range ev.Document() {

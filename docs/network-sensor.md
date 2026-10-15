@@ -42,7 +42,7 @@ everywhere else, sends both programs' logs to Signalith over HTTPS.
   managed switches can mirror a port, even inexpensive ones.
 - **A machine with two network ports**: one plugged into the mirror port (it only listens and
   has no IP address), and one for normal network access, to reach Signalith and get updates.
-- **Linux**: Ubuntu Server 24.04 LTS is the easiest choice; Debian 12 and Rocky, Alma or Red
+- **Linux**: Ubuntu Server 24.04 LTS is the easiest choice; Debian 12 or 13 and Rocky, Alma or Red
   Hat Enterprise Linux 9 work too. Zeek does not run on Windows. The simplest sensor is a
   spare mini PC with two network ports.
 
@@ -188,104 +188,278 @@ does not have this limit.
 
 ## Building a new sensor
 
-A one-line sensor install is coming. Until then, these are the steps on a fresh
-**Ubuntu Server 24.04** machine with two network ports. In the commands, `ens192` is the
-capture port (the one on the mirror port); use your own port's name (`ip link` lists them).
+On Signalith, open **Add data**, pick **Network sensor**, then the **Set up a new sensor**
+tab. It shows what a sensor needs and a few options, and makes one line to run on the new
+machine:
 
-1. **Leave the capture port without an IP address.** Keep the address on the other port. Tell
-   Ubuntu to bring the capture port up at every start with no address, in a new file
-   `/etc/netplan/90-capture.yaml`:
+- **Capture port**: the port plugged into the mirror port or tap, such as `ens192`. Leave it
+  empty to choose on the sensor: the script lists the ports with their link and traffic.
+- **Your networks**: the address ranges inside your network, separated by commas, so Zeek
+  and Suricata know which side of a connection is yours. Empty means the private ranges
+  (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `fd00::/8`).
+- **Zeek**, **Suricata** and **Also Suricata protocol logs**: which programs to install, as
+  on the other tab.
+- **Install with**: **Packages** (recommended) installs Zeek, Suricata and Fluent Bit from
+  their publishers' signed package repositories; **Docker** runs their official images
+  instead (see [Docker](#docker)).
+- **Token for these agents**: the name of the sensor's agent token.
 
-    ```yaml
-    network:
-      version: 2
-      ethernets:
-        ens192:
-          dhcp4: false
-          dhcp6: false
-          link-local: []
-          optional: true
-    ```
+Press **Copy**: Signalith makes the sensor's token and puts it in the line. The line holds
+that token, so anyone with it can send data as this sensor: don't share it. Paste it on the
+new machine, as a user who can use `sudo`:
 
-    Then apply it: `sudo chmod 600 /etc/netplan/90-capture.yaml && sudo netplan apply`. Zeek
-    and Suricata switch the port to promiscuous mode themselves, so it hears all the copied
-    traffic.
+```
+ f=$(mktemp) && curl -fsSk --proto '=https' https://siem.example.com:8080/api/sensor/install.sh -o "$f" && echo "<sha-256>  $f" | sha256sum -c --quiet && echo 'sgl_...' | sudo sh "$f" --role sensor --from https://siem.example.com:8080 --ca-sha256 <fingerprint> --version 1.6.0 --token -
+```
 
-2. **Install Zeek** from Zeek's signed packages (the openSUSE Build Service repository Zeek
-   documents at <https://docs.zeek.org/en/current/install.html>):
+It downloads the sensor install script from Signalith, checks it against the SHA-256 in the
+line, and runs it. The token goes in on the standard input, so it never shows in the list
+of running programs.
 
-    ```sh
-    sudo install -d -m 755 /etc/apt/keyrings
-    curl -fsSL https://download.opensuse.org/repositories/security:zeek/xUbuntu_24.04/Release.key | gpg --dearmor | sudo tee /etc/apt/keyrings/security_zeek.gpg > /dev/null
-    echo 'deb [signed-by=/etc/apt/keyrings/security_zeek.gpg] http://download.opensuse.org/repositories/security:/zeek/xUbuntu_24.04/ /' | sudo tee /etc/apt/sources.list.d/security:zeek.list
-    sudo apt update && sudo apt install zeek
-    ```
+The line itself holds the token, though, and the shell may keep it in its history
+(`~/.bash_history`). Unlike the one-use join token of [Add a server](multi-server.md), a
+sensor's token keeps working until you revoke it. The line starts with a space, which keeps
+it out of bash's history on Ubuntu and Debian (they set `HISTCONTROL=ignoreboth`); on Rocky,
+Alma Linux and other shells, clear the history after running it (`history -c`, or remove the
+line from `~/.bash_history`). If someone else may have seen it, revoke the token
+(**Settings > Agent tokens**) and make a new line.
 
-    The repository is signed, so the plain `http` address is safe: apt checks every package
-    against the key. The key is trusted for Zeek's repository only (`signed-by`), not for
-    every package on the machine.
+The first download skips the certificate check
+(the new machine does not trust Signalith's certificate authority yet); the SHA-256 checks
+the script, and the script then checks Signalith's certificate authority against
+`--ca-sha256` before it trusts it. With a certificate from a public authority there is no
+`--ca-sha256`: the machine's own trusted authorities are used.
 
-3. **Point Zeek at the capture port**: in `/opt/zeek/etc/node.cfg` set `interface=ens192`.
-   In `/opt/zeek/etc/networks.cfg` list your own networks (by default the private ranges),
-   so Zeek knows which side of a connection is yours. Then turn on JSON logs and Community ID,
-   and start Zeek:
+Signalith must use HTTPS: the tab makes no line while it serves plain HTTP, because a sensor
+sends what it sees on your network.
 
-    ```sh
-    echo '@load policy/tuning/json-logs' | sudo tee -a /opt/zeek/share/zeek/site/local.zeek
-    echo '@load policy/protocols/conn/community-id-logging' | sudo tee -a /opt/zeek/share/zeek/site/local.zeek
-    sudo /opt/zeek/bin/zeekctl deploy
-    ```
+While you install, the tab waits for the sensor and says **nsm-01 is sending** once its
+first logs arrive (it stops waiting after 30 minutes).
 
-    Add `*/5 * * * * /opt/zeek/bin/zeekctl cron` to root's crontab (`sudo crontab -e`) so
-    Zeek is restarted if it stops and its old logs are cleaned up.
+The line runs on **Ubuntu 22.04 or 24.04, Debian 12 or 13, Rocky Linux 9 or AlmaLinux 9**, on
+64-bit x86 or ARM, with systemd. Zeek publishes no packages for Rocky or Alma Linux: there, use
+`--no-zeek` (Suricata only) or `--docker`. The checklist says so before anything is installed.
 
-4. **Install Suricata** from the Open Information Security Foundation's package archive:
+### What the script checks
 
-    ```sh
-    sudo add-apt-repository ppa:oisf/suricata-stable
-    sudo apt update && sudo apt install suricata
-    ```
+First it checks the machine and Signalith, and prints a checklist. **✗** stops it, **!** is a
+warning (it goes on), **-** is for your information.
 
-    In `/etc/suricata/suricata.yaml`, set the `af-packet` interface to `ens192` and, under
-    `eve-log`, `community-id: true`. Suricata reads traffic from attackers, so let it drop
-    root once it has opened the port: in the same file set
+| Check | When it is not met |
+| --- | --- |
+| A supported Linux, 64-bit, with systemd, run with `sudo` | ✗ stops |
+| Each program chosen has signed packages for this system, with a signing key the script can check (see [Signing keys](#signing-keys)) | ✗ stops, before anything is installed, and says what works instead (`--docker`, or `--no-zeek`) |
+| Signalith answers, its certificate authority matches `--ca-sha256`, and it accepts the token | ✗ stops, before anything is installed |
+| 4 or more processor cores, 8 GB or more memory, 50 GB or more free under `/var` and `/opt` | ! Zeek and Suricata may drop packets, or run out of room |
+| The capture port has a link, receives packets in 10 seconds, and has no IP address | ! check the cable, the mirror port, and remove the address |
+| A second network port, to reach Signalith | ! a sensor needs two |
+| The clock is synchronised | ! times of what the sensor sees may be off |
+| The disk is encrypted (LUKS) | - the logs hold what people do on your network |
 
-    ```yaml
-    run-as:
-      user: suricata
-      group: suricata
-    ```
+Warnings scroll past while it installs, so it counts them again at the end (**2 warning(s)
+above**): read the **Fix** line under each.
 
-    The package creates that user; if `id suricata` says it does not exist, add it with
-    `sudo useradd --system --no-create-home --shell /usr/sbin/nologin suricata`, and let it
-    write its logs: `sudo chown -R suricata:suricata /var/log/suricata /var/lib/suricata`.
+Add `--check-only` to the line to only check, or `--dry-run /tmp/sensor` to see every file it
+would write (under that folder) and every command it would run, changing nothing.
 
-5. **Get the rules and keep them up to date.** `suricata-update` (it comes with Suricata)
-   downloads the Emerging Threats Open rules from Proofpoint, checks that Suricata accepts
-   them, and only then installs them:
+### Choosing the capture port
 
-    ```sh
-    sudo suricata-update
-    sudo systemctl enable suricata && sudo systemctl restart suricata
-    ```
+With `--interface` the script uses that port. Without it, it picks the one free port: not the
+one that holds the default route (the one this machine reaches the network with), and not one
+with an IP address or in a bridge or bond, which carries some other network (storage,
+backups). When there are several free ports, it lists them with their link and packet counts
+and asks; when none is free, it stops and asks you to name the port with `--interface`. It
+uses the port that holds the default route only when `--interface` names it, and warns, since
+listening there could cut you off.
 
-    `restart` (not just `enable --now`) makes sure Suricata loads the settings from step 4
-    and the new rules, even if the package had already started it.
+The script then keeps the capture port up with no address, in promiscuous mode, never
+answering (no ARP, no IPv6), and turns off the network card offloads that merge packets and
+confuse Zeek and Suricata (GRO, LRO, GSO, TSO): `signalith-sensor-capture.service` does this
+at every start. It keeps what the port was like before, and puts it back when it stops (and
+so on `--uninstall`). It never changes the machine's network settings files.
 
-    Add a daily update to root's crontab, at a minute of your choice:
-    `17 3 * * * suricata-update && suricatasc -c ruleset-reload-nonblocking`.
+### Options
 
-6. **Send the logs**: on Signalith, open **Add data**, pick **Network sensor** and follow the
-   steps, as above.
+| Option | What it does |
+| --- | --- |
+| `--role sensor` | What to build. The only role for now. |
+| `--from <address>` | Signalith's address, which the sensor sends to. |
+| `--ca-sha256 <hex>` | SHA-256 of Signalith's certificate authority; the script refuses any other. |
+| `--next-ca-sha256 <hex>` | The new certificate authority, while Signalith switches to it. |
+| `--version <v>` | Signalith's version, shown on the Endpoints page. |
+| `--token -` | Read the sensor's agent token from the standard input. |
+| `--name <name>` | The sensor's name in Signalith (default: the host name). |
+| `--interface <port>` | The capture port. |
+| `--networks <cidr,...>` | Your own networks (default: the private ranges). |
+| `--no-zeek`, `--no-suricata` | Suricata only, or Zeek only. |
+| `--suricata-protocols` | Suricata also logs flows, DNS, HTTP and TLS (on when there is no Zeek). |
+| `--local-rules <file>` | A file of your own Suricata rules, added to the downloaded ones. |
+| `--zeek-workers <n>` | Zeek processes reading the port (default: one Zeek process below 8 cores; from 8 cores, a quarter of them, at most 8). |
+| `--suricata-threads <n>` | Suricata capture threads (default: half the cores). |
+| `--docker` | Run the three programs in containers. |
+| `--check-only` | Check the machine and Signalith, change nothing. |
+| `--dry-run <folder>` | Write every file under the folder and print the commands, changing nothing. |
+| `--uninstall [--purge]` | Remove what the script added (`--purge`: the logs too). |
 
-**Zeek runs as root in these steps.** `zeekctl` starts Zeek's workers as root, so a bug in
-Zeek's parsing of hostile traffic would run as root on the sensor. The one-line sensor
-install will run Zeek as its own `zeek` user with only the rights to capture packets. Until
-then, keep the sensor patched (`sudo apt upgrade`), give it no other job, and let only
-administrators sign in to it.
+### What it installs, and from where
 
-When the logs arrive, the **Endpoints** page lists the sensor as **Network sensor**, and the
-**Network** dashboard fills in.
+Only from each publisher's own signed package repository. Each repository's signing key is
+downloaded from the publisher and used only when its fingerprint is the one pinned in the
+script (see [Signing keys](#signing-keys)); the key is trusted for that repository alone
+(`signed-by`), not for every package on the machine.
+
+| Program | Ubuntu | Debian 12 | Debian 13 | Rocky, Alma Linux 9 |
+| --- | --- | --- | --- | --- |
+| Zeek (LTS, package `zeek-8.0`) | openSUSE Build Service `security:zeek`, as Zeek documents | the same | the same | none: use `--no-zeek` or `--docker` |
+| Suricata, suricata-update | the OISF PPA `ppa:oisf/suricata-stable` | Debian's `bookworm-backports` | Debian's own `trixie` | OISF's COPR `@oisf/suricata-8.0` |
+| Fluent Bit | packages.fluentbit.io | packages.fluentbit.io | packages.fluentbit.io | packages.fluentbit.io |
+
+Signalith does not include or pass on any of them, nor any rules: your machine downloads
+them from their publishers.
+
+What it writes:
+
+- `/etc/signalith-sensor/`: `sensor.conf` (the options), `token.env` (the token, root only),
+  `ca.pem` (Signalith's certificate authority), `fluent-bit.conf` (the agent's configuration,
+  from Signalith), `local.rules` (your own Suricata rules, see
+  [Keeping rules up to date](#keeping-rules-up-to-date)), `manifest` (everything the script
+  added, for `--uninstall`).
+- `/etc/suricata/signalith-sensor.yaml`, which loads the package's `suricata.yaml` and changes
+  only what the sensor needs (the capture port, your networks, the EVE log, Community ID), and
+  `disable.conf` and `threshold.config` beside it, which the script creates once and never
+  overwrites.
+- `/var/lib/signalith-sensor/suricata/`: the rules and `suricata-update`'s downloads, which
+  only root can change.
+- `/usr/lib/signalith-sensor/`: its helpers, and a copy of the script itself, for
+  `--uninstall`.
+- Zeek's `node.cfg`, `networks.cfg`, `zeekctl.cfg` and a `signalith.zeek` site script (JSON
+  logs, Community ID).
+- The systemd units `signalith-zeek`, `signalith-suricata`, `signalith-fluent-bit`,
+  `signalith-sensor-capture`, and the timers `signalith-suricata-update`,
+  `signalith-sensor-status` and `signalith-zeekctl-cron`. The packages' own `suricata` and
+  `fluent-bit` services are masked, so only Signalith's run.
+
+### Who runs as whom
+
+- **Zeek** runs as its own `zeek` user, with only the right to capture packets
+  (`CAP_NET_RAW`), never as root. It cannot change the machine's network settings.
+- **Suricata** starts as root to open the port, then drops to its `suricata` user. Its rules
+  are root's and it only reads them.
+- **The rules update** runs as root, and works only in folders that only root can change, so
+  a Suricata that someone took over through the traffic it reads cannot use it to gain more.
+- **Fluent Bit** runs as `signalith-sensor`, with no special rights; it can read Zeek's and
+  Suricata's logs (their groups) and nothing else. Only it gets the token, from `token.env`.
+- Every unit is locked down with systemd's sandboxing (read-only system, private `/tmp`, no
+  new privileges); `systemd-analyze security signalith-zeek` shows the details.
+- Zeek and Suricata keep two days of logs on the sensor; Signalith holds the history.
+
+### Rules
+
+The script downloads the **Emerging Threats Open** rules with `suricata-update` and installs
+`signalith-suricata-update.timer`, which updates them once a day (at a random time, so
+sensors don't all ask at once): `suricata-update` checks that Suricata accepts the new rules
+before installing them, then Suricata reloads them without stopping. If the check fails, the
+old rules stay and the sensor's status says the update failed. See
+[Keeping rules up to date](#keeping-rules-up-to-date).
+
+### Status
+
+Every 5 minutes the sensor sends a status line (`sourcetype=sensor:status`): the versions,
+whether Zeek and Suricata run, how old the rules are, the capture port's link, the share of
+packets dropped, free disk, and what looks wrong. The **Endpoints** page shows it on the
+sensor's row and in its details (each warning with what to run to fix it), and the **Health**
+page counts the sensors that send, went silent, drop more than 5% of packets or run on rules
+more than 3 days old.
+
+A sensor the script built is **silent** after 15 minutes without anything from it (three
+status lines missed); a sensor you set up yourself, which sends no status line, after an
+hour. Both pages count the same way.
+
+### Running it again, and uninstalling
+
+Run the line again to repair, or to upgrade: Zeek (within its long-term support line),
+Suricata and Fluent Bit get their publishers' newest packages, and the sensor's own files
+those of the Signalith version that made the line. The script changes only what differs,
+restarts only what it changed, and says **Nothing to change** when nothing does. A new line
+from Add data also gives the sensor a new token. With Docker, the images are the ones the
+Signalith version pins: update Signalith, then run its line.
+
+To remove the sensor, run the copy of the script it keeps:
+
+```sh
+sudo sh /usr/lib/signalith-sensor/install.sh --uninstall
+```
+
+It stops and removes the units, puts the capture port back as it was, removes the files it
+wrote (putting back any it replaced), the packages and repositories it added, and the `zeek`,
+`suricata` and `signalith-sensor` accounts; packages that were there before stay, and their
+own `suricata` or `fluent-bit` service starts again if it ran before. The logs stay unless you
+add `--purge`. Then revoke the sensor's token on Signalith: **Settings > Agent tokens**.
+
+### Docker
+
+With **Install with: Docker** (`--docker`), the script runs Zeek, Suricata and Fluent Bit in
+containers with Docker Compose, from their publishers' official images, each pinned by
+digest (`zeek/zeek`, `jasonish/suricata`, `fluent/fluent-bit`). It needs Docker Engine 24 or
+later with Compose v2 on Linux; Docker Desktop cannot capture from a physical port. The
+Compose file is `/etc/signalith-sensor/docker/docker-compose.yml`.
+
+- The containers use the host's network, so they see the capture port. Only Zeek and
+  Suricata get the rights to capture (Zeek only `NET_RAW`, so it cannot change the network
+  settings); every container drops all others, has a read-only file system and cannot gain
+  privileges. Fluent Bit reads their logs read-only.
+- The token is in `/etc/signalith-sensor/token.env` (root only), which Compose hands to the
+  Fluent Bit container as an environment variable: anyone who can run `docker inspect` on the
+  sensor can read it, so only administrators should be in the `docker` group.
+- Zeek runs as one process in its container, which suits up to a few hundred Mbit/s; for more
+  traffic, use the packages.
+- The rules update and the status line run from the host's systemd timers, as with packages.
+
+### Signing keys
+
+The script trusts a repository only when its signing key's fingerprint is the one pinned in
+the script (`KEY_FPR_*` near the top of `deploy/sensor/install.sh`):
+
+| Repository | Fingerprint | Where the publisher shows it |
+| --- | --- | --- |
+| Fluent Bit (packages.fluentbit.io) | `C3C0 A285 34B9 293E AF51 FABD 9F9D DC08 3888 C1CD` | Fluent Bit's documentation, Linux downloads |
+| Suricata, OISF PPA | `1215 04AD E276 E141 AD70 4A75 AC10 378C F205 C960` | the PPA's page on Launchpad, "Signing key" |
+| Zeek, openSUSE Build Service | not pinned yet | the project's `Release.key` on download.opensuse.org |
+| Suricata, OISF COPR | not pinned yet | the COPR project's `pubkey.gpg` |
+
+While a fingerprint is not pinned, the script will not add that repository: on Ubuntu and
+Debian a sensor with Zeek needs the Zeek one, on Rocky and Alma Linux Suricata needs the COPR
+one. Its checklist says so before anything is installed, and so does the Add data page. Use
+`--docker` meanwhile, or leave Zeek out with `--no-zeek` on Ubuntu or Debian.
+
+All the fingerprints are in one place near the top of the script. CI's `sensor-script` job
+checks every one against what its publisher serves (`.github/scripts/sensor-keys.sh` prints
+them), and fails while one is empty (`TestSensorKeyFingerprintsSet` with
+`SIGNALITH_SENSOR_KEYS=required`). Before filling one in, check it against the publisher's
+own page too.
+
+### By hand
+
+On a system the script does not support, build the sensor by hand, then send its logs with
+the **I already run Zeek or Suricata** tab:
+
+1. Leave the capture port up with no IP address (for netplan: `dhcp4: false`, `dhcp6: false`,
+   `link-local: []`, `optional: true`).
+2. Install Zeek from Zeek's signed packages (<https://docs.zeek.org/en/current/install.html>);
+   in `/opt/zeek/etc/node.cfg` set `interface=` to the capture port, list your networks in
+   `networks.cfg`, add `@load policy/tuning/json-logs` and
+   `@load policy/protocols/conn/community-id-logging` to `site/local.zeek`, and run
+   `zeekctl deploy`. Add `*/5 * * * * /opt/zeek/bin/zeekctl cron` to root's crontab.
+3. Install Suricata from OISF's packages; in `suricata.yaml` set the `af-packet` interface,
+   `community-id: true` under `eve-log`, and `run-as` to the `suricata` user.
+4. Run `sudo suricata-update`, restart Suricata, and add a daily
+   `suricata-update && suricatasc -c ruleset-reload-nonblocking` to root's crontab.
+   With `run-as` set, `suricata-update`'s test of the rules drops to that user and
+   fails; give it `--suricata-conf` with a copy of the settings without `run-as`, as the
+   script's `signalith-sensor-test.yaml` is.
+
+Done this way, `zeekctl` runs Zeek's workers as root: keep the sensor patched and give it no
+other job.
 
 ## What you get
 
@@ -424,14 +598,24 @@ is running.
 
 ## Keeping rules up to date
 
-Suricata only knows what its rules describe, so update them every day (see step 5 of
-[Building a new sensor](#building-a-new-sensor)). `suricata-update` checks that Suricata
-accepts the new rules before installing them; if they fail the check, the old rules stay.
+Suricata only knows what its rules describe, so they are updated every day. On a sensor the
+script built, `signalith-suricata-update.timer` does it; on your own, add the daily
+`suricata-update` of [By hand](#by-hand). `suricata-update` checks that Suricata accepts the new
+rules before installing them; if they fail the check, the old rules stay. Run an update now
+with `sudo systemctl start signalith-suricata-update`.
 
 To turn off a rule that is wrong for your network, put its SID in
-`/etc/suricata/disable.conf` (one per line, such as `2014520`) and run `suricata-update`
-again. `threshold.config` limits how often a rule may alert. Air-gapped networks can load
-rules from a file: `suricata-update --local /path/to/rules`.
+`/etc/suricata/disable.conf` (one per line, such as `2014520`; with Docker,
+`/etc/signalith-sensor/docker/suricata/disable.conf`) and run the update again.
+`threshold.config` beside it limits how often a rule may alert.
+
+Your own rules go in `/etc/signalith-sensor/local.rules`, with packages or Docker (or give a
+file with `--local-rules` in the line, which the script copies there). With packages, load
+them with `sudo systemctl start signalith-suricata-update`; with Docker, run the line again.
+Running the line again with a changed `--local-rules` file loads them straight away. Don't
+edit the copy in `/etc/signalith-sensor/docker/suricata/`: the next run replaces it.
+
+Air-gapped networks can load rules from a file: `suricata-update --local /path/to/rules`.
 
 ## Security
 
@@ -440,9 +624,9 @@ rules from a file: `suricata-update --local /path/to/rules`.
   opens no ports and needs nothing from Signalith except the address.
 - **One token per sensor.** Name the token after the sensor on the Add data page and each
   sensor gets its own (purpose `sensor`), shown once, stored on Signalith only as a hash, and
-  revocable on its own. On the sensor it
-  is in `/etc/fluent-bit/fluent-bit.conf`, which only root can read (the install step sets
-  mode 600).
+  revocable on its own. On a sensor the script built it is in
+  `/etc/signalith-sensor/token.env`, which only root can read, and only Fluent Bit's service
+  gets it; set up by hand, it is in `/etc/fluent-bit/fluent-bit.conf` (mode 600).
 - **A sensor is not a server.** It is an agent, not a member of Signalith's servers: it holds
   no OpenSearch password, no CA key and no settings, only its token and the CA certificate,
   which is public.
@@ -466,9 +650,17 @@ rules from a file: `suricata-update --local /path/to/rules`.
   settings say. On the sensor, turn on full-disk encryption when you install Linux (in the
   Ubuntu installer: **Encrypt the new Ubuntu installation**), and let Zeek and Suricata keep
   only a few days of logs: Signalith holds the history.
-- **Updates.** Install Zeek, Suricata and Fluent Bit only from their signed package
-  repositories, and keep the operating system updated (`sudo apt upgrade`, or turn on
-  unattended upgrades).
+- **The token in the line.** It keeps working until you revoke it. The line starts with a
+  space, which keeps it out of bash's history on Ubuntu and Debian; elsewhere, clear the
+  history after running it (see [Building a new sensor](#building-a-new-sensor)).
+- **Least rights.** With the script, Zeek no longer runs as root: it runs as its own `zeek`
+  user with only the rights to capture packets, Suricata drops to its `suricata` user, and
+  Fluent Bit runs as `signalith-sensor` with none (see [Who runs as whom](#who-runs-as-whom)).
+- **Updates.** Zeek, Suricata and Fluent Bit come only from their signed package
+  repositories, each key pinned by fingerprint (see [Signing keys](#signing-keys)). Keep the
+  operating system updated (`sudo apt upgrade`, or turn on unattended upgrades, which leave
+  the publishers' repositories alone); running the line again upgrades Zeek, Suricata and
+  Fluent Bit, and the sensor's own files.
 
 ## Licences
 
@@ -481,14 +673,26 @@ Signalith does not include, link or ship any of them, and does not copy or pass 
 | Suricata, suricata-update | GPL version 2 | Installed on the sensor from the Open Information Security Foundation's packages. Signalith reads its EVE JSON. |
 | Emerging Threats Open rules | Proofpoint's ET Open licence (BSD-style; some older rules GPL version 2); the licence text comes with each download | Downloaded by `suricata-update` on the sensor, straight from Proofpoint. The sample data uses made-up rules with SIDs from 9100000 up, not Emerging Threats text. |
 | Fluent Bit | Apache 2.0 | The Signalith agent, as on every other machine. |
+| Docker images (`zeek/zeek`, `jasonish/suricata`, `fluent/fluent-bit`) | as the programs above | With `--docker`, pulled by your Docker from their publishers, not rebuilt or passed on by Signalith. |
+
+The sensor install script and its Compose file are Signalith's own; they install or pull
+these programs from their publishers and download the rules on the sensor. The Emerging
+Threats Open rules' licence text is the `LICENSE` file in each download, in
+`/var/lib/signalith-sensor/suricata/update/cache` on the sensor (with Docker, in the
+`suricata-rules` volume).
 
 ## Troubleshooting
 
 **Nothing arrives.** Open the **Endpoints** page: the sensor should be listed as **Network
 sensor**, with when it last sent. If it is not there, check Fluent Bit's log on the sensor:
-`journalctl -u fluent-bit -n 50`. Common causes are a wrong address under **Agents send to**,
-a firewall blocking port 8080, a revoked token, or a wrong log path (Fluent Bit says it found
-no files). The **Health** page shows problems with incoming data.
+
+- on a sensor the script built: `sudo journalctl -u signalith-fluent-bit -n 50`;
+- with Docker: `sudo docker compose -f /etc/signalith-sensor/docker/docker-compose.yml logs fluent-bit`;
+- on a sensor you set up yourself: `journalctl -u fluent-bit -n 50`.
+
+Common causes are a wrong address under **Agents send to**, a firewall blocking port 8080, a
+revoked token, or a wrong log path (Fluent Bit says it found no files). The **Health** page
+shows problems with incoming data.
 
 **Zeek events are in `sourcetype=zeek:unknown`.** Zeek is writing tab-separated logs: turn
 on JSON logs (see [Zeek's JSON logs](#zeeks-json-logs)). Lines written before the change stay
@@ -503,8 +707,31 @@ traffic, so it may miss attacks too. Common causes: a sensor too small for the t
 the sizing table), a busy disk, or network card offloading. Check the mirror port too: a
 mirror port slower than the ports it copies drops packets before they reach the sensor.
 
-**No alerts at all.** Check that Suricata has rules: `sudo suricata-update` prints how many
-it installed, and `/var/log/suricata/suricata.log` says how many were loaded.
+**The script says "Signalith refused the token".** The token was revoked, or is not a sensor
+token, or the line was cut when it was copied. Make a new line on **Add data > Network sensor
+> Set up a new sensor** and run it.
+
+**The script says "This Signalith's certificate authority is not the one the line names".**
+The machine reached something else at that address (a proxy that inspects HTTPS, or another
+server), or Signalith's certificate authority changed since the line was made. Copy the line
+again from Add data; if it still fails, check that the address reaches your Signalith.
+
+**The status says no traffic, or the capture link is down.** Check the cable from the
+switch's mirror (SPAN) port or tap, and that the switch copies the right ports to it:
+`sudo tcpdump -ni ens192 -c 20` on the sensor should print packets.
+
+**The status says the sensor drops packets.** It is too small for the traffic (see the sizing
+table), or the disk is busy. Run the line again with more Zeek workers or Suricata threads
+(`--zeek-workers`, `--suricata-threads`) if it has cores to spare, or mirror less traffic.
+Offloads are turned off by `signalith-sensor-capture.service`; check it ran with
+`systemctl status signalith-sensor-capture`.
+
+**A service does not start.** `journalctl -u signalith-zeek -u signalith-suricata -u
+signalith-fluent-bit -n 100` says why. Run the line again: it repairs what differs.
+
+**No alerts at all.** Check that Suricata has rules: the sensor's row on **Endpoints** shows
+how many and how old; `sudo systemctl start signalith-suricata-update` updates them now, and
+`journalctl -u signalith-suricata-update` says how it went.
 
 To see what arrives:
 
