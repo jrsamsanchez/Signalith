@@ -103,9 +103,11 @@ than an hour ahead is filed under the time it arrived (see [Ingest limits](sendi
 
 The same limits as agent batches apply: up to 16 MB per request (also after gzip is
 undone), 200,000 records of at most 1 MB each, values nested at most 32 levels. A
-request over a limit or that does not decode is refused with 4xx and a message saying
-why, and nothing from it is stored; the Collector logs the message and drops the batch,
-so keep batches small (the generated config's batch processor sends at most 5,000
+record over the size or nesting limit, or one that does not decode, is turned away on
+its own: the rest of the batch is stored, and the record is counted in the answer's
+partial success with a message saying why. A request over a limit or that does not
+decode as a whole is refused with 4xx and a message saying why, and nothing from it is
+stored; the Collector logs the message and drops the batch, so keep batches small (the generated config's batch processor sends at most 5,000
 records). When Signalith is busy or OpenSearch is down the answer is 503 with
 `Retry-After`, and the Collector keeps the batch and sends it again. Records OpenSearch
 turns away are counted in the answer's partial success.

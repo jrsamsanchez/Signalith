@@ -423,25 +423,35 @@ func fuzzOTLP(t *testing.T, body []byte, isJSON bool) {
 	if isJSON {
 		walk = walkOTLPJSON
 	}
-	checked := 0
-	checkErr := walk(body, false, func(l *otlpLog, _ int) error {
+	checked, checkBad := 0, 0
+	checkErr := walk(body, false, func(l *otlpLog, _ int, bad *BodyError) error {
 		if l != nil {
 			t.Fatal("the check pass built a record")
 		}
 		checked++
+		if bad != nil {
+			checkBad++
+		}
 		return nil
 	})
-	built := 0
-	buildErr := walk(body, true, func(l *otlpLog, size int) error {
+	built, buildBad := 0, 0
+	buildErr := walk(body, true, func(l *otlpLog, size int, bad *BodyError) error {
+		built++
+		if bad != nil {
+			if l != nil {
+				t.Fatal("a rejected record came with its contents")
+			}
+			buildBad++
+			return nil
+		}
 		if size > MaxRecordBytes {
 			t.Fatalf("record of %d bytes", size)
 		}
 		checkOTLPLog(t, l)
-		built++
 		return nil
 	})
-	if (checkErr == nil) != (buildErr == nil) || checked != built {
-		t.Fatalf("check: %d records, %v; build: %d records, %v", checked, checkErr, built, buildErr)
+	if (checkErr == nil) != (buildErr == nil) || checked != built || checkBad != buildBad {
+		t.Fatalf("check: %d records (%d bad), %v; build: %d records (%d bad), %v", checked, checkBad, checkErr, built, buildBad, buildErr)
 	}
 	b := &countingBulk{keep: true}
 	p := &Pipeline{Store: b, Prefix: "sig", Now: func() time.Time { return now }}
@@ -453,7 +463,7 @@ func fuzzOTLP(t *testing.T, body []byte, isJSON bool) {
 		}
 		return
 	}
-	if err != nil || res.Received != checked || res.Indexed != checked || len(b.docs) != checked {
+	if err != nil || res.Received < checked || res.Rejected != checkBad || res.Indexed != res.Received-checkBad || len(b.docs) != res.Indexed {
 		t.Fatalf("%d records: %+v, %v, %d documents", checked, res, err, len(b.docs))
 	}
 	for _, d := range b.docs {
