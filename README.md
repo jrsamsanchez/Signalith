@@ -325,6 +325,7 @@ Supported sources in Phase 1:
 | Microsoft Defender Antivirus (Windows agent, collected automatically) | Malware |
 | ClamAV (Linux agent: /var/log/clamav or the journal) | Malware |
 | Linux audit log (Linux agent: /var/log/audit/audit.log; or syslog) | Other |
+| Apache and Nginx access logs (Linux agent: /var/log/nginx, /var/log/apache2, /var/log/httpd) | Web |
 | Antivirus consoles via syslog (CEF, LEEF, Symantec, Trellix ePO): Trend Micro, Sophos, ESET, CrowdStrike, SentinelOne, Kaspersky, Bitdefender and others | Malware |
 | OpenTelemetry Collector or SDK logs over OTLP/HTTP ([docs/opentelemetry.md](docs/opentelemetry.md)) | the same models for Windows, Linux and syslog records; Other for app logs |
 | osquery ([docs/endpoints.md](docs/endpoints.md)): file changes, software, accounts, ports, services, startup items, configuration checks | Filesystem, Inventory, Configuration_Check |
@@ -817,8 +818,8 @@ changes and more, plus two risk incident rules); 19 are on by default.
 - **Import Sigma rule** converts a [Sigma](https://github.com/SigmaHQ/sigma) rule to a
   Signalith query and lists anything it had to approximate. Imported rules start
   disabled so you can test them first.
-- **Content packs** add community rules, off until you turn them on: 2,234 tested
-  [SigmaHQ](https://github.com/SigmaHQ/sigma) Windows and Linux rules and 988 Windows and Linux detections
+- **Content packs** add community rules, off until you turn them on: 2,247 tested
+  [SigmaHQ](https://github.com/SigmaHQ/sigma) Windows, Linux and web server rules and 1,024 Windows, Linux and web detections
   from Splunk's open source
   [security_content](https://github.com/splunk/security_content) (Apache 2.0). With
   both packs on, detections cover 156 ATT&CK techniques. Newer tested rules arrive as
@@ -1198,7 +1199,7 @@ syslog devices ─UDP/TCP/TLS▶ query compiler,
 | `internal/search` | Compiles queries to OpenSearch DSL and runs remaining commands in memory |
 | `internal/ingest` | Fluent Bit and OTLP record parsing for Windows and Linux, index template |
 | `internal/syslog` | Syslog receiver (UDP, TCP, TLS), RFC 5424, RFC 3164 and CEF parsing |
-| `internal/datamodel` | Authentication, Endpoint, Network_Traffic, Change, Malware, Filesystem, Registry, Network_Resolution, Image_Load, Script, Inventory, Configuration_Check, Alerts, Risk, Other |
+| `internal/datamodel` | Authentication, Endpoint, Network_Traffic, Change, Malware, Filesystem, Registry, Network_Resolution, Web, Image_Load, Script, Inventory, Configuration_Check, Alerts, Risk, Other |
 | `internal/agents` | Fluent Bit and OpenTelemetry Collector configuration generator |
 | `internal/detect` | Detection format, built-in content, scheduler, Sigma converter, ATT&CK catalog |
 | `internal/findings` | Findings model and its OpenSearch store |

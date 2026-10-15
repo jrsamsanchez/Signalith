@@ -15,6 +15,10 @@ import (
 	"unicode"
 )
 
+// WebAccessLogs are the access logs of Apache (Debian and Red Hat
+// layouts, virtual hosts included) and Nginx that the Linux agents read.
+var WebAccessLogs = []string{"/var/log/nginx/*access*.log", "/var/log/apache2/*access*.log", "/var/log/httpd/*access_log"}
+
 // AuditLogPath is where auditd writes the Linux audit log.
 const AuditLogPath = "/var/log/audit/audit.log"
 
@@ -353,6 +357,24 @@ func Generate(o Options) (*Agent, error) {
 			b.WriteString(section("FILTER", [][2]string{
 				{"Name", "grep"}, {"Match", "linux.clamav"},
 				{"Exclude", "log SelfCheck"},
+			}))
+		}
+		if o.LinuxSource != "wazuh" {
+			// Web servers' access logs (Apache, Nginx), whichever source the
+			// auth logs come from. Path_Key says which server wrote a line,
+			// and the host name is added because the lines carry none. A
+			// host without a web server has no such files.
+			b.WriteString(section("INPUT", [][2]string{
+				{"Name", "tail"}, {"Tag", "linux.web"},
+				{"Path", strings.Join(WebAccessLogs, ",")},
+				{"Path_Key", "file"},
+				{"DB", "/var/lib/fluent-bit/signalith-web.db"},
+				{"Skip_Long_Lines", "On"},
+				{"storage.type", "filesystem"},
+			}))
+			b.WriteString(section("FILTER", [][2]string{
+				{"Name", "sysinfo"}, {"Match", "linux.web"},
+				{"hostname_key", "hostname"},
 			}))
 		}
 		if o.LinuxSource != "wazuh" {

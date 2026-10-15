@@ -1,0 +1,7 @@
+{"rule": "e03edeba-4942-470c-a664-27253f3ad351", "cases": [
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","status":"200","url":"x /mifs/asfV3/api/v2/ x"}},
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","status":"200","url":"x /mifs/asfV3/api/v2/ y"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"status":"200"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","status":"201","url":"x /mifs/asfV3/api/v2/ x"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","url":"x /mifs/asfV3/api/v2/ x"}}
+]}

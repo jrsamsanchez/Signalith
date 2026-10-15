@@ -111,6 +111,12 @@ var linuxCategories = map[string]string{
 	"auditd": "rules/linux/auditd",
 }
 
+// webCategories are the log source categories of web servers' logs, which
+// name no product, and the folders their rules live in.
+var webCategories = map[string]string{
+	"webserver": "rules/web/webserver_generic",
+}
+
 // maxWildcardTerms keeps a rule's searches under
 // OpenSearch's default limit of 1,024 clauses in one search (see
 // search.WildcardFieldTerms and search.Clauses).
@@ -173,6 +179,9 @@ func main() {
 	}
 	for c, dir := range linuxCategories {
 		sources = append(sources, source{"linux", c, dir})
+	}
+	for c, dir := range webCategories {
+		sources = append(sources, source{"", c, dir})
 	}
 	sort.Slice(sources, func(i, j int) bool { return sources[i].dir < sources[j].dir })
 	for _, src := range sources {

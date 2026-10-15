@@ -97,7 +97,7 @@ func main() {
 		Name:   "splunk",
 		Title:  "Splunk Security Content",
 		Format: "splunk",
-		Description: "Windows detections for process, file and registry events from Splunk's Threat Research Team (security_content), converted to Signalith detections. " +
+		Description: "Windows detections for process, file and registry events, and web detections for web server requests, from Splunk's Threat Research Team (security_content), converted to Signalith detections. " +
 			"TTP rules raise findings; anomaly rules only add risk, as in Splunk's risk-based alerting. Each rule shipped here agrees with Splunk's reading of its search on its test events, checked in CI.",
 		Source:     "https://github.com/splunk/security_content",
 		Version:    commit,
@@ -150,6 +150,16 @@ func main() {
 	usedIDs := map[string]bool{}
 	usedMacros := map[string]bool{}
 	rules, _ := filepath.Glob(filepath.Join(*splunkDir, "detections", "endpoint", "*.yml"))
+	// Web detections search the Web data model, whatever log fills it,
+	// and so do a few network ones.
+	web, _ := filepath.Glob(filepath.Join(*splunkDir, "detections", "web", "*.yml"))
+	rules = append(rules, web...)
+	network, _ := filepath.Glob(filepath.Join(*splunkDir, "detections", "network", "*.yml"))
+	for _, f := range network {
+		if src, err := os.ReadFile(f); err == nil && webSearch.Match(src) {
+			rules = append(rules, f)
+		}
+	}
 	sort.Strings(rules)
 	for _, f := range rules {
 		rel, _ := filepath.Rel(*splunkDir, f)
@@ -171,7 +181,7 @@ func main() {
 			skip("type "+meta.Type+" (not TTP or Anomaly)", rel)
 			continue
 		}
-		if !slices.ContainsFunc(meta.DataSource, func(s string) bool { return slices.Contains(windowsSources, s) }) {
+		if !slices.ContainsFunc(meta.DataSource, func(s string) bool { return slices.Contains(windowsSources, s) }) && !webSearch.MatchString(meta.Search) {
 			skip("no Windows Sysmon or Security log data source", rel)
 			continue
 		}
@@ -279,6 +289,9 @@ func markMacros(s string, macros map[string]*splcheck.Macro, used map[string]boo
 	}
 }
 
+// webSearch is a search of the Web data model.
+var webSearch = regexp.MustCompile(`(?i)\bfrom\s+datamodel=Web\b`)
+
 var quoted = regexp.MustCompile(`"[^"]*"|\b[A-Z][a-z]+\.\w+`)
 
 func short(err error) string {
@@ -318,7 +331,7 @@ func writeReport(p *detect.Pack, skipped map[string][]string) {
 	for _, v := range skipped {
 		total += len(v)
 	}
-	fmt.Fprintf(&b, "%d rules shipped. %d endpoint detections were left out:\n\n| Rules | Reason |\n| ---: | --- |\n", len(p.Rules), total)
+	fmt.Fprintf(&b, "%d rules shipped. %d endpoint and web detections were left out:\n\n| Rules | Reason |\n| ---: | --- |\n", len(p.Rules), total)
 	reasons := make([]string, 0, len(skipped))
 	for r := range skipped {
 		reasons = append(reasons, r)

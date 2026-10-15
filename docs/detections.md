@@ -255,11 +255,12 @@ Content packs are rule sets from other open source projects, shipped unchanged
 inside Signalith and converted when it starts. Every pack detection is **off** until
 an admin turns it on.
 
-**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,234 rules from
+**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,247 rules from
 [SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 2,080 Windows rules
-for these Sysmon, Security, PowerShell, System, Application, Code Integrity, Windows Firewall, BITS, AppX deployment, WMI activity, Remote Desktop session, shell, SMB client, exploit protection, DNS client, Task Scheduler, NTLM, LSA, CryptoAPI, device driver, packaged app, certificate, OpenSSH, DNS Server, IIS configuration and Defender log sources, and 154 Linux rules (see
+for these Sysmon, Security, PowerShell, System, Application, Code Integrity, Windows Firewall, BITS, AppX deployment, WMI activity, Remote Desktop session, shell, SMB client, exploit protection, DNS client, Task Scheduler, NTLM, LSA, CryptoAPI, device driver, packaged app, certificate, OpenSSH, DNS Server, IIS configuration and Defender log sources, 154 Linux rules (see
 [Linux endpoints](#linux-endpoints-sysmon-for-linux) and
-[the Linux audit log](#linux-audit-log-auditd)):
+[the Linux audit log](#linux-audit-log-auditd)), and 13 web server rules (see
+[Web server access logs](#web-server-access-logs)):
 
 | Sigma log source | Windows events | Data model |
 | --- | --- | --- |
@@ -274,6 +275,7 @@ for these Sysmon, Security, PowerShell, System, Application, Code Integrity, Win
 | `create_stream_hash` | Sysmon 15 (alternate data stream written, such as a download's `Zone.Identifier`) | Filesystem |
 | `raw_access_thread` | Sysmon 9 (a drive read directly; `Device` is `device`) | Endpoint |
 | `ps_script` | PowerShell 4104 | Script |
+| `webserver` | Apache and Nginx access log lines (see [Web server access logs](#web-server-access-logs)) | Web |
 | `service: system` | System 7045 (service installed) | Change |
 | `service: system` | Other System events, by provider and event ID (see below) | Other |
 | `service: application` | Application events, by provider and event ID (see below) | Other |
@@ -395,6 +397,40 @@ echo '-a always,exit -F arch=b64 -S execve -k exec' | sudo tee /etc/audit/rules.
 The OpenTelemetry Collector runs as its own user and cannot read the audit log, so
 collect it with the Fluent Bit agent, or forward it with auditd's syslog plugin.
 
+### Web server access logs
+
+Apache and Nginx write each request to an access log. The Linux agent reads them
+(`/var/log/nginx/*access*.log`, `/var/log/apache2/*access*.log` and
+`/var/log/httpd/*access_log`), in the combined format both use by default, the common
+format, or Apache's `vhost_combined`. Each request is an event in the Web data model,
+with Splunk's Web field names:
+
+| Field | What it is |
+| --- | --- |
+| `url` | The request's target as logged: path and query (`/index.php?id=1`) |
+| `uri_path`, `uri_query` | Its path, and its query without the `?` |
+| `http_method`, `status`, `http_version` | The method, the response status (`404`) and HTTP version |
+| `src`, `user` | The client's address, and the account it logged in as, when it did |
+| `http_user_agent`, `http_referrer` | The User-Agent and Referer headers |
+| `bytes_out`, `url_length`, `http_user_agent_length` | Response size, and the lengths of `url` and `http_user_agent` |
+| `dest`, `dest_port` | The web server: the virtual host and port when the log names them, else the host |
+
+The sourcetype is `nginx:access` or `apache:access`. A line that is not a request
+(an error Apache wrote to the wrong file) stays in Other.
+
+The 13 SigmaHQ `webserver` rules name the W3C fields: `cs-method` is
+`http_method`, `cs-uri-query` (which the rules use for the whole target) and `c-uri` are
+`url`, `cs-uri-stem` is `uri_path`, `sc-status` is `status`, `cs-user-agent` is
+`http_user_agent`, `cs-referer` is `http_referrer` and `c-ip` is `src`. Their keywords
+(`'${jndi:'`, `'=whoami'`) are searched in what the client sent: the target, the user
+agent and the referrer. 36 Splunk rules search the Web data model, for example
+exploitation attempts against SharePoint, Citrix, Ivanti, Confluence, Fortinet, F5 and
+TeamCity, and Spring4Shell.
+
+The OpenTelemetry Collector reads the same files once its user is in the `adm` group,
+as its setup steps say. On Red Hat-family systems `/var/log/httpd` is readable only by
+root, so collect it with the Fluent Bit agent there.
+
 ### PowerShell script blocks
 
 The `ps_script` rules read event 4104, which Windows PowerShell writes for each script
@@ -472,11 +508,11 @@ The generator keeps each rule's Signalith ID across runs, rewrites `rules/`,
 
 ### Splunk Security Content
 
-**Splunk Security Content** (`internal/detect/packs/splunk`) holds 988 Windows and
-Linux detections from Splunk's Threat Research Team
+**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,024 Windows,
+Linux and web detections from Splunk's Threat Research Team
 ([security_content](https://github.com/splunk/security_content)), pinned to one
 commit. They are the production TTP and anomaly rules that search the CIM
-`Endpoint.Processes`, `Endpoint.Filesystem` and `Endpoint.Registry` nodes with
+`Endpoint.Processes`, `Endpoint.Filesystem`, `Endpoint.Registry` and `Web` nodes with
 `tstats`, plus the PowerShell script block rules. Signalith uses the same CIM field
 names, so each rule's `where` clause becomes a Signalith filter field for field:
 
@@ -511,6 +547,7 @@ names, so each rule's `where` clause becomes a Signalith filter field for field:
 | `Endpoint.Processes` (Sysmon for Linux rules) | Sysmon for Linux 1 | Endpoint |
 | `Endpoint.Filesystem` (Sysmon for Linux rules) | Sysmon for Linux 11 and 23 | Filesystem |
 | `` `linux_auditd` `` (raw search) | Linux audit records, each field by auditd's name (see [the Linux audit log](#linux-audit-log-auditd)) | Other |
+| `Web` (`datamodel=Web` or `Web.Web`) | Apache and Nginx access log lines (see [Web server access logs](#web-server-access-logs)) | Web |
 
 The rule files and the macros they use ship unchanged; Signalith converts them when
 it starts, reading the search the way Splunk does: `*` is the only wildcard (`?` is

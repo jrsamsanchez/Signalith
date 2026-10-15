@@ -221,6 +221,28 @@ var Models = []Model{
 		},
 	},
 	{
+		Name:        "Web",
+		Description: "Requests to web servers (Apache and Nginx access logs)",
+		Fields: []Field{
+			{Name: "url", Type: "string", Description: "Requested path and query, as the server logged it", Examples: []string{"/index.php?id=1"}},
+			{Name: "url_length", Type: "number", Description: "Length of url"},
+			{Name: "uri_path", Type: "string", Description: "Path part of url", Examples: []string{"/index.php"}},
+			{Name: "uri_query", Type: "string", Description: "Query part of url, without the ?", Examples: []string{"id=1"}},
+			{Name: "http_method", Type: "string", Description: "Request method", Examples: []string{"GET", "POST"}},
+			{Name: "http_version", Type: "string", Description: "HTTP version of the request", Examples: []string{"1.1", "2.0"}},
+			{Name: "status", Type: "string", Description: "Response status code", Examples: []string{"200", "404"}},
+			{Name: "bytes_out", Type: "number", Description: "Bytes sent in the response"},
+			{Name: "http_referrer", Type: "string", Description: "Referer header the client sent"},
+			{Name: "http_user_agent", Type: "string", Description: "User-Agent header the client sent"},
+			{Name: "http_user_agent_length", Type: "number", Description: "Length of http_user_agent"},
+			{Name: "src", Type: "ip", Description: "Client address"},
+			{Name: "user", Type: "string", Description: "Account the client authenticated as, when it did"},
+			{Name: "dest", Type: "string", Description: "Web server: its virtual host when the log names one, else the host"},
+			{Name: "dest_port", Type: "number", Description: "Port the request came in on, when the log names it"},
+			{Name: "app", Type: "string", Description: "Web server software", Examples: []string{"apache", "nginx"}},
+		},
+	},
+	{
 		Name:        "Image_Load",
 		Description: "DLLs and drivers loaded on Windows hosts (Sysmon 6 and 7)",
 		Fields: []Field{
