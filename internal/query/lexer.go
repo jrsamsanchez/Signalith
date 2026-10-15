@@ -81,7 +81,9 @@ func lex(src string) ([]token, error) {
 	for i < len(src) {
 		c := src[i]
 		switch {
-		case c == ' ' || c == '\t' || c == '\n' || c == '\r':
+		case c < 0x80 && unicode.IsSpace(rune(c)):
+			// Every ASCII space ends a word (isWordRune), \f and \v too,
+			// or the word below would be empty and never move on.
 			i++
 		case c == '|':
 			toks = append(toks, token{tokPipe, "|", i})

@@ -193,6 +193,17 @@ func TestOrBeforeAnd(t *testing.T) {
 	}
 }
 
+// A "!" without "=" once made the lexer loop forever (found by
+// FuzzSplunkSearch in internal/detect).
+func TestLoneBang(t *testing.T) {
+	if _, err := ParseWhere(`Processes.process_name=a.exe !Processes.user=x`, "Processes", nil); err == nil {
+		t.Error("ParseWhere: want an error")
+	}
+	if _, err := Parse(rule("`sysmon` !EventCode=10 TargetImage=*lsass.exe | stats count by dest"), nil); err == nil {
+		t.Error("Parse: want an error")
+	}
+}
+
 // An unquoted value reads \\ as one backslash, as a quoted one does.
 func TestUnquotedBackslash(t *testing.T) {
 	e, err := ParseWhere(`Processes.process=*\\users\\public\\* Processes.process_name="*\\\\*"`, "Processes", nil)

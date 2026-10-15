@@ -415,6 +415,20 @@ func TestConvertSigmaUnsupported(t *testing.T) {
 	}
 }
 
+// A Sigma field searched as-is must be one word of the query language:
+// FuzzConvertSigma found "a b" stored as the term a and the field b.
+func TestConvertSigmaFieldNameNotAWord(t *testing.T) {
+	for _, field := range []string{"a b", `a"b`, "a=b", "AND", "a(b)"} {
+		rule := "title: x\ndetection:\n  sel:\n    '" + field + "': 1\n  condition: sel\n"
+		if res, err := ConvertSigma([]byte(rule)); err == nil {
+			t.Errorf("field %q converted to %s", field, res.Detection.Query)
+		}
+	}
+	if _, err := ConvertSigma([]byte("title: x\ndetection:\n  sel:\n    My_Field-1.x: 1\n  condition: sel\n")); err != nil {
+		t.Errorf("a one-word field: %v", err)
+	}
+}
+
 func TestCoverage(t *testing.T) {
 	ds := []*Detection{
 		{ID: "a", MITRE: []string{"T1110.003"}, Enabled: true},
