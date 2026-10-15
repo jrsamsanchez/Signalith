@@ -1224,7 +1224,8 @@ EOF
 }
 
 # zeek_script prints signalith.zeek: JSON logs with the Community ID, file
-# hashes, and Zeek's own capture-loss and stats logs.
+# hashes, Zeek's own capture-loss and stats logs, and the known hosts,
+# services and software logs.
 zeek_script() {
   cat <<'EOF'
 # Written by the Signalith sensor install script: what Signalith needs from
@@ -1235,6 +1236,12 @@ zeek_script() {
 @load frameworks/files/hash-all-files
 @load misc/capture-loss
 @load misc/stats
+# The hosts, services and software of your network, which Signalith's
+# asset list picks up (Zeek's default local.zeek loads them too).
+@load protocols/conn/known-hosts
+@load protocols/conn/known-services
+@load protocols/ssh/software
+@load protocols/http/software
 # Network cards that compute checksums themselves (offload) hand captured
 # packets over with checksums still unset; Zeek would drop those and log
 # no DNS, HTTP or TLS for them. Suricata decides this for itself.

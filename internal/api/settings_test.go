@@ -19,6 +19,7 @@ import (
 
 	"github.com/jrsamsanchez/signalith/internal/assistant"
 	"github.com/jrsamsanchez/signalith/internal/config"
+	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"github.com/jrsamsanchez/signalith/internal/users"
 	"gopkg.in/yaml.v3"
 )
@@ -668,6 +669,30 @@ func TestMaxEventAgeAppliesAtOnce(t *testing.T) {
 	}
 	if pending, _ := out["pending"].([]any); len(pending) != 0 {
 		t.Errorf("waits for a restart: %v", out["pending"])
+	}
+}
+
+// TestURLQueryAppliesAtOnce: ingest.url_query reaches the pipeline
+// without a restart, and a value it does not know is refused.
+func TestURLQueryAppliesAtOnce(t *testing.T) {
+	pipe := &ingest.Pipeline{}
+	ts, srv, _ := newSettingsServer(t, "", func(s *Server) { s.Pipeline = pipe })
+	if pipe.URLQuery() != ingest.URLQueryKeep {
+		t.Fatalf("starts as %s", pipe.URLQuery())
+	}
+	code, out, _ := call(t, ts, "PUT", "/api/settings", `{"values":{"ingest.url_query":"redact"}}`, "admin", "s3cret-pass", nil)
+	if code != 200 || srv.conf().Ingest.URLQuery != "redact" || pipe.URLQuery() != ingest.URLQueryRedact {
+		t.Fatalf("save %d %v: %q %s", code, out, srv.conf().Ingest.URLQuery, pipe.URLQuery())
+	}
+	if pending, _ := out["pending"].([]any); len(pending) != 0 {
+		t.Errorf("waits for a restart: %v", out["pending"])
+	}
+	if code, _, _ := call(t, ts, "PUT", "/api/settings", `{"values":{"ingest.url_query":"scramble"}}`, "admin", "s3cret-pass", nil); code == 200 {
+		t.Error("unknown mode saved")
+	}
+	call(t, ts, "PUT", "/api/settings", `{"values":{"ingest.url_query":"drop"}}`, "admin", "s3cret-pass", nil)
+	if pipe.URLQuery() != ingest.URLQueryDrop {
+		t.Errorf("drop: %s", pipe.URLQuery())
 	}
 }
 

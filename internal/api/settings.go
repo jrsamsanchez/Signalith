@@ -1151,6 +1151,9 @@ func (s *Server) applyLive(old, saved *config.Config) []string {
 	if changed("ingest.max_event_age") && s.EventAge != nil {
 		s.EventAge.Use(&next)
 	}
+	if changed("ingest.url_query") && s.Pipeline != nil {
+		s.Pipeline.SetURLQuery(next.URLQueryMode())
+	}
 	if changed("server.node_url") && s.NodeURLChanged != nil {
 		s.NodeURLChanged(&next)
 	}

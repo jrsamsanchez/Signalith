@@ -39,10 +39,13 @@ func zeekLog(category string) (string, bool) {
 }
 
 // zeekLogModels are the data models of the Zeek logs Signalith maps;
-// every other Zeek log is in Other.
+// every other Zeek log is in Other. The logs without zeekLogFields keep
+// every key as zeek_<key> too (ingest.ZeekGenericField).
 var zeekLogModels = map[string]string{
 	"conn": "Network_Traffic", "dns": "Network_Resolution", "http": "Web", "ssl": "Certificates",
 	"x509": "Certificates", "files": "File_Transfers", "notice": "Intrusion_Detection",
+	"ssh": "Authentication", "rdp": "Authentication", "kerberos": "Authentication", "ntlm": "Authentication",
+	"smb_files": "Filesystem",
 }
 
 // sigmaNetworkModel returns a network category's data model.
@@ -122,7 +125,7 @@ var zeekLogFields = map[string]map[string]string{
 	},
 	"ssl": {
 		"version": "ssl_version", "cipher": "ssl_cipher", "server_name": "ssl_server_name", "subject": "ssl_subject",
-		"issuer": "ssl_issuer", "validation_status": "ssl_validation_status", "ja3": "ja3", "ja3s": "ja3s", "ja4": "ja4",
+		"issuer": "ssl_issuer", "validation_status": "ssl_validation_status", "ja3": "ja3", "ja3s": "ja3s", "ja4": "ja4", "ja4s": "ja4s",
 		"established": "zeek_established", "resumed": "zeek_resumed", "curve": "zeek_curve", "next_protocol": "zeek_next_protocol",
 	},
 	"x509": {
@@ -167,7 +170,7 @@ var (
 // Signalith mapping.
 func (c *sigmaConv) networkField(name string) (field string, ok bool) {
 	if log, isZeek := zeekLog(c.category); isZeek {
-		if _, mapped := zeekLogModels[log]; !mapped {
+		if _, mapped := zeekLogFields[log]; !mapped {
 			return ingest.ZeekGenericField(log, name), true
 		}
 		if f, ok := zeekLogFields[log][name]; ok {

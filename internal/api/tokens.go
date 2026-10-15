@@ -144,7 +144,11 @@ func (s *Server) tokenAccepted(r *http.Request) bool {
 // withOrigin returns the context of an agent's request with where its
 // events come from.
 func withOrigin(r *http.Request, intake string, id agenttokens.Identity) context.Context {
-	return ingest.WithOrigin(r.Context(), ingest.Origin{Intake: intake, TokenID: id.ID, TokenName: id.Name, Sender: clientaddr.Parse(r.RemoteAddr).String()})
+	o := ingest.Origin{Intake: intake, TokenID: id.ID, TokenName: id.Name, Sender: clientaddr.Parse(r.RemoteAddr).String()}
+	if !id.Legacy {
+		o.Purpose = id.Purpose
+	}
+	return ingest.WithOrigin(r.Context(), o)
 }
 
 // TokenFacts are the agent tokens for the Security page's checks.

@@ -1086,7 +1086,7 @@
         return;
       }
       default:
-        put(box, panelTable(res), ...notes.map(note));
+        put(box, panelTable(res, earliest), ...notes.map(note));
     }
   }
 
@@ -1096,8 +1096,10 @@
   };
 
   // panelTable shows up to 100 rows and 8 columns; columns that do not fit
-  // the panel's width are hidden (Open in Search shows everything).
-  function panelTable(res) {
+  // the panel's width are hidden (Open in Search shows everything). A TLS
+  // fingerprint or a connection's Community ID opens every event with it
+  // (see PIVOTS in app.js), over the panel's time range.
+  function panelTable(res, earliest) {
     const rows = res.rows || [];
     if (!rows.length) return emptyState('search', 'No results', 'Nothing matched in this time range.');
     let cols = res.columns || [];
@@ -1111,7 +1113,12 @@
       el('tbody', {}, ...rows.slice(0, 100).map((r) => el('tr', {}, ...cols.map((c) => {
         const v = r[c];
         const text = c === '_time' ? shortTime(v) : fmtValue(v);
-        return el('td', { class: typeof v === 'number' ? 'num' : '', title: c === '_time' ? fmtTime(v) : text }, text);
+        const pivot = typeof PIVOTS !== 'undefined' && PIVOTS[c] && v != null && v !== '' && !Array.isArray(v);
+        return el('td', { class: (typeof v === 'number' ? 'num' : '') + (pivot ? ' mono' : ''), title: c === '_time' ? fmtTime(v) : text },
+          pivot ? el('a', {
+            href: '#search', class: 'db-pivot', title: `Search every event with ${c}=${text}`,
+            onclick: (ev) => { ev.preventDefault(); openSearch(c + '=' + quoteValue(v), earliest); },
+          }, text) : text);
       }))))));
   }
 

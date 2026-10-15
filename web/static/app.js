@@ -1664,7 +1664,29 @@ function drawBars(box, items, valueName) {
 
 // Events read best as a list: the time, then the raw text with the key
 // fields under it. Columns added by | enrich follow the field they describe.
-const EVENT_FIELDS = ['host', 'sourcetype', 'action', 'user', 'src', 'dest', 'process_name', 'signature'];
+const EVENT_FIELDS = ['host', 'sourcetype', 'action', 'user', 'src', 'dest', 'process_name', 'signature', 'ja4', 'ja3', 'ja3s', 'ja4s'];
+// PIVOTS are fields whose value names the same thing in every event that
+// has it, whatever the search: a TLS fingerprint (one client program, or
+// one server's answer) or one connection seen by Zeek and Suricata. The
+// cell menu searches everything with the value, and who has it.
+const PIVOTS = {
+  ja3: { what: 'TLS client fingerprint', by: 'src', who: 'clients', other: 'dest', others: 'servers' },
+  ja4: { what: 'TLS client fingerprint', by: 'src', who: 'clients', other: 'dest', others: 'servers' },
+  ja3s: { what: 'TLS server fingerprint', by: 'dest', who: 'servers', other: 'src', others: 'clients' },
+  ja4s: { what: 'TLS server fingerprint', by: 'dest', who: 'servers', other: 'src', others: 'clients' },
+  community_id: { what: 'connection', conn: true },
+};
+function pivotItems(item, field, value) {
+  const p = PIVOTS[field];
+  if (!p || value == null || value === '') return [];
+  const term = field + '=' + quoteValue(value);
+  const run = (q) => { setQuery(q); runSearch(); };
+  if (p.conn) return [item('network', 'Show this connection in every log', () => run(term + '\n| sort _time'))];
+  return [
+    item('fingerprint', `Search every event with this ${p.what}`, () => run(term)),
+    item('chart-bar', `List the ${p.who} with this ${p.what}`, () => run(`${term}\n| stats count, dc(${p.other}) as ${p.others} by ${p.by}\n| sort -count`)),
+  ];
+}
 function renderEvents(box, res, opts) {
   const rows = res.rows || [];
   if (!rows.length) {
@@ -1956,6 +1978,7 @@ function showCellMenu(ev, col, value, kind, row, canSort) {
   const field = col === '_time' ? null : col;
   const items = [];
   if (field && kind !== 'timechart') {
+    items.push(...pivotItems(item, field, value));
     items.push(item('filter', `Filter to ${field}=${fmtValue(value)}`, () => addSearchTerm(field + '=' + quoteValue(value))));
     items.push(item('filter-x', `Exclude ${field}=${fmtValue(value)}`, () => addSearchTerm(field + '!=' + quoteValue(value))));
     items.push(item('chart-bar', `Count events by ${field}`, () => {

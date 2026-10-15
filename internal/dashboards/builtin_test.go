@@ -49,7 +49,7 @@ func TestBuiltinVulnerabilities(t *testing.T) {
 
 func TestBuiltinNetwork(t *testing.T) {
 	d, ok := GetBuiltin(NetworkID)
-	if !ok || d.Title != "Network" || d.TimeRange != "24h" || d.Description == "" || len(d.Panels) != 16 {
+	if !ok || d.Title != "Network" || d.TimeRange != "24h" || d.Description == "" || len(d.Panels) != 20 {
 		t.Fatalf("network = %+v", d)
 	}
 	if err := d.check(); err != nil {
@@ -94,7 +94,7 @@ func TestBuiltinNetwork(t *testing.T) {
 			}
 		}
 	}
-	for _, m := range []string{"Intrusion_Detection", "Network_Traffic", "Network_Resolution", "Web", "File_Transfers", "Certificates"} {
+	for _, m := range []string{"Intrusion_Detection", "Network_Traffic", "Network_Resolution", "Web", "File_Transfers", "Certificates", "Authentication", "Filesystem"} {
 		if !models[m] {
 			t.Errorf("no panel reads %s", m)
 		}
