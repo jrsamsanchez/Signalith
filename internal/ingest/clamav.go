@@ -126,7 +126,7 @@ func parseClamAVLine(program, line string, f map[string]any) bool {
 		// Every line that says what ClamAV did carries vendor_action;
 		// FOUND alone does not (malware-left-clamav counts on that).
 		verb, _, _ := strings.Cut(line[i+len(": Can't "):], " ")
-		f["vendor_action"] = "Can't " + verb
+		SetValue(f, "vendor_action", "Can't "+verb)
 		return threat("failed", "")
 	case strings.HasPrefix(line, "ERROR: Database update process failed") ||
 		program == "freshclam" && strings.HasPrefix(line, "ERROR: ") && strings.Contains(strings.ToLower(line), "update"):

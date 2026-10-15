@@ -145,7 +145,8 @@ func avFieldsOK(t *testing.T, ev ingest.Event) {
 		}
 	}
 	if ev.Model != ingest.MalwareModel {
-		if ev.Fields["type"] != nil {
+		// Alerts has a type of its own: the Wazuh rule groups.
+		if ev.Fields["type"] != nil && ev.Model != "Alerts" {
 			t.Fatalf("%s event with type %v", ev.Model, ev.Fields["type"])
 		}
 		return

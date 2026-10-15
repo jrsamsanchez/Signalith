@@ -411,8 +411,11 @@ func otlpWindows(b map[string]any) Event {
 func windowsSchemaFor(channel, provider, eventID string) ([]string, bool) {
 	switch {
 	case channel == "Security":
-		s, ok := windowsSchema[eventID]
-		return s, ok
+		if s, ok := windowsSchema[eventID]; ok {
+			return s, true
+		}
+		e, ok := namedChannelEvent(channel, eventID)
+		return e.data, ok
 	case channel == SystemChannel && eventID == "7045" && (provider == "" || strings.EqualFold(provider, ServiceControlManager)):
 		return serviceInstallSchema, true
 	case channel == SystemChannel:
@@ -420,6 +423,9 @@ func windowsSchemaFor(channel, provider, eventID string) ([]string, bool) {
 		return e.data, ok
 	case strings.EqualFold(channel, PowerShellChannel) && eventID == "4104":
 		return scriptBlockSchema, true
+	case IsNamedChannel(channel):
+		e, ok := namedChannelEvent(channel, eventID)
+		return e.data, ok
 	}
 	return nil, false
 }

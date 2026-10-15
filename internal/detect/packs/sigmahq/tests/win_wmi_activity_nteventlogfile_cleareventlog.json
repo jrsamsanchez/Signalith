@@ -1,0 +1,4 @@
+{"rule": "d4f1a2b3-7c8e-4d5f-b6a9-1e0c2d3f4e5b", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-WMI-Activity/Operational","event_id":"5858","data":{"Operation":"cleareventlog Win32_NTEventlogFile"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-WMI-Activity/Operational","event_id":"5858","data":{}}
+]}

@@ -1109,8 +1109,23 @@
   }
 
   // ---------- saving ----------
+  // saveDashboard saves over the version the page shows (d.etag): when
+  // someone changed the dashboard meanwhile it asks whether to reload to
+  // see their change or overwrite it.
   async function saveDashboard(d) {
-    const saved = await api('api/dashboards/' + encodeURIComponent(d.id), d, 'PUT');
+    const path = 'api/dashboards/' + encodeURIComponent(d.id);
+    let saved;
+    try {
+      saved = await api(path, d, 'PUT', libraryIfMatch(d.etag));
+    } catch (e) {
+      if (e.status !== 412) throw e;
+      const choice = await libraryStale(e, 'dashboard');
+      if (choice !== 'overwrite') {
+        if (choice === 'reload') { closeEditor(); await showDashboard(d.id); }
+        throw new Error('it was not saved, because someone else changed this dashboard meanwhile.');
+      }
+      saved = await api(path, d, 'PUT', libraryIfMatch(await latestETag(path)));
+    }
     if (saved.id === dash.current) dash.def = saved;
     return saved;
   }
@@ -1136,7 +1151,9 @@
     say(`Removed “${title}”.`, {
       label: 'Undo',
       run: async () => {
-        try { await saveDashboard(before); } catch (e) { sayError('Couldn’t restore the panel: ' + e.message); return; }
+        // Saved over the removal this page just made.
+        const again = { ...before, etag: dash.def && dash.def.id === before.id ? dash.def.etag : before.etag };
+        try { await saveDashboard(again); } catch (e) { sayError('Couldn’t restore the panel: ' + e.message); return; }
         if (dash.current === before.id) runDashboard();
       },
     });
@@ -1260,8 +1277,17 @@
     const btn = el('button', { class: 'btn btn--danger', type: 'button' }, 'Delete dashboard');
     btn.addEventListener('click', async () => {
       btn.disabled = true;
+      const path = 'api/dashboards/' + encodeURIComponent(d.id);
       try {
-        await api('api/dashboards/' + encodeURIComponent(d.id), undefined, 'DELETE');
+        try {
+          await api(path, undefined, 'DELETE', libraryIfMatch(d.etag));
+        } catch (e) {
+          if (e.status !== 412) throw e;
+          const choice = await libraryStale(e, 'dashboard');
+          if (choice === 'reload') { closeEditor(); await showDashboard(d.id); return; }
+          if (choice !== 'overwrite') { btn.disabled = false; return; }
+          await api(path, undefined, 'DELETE', libraryIfMatch(await latestETag(path)));
+        }
       } catch (e) {
         put(msg, problemsAlert(e));
         msg.hidden = false;

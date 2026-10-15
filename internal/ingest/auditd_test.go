@@ -1,6 +1,7 @@
 package ingest
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -81,4 +82,50 @@ func TestAuditd(t *testing.T) {
 	})
 	// Not an audit record.
 	expect(t, audit("hello"), map[string]any{"datamodel": "Other", "sourcetype": "linux:audit", "message": "hello"})
+}
+
+// TestAuditdManyWordsIsLinear: a line of many words with no key=value
+// pair used to skip them one at a time, each step searching the rest of
+// the line, so a 1 MB record took tens of seconds.
+func TestAuditdManyWordsIsLinear(t *testing.T) {
+	words := strings.Repeat("a ", 1<<19)
+	start := time.Now()
+	rec, ok := ReadAuditd("type=USER_CMD msg=audit(1760443200.123:1): msg='" + words + "x=1' res=success")
+	if took := time.Since(start); took > 3*time.Second {
+		t.Fatalf("took %v", took)
+	}
+	if !ok || rec.Fields["x"] != "1" || rec.Fields["res"] != "success" {
+		t.Fatalf("fields %v", rec.Fields)
+	}
+	// Words before a key are skipped as before; a word with a tab in it
+	// runs to the next space.
+	for line, want := range map[string]string{
+		"a b c=1 d=2":  "c=1 d=2",
+		"a\tb c=1 d=2": "c=1 d=2",
+		"a  \t b c=1":  "c=1",
+		"a\tb=1 c=2":   "c=2",
+	} {
+		var got []string
+		for _, kv := range auditdFields(line) {
+			got = append(got, kv[0]+"="+kv[1])
+		}
+		if strings.Join(got, " ") != want {
+			t.Errorf("%q: %v, want %s", line, got, want)
+		}
+	}
+}
+
+// TestAuditdManyArgumentPiecesIsLinear: an argument in many pieces
+// (a1[0]=..., a1[1]=...) used to be added to piece by piece, copying it
+// each time, so a 1 MB record took tens of seconds.
+func TestAuditdManyArgumentPiecesIsLinear(t *testing.T) {
+	const n = 1 << 20 / 18
+	start := time.Now()
+	rec, ok := ReadAuditd(`type=EXECVE msg=audit(1760443200.123:1): argc=2 a0="x" ` + strings.Repeat(`a1[0]="xxxxxxxxx" `, n))
+	if took := time.Since(start); took > 3*time.Second {
+		t.Fatalf("took %v", took)
+	}
+	if !ok || rec.Fields["a1"] != strings.Repeat("x", 9*n) {
+		t.Fatalf("a1 is %d bytes", len(rec.Fields["a1"]))
+	}
 }

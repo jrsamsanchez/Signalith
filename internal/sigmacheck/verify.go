@@ -93,9 +93,10 @@ func (c Case) SigmaView() (map[string]string, bool) {
 			out[k] = v
 		}
 		return out, true
-	case c.Channel == ApplicationChannel || c.Channel == CodeIntegrityChannel:
+	case c.Channel == ApplicationChannel || c.Channel == CodeIntegrityChannel || ingest.IsNamedChannel(c.Channel):
 		// Application and Code Integrity log rules name the provider and
-		// the event's data values (Data).
+		// the event's data values (Data); Firewall and BITS log rules
+		// their events' data by name.
 		out := map[string]string{"EventID": c.EventID}
 		for k, v := range c.Data {
 			out[k] = v
@@ -121,7 +122,7 @@ func (c Case) SigmaView() (map[string]string, bool) {
 			}
 		}
 		return out, true
-	case c.Channel == SecurityChannel && slices.Contains(SecurityEvents, c.EventID):
+	case c.Channel == SecurityChannel && (slices.Contains(SecurityEvents, c.EventID) || ingest.IsNamedSecurityEvents(c.EventID)):
 		// Security log rules (service: security) name the event's own
 		// data.
 		out := map[string]string{"EventID": c.EventID}
@@ -182,6 +183,36 @@ var sysmonEvents = map[string]string{
 	// Code Integrity log rules name their events; an unsigned driver
 	// loaded is the first.
 	"code_integrity": "3001",
+	// Rules about the logs the parser reads by name name their events:
+	// a firewall rule added, a BITS transfer started, an app package
+	// deployed and a WMI operation failed are the first.
+	"firewall_as":           "2004",
+	"bits_client":           "16403",
+	"appxdeployment_server": "400",
+	"wmi":                   "5858",
+	// Sysmon's own events (service: sysmon): a configuration change,
+	// or a file block.
+	"sysmon_event":      "16",
+	"sysmon_file_block": "27",
+	// Security events no data model holds, read by name; each rule
+	// names its events.
+	"security_named":                       "4611",
+	"terminalservices_localsessionmanager": "21",
+	"shell_core":                           "28115",
+	"smbclient_security":                   "31017",
+	"security_mitigations":                 "12",
+	"dns_client":                           "3008",
+	"taskscheduler":                        "129",
+	"ntlm":                                 "8001",
+	"lsa_server":                           "300",
+	"capi2":                                "70",
+	"driver_framework":                     "2003",
+	"appmodel_runtime":                     "201",
+	"appxpackaging_om":                     "157",
+	"certificateservicesclient_lifecycle_system": "1007",
+	"openssh":           "4",
+	"dns_server":        "6004",
+	"iis_configuration": "29",
 	// Defender log rules (service: windefend) name their events; a
 	// threat detected is the first.
 	"windefend": "1116",
@@ -206,6 +237,15 @@ var SecurityGroups = [][]string{{"4656", "4663"}, {"4699", "4701"}}
 // SysmonEventID) for one of SecurityEvents or a group of SecurityGroups.
 func SecurityCategory(eventIDs ...string) string { return "security_" + strings.Join(eventIDs, "_") }
 
+// SysmonServiceCategory is the category of a rule about Sysmon's own
+// events (service: sysmon): its file blocks (27, 28, 29), or others.
+func SysmonServiceCategory(eventIDs ...string) string {
+	if len(eventIDs) > 0 && !slices.ContainsFunc(eventIDs, func(id string) bool { return id != "27" && id != "28" && id != "29" }) {
+		return "sysmon_file_block"
+	}
+	return "sysmon_event"
+}
+
 // SystemCategory is the category of a System log rule (service: system)
 // about its events: services installed (7045), or other events.
 func SystemCategory(eventIDs ...string) string {
@@ -221,6 +261,12 @@ func init() {
 	Bases["system_event"] = map[string]string{}
 	Bases["application"] = map[string]string{}
 	Bases["code_integrity"] = map[string]string{}
+	for service := range ingest.NamedChannelServices {
+		Bases[ingest.NamedChannelCategory(service)] = map[string]string{}
+	}
+	Bases["sysmon_event"] = map[string]string{}
+	Bases["security_named"] = map[string]string{}
+	Bases["sysmon_file_block"] = Bases["file_event"]
 	// A task disabled has the data of a task deleted.
 	Bases[SecurityCategory("4701")] = Bases[SecurityCategory("4699")]
 	for _, id := range SecurityEvents {
@@ -247,6 +293,11 @@ func Channel(category string) string {
 		return CodeIntegrityChannel
 	case "windefend":
 		return DefenderChannel
+	}
+	for service, channel := range ingest.NamedChannelServices {
+		if category == ingest.NamedChannelCategory(service) {
+			return channel
+		}
 	}
 	if strings.HasPrefix(category, "security_") {
 		return SecurityChannel

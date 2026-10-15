@@ -10,6 +10,7 @@ const el = (tag, attrs = {}, ...children) => {
   const n = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
     if (k === 'class') n.className = v;
+    else if (BOOL_ATTRS.has(k) && (v === false || v == null)) continue; // disabled: false leaves it enabled
     else if (k.startsWith('on')) n.addEventListener(k.slice(2), v);
     else n.setAttribute(k, TEXT_ATTRS.has(k) ? visibleText(v) : v);
   }
@@ -20,6 +21,9 @@ const el = (tag, attrs = {}, ...children) => {
   return n;
 };
 const TEXT_ATTRS = new Set(['title', 'aria-label', 'data-label']);
+// BOOL_ATTRS are on whenever present, whatever their value: false leaves
+// them out.
+const BOOL_ATTRS = new Set(['disabled', 'hidden', 'checked', 'required', 'readonly', 'open', 'selected', 'multiple']);
 
 // ---------- hidden characters ----------
 // Some Unicode characters are invisible or reorder the text around them:
@@ -2412,11 +2416,35 @@ function agentTokDefault() {
 // agentTokPurpose follows the source on screen: a new source starts with
 // its own name and no token.
 function agentTokPurpose(purpose) {
+  agentTokClusterCA();
   if (purpose === agentTok.purpose) return;
   agentTok.purpose = purpose;
   agentTok.touched = false;
   agentTokDrop();
   agentTokDefault();
+}
+
+// agentTokClusterCA adds, under the token, a line saying that agents
+// trust the cluster's certificate authority when this server uses it
+// (tls.cluster_ca in api/health), so one file works for every server.
+let agentTokCA = null;
+let agentTokCAAt = 0;
+function agentTokClusterCA() {
+  if (Date.now() - agentTokCAAt > 60000) agentTokCA = null;
+  if (!agentTokCA) {
+    agentTokCAAt = Date.now();
+    agentTokCA = api('api/health').then((h) => h && h.tls).catch(() => { agentTokCA = null; return null; });
+  }
+  agentTokCA.then((t) => {
+    let line = $('agent-cluster-ca');
+    if (!t || !t.cluster_ca || !t.ca_sha256) { if (line) line.remove(); return; }
+    if (!line) {
+      line = el('p', { id: 'agent-cluster-ca', class: 'hint agent-token__help' });
+      $('agent-token-help').after(line);
+    }
+    const fp = t.ca_sha256.split(':').slice(0, 8).join(':') + '…';
+    fill(line, 'Agents trust the cluster’s certificate authority (fingerprint ', el('span', { class: 'mono', title: t.ca_sha256 }, fp), '); one file works for every server.');
+  });
 }
 
 // agentTokDrop forgets the token made on this page; the config shows the

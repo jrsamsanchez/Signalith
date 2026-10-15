@@ -42,8 +42,10 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/retention"
 	"github.com/jrsamsanchez/signalith/internal/sample"
 	"github.com/jrsamsanchez/signalith/internal/search"
+	"github.com/jrsamsanchez/signalith/internal/shared"
 	"github.com/jrsamsanchez/signalith/internal/syslog"
 	"github.com/jrsamsanchez/signalith/internal/tlsauto"
+	"github.com/jrsamsanchez/signalith/internal/upgradecheck"
 	"github.com/jrsamsanchez/signalith/internal/users"
 )
 
@@ -181,6 +183,30 @@ type Server struct {
 	// how old an event's own time may be in the pipeline and syslog. nil
 	// leaves the age the server started with.
 	EventAge EventAge
+	// ClusterTLS is the cluster's one certificate authority; nil on a
+	// server that is not a member of a cluster.
+	ClusterTLS ClusterTLS
+	// Join adds servers to the cluster: join tokens, the public join and
+	// approvals (clusterjoin.go); nil on a server without shared settings.
+	Join ClusterJoin
+	// ClusterServers drains and removes servers and rotates the cluster
+	// key; nil on a server that is not a member of a cluster.
+	ClusterServers ClusterServers
+	// ClusterOSIdentity is OpenSearch's certificate authority the cluster
+	// keeps; nil on a server that is not a member of a cluster.
+	ClusterOSIdentity ClusterOSIdentity
+	// Features says which features that come with a cluster level are on
+	// (GET /api/cluster/features), and ClusterLevel the cluster's level;
+	// nil on a server without shared settings.
+	Features     func() []shared.FeatureState
+	ClusterLevel func() int
+	// Upgrade judges whether the next server may be upgraded, for the
+	// Servers page's checklist (GET /api/cluster/upgrade); nil on a
+	// server without a cluster.
+	Upgrade func(ctx context.Context) (upgradecheck.Verdict, error)
+	// Install hands new servers the install scripts and this server's
+	// program; nil turns that off.
+	Install *ClusterInstall
 
 	authOnce     sync.Once
 	creds        credCache  // recently checked Basic credentials
@@ -193,6 +219,7 @@ type Server struct {
 	background   sync.WaitGroup // directory checks still running
 	settingsMu   sync.Mutex     // serializes saves on the Settings page
 	testMu       sync.Mutex     // one connection test at a time
+	aiModels     modelCache     // model lists read from the AI model's service
 	sampleJob    sampleJob      // the one running sample-data load or remove
 	pageCache    pages          // index.html and login.html, rendered
 	// live holds Config with the settings saved on the Settings page that
@@ -294,7 +321,14 @@ func (s *Server) Handler() http.Handler {
 	s.routeVulns(api)
 	s.routeSettings(api)
 	s.routeCluster(api)
+	s.routeClusterTLS(api)
+	s.routeClusterServers(api)
+	s.routeClusterFeatures(api)
+	s.routeClusterUpgrade(api)
+	s.routeClusterOSIdentity(api)
+	s.routeClusterInstall(mux, api)
 	s.routeTokens(api)
+	s.routeAPITokens(api)
 	s.routeAgents(api)
 	if s.UI != nil {
 		api.add(route{Pattern: "GET /", Role: users.Viewer}, revalidate(s.indexPage(staticFiles(s.UI, true))))
@@ -1139,6 +1173,10 @@ func (s *Server) tlsInfo() map[string]any {
 	if s.TLS.CAPEM() != nil {
 		t["ca_sha256"] = s.TLS.Fingerprint()
 		t["own_ca"] = s.TLS.LocalCA()
+		if s.clusterCAOwner() != "" {
+			// The cluster's: every server's certificate comes from it.
+			t["cluster_ca"] = true
+		}
 	}
 	if ca := s.TLS.CAInfo(); ca != nil {
 		t["ca_scope"] = ca.Scope

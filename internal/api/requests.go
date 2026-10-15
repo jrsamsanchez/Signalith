@@ -86,12 +86,18 @@ func (s *Server) submit(w http.ResponseWriter, r *http.Request, typ string, args
 }
 
 // sharedError answers the errors of a change of the shared settings:
-// a change someone else made first (412), and settings that cannot be
-// changed or read now (503). It reports whether err was one of them.
+// a change someone else made first (412), settings that cannot be
+// changed or read now (503), and a change of this server's own files
+// while they move into the shared settings (503, asked again shortly).
+// It reports whether err was one of them.
 func sharedError(w http.ResponseWriter, err error) bool {
 	var stale *shared.StaleError
 	var paused *shared.PausedError
+	var moving *shared.MovingError
 	switch {
+	case errors.As(err, &moving):
+		w.Header().Set("Retry-After", "5")
+		writeError(w, http.StatusServiceUnavailable, err)
 	case errors.As(err, &stale):
 		writeJSON(w, http.StatusPreconditionFailed, staleBody(err, stale))
 	case errors.Is(err, intel.ErrFeedStale):

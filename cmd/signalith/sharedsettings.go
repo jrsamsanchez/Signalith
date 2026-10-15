@@ -22,6 +22,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/api"
 	"github.com/jrsamsanchez/signalith/internal/cluster"
 	"github.com/jrsamsanchez/signalith/internal/clustercfg"
+	"github.com/jrsamsanchez/signalith/internal/clustertls"
 	"github.com/jrsamsanchez/signalith/internal/config"
 	"github.com/jrsamsanchez/signalith/internal/retention"
 	"github.com/jrsamsanchez/signalith/internal/securefile"
@@ -149,17 +150,42 @@ func (r *runner) loadSetAside(keys []string, reason string) (*config.Config, err
 
 // importOwn moves this server's own settings out of settings.yaml into
 // its nodecfg document, once (clustercfg.ImportOwn), when OpenSearch takes
-// writes; until then layer reads them from settings.yaml.
+// writes; until then layer reads them from settings.yaml. It holds ownMu
+// from reading settings.yaml to rewriting it, so a save on the Settings
+// page of the start running now, which may still keep them in
+// settings.yaml, comes before the move (and moves with them) or after it
+// (and goes to the shared settings): see settingsStore.HoldFile.
 func (r *runner) importOwn(c *config.Config) {
 	if r.shared.Writable() != nil {
 		return
 	}
-	r.sharedContent.cfg.Store(c)
+	ct := r.sharedContent
+	ct.ownMu.Lock()
+	defer ct.ownMu.Unlock()
+	ct.cfg.Store(c)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	if _, err := clustercfg.ImportOwn(ctx, r.shared, r.sharedContent.docs, c, r.log); err != nil {
+	if _, err := clustercfg.ImportOwn(ctx, r.shared, ct.docs, c, r.log); err != nil {
 		r.log.Warn("could not move this server's own settings from settings.yaml into the shared settings; trying again at the next start", "err", err)
 	}
+	if hook := importOwnHook; hook != nil {
+		hook(r)
+	}
+}
+
+// importOwnHook, when set (tests), runs as importOwn ends, still holding
+// ownMu.
+var importOwnHook func(*runner)
+
+// ownMoved reports whether this server's own settings moved out of
+// settings.yaml into the shared settings: they are shared, and its
+// nodecfg records the move.
+func (r *runner) ownMoved() bool {
+	if !r.settingsShared() {
+		return false
+	}
+	nc, _ := r.shared.NodeCfg().Get()
+	return nc != nil && nc.SettingsImported != ""
 }
 
 // primeShared points the runtime at OpenSearch before the first start of
@@ -583,12 +609,36 @@ func (rr *remoteRestart) end(res *api.RestartResult) {
 // restart under way to end before it fails.
 var restartWait = 5 * time.Minute
 
-// serverHandlers run the requests that name this server.
+// serverHandlers run the requests that name this server. A new feature
+// with requests of its own for one server appends its handlers to the
+// list, each with its own request types.
 func (r *runner) serverHandlers() map[string]shared.Handler {
-	return map[string]shared.Handler{
-		clustercfg.RequestRestart:       r.handleRestartRequest,
-		clustercfg.RequestSettingsCheck: r.handleSettingsCheck,
+	return mergeHandlers(
+		map[string]shared.Handler{
+			clustercfg.RequestRestart:       r.handleRestartRequest,
+			clustercfg.RequestSettingsCheck: r.handleSettingsCheck,
+			clustertls.RequestPublish:       r.sharedContent.tls.handler(r.sharedContent.cfg.Load, r.node.Name(), r.log),
+		},
+		// Drain and resume (clusterlifecycle.go).
+		r.lifecycleServerHandlers(),
+		// Append a new feature's handlers here.
+	)
+}
+
+// mergeHandlers puts lists of request handlers together. Two features
+// naming one request type would leave one of them silently unrun, so
+// that panics.
+func mergeHandlers(lists ...map[string]shared.Handler) map[string]shared.Handler {
+	out := map[string]shared.Handler{}
+	for _, hs := range lists {
+		for k := range hs {
+			if _, dup := out[k]; dup {
+				panic("shared request type " + k + " has two handlers")
+			}
+		}
+		maps.Copy(out, hs)
 	}
+	return out
 }
 
 // handleRestartRequest restarts this server as part of a restart request,
@@ -696,17 +746,36 @@ func (r *runner) confirmProbe(req *http.Request, token string) bool {
 
 // probeMoves follows a restart request this server made and probes the
 // new address of each server whose restart moved its web page, which
-// confirms the move there. Until the servers share one certificate
-// authority, the probe does not check the certificate: the token, which
+// confirms the move there. Once the cluster has its one certificate
+// authority, the probe checks the certificate, and the name: against the
+// cluster's certificate authority alone, or for a server whose heartbeat
+// says it has its own certificate files, against those this system
+// trusts. Until then it does not check the certificate: the token, which
 // only the request holds, reaching the new address is the proof, and a
 // probe can confirm a move, nothing else.
 func (r *runner) probeMoves(id string) {
 	ctx, cancel := context.WithTimeout(r.backgroundContext(context.Background()), 2*time.Hour)
 	defer cancel()
-	client := &http.Client{Timeout: 3 * time.Second, Transport: &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // the move token is the proof (see above)
-	}}
-	defer client.CloseIdleConnections()
+	clients := map[string]*http.Client{}
+	clientFor := func(node string) *http.Client {
+		files, root := r.filesMode(node)
+		key := fmt.Sprint(files, root)
+		if c := clients[key]; c != nil {
+			return c
+		}
+		tlsConf := &tls.Config{InsecureSkipVerify: true} //nolint:gosec // the move token is the proof (see above)
+		if pinned := r.sharedContent.tls.probeTLS(files, root); pinned != nil {
+			tlsConf = pinned
+		}
+		c := &http.Client{Timeout: 3 * time.Second, Transport: &http.Transport{TLSClientConfig: tlsConf}}
+		clients[key] = c
+		return c
+	}
+	defer func() {
+		for _, c := range clients {
+			c.CloseIdleConnections()
+		}
+	}()
 	for {
 		req, ok, err := r.shared.Requests().Get(ctx, id)
 		if err == nil && (!ok || req.Over()) {
@@ -714,12 +783,12 @@ func (r *runner) probeMoves(id string) {
 		}
 		var res clustercfg.RestartResults
 		if err == nil && json.Unmarshal(req.Result, &res) == nil {
-			for _, p := range res {
+			for node, p := range res {
 				if p.Move == nil || p.Move.Confirmed || p.Move.Token == "" || p.Move.To == "" {
 					continue
 				}
 				u := strings.TrimRight(p.Move.To, "/") + "/readyz?move=" + url.QueryEscape(p.Move.Token)
-				if resp, err := client.Get(u); err == nil {
+				if resp, err := clientFor(node).Get(u); err == nil {
 					resp.Body.Close()
 				}
 			}
@@ -751,10 +820,23 @@ func (r *runner) handleSettingsCheck(ctx context.Context, req *shared.Request) e
 }
 
 // settingsStore keeps the Settings page's settings in the shared
-// settings (api.SettingsStore).
-type settingsStore struct{ r *runner }
+// settings (api.SettingsStore). files is a start whose components take
+// them from settings.yaml: its page saves there, but for a save made once
+// this server's own settings moved into the shared settings (HoldFile).
+type settingsStore struct {
+	r     *runner
+	files bool
+}
 
-func (s settingsStore) Shared() bool    { return s.r.sharedContent.settingsOn.Load() }
+func (s settingsStore) Shared() bool { return !s.files && s.r.sharedContent.settingsOn.Load() }
+
+// HoldFile keeps importOwn from moving this server's own settings out of
+// settings.yaml until release, and reports whether they moved already.
+func (s settingsStore) HoldFile() (bool, func()) {
+	ct := s.r.sharedContent
+	ct.ownMu.Lock()
+	return s.r.ownMoved(), ct.ownMu.Unlock
+}
 func (s settingsStore) Writable() error { return s.r.shared.Writable() }
 func (s settingsStore) Self() string    { return s.r.node.ID() }
 func (s settingsStore) ETag() string    { return s.r.sharedContent.docs.Settings().ETag() }

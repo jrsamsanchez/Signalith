@@ -1,0 +1,31 @@
+name: Nightly fuzz
+# Every fuzz target for five minutes each: longer than the short run on
+# pull requests, to find the rarer inputs that crash or hang a parser.
+# Nightly only, never on pull requests, so it does not hold up the runners
+# they share. A failure uploads the inputs that failed; commit each one
+# under the package's testdata/fuzz/ with its fix.
+on:
+  schedule:
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+      - run: .github/scripts/fuzz.sh
+        env:
+          FUZZTIME: 5m
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: failure()
+        with:
+          name: fuzz-failures
+          path: '**/testdata/fuzz/'

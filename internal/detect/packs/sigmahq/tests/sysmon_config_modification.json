@@ -1,0 +1,4 @@
+{"rule": "8ac03a65-6c84-4116-acad-dc1558ff7a77", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"16","data":{}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"16","data":{"Configuration":"C:\\Users\\Administrator\\Downloads\\sysmonconfig-trace.xml","ConfigurationFileHash":"SHA256=B977839264146AFDE215D41182F78F153F9198EBA8EF0B88426239C33FBDA945","UtcTime":"2025-10-24 23:33:08.088"}}
+]}

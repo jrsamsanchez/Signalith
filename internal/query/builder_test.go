@@ -42,6 +42,21 @@ func TestBuilderRoundTrip(t *testing.T) {
 	}
 }
 
+// One leading sign is the sort order; FuzzParse found a field named
+// "-x" losing its sign.
+func TestBuilderSortSigns(t *testing.T) {
+	s, ok := FromQuery(mustParse(t, `* | sort +-x`))
+	if !ok || s.Sort != "+-x" {
+		t.Fatalf("FromQuery = %+v %v", s, ok)
+	}
+	if got := Build(s).String(); got != "*\n| sort +-x" {
+		t.Errorf("Build = %q", got)
+	}
+	if got := Build(Spec{Sort: "-"}).String(); got != "*" {
+		t.Errorf("Build with no sort field = %q", got)
+	}
+}
+
 func TestFromQueryRejectsComplexQueries(t *testing.T) {
 	for _, src := range []string{
 		`a=1 OR b=2`,

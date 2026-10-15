@@ -6,6 +6,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"io/fs"
+	"math/big"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -310,6 +311,26 @@ func TestBootstrapExportCAKey(t *testing.T) {
 	}
 }
 
+// A link planted as the import folder is refused, not followed.
+func TestBootstrapExportCAKeyLink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symbolic links need privileges on Windows")
+	}
+	o := caVolumes(t)
+	o.ExportCAKey = true
+	os.MkdirAll(filepath.Join(o.StateDir, "keys"), 0o700)
+	elsewhere := t.TempDir()
+	if err := os.Symlink(elsewhere, filepath.Join(o.StateDir, ospki.ImportDir)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := bootstrapWith(t, o); err == nil || !strings.Contains(err.Error(), "is not a folder") {
+		t.Errorf("through a link: %v", err)
+	}
+	if entries, _ := os.ReadDir(elsewhere); len(entries) != 0 {
+		t.Errorf("written through the link: %v", entries)
+	}
+}
+
 func TestBootstrapApplySecurity(t *testing.T) {
 	o := caVolumes(t)
 	os.MkdirAll(o.LoadedDir, 0o700)
@@ -394,5 +415,67 @@ func TestOpenSearchCertsUnderCA(t *testing.T) {
 	}
 	if runtime.GOOS != "windows" {
 		checkModes(t, filepath.Join(first, "ca"), os.Getuid(), 0o700)
+	}
+}
+
+// The revocation list OpenSearch checks: made empty the first time, kept
+// while it is good (Signalith writes the revoked certificates into it),
+// and made again when it is gone or no longer the CA's.
+func TestBootstrapCRL(t *testing.T) {
+	top := t.TempDir()
+	o := bootstrapOptions{OSDir: filepath.Join(top, "os"), SigDir: filepath.Join(top, "sig"), CADir: filepath.Join(top, "ca"), CRLDir: filepath.Join(top, "crl")}
+	out, err := bootstrapWith(t, o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "revocation list") {
+		t.Errorf("output %q", out)
+	}
+	file := filepath.Join(o.CRLDir, ospki.CRLFile)
+	ca, err := ospki.LoadCA(o.CADir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	l, err := ospki.ReadCRL(file, ca.Cert, time.Now())
+	if err != nil || len(l.RevokedCertificateEntries) != 0 {
+		t.Fatalf("%v %v", l, err)
+	}
+	checkModes(t, file, 65532, 0o644)
+
+	// One naming a certificate, as Signalith writes it, is kept.
+	named, err := ospki.MakeCRL(ca, []*big.Int{big.NewInt(42)}, big.NewInt(2), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(file, named, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := bootstrapWith(t, o); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(file); string(b) != string(named) {
+		t.Error("a good list was replaced")
+	}
+
+	// Gone: made again.
+	os.Remove(file)
+	if _, err := bootstrapWith(t, o); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ospki.ReadCRL(file, ca.Cert, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+
+	// A new CA: the old list would lock everyone out, so a new one.
+	o.NewCA = true
+	if _, err := bootstrapWith(t, o); err != nil {
+		t.Fatal(err)
+	}
+	nca, err := ospki.LoadCA(o.CADir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ospki.ReadCRL(file, nca.Cert, time.Now()); err != nil {
+		t.Errorf("after -new-ca: %v", err)
 	}
 }

@@ -1,6 +1,7 @@
 package query
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -165,5 +166,57 @@ func TestBackslashesInQuotedStrings(t *testing.T) {
 	q2, err := Parse(q.String())
 	if err != nil || q2.String() != q.String() {
 		t.Errorf("round trip: %v %s", err, q2)
+	}
+}
+
+// Queries FuzzParse found printing as text that parses to something else,
+// or not at all.
+func TestRoundTripFuzzFindings(t *testing.T) {
+	for _, src := range []string{
+		`* | fields _time, "a b"`, // a column name with a space
+		`* | stats count as "a b" | rename "a b" as "c d", dc(x) as e`,
+		`"*"`,                         // a quoted * is a search term
+		`* | top 0 0`,                 // limit 0 is no limit, not the default
+		`* | top limit=0 x`,           // the same
+		`0="~"`,                       // not =~
+		`* | sort ++, +-x, --y`,       // a second sign is part of the name
+		`(* a) OR b`,                  // * inside parentheses
+		`* | table dc(user), "max(x"`, // a stats column stays bare
+	} {
+		q := mustParse(t, src)
+		text := q.String()
+		q2, err := Parse(text)
+		if err != nil {
+			t.Errorf("%s printed %q, which does not parse: %v", src, text, err)
+			continue
+		}
+		if !reflect.DeepEqual(q, q2) {
+			t.Errorf("%s printed %q, which parses to\n%#v\nnot\n%#v", src, text, q2, q)
+		}
+	}
+	if got := mustParse(t, `* | table dc(user)`).String(); got != "*\n| table dc(user)" {
+		t.Errorf("table dc(user) printed %q", got)
+	}
+}
+
+func TestParseStarTerms(t *testing.T) {
+	if q := mustParse(t, `a OR *`); q.Search != nil {
+		t.Errorf("a OR * = %s, want every event", q.Search)
+	}
+	if q := mustParse(t, `(*) a`); q.Search.String() != "a" {
+		t.Errorf("(*) a = %s", q.Search)
+	}
+	for _, src := range []string{`NOT *`, `OR>0 x`, `a OR=1`, `OR IN (1)`, `IN>0 x`} {
+		if _, err := Parse(src); err == nil {
+			t.Errorf("Parse(%q): want an error", src)
+		}
+	}
+}
+
+// A form feed or vertical tab once made the lexer loop forever.
+func TestLexAllASCIISpaces(t *testing.T) {
+	q := mustParse(t, "a\fb\vc")
+	if and, ok := q.Search.(*And); !ok || len(and.Children) != 3 {
+		t.Errorf("search = %s", q.Search)
 	}
 }

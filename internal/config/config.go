@@ -26,6 +26,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/jrsamsanchez/signalith/internal/agents"
+	"github.com/jrsamsanchez/signalith/internal/assistant"
 	"github.com/jrsamsanchez/signalith/internal/detect"
 	"github.com/jrsamsanchez/signalith/internal/intel"
 	"github.com/jrsamsanchez/signalith/internal/redact"
@@ -503,6 +504,12 @@ type OpenSearch struct {
 	// presents to OpenSearch, for certificate sign-in.
 	CertFile string `yaml:"cert_file,omitempty"`
 	KeyFile  string `yaml:"key_file,omitempty"`
+	// CRLFile is the revocation list OpenSearch checks client
+	// certificates against (plugins.security.ssl.http.crl.file_path),
+	// which Signalith keeps when the cluster keeps OpenSearch's
+	// certificate authority (internal/clusterpki), so a removed server's
+	// certificate stops working at once.
+	CRLFile string `yaml:"crl_file,omitempty"`
 	// TLSSkipVerify turns off OpenSearch certificate checks, so anyone on
 	// the network path could read and change events. For a lab only; use
 	// CAFile instead.
@@ -657,6 +664,11 @@ type Retention struct {
 	Policies map[string]retention.Policy `yaml:"policies,omitempty"`
 	// Guard deletes the oldest days when OpenSearch's disk gets too full.
 	Guard *retention.Guard `yaml:"guard,omitempty"`
+	// EncryptArchives encrypts archive files with the master key (and
+	// the cluster key, on servers that share their settings). Default
+	// true; false writes plain gzip files, for tools that read them
+	// directly. Archives already written stay as they are.
+	EncryptArchives *bool `yaml:"encrypt_archives,omitempty"`
 }
 
 // RetentionInterval returns retention.interval as a duration (1h if unset
@@ -674,6 +686,12 @@ func (c *Config) ArchiveDir() string {
 		return c.resolve(c.Retention.ArchiveDir)
 	}
 	return filepath.Join(filepath.Dir(filepath.Clean(c.LookupsDir())), "archive")
+}
+
+// ArchiveEncryption reports whether new archive files are encrypted
+// (retention.encrypt_archives, true unless set false).
+func (c *Config) ArchiveEncryption() bool {
+	return c.Retention.EncryptArchives == nil || *c.Retention.EncryptArchives
 }
 
 // RetentionPolicies returns the retention settings for the retention
@@ -929,7 +947,18 @@ type Detections struct {
 	// its signature is at the same address plus .sig. Empty means
 	// DefaultContentURL.
 	ContentURL string `yaml:"content_url,omitempty"`
+	// Sync is what the detections and dashboards folders are once the
+	// servers of a cluster share them: inbox (a file added or changed
+	// there is shared; one removed changes nothing) or mirror (one removed
+	// also removes the shared detection or dashboard). Empty means inbox.
+	Sync string `yaml:"sync,omitempty"`
 }
+
+// Folder modes of a shared library (detections.sync).
+const (
+	SyncInbox  = "inbox"
+	SyncMirror = "mirror"
+)
 
 // Content update modes.
 const (
@@ -1030,10 +1059,57 @@ type Assistant struct {
 	// which sends the finding's events and the results of read-only
 	// searches to the model. Off unless an admin turns it on.
 	Investigate bool `yaml:"investigate,omitempty"`
-	// MaskFields are fields whose values are replaced with "[masked]"
-	// before Investigate with AI sends anything, wherever the value
-	// appears; _raw leaves out the original event text. Wildcards * work.
+	// MaskFields are fields whose values are replaced with stand-ins such
+	// as masked-user-1 before Investigate with AI sends anything, wherever
+	// the value appears; _raw leaves out the original event text.
+	// Wildcards * work.
 	MaskFields []string `yaml:"mask_fields,omitempty"`
+	// RequestTimeout is how long one answer from the model may take, such
+	// as 3m (the default). A model on a CPU without a GPU may need 15m.
+	RequestTimeout string `yaml:"request_timeout,omitempty"`
+	// InvestigateTimeout is how long one Investigate with AI may take,
+	// every model turn and search included, such as 6m (the default).
+	InvestigateTimeout string `yaml:"investigate_timeout,omitempty"`
+}
+
+// The AI model's time limits: their defaults and the range allowed.
+const (
+	DefaultAssistantRequestTimeout     = 3 * time.Minute
+	DefaultAssistantInvestigateTimeout = 6 * time.Minute
+	MinAssistantTimeout                = 30 * time.Second
+	MaxAssistantRequestTimeout         = time.Hour
+	MaxAssistantInvestigateTimeout     = 2 * time.Hour
+)
+
+// assistantTimeout reads one of the AI model's time limits: def when it
+// is unset or invalid (Validate reports invalid values).
+func assistantTimeout(v string, def, max time.Duration) time.Duration {
+	if d, err := detect.ParseDuration(strings.TrimSpace(v)); err == nil && d >= MinAssistantTimeout && d <= max {
+		return d
+	}
+	return def
+}
+
+// AssistantRequestTimeout returns assistant.request_timeout as a duration.
+func (c *Config) AssistantRequestTimeout() time.Duration {
+	return assistantTimeout(c.Assistant.RequestTimeout, DefaultAssistantRequestTimeout, MaxAssistantRequestTimeout)
+}
+
+// AssistantInvestigateTimeout returns assistant.investigate_timeout as a
+// duration.
+func (c *Config) AssistantInvestigateTimeout() time.Duration {
+	return assistantTimeout(c.Assistant.InvestigateTimeout, DefaultAssistantInvestigateTimeout, MaxAssistantInvestigateTimeout)
+}
+
+// AssistantClient returns the AI model client the settings describe, with
+// its time limit for one answer, or nil when no provider is set.
+func (c *Config) AssistantClient() *assistant.Client {
+	a := c.Assistant
+	cl := assistant.New(a.Provider, a.URL, a.Model, a.APIKey)
+	if cl != nil {
+		cl.HTTP.Timeout = c.AssistantRequestTimeout()
+	}
+	return cl
 }
 
 // Vulns configures the CVE lookups of vulnerability scans (the
@@ -1223,6 +1299,14 @@ func Default() *Config {
 		Lookups:    Lookups{Dir: "lookups"},
 		Dashboards: Dashboards{Dir: "dashboards", StaleAfter: "2h"},
 	}
+}
+
+// DefaultFor returns Default for a config file at path that is not there
+// yet: its folders resolve next to path, as they will once it is written.
+func DefaultFor(path string) *Config {
+	c := Default()
+	c.path = path
+	return c
 }
 
 // Path returns the file the config was loaded from.
@@ -1779,6 +1863,10 @@ func (c *Config) applyEnv() error {
 		c.OpenSearch.Password = v[0]
 		c.fromEnv("opensearch.password", from)
 	}
+	if v := strings.TrimSpace(os.Getenv("SIGNALITH_OPENSEARCH_CRL_FILE")); v != "" {
+		c.OpenSearch.CRLFile = v
+		c.fromEnv("opensearch.crl_file", "SIGNALITH_OPENSEARCH_CRL_FILE")
+	}
 	if v := strings.TrimSpace(os.Getenv("SIGNALITH_OPENSEARCH_PROXY")); v != "" {
 		c.OpenSearch.Proxy = v
 		c.fromEnv("opensearch.proxy", "SIGNALITH_OPENSEARCH_PROXY")
@@ -1973,6 +2061,14 @@ func (e *ValidationError) Error() string {
 	return "invalid configuration:\n  - " + strings.Join(e.Problems, "\n  - ")
 }
 
+// JoinedCluster reports whether this server is a member of a cluster: it
+// has a cluster key in its state folder (keys/cluster-*.key), as
+// signalith join, an approval and signalith cluster init write it.
+func (c *Config) JoinedCluster() bool {
+	m, _ := filepath.Glob(filepath.Join(c.StateDir(), "keys", "cluster-*.key"))
+	return len(m) > 0
+}
+
 // Validate checks the config and fills derived defaults.
 func (c *Config) Validate() error {
 	var p []string
@@ -2055,7 +2151,12 @@ func (c *Config) Validate() error {
 		p = append(p, "auth.admin_user is required")
 	}
 	if c.Auth.AdminPasswordHash == "" {
-		p = append(p, "auth.admin_password_hash is empty; run signalith passwd, or set SIGNALITH_ADMIN_PASSWORD")
+		// A server that joined a cluster has no built-in admin password
+		// of its own: the cluster's users sign in (signalith passwd
+		// -local adds a break-glass one).
+		if !c.JoinedCluster() {
+			p = append(p, "auth.admin_password_hash is empty; run signalith passwd, or set SIGNALITH_ADMIN_PASSWORD")
+		}
 	} else if _, err := bcrypt.Cost([]byte(c.Auth.AdminPasswordHash)); err != nil {
 		p = append(p, "auth.admin_password_hash is not a bcrypt hash; generate one with signalith passwd")
 	}
@@ -2129,10 +2230,26 @@ func (c *Config) Validate() error {
 			p = append(p, fmt.Sprintf("detections.catch_up %q must be 0 (off) or a duration up to 168h (7d), for example 6h", c.Detections.CatchUp))
 		}
 	}
+	for _, t := range []struct {
+		key, v string
+		max    time.Duration
+	}{{"assistant.request_timeout", c.Assistant.RequestTimeout, MaxAssistantRequestTimeout},
+		{"assistant.investigate_timeout", c.Assistant.InvestigateTimeout, MaxAssistantInvestigateTimeout}} {
+		if v := strings.TrimSpace(t.v); v != "" {
+			if d, err := detect.ParseDuration(v); err != nil || d < MinAssistantTimeout || d > t.max {
+				p = append(p, fmt.Sprintf("%s %q must be a duration from 30s to %s, for example 15m", t.key, t.v, strings.TrimSuffix(t.max.String(), "0m0s")))
+			}
+		}
+	}
 	switch c.Detections.ContentUpdates {
 	case "", ContentManual, ContentDaily:
 	default:
 		p = append(p, "detections.content_updates must be manual or daily")
+	}
+	switch c.Detections.Sync {
+	case "", SyncInbox, SyncMirror:
+	default:
+		p = append(p, "detections.sync must be inbox or mirror")
 	}
 	if u := c.Detections.ContentURL; u != "" {
 		if pu, err := url.Parse(u); err != nil || pu.Scheme != "https" || pu.Host == "" {
@@ -2248,11 +2365,26 @@ func IsPublicIngestToken(t string) bool { return slices.Contains(publicIngestTok
 // OpenSearch with.
 func (c *Config) OpenSearchConnection() store.Config {
 	ca, cert, key := c.OpenSearchTLSFiles()
+	mcert, mkey := c.ManagedOpenSearchFiles()
 	return store.Config{
 		URL: c.OpenSearch.URL, Username: c.OpenSearch.Username, Password: secrets.New("opensearch.password", c.OpenSearch.Password),
-		CAFile: ca, CertFile: cert, KeyFile: key,
+		CAFile: ca, CertFile: cert, KeyFile: key, ManagedCertFile: mcert, ManagedKeyFile: mkey,
 		TLSSkipVerify: c.OpenSearch.TLSSkipVerify, Proxy: c.OpenSearch.Proxy,
 	}
+}
+
+// ManagedOpenSearchDir is the folder in the state folder that holds the
+// OpenSearch client certificate the cluster issued this server
+// (internal/clusterpki), as ManagedOpenSearchFiles names them.
+const ManagedOpenSearchDir = "opensearch"
+
+// ManagedOpenSearchFiles returns the OpenSearch client certificate and
+// key the cluster issued this server. Signalith presents them instead of
+// opensearch.cert_file and key_file whenever they are there and valid
+// (store.Config.ManagedCertFile).
+func (c *Config) ManagedOpenSearchFiles() (cert, key string) {
+	dir := filepath.Join(c.StateDir(), ManagedOpenSearchDir)
+	return filepath.Join(dir, "client.pem"), filepath.Join(dir, "client-key.pem")
 }
 
 // OpenSearchProblems lists what is wrong with the OpenSearch connection
@@ -2267,6 +2399,12 @@ func (c *Config) OpenSearchProblems() []string {
 // with relative paths made relative to the folder this config file is in.
 func (c *Config) OpenSearchTLSFiles() (ca, cert, key string) {
 	return c.resolve(c.OpenSearch.CAFile), c.resolve(c.OpenSearch.CertFile), c.resolve(c.OpenSearch.KeyFile)
+}
+
+// OpenSearchCRLFile returns opensearch.crl_file, relative to the folder
+// this config file is in, "" when it is not set.
+func (c *Config) OpenSearchCRLFile() string {
+	return c.resolve(c.OpenSearch.CRLFile)
 }
 
 // ValidNodeName reports whether name can be a server's name: 1 to 63

@@ -1,0 +1,4 @@
+{"rule": "8b48ad89-10d8-4382-a546-50588c410f0d", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-AppXDeploymentServer/Operational","event_id":"854","data":{"Path":"send.exploit.in"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-AppXDeploymentServer/Operational","event_id":"854","data":{}}
+]}

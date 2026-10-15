@@ -13,22 +13,25 @@ func TestMCPClientSettings(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, tc := range []struct {
-		addr, user, pass, ca string
-		want                 string // part of the error, or the address when it works
+		addr, user, pass, token, ca string
+		want                        string // part of the error, or the address when it works
 	}{
-		{"", "u", "p", "", "set the Signalith server's address"},
-		{"siem.example.com:8080", "u", "p", "", "https://siem.example.com:8080"},
-		{"https://siem.example.com/signalith/", "u", "p", "", "https://siem.example.com/signalith"},
-		{"http://siem.example.com:8080", "u", "p", "", "plain http"},
-		{"http://127.0.0.1:8080", "u", "p", "", "http://127.0.0.1:8080"},
-		{"http://localhost:8080", "u", "p", "", "http://localhost:8080"},
-		{"https://u:p@siem.example.com", "u", "p", "", "not in the address"},
-		{"ftp://siem.example.com", "u", "p", "", "not a web address"},
-		{"https://siem.example.com", "", "p", "", "set the Signalith user"},
-		{"https://siem.example.com", "u", "", "", "set the Signalith user"},
-		{"https://siem.example.com", "u", "p", bad, "holds no PEM certificate"},
+		{"", "u", "p", "", "", "set the Signalith server's address"},
+		{"siem.example.com:8080", "u", "p", "", "", "https://siem.example.com:8080"},
+		{"https://siem.example.com/signalith/", "u", "p", "", "", "https://siem.example.com/signalith"},
+		{"http://siem.example.com:8080", "u", "p", "", "", "plain http"},
+		{"http://127.0.0.1:8080", "u", "p", "", "", "http://127.0.0.1:8080"},
+		{"http://localhost:8080", "u", "p", "", "", "http://localhost:8080"},
+		{"https://u:p@siem.example.com", "u", "p", "", "", "not in the address"},
+		{"ftp://siem.example.com", "u", "p", "", "", "not a web address"},
+		{"https://siem.example.com", "", "p", "", "", "set an API token"},
+		{"https://siem.example.com", "u", "", "", "", "set an API token"},
+		{"https://siem.example.com", "u", "p", "", bad, "holds no PEM certificate"},
+		{"https://siem.example.com", "", "", "sgl_api_" + strings.Repeat("a", 52), "", "https://siem.example.com"},
+		{"https://siem.example.com", "", "", "sgl_" + strings.Repeat("a", 52), "", "not an API token"},
+		{"http://siem.example.com", "", "", "sgl_api_" + strings.Repeat("a", 52), "", "plain http"},
 	} {
-		c, err := newMCPClient(tc.addr, tc.user, tc.pass, tc.ca)
+		c, err := newMCPClient(tc.addr, tc.user, tc.pass, tc.token, tc.ca)
 		got := ""
 		if err != nil {
 			got = err.Error()

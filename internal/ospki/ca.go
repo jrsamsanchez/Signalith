@@ -135,6 +135,22 @@ func issue(ca *Pair, cn string, usage []x509.ExtKeyUsage, dns []string, ips []ne
 	if ca == nil || ca.Key == nil {
 		return nil, ErrNoCAKey
 	}
+	key, err := rsa.GenerateKey(rand.Reader, KeyBits)
+	if err != nil {
+		return nil, err
+	}
+	c, err := issueKey(ca, cn, usage, dns, ips, &key.PublicKey, now, validity)
+	if err != nil {
+		return nil, err
+	}
+	return &Pair{Cert: c, Key: key}, nil
+}
+
+// issueKey makes a certificate under ca for the public key pub.
+func issueKey(ca *Pair, cn string, usage []x509.ExtKeyUsage, dns []string, ips []net.IP, pub *rsa.PublicKey, now time.Time, validity time.Duration) (*x509.Certificate, error) {
+	if ca == nil || ca.Key == nil {
+		return nil, ErrNoCAKey
+	}
 	if now.IsZero() {
 		now = time.Now()
 	}
@@ -145,10 +161,6 @@ func issue(ca *Pair, cn string, usage []x509.ExtKeyUsage, dns []string, ips []ne
 	notBefore := now.Add(-time.Hour)
 	if notBefore.Before(ca.Cert.NotBefore) {
 		notBefore = ca.Cert.NotBefore
-	}
-	key, err := rsa.GenerateKey(rand.Reader, KeyBits)
-	if err != nil {
-		return nil, err
 	}
 	tmpl := &x509.Certificate{
 		SerialNumber:          serial(),
@@ -161,15 +173,11 @@ func issue(ca *Pair, cn string, usage []x509.ExtKeyUsage, dns []string, ips []ne
 		DNSNames:              dns,
 		IPAddresses:           ips,
 	}
-	der, err := x509.CreateCertificate(rand.Reader, tmpl, ca.Cert, &key.PublicKey, ca.Key)
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, ca.Cert, pub, ca.Key)
 	if err != nil {
 		return nil, err
 	}
-	c, err := x509.ParseCertificate(der)
-	if err != nil {
-		return nil, err
-	}
-	return &Pair{Cert: c, Key: key}, nil
+	return x509.ParseCertificate(der)
 }
 
 // nodeNames checks a node's common name and sorts what its certificate

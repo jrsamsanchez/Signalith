@@ -1,0 +1,4 @@
+{"rule": "29f171d7-aa47-42c7-9c7b-3c87938164d9", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-DNS-Client/Operational","event_id":"3008","data":{"QueryName":".anonfiles.com"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-DNS-Client/Operational","event_id":"3008","data":{}}
+]}

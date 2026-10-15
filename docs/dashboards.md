@@ -116,6 +116,13 @@ so dashboards you copy in or `git pull` show up without a restart. A file with
 mistakes is listed at the top of the Dashboards page with every problem, and
 `signalith validate` checks every file.
 
+On the servers of a cluster, custom dashboards are shared: a dashboard saved on any
+server is the same everywhere, and every server's dashboards folder holds a copy. A file
+added or changed in a server's folder is shared; removing one changes nothing unless
+`detections.sync` is `mirror`. A save made from a page that read an older version is
+refused with `412`, and the page offers to reload or overwrite. See
+[Shared detections, dashboards and asset lists](servers.md#shared-detections-dashboards-and-asset-lists).
+
 ## Format
 
 ```yaml
