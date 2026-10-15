@@ -3,7 +3,9 @@
 // opens one for its open ports and the CVEs in the software on them;
 // Networks lists what is scanned and when, with Scan now; Scans is the
 // history. Setup (admins) checks the scanning server: Nmap, CVE lookups,
-// and what each one is for.
+// and what each one is for. Settings > Scanners (admins) lists every
+// server as a scanner: the networks it scans, whether it reaches them,
+// and what it still needs.
 'use strict';
 
 (function () {
@@ -15,6 +17,7 @@
   const S = { tab: 'hosts', data: null, setup: null, find: '', network: '', vulnOnly: false, poll: null, loading: false };
 
   pageHooks.push((name) => {
+    if (name === 'scanners') loadScanners(false);
     if (name !== 'vulns') {
       stopPoll();
       return;
@@ -44,6 +47,32 @@
       panels[k].hidden = k !== name;
     }
     render();
+  }
+
+  // ---------- servers as scanners ----------
+  // servers is every server that can scan; a network names one by its id,
+  // and "" is the one running the background jobs.
+  const servers = () => (S.data && S.data.servers) || [];
+  const multi = () => servers().length > 1;
+  const jobServer = () => servers().find((sv) => sv.runs_jobs);
+  const serverOf = (n) => (n.scanner ? servers().find((sv) => sv.id === n.scanner) : jobServer());
+
+  // scannerState is a server's state as a scanner, for a badge.
+  function scannerState(sv) {
+    if (!sv) return { label: 'No server', tone: 'warning' };
+    if (sv.state === 'removed') return { label: 'Removed', tone: 'danger' };
+    if (!sv.online) return { label: 'Offline', tone: 'danger' };
+    if (sv.ready === undefined || sv.ready === null) return { label: 'Not checked yet', tone: '' };
+    return sv.ready ? { label: 'Ready', tone: 'success' } : { label: 'Needs setup', tone: 'warning' };
+  }
+
+  function scannerName(n) {
+    if (!n.scanner) {
+      const j = jobServer();
+      return j ? j.name + ' (runs the background jobs)' : 'The server that runs the background jobs';
+    }
+    const sv = serverOf(n);
+    return sv ? sv.name : 'A removed server';
   }
 
   // ---------- loading ----------
@@ -187,8 +216,10 @@
     return box;
   }
 
-  function checkRow(c, redraw) {
-    const open = c.state === 'fail' || c.state === 'warn';
+  // checkRow is one check; quiet leaves optional warnings closed, as on
+  // the Scanners page, where every server repeats them.
+  function checkRow(c, redraw, quiet) {
+    const open = c.state === 'fail' || (c.state === 'warn' && (!quiet || c.required));
     const extra = [];
     if (c.id === 'cve' && S.data) extra.push(lookupSwitch(redraw));
     return el('li', { class: 'vs-check', 'data-state': c.state },
@@ -244,7 +275,9 @@
         el('h3', { class: 'modal__title', id: 'vs-setup-title' }, 'Scanner setup'),
         el('p', { class: 'modal__desc' }, 'What scanning needs on the scanning server, why, and how to fix anything missing.')),
       el('button', { class: 'btn btn--ghost btn--icon btn--sm modal__close', type: 'button', 'aria-label': 'Close', onclick: () => dlg.close() }, icon('x'))),
-      el('div', { class: 'modal__body vs-setup__body' }, setupCard(false)),
+      el('div', { class: 'modal__body vs-setup__body' }, setupCard(false),
+        multi() ? el('p', { class: 'hint vs-setup__more' }, icon('radar'), el('span', {}, 'This checks the server that runs the background jobs. ',
+          el('a', { href: '#scanners', 'data-page': 'scanners', onclick: () => dlg.close() }, 'Settings > Scanners'), ' checks every server that scans a network.')) : null),
       el('div', { class: 'modal__foot' }, el('button', { class: 'btn btn--secondary', type: 'button', onclick: () => dlg.close() }, 'Close')));
     if (!dlg.open) dlg.showModal();
   }
@@ -286,7 +319,16 @@
         el('div', {}, el('b', {}, running.map((n) => n.name).join(', ') + (running.length === 1 ? ' is' : ' are') + ' being scanned.'),
           el('p', {}, 'Results replace the earlier ones when the scan finishes.')));
     }
-    if (d.scanner && !d.scanner.ready && can('admin')) {
+    if (!can('admin')) return null;
+    if (multi()) {
+      const stuck = servers().filter((sv) => sv.networks.length && (sv.state === 'removed' || !sv.online || sv.ready === false));
+      if (!stuck.length) return null;
+      return el('div', { class: 'alert', 'data-tone': 'warning' }, icon('triangle-alert'), el('div', {},
+        el('b', {}, stuck.map((sv) => sv.name + ' (' + scannerState(sv).label.toLowerCase() + ')').join(', ') + (stuck.length === 1 ? ' scans ' : ' scan ') +
+          'networks but cannot run scans right now.'),
+        el('p', {}, el('a', { href: '#scanners', 'data-page': 'scanners' }, 'Open Settings > Scanners'), ' to see what is missing.')));
+    }
+    if (d.scanner && !d.scanner.ready) {
       return el('div', { class: 'alert', 'data-tone': 'warning' }, icon('triangle-alert'), el('div', {},
         el('b', {}, 'Scans cannot run on ' + d.scanner.server + ' right now.'),
         el('p', {}, el('a', { href: '#', onclick: (ev) => { ev.preventDefault(); openSetup(); } }, 'Open the scanner setup'), ' to see what is missing.')));
@@ -466,7 +508,8 @@
       const pct = a.state === 'running' && p.percent > 0 ? Math.round(p.percent) : null;
       status = el('div', { class: 'vs-net__status' },
         el('span', { class: 'pulse', 'data-state': 'warn' }),
-        el('span', {}, a.state === 'running' ? 'Scanning' + (pct !== null ? ', ' + pct + '%' : '…') + (p.hosts_up ? ' · ' + p.hosts_up + ' up so far' : '') : 'Waiting to start'),
+        el('span', {}, a.state === 'running' ? 'Scanning' + (pct !== null ? ', ' + pct + '%' : '…') + (p.hosts_up ? ' · ' + p.hosts_up + ' up so far' : '') + (multi() && a.scanner ? ' on ' + a.scanner : '') :
+          waitingText(n)),
         pct !== null ? el('span', { class: 'vs-progress', role: 'progressbar', 'aria-valuenow': pct, 'aria-valuemin': 0, 'aria-valuemax': 100, 'aria-label': 'Scan progress' }, el('span', { style: 'width:' + pct + '%' })) : null);
     } else if (last) {
       status = el('div', { class: 'vs-net__status' },
@@ -493,9 +536,25 @@
         el('dt', {}, 'When'), el('dd', {}, n.enabled ? scheduleText(n) : 'Paused: no scheduled scans'),
         n.enabled && n.next_run ? el('dt', {}, 'Next') : null, n.enabled && n.next_run ? el('dd', {}, new Date(n.next_run).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' })) : null,
         el('dt', {}, 'Ports'), el('dd', {}, portsLabel(n.ports)),
+        multi() || n.scanner ? el('dt', {}, 'Scanned by') : null,
+        multi() || n.scanner ? el('dd', { class: 'vs-net__scanner' }, scannerName(n), scannerBadge(serverOf(n))) : null,
         el('dt', {}, 'Found'), el('dd', {}, n.hosts ? el('span', { class: 'vs-found' }, n.hosts + (n.hosts === 1 ? ' host' : ' hosts') + ', ', cveCounts(n.counts)) : '—')),
       status,
       lastProblem ? el('p', { class: last.error ? 'field-error' : 'hint' }, icon(last.error ? 'circle-alert' : 'info'), last.error || 'CVE lookups: ' + last.cve_error) : null));
+  }
+
+  // scannerBadge flags a scanner that cannot scan now; a ready one needs
+  // no badge.
+  function scannerBadge(sv) {
+    const st = scannerState(sv);
+    if (st.tone === 'success' || !can('admin')) return null;
+    return el('span', { class: 'badge' + (st.tone ? ' badge--' + st.tone : '') }, st.label);
+  }
+
+  function waitingText(n) {
+    const sv = serverOf(n);
+    if (multi() && sv && (sv.state === 'removed' || !sv.online)) return 'Waiting for ' + sv.name + ', which is ' + scannerState(sv).label.toLowerCase();
+    return multi() && sv ? 'Waiting to start on ' + sv.name : 'Waiting to start';
   }
 
   async function scanNow(n, btn) {
@@ -564,6 +623,15 @@
     const syncEvery = () => { day.hidden = every.value !== 'weekly'; hour.hidden = every.value === 'manual'; };
     every.addEventListener('change', syncEvery);
     syncEvery();
+    let scanner = null;
+    if (multi() || t.scanner) {
+      const j = jobServer();
+      const opt = (value, label, sv) => el('option', { value }, label + (sv ? ' · ' + scannerState(sv).label : ''));
+      scanner = el('select', { class: 'select select--block', id: 'vs-scanner' },
+        opt('', 'Whichever server runs the background jobs' + (j ? ' (now ' + j.name + ')' : ''), null),
+        ...servers().map((sv) => opt(sv.id, sv.name + (sv.self ? ' (this server)' : ''), sv)));
+      scanner.value = t.scanner || '';
+    }
     const gentle = el('input', { type: 'checkbox' });
     gentle.checked = t.gentle;
     const enabled = el('input', { type: 'checkbox' });
@@ -584,6 +652,11 @@
         el('details', { class: 'vs-more', ...(t.exclude && t.exclude.length ? { open: '' } : {}) }, el('summary', {}, 'Addresses to skip'),
           el('div', { class: 'field' }, skip, el('p', { class: 'hint' }, 'Hosts that must never be scanned, such as fragile devices or ones you have no permission for.'))),
         el('div', { class: 'field' }, el('label', { class: 'label', for: 'vs-ports' }, 'Ports'), ports), customWrap,
+        scanner ? el('div', { class: 'field' }, el('label', { class: 'label', for: 'vs-scanner' }, 'Scanned by'), scanner,
+          el('p', { class: 'hint' }, el('span', {}, 'Pick a server that can reach these addresses, such as one inside this network’s zone. ',
+            el('a', { href: '#scanners', 'data-page': 'scanners', onclick: () => dlg.close() }, 'Settings > Scanners'), ' shows what each server needs.'))) :
+          el('p', { class: 'hint vs-zone-hint' }, icon('network'), el('span', {}, 'Network in a separate zone that this server cannot reach? ',
+            el('a', { href: '#servers', 'data-page': 'servers', onclick: () => dlg.close() }, 'Add a server'), ' inside it, then pick it here to scan from there.')),
         el('div', { class: 'field' }, el('label', { class: 'label', for: 'vs-every' }, 'When'), el('div', { class: 'vs-when' }, every, day, hour),
           el('p', { class: 'hint' }, 'In the scanning server’s time zone. Pick a quiet hour: scans add some network traffic.')),
         el('label', { class: 'switch vs-switch' }, gentle, el('span', {}, el('b', {}, 'Gentle mode'),
@@ -611,6 +684,7 @@
         ports: ports.value === 'custom' ? custom.value.replace(/\s+/g, '') : ports.value, gentle: gentle.checked, enabled: isNew ? true : enabled.checked,
         schedule: { every: every.value, hour: +hour.value, weekday: +day.value },
       };
+      if (scanner) next.scanner = scanner.value;
       const targets = S.data.settings.targets.filter((x) => x.id !== t.id);
       const at = S.data.settings.targets.findIndex((x) => x.id === t.id);
       targets.splice(at < 0 ? targets.length : at, 0, next);
@@ -676,7 +750,8 @@
       return;
     }
     panels.scans.replaceChildren(el('div', { class: 'card' }, el('div', { class: 'table-wrap' }, el('table', { class: 'table vs-scans' },
-      el('thead', {}, el('tr', {}, el('th', {}, 'Network'), el('th', {}, 'Result'), el('th', {}, 'Started'), el('th', {}, 'Took'), el('th', {}, 'Found'), el('th', {}, 'Started by'))),
+      el('thead', {}, el('tr', {}, el('th', {}, 'Network'), el('th', {}, 'Result'), el('th', {}, 'Started'), el('th', {}, 'Took'), el('th', {}, 'Found'),
+        multi() ? el('th', {}, 'Scanner') : null, el('th', {}, 'Started by'))),
       el('tbody', {}, ...scans.map((sc) => el('tr', {},
         el('td', { 'data-label': 'Network' }, sc.target_name),
         el('td', { 'data-label': 'Result' }, el('span', { class: 'badge' + (STATE_TONE[sc.state] ? ' badge--' + STATE_TONE[sc.state] : '') }, STATE[sc.state] || sc.state),
@@ -685,6 +760,106 @@
         el('td', { 'data-label': 'Started', class: 'vs-muted' }, sc.started_at ? new Date(sc.started_at).toLocaleString() : 'Not yet'),
         el('td', { 'data-label': 'Took', class: 'num' }, duration(sc)),
         el('td', { 'data-label': 'Found' }, sc.state === 'done' ? el('span', { class: 'vs-found' }, sc.counts.hosts + (sc.counts.hosts === 1 ? ' host ' : ' hosts '), cveCounts(sc.counts)) : '—'),
+        multi() ? el('td', { 'data-label': 'Scanner', class: 'vs-muted' }, sc.scanner || '—') : null,
         el('td', { 'data-label': 'Started by', class: 'vs-muted' }, sc.trigger === 'schedule' ? 'Schedule' : sc.requested_by || 'Scan now'))))))));
+  }
+  // ---------- Settings > Scanners ----------
+  const SC = { data: null, loading: false, poll: null };
+
+  async function loadScanners(fresh) {
+    const box = $('sc-page');
+    clearTimeout(SC.poll);
+    if (SC.loading) return;
+    SC.loading = true;
+    if (!SC.data) box.replaceChildren(skeleton());
+    try {
+      SC.data = await api('api/vulns/scanners' + (fresh ? '?fresh=1' : ''));
+      box.removeAttribute('aria-busy');
+      renderScanners();
+    } catch (e) {
+      if (!SC.data) box.replaceChildren(failed(e, () => loadScanners(false)));
+    } finally {
+      SC.loading = false;
+    }
+    // Servers check themselves every few minutes, and every 30 seconds
+    // while something is missing: follow them.
+    if (currentPage === 'scanners') SC.poll = setTimeout(() => loadScanners(false), 30000);
+  }
+
+  function renderScanners() {
+    // The server running the background jobs first, then by name.
+    const list = [...SC.data.servers].sort((a, b) => (b.runs_jobs - a.runs_jobs) || a.name.localeCompare(b.name));
+    const scanning = list.filter((sv) => sv.networks.length);
+    const intro = el('div', { class: 'card sc-intro' }, el('div', { class: 'card__body' },
+      el('span', { class: 'vs-start__icon' }, icon('radar')),
+      el('div', {},
+        el('h3', { class: 'vs-start__title' }, 'Scan every network zone from inside it'),
+        el('p', { class: 'vs-start__text' }, 'A scan only sees the hosts and ports its server can reach. For a network behind a firewall, such as a plant floor or a lab, ' +
+          'run a Signalith server inside it and let that server scan it. Results from every scanner land on the same Vulnerabilities page, in Findings and in the asset list.'),
+        el('ol', { class: 'vs-steps' },
+          el('li', {}, el('b', {}, 'Add a server inside the zone. '), el('a', { href: '#servers', 'data-page': 'servers' }, 'Settings > Servers'), ' > Add a server.'),
+          el('li', {}, el('b', {}, 'Install Nmap on it. '), 'Its card below says whether it has what scanning needs, and how to fix anything red.'),
+          el('li', {}, el('b', {}, 'Pick it for the zone’s networks. '), 'On ', el('a', { href: '#vulns', 'data-page': 'vulns' }, 'Vulnerabilities'),
+            ' > Networks, edit a network and choose the server under Scanned by.')))));
+    const needs = el('div', { class: 'card sc-needs' }, el('div', { class: 'card__head' }, el('div', {},
+      el('h3', { class: 'card__title' }, 'What each scanner needs'),
+      el('p', { class: 'card__sub' }, 'Every server checks itself every few minutes. Expand a check below for why it matters and how to fix it.'))),
+    el('div', { class: 'table-wrap' }, el('table', { class: 'table sc-needs__table' },
+      el('thead', {}, el('tr', {}, el('th', {}, 'What'), el('th', {}, 'Why'), el('th', {}, 'Needed'))),
+      el('tbody', {},
+        needRow('Nmap 7.80 or later', 'Finds the hosts, open ports and software versions on a network.', 'Yes'),
+        needRow('Network reach', 'The server must reach the networks it scans. Firewalls between them hide hosts and ports.', 'Yes'),
+        needRow('Outbound HTTPS to services.nvd.nist.gov', 'Looks the software versions up in the National Vulnerability Database to name the CVEs.', 'No: scans still list hosts, ports and software'),
+        needRow('An NVD API key', 'Makes the first CVE lookups about ten times faster. One key serves every server.', 'No')))));
+    const cards = list.map(scannerCard);
+    $('sc-page').replaceChildren(...[intro,
+      list.length < 2 ? el('div', { class: 'alert', 'data-tone': 'info' }, icon('info'), el('div', {},
+        el('b', {}, 'This is your only server, so it scans every network.'),
+        el('p', {}, 'To scan a network it cannot reach, ', el('a', { href: '#servers', 'data-page': 'servers' }, 'add a server'), ' inside that network’s zone.'))) : null,
+      el('h3', { class: 'sc-heading' }, list.length === 1 ? 'Your server' : list.length + ' servers', el('span', { class: 'vs-muted' },
+        scanning.length ? ' · ' + scanning.length + ' scanning' : ' · none scans a network yet')),
+      el('div', { class: 'sc-list' }, ...cards),
+      needs].filter(Boolean));
+  }
+
+  function needRow(what, why, needed) {
+    return el('tr', {}, el('td', { 'data-label': 'What' }, el('b', {}, what)), el('td', { 'data-label': 'Why', class: 'vs-muted' }, why),
+      el('td', { 'data-label': 'Needed' }, needed === 'Yes' ? el('span', { class: 'badge badge--accent' }, 'Required') : el('span', { class: 'vs-muted' }, needed)));
+  }
+
+  function scannerCard(sv) {
+    const st = scannerState(sv);
+    const rep = sv.report;
+    const badges = [
+      sv.self ? el('span', { class: 'badge' }, 'This server') : null,
+      sv.runs_jobs ? el('span', { class: 'badge', title: 'Scans the networks that name no scanner' }, 'Runs the background jobs') : null,
+    ];
+    const nets = sv.networks.length
+      ? el('p', { class: 'sc-card__nets' }, icon('network'), el('span', {}, 'Scans ', ...sv.networks.flatMap((n, i) => [i ? ', ' : '', el('b', {}, n.name), n.enabled ? '' : ' (paused)'])))
+      : el('p', { class: 'sc-card__nets vs-muted' }, icon('network'), el('span', {}, sv.runs_jobs ? 'Scans the networks that name no scanner; none do now.' : 'Scans no network yet.'));
+    let sub;
+    if (sv.state === 'removed') sub = 'This server was removed, but networks still name it. Edit them and pick another scanner.';
+    else if (!sv.online) sub = 'Not running (' + sv.state + ').' + (sv.checked_at ? ' Last checked ' + ago(sv.checked_at) + '.' : '') + ' Its networks are not scanned until it is back.';
+    else if (!rep) sub = 'Has not checked itself yet. A server checks itself a few seconds after it starts; one running an older version of Signalith does not.';
+    else sub = 'Checked ' + ago(rep.at) + '.';
+    const again = sv.self && sv.online ? el('button', { class: 'btn btn--secondary btn--sm', type: 'button' }, icon('refresh-cw'), 'Check again') : null;
+    if (again) {
+      again.addEventListener('click', async () => {
+        again.disabled = true;
+        again.replaceChildren(icon('refresh-cw'), 'Checking…');
+        await loadScanners(true);
+      });
+    }
+    const checks = rep && sv.state !== 'removed' ? rep.checks.filter((c) => c.id !== 'networks') : [];
+    return el('article', { class: 'card sc-card', 'data-state': st.tone || 'none' }, el('div', { class: 'card__body' },
+      el('div', { class: 'sc-card__head' },
+        el('span', { class: 'sc-card__icon' }, icon('server')),
+        el('div', { class: 'sc-card__title' },
+          el('div', { class: 'sc-card__name' }, el('h3', {}, sv.name), ...badges.filter(Boolean)),
+          el('p', { class: 'vs-muted' }, sub)),
+        el('span', { class: 'badge' + (st.tone ? ' badge--' + st.tone : '') + ' sc-card__state' }, st.label),
+        again),
+      nets,
+      checks.length ? el('ul', { class: 'vs-checks', role: 'list' }, ...checks.map((c) => checkRow(c, renderScanners, true))) : null));
   }
 })();
