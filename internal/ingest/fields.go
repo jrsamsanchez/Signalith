@@ -328,6 +328,14 @@ var knownFields = func() map[string]string {
 	for _, k := range o365Mapped {
 		m[k] = kw
 	}
+	// The fields the shipped cloud rules read (rulefields.go).
+	for _, k := range cloudRuleFields {
+		m[k] = kw
+	}
+	// And the lists of objects they read inside, as JSON text.
+	for _, k := range cloudTrailLists {
+		m[k] = "wildcard"
+	}
 	add := func(fs []datamodel.Field) {
 		for _, f := range fs {
 			if strings.HasPrefix(f.Name, "_") {
@@ -356,6 +364,31 @@ var knownFields = func() map[string]string {
 // SampleField is the keyword field that marks a document as sample data
 // (see the sample package). Its value is the load's ID.
 const SampleField = datamodel.SampleField
+
+// knownObjects are the objects the known fields' dotted names make
+// (properties, properties.status), which no value may take the name of.
+var knownObjects = func() map[string]bool {
+	m := map[string]bool{}
+	for k := range knownFields {
+		for i := range len(k) {
+			if k[i] == '.' {
+				m[k[:i]] = true
+			}
+		}
+	}
+	return m
+}()
+
+// knownPrefix reports whether a dotted name's parts start with a known
+// field, which would become an object.
+func knownPrefix(parts []string) bool {
+	for i := 1; i < len(parts); i++ {
+		if KnownField(strings.Join(parts[:i], ".")) {
+			return true
+		}
+	}
+	return false
+}
 
 // KnownField reports whether Signalith's own parsers produce a field name,
 // so the index template maps it and events always keep it.
@@ -499,8 +532,12 @@ func (b *fieldBudget) limitTo(index, day, oldest string, f map[string]any, budge
 			continue
 		}
 		parts := strings.Split(k, ".")
-		if KnownField(parts[0]) && len(parts) > 1 {
+		if knownPrefix(parts) {
 			drop(k) // "user.name" would turn the known field user into an object
+			continue
+		}
+		if knownObjects[k] {
+			drop(k) // a value "properties.status" where properties.status.errorCode is mapped
 			continue
 		}
 		added, clash := 1, false

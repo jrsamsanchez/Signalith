@@ -1265,6 +1265,15 @@ func (c *sigmaConv) fieldCond(key string, v any) (query.Expr, error) {
 			return nil, fmt.Errorf("Sigma modifier |%s (in %s) is not supported", m, key)
 		}
 	}
+	if list := ingest.CloudTrailList(sigField); c.category == "cloudtrail" && list != "" {
+		// A field inside a list of objects: the list is kept as JSON text,
+		// which contains the value when an object's field does.
+		if how != "contains" {
+			c.approx("field %s is inside a list, which is searched as text", sigField)
+		} else {
+			field = list
+		}
+	}
 	var kids []query.Expr
 	for _, raw := range values {
 		if raw == nil || sigmaString(raw) == "" {

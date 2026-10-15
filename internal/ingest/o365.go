@@ -331,7 +331,7 @@ func O365Field(name string) bool {
 // one of Signalith's own fields, unless the template maps it for these
 // records.
 func o365Own(name string) bool {
-	return !KnownField(name) || slices.Contains(o365Mapped, name)
+	return !KnownField(name) || slices.Contains(o365Mapped, name) || slices.Contains(cloudRuleFields, name)
 }
 
 // O365Record is a Microsoft 365 audit record of a workload with the
