@@ -128,6 +128,10 @@ warn() {
   printf '  ! %s\n' "$1"
   if [ $# -gt 1 ]; then printf '      Fix: %s\n' "$2"; fi
 }
+# why prints the last lines a command wrote to $tmp/out, under a warning.
+why() {
+  tail -n 5 "$tmp/out" 2>/dev/null | sed 's/^/      | /'
+}
 fail() {
   printf '  \342\234\227 %s\n' "$1" >&2
   if [ $# -gt 1 ]; then printf '      Fix: %s\n' "$2" >&2; fi
@@ -1210,6 +1214,10 @@ zeek_script() {
 @load frameworks/files/hash-all-files
 @load misc/capture-loss
 @load misc/stats
+# Network cards that compute checksums themselves (offload) hand captured
+# packets over with checksums still unset; Zeek would drop those and log
+# no DNS, HTTP or TLS for them. Suricata decides this for itself.
+redef ignore_checksums = T;
 EOF
   if [ "$layout" = docker ]; then
     cat <<EOF
@@ -2260,8 +2268,9 @@ sensor_docker_start() {
   if [ "$suricata" = yes ]; then
     if ! manifest_has "rules first"; then
       say "  downloading the Suricata rules (Emerging Threats Open)..."
-      if ! run /usr/lib/signalith-sensor/rules-update.sh >/dev/null 2>&1; then
+      if ! run /usr/lib/signalith-sensor/rules-update.sh >"$tmp/out" 2>&1; then
         warn "The first rules download failed: Suricata starts with no rules, and the daily update tries again." "sudo systemctl start signalith-suricata-update.service, then see: journalctl -u signalith-suricata-update"
+        why
         dc --profile update run --rm --entrypoint sh suricata-update -c 'mkdir -p /var/lib/suricata/rules && touch /var/lib/suricata/rules/suricata.rules'
       fi
       manifest_add "rules first"
@@ -2323,6 +2332,7 @@ rules_again() {
     ok "the Suricata rules, with your own"
   else
     warn "The rules update failed: Suricata keeps the rules it had." "See why with: sudo journalctl -u signalith-suricata-update -n 50 (or run sudo /usr/lib/signalith-sensor/rules-update.sh), fix your rules file, and run the line again."
+    why
   fi
 }
 
@@ -2334,6 +2344,7 @@ sensor_start() {
         ok "the Suricata rules"
       else
         warn "The first rules download failed: Suricata starts with no rules, and the daily update tries again." "sudo systemctl start signalith-suricata-update.service, then see: journalctl -u signalith-suricata-update"
+        why
       fi
       manifest_add "rules first"
     elif is_changed rules; then
