@@ -780,8 +780,7 @@ func cmdQuery(args []string) error {
 }
 
 func newAssistant(c *config.Config) *assistant.Client {
-	a := c.Assistant
-	return assistant.New(a.Provider, a.URL, a.Model, a.APIKey)
+	return c.AssistantClient()
 }
 
 // cmdAsk prints the query for a plain-English question, with how each
