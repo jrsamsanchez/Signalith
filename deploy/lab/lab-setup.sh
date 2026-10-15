@@ -120,10 +120,13 @@ others() { conf '.machines[] | select(.name != "signalith-1") | .name'; }
 
 # ---- 0. the other machines ----
 
-ready() { on "$1" 'cloud-init status --wait >/dev/null 2>&1; [ $? -le 2 ]'; }
+# ready says whether a machine finished its first boot; ssh's own errors
+# while it is still starting are not shown.
+ready() { on "$1" 'cloud-init status --wait >/dev/null 2>&1; [ $? -le 2 ]' 2>/dev/null; }
 
 wait_machines() {
   for m in $(others); do
+    ready "$m" || say "  waiting for $m"
     retry 90 ready "$m" || fail "$m did not finish starting (cloud-init). Check it in the Hetzner Console."
     say "  $m is up"
   done
