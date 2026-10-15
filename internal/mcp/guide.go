@@ -22,6 +22,7 @@ Commands:
   top limit=10 process_name by host
   where count > 20 AND users >= 2
   sort -count, src       head 20       table _time, user, src       rename src as source_ip
+  lookup <table> <col> [OUTPUT cols]  add columns from an uploaded lookup table (admins add them on Settings > Lookups)
   enrich [fields]        add asset and identity context (priority, owner, watchlist)
   threatmatch [fields]   keep events whose fields match threat intel; must come right after the search
   intel [fields]         add threat intel context to any result

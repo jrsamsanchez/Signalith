@@ -343,6 +343,7 @@ func QueryReference() string {
   head N
   table f1, f2
   rename f as g
+  lookup <table> <col> [AS field] [OUTPUT|OUTPUTNEW col [AS name], ...]   adds columns from an uploaded lookup table (Settings > Lookups) where col matches; only use table names the user gave
   enrich [fields]   adds asset and identity context columns
   intel [fields]    adds threat intel columns (<field>_intel_source, _intel_type, _intel_weight) for values that are known indicators
   threatmatch [fields]   keeps only events whose IP, domain, URL, hash or email fields match threat intel; must come right after the search

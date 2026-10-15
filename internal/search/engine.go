@@ -14,6 +14,7 @@ import (
 
 	"github.com/jrsamsanchez/signalith/internal/assets"
 	"github.com/jrsamsanchez/signalith/internal/intel"
+	"github.com/jrsamsanchez/signalith/internal/lookuptables"
 	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/store"
 )
@@ -46,6 +47,8 @@ type Engine struct {
 	Assets *assets.Store
 	// Intel backs the intel and threatmatch commands; nil makes them errors.
 	Intel *intel.Store
+	// Lookups backs the lookup command; nil makes it an error.
+	Lookups *lookuptables.Store
 
 	optMu   sync.RWMutex
 	slotsMu sync.Mutex
@@ -419,7 +422,7 @@ func leadingHead(cmds []query.Command) (int, bool) {
 		switch c := c.(type) {
 		case *query.Head:
 			return c.N, true
-		case *query.Table, *query.Rename, *query.Enrich, *query.Intel, *query.Eval, *query.Rex, *query.Fillnull:
+		case *query.Table, *query.Rename, *query.Enrich, *query.Intel, *query.Eval, *query.Rex, *query.Fillnull, *query.Lookup:
 			continue
 		}
 		return 0, false
@@ -514,6 +517,8 @@ func (e *Engine) execute(ctx context.Context, q *query.Query) (*Result, error) {
 		switch c := c.(type) {
 		case *query.Enrich:
 			err = e.enrich(res, c)
+		case *query.Lookup:
+			err = e.lookup(ctx, res, c)
 		case *query.Intel:
 			err = e.intelEnrich(res, c)
 		default:

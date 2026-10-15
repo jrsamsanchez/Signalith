@@ -34,6 +34,7 @@ var fuzzSeeds = []string{
 	`x | where name=O'Brien | where (a) = 1 | eval n=-x * 2 - -3 % 4, s=substr(cmd, -5, 2), t=strftime(_time, "%Y-%m-%d")`,
 	`* | eval a=`, `* | rex "(?<x"`, `* | dedup`, `* | where NOT`, `* | eval 'x|y'=1 | head 2`,
 	`* | where substr("abc", 1, "NaN") = "" OR replace(s, "", s) != s`,
+	`* | lookup owners host AS dest, "output" OUTPUTNEW owner AS "as", team | lookup t a`,
 }
 
 // FuzzParse checks that Parse never panics, that its errors carry a

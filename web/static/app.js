@@ -517,6 +517,7 @@ const JUMP_WORDS = {
   playbooks: 'playbooks automation soar workflow runbook automatic response steps',
   approvals: 'approvals approve reject pending waiting playbook runs',
   sensors: 'network sensors zeek suricata ids rules tuning disable threshold suppress local rules sid packet drops capture span mirror',
+  lookuptables: 'lookup lookups tables csv reference owners enrichment context',
   security: 'hardening encryption certificate authority ca tls https keys permissions bitlocker luks',
   settings: 'configuration config server opensearch syslog listen address port tls certificate ai assistant model api key restart yaml',
 };
@@ -903,12 +904,12 @@ const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
 // functions, keywords and values apart. The Query guide uses the same
 // colouring for its examples.
 const lang = {
-  commands: ['stats', 'eventstats', 'timechart', 'top', 'rare', 'where', 'eval', 'rex', 'dedup', 'fillnull', 'sort', 'head', 'table', 'rename', 'enrich', 'threatmatch', 'intel'],
+  commands: ['stats', 'eventstats', 'timechart', 'top', 'rare', 'where', 'eval', 'rex', 'dedup', 'fillnull', 'sort', 'head', 'table', 'rename', 'lookup', 'enrich', 'threatmatch', 'intel'],
   functions: ['count', 'dc', 'sum', 'avg', 'min', 'max', 'median', 'perc95', 'stdev', 'var', 'range', 'mode', 'values', 'list', 'first', 'last', 'earliest', 'latest'],
   // eval and where expression functions (query.EvalFuncs).
   evalFunctions: ['abs', 'case', 'ceil', 'ceiling', 'cidrmatch', 'coalesce', 'exp', 'false', 'floor', 'if', 'in', 'isnotnull', 'isnull', 'isnum', 'isstr', 'len', 'like', 'ln', 'log', 'lower', 'ltrim', 'match', 'max', 'md5', 'min', 'mvappend', 'mvcount', 'mvdedup', 'mvindex', 'mvjoin', 'mvsort', 'now', 'null', 'nullif', 'pow', 'replace', 'round', 'rtrim', 'sha1', 'sha256', 'split', 'sqrt', 'strftime', 'strptime', 'substr', 'time', 'tonumber', 'tostring', 'trim', 'true', 'typeof', 'upper', 'urldecode'],
 };
-const QL_KEYWORDS = new Set(['and', 'or', 'not', 'in', 'as', 'by', 'over', 'xor', 'like']);
+const QL_KEYWORDS = new Set(['and', 'or', 'not', 'in', 'as', 'by', 'over', 'xor', 'like', 'output', 'outputnew']);
 const QL_FUNCS = new Set(lang.functions);
 const QL_EVAL_FUNCS = new Set(lang.evalFunctions);
 const QL_KEYS = new Set(['datamodel', 'index', 'earliest', 'latest']);

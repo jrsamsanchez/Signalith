@@ -283,6 +283,30 @@ func describeCommand(c query.Command) string {
 			parts[i] = p[0] + " to " + p[1]
 		}
 		return "Rename " + strings.Join(parts, ", ") + "."
+	case *query.Lookup:
+		keys := make([]string, len(c.Keys))
+		for i, k := range c.Keys {
+			keys[i] = k.Field()
+			if k.As != "" {
+				keys[i] += " (as the table's " + k.Column + ")"
+			}
+		}
+		what := "every other column"
+		if len(c.Outputs) > 0 {
+			cols := make([]string, len(c.Outputs))
+			for i, o := range c.Outputs {
+				cols[i] = o.Column
+				if o.As != "" {
+					cols[i] += " as " + o.As
+				}
+			}
+			what = strings.Join(cols, ", ")
+		}
+		s := "Look up " + strings.Join(keys, " and ") + " in the lookup table " + c.Table + " and add " + what + " from the matching rows"
+		if c.New {
+			s += ", only where the field is not already set"
+		}
+		return s + "."
 	case *query.Enrich:
 		what := "user, src, dest and host fields"
 		if len(c.Fields) > 0 {

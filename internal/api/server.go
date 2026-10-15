@@ -331,6 +331,7 @@ func (s *Server) Handler() http.Handler {
 	api.admin("POST /api/security/ca", s.handleSecurityCA)
 	s.routeDetections(api)
 	s.routeRisk(api)
+	s.routeLookupTables(api)
 	s.routeAsk(api)
 	s.routeInvestigate(api)
 	s.routeIntel(api)

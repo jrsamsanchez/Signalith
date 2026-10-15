@@ -320,6 +320,8 @@ func CommandString(c Command) string {
 			ps[i] = formatName(p[0]) + " as " + FormatValue(p[1])
 		}
 		return "rename " + strings.Join(ps, ", ")
+	case *Lookup:
+		return lookupString(c)
 	case *Enrich:
 		if len(c.Fields) == 0 {
 			return "enrich"
