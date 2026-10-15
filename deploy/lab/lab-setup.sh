@@ -568,6 +568,9 @@ if have sensor; then
   step sensor sensor
 fi
 
+# The end-to-end test, from the same commit (docs/cloud-lab.md).
+install -m 755 "$LAB/src/deploy/lab/lab-e2e.sh" /usr/local/sbin/lab-e2e
+
 public=$(curl -fsS -4 --max-time 5 https://ipv4.icanhazip.com 2>/dev/null || echo '<signalith-1 address>')
 say "Lab ready."
 cat <<MSG
@@ -579,5 +582,6 @@ cat <<MSG
   Agents and the sensor send to $SIEM_URL$([ -n "$LB_IP" ] && echo " (the load balancer)").
   The rest is by hand: see "After the setup" in docs/cloud-lab.md
   (Windows, the scan networks, single sign-on).
+  To test everything: sudo lab-e2e
 
 MSG

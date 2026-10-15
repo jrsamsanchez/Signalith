@@ -314,15 +314,15 @@ jobs:
     needs: test
     uses: ./.github/workflows/packages.yml
 
-  # The cloud test lab (deploy/lab): shellcheck of the setup script, and
+  # The cloud test lab (deploy/lab): shellcheck of its scripts, and
   # Terraform's format and validate. Not a required check.
   lab:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - name: Shellcheck the setup script
-        run: shellcheck -s bash deploy/lab/lab-setup.sh
+      - name: Shellcheck the setup and end-to-end test scripts
+        run: shellcheck -s bash deploy/lab/lab-setup.sh deploy/lab/lab-e2e.sh
       - name: Terraform format and validate
         working-directory: deploy/lab
         run: |

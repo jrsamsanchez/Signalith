@@ -132,6 +132,50 @@ month). Check the Hetzner Console afterwards if you want to be sure nothing is l
 If your internet address changed since you built the lab, `terraform apply` again
 updates the firewall.
 
+## Test everything
+
+Once the setup says `Lab ready.`, one command on signalith-1 tests the lab from end to end:
+
+```sh
+ssh root@<signalith-1 address>
+sudo lab-e2e
+```
+
+It makes the lab do what Signalith should notice, then checks through the API that each
+thing arrived and was acted on. It takes about 5 minutes:
+
+- **Servers and OpenSearch:** every server ready, the jobs held by one server, OpenSearch
+  green, the load balancer, the upgrade check and the Health page.
+- **Data coming in:** the agent on linux-1 (logs, logons, the audit log, process launches),
+  an OpenTelemetry record through the agent port, a syslog message when the receiver is on,
+  and the network sensor (Zeek and Suricata). When the web page and agents have separate
+  ports, it checks that each port does only its own job.
+- **Attacks and detections:** from the scanner, failed logons as 12 accounts that don't
+  exist; on linux-1, a new account, three wrong sudo passwords, password hashes read with
+  sudo, the EICAR test file (when ClamAV is installed), traffic to port 4444 and 30 unknown
+  DNS names; a threat intel indicator for the address it sent to on port 4444. Each matching detection is
+  run as **Run now** does and must find it and raise a finding. linux-1 must then have a
+  risk score. The findings go into a case, which is closed as benign (`--keep-findings`
+  leaves them open).
+- **Search, Ask and dashboards:** a set of searches (stats, timechart, eval, rex, dedup and
+  more), an Ask question, every dashboard's panels, the web page's scripts, compliance,
+  coverage, the audit log, retention and the shared settings export.
+- **Vulnerability scanning:** the scanner online and ready, OpenVAS, and the last scan.
+
+`sudo lab-e2e --all` also changes the lab for a while, and takes about 15 minutes more:
+it drains and resumes signalith-2, restarts the server that runs the jobs, stops OpenSearch
+on opensearch-3 and starts it again, and runs a vulnerability scan from the scanner.
+
+It ends with how many checks passed and failed, and writes the report to
+`/root/lab/e2e/latest/report.md`, failures first. To copy it to your PC (in PowerShell):
+
+```powershell
+scp root@<signalith-1 address>:/root/lab/e2e/latest/report.md .
+```
+
+If you changed the admin password, give it to the test:
+`sudo E2E_PASSWORD='<password>' lab-e2e`.
+
 ## After the setup
 
 ### Windows
