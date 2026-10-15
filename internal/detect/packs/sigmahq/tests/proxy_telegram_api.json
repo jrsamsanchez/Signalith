@@ -1,0 +1,5 @@
+{"rule": "b494b165-6634-483d-8c47-2026a6c52372", "cases": [
+  {"expect":true,"source":"synthesized","channel":"zeek:http","event_id":"proxy","data":{"cs-host":"api.telegram.org"}},
+  {"expect":false,"source":"synthesized","channel":"zeek:http","event_id":"proxy","data":{"c-useragent":"Telegram","cs-host":"api.telegram.org"}},
+  {"expect":false,"source":"synthesized","channel":"zeek:http","event_id":"proxy","data":{}}
+]}

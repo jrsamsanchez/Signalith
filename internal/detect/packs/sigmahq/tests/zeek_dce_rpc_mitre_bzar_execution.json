@@ -1,0 +1,13 @@
+{"rule": "b640c0b8-87f8-4daa-aef8-95a24261dd1d", "cases": [
+  {"expect":true,"source":"synthesized","channel":"zeek:dce_rpc","event_id":"","data":{"endpoint":"JobAdd","operation":"atsvc"}},
+  {"expect":true,"source":"synthesized","channel":"zeek:dce_rpc","event_id":"","data":{"endpoint":"svcctl","operation":"StartServiceW"}},
+  {"expect":true,"source":"synthesized","channel":"zeek:dce_rpc","event_id":"","data":{"endpoint":"ITaskSchedulerService","operation":"SchRpcEnableTask"}},
+  {"expect":true,"source":"synthesized","channel":"zeek:dce_rpc","event_id":"","data":{"endpoint":"ITaskSchedulerService","operation":"SchRpcRegisterTask"}},
+  {"expect":false,"source":"synthesized","channel":"zeek:dce_rpc","event_id":"","data":{"operation":"atsvc"}},
+  {"expect":false,"source":"synthesized","channel":"zeek:dce_rpc","event_id":"","data":{"endpoint":"JobAdd"}},
+  {"expect":false,"source":"synthesized","channel":"zeek:dce_rpc","event_id":"","data":{"operation":"StartServiceW"}},
+  {"expect":false,"source":"synthesized","channel":"zeek:dce_rpc","event_id":"","data":{"endpoint":"svcctl"}},
+  {"expect":false,"source":"synthesized","channel":"zeek:dce_rpc","event_id":"","data":{"operation":"SchRpcEnableTask"}},
+  {"expect":false,"source":"synthesized","channel":"zeek:dce_rpc","event_id":"","data":{"endpoint":"ITaskSchedulerService"}},
+  {"expect":false,"source":"synthesized","channel":"zeek:dce_rpc","event_id":"","data":{"operation":"SchRpcRegisterTask"}}
+]}

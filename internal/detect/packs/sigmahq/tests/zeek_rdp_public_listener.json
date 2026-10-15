@@ -1,0 +1,4 @@
+{"rule": "1fc0809e-06bf-4de3-ad52-25e5263b7623", "cases": [
+  {"expect":true,"source":"synthesized","channel":"zeek:rdp","event_id":"","data":{}},
+  {"expect":false,"source":"synthesized","channel":"zeek:rdp","event_id":"","data":{"id.orig_h":"::1"}}
+]}

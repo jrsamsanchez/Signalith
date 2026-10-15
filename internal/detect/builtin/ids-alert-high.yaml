@@ -17,5 +17,5 @@ risk:
     - {field: src, type: system}
     - {field: dest, type: system}
 enabled: true
-tags: [network, intrusion-detection]
+tags: [network, intrusion-detection, pci-dss:10.4.1, pci-dss:11.5.1, nist-800-53:SI-4, cis-v8:13.3]
 guidance: Open the events with the same community_id to see the connection, DNS lookup, web request and files of this flow. ET rules in the INFO and POLICY categories are mostly medium or low and do not raise this; if one rule is noisy here, add an exception on its signature_id (Don't alert on this again).

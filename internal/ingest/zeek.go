@@ -230,6 +230,13 @@ func ParseZeek(lt string, r map[string]any, raw string) Event {
 	}
 	if model == "Intrusion_Detection" {
 		setLocalHost(f)
+		// A notice about one address (an Address_Scan has no dst) has
+		// no direction: the scanner is local when its address is.
+		if _, ok := f["local_host"]; !ok && f["direction"] == nil {
+			if src := wstr(f["src"]); src != "" && localAddr(src) {
+				f["local_host"] = src
+			}
+		}
 	}
 	ev := Event{Model: model, Fields: f, ID: sensorDocID("zeek:"+lt, raw)}
 	if t, ok := zeekTime(r["ts"]); ok {
@@ -586,6 +593,39 @@ func zeekGeneric(lt string, r, f map[string]any) {
 		}
 		n++
 	}
+}
+
+// ZeekGenericField returns the field a key of a Zeek log without a
+// mapping of its own (ssh, rdp, smb_files, kerberos, dce_rpc, ...) is
+// stored as by zeekGeneric: the connection's 4-tuple, uid and Community
+// ID by their common names, any other key as zeek_<name>. It returns ""
+// for a key such a log never keeps (ts, _path, the sensor's name), and
+// for a log type that has a mapping of its own.
+func ZeekGenericField(lt, key string) string {
+	if zeekMapped[lt] {
+		return ""
+	}
+	switch key {
+	case "id.orig_h":
+		return "src"
+	case "id.orig_p":
+		return "src_port"
+	case "id.resp_h":
+		return "dest"
+	case "id.resp_p":
+		return "dest_port"
+	case "uid":
+		return "session_id"
+	case "community_id":
+		return "community_id"
+	}
+	if zeekSkip[key] && !(key == "hostname" && lt == "ntlm") {
+		return ""
+	}
+	if name := cleanFieldPart(key); name != "" {
+		return "zeek_" + name
+	}
+	return ""
 }
 
 // cleanFieldPart makes a key part of a field name: lower case [a-z0-9_],

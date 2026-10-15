@@ -350,7 +350,7 @@ func (p *parser) field(name string) (string, error) {
 		}
 		return "", fmt.Errorf("field %s has no Signalith mapping", name)
 	}
-	f, ok := strings.CutPrefix(name, p.node+".")
+	f, ok := strings.CutPrefix(name, nodePrefix(p.node)+".")
 	if !ok {
 		return "", fmt.Errorf("field %s is not a field of %s", name, p.node)
 	}

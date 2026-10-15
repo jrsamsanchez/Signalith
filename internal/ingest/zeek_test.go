@@ -161,6 +161,17 @@ func TestZeekNotice(t *testing.T) {
 	expect(t, d[1], map[string]any{"dest_host": "c2.badcorp.example", "src": "192.168.10.21", "dest": "203.0.113.66",
 		"dest_port": int64(8443), "direction": "outbound", "transport": "tcp", "local_host": "192.168.10.21"})
 	expect(t, d[0], map[string]any{"local_host": "192.168.10.5"})
+
+	// An Address_Scan notice names only the scanner: local_host is set
+	// when it is one of yours, so a scan from the internet has none.
+	for src, want := range map[string]any{"192.168.10.21": "192.168.10.21", "203.0.113.66": nil} {
+		r := map[string]any{"ts": 1791720000.0, "note": "Scan::Address_Scan", "src": src, "p": 445,
+			"msg": src + " scanned at least 25 unique hosts on port 445/tcp in 0m50s"}
+		got := ParseZeek("notice", r, "nsm-01").Fields
+		if got["local_host"] != want || got["direction"] != nil {
+			t.Errorf("Address_Scan from %s: local_host %v, direction %v", src, got["local_host"], got["direction"])
+		}
+	}
 }
 
 func TestZeekNTLMHostnameIsNotTheSensor(t *testing.T) {

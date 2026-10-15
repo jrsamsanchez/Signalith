@@ -1,0 +1,4 @@
+{"rule": "2b1ee7e4-89b6-4739-b7bb-b811b6607e5e", "cases": [
+  {"expect":true,"source":"synthesized","channel":"zeek:http","event_id":"proxy","data":{"c-uri":"http://downloads.example.com/pwndrop/","cs-host":"downloads.example.com"}},
+  {"expect":false,"source":"synthesized","channel":"zeek:http","event_id":"proxy","data":{}}
+]}

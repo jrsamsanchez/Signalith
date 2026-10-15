@@ -20,6 +20,8 @@ func (g *gen) attacks() {
 	g.malwareOutbreak()
 	g.antivirusHousekeeping()
 	g.vulnerabilityScan()
+	g.dnsTunnel()
+	g.networkHygiene()
 }
 
 // day returns a working-hour time n days before the end of the range.
@@ -161,16 +163,23 @@ func (g *gen) phishingIntrusion() {
 	g.sysmonNet(ws, alice, ws.IP, 51000, ipC2Beacon, "updates.corp-sync.example", 443, "tcp",
 		`C:\Users\alice.nguyen\update.exe`, t0.Add(16*time.Minute))
 	// The sensor sees the beacon: TLS to the C2 with a self-signed
-	// certificate every ten minutes for an hour, and a Suricata alert.
+	// certificate every five minutes for an hour, and a Suricata alert.
+	// The twelve small, short connections are also what the beaconing
+	// detection (network-beaconing, off by default) looks for.
 	g.sensorBeacon(ws, t0.Add(16*time.Minute))
-	// Command-and-control on a non-standard shell port (network-shell-port).
+	// Command-and-control on a non-standard shell port (network-shell-port),
+	// which the sensor sees too (network-sensor-shell-port).
 	g.sysmonNet(ws, alice, ws.IP, 51002, ipC2, "updates.corp-sync.example", 4444, "tcp",
 		`C:\Users\alice.nguyen\update.exe`, t0.Add(17*time.Minute))
+	g.zeekConnLog(g.newFlow(ws.IP, ipC2, 4444), t0.Add(17*time.Minute), "", "SF", 5200, 48000, 300.4, false)
 	// A little exfiltration over the firewall.
 	g.b.cef(ipFirewall, t0.Add(20*time.Minute), "Traffic", "100", "6", map[string]string{
 		"act": "allow", "src": ws.IP, "dst": ipExfil, "spt": "51010", "dpt": "443", "proto": "6",
 		"in": "2000", "out": "4500000",
 	})
+	// The sensor sees the real upload: 1.4 GB over TLS to the same
+	// address in half an hour (network-large-outbound-transfer).
+	g.zeekConnLog(g.newFlow(ws.IP, ipExfil, 443), t0.Add(21*time.Minute), "ssl", "SF", 1400000000, 2100000, 1820.6, false)
 	// The same invoice reaches a colleague; there an attack surface
 	// reduction rule stops Word from starting PowerShell.
 	fin2 := g.org.host("ws-fin-02")
@@ -181,11 +190,13 @@ func (g *gen) phishingIntrusion() {
 	g.story(Story{
 		ID:      "phishing-to-c2",
 		Title:   "Phishing to credential theft and C2",
-		Summary: "A finance workstation (ws-fin-07, Alice Nguyen) follows a phishing link to a look-alike sign-in site, opens a malicious invoice that launches encoded PowerShell, downloads a tool with certutil, dumps credentials with Mimikatz, turns off Defender's real-time protection, runs discovery, installs persistence and beacons to a command-and-control address. The network sensor sees the download and the beacon (Zeek logs and two high Suricata alerts). Microsoft Defender finds Mimikatz but cannot remove it. The domain, the tools and the C2 are all in the sample threat intel. The whole kill chain on one host, while on ws-fin-02 a protection rule stops the same invoice from starting PowerShell.",
+		Summary: "A finance workstation (ws-fin-07, Alice Nguyen) follows a phishing link to a look-alike sign-in site, opens a malicious invoice that launches encoded PowerShell, downloads a tool with certutil, dumps credentials with Mimikatz, turns off Defender's real-time protection, runs discovery, installs persistence and beacons to a command-and-control address. The network sensor sees the implant downloaded over plain HTTP, its beacon to a server with a self-signed certificate every five minutes, a connection on a reverse shell port and a 1.4 GB upload (Zeek logs and two high Suricata alerts). Microsoft Defender finds Mimikatz but cannot remove it. The domain, the tools and the C2 are all in the sample threat intel. The whole kill chain on one host, while on ws-fin-02 a protection rule stops the same invoice from starting PowerShell.",
 		Detections: []string{"endpoint-office-child-shell", "endpoint-encoded-powershell", "endpoint-lolbin-download",
 			"endpoint-credential-dumping", "endpoint-discovery-burst", "endpoint-scheduled-task",
 			"endpoint-service-created", "network-shell-port", "threat-activity",
-			"malware-detected", "malware-not-removed", "av-protection-disabled", "av-rule-block", "ids-alert-high"},
+			"malware-detected", "malware-not-removed", "av-protection-disabled", "av-rule-block", "ids-alert-high",
+			"network-http-executable-download", "network-tls-untrusted-cert",
+			"network-sensor-shell-port", "network-large-outbound-transfer"},
 	}, t0.Add(76*time.Minute), "ws-fin-07", alice, ipC2, ipC2Beacon, ipExfil)
 }
 

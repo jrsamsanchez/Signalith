@@ -45,6 +45,7 @@ type manifest struct {
 	Rules []struct {
 		ID   string `yaml:"id"`
 		File string `yaml:"file"`
+		Path string `yaml:"path"`
 	} `yaml:"rules"`
 }
 
@@ -119,7 +120,7 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		rule, err := splcheck.Parse(src, macros)
+		rule, err := splcheck.ParseWith(src, macros, splcheck.ParseOptions{Network: detect.SplunkNetworkRule(r.Path)})
 		if err != nil {
 			log.Fatalf("%s: %v", r.File, err)
 		}

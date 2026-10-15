@@ -154,6 +154,11 @@ var (
 // rename fields, format times and apply the rule's own (empty) filter
 // macro is understood; anything else is an error that says what.
 func Parse(src []byte, macros map[string]*Macro) (*Rule, error) {
+	return ParseWith(src, macros, ParseOptions{})
+}
+
+// ParseWith is Parse with options.
+func ParseWith(src []byte, macros map[string]*Macro, opt ParseOptions) (*Rule, error) {
 	var r Rule
 	if err := yaml.Unmarshal(src, &r); err != nil {
 		return nil, err
@@ -178,6 +183,13 @@ func Parse(src []byte, macros map[string]*Macro) (*Rule, error) {
 	}
 	first := summariesRe.ReplaceAllString("| "+stages[0], "")
 	m := tstatsRe.FindStringSubmatch(first)
+	if opt.Network {
+		if _, nm, ok := sensorNode(first); ok {
+			m = nm
+		} else if m == nil {
+			return nil, errors.New("search is not a tstats search of Network_Traffic, Network_Resolution or Web")
+		}
+	}
 	if m == nil {
 		return nil, errors.New("search is not a tstats search of Endpoint.Processes, Filesystem, Registry or Web")
 	}
@@ -187,7 +199,10 @@ func Parse(src []byte, macros map[string]*Macro) (*Rule, error) {
 		r.Node = "Web"
 	}
 	fields, ok := Nodes[r.Node]
-	if !ok || (m[2] == "Network_Traffic") != (r.Node == "All_Traffic") || strings.EqualFold(m[2], "Web") != (r.Node == "Web") {
+	if !opt.Network && IsSensorNode(r.Node) {
+		ok = false
+	}
+	if !ok || !IsSensorNode(r.Node) && ((m[2] == "Network_Traffic") != (r.Node == "All_Traffic") || strings.EqualFold(m[2], "Web") != (r.Node == "Web")) {
 		return nil, fmt.Errorf("data model node %s.%s is not supported", m[2], r.Node)
 	}
 	var present []Expr
