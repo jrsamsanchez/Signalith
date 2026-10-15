@@ -89,8 +89,8 @@ func TestSensorStatusOddValues(t *testing.T) {
 	}
 	// A failed tuning: its error is kept, cut short; a hash that is not
 	// hex and an error with control characters are not.
-	ev := Normalize(SensorStatusTag, map[string]any{"log": `{"kind":"signalith-sensor-status","v":1,"suricata":{"running":true},"tuning":{"hash":"ABC;rm","result":"failed","error":"` + strings.Repeat("e", 300) + `"},"warnings":["tuning_failed"]}`}, now)
-	if s := ev.Sensor; s == nil || s.TuningHash != "" || s.TuningResult != "failed" || len(s.TuningError) != 200 || len(s.Warnings) != 1 || s.Warnings[0] != "tuning_failed" {
+	ev := Normalize(SensorStatusTag, map[string]any{"log": `{"kind":"signalith-sensor-status","v":1,"suricata":{"running":true},"tuning":{"hash":"ABC;rm","result":"failed","failed":"0123456789ab","error":"` + strings.Repeat("e", 300) + `"},"warnings":["tuning_failed"]}`}, now)
+	if s := ev.Sensor; s == nil || s.TuningHash != "" || s.TuningResult != "failed" || s.TuningFailed != "0123456789ab" || len(s.TuningError) != 200 || len(s.Warnings) != 1 || s.Warnings[0] != "tuning_failed" {
 		t.Errorf("failed tuning: %+v", ev.Sensor)
 	}
 	if w, _ := ev.Document()["sensor_warnings"].([]string); len(w) != 1 || w[0] != "tuning_failed" {

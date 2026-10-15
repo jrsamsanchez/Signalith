@@ -284,9 +284,26 @@ func TestSensorChecks(t *testing.T) {
 		"tuning stale":   {agentinv.Agent{LastSeen: now, Sensor: healthy()}, tuningNow{Hash: "111111111111", Saved: now.Add(-time.Hour)}, "active", "tuning", "stale"},
 		"tuning failed": {agentinv.Agent{LastSeen: now, Sensor: func() *ingest.SensorStatus {
 			s := healthy()
-			s.TuningResult, s.TuningError, s.Warnings = "failed", "rule 3 invalid", []string{"tuning_failed"}
+			s.TuningResult, s.TuningError, s.TuningFailed, s.Warnings = "failed", "rule 3 invalid", "111111111111", []string{"tuning_failed"}
 			return s
 		}()}, tuningNow{Hash: "111111111111", Saved: now.Add(-5 * time.Minute)}, "active", "tuning", "failed"},
+		// It failed a tuning before the one saved 5 minutes ago, which it
+		// has not tested yet: pending, not failed.
+		"older tuning failed, new one saved": {agentinv.Agent{LastSeen: now, Sensor: func() *ingest.SensorStatus {
+			s := healthy()
+			s.TuningResult, s.TuningError, s.TuningFailed, s.Warnings = "failed", "rule 3 invalid", "222222222222", []string{"tuning_failed"}
+			return s
+		}()}, tuningNow{Hash: "111111111111", Saved: now.Add(-5 * time.Minute)}, "active", "", "pending"},
+		"older tuning failed, new one not fetched": {agentinv.Agent{LastSeen: now, Sensor: func() *ingest.SensorStatus {
+			s := healthy()
+			s.TuningResult, s.TuningError, s.TuningFailed = "failed", "rule 3 invalid", "222222222222"
+			return s
+		}()}, tuningNow{Hash: "111111111111", Saved: now.Add(-time.Hour)}, "active", "tuning", "stale"},
+		"tuning failed, which one not said": {agentinv.Agent{LastSeen: now, Sensor: func() *ingest.SensorStatus {
+			s := healthy()
+			s.TuningResult, s.TuningError = "failed", "rule 3 invalid"
+			return s
+		}()}, tuningNow{Hash: "111111111111", Saved: now.Add(-time.Hour)}, "active", "tuning", "failed"},
 		"old script, tuning saved": {agentinv.Agent{LastSeen: now, Sensor: func() *ingest.SensorStatus {
 			s := healthy()
 			s.TuningResult, s.TuningHash = "", ""
@@ -309,6 +326,72 @@ func TestSensorChecks(t *testing.T) {
 		got, tuning := problems(c.a, c.tn, c.token)
 		if strings.Join(got, " ") != c.want || tuning.State != c.tuning {
 			t.Errorf("%s: problems %v tuning %+v", name, got, tuning)
+		}
+	}
+}
+
+// A tuning written to OpenSearch some other way than a save is checked
+// again before a sensor gets it: one that fails is refused whole, once
+// logged for the audit trail.
+func TestSensorTuningFetchRechecks(t *testing.T) {
+	ts, _, docs, logs := newTuningServer(t)
+	_, sensor := makeToken(t, ts, "nsm token", "sensor")
+	bad := sensortune.Tuning{Local: "alert tcp any any -> any any (msg:\"x\"; lua:evil.lua; sid:1000001;)"}
+	if _, err := docs.Create(context.Background(), "st_endpoints", "sensor-tuning", map[string]any{"kind": "sensor_tuning", "tuning": bad}, true); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		code, h, body := sensorGet(t, ts, "/api/sensor/tuning", sensor)
+		if code != 503 || strings.Contains(body, "lua") || strings.Contains(body, "[local]") || h.Get("ETag") != "" {
+			t.Errorf("tampered tuning: %d %v %s", code, h, body)
+		}
+	}
+	if l := logs.String(); strings.Count(l, "fails the checks of a save") != 1 || !strings.Contains(l, "audit=true") {
+		t.Errorf("log: %s", l)
+	}
+}
+
+// The audit line of a save says what changed.
+func TestSensorTuningAuditDiff(t *testing.T) {
+	ts, _, _, logs := newTuningServer(t)
+	code, out := putTuning(t, ts, "admin", adminPass, map[string]string{"disable": "2014520\n2014521"}, "0.0")
+	if code != 200 {
+		t.Fatalf("save: %d %v", code, out)
+	}
+	code, out = putTuning(t, ts, "admin", adminPass, map[string]string{"disable": "2014521\nre:.", "threshold": "suppress gen_id 1, sig_id 2013028"}, out["version"].(string))
+	if code != 200 {
+		t.Fatalf("second save: %d %v", code, out)
+	}
+	l := logs.String()
+	last := l[strings.LastIndex(l, `msg="sensor rule tuning saved"`):]
+	for _, want := range []string{`disable_added=[re:.]`, `disable_removed=[2014520]`, `threshold_added="[suppress gen_id 1, sig_id 2013028]"`, "previous_hash="} {
+		if !strings.Contains(last, want) {
+			t.Errorf("audit has no %s: %s", want, last)
+		}
+	}
+	if strings.Contains(last, "local_") {
+		t.Errorf("unchanged field audited: %s", last)
+	}
+}
+
+// Why a sensor refused the tuning (which can quote it) is for admins: the
+// Endpoints page's agent list leaves it out for the others.
+func TestAgentsHideTuningErrorFromAnalysts(t *testing.T) {
+	ts, _, _, _ := newTuningServer(t)
+	_, sensor := makeToken(t, ts, "nsm-01 token", "sensor")
+	hdr := map[string]string{"X-Signalith-Tag": "sensor.status", "X-Signalith-Agent": "nsm-01"}
+	line := statusLine(time.Now(), `,"tuning":{"hash":"abcdefabcdef","result":"failed","error":"rule secret-local-rule is bad","failed":"123456123456"},"warnings":["tuning_failed"]`)
+	if code, body := agentSend(t, ts.URL, "/api/ingest", sensor, line, hdr); code != 200 {
+		t.Fatalf("send: %d %s", code, body)
+	}
+	for user, pass := range map[string]string{"andy": "role-password", "admin": adminPass} {
+		code, _, raw := call(t, ts, "GET", "/api/agents", "", user, pass, nil)
+		if code != 200 || !strings.Contains(raw, `"tuning_result":"failed"`) {
+			t.Fatalf("%s: %d %s", user, code, raw)
+		}
+		shown := strings.Contains(raw, "secret-local-rule") || strings.Contains(raw, "abcdefabcdef") || strings.Contains(raw, "123456123456")
+		if shown != (user == "admin") {
+			t.Errorf("%s: tuning detail shown %v: %s", user, shown, raw)
 		}
 	}
 }

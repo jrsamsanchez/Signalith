@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -63,6 +64,17 @@ func TestValidateLines(t *testing.T) {
 		{Tuning{Local: "alert http any any -> any any (filestore; sid:1000001;)"}, FieldLocal, 1, "cannot use filestore"},
 		{Tuning{Local: "alert ip any any -> any any (iprep:src,cat,>,10; sid:1000001;)"}, FieldLocal, 1, "cannot use iprep"},
 		{Tuning{Local: "alert tcp any any -> any any (sid:1000001;) \\"}, FieldLocal, 1, "one whole rule"},
+		{Tuning{Local: "alert http any any -> any any (datajson:isset,x,type string,load /etc/x.json; sid:1000001;)"}, FieldLocal, 1, "cannot use datajson"},
+		{Tuning{Local: "alert http any any -> any any (filesha256:/etc/shadow; sid:1000001;)"}, FieldLocal, 1, "cannot use filesha256"},
+		// Commented out, suricata-update still reads it as a disabled rule.
+		{Tuning{Local: "alert ip any any -> any any (sid:1000001;)\n# alert tcp any any -> any any (msg:\"x\"; lua:x.lua; sid:1000002;)"}, FieldLocal, 2, "even commented out"},
+		{Tuning{Local: "##  ALERT http any any -> any any (filestore; sid:1000002;)"}, FieldLocal, 1, "cannot use filestore"},
+		// Line numbers count the blank lines at the start of the box.
+		{Tuning{Local: "\n\nhello"}, FieldLocal, 3, "one whole rule"},
+		{Tuning{Disable: "\ufeff\r\n\r\nfoo"}, FieldDisable, 3, "SID"},
+		{Tuning{Disable: "re:(a+)+$"}, FieldDisable, 1, "simpler pattern"},
+		{Tuning{Disable: "re:(x|y*){2,}"}, FieldDisable, 1, "simpler pattern"},
+		{Tuning{Disable: "re:(a)\\1"}, FieldDisable, 1, "simpler pattern"},
 	}
 	for _, c := range bad {
 		err := c.tu.Normalize().Validate()
@@ -85,9 +97,49 @@ func TestValidateLines(t *testing.T) {
 	}
 }
 
+// Every Suricata rule keyword that runs a script or reads or writes a file
+// on the sensor is refused. When Suricata adds such a keyword, add it here
+// and to ForbiddenKeywords (and to docs/network-sensor.md).
+func TestForbiddenKeywordsReviewed(t *testing.T) {
+	io := map[string]string{
+		"lua":        "runs a Lua script",
+		"luajit":     "runs a Lua script",
+		"luaxform":   "runs a Lua script as a transform",
+		"dataset":    "loads and saves a data file",
+		"datarep":    "loads a reputation file",
+		"datajson":   "loads a JSON file",
+		"iprep":      "reads the IP reputation files",
+		"filemd5":    "loads a hash list file",
+		"filesha1":   "loads a hash list file",
+		"filesha256": "loads a hash list file",
+		"filestore":  "writes files to disk",
+	}
+	if len(io) != len(ForbiddenKeywords) {
+		t.Errorf("ForbiddenKeywords %v and this list differ", ForbiddenKeywords)
+	}
+	for kw, why := range io {
+		for _, form := range []string{kw + ":x", kw, strings.ToUpper(kw) + " : x"} {
+			l := "alert http any any -> any any (msg:\"t\"; " + form + "; sid:1000001;)"
+			err := Tuning{Local: l}.Normalize().Validate()
+			if err == nil || !strings.Contains(err.Error(), "cannot use "+kw) {
+				t.Errorf("%s (%s): %q: %v", kw, why, l, err)
+			}
+			if err := (Tuning{Local: "# " + l}).Normalize().Validate(); err == nil {
+				t.Errorf("%s commented out: allowed", kw)
+			}
+		}
+	}
+	// Keywords that only match on what was seen stay allowed.
+	for _, ok := range []string{"filename:\"a.exe\"", "filemagic:\"PE32\"", "content:\"lua\"", "fileext:\"exe\""} {
+		if err := (Tuning{Local: "alert http any any -> any any (" + ok + "; sid:1000001;)"}).Normalize().Validate(); err != nil {
+			t.Errorf("%s: %v", ok, err)
+		}
+	}
+}
+
 func TestNormalizeAndCounts(t *testing.T) {
 	tu := Tuning{Disable: "\ufeff\r\n2014520  \r\n# off\r\n\r\n1:2\t\r\n\r\n", Local: "\n\nalert ip any any -> any any (sid:5;)\n"}.Normalize()
-	if tu.Disable != "2014520\n# off\n\n1:2" || tu.Local != "alert ip any any -> any any (sid:5;)" {
+	if tu.Disable != "\n2014520\n# off\n\n1:2" || tu.Local != "\n\nalert ip any any -> any any (sid:5;)" {
 		t.Errorf("normalized: %q %q", tu.Disable, tu.Local)
 	}
 	if c := tu.Counts(); c[FieldDisable] != 2 || c[FieldThreshold] != 0 || c[FieldLocal] != 1 {
@@ -183,4 +235,19 @@ func FuzzValidate(f *testing.F) {
 			}
 		}
 	})
+}
+
+func TestDiff(t *testing.T) {
+	added, removed := Diff("2014520\n\n2014521\n2014521", "2014521\nre:.\n2014522\n")
+	if strings.Join(added, "|") != "re:.|2014522" || strings.Join(removed, "|") != "2014520|2014521" {
+		t.Errorf("added %q removed %q", added, removed)
+	}
+	many := ""
+	for i := 0; i < maxDiffLines+5; i++ {
+		many += strconv.Itoa(i) + "\n"
+	}
+	added, removed = Diff("", many+strings.Repeat("y", 1000))
+	if len(added) != maxDiffLines+1 || added[maxDiffLines] != "(and 6 more lines)" || len(removed) != 0 {
+		t.Errorf("many: %d %q", len(added), added[len(added)-1])
+	}
 }

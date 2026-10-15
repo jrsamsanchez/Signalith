@@ -605,7 +605,7 @@ in the format Suricata already uses:
 
 | Box | File | One per line |
 | --- | --- | --- |
-| **Rules to turn off** | `disable.conf` | A rule's SID (`2013504`), `gid:sid` (`1:2013504`), `re:` and a pattern matched against the rule (`re:ET POLICY Dropbox`), `group:` and a rules file name (`group:emerging-games.rules`), or `metadata:` with a key and value. |
+| **Rules to turn off** | `disable.conf` | A rule's SID (`2013504`), `gid:sid` (`1:2013504`), `re:` and a pattern matched against the rule (`re:ET POLICY Dropbox`), `group:` and a rules file name (`group:emerging-games.rules`), or `metadata:` with a key and value. A pattern may not repeat a group that itself repeats, such as `(a+)+`, nor refer back to a group (`\1`): `suricata-update` could take hours on it. |
 | **Limits and suppressions** | `threshold.config` | `suppress`, `threshold`, `event_filter` or `rate_filter`, such as `suppress gen_id 1, sig_id 2010935, track by_src, ip 10.0.5.20`. |
 | **Your own rules** | `local.rules` | One whole Suricata rule, each with a `sid` of its own, best from 1000000 to 1999999 (the range set aside for local rules), such as `alert tls any any -> any any (msg:"Old TLS"; tls.version:1.0; sid:1000001; rev:1;)`. |
 
@@ -621,12 +621,21 @@ every 10 minutes, over HTTPS, checking Signalith's certificate, with the sensor'
 only a sensor token can read it. The answer carries a hash; when nothing changed, Signalith
 answers "not modified" and the sensor does nothing. A new tuning is written to
 `/var/lib/signalith-sensor/tuning` (which only root writes), and the rules are rebuilt with
-it: `suricata-update` has Suricata test them first. If the test passes, Suricata reloads them
-without stopping; if it fails, the sensor puts back the files it had, keeps running on them,
-and its card says **The rule tuning failed its test**, with Suricata's reason. Fix the line and
-save: the sensor tries the new tuning within 10 minutes, and does not try a failed tuning
-again until it changes. Nothing in the tuning is ever run as a command: it is only written to
-these files.
+it: `suricata-update` has Suricata test them first, from its last download when it has one.
+If the test passes, Suricata reloads them without stopping. If it fails, the sensor puts back
+the files it had and builds the rules again without the new tuning: when that passes, the
+tuning was at fault, the sensor keeps running on the files it had, and its card says **The
+rule tuning failed its test**, with Suricata's reason. Fix the line and save: the sensor
+tries the new tuning within 10 minutes, and does not try a failed tuning again until it
+changes. When the rules fail without the tuning too (say the rules download failed), nothing
+is said against the tuning: the sensor tries it again on its next run. A run that takes
+longer than 15 minutes is stopped and counts as a failed test. Nothing in the tuning is ever
+run as a command: it is only written to these files.
+
+Suricata's test checks the rules to turn off and your own rules. A line of **Limits and
+suppressions** that Suricata cannot read is only logged by Suricata, not refused, so for that
+box Signalith's own check at save time is what stands between a typo and the sensors: it
+accepts only the forms in the table above.
 
 The card shows **Fetching the new rule tuning** for up to 20 minutes after a save, then
 **Runs an old rule tuning** if the sensor still has not got it (its last error says why, such
@@ -644,9 +653,13 @@ tuning**. Run the install line again on them (from **Add data > Network sensor**
 their settings and adds the timer.
 
 **Refused in your own rules**: the keywords `lua`, `luajit`, `luaxform`, `dataset`,
-`datarep`, `filestore` and `iprep`. They run scripts or read and write files on the sensor,
-which a line typed on Signalith should never be able to do. Load rules that need them with
-`--local-rules` on the sensor itself.
+`datarep`, `datajson`, `iprep`, `filemd5`, `filesha1`, `filesha256` and `filestore`, also
+in a rule that is commented out (`suricata-update` reads one as a turned-off rule, which an
+`enable.conf` on the sensor can turn on). They run scripts or read and write files on the
+sensor, which a line typed on Signalith should never be able to do. Load rules that need them
+with `--local-rules` on the sensor itself. Signalith checks the tuning again each time a
+sensor fetches it, so one written to OpenSearch some other way, without these checks, reaches
+no sensor: they keep the tuning they have, and Signalith logs it for the audit trail.
 
 Limits: 256 KB a box and 8 KB a line; at most 5,000 rules to turn off, 2,000 limits and
 5,000 rules of your own.
@@ -685,7 +698,9 @@ Air-gapped networks can load rules from a file: `suricata-update --local /path/t
   gets it; set up by hand, it is in `/etc/fluent-bit/fluent-bit.conf` (mode 600).
 - **Rule tuning.** Sensors fetch it with their own token, over HTTPS only; an admin's
   sign-in, another kind of token or no token at all gets nothing. Only admins can read or
-  change it on Signalith, and each save is in the audit log, with who saved it. The sensor
+  change it on Signalith, and each save is in the audit log, with who saved it and the lines
+  added to and removed from each box. Why a sensor refused the tuning (which can quote it)
+  shows to admins only, on **Settings > Network sensors**. The sensor
   checks the answer's hash, writes it to files only root can change, and never runs any of
   it; Signalith refuses rule keywords that run scripts or touch files (see
   [Rule tuning from Signalith](#rule-tuning-from-signalith)). It is stored with Signalith's

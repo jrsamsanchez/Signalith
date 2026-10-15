@@ -247,7 +247,10 @@
       const title = TUNING[c.state] || 'Rule tuning';
       if (c.state === 'pending') return { state: 'info', title, text: 'Sensors fetch the tuning within 10 minutes of a save, and test it before they use it.' };
       if (c.ok) return { state: 'ok', title, text: '' };
-      if (c.state === 'failed') return { state: 'fail', title, text: sensorText.warning('tuning_failed', { tuning_error: c.detail }) };
+      if (c.state === 'failed') {
+        return { state: 'fail', title, text: 'Suricata refused the rule tuning saved last, so the sensor keeps the tuning it had' + (c.detail ? ': ' + c.detail : '') +
+          '. Fix the line in Rule tuning and save; the sensor tries again within 10 minutes.' };
+      }
       if (c.state === 'old_script') {
         return { state: 'warn', title, text: 'It was installed before Signalith had rule tuning. Run the install line from Add data > Network sensor on it again: it keeps its settings and starts fetching the tuning.' };
       }

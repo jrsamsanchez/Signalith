@@ -237,10 +237,14 @@ type Server struct {
 	secOnce       sync.Once
 	sec           *SecurityChecker
 	caMu          sync.Mutex // one change of certificate authority at a time
-	blockedLog    logOnce    // blocked osquery hosts that tried to enroll
-	tokensOnce    sync.Once
-	tokenRate     tokenRate         // agent token creation
-	sensorCache   sensorHealthCache // the Health page's network sensor counts
+	// badTuning is the hash of the stored rule tuning last refused to
+	// sensors (refusedTuning), so it is logged once.
+	badTuningMu sync.Mutex
+	badTuning   string
+	blockedLog  logOnce // blocked osquery hosts that tried to enroll
+	tokensOnce  sync.Once
+	tokenRate   tokenRate         // agent token creation
+	sensorCache sensorHealthCache // the Health page's network sensor counts
 }
 
 // EventAge is what keeps the age of events the server accepts in step

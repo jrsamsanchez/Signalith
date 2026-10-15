@@ -66,13 +66,15 @@ type SensorStatus struct {
 	// TuningHash is the start of the hash of the rule tuning the sensor
 	// runs (sensortune.ShortHash), TuningResult how its last fetch went
 	// (ok, failed, unreachable, never), TuningApplied when the tuning in
-	// use was applied (RFC 3339) and TuningError why the last one failed.
-	// All empty for a sensor whose script fetches no tuning. They are
+	// use was applied (RFC 3339) and TuningError why the last one failed;
+	// TuningFailed is the start of the hash of the tuning that failed its
+	// test (that one is not the tuning the sensor runs). All empty for a sensor whose script fetches no tuning. They are
 	// kept for the Settings page only, never as event fields.
 	TuningHash    string `json:"tuning_hash,omitempty"`
 	TuningResult  string `json:"tuning_result,omitempty"`
 	TuningApplied string `json:"tuning_applied,omitempty"`
 	TuningError   string `json:"tuning_error,omitempty"`
+	TuningFailed  string `json:"tuning_failed,omitempty"`
 }
 
 // SensorTool is one of the sensor's programs.
@@ -107,6 +109,7 @@ func parseSensorStatus(r map[string]any) Event {
 		TuningResult:  word(wget(rec, "tuning", "result")),
 		TuningApplied: word(wget(rec, "tuning", "applied")),
 		TuningError:   sentence(wget(rec, "tuning", "error")),
+		TuningFailed:  hexWord(wget(rec, "tuning", "failed")),
 	}
 	if t, err := time.Parse(time.RFC3339, wstr(rec["time"])); err == nil {
 		s.At = t.UTC()

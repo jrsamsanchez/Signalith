@@ -54,13 +54,17 @@ printf 'HTTP/1.1 200 OK\r\nETag: "%s"\r\n\r\n' "$etag" >"$head"
 printf 200
 `, 0o755)
 	// suricata-update: logs its arguments and the tuning it was given;
-	// fails while $STUB/fail exists.
+	// fails while $STUB/fail exists (a failed download), or while the
+	// tuning holds the SID in $STUB/refuse (a refused tuning); hangs while
+	// $STUB/hang exists.
 	mustWrite(t, filepath.Join(bin, "suricata-update"), `#!/bin/sh
 printf '%s\n' "$*" >>"$STUB/su-argv"
 for a in "$@"; do
   case "$a" in */tuning/disable.conf) cp "$a" "$STUB/su-disable" ;; esac
 done
-if [ -f "$STUB/fail" ]; then echo "1/1/2026 -- 10:00:00 - <Error> -- Suricata test failed: bad threshold"; exit 1; fi
+if [ -f "$STUB/hang" ]; then sleep 30; fi
+if [ -f "$STUB/fail" ]; then echo "1/1/2026 -- 10:00:00 - <Error> -- Failed to download https://rules.emergingthreats.net/: name resolution"; exit 1; fi
+if [ -f "$STUB/refuse" ] && grep -q "$(cat "$STUB/refuse")" "$STUB/su-disable"; then echo "1/1/2026 -- 10:00:00 - <Error> -- Suricata test failed: bad threshold"; exit 1; fi
 for a in "$@"; do last=$a; done
 data=$(printf '%s\n' "$*" | sed -n 's/.*--data-dir \([^ ]*\).*/\1/p')
 mkdir -p "$data/rules"
@@ -83,10 +87,23 @@ func (tm *tuningMachine) serve(t *testing.T, tu sensortune.Tuning, etag string) 
 	mustWrite(t, filepath.Join(tm.stub, "etag"), etag, 0o644)
 }
 
+// refuse makes the stub suricata-update fail while the disable.conf it
+// is given holds sid, as a refused tuning; "" stops that.
+func (tm *tuningMachine) refuse(t *testing.T, sid string) {
+	t.Helper()
+	p := filepath.Join(tm.stub, "refuse")
+	if sid == "" {
+		os.Remove(p)
+		return
+	}
+	mustWrite(t, p, sid, 0o644)
+}
+
 func (tm *tuningMachine) run(t *testing.T, args ...string) (string, error) {
 	t.Helper()
 	cmd := exec.Command("sh", append([]string{filepath.Join(tm.root, "usr/lib/signalith-sensor/rules-update.sh")}, args...)...)
-	cmd.Env = append(os.Environ(), "PATH="+tm.path, "STUB="+tm.stub, "STUB_TOKEN="+testToken, "SIGNALITH_SENSOR_ROOT="+tm.root, "SIGNALITH_TOKEN=")
+	cmd.Env = append(os.Environ(), "PATH="+tm.path, "STUB="+tm.stub, "STUB_TOKEN="+testToken, "SIGNALITH_SENSOR_ROOT="+tm.root, "SIGNALITH_TOKEN=",
+		"SIGNALITH_RULES_TIMEOUT=2")
 	out, err := cmd.CombinedOutput()
 	return string(out), err
 }
@@ -201,13 +218,13 @@ func TestSensorTuningFetch(t *testing.T) {
 		t.Error("no If-None-Match")
 	}
 
-	// A tuning that fails its test: the one before stays, and is not
-	// tried again until it changes. With a download kept, it rebuilds
-	// offline.
+	// A tuning that fails its test (the stub refuses 2014521 only, so the
+	// rules pass without it): the one before stays, and is not tried
+	// again until it changes. With a download kept, it rebuilds offline.
 	mustWrite(t, filepath.Join(tm.root, "var/lib/signalith-sensor/suricata/update/cache/etopen.tar.gz"), "x", 0o644)
 	two := sensortune.Tuning{Disable: "2014521"}
 	tm.serve(t, two, "")
-	mustWrite(t, filepath.Join(tm.stub, "fail"), "", 0o644)
+	tm.refuse(t, "2014521")
 	if _, err := tm.run(t, "tuning"); err == nil {
 		t.Error("a failed tuning exited 0")
 	}
@@ -224,11 +241,14 @@ func TestSensorTuningFetch(t *testing.T) {
 	if st["TUNING_RESULT"] != "failed" || st["TUNING_HASH"] != one.Hash()[:12] || !strings.Contains(st["TUNING_ERROR"], "Suricata test failed: bad threshold") {
 		t.Errorf("failed state: %v", st)
 	}
-	if su := readFile(t, filepath.Join(tm.stub, "su-argv")); !strings.Contains(su, "--offline") {
-		t.Errorf("not offline: %s", su)
+	if st["TUNING_FAILED"] != two.Hash() {
+		t.Errorf("TUNING_FAILED: %v", st)
+	}
+	if su := readFile(t, filepath.Join(tm.stub, "su-argv")); strings.Count(su, "--offline") != 2 || strings.Count(su, "\n") != 2 {
+		t.Errorf("not tried offline, with then without the tuning: %s", su)
 	}
 	os.Remove(filepath.Join(tm.stub, "su-argv"))
-	os.Remove(filepath.Join(tm.stub, "fail"))
+	tm.refuse(t, "")
 	if out, err := tm.run(t, "tuning"); err != nil {
 		t.Fatalf("the failed one again: %v\n%s", err, out)
 	}
@@ -250,7 +270,7 @@ func TestSensorTuningFetch(t *testing.T) {
 		t.Fatal(err)
 	}
 	tu, _ := line["tuning"].(map[string]any)
-	if tu["hash"] != one.Hash()[:12] || tu["result"] != "failed" || !strings.Contains(tu["error"].(string), "bad threshold") || !strings.Contains(jsonString(t, line["warnings"]), `"tuning_failed"`) {
+	if tu["hash"] != one.Hash()[:12] || tu["result"] != "failed" || tu["failed"] != two.Hash()[:12] || !strings.Contains(tu["error"].(string), "bad threshold") || !strings.Contains(jsonString(t, line["warnings"]), `"tuning_failed"`) {
 		t.Errorf("status line: %v", line)
 	}
 
@@ -310,8 +330,7 @@ func TestSensorTuningDaily(t *testing.T) {
 	}
 	// A tuning suricata-update refuses (the stub fails only when it sees
 	// 2014521): the rules still update, without it.
-	stub := filepath.Join(tm.stub, "bin", "suricata-update")
-	mustWrite(t, stub, strings.Replace(readFile(t, stub), `if [ -f "$STUB/fail" ]`, `if grep -q 2014521 "$STUB/su-disable"`, 1), 0o755)
+	tm.refuse(t, "2014521")
 	tm.serve(t, sensortune.Tuning{Disable: "2014521"}, "")
 	out, err := tm.run(t)
 	if err != nil {
@@ -324,6 +343,89 @@ func TestSensorTuningDaily(t *testing.T) {
 		t.Errorf("rules.state: %s", rs)
 	}
 	if got := tm.file(t, "server.disable.conf"); got != "2014520\n" {
+		t.Errorf("server.disable.conf: %q", got)
+	}
+}
+
+// A failed download is not a refused tuning: when the rules fail without
+// the tuning too, the tuning is not marked as failed, and the next run
+// tries it again.
+func TestSensorTuningDownloadFails(t *testing.T) {
+	for _, mode := range []string{"tuning", "daily"} {
+		t.Run(mode, func(t *testing.T) {
+			tm := newTuningMachine(t)
+			var args []string
+			if mode == "tuning" {
+				args = []string{"tuning"}
+			}
+			one := sensortune.Tuning{Disable: "2014520", Local: "alert tcp any any -> $HOME_NET 23 (msg:\"Telnet\"; sid:1000001; rev:1;)"}
+			tm.serve(t, one, "")
+			mustWrite(t, filepath.Join(tm.stub, "fail"), "", 0o644)
+			if _, err := tm.run(t, args...); err == nil {
+				t.Error("a failed download exited 0")
+			}
+			st := tm.state(t)
+			if st["TUNING_FAILED"] != "" || st["TUNING_RESULT"] != "unreachable" || !strings.Contains(st["TUNING_ERROR"], "Failed to download") {
+				t.Errorf("state: %v", st)
+			}
+			if got := tm.file(t, "server.disable.conf"); got != "" {
+				t.Errorf("server.disable.conf: %q", got)
+			}
+			if su := readFile(t, filepath.Join(tm.stub, "su-argv")); strings.Count(su, "\n") != 2 || strings.Contains(su, "--offline") {
+				t.Errorf("suricata-update: %s", su)
+			}
+			// The download works again: the same tuning is applied.
+			os.Remove(filepath.Join(tm.stub, "fail"))
+			if out, err := tm.run(t, args...); err != nil {
+				t.Fatalf("again: %v\n%s", err, out)
+			}
+			if st := tm.state(t); st["TUNING_RESULT"] != "ok" || st["TUNING_HASH"] != one.Hash()[:12] || tm.file(t, "server.disable.conf") != "2014520\n" {
+				t.Errorf("again: %v", st)
+			}
+		})
+	}
+}
+
+// The daily update tests a new tuning from the last download first, then
+// downloads the rules with the tuning that passed.
+func TestSensorTuningDailyOfflineFirst(t *testing.T) {
+	tm := newTuningMachine(t)
+	mustWrite(t, filepath.Join(tm.root, "var/lib/signalith-sensor/suricata/update/cache/etopen.tar.gz"), "x", 0o644)
+	one := sensortune.Tuning{Disable: "2014520"}
+	tm.serve(t, one, "")
+	if out, err := tm.run(t); err != nil {
+		t.Fatalf("daily: %v\n%s", err, out)
+	}
+	su := strings.Split(strings.TrimSpace(readFile(t, filepath.Join(tm.stub, "su-argv"))), "\n")
+	if len(su) != 2 || !strings.Contains(su[0], "--offline") || strings.Contains(su[1], "--offline") {
+		t.Errorf("suricata-update: %q", su)
+	}
+	if st := tm.state(t); st["TUNING_RESULT"] != "ok" || !strings.Contains(readFile(t, filepath.Join(tm.stub, "su-disable")), "2014520") {
+		t.Errorf("state: %v", st)
+	}
+}
+
+// A suricata-update that never ends (a rule pattern that backtracks
+// forever) is stopped, and the tuning that made it hang is refused.
+func TestSensorTuningHangs(t *testing.T) {
+	if _, err := exec.LookPath("timeout"); err != nil {
+		t.Skip("no timeout command")
+	}
+	tm := newTuningMachine(t)
+	mustWrite(t, filepath.Join(tm.root, "var/lib/signalith-sensor/suricata/update/cache/etopen.tar.gz"), "x", 0o644)
+	bad := sensortune.Tuning{Disable: "re:2014521"}
+	tm.serve(t, bad, "")
+	// It hangs with the tuning only.
+	stub := filepath.Join(tm.stub, "bin", "suricata-update")
+	mustWrite(t, stub, strings.Replace(readFile(t, stub), `if [ -f "$STUB/hang" ]`, `if grep -q 're:2014521' "$STUB/su-disable"`, 1), 0o755)
+	if _, err := tm.run(t, "tuning"); err == nil {
+		t.Error("a hung update exited 0")
+	}
+	st := tm.state(t)
+	if st["TUNING_RESULT"] != "failed" || st["TUNING_FAILED"] != bad.Hash() || !strings.Contains(st["TUNING_ERROR"], "ran longer than 2 seconds") {
+		t.Errorf("state: %v", st)
+	}
+	if got := tm.file(t, "server.disable.conf"); got != "" {
 		t.Errorf("server.disable.conf: %q", got)
 	}
 }

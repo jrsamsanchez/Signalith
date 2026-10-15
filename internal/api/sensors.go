@@ -116,13 +116,18 @@ func tuningCheck(s *ingest.SensorStatus, t tuningNow, now time.Time) sensorCheck
 		c.State = "old_script"
 	case s.TuningHash == t.Hash:
 		c.OK, c.State = true, "current"
-	case s.TuningResult == "failed":
+	case s.TuningResult == "failed" && s.TuningFailed == t.Hash:
+		c.State, c.Detail = "failed", s.TuningError
+	case saved && now.Sub(t.Saved) < tuningPendingFor:
+		// Saved lately: a failure it reports is of a tuning before this
+		// one, which it has not fetched and tested yet.
+		c.OK, c.State = true, "pending"
+	case s.TuningResult == "failed" && s.TuningFailed == "":
+		// Which tuning failed is not said: the failure stands.
 		c.State, c.Detail = "failed", s.TuningError
 	case !saved:
 		// Nothing was ever saved: the sensor has nothing to apply yet.
 		c.OK, c.State = true, "none"
-	case now.Sub(t.Saved) < tuningPendingFor:
-		c.OK, c.State = true, "pending"
 	default:
 		c.State = "stale"
 		if s.TuningResult == "unreachable" {
@@ -340,7 +345,7 @@ func (s *Server) handleSaveSensorTuning(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 	}
-	_, cur, err := s.SensorTuning.Read(r.Context())
+	prev, cur, err := s.SensorTuning.Read(r.Context())
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err)
 		return
@@ -366,9 +371,35 @@ func (s *Server) handleSaveSensorTuning(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	c := t.Counts()
-	s.audit(r, "sensor rule tuning saved", "hash", sensortune.ShortHash(t.Hash()),
-		"disabled", c[sensortune.FieldDisable], "thresholds", c[sensortune.FieldThreshold], "rules", c[sensortune.FieldLocal])
+	// What changed, line by line: the tuning can turn rules off on every
+	// sensor, so the audit trail says who turned off what.
+	args := []any{"hash", sensortune.ShortHash(t.Hash()), "previous_hash", sensortune.ShortHash(prev.Hash()),
+		"disabled", c[sensortune.FieldDisable], "thresholds", c[sensortune.FieldThreshold], "rules", c[sensortune.FieldLocal]}
+	for _, f := range sensortune.Fields {
+		added, removed := sensortune.Diff(prev.Field(f), t.Field(f))
+		if len(added) > 0 {
+			args = append(args, f+"_added", added)
+		}
+		if len(removed) > 0 {
+			args = append(args, f+"_removed", removed)
+		}
+	}
+	s.audit(r, "sensor rule tuning saved", args...)
 	writeJSON(w, http.StatusOK, tuningView(t, v))
+}
+
+// refusedTuning logs and audits, once per tuning, a stored tuning that
+// fails the checks of a save.
+func (s *Server) refusedTuning(r *http.Request, hash string, err error) {
+	s.badTuningMu.Lock()
+	seen := s.badTuning == hash
+	s.badTuning = hash
+	s.badTuningMu.Unlock()
+	if seen {
+		return
+	}
+	s.Log.Error("the rule tuning stored in OpenSearch fails the checks of a save: no sensor gets it until an admin saves it again", "audit", true,
+		"hash", sensortune.ShortHash(hash), "err", err)
 }
 
 // handleSensorTuningFetch hands a sensor the rule tuning, with its
@@ -391,6 +422,18 @@ func (s *Server) handleSensorTuningFetch(w http.ResponseWriter, r *http.Request)
 		s.Log.Warn("a sensor could not be given the rule tuning", "err", err)
 		w.Header().Set("Retry-After", "60")
 		writeError(w, http.StatusServiceUnavailable, errors.New("the rule tuning cannot be read from OpenSearch right now; the sensor keeps the tuning it has"))
+		return
+	}
+	// Only a save checks the tuning: a document written to OpenSearch
+	// some other way is checked again before any sensor gets it, and
+	// refused whole, so sensors keep the tuning they have.
+	if verr := t.Normalize().Validate(); verr != nil || t.Normalize() != t {
+		if verr == nil {
+			verr = errors.New("it is not in the form a save writes")
+		}
+		s.refusedTuning(r, t.Hash(), verr)
+		w.Header().Set("Retry-After", "600")
+		writeError(w, http.StatusServiceUnavailable, errors.New("the rule tuning stored in OpenSearch fails Signalith's checks, so no sensor gets it; an admin saves it again on Settings > Network sensors"))
 		return
 	}
 	body := t.Bundle()

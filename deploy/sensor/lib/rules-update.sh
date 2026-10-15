@@ -3,7 +3,9 @@
 # Updates the Suricata rules and applies the rule tuning set on Signalith
 # (Settings > Network sensors). suricata-update has Suricata test the
 # rules before it writes them; Suricata then loads them without stopping.
-# A failed download or test keeps the rules and the tuning in use.
+# A failed download or test keeps the rules and the tuning in use. A
+# tuning is only marked as failed when the rules pass without it; when they
+# fail either way (a failed download), it is tried again on the next run.
 #
 #   rules-update.sh          the daily update (signalith-suricata-update.timer):
 #                            fetch the tuning, then download the rules
@@ -24,9 +26,12 @@
 # /var/lib/signalith-sensor/suricata, which only root writes: this runs as
 # root, so it never works in a folder the suricata user could change.
 #
-# SIGNALITH_SENSOR_ROOT is for tests only: a folder standing for /.
+# SIGNALITH_SENSOR_ROOT is for tests only: a folder standing for /, and
+# SIGNALITH_RULES_TIMEOUT too: how many seconds one suricata-update may run.
 set -u
 R=${SIGNALITH_SENSOR_ROOT:-}
+lim=$(printf '%s' "${SIGNALITH_RULES_TIMEOUT:-900}" | tr -cd '0-9')
+[ -n "$lim" ] || lim=900
 mode=${1:-daily}
 conf=$R/etc/signalith-sensor/sensor.conf
 lib=$R/var/lib/signalith-sensor
@@ -78,17 +83,18 @@ merge() {
   if [ ! -f "$tdir/server.local.rules" ]; then : >"$tdir/server.local.rules"; fi
 }
 
+# One run at a time: the daily update, the tuning timer and the install
+# script (merge) may start together.
+if command -v flock >/dev/null 2>&1; then
+  exec 9>"$lib/rules.lock"
+  flock -w 1800 9 || exit 1
+fi
+
 if [ "$mode" = merge ]; then
   merge
   exit 0
 fi
 
-# One run at a time: the daily update, the tuning timer and the install
-# script may start together.
-if command -v flock >/dev/null 2>&1; then
-  exec 9>"$lib/rules.lock"
-  flock -w 1800 9 || exit 1
-fi
 tmp=$(mktemp -d) || exit 1
 trap 'rm -rf "$tmp"' EXIT
 chmod 0700 "$tmp"
@@ -214,6 +220,16 @@ dc() {
   docker compose -f /etc/signalith-sensor/docker/docker-compose.yml "$@"
 }
 
+# timed runs a command for at most $lim seconds (then 124), so a rule
+# pattern that never ends cannot hold the lock and stop every later update.
+timed() {
+  if command -v timeout >/dev/null 2>&1; then
+    timeout -k 30 "$lim" "$@"
+  else
+    "$@"
+  fi
+}
+
 # update runs suricata-update with the tuning in place; with "offline",
 # from its last download. Its output goes to $tmp/out.
 update() {
@@ -223,7 +239,12 @@ update() {
     set -- --etopen --suricata-conf /etc/suricata/signalith-sensor.yaml --disable-conf "$t/disable.conf" \
       --local /etc/suricata/local.rules --local "$t/server.local.rules" --no-reload --fail
     if [ -n "$off" ]; then set -- "$@" --offline; fi
-    dc --profile update run --rm suricata-update "$@" >"$tmp/out" 2>&1
+    cname=signalith-suricata-update-$$
+    timed docker compose -f /etc/signalith-sensor/docker/docker-compose.yml --profile update run --rm --name "$cname" \
+      suricata-update "$@" >"$tmp/out" 2>&1
+    rc=$?
+    # The container outlives a docker command that was stopped.
+    if [ "$rc" = 124 ] || [ "$rc" = 137 ]; then docker rm -f "$cname" >/dev/null 2>&1 || true; fi
   else
     set -- --etopen --data-dir "$lib/suricata" --suricata-conf "$R/etc/suricata/signalith-sensor-test.yaml" \
       --disable-conf "$tdir/disable.conf" --no-reload --fail
@@ -234,8 +255,13 @@ update() {
       set -- "$@" --local "$tdir/server.local.rules"
     fi
     if [ -n "$off" ]; then set -- "$@" --offline; fi
-    suricata-update "$@" >"$tmp/out" 2>&1
+    timed suricata-update "$@" >"$tmp/out" 2>&1
+    rc=$?
   fi
+  if [ "$rc" = 124 ] || [ "$rc" = 137 ]; then
+    echo "Error: suricata-update ran longer than $lim seconds and was stopped" >>"$tmp/out"
+  fi
+  return "$rc"
 }
 
 # cached says whether suricata-update has a download to rebuild from.
@@ -269,10 +295,12 @@ reload() {
   fi
 }
 
-# why prints the last error suricata-update gave.
+# why prints the last error suricata-update gave (in $tmp/out, or the
+# file named).
 why() {
-  l=$(grep -i 'error' "$tmp/out" 2>/dev/null | tail -n 1)
-  [ -n "$l" ] || l=$(tail -n 1 "$tmp/out" 2>/dev/null)
+  f=${1:-$tmp/out}
+  l=$(grep -i 'error' "$f" 2>/dev/null | tail -n 1)
+  [ -n "$l" ] || l=$(tail -n 1 "$f" 2>/dev/null)
   printf '%s' "$l" | sed 's/^[0-9/ :.-]*- *//'
 }
 
@@ -293,10 +321,29 @@ applied() {
   t_result=ok t_applied=$now t_error='' t_failed=''
 }
 
-# refused records a tuning that failed its test; the one before stays.
-refused() {
-  t_result=failed t_error=$(why) t_failed=$new
-  [ -n "$t_error" ] || t_error="suricata-update refused the rules"
+# try_tuning puts the new tuning in place and has suricata-update test
+# it with the rules ($1: offline, or empty to download). 0: applied. 1:
+# refused: the rules pass without it, so the tuning is at fault; it is
+# not tried again until it changes. 2: the rules fail without it too (a
+# failed download, say): nothing is known about the tuning, the one
+# before stays, and the next run tries it again. Either way but 0, the
+# rules were rebuilt without it when that passed.
+try_tuning() {
+  stage
+  if update "$1"; then
+    applied
+    return 0
+  fi
+  mv -f "$tmp/out" "$tmp/out.tuning"
+  unstage
+  if update "$1"; then
+    t_result=failed t_error=$(why "$tmp/out.tuning") t_failed=$new
+    [ -n "$t_error" ] || t_error="suricata-update refused the rules"
+    cp "$tmp/out.tuning" "$tmp/out"
+    return 1
+  fi
+  t_result=unreachable t_error="the rules could not be built to test the tuning: $(why)"
+  return 2
 }
 
 fetch
@@ -320,38 +367,41 @@ if [ "$mode" = tuning ]; then
     save_tuning
     exit 0
   fi
-  stage
+  # From the last download when there is one; else it downloads, and a
+  # failed download is told from a refused tuning by the run without it.
   off=''
   if cached; then off=offline; fi
-  if update $off; then
-    applied
-    save_tuning
+  try_tuning "$off"
+  tried=$?
+  save_tuning
+  if [ "$tried" != 2 ]; then
+    # The rules were rebuilt, with the tuning or without it.
     updated=$(get RULES_UPDATED "$state")
     [ -n "$off" ] || updated=$now
     save_rules ok "$updated" "$(rules_count)" "$now"
     reload
-    exit 0
   fi
-  refused
-  unstage
-  save_tuning
+  if [ "$tried" = 0 ]; then exit 0; fi
   cat "$tmp/out" >&2
   exit 1
 fi
 
-# The daily update: the new tuning, if any, goes in with the new rules;
-# when they fail together, the rules are tried again without it.
+# The daily update: a new tuning is tested first from the last download,
+# when there is one, then the rules are downloaded with the tuning that
+# passed. With no download kept, the tuning is tested with the download,
+# and the rules without it tell a refused tuning from a failed download.
 updated=$(get RULES_UPDATED "$state")
 rules=$(get RULES_COUNT "$state")
 result=failed
-if [ "$fetched" = 0 ]; then stage; fi
-if update; then
+if [ "$fetched" = 0 ] && cached; then
+  try_tuning offline
+  fetched=done
+fi
+if [ "$fetched" = 0 ]; then
+  try_tuning ''
+  case $? in 0 | 1) result=ok ;; esac
+elif update; then
   result=ok
-  if [ "$fetched" = 0 ]; then applied; fi
-elif [ "$fetched" = 0 ]; then
-  refused
-  unstage
-  if update; then result=ok; fi
 fi
 if [ "$result" = ok ]; then
   updated=$now

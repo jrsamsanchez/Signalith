@@ -25,8 +25,10 @@ window.sensorText = (function () {
     suricata_stopped: (s) => 'Suricata is not running. On the sensor, see why with ' + logsOf(s, 'signalith-suricata', 'suricata') + ', or run the install line again.',
     disk_low: () => 'Less than 10% of its disk is free: give it a bigger disk.',
     time_not_synced: () => 'Its clock is not synced, so event times may be off. On the sensor, run sudo timedatectl set-ntp true.',
-    tuning_failed: (s) => 'The rule tuning from Signalith failed its test, so the sensor keeps the tuning it had' + (s.tuning_error ? ': ' + s.tuning_error : '') +
-      '. Fix the line in Settings > Network sensors > Rule tuning and save; the sensor tries again within 10 minutes.',
+    // Why it failed is on Settings > Network sensors only: it can quote
+    // the tuning, which only admins read.
+    tuning_failed: () => 'The rule tuning from Signalith failed its test, so the sensor keeps the tuning it had. ' +
+      'An admin sees why in Settings > Network sensors, fixes the line in Rule tuning and saves; the sensor tries again within 10 minutes.',
     silent: (s) => 'Signalith has heard nothing from it lately. Check the sensor is on and reaches Signalith, then see why its agent stopped sending with ' + logsOf(s, 'signalith-fluent-bit', 'fluent-bit') + '.',
     no_status: () => 'It sends no status line, so only whether it sends can be checked: sensors you set up yourself send none. Install it with the line from Add data > Network sensor to see the rest.',
   };

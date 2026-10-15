@@ -8,7 +8,8 @@
 // checks here are a syntax gate, not a Suricata parser: each line must be
 // one of the forms the file takes, nothing may look like the bundle's
 // section markers, and rules may not use the keywords that make Suricata
-// run Lua or read and write files on the sensor.
+// run Lua or read and write files on the sensor, not even in a rule that
+// is commented out, which suricata-update can turn back on.
 package sensortune
 
 import (
@@ -101,7 +102,9 @@ func (e *LineError) Error() string {
 }
 
 // Normalize tidies what a browser sent: Windows line ends, a byte order
-// mark, spaces at the end of lines and blank lines at the end go.
+// mark, spaces at the end of lines and blank lines at the end go. Blank
+// lines at the start stay, so a line number in a *LineError is the line
+// the admin sees in the box.
 func (t Tuning) Normalize() Tuning {
 	t.Disable = normalize(t.Disable)
 	t.Threshold = normalize(t.Threshold)
@@ -118,9 +121,6 @@ func normalize(s string) string {
 	}
 	for len(lines) > 0 && lines[len(lines)-1] == "" {
 		lines = lines[:len(lines)-1]
-	}
-	for len(lines) > 0 && lines[0] == "" {
-		lines = lines[1:]
 	}
 	return strings.Join(lines, "\n")
 }
@@ -163,6 +163,11 @@ func (t Tuning) check(field string, max int, line func(string, int) string) erro
 			return &LineError{Field: field, Line: i + 1, Msg: msg}
 		}
 		if skip(l) {
+			if field == FieldLocal {
+				if msg := commentedRule(l); msg != "" {
+					return &LineError{Field: field, Line: i + 1, Msg: msg}
+				}
+			}
 			continue
 		}
 		if n++; n > max {
@@ -201,6 +206,13 @@ var (
 	reIDList   = regexp.MustCompile(`^(` + reSID + `(:` + reSID + `)?)(\s*,\s*` + reSID + `(:` + reSID + `)?)*$`)
 	reGroup    = regexp.MustCompile(`^group:\s*[A-Za-z0-9._/*-]{1,128}$`)
 	reMetadata = regexp.MustCompile(`^metadata:\s*[A-Za-z0-9_.-]{1,64}\s+[A-Za-z0-9_.:/ -]{1,128}$`)
+	// reNested finds a repeated group that holds a repeat, such as (a+)+
+	// or (a|b*){2,}: suricata-update matches re: patterns with Python's
+	// backtracking regular expressions against every rule, and such a
+	// pattern can take exponential time. reBackref finds a back
+	// reference, which no linear-time matcher supports either.
+	reNested  = regexp.MustCompile(`\([^()]*(?:[+*]|\{[0-9,]+\})[^()]*\)(?:[+*]|\{[0-9,]+\})`)
+	reBackref = regexp.MustCompile(`\\[1-9]|\(\?P=`)
 )
 
 // disableLine checks one line of disable.conf, the forms suricata-update
@@ -224,8 +236,12 @@ func disableLine(l string, _ int) string {
 		}
 		return ""
 	case strings.HasPrefix(l, "re:"):
-		if p := strings.TrimSpace(l[3:]); p == "" || len(p) > 512 {
+		p := strings.TrimSpace(l[3:])
+		if p == "" || len(p) > 512 {
 			return "write the pattern after re: (at most 512 characters)"
+		}
+		if reNested.MatchString(p) || reBackref.MatchString(p) {
+			return "this pattern repeats a group that itself repeats (such as (a+)+) or refers back to a group: suricata-update could take hours on it. Write a simpler pattern"
 		}
 		return ""
 	case strings.HasPrefix(l, "group:"):
@@ -321,9 +337,41 @@ var (
 	reRule = regexp.MustCompile(`^(alert|drop|pass|reject|rejectsrc|rejectdst|rejectboth|config)\s+\S+\s+.*\(.*\)$`)
 	reSIDs = regexp.MustCompile(`(?:^|[;(\s])sid\s*:\s*([0-9]+)\s*;`)
 	// reForbidden finds the rule keywords that run Lua or read and write
-	// files on the sensor.
-	reForbidden = regexp.MustCompile(`(?i)(?:^|[;(\s])(lua|luajit|luaxform|dataset|datarep|filestore|iprep)\s*[:;]`)
+	// files on the sensor (ForbiddenKeywords).
+	reForbidden = regexp.MustCompile(`(?i)(?:^|[;(\s])(` + strings.Join(ForbiddenKeywords, "|") + `)\s*[:;]`)
+	// reCommented finds a rule after the # of a comment, as
+	// suricata-update reads a disabled rule.
+	reCommented = regexp.MustCompile(`^[\s#]*(.*)$`)
 )
+
+// ForbiddenKeywords are the rule keywords that run code or read and
+// write files on the sensor: Lua scripts, datasets and their JSON and
+// reputation files, IP reputation files, file hash lists and stored
+// files. A rule using one belongs in /etc/signalith-sensor/local.rules on
+// the sensor, where only its admin puts it.
+var ForbiddenKeywords = []string{
+	"lua", "luajit", "luaxform",
+	"dataset", "datarep", "datajson",
+	"iprep",
+	"filemd5", "filesha1", "filesha256",
+	"filestore",
+}
+
+// commentedRule checks a comment line of the local rules: suricata-update
+// reads a commented-out rule as a disabled one, which an enable.conf or
+// modify.conf on the sensor can turn on, so it may not use the forbidden
+// keywords either.
+func commentedRule(l string) string {
+	r := reCommented.FindStringSubmatch(l)[1]
+	if !reRule.MatchString(strings.ToLower(r)) {
+		return ""
+	}
+	_, opts, _ := strings.Cut(r, "(")
+	if m := reForbidden.FindStringSubmatch(opts); m != nil {
+		return "rules here cannot use " + strings.ToLower(m[1]) + ", even commented out (suricata-update can turn a commented rule back on): it runs code or reads and writes files on the sensor. Keep such a rule in /etc/signalith-sensor/local.rules on the sensor itself"
+	}
+	return ""
+}
 
 // localLine checks one local rule: one rule a line, with one SID used
 // by no rule above it, and none of the forbidden keywords.
@@ -429,4 +477,57 @@ func ShortHash(h string) string {
 		return h[:12]
 	}
 	return h
+}
+
+// Limits on Diff, so one audit line stays readable.
+const (
+	maxDiffLines     = 100
+	maxDiffLineBytes = 300
+)
+
+// Diff returns the lines of a field added and removed from before to
+// after, blank lines aside, for the audit trail: at most maxDiffLines
+// each, cut to maxDiffLineBytes, the last one saying how many more there
+// are.
+func Diff(before, after string) (added, removed []string) {
+	count := func(s string) map[string]int {
+		m := map[string]int{}
+		for _, l := range lines(s) {
+			if strings.TrimSpace(l) != "" {
+				m[l]++
+			}
+		}
+		return m
+	}
+	b, a := count(before), count(after)
+	pick := func(from string, other map[string]int) []string {
+		var out []string
+		left := map[string]int{}
+		for l, n := range other {
+			left[l] = n
+		}
+		more := 0
+		for _, l := range lines(from) {
+			if strings.TrimSpace(l) == "" {
+				continue
+			}
+			if left[l] > 0 {
+				left[l]--
+				continue
+			}
+			if len(out) == maxDiffLines {
+				more++
+				continue
+			}
+			if len(l) > maxDiffLineBytes {
+				l = strings.ToValidUTF8(l[:maxDiffLineBytes], "") + "..."
+			}
+			out = append(out, l)
+		}
+		if more > 0 {
+			out = append(out, fmt.Sprintf("(and %d more lines)", more))
+		}
+		return out
+	}
+	return pick(after, b), pick(before, a)
 }

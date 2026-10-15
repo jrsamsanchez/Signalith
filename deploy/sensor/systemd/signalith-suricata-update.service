@@ -12,6 +12,10 @@ After=network-online.target
 
 [Service]
 Type=oneshot
+# A rules update that hangs (a rule pattern that never ends) is stopped,
+# so it cannot hold the rules lock and stop every later update; each
+# suricata-update run is limited to 15 minutes by the script itself.
+TimeoutStartSec=1h
 ExecStart=/usr/lib/signalith-sensor/rules-update.sh
 # The sensor's token, to fetch the tuning (only root reads the file).
 EnvironmentFile=/etc/signalith-sensor/token.env
