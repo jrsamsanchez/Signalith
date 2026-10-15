@@ -8,7 +8,7 @@ set -eu
 script=deploy/linux/install.sh
 program=bin/signalith
 
-mkdir -p /run/systemd/system
+mkdir -p /run/systemd/system /etc/systemd/system
 cat >/usr/local/sbin/systemctl <<'STUB'
 #!/bin/sh
 echo "$*" >>/tmp/systemctl.log
