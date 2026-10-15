@@ -27,6 +27,8 @@ others may run while Signalith runs on the same computer.
 | [`reset-key`](#reset-key) | Makes a new cluster key when every copy of it is lost |
 | [`accept-restore`](#accept-restore) | Accepts the shared settings after an OpenSearch snapshot was restored |
 | [`tls`](#tls) | The cluster's certificate authority and each server's; `tls choose` keeps one for the whole cluster |
+| [`token`](#token) | Makes a join token, which adds a server with `signalith join` |
+| [`approve`](#approve) | Approves a server that waits to join, by its fingerprint |
 
 `signalith join` and `signalith opensearch-check`, which are not `cluster` commands,
 add a server with a join token and check an OpenSearch for several servers; see
@@ -80,7 +82,9 @@ signalith cluster import-key [-c file] <file>
 `export-key` asks for a passphrase of at least 12 characters and writes the cluster
 key, encrypted with it, to `-o` (readable by you only) or to the standard output.
 Copy the file to the other server and run `import-key` there with the same
-passphrase. The key is kept in that server's state folder, encrypted with its master
+passphrase. `import-key` refuses when OpenSearch is not secured (https with a checked
+certificate, and a password or client certificate): a second server is never added
+to an OpenSearch anyone on the network can read. The key is kept in that server's state folder, encrypted with its master
 key, and a running server joins the cluster within seconds. Delete the file
 afterwards.
 
@@ -335,6 +339,42 @@ With `-json` it prints `safe`, `servers` (each with `name`, `version`, `state`, 
 `cluster_level`, `blockers` and `warnings` (each with a `code`, the `server` and the
 `text`) and `next`. A server that is the only one using its OpenSearch prints that
 it can simply be stopped, upgraded and started, and exits 0.
+
+## token
+
+```
+signalith cluster token [-c file] [-platform linux|windows|docker] [-ttl 60m] [-note text] [-node-url url] [-url url] [-json]
+```
+
+Makes a join token, as **Servers → Add a server** does, and prints it with the line
+to run on the new server for Linux, Windows and Docker. The token works once and
+for `-ttl` (60 minutes by default, at most 24 hours). It names this server's https
+address (`-url`, else `server.node_url`, else `server.public_url`; one only this
+computer reaches is refused) and the fingerprint of its HTTPS certificate authority,
+which the new server checks before it trusts the answer. Its secret is printed this
+once and kept in OpenSearch only encrypted with the cluster key, so a lost token
+cannot be shown again: make a new one. `-platform`, `-note` and `-node-url` (the
+address the other servers will reach the new server at) are shown with the token on
+the Servers page.
+
+It needs a member of the cluster, OpenSearch with security turned on, and an HTTPS
+certificate from Signalith's own certificate authority or a private one whose root
+is in the certificate file. Without one, approve the new server instead.
+
+## approve
+
+```
+signalith cluster approve [-c file] [-yes] [<server|fingerprint>]
+```
+
+A server started with the cluster's OpenSearch settings but without the cluster key
+waits to join and shows a fingerprint, such as `4F2A-91C0-…`, on its sign-in page
+and in its log. Without an argument, `approve` lists the servers that wait, with
+their fingerprints. With a fingerprint (dashes and case do not matter), it approves
+that server; with a name or node id it shows the fingerprint and asks you to compare
+it first (`-yes` answers for you). The server then gets the cluster key, encrypted
+so only it can read it, and joins within a minute. A fingerprint that does not match
+is refused, as is any approval while OpenSearch is not secured.
 
 ## join
 

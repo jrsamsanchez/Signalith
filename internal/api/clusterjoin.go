@@ -215,6 +215,14 @@ func commandsFor(tok string) joinCommands {
 	}
 }
 
+// JoinLines returns the Linux, Windows and Docker lines that join a
+// server with the token tok, as POST /api/cluster/tokens gives them, for
+// signalith cluster token.
+func JoinLines(tok string) (linux, windows, docker string) {
+	c := commandsFor(tok)
+	return c.Linux, c.Windows, c.Docker
+}
+
 // handleJoinTokenNew answers POST /api/cluster/tokens {platform,
 // ttl_minutes, note, node_url}: a new join token, shown once.
 func (s *Server) handleJoinTokenNew(w http.ResponseWriter, r *http.Request) {

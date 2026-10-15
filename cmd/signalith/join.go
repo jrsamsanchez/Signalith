@@ -58,6 +58,11 @@ const (
 	joinExitStart     = 6 // the service did not start
 )
 
+// joinAnyUser lets signalith join run without root or Administrator: only
+// in the clustertest build of the cluster tests (join_clustertest.go),
+// which join servers in folders the test's own user owns.
+var joinAnyUser = false
+
 // joinTimeout bounds each request to the server the token names.
 const joinTimeout = 30 * time.Second
 
@@ -103,7 +108,7 @@ func defaultJoinEnv() *joinEnv {
 	e := &joinEnv{
 		out: os.Stdout, errOut: os.Stderr, in: os.Stdin,
 		terminal: term.IsTerminal(int(os.Stdin.Fd())),
-		getenv:   os.Getenv, goos: runtime.GOOS, admin: runningAsAdmin(),
+		getenv:   os.Getenv, goos: runtime.GOOS, admin: runningAsAdmin() || joinAnyUser,
 		serviceEnv: func(path string) { useServiceEnv(path, os.Stdout) },
 		check:      opensearchcheck.Check,
 		listenFree: func(addr string) error {
@@ -137,8 +142,13 @@ func defaultJoinEnv() *joinEnv {
 			}
 			return e.systemctl("restart", "signalith")
 		}
-		if st, err := os.Stat("/etc/systemd/system"); err == nil && st.IsDir() {
-			e.dropInDir = "/etc/systemd/system/signalith.service.d"
+		// Only where the signalith unit is installed: the packages' or
+		// install.sh's.
+		for _, unit := range []string{"/usr/lib/systemd/system/signalith.service", "/lib/systemd/system/signalith.service", "/etc/systemd/system/signalith.service"} {
+			if _, err := os.Stat(unit); err == nil {
+				e.dropInDir = "/etc/systemd/system/signalith.service.d"
+				break
+			}
 		}
 	case "windows":
 		e.serviceActive = func() bool { return false }
