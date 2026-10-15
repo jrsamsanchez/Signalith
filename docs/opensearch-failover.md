@@ -49,6 +49,11 @@ from the same CA as Signalith's client certificate.
   same CA with `signalith opensearch-certs -ca-dir <dir> -node os-2 -out <dir2>`, and
   list every node's name in `nodes_dn` on every node. See
   [Securing OpenSearch](opensearch-security.md).
+- Every node checks client certificates against Signalith's revocation list, not only the
+  first: a node without it still lets a removed server in. The Docker overlay mounts the
+  `opensearch-crl` volume on all three nodes. By hand, add the CRL settings from
+  [Ending a server's OpenSearch access at once](servers.md#ending-a-servers-opensearch-access-at-once) to each node's
+  `opensearch.yml`, and keep a copy of the list on each node, updated whenever it changes.
 
 ## Telling Signalith every node
 

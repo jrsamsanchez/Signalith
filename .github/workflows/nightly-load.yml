@@ -201,6 +201,16 @@ jobs:
             sleep 5
           done
           echo "OpenSearch did not reach three nodes"; exit 1
+      # A revoked server certificate is refused by every node, not only
+      # the first (each node reads the opensearch-crl volume).
+      - name: Every node checks the revocation list
+        env:
+          SIGNALITH_TEST_OPENSEARCH: https://localhost:9200
+          SIGNALITH_TEST_OPENSEARCH_URLS: https://localhost:9201,https://localhost:9202
+          SIGNALITH_TEST_OPENSEARCH_CA: ${{ runner.temp }}/signalith-secrets/opensearch-ca.pem
+          SIGNALITH_TEST_OPENSEARCH_CERT: ${{ runner.temp }}/signalith-secrets/opensearch-client.pem
+          SIGNALITH_TEST_OPENSEARCH_KEY: ${{ runner.temp }}/signalith-secrets/opensearch-client-key.pem
+        run: go test -tags integration -count=1 -v -run '^TestClusterOSIdentity$' -timeout 15m ./internal/integration/
       # Stops the second node's container for a minute and a half while
       # two servers take events (loadtest/s9-small.yaml).
       - name: Losing one OpenSearch node
