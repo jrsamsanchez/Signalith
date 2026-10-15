@@ -849,3 +849,58 @@ func TestSaveWhileOwnSettingsMove(t *testing.T) {
 	}
 	eventually(t, "the jobs are given up", func() bool { return !rs.r.node.RunsJobs() })
 }
+
+// The certificate authority's scope, saved by the Security page when it
+// prepares a new one (server.tls.ca_scope), while this server's own
+// settings move into the shared settings, is kept like a save on the
+// Settings page: it waits for the move and goes to the shared settings.
+func TestCAScopeSaveWhileOwnSettingsMove(t *testing.T) {
+	type result struct {
+		code int
+		out  map[string]any
+		err  error
+	}
+	saved := make(chan result, 1)
+	var once sync.Once
+	var cur atomic.Pointer[running]
+	importOwnHook = func(r *runner) {
+		rs := cur.Load()
+		if rs == nil || rs.r != r || !r.ownMoved() || r.sharedContent.settingsOn.Load() {
+			return
+		}
+		once.Do(func() {
+			go func() {
+				code, out, err := rs.call("", "POST", "/api/security/ca", `{"action":"prepare","scope":"strict"}`)
+				if err == nil && code == http.StatusUnauthorized {
+					rs.signInAs("admin", "s3cret-pass")
+					code, out, err = rs.call("", "POST", "/api/security/ca", `{"action":"prepare","scope":"strict"}`)
+				}
+				saved <- result{code, out, err}
+			}()
+			// Without the hold the scope lands in settings.yaml now,
+			// after the move; with it, it waits for this to return.
+			time.Sleep(300 * time.Millisecond)
+		})
+	}
+	t.Cleanup(func() { importOwnHook = nil })
+	rs := startRunnerWith(t, runOptions{scheduler: true, server: "  tls:\n    mode: auto\n"})
+	cur.Store(rs)
+	var res result
+	select {
+	case res = <-saved:
+	case <-time.After(30 * time.Second):
+		t.Fatalf("no save was made while the settings moved\n%s", rs.logs.String())
+	}
+	if res.err != nil || res.code != http.StatusOK {
+		t.Fatalf("prepare while the settings moved: %d %v %v", res.code, res.out, res.err)
+	}
+	rs.settingsShared()
+	c, err := rs.r.loadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Server.CAScope() != "strict" {
+		nc, _ := rs.r.shared.NodeCfg().Get()
+		t.Errorf("the scope saved while the settings moved was lost: %q, nodecfg %+v\n%s", c.Server.CAScope(), nc, rs.logs.String())
+	}
+}
