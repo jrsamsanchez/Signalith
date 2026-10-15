@@ -191,6 +191,11 @@ func (t *Target) Validate() error {
 	if t.Schedule.Weekday < 0 || t.Schedule.Weekday > 6 {
 		return inputErrorf("%s: the day must be from 0 (Sunday) to 6 (Saturday)", t.Name)
 	}
+	// OpenVAS probes thousands of ports with many tests per host, which
+	// is what gentle mode exists to spare fragile devices.
+	if t.Gentle && t.OpenVAS {
+		return inputErrorf("%s: OpenVAS cannot scan a network in gentle mode: it sends far more traffic than fragile devices may take. Turn one of them off", t.Name)
+	}
 	t.Scanner = strings.TrimSpace(t.Scanner)
 	if t.Scanner != "" && !scannerRE.MatchString(t.Scanner) {
 		return inputErrorf("%s: unknown scanner %q", t.Name, t.Scanner)

@@ -177,8 +177,11 @@ func (s *Server) handleVulns(w http.ResponseWriter, r *http.Request) {
 	}
 	servers := s.vulnServers(set, reports, false)
 	out["servers"] = servers
+	// Whether scans can run, without the checks: they name programs,
+	// paths and OpenVAS's address, which are for admins (GET
+	// /api/vulns/setup).
 	if rep := jobsReport(servers, reports); rep != nil {
-		out["scanner"] = rep
+		out["scanner"] = map[string]any{"server": rep.Server, "ready": rep.Ready}
 	}
 	writeJSON(w, http.StatusOK, out)
 }

@@ -657,6 +657,13 @@
     gentle.checked = t.gentle;
     const deep = el('input', { type: 'checkbox' });
     deep.checked = !!t.openvas;
+    // OpenVAS sends far more traffic than a gentle scan allows.
+    const gentleOff = () => {
+      if (gentle.checked) deep.checked = false;
+      deep.disabled = gentle.checked;
+    };
+    gentle.addEventListener('change', gentleOff);
+    gentleOff();
     const enabled = el('input', { type: 'checkbox' });
     enabled.checked = t.enabled;
     const allowed = el('input', { type: 'checkbox', id: 'vs-allowed' });
@@ -686,7 +693,7 @@
           el('span', { class: 'vs-muted' }, 'Scans slowly, one probe at a time, for networks with fragile devices such as old printers or building controllers. Takes several times longer.'))),
         el('label', { class: 'switch vs-switch' }, deep, el('span', {}, el('b', {}, 'Also scan with OpenVAS'),
           el('span', { class: 'vs-muted' }, 'Optional and deeper: after Nmap, OpenVAS tests each host for thousands of known weaknesses, such as missing patches and default passwords. ' +
-            'Much slower, and only on a scanner where OpenVAS is set up (Settings > Scanners says how).'))),
+            'Much slower, and only on a scanner where OpenVAS is set up (Settings > Scanners says how). Not with Gentle mode.'))),
         isNew ? null : el('label', { class: 'switch vs-switch' }, enabled, el('span', {}, el('b', {}, 'Scan on schedule'), el('span', { class: 'vs-muted' }, 'Off pauses scheduled scans; Scan now still works.'))),
         isNew ? el('label', { class: 'vs-allowed' }, allowed, el('span', {}, 'I own these networks, or have permission to scan them. Scanning networks you do not own can be against the law.')) : null,
         err),

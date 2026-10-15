@@ -61,6 +61,16 @@ func TestValidateTarget(t *testing.T) {
 	if err := set.Validate(); err == nil {
 		t.Error("two networks with one ID")
 	}
+	// OpenVAS's traffic is what gentle mode spares fragile devices from.
+	tg = target("192.0.2.1")
+	tg.Gentle, tg.OpenVAS = true, true
+	if err := tg.Validate(); err == nil || !strings.Contains(err.Error(), "gentle mode") {
+		t.Errorf("OpenVAS on a gentle network: %v", err)
+	}
+	tg.Gentle = false
+	if err := tg.Validate(); err != nil {
+		t.Errorf("OpenVAS: %v", err)
+	}
 }
 
 func TestArgs(t *testing.T) {
