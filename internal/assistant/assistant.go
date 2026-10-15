@@ -17,6 +17,7 @@ import (
 	"io"
 	"net/http"
 	neturl "net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -310,6 +311,15 @@ func SystemPrompt() string {
 		QueryReference()
 }
 
+func evalFuncList() string {
+	names := make([]string, 0, len(query.EvalFuncs))
+	for n := range query.EvalFuncs {
+		names = append(names, n+"()")
+	}
+	sort.Strings(names)
+	return strings.Join(names, ", ")
+}
+
 // QueryReference describes the query language, the data models and their
 // fields, with examples.
 func QueryReference() string {
@@ -321,8 +331,14 @@ func QueryReference() string {
 - Commands: ` + strings.Join(query.Commands, ", ") + `.
   stats <aggs> [by f1, f2]   aggs: ` + strings.Join(query.AggFuncs, ", ") + ` as count, count(f), dc(f), sum(f), avg(f), min(f), max(f), each optionally "as name"
   timechart [span=1h] <agg> [by field]
+  eventstats <aggs> [by f1, f2]   like stats, but adds the aggregate columns to every row instead of replacing the rows
   top [limit=N] field [by field]
-  where <expression on result columns>
+  rare [limit=N] field [by field]   least common values first
+  where <expression on result columns>   a filter such as count > 20 AND user=adm*, or an eval expression such as len(process) > 200 or bytes_out > bytes_in * 10
+  eval name=<expression>[, name2=<expression>]   operators + - * / % . (concatenate) = != < <= > >= AND OR NOT XOR LIKE; field names with other characters in single quotes ('dc(user)'); strings in double quotes. Functions: ` + evalFuncList() + `
+  rex [field=f] [max_match=N] "<RE2 regex with named groups (?<name>...)>"   extracts fields (default field _raw)
+  dedup [N] f1, f2 [keepempty=true] [consecutive=true]   keeps the first N rows (default 1) per value; events come newest first
+  fillnull [value=X] [fields]   sets missing values (default 0)
   sort [-]field, ...    ("-" is descending)
   head N
   table f1, f2

@@ -131,6 +131,16 @@ func applyCommand(ctx context.Context, res *Result, c query.Command) error {
 		}
 		res.Rows, res.Columns = topRows(counted, c)
 		res.Kind = "table"
+	case *query.Eval:
+		return applyEval(ctx, res, c)
+	case *query.Rex:
+		return applyRex(ctx, res, c)
+	case *query.Dedup:
+		return applyDedup(ctx, res, c)
+	case *query.Fillnull:
+		applyFillnull(res, c)
+	case *query.EventStats:
+		return applyEventStats(ctx, res, c)
 	case *query.Timechart:
 		return fmt.Errorf("timechart must come before other commands that change results")
 	default:
@@ -157,7 +167,12 @@ func topRows(rows []Row, top *query.Top) ([]Row, []string) {
 	var out []Row
 	for _, k := range order {
 		g := byGroup[k]
-		sort.SliceStable(g, func(i, j int) bool { return g[i]["count"].(int64) > g[j]["count"].(int64) })
+		sort.SliceStable(g, func(i, j int) bool {
+			if top.Rare {
+				return g[i]["count"].(int64) < g[j]["count"].(int64)
+			}
+			return g[i]["count"].(int64) > g[j]["count"].(int64)
+		})
 		if top.Limit > 0 && len(g) > top.Limit {
 			g = g[:top.Limit]
 		}
@@ -364,6 +379,8 @@ type matcher struct {
 	ctx  context.Context
 	work int
 	err  error
+
+	ev *evaluator // for conditions written as expressions
 }
 
 func (m *matcher) eval(e query.Expr, r Row) bool {
@@ -384,6 +401,15 @@ func (m *matcher) eval(e query.Expr, r Row) bool {
 		return false
 	case *query.Not:
 		return !m.eval(e.Child, r)
+	case *query.Cond:
+		if m.ev == nil {
+			m.ev = evaluatorFor(m.ctx)
+		}
+		ok := truth(m.ev.safeEval(e.X, r))
+		if m.ev.err != nil && m.err == nil {
+			m.err = m.ev.err
+		}
+		return ok
 	case *query.In:
 		for _, v := range e.Values {
 			if m.equals(r[e.Field], v) {
