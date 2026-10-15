@@ -192,6 +192,7 @@ var sigmaEventFields = func() map[string]map[string]string {
 		"file_event": file, "file_delete": file,
 		"registry_add": registry, "registry_delete": registry, "registry_set": registry, "registry_event": registry,
 		"dns_query":            with(map[string]string{"queryname": "query", "queryresults": "answer"}),
+		"webserver":            ingest.WebFields,
 		"pipe_created":         with(map[string]string{"pipename": "pipe_name", "eventtype": "pipe_event_type"}),
 		"raw_access_thread":    with(map[string]string{"device": "device"}),
 		"create_stream_hash":   with(map[string]string{"targetfilename": "file_path", "hash": "file_hashes", "contents": "file_contents"}),
@@ -706,6 +707,8 @@ func (c *sigmaConv) datamodel(ls map[string]any) string {
 		return "Registry"
 	case "dns_query":
 		return "Network_Resolution"
+	case "webserver":
+		return ingest.WebModel
 	case "image_load", "driver_load":
 		return "Image_Load"
 	case "process_access", "create_remote_thread", "pipe_created", "raw_access_thread":
@@ -1037,6 +1040,9 @@ func or(kids []query.Expr) query.Expr {
 // ---- selections ----
 
 func (c *sigmaConv) selection(name string, v any) (query.Expr, error) {
+	if c.category == "webserver" {
+		return c.webSelection(name, v)
+	}
 	switch s := v.(type) {
 	case map[string]any:
 		return c.fieldMap(s)
@@ -1065,6 +1071,49 @@ func (c *sigmaConv) selection(name string, v any) (query.Expr, error) {
 		return &query.Text{Value: "*" + s + "*"}, nil
 	}
 	return nil, fmt.Errorf("selection %s has an unsupported shape", name)
+}
+
+// webSelection is a web server log rule's selection, whose keywords are
+// searched in the parts of a request the client chose: its target, user
+// agent and referrer (sigmacheck.WebKeywordFields).
+func (c *sigmaConv) webSelection(name string, v any) (query.Expr, error) {
+	var maps []any
+	var keywords []any
+	switch s := v.(type) {
+	case string:
+		keywords = append(keywords, s)
+	case []any:
+		for _, item := range s {
+			if _, ok := item.(map[string]any); ok {
+				maps = append(maps, item)
+			} else {
+				keywords = append(keywords, item)
+			}
+		}
+	default:
+		maps = append(maps, v)
+	}
+	var kids []query.Expr
+	for _, m := range maps {
+		e, err := c.fieldMap(m.(map[string]any))
+		if err != nil {
+			return nil, err
+		}
+		kids = append(kids, e)
+	}
+	if len(keywords) > 0 {
+		for _, f := range []string{"cs-uri-query", "cs-user-agent", "cs-referer"} {
+			e, err := c.fieldCond(f+"|contains", keywords)
+			if err != nil {
+				return nil, err
+			}
+			kids = append(kids, e)
+		}
+	}
+	if len(kids) == 0 {
+		return nil, fmt.Errorf("selection %s is empty", name)
+	}
+	return or(kids), nil
 }
 
 func (c *sigmaConv) fieldMap(m map[string]any) (query.Expr, error) {

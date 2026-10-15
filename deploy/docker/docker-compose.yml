@@ -97,8 +97,9 @@ services:
     # Checks client certificates against the revocation list Signalith
     # keeps (docs/servers.md, Ending a server's OpenSearch access at once),
     # once setup has made it: OpenSearch refuses every certificate while
-    # the list it checks is missing.
-    entrypoint: ["sh", "-c", "if [ -s config/crl/crl.pem ]; then exec env plugins.security.ssl.http.crl.validate=true plugins.security.ssl.http.crl.file_path=/usr/share/opensearch/config/crl/crl.pem plugins.security.ssl.http.crl.disable_ocsp=true plugins.security.ssl.http.crl.disable_crldp=true plugins.security.ssl.http.crl.prefer_crlfile_over_ocsp=true ./opensearch-docker-entrypoint.sh \"$$@\"; fi; exec ./opensearch-docker-entrypoint.sh \"$$@\"", "sh"]
+    # the list it checks is missing. After that (crl-required), it does not
+    # start without the list, which would leave it checking nothing.
+    entrypoint: ["sh", "-c", "if [ -s config/crl/crl.pem ]; then exec env plugins.security.ssl.http.crl.validate=true plugins.security.ssl.http.crl.file_path=/usr/share/opensearch/config/crl/crl.pem plugins.security.ssl.http.crl.disable_ocsp=true plugins.security.ssl.http.crl.disable_crldp=true plugins.security.ssl.http.crl.prefer_crlfile_over_ocsp=true ./opensearch-docker-entrypoint.sh \"$$@\"; fi; if [ -e config/crl/crl-required ]; then echo \"OpenSearch does not start without its revocation list, config/crl/crl.pem. Signalith writes it again within a minute, and so does: docker compose -f deploy/docker/docker-compose.yml up -d\" >&2; exit 1; fi; exec ./opensearch-docker-entrypoint.sh \"$$@\"", "sh"]
     command: ["opensearch"]
     ulimits:
       memlock: { soft: -1, hard: -1 }

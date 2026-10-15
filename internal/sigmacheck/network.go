@@ -94,8 +94,9 @@ func NetworkBase(category string) map[string]string {
 
 // NetworkCases turns synthesized events of a network category into test
 // cases. A generic rule's events that name a part of the address (c-uri)
-// without the whole of it get the whole address, as a sensor sees it,
-// and whether the rule matches is asked again of the event as written.
+// without the whole of it get the whole address, as a sensor sees it, a
+// DNS lookup gets the addresses of who asked and the resolver, and
+// whether the rule matches is asked again of the event as written.
 func NetworkCases(rule *Rule, category string, syn *Synthesis) []Case {
 	channel := NetworkChannel(category)
 	eventID := ""
@@ -108,6 +109,14 @@ func NetworkCases(rule *Rule, category string, syn *Synthesis) []Case {
 		ev = maps.Clone(ev)
 		if category == "proxy" {
 			fullURI(ev)
+		}
+		if category == "dns" {
+			// A sensor's lookup always names who asked and the resolver.
+			for _, k := range []string{"src_ip", "src_port", "dst_ip", "dst_port"} {
+				if _, ok := ev[k]; !ok {
+					ev[k] = NetworkBases["dns"][k]
+				}
+			}
 		}
 		m, err := rule.Match(ev)
 		if err != nil {

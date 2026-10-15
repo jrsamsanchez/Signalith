@@ -4,12 +4,15 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -669,5 +672,73 @@ func TestComposeEveryOpenSearchNodeChecksTheCRL(t *testing.T) {
 	}
 	if nodes != 3 {
 		t.Errorf("docker-compose.opensearch3.yml has %d OpenSearch nodes, want 3", nodes)
+	}
+}
+
+// The OpenSearch entrypoint checks certificates against the revocation
+// list when there is one, and once setup has made one, does not start
+// without it.
+func TestComposeOpenSearchEntrypointNeedsTheCRL(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("runs the entrypoint with sh")
+	}
+	var ep struct {
+		Services map[string]struct {
+			Entrypoint []string `yaml:"entrypoint"`
+		} `yaml:"services"`
+	}
+	raw, err := os.ReadFile(filepath.Join(dockerDir, "docker-compose.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := yaml.Unmarshal(raw, &ep); err != nil {
+		t.Fatal(err)
+	}
+	args := ep.Services["opensearch"].Entrypoint
+	if len(args) != 4 || args[0] != "sh" || args[1] != "-c" {
+		t.Fatalf("entrypoint %q", args)
+	}
+	// Compose turns $$ into $.
+	script := strings.ReplaceAll(args[2], "$$", "$")
+	run := func(t *testing.T, files map[string]string) (string, error) {
+		t.Helper()
+		dir := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(dir, "config", "crl"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		for name, body := range files {
+			if err := os.WriteFile(filepath.Join(dir, "config", "crl", name), []byte(body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		// awk, not sh, which drops variables with dots in their names.
+		stub := "#!/usr/bin/awk -f\nBEGIN { print \"started \" ARGV[1] \" validate=\" ENVIRON[\"plugins.security.ssl.http.crl.validate\"]; exit }\n"
+		if err := os.WriteFile(filepath.Join(dir, "opensearch-docker-entrypoint.sh"), []byte(stub), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		cmd := exec.Command("sh", "-c", script, args[3], "opensearch")
+		cmd.Dir = dir
+		out, err := cmd.CombinedOutput()
+		return string(out), err
+	}
+	t.Run("with the list", func(t *testing.T) {
+		out, err := run(t, map[string]string{"crl.pem": "list", "crl-required": "x"})
+		if err != nil || !strings.Contains(out, "started opensearch validate=true") {
+			t.Errorf("%v: %s", err, out)
+		}
+	})
+	t.Run("before setup made one", func(t *testing.T) {
+		out, err := run(t, nil)
+		if err != nil || !strings.Contains(out, "started opensearch validate=\n") {
+			t.Errorf("%v: %q", err, out)
+		}
+	})
+	for _, files := range []map[string]string{{"crl-required": "x"}, {"crl-required": "x", "crl.pem": ""}} {
+		t.Run(fmt.Sprintf("list gone %v", files), func(t *testing.T) {
+			out, err := run(t, files)
+			if err == nil || strings.Contains(out, "started") || !strings.Contains(out, "does not start without its revocation list") {
+				t.Errorf("%v: %s", err, out)
+			}
+		})
 	}
 }

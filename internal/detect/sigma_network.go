@@ -65,15 +65,29 @@ func sigmaNetworkModel(category string) (string, bool) {
 }
 
 // sigmaNetworkScope limits a Zeek rule to its own log's events. The
-// generic categories search every event of their data model: a DNS
-// lookup from a sensor or from Sysmon, a connection from a sensor or a
-// firewall.
+// generic categories search their data model: a dns rule the lookups
+// that name the address that asked (src), as a sensor's or a DNS
+// server's do (a host's own lookups, Sysmon 22, name only the host, and
+// the dns_query rules cover them); a proxy rule the web requests a
+// client made, not web servers' access logs (url there is only the
+// path, and the requests come in from the internet); a firewall rule
+// every connection, from a sensor or a firewall.
 func sigmaNetworkScope(category string) query.Expr {
 	if log, ok := zeekLog(category); ok {
 		return &query.Compare{Field: "sourcetype", Op: "=", Value: "zeek:" + log}
 	}
+	switch category {
+	case "dns":
+		return &query.Compare{Field: "src", Op: "=", Value: "*"}
+	case "proxy":
+		return &query.Not{Child: &query.In{Field: "sourcetype", Values: webServerSourcetypes}}
+	}
 	return nil
 }
+
+// webServerSourcetypes are the sourcetypes of web servers' access logs
+// (ingest.parseWebRecord).
+var webServerSourcetypes = []string{"apache:access", "nginx:access"}
 
 // zeekTuple is how every Zeek log's connection fields are stored.
 var zeekTuple = map[string]string{
@@ -99,7 +113,10 @@ var zeekLogFields = map[string]map[string]string{
 		"rtt": "zeek_rtt",
 	},
 	"http": {
-		"method": "http_method", "host": "url_domain", "uri": "url", "status_code": "status",
+		// uri is the path and query the client asked for; url is the
+		// whole address (http://host/uri), so a uri that starts with /
+		// is the path.
+		"method": "http_method", "host": "url_domain", "uri": "uri_path", "status_code": "status",
 		"user_agent": "http_user_agent", "referrer": "http_referrer", "resp_mime_types": "http_content_type",
 		"request_body_len": "bytes_out", "response_body_len": "bytes_in", "username": "user", "trans_depth": "zeek_trans_depth",
 	},

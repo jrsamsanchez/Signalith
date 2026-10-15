@@ -453,3 +453,36 @@ func TestRegexStage(t *testing.T) {
 		t.Errorf("lookbehind: %v %v", ok, err)
 	}
 }
+
+// A Web detection (datamodel=Web, with or without its node) reads web
+// server access log lines.
+func TestWebRule(t *testing.T) {
+	for _, dm := range []string{"Web", "Web.Web"} {
+		src := rule("| tstats count from datamodel=" + dm + " where Web.url=\"*/_layouts/15/ToolPane.aspx*\" Web.http_method=POST by Web.src, Web.dest")
+		r, err := Parse(src, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r.Node != "Web" || NodeModel[r.Node] != "Web" {
+			t.Fatalf("node %s", r.Node)
+		}
+		pos := 0
+		for _, c := range Cases(r) {
+			if c.Channel != "web:access" {
+				t.Errorf("channel %s", c.Channel)
+			}
+			if c.Expect {
+				pos++
+				if !strings.Contains(c.Data["url"], "/_layouts/15/ToolPane.aspx") || c.Data["http_method"] != "POST" {
+					t.Errorf("positive %v", c.Data)
+				}
+			}
+		}
+		if pos == 0 {
+			t.Errorf("%s: no positive case", dm)
+		}
+	}
+	if _, err := Parse(rule("| tstats count from datamodel=Endpoint where Processes.process_name=x by Processes.dest"), nil); err == nil {
+		t.Error("Endpoint without a node parsed")
+	}
+}

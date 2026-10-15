@@ -95,3 +95,24 @@ func TestVulnScanners(t *testing.T) {
 		t.Errorf("scan on a stopped scanner: %d %v", code, out)
 	}
 }
+
+// The Vulnerabilities page, which analysts see, says whether scans can
+// run, but not the checks behind it: they name programs, paths and
+// OpenVAS's address, which are for admins.
+func TestVulnsScannerSummaryOnly(t *testing.T) {
+	st := vulnscan.NewStore(endpoint.NewMemoryDocs(), "signalith")
+	sc := &vulnscan.Scanner{Store: st, Server: "siem-a", Leader: func() bool { return true },
+		Checker: &vulnscan.Checker{FindNmap: func() string { return "" }}}
+	ts, _ := newTestServerWith(t, func(s *Server) { s.Vulns = &Vulns{Store: st, Scanner: sc} })
+	if code, out, _ := call(t, ts, "GET", "/api/vulns/scanners?fresh=1", "", "admin", "s3cret-pass", nil); code != 200 {
+		t.Fatalf("scanners %d %v", code, out)
+	}
+	code, out, _ := call(t, ts, "GET", "/api/vulns", "", "admin", "s3cret-pass", nil)
+	if code != 200 {
+		t.Fatalf("vulns %d %v", code, out)
+	}
+	rep, ok := out["scanner"].(map[string]any)
+	if !ok || rep["server"] != "siem-a" || rep["ready"] != false || len(rep) != 2 {
+		t.Errorf("scanner = %v", out["scanner"])
+	}
+}

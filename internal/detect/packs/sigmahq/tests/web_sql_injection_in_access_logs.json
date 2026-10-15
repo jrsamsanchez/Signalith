@@ -1,0 +1,6 @@
+{"rule": "5513deaf-f49a-46c2-a6c8-3f111b5cb453", "cases": [
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","url":"or 1=1#"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","status":"404","url":"or 1=1#"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"url":"or 1=1#"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET"}}
+]}

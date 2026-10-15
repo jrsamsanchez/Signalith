@@ -29,8 +29,10 @@ type ClusterServers interface {
 	// shared.TargetLeader), for the user by.
 	Submit(ctx context.Context, typ, target string, args any, by string) (*shared.Request, error)
 	// Remove takes the server nodeID (named name) out of the cluster,
-	// for the user by; live is true while its heartbeat moves.
-	Remove(ctx context.Context, nodeID, name, by string, live bool) (shared.RemovedServer, error)
+	// for the user by; live is true while its heartbeat moves. An error
+	// means it was not removed; warnings are steps after the removal that
+	// failed, which do not undo it.
+	Remove(ctx context.Context, nodeID, name, by string, live bool) (rec shared.RemovedServer, warnings []string, err error)
 }
 
 // ClusterLifecycle is GET /api/cluster/lifecycle.
@@ -267,14 +269,19 @@ func (s *Server) handleServerRemove(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
-	rec, err := s.ClusterServers.Remove(ctx, id, name, userOf(r), live)
+	rec, warnings, err := s.ClusterServers.Remove(ctx, id, name, userOf(r), live)
 	if err != nil {
 		if !sharedError(w, err) {
 			writeError(w, http.StatusServiceUnavailable, err)
 		}
 		return
 	}
+	// The server is out of the cluster even when a step after that
+	// failed, so the key is still rotated and the removal audited.
 	out := map[string]any{"removed": rec}
+	if len(warnings) > 0 {
+		out["warnings"] = warnings
+	}
 	switch {
 	case !rotate:
 		out["rotate_skipped"] = fmt.Sprintf("%s's copy of the cluster key still works until the key is rotated.", rec.Name)
@@ -289,7 +296,8 @@ func (s *Server) handleServerRemove(w http.ResponseWriter, r *http.Request) {
 			out["request_id"] = rq.ID
 		}
 	}
-	s.audit(r, "cluster.remove: server removed from the cluster", "server", rec.Name, "node_id", id, "rotate", rotate, "request", out["request_id"])
+	s.audit(r, "cluster.remove: server removed from the cluster", "server", rec.Name, "node_id", id, "rotate", rotate, "request", out["request_id"],
+		"warnings", warnings)
 	writeJSON(w, http.StatusOK, out)
 }
 

@@ -97,7 +97,7 @@ func main() {
 		Name:   "splunk",
 		Title:  "Splunk Security Content",
 		Format: "splunk",
-		Description: "Windows detections for process, file and registry events, and network detections over connections, DNS lookups and web requests, from Splunk's Threat Research Team (security_content), converted to Signalith detections. " +
+		Description: "Windows detections for process, file and registry events, web detections for web requests, and network detections over connections and DNS lookups, from Splunk's Threat Research Team (security_content), converted to Signalith detections. " +
 			"TTP rules raise findings; anomaly rules only add risk, as in Splunk's risk-based alerting. Each rule shipped here agrees with Splunk's reading of its search on its test events, checked in CI.",
 		Source:     "https://github.com/splunk/security_content",
 		Version:    commit,
@@ -150,8 +150,12 @@ func main() {
 	usedIDs := map[string]bool{}
 	usedMacros := map[string]bool{}
 	rules, _ := filepath.Glob(filepath.Join(*splunkDir, "detections", "endpoint", "*.yml"))
-	// Network detections: tstats over the network data models, which a
-	// network sensor fills, and Sysmon's network events.
+	// Web detections search the Web data model, whatever log fills it,
+	// and so do a few network ones. The other network detections are
+	// tstats searches over connections and DNS lookups, which a network
+	// sensor fills, or searches of Sysmon's network events.
+	web, _ := filepath.Glob(filepath.Join(*splunkDir, "detections", "web", "*.yml"))
+	rules = append(rules, web...)
 	network, _ := filepath.Glob(filepath.Join(*splunkDir, "detections", "network", "*.yml"))
 	rules = append(rules, network...)
 	sort.Strings(rules)
@@ -175,19 +179,21 @@ func main() {
 			skip("type "+meta.Type+" (not TTP or Anomaly)", rel)
 			continue
 		}
-		opt := splcheck.ParseOptions{Network: detect.SplunkNetworkRule(rel)}
-		if !slices.ContainsFunc(meta.DataSource, func(s string) bool { return slices.Contains(windowsSources, s) }) {
-			// A network rule reads its data model from any source, a
-			// network sensor's among them.
+		web := webSearch.MatchString(meta.Search)
+		opt := splcheck.ParseOptions{Network: detect.SplunkNetworkRule(rel) && !web}
+		if opt.Network {
+			// A network rule over connections or DNS lookups reads its
+			// data model from any source, a network sensor's among them.
+			// One over Sysmon's events is endpoint content, left to the
+			// endpoint rules.
 			r, err := splcheck.ParseWith(src, macros, opt)
-			if opt.Network && err != nil {
-				skip("network detection does not convert exactly: "+short(err), rel)
+			if err != nil || !splcheck.IsSensorNode(r.Node) {
+				skip("network detection that is not a tstats search of connections or DNS lookups", rel)
 				continue
 			}
-			if !opt.Network || !splcheck.IsSensorNode(r.Node) {
-				skip("no Windows Sysmon or Security log data source", rel)
-				continue
-			}
+		} else if !slices.ContainsFunc(meta.DataSource, func(s string) bool { return slices.Contains(windowsSources, s) }) && !web {
+			skip("no Windows Sysmon or Security log data source", rel)
+			continue
 		}
 		rule, err := splcheck.ParseWith(src, macros, opt)
 		if err != nil {
@@ -297,6 +303,9 @@ func markMacros(s string, macros map[string]*splcheck.Macro, used map[string]boo
 	}
 }
 
+// webSearch is a search of the Web data model.
+var webSearch = regexp.MustCompile(`(?i)\bfrom\s+datamodel=Web\b`)
+
 var quoted = regexp.MustCompile(`"[^"]*"|\b[A-Z][a-z]+\.\w+`)
 
 func short(err error) string {
@@ -336,7 +345,7 @@ func writeReport(p *detect.Pack, skipped map[string][]string) {
 	for _, v := range skipped {
 		total += len(v)
 	}
-	fmt.Fprintf(&b, "%d rules shipped. %d endpoint and network detections were left out:\n\n| Rules | Reason |\n| ---: | --- |\n", len(p.Rules), total)
+	fmt.Fprintf(&b, "%d rules shipped. %d endpoint, web and network detections were left out:\n\n| Rules | Reason |\n| ---: | --- |\n", len(p.Rules), total)
 	reasons := make([]string, 0, len(skipped))
 	for r := range skipped {
 		reasons = append(reasons, r)

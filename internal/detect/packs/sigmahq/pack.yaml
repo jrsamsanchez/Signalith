@@ -8013,6 +8013,58 @@ rules:
     rule_id: c15e99a3-c474-48ab-b9a7-84549a7a9d16
     file: create_remote_thread_win_ttdinjec.yml
     path: rules/windows/create_remote_thread/create_remote_thread_win_ttdinjec.yml
+  - id: sigma-web-f5-tm-utility-bash-api-request
+    rule_id: 85254a62-22be-4239-b79c-2ec17e566c37
+    file: web_f5_tm_utility_bash_api_request.yml
+    path: rules/web/webserver_generic/web_f5_tm_utility_bash_api_request.yml
+  - id: sigma-web-iis-tilt-shortname-scan
+    rule_id: 7cb02516-6d95-4ffc-8eee-162075e111ac
+    file: web_iis_tilt_shortname_scan.yml
+    path: rules/web/webserver_generic/web_iis_tilt_shortname_scan.yml
+  - id: sigma-web-java-payload-in-access-logs
+    rule_id: 583aa0a2-30b1-4d62-8bf3-ab73689efe6c
+    file: web_java_payload_in_access_logs.yml
+    path: rules/web/webserver_generic/web_java_payload_in_access_logs.yml
+  - id: sigma-web-jndi-exploit
+    rule_id: 412d55bc-7737-4d25-9542-5b396867ce55
+    file: web_jndi_exploit.yml
+    path: rules/web/webserver_generic/web_jndi_exploit.yml
+  - id: sigma-web-path-traversal-exploitation-attempt
+    rule_id: 7745c2ea-24a5-4290-b680-04359cb84b35
+    file: web_path_traversal_exploitation_attempt.yml
+    path: rules/web/webserver_generic/web_path_traversal_exploitation_attempt.yml
+  - id: sigma-web-source-code-enumeration
+    rule_id: 953d460b-f810-420a-97a2-cfca4c98e602
+    file: web_source_code_enumeration.yml
+    path: rules/web/webserver_generic/web_source_code_enumeration.yml
+  - id: sigma-web-sql-injection-in-access-logs
+    rule_id: 5513deaf-f49a-46c2-a6c8-3f111b5cb453
+    file: web_sql_injection_in_access_logs.yml
+    path: rules/web/webserver_generic/web_sql_injection_in_access_logs.yml
+  - id: sigma-web-ssti-in-access-logs
+    rule_id: ada3bc4f-f0fd-42b9-ba91-e105e8af7342
+    file: web_ssti_in_access_logs.yml
+    path: rules/web/webserver_generic/web_ssti_in_access_logs.yml
+  - id: sigma-web-susp-useragents
+    rule_id: 19aa4f58-94ca-45ff-bc34-92e533c0994a
+    file: web_susp_useragents.yml
+    path: rules/web/webserver_generic/web_susp_useragents.yml
+  - id: sigma-web-susp-windows-path-uri
+    rule_id: 9f6a34b4-2688-4eb7-a7f5-e39fef573d0e
+    file: web_susp_windows_path_uri.yml
+    path: rules/web/webserver_generic/web_susp_windows_path_uri.yml
+  - id: sigma-web-webshell-regeorg
+    rule_id: 2ea44a60-cfda-11ea-87d0-0242ac130003
+    file: web_webshell_regeorg.yml
+    path: rules/web/webserver_generic/web_webshell_regeorg.yml
+  - id: sigma-web-win-webshells-in-access-logs
+    rule_id: 7ff9db12-1b94-4a79-ba68-a2402c5d6729
+    file: web_win_webshells_in_access_logs.yml
+    path: rules/web/webserver_generic/web_win_webshells_in_access_logs.yml
+  - id: sigma-web-xss-in-access-logs
+    rule_id: 65354b83-a2ea-4ea6-8414-3ab38be0d409
+    file: web_xss_in_access_logs.yml
+    path: rules/web/webserver_generic/web_xss_in_access_logs.yml
   - id: sigma-win-app-remote-access-tools-screenconnect-command-exec
     rule_id: 076ebe48-cc05-4d8f-9d41-89245cd93a14
     file: win_app_remote_access_tools_screenconnect_command_exec.yml

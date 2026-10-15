@@ -111,6 +111,12 @@ var linuxCategories = map[string]string{
 	"auditd": "rules/linux/auditd",
 }
 
+// webCategories are the log source categories of web servers' logs, which
+// name no product, and the folders their rules live in.
+var webCategories = map[string]string{
+	"webserver": "rules/web/webserver_generic",
+}
+
 // networkCategories are the network log sources, and the folders their
 // rules live in: Zeek's own logs (product: zeek, one category per
 // service, zeek_dns), and the generic dns, firewall and proxy categories,
@@ -200,6 +206,9 @@ func main() {
 	}
 	for c, dir := range linuxCategories {
 		sources = append(sources, source{"linux", c, dir})
+	}
+	for c, dir := range webCategories {
+		sources = append(sources, source{"", c, dir})
 	}
 	for c, dir := range networkCategories {
 		sources = append(sources, source{"network", c, dir})
@@ -538,10 +547,24 @@ func writeReport(p *detect.Pack, skipped map[string][]string) {
 			fmt.Fprintf(&b, "- %s\n", strings.ReplaceAll(f, "|", `\|`))
 		}
 	}
+	b.WriteString(networkReportNote)
 	if err := os.WriteFile(filepath.Join(*outDir, "REPORT.md"), []byte(b.String()), 0o644); err != nil {
 		log.Fatal(err)
 	}
 }
+
+// networkReportNote is about network rules that ship but are unlikely
+// to match what Zeek writes.
+const networkReportNote = `
+## Shipped network rules unlikely to match real Zeek data
+
+These convert faithfully and pass their test events, but Sigma's values are not the
+ones Zeek writes, so they seldom fire on a real sensor's logs (all pack rules are off
+until turned on):
+
+- rules/network/zeek/zeek_smb_converted_win_atsvc_task.yml: the share is the literal ` + "`\\\\*\\IPC$`" + `, while Zeek logs the server's own name.
+- rules/network/zeek/zeek_smb_converted_win_transferring_files_with_credential_data.yml: whole names such as ` + "`\\sam`" + ` and ` + "`\\ntds.dit`" + `, while Zeek's name is the file's path in the share (` + "`Windows\\System32\\config\\SAM`" + `).
+`
 
 // clauseNote is a report line for a rule over the clause limit.
 func clauseNote(rel string, n int, err error) string {

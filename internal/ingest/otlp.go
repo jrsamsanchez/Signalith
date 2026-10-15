@@ -1,6 +1,7 @@
 package ingest
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"maps"
@@ -133,6 +134,9 @@ func otlpEvent(l *otlpLog, now time.Time) Event {
 			bodyText = str(l.attrs, "message")
 		}
 		ev.Fields["message"] = bodyText
+	case bodyText != "" && isWebAccessFile(l.attrs):
+		// The Collector's filelog receiver on a web server's access log.
+		ev = parseWebRecord(map[string]any{"log": bodyText, "file": cmp.Or(str(l.attrs, "log.file.path"), str(l.attrs, "log.file.name")), "hostname": host})
 	case bodyText != "" && syslogLine.MatchString(bodyText):
 		ev = parseSyslogLine(bodyText, otlpFileSourcetype(l.attrs), now)
 	default:
@@ -203,6 +207,16 @@ func otlpFileSourcetype(attrs map[string]any) string {
 		return "linux:auth"
 	}
 	return "syslog"
+}
+
+// isWebAccessFile reports whether a filelog record is from a web server's
+// access log (access.log, other_vhosts_access.log, access_log).
+func isWebAccessFile(attrs map[string]any) bool {
+	name := str(attrs, "log.file.name")
+	if name == "" {
+		name = baseName(str(attrs, "log.file.path"))
+	}
+	return strings.Contains(strings.ToLower(name), "access")
 }
 
 // otlpSemconv maps OpenTelemetry semantic-convention attribute names onto

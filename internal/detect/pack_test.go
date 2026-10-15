@@ -182,13 +182,15 @@ func TestPackDetections(t *testing.T) {
 		}
 		// Each rule reads only its own system's events: a network rule
 		// its Zeek log's, or its data model's (a DNS lookup, a web request
-		// or a connection from any source).
+		// or a connection from any source); a web server rule the Web
+		// data model's.
 		if strings.Contains(d.Query, "sourcetype=zeek:") || networkPackRule(d) {
 			continue
 		}
 		if !strings.Contains(d.Query, "sourcetype=WinEventLog:") && !strings.Contains(d.Query, `sourcetype="WinEventLog:`) &&
-			!strings.Contains(d.Query, "sourcetype=sysmon:linux") && !strings.Contains(d.Query, "sourcetype=linux:audit") {
-			t.Errorf("%s: not limited to Windows, Sysmon for Linux or Linux audit events: %s", d.ID, d.Query)
+			!strings.Contains(d.Query, "sourcetype=sysmon:linux") && !strings.Contains(d.Query, "sourcetype=linux:audit") &&
+			!strings.HasPrefix(d.Query, "datamodel=Web ") {
+			t.Errorf("%s: not limited to Windows, Sysmon for Linux, Linux audit or web server events: %s", d.ID, d.Query)
 		}
 	}
 }
@@ -198,7 +200,7 @@ func TestPackDetections(t *testing.T) {
 // detection over a network data model), limited to its data model.
 func networkPackRule(d *Detection) bool {
 	if d.Origin != nil && d.Origin.Pack == "splunk" && slices.Contains(d.Tags, "network") {
-		for _, m := range []string{"Network_Traffic", "Network_Resolution", "Web"} {
+		for _, m := range []string{"Network_Traffic", "Network_Resolution"} {
 			if strings.HasPrefix(d.Query, "datamodel="+m+" ") {
 				return true
 			}
