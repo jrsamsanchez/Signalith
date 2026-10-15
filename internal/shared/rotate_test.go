@@ -198,7 +198,7 @@ func TestKeyRotationAfterRemove(t *testing.T) {
 	if len(res.Skipped) != 0 {
 		t.Errorf("skipped %v: a removed server is not waited for", res.Skipped)
 	}
-	if err := rc.a.rt.MarkRotated(context.Background(), "n_siem-c"); err != nil {
+	if _, err := rc.a.rt.MarkRotated(context.Background(), res.KID, "n_siem-c"); err != nil {
 		t.Fatal(err)
 	}
 	kr, _ := rc.a.rt.Keyring().Get()
@@ -268,7 +268,7 @@ func TestKeyRotationResealerFails(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if again.KID != res.KID || runs.Load() != 2 {
+	if again.KID != res.KID || runs.Load() != 3 {
 		t.Errorf("the second run rotated to %s (first %s), resealer ran %d times", again.KID, res.KID, runs.Load())
 	}
 	kr, _ = rc.a.rt.Keyring().Get()
@@ -415,4 +415,83 @@ func TestRotationDoesNotSignForgedDocuments(t *testing.T) {
 		t.Error("nothing was signed again")
 	}
 	mustContain(t, "log", rc.a.logs.String(), "user:mallory")
+}
+
+// The resealers run a last time right before the old key is retired, so
+// a value sealed with it after their first pass still opens afterwards.
+func TestKeyRotationResealsBeforeRetiring(t *testing.T) {
+	rc := newRotationCluster(t)
+	var step atomic.Value
+	var at []string
+	rs := func(context.Context) error {
+		at = append(at, step.Load().(string))
+		return nil
+	}
+	_, err := rc.rotate(RotateOptions{By: "admin", Resealers: []Resealer{rs},
+		Progress: func(s string, done, total int) { step.Store(s) }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(at, []string{rotationSteps[3], rotationSteps[4]}) {
+		t.Errorf("the resealers ran at %q", at)
+	}
+}
+
+// A server removed during a rotation that had made it a copy may hold
+// the new key: that rotation does not count as rotating it away, and a
+// later one does.
+func TestKeyRotationRemoveDuring(t *testing.T) {
+	rc := newRotationCluster(t)
+	ctx := context.Background()
+	var fail atomic.Bool
+	fail.Store(true)
+	rs := func(context.Context) error {
+		if fail.Load() {
+			return errors.New("cannot reach OpenSearch")
+		}
+		return nil
+	}
+	// The rotation stops after every member, siem-c too, has the new key.
+	first, err := rc.rotate(RotateOptions{By: "admin", Resealers: []Resealer{rs}})
+	if err == nil {
+		t.Fatal("the rotation finished although a resealer failed")
+	}
+	if !slices.Contains(rc.c.rt.Hub().Keys().IDs(), first.KID) {
+		t.Fatal("siem-c did not pick up the new key")
+	}
+	rc.cOffline = OfflineSkip + time.Minute
+	rc.heartbeats()
+	rec, err := rc.a.rt.RemoveMember(ctx, "n_siem-c", "", "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec.During != first.KID {
+		t.Errorf("removed = %+v", rec)
+	}
+	fail.Store(false)
+	res, err := rc.rotate(RotateOptions{By: "admin", Resealers: []Resealer{rs}})
+	if err != nil || res.KID != first.KID {
+		t.Fatalf("finishing the rotation: %+v %v", res, err)
+	}
+	if err := rc.a.rt.MarkAllRotated(ctx, res.KID); err != nil {
+		t.Fatal(err)
+	}
+	left, err := rc.a.rt.MarkRotated(ctx, res.KID, "n_siem-c")
+	if err != nil || !slices.Equal(left, []string{"n_siem-c"}) {
+		t.Fatalf("left %v %v", left, err)
+	}
+	if rm := rc.a.rt.Removed(); len(rm) != 1 || rm[0].Rotated {
+		t.Fatalf("marked rotated by the rotation it may hold the key of: %+v", rm)
+	}
+
+	again, err := rc.rotate(RotateOptions{By: "admin", Resealers: []Resealer{rs}})
+	if err != nil || again.KID == first.KID {
+		t.Fatalf("the next rotation: %+v %v", again, err)
+	}
+	if left, err := rc.a.rt.MarkRotated(ctx, again.KID, "n_siem-c"); err != nil || len(left) != 0 {
+		t.Fatalf("left %v %v", left, err)
+	}
+	if rm := rc.a.rt.Removed(); len(rm) != 1 || !rm[0].Rotated {
+		t.Errorf("removed list = %+v", rm)
+	}
 }

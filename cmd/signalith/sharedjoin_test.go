@@ -225,7 +225,7 @@ func TestRejoinAfterRemoveGetsACertificate(t *testing.T) {
 	}
 	join("first join")
 
-	if _, err := removeServer(ctx, a.r.shared, j.osca, "n_siem-c", "siem-c", "admin", false); err != nil {
+	if _, _, err := removeServer(ctx, a.r.shared, removeHooks(a.r.shared, j.osca), "n_siem-c", "siem-c", "admin", false); err != nil {
 		t.Fatal(err)
 	}
 	if b, _ := j.osca.Get(); b.RevokedNodes["n_siem-c"].IsZero() {
@@ -244,7 +244,7 @@ func TestRejoinAfterRemoveGetsACertificate(t *testing.T) {
 	}
 
 	// Approval readmits too.
-	if _, err := removeServer(ctx, a.r.shared, j.osca, "n_siem-c", "siem-c", "admin", false); err != nil {
+	if _, _, err := removeServer(ctx, a.r.shared, removeHooks(a.r.shared, j.osca), "n_siem-c", "siem-c", "admin", false); err != nil {
 		t.Fatal(err)
 	}
 	ap := j.approver()
