@@ -2916,6 +2916,7 @@ body:has(.page.active .inspector:not([hidden], .hidden)) #toast { bottom: 88px; 
 #page-servers .sv-table [data-col="version"] { width: 120px; }
 #page-servers .sv-server { display: flex; align-items: center; gap: 12px; min-width: 0; }
 #page-servers .sv-server__icon { width: 32px; height: 32px; flex: none; display: grid; place-items: center; border-radius: var(--r-md); color: var(--text-2); background: var(--hover); }
+#page-servers .sv-server__icon[data-role="scanner"] { color: var(--accent); background: var(--accent-soft); }
 #page-servers .sv-server__text { min-width: 0; }
 #page-servers .sv-server__name { display: flex; align-items: center; gap: 8px; min-width: 0; font-weight: 500; color: var(--text); }
 #page-servers .sv-server__name > :first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -4995,6 +4996,32 @@ dialog.modal.sj-dialog[open] { display: flex; flex-direction: column; max-height
 .sj-step__body > p { margin: 0; line-height: 1.5; color: var(--text); overflow-wrap: anywhere; }
 .sj-step__body code { padding: 1px 5px; border-radius: var(--r-xs); font-size: var(--fs-sm); background: var(--sunken); box-shadow: inset 0 0 0 1px var(--line-subtle); }
 
+/* step 1: what is being added, as selectable cards with the real radio
+   drawn at the right (as on Add data). One column on a phone. */
+.sj-kinds { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.sj-kind { position: relative; display: flex; align-items: flex-start; gap: 10px; padding: 12px; border-radius: var(--r-lg); cursor: pointer;
+  background: var(--raised); box-shadow: inset 0 0 0 1px var(--line); transition: box-shadow var(--t-fast); }
+.sj-kind:hover { box-shadow: inset 0 0 0 1px var(--line-strong), var(--shadow-sm); }
+.sj-kind:has(input:checked) { box-shadow: inset 0 0 0 1.5px var(--accent), var(--shadow-sm); }
+.sj-kind:has(input:focus-visible) { box-shadow: 0 0 0 2px var(--sheet), 0 0 0 4px var(--accent); }
+.sj-kind:has(input:disabled) { opacity: .5; cursor: default; }
+.sj-kind__icon { width: 32px; height: 32px; flex: none; display: grid; place-items: center; border-radius: var(--r-md); color: var(--text-2); background: var(--hover);
+  transition: background var(--t-fast), color var(--t-fast); }
+.sj-kind:has(input:checked) .sj-kind__icon { color: var(--accent); background: var(--accent-soft-2); }
+.sj-kind__text { display: grid; gap: 2px; flex: 1; min-width: 0; }
+.sj-kind__text b { font-weight: 600; color: var(--text); line-height: 20px; padding-right: 26px; }
+.sj-kind__text span { font-size: var(--fs-sm); color: var(--text-3); line-height: 1.45; }
+.sj-kind input {
+  position: absolute; top: 14px; right: 12px; appearance: none; -webkit-appearance: none; width: 16px; height: 16px; margin: 0; border-radius: 50%; cursor: pointer;
+  background: var(--field); box-shadow: inset 0 0 0 1px var(--line-strong); transition: box-shadow var(--t-fast);
+}
+.sj-kind input:checked { background: var(--text-on-accent); box-shadow: inset 0 0 0 5px var(--accent-fill); }
+.sj-kind input:focus-visible { outline: none; }
+.sj-kind input:disabled { cursor: default; }
+@media (max-width: 640px) {
+  .sj-kinds { grid-template-columns: minmax(0, 1fr); }
+  .sj-kind__text span { font-size: var(--fs-sm); }
+}
 .sj-checks { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; }
 .sj-check { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 10px; line-height: 1.45; }
 .sj-check > .icon { margin-top: 2px; color: var(--success); }

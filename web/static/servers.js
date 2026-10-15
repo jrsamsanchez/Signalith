@@ -158,9 +158,10 @@ const serverPanels = [];
     const addr = s.node_url || s.listen || '';
     return el('td', { 'data-col': 'server' },
       el('div', { class: 'sv-server' },
-        el('span', { class: 'sv-server__icon' }, icon('server')),
+        el('span', { class: 'sv-server__icon', 'data-role': s.role || 'server' }, icon(s.role === 'scanner' ? 'radar' : 'server')),
         el('div', { class: 'sv-server__text' },
           el('div', { class: 'sv-server__name' }, el('button', { type: 'button', class: 'link-btn sv-open', title: 'Settings of ' + s.name, onclick: () => openPanel(s.node_id || s.name) }, s.name),
+            s.role === 'scanner' ? el('span', { class: 'badge badge--accent', title: 'Added as a vulnerability scanner: it scans the networks picked for it and never runs the background jobs' }, 'Scanner') : null,
             s.self ? el('span', { class: 'badge badge--outline', title: 'The server that answered this page' }, 'This server') : null),
           addr ? el('div', { class: 'sv-server__addr mono', title: addr }, addr) : null)));
   }
@@ -212,6 +213,7 @@ const serverPanels = [];
     } else {
       body = [el('span', { class: 'sv-standby' }, 'Doesn’t run them')];
       let why = s.not_eligible || '';
+      if (s.role === 'scanner') why = 'A scanner only scans its network zone';
       // The setting's name as this server's Settings page shows it: its new
       // name once that server takes its settings from the shared ones.
       if (/^detections\.scheduler is off/.test(why)) why = (s.shared && s.shared.settings_rev ? 'May run background jobs' : 'Run detections on schedule') + ' is off';

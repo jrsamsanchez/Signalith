@@ -272,6 +272,10 @@ func (p *parser) primary() (Expr, error) {
 		p.i++
 		return e, nil
 	}
+	// A quoted name before = or != is a field ("a.b"=c), as in Splunk.
+	if t.kind == 's' && p.i+1 < len(p.toks) && p.toks[p.i+1].kind == 'o' && (p.toks[p.i+1].text == "=" || p.toks[p.i+1].text == "!=") {
+		t.kind = 'w'
+	}
 	if t.kind != 'w' {
 		return nil, fmt.Errorf("expected a field, found %q", t.text)
 	}
@@ -334,6 +338,11 @@ func (p *parser) field(name string) (string, error) {
 		if source, ok = strings.CutSuffix(source, xmlkvSuffix); ok {
 			if f, ok := XMLKVFields[name]; ok {
 				return f, nil
+			}
+		}
+		if source == "cloudtrail" {
+			if _, ok := cloudTrailField(name); ok {
+				return rawFieldPrefix + name, nil
 			}
 		}
 		if source == "linux_auditd" {

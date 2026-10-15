@@ -49,6 +49,13 @@
     render();
   }
 
+  // addScanner opens Settings > Servers > Add a server with Vulnerability
+  // scanner picked.
+  function addScanner() {
+    if (typeof window.openAddServer === 'function') window.openAddServer('scanner');
+    else showPage('servers');
+  }
+
   // ---------- servers as scanners ----------
   // servers is every server that can scan; a network names one by its id,
   // and "" is the one running the background jobs.
@@ -650,7 +657,7 @@
       const opt = (value, label, sv) => el('option', { value }, label + (sv ? ' · ' + scannerState(sv).label : ''));
       scanner = el('select', { class: 'select select--block', id: 'vs-scanner' },
         opt('', 'Whichever server runs the background jobs' + (j ? ' (now ' + j.name + ')' : ''), null),
-        ...servers().map((sv) => opt(sv.id, sv.name + (sv.self ? ' (this server)' : ''), sv)));
+        ...servers().map((sv) => opt(sv.id, sv.name + (sv.self ? ' (this server)' : sv.scanner ? ' (scanner)' : ''), sv)));
       scanner.value = t.scanner || '';
     }
     const gentle = el('input', { type: 'checkbox' });
@@ -686,7 +693,7 @@
           el('p', { class: 'hint' }, el('span', {}, 'Pick a server that can reach these addresses, such as one inside this network’s zone. ',
             el('a', { href: '#scanners', 'data-page': 'scanners', onclick: () => dlg.close() }, 'Settings > Scanners'), ' shows what each server needs.'))) :
           el('p', { class: 'hint vs-zone-hint' }, icon('network'), el('span', {}, 'Network in a separate zone that this server cannot reach? ',
-            el('a', { href: '#servers', 'data-page': 'servers', onclick: () => dlg.close() }, 'Add a server'), ' inside it, then pick it here to scan from there.')),
+            el('a', { href: '#servers', onclick: (ev) => { ev.preventDefault(); dlg.close(); addScanner(); } }, 'Add a scanner'), ' inside it, then pick it here to scan from there.')),
         el('div', { class: 'field' }, el('label', { class: 'label', for: 'vs-every' }, 'When'), el('div', { class: 'vs-when' }, every, day, hour),
           el('p', { class: 'hint' }, 'In the scanning server’s time zone. Pick a quiet hour: scans add some network traffic.')),
         el('label', { class: 'switch vs-switch' }, gentle, el('span', {}, el('b', {}, 'Gentle mode'),
@@ -831,7 +838,8 @@
         el('p', { class: 'vs-start__text' }, 'A scan only sees the hosts and ports its server can reach. For a network behind a firewall, such as a plant floor or a lab, ' +
           'run a Signalith server inside it and let that server scan it. Results from every scanner land on the same Vulnerabilities page, in Findings and in the asset list.'),
         el('ol', { class: 'vs-steps' },
-          el('li', {}, el('b', {}, 'Add a server inside the zone. '), el('a', { href: '#servers', 'data-page': 'servers' }, 'Settings > Servers'), ' > Add a server.'),
+          el('li', {}, el('b', {}, 'Add a scanner inside the zone. '), el('a', { href: '#servers', onclick: (ev) => { ev.preventDefault(); addScanner(); } }, 'Add a server'),
+            ' and pick Vulnerability scanner. A scanner joins these servers but never runs the background jobs.'),
           el('li', {}, el('b', {}, 'Install Nmap on it. '), 'Its card below says whether it has what scanning needs, and how to fix anything red.'),
           el('li', {}, el('b', {}, 'Pick it for the zone’s networks. '), 'On ', el('a', { href: '#vulns', 'data-page': 'vulns' }, 'Vulnerabilities'),
             ' > Networks, edit a network and choose the server under Scanned by.')))));
@@ -866,6 +874,7 @@
     const st = scannerState(sv);
     const rep = sv.report;
     const badges = [
+      sv.scanner ? el('span', { class: 'badge badge--accent', title: 'Added as a scanner: it never runs the background jobs' }, 'Scanner') : null,
       sv.self ? el('span', { class: 'badge' }, 'This server') : null,
       sv.runs_jobs ? el('span', { class: 'badge', title: 'Scans the networks that name no scanner' }, 'Runs the background jobs') : null,
     ];
@@ -888,7 +897,7 @@
     const checks = rep && sv.state !== 'removed' ? rep.checks.filter((c) => c.id !== 'networks') : [];
     return el('article', { class: 'card sc-card', 'data-state': st.tone || 'none' }, el('div', { class: 'card__body' },
       el('div', { class: 'sc-card__head' },
-        el('span', { class: 'sc-card__icon' }, icon('server')),
+        el('span', { class: 'sc-card__icon' }, icon(sv.scanner ? 'radar' : 'server')),
         el('div', { class: 'sc-card__title' },
           el('div', { class: 'sc-card__name' }, el('h3', {}, sv.name), ...badges.filter(Boolean)),
           el('p', { class: 'vs-muted' }, sub)),

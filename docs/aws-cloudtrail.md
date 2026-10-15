@@ -140,7 +140,9 @@ datamodel=Change vendor_product="AWS CloudTrail" | stats count by command
 
 ## Detections
 
-The SigmaHQ pack has 38 CloudTrail rules (see [Detections](detections.md)). Each searches
+The SigmaHQ pack has 38 CloudTrail rules and the Splunk Security Content pack has 32 (see
+[Detections](detections.md)), such as logging stopped, MFA turned off, many failed
+sign-ins from one address and Bedrock guardrails deleted. Each searches
 `sourcetype=aws:cloudtrail`. Turn them on from the pack's page like any other rules.
 
 ## When nothing arrives

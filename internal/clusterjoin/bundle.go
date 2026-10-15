@@ -37,6 +37,9 @@ type Bundle struct {
 	PublicURL string `json:"public_url,omitempty"`
 	NodeName  string `json:"node_name"`
 	Listen    string `json:"listen,omitempty"`
+	// Role is the role the token gives the new server: "" a cluster
+	// server, or RoleScanner (cluster.role).
+	Role string `json:"role,omitempty"`
 	// Syslog is the issuer's syslog listeners, sent only for
 	// --copy-syslog; nil leaves syslog off.
 	Syslog *SyslogDefaults `json:"syslog,omitempty"`

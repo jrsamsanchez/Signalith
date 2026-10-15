@@ -5,8 +5,8 @@ detections and dashboards, take turns running the background jobs, and keep work
 one of them stops. [Servers](servers.md) explains how they work together. This page is about
 adding one.
 
-The short version: on the Servers page, click **Add a server**, pick where the new server
-runs, and run the line it gives you on the new computer. The dialog checks first that
+The short version: on the Servers page, click **Add a server**, pick what you are adding
+and where it runs, and run the line it gives you on the new computer. The dialog checks first that
 OpenSearch is ready for a second server, and says what to change if it isn't.
 
 ## What a new server needs
@@ -28,7 +28,12 @@ OpenSearch is ready for a second server, and says what to change if it isn't.
 
 ## Add a server
 
-1. On the **Servers** page (Settings > Servers), click **Add a server**.
+1. On the **Servers** page (Settings > Servers), click **Add a server**, and pick what you
+   are adding (see [Cluster servers and scanners](#cluster-servers-and-scanners)):
+   - **Cluster server**: shares the work of the other servers.
+   - **Vulnerability scanner**: a server inside a network zone that only scans it.
+   - **Network sensor**: Zeek and Suricata on a mirror port. It isn't a Signalith server, so
+     the dialog takes you to its setup on Add data ([Network sensor](network-sensor.md)).
 2. The dialog checks what a new server needs from this one. If OpenSearch isn't ready, do
    the steps under **Prepare OpenSearch** first and save the **Address for new servers**.
 3. Pick where the new server runs, **Linux**, **Windows** or **Docker**, and click **Make
@@ -36,6 +41,25 @@ OpenSearch is ready for a second server, and says what to change if it isn't.
 4. Run the line on the new computer (below). The dialog follows it live: the token used,
    the server started, and this server reaching it. When it says the server **joined and is
    ready**, it is in the list of servers.
+
+### Cluster servers and scanners
+
+Both join the same way, with the same line, and both share this OpenSearch, the settings and
+the users. What they are for differs, and the Servers page shows a **Scanner** badge on each
+scanner:
+
+- A **cluster server** takes events from agents and devices, answers searches, and may run
+  the background jobs (detections, threat intel downloads, notifications, playbooks and
+  retention), taking them over when another server stops. Put it behind your load balancer.
+- A **scanner** scans the networks picked for it on the Vulnerabilities page, from inside
+  their zone (see [Vulnerabilities](vulnerabilities.md#scanning-each-network-zone-from-inside-it)),
+  and never runs the background jobs. Agents and devices don't send to it, so only its web
+  port must be open, for the other servers to check it.
+
+The join token carries the choice, and the new server keeps it as its **Server role**
+(`cluster.role: scanner` in its settings). Change it later on that server's settings, under
+Detections; it applies after a restart. If only scanners are left running, no server runs
+the background jobs.
 
 The line holds a **join token** that works **once, for 60 minutes**. Anyone who has it can
 add a server to your cluster, so don't post it anywhere. Your shell may keep the line in its
