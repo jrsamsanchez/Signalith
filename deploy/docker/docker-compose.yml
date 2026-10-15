@@ -69,6 +69,7 @@ services:
       - SIGNALITH_SETUP_CA_DIR=/opensearch-ca
       - SIGNALITH_SETUP_STATE_DIR=/signalith-data
       - SIGNALITH_SETUP_LOADED_DIR=/opensearch-security-loaded
+      - SIGNALITH_SETUP_CRL_DIR=/opensearch-crl
     volumes:
       - opensearch-certs:/opensearch-certs
       - signalith-secrets:/signalith-secrets
@@ -76,6 +77,7 @@ services:
       # Written only by -export-ca-key and -apply-security.
       - signalith-data:/signalith-data
       - opensearch-security-loaded:/opensearch-security-loaded
+      - opensearch-crl:/opensearch-crl
     restart: "no"
 
   opensearch:
@@ -92,6 +94,12 @@ services:
       # it, and it would be one more program listening (port 9600).
       - DISABLE_PERFORMANCE_ANALYZER_AGENT_CLI=true
       - OPENSEARCH_JAVA_OPTS=-Xms1g -Xmx1g
+    # Checks client certificates against the revocation list Signalith
+    # keeps (docs/servers.md, Ending a server's OpenSearch access at once),
+    # once setup has made it: OpenSearch refuses every certificate while
+    # the list it checks is missing.
+    entrypoint: ["sh", "-c", "if [ -s config/crl/crl.pem ]; then exec env plugins.security.ssl.http.crl.validate=true plugins.security.ssl.http.crl.file_path=/usr/share/opensearch/config/crl/crl.pem plugins.security.ssl.http.crl.disable_ocsp=true plugins.security.ssl.http.crl.disable_crldp=true plugins.security.ssl.http.crl.prefer_crlfile_over_ocsp=true ./opensearch-docker-entrypoint.sh \"$$@\"; fi; exec ./opensearch-docker-entrypoint.sh \"$$@\"", "sh"]
+    command: ["opensearch"]
     ulimits:
       memlock: { soft: -1, hard: -1 }
       nofile: { soft: 65536, hard: 65536 }
@@ -100,6 +108,7 @@ services:
     volumes:
       - opensearch-data:/usr/share/opensearch/data
       - opensearch-certs:/usr/share/opensearch/config/certs:ro
+      - opensearch-crl:/usr/share/opensearch/config/crl:ro
       - ./opensearch/opensearch.yml:/usr/share/opensearch/config/opensearch.yml:ro
       - ./opensearch/security/config.yml:/usr/share/opensearch/config/opensearch-security/config.yml:ro
       - ./opensearch/security/internal_users.yml:/usr/share/opensearch/config/opensearch-security/internal_users.yml:ro
@@ -232,6 +241,9 @@ services:
       # This server's name on the Servers page. When several servers share
       # one OpenSearch, give each its own.
       - SIGNALITH_NODE_NAME=signalith-1
+      # The revocation list OpenSearch checks client certificates against,
+      # which this server keeps once the cluster keeps OpenSearch's CA.
+      - SIGNALITH_OPENSEARCH_CRL_FILE=/run/opensearch-crl/crl.pem
       # Set to https://<this computer's IP>:8080 so agents on other machines can reach it.
       # When several servers share one OpenSearch and their settings, the public
       # address is one for all of them: a change here applies to every server
@@ -242,6 +254,7 @@ services:
       - ./signalith.yaml:/etc/signalith/signalith.yaml:ro
       - signalith-data:/var/lib/signalith
       - signalith-secrets:/run/signalith-secrets:ro
+      - opensearch-crl:/run/opensearch-crl
       # Days archived before retention deletes them go to /var/lib/signalith/archive.
       # To keep them on another disk, mount a folder there (writable by uid 65532):
       # - /mnt/archive/signalith:/var/lib/signalith/archive
@@ -279,3 +292,6 @@ volumes:
   signalith-data:
   # Signalith's OpenSearch certificate, first admin password and ingest token.
   signalith-secrets:
+  # The revocation list OpenSearch checks client certificates against:
+  # made by setup, kept by Signalith, read by OpenSearch.
+  opensearch-crl:

@@ -21,6 +21,10 @@ const (
 // ErrNoCA: the cluster keeps no OpenSearch certificate authority.
 var ErrNoCA = errors.New("the cluster keeps no OpenSearch certificate authority")
 
+// ErrRevoked: the server's certificates were revoked, so it gets no new
+// one.
+var ErrRevoked = errors.New("this server's OpenSearch certificates were revoked, so it is issued no new one")
+
 // ErrNameTaken: another server holds a valid certificate for the name.
 var ErrNameTaken = errors.New("another server has a valid OpenSearch certificate for this name")
 
@@ -95,6 +99,9 @@ func (o *OSCA) Issue(ctx context.Context, name, nodeID string, csrPEM []byte, no
 	if taken(b, key, nodeID, now) {
 		return nil, time.Time{}, ErrNameTaken
 	}
+	if _, ok := b.RevokedNodes[nodeID]; ok {
+		return nil, time.Time{}, ErrRevoked
+	}
 	ca, err := o.open(b)
 	if err != nil {
 		return nil, time.Time{}, err
@@ -110,10 +117,26 @@ func (o *OSCA) Issue(ctx context.Context, name, nodeID string, csrPEM []byte, no
 		if taken(b, key, nodeID, now) {
 			return ErrNameTaken
 		}
+		if _, ok := b.RevokedNodes[nodeID]; ok {
+			return ErrRevoked
+		}
 		if b.Issued == nil {
 			b.Issued = map[string]Issued{}
 		}
-		b.Issued[key] = Issued{Serial: cert.SerialNumber.Text(16), NotAfter: cert.NotAfter.UTC(), NodeID: nodeID, IssuedAt: now.UTC()}
+		next := Issued{Serial: cert.SerialNumber.Text(16), NotAfter: cert.NotAfter.UTC(), NodeID: nodeID, IssuedAt: now.UTC()}
+		if cur, ok := b.Issued[key]; ok && cur.NodeID == nodeID {
+			// The certificates it replaces stay valid until they expire,
+			// so a revocation must name them too.
+			for _, e := range append(cur.Previous, Earlier{Serial: cur.Serial, NotAfter: cur.NotAfter}) {
+				if now.Before(e.NotAfter) {
+					next.Previous = append(next.Previous, e)
+				}
+			}
+			if len(next.Previous) > MaxPrevious {
+				next.Previous = next.Previous[len(next.Previous)-MaxPrevious:]
+			}
+		}
+		b.Issued[key] = next
 		pruneIssued(b.Issued)
 		return nil
 	})

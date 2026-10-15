@@ -45,6 +45,10 @@ type Options struct {
 	// ImportDir is the folder OpenSearch's certificate authority is
 	// handed over in (<state>/import, ospki.ImportDir).
 	ImportDir string
+	// CRLFile is opensearch.crl_file, the revocation list OpenSearch
+	// checks client certificates against, which this server keeps
+	// (syncCRL); "" when it is not set.
+	CRLFile string
 	// Writable says why this server cannot change the shared settings
 	// now, nil when it can.
 	Writable func() error
@@ -118,6 +122,7 @@ func (i *Identity) Sync(ctx context.Context) {
 	i.importProblem = i.note("import", i.importFiles(ctx))
 	i.issueProblem = i.note("issue", i.ensure(ctx))
 	st := i.describe()
+	st.CRL = i.syncCRL()
 	i.smu.Lock()
 	i.status = st
 	i.smu.Unlock()

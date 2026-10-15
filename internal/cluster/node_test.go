@@ -1265,6 +1265,50 @@ func TestSettingsStateInHeartbeat(t *testing.T) {
 	})
 }
 
+// A revocation list OpenSearch would refuse everyone over is red, with a
+// banner on every page.
+func TestCRLProblemIsABanner(t *testing.T) {
+	fos := ostest.New(t)
+	c := store.New(store.Config{URL: fos.URL})
+	l, err := OpenLocal(t.TempDir(), testOptions("host-crl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := New(Options{Local: l, Version: "1.0.0", Timing: fast})
+	ctx, cancel := context.WithCancel(context.Background())
+	n.Start(ctx)
+	var mu sync.Mutex
+	problem := ""
+	n.Use(c, "s", Settings{Eligible: true, Listen: "0.0.0.0:8080", OSIdentity: func() *OSIdentityStatus {
+		mu.Lock()
+		defer mu.Unlock()
+		return &OSIdentityStatus{CRL: &CRLStatus{File: "/crl/crl.pem", Problem: problem}}
+	}})
+	t.Cleanup(func() {
+		cancel()
+		n.Close()
+	})
+	until(t, 5*time.Second, "the jobs", n.RunsJobs)
+	for _, b := range n.Banners() {
+		if strings.Contains(b, "revocation list") {
+			t.Fatalf("a banner without a problem: %q", b)
+		}
+	}
+	mu.Lock()
+	problem = "OpenSearch's revocation list /crl/crl.pem is missing."
+	mu.Unlock()
+	found := false
+	for _, w := range n.Status().Warnings {
+		found = found || w.Level == "red" && strings.Contains(w.Text, "/crl/crl.pem is missing")
+	}
+	if !found {
+		t.Errorf("warnings %+v", n.Status().Warnings)
+	}
+	if !slices.ContainsFunc(n.Banners(), func(b string) bool { return strings.Contains(b, "revocation list") }) {
+		t.Errorf("banners %q", n.Banners())
+	}
+}
+
 // A drained server is not ready, gives up the background jobs and does
 // not take them back; resumed, it is ready again.
 func TestDrainAndResume(t *testing.T) {

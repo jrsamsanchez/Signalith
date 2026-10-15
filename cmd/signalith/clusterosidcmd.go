@@ -22,15 +22,82 @@ import (
 // which the cluster keeps to give each server its own OpenSearch
 // certificate (see sharedosid.go).
 
-// osCACommand runs signalith cluster opensearch-ca [import <key>].
-func (x *clusterCLI) osCACommand(ctx context.Context, pos []string, certFile string, asJSON bool) error {
+// osCACommand runs signalith cluster opensearch-ca [import <key> |
+// revoke <server> | crl].
+func (x *clusterCLI) osCACommand(ctx context.Context, pos []string, certFile, outFile string, asJSON, yes bool) error {
 	switch {
 	case len(pos) == 0:
 		return x.osCAStatus(ctx, asJSON)
 	case pos[0] == "import" && len(pos) == 2:
 		return x.osCAImport(ctx, pos[1], certFile)
+	case pos[0] == "revoke" && len(pos) == 2:
+		return x.osCARevoke(ctx, pos[1], yes)
+	case pos[0] == "crl" && len(pos) == 1:
+		return x.osCACRL(outFile)
 	}
-	return errors.New("usage: signalith cluster opensearch-ca [-json]\n       signalith cluster opensearch-ca import [-cert root-ca.pem] <root-ca-key.pem>")
+	return errors.New("usage: signalith cluster opensearch-ca [-json]\n" +
+		"       signalith cluster opensearch-ca import [-cert root-ca.pem] <root-ca-key.pem>\n" +
+		"       signalith cluster opensearch-ca revoke [-yes] <server>\n" +
+		"       signalith cluster opensearch-ca crl [-o file]")
+}
+
+// osCARevoke ends the OpenSearch access of the server named server (its
+// name or node id) at once: its certificates go on the revocation list.
+func (x *clusterCLI) osCARevoke(ctx context.Context, server string, yes bool) error {
+	if _, err := x.osCARuntime(false); err != nil {
+		return err
+	}
+	b, ok := x.osca.Get()
+	if !ok {
+		return clusterpki.ErrShared
+	}
+	nodeID, name := "", server
+	for n, is := range b.Issued {
+		if is.NodeID == server || n == clusterpki.Norm(server) {
+			nodeID, name = is.NodeID, n
+			break
+		}
+	}
+	if nodeID == "" {
+		hbs, err := x.heartbeats(ctx)
+		if err != nil {
+			return fmt.Errorf("the servers' heartbeats cannot be read: %w", err)
+		}
+		for _, hb := range hbs {
+			if hb.NodeID == server || hb.Name == server {
+				nodeID, name = hb.NodeID, hb.Name
+				break
+			}
+		}
+	}
+	if nodeID == "" {
+		return fmt.Errorf("no server %q has, or had, an OpenSearch certificate from the cluster", server)
+	}
+	if nodeID == x.self.NodeID {
+		return errors.New("that is this server: revoke it from another one")
+	}
+	if err := x.confirm(fmt.Sprintf("%s (%s) will lose its OpenSearch access at once, and get no new certificate unless it joins the cluster again. Go on?", name, nodeID), yes); err != nil {
+		return err
+	}
+	revoked, err := x.osca.RevokeNode(ctx, x.by, nodeID)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(x.out, "Revoked %d OpenSearch %s of %s.\n", len(revoked), map[bool]string{true: "certificate", false: "certificates"}[len(revoked) == 1], name)
+	fmt.Fprintln(x.out, "Each server with opensearch.crl_file set writes the new revocation list within a minute; OpenSearch nodes without one need a copy: signalith cluster opensearch-ca crl -o crl.pem.")
+	return nil
+}
+
+// osCACRL writes the revocation list to outFile, or prints it.
+func (x *clusterCLI) osCACRL(outFile string) error {
+	if _, err := x.osCARuntime(true); err != nil {
+		return err
+	}
+	b, err := x.osca.CRL(time.Now())
+	if err != nil {
+		return err
+	}
+	return x.write(outFile, b)
 }
 
 // osCARuntime is a runtime of a member, which can read and change the

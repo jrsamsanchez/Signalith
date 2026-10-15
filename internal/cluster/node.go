@@ -1803,6 +1803,10 @@ func (n *Node) localWarningsLocked(st Status) []Warning {
 			continue
 		}
 		names[s.Name]++
+		if s.Detail != nil && s.Detail.OSIdentity != nil && s.Detail.OSIdentity.CRL != nil && s.Detail.OSIdentity.CRL.Problem != "" {
+			w = append(w, Warning{Level: "red", Text: s.Name + ": " + s.Detail.OSIdentity.CRL.Problem,
+				Banner: "OpenSearch's revocation list needs attention: while it is missing or expired, OpenSearch refuses every certificate sign-in. The Servers page says what to do."})
+		}
 		if s.Detail != nil && s.Detail.ClockOffsetMS != nil {
 			off := time.Duration(*s.Detail.ClockOffsetMS) * time.Millisecond
 			if off.Abs() > 2*time.Second {
