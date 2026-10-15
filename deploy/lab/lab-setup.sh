@@ -328,6 +328,9 @@ join() {
   out=$(sg "${args[@]}")
   line="$(jq -r .commands.linux <<<"$out") --name $name --node-url https://$name.$DOMAIN:8080"
   on "$name" "bash -c $(printf '%q' "$line")"
+  # A join through install.sh can leave node.id root's, which the
+  # service cannot read: give the state folder to its account.
+  on "$name" 'chown -R signalith:signalith /var/lib/signalith && systemctl restart signalith'
   if [ "$role" = scanner ]; then
     on "$name" 'DEBIAN_FRONTEND=noninteractive apt-get install -y -q nmap >/dev/null && systemctl restart signalith'
   fi
