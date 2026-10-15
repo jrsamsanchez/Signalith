@@ -1,0 +1,33 @@
+name: Scorecard
+# OpenSSF Scorecard: checks the repository's supply-chain practices (pinned
+# actions, branch protection, signed releases and so on). Results go to the
+# Security tab and to the public Scorecard API (publish_results).
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '41 5 * * 3'
+
+permissions:
+  contents: read
+
+jobs:
+  analysis:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      id-token: write
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: ossf/scorecard-action@fa7117db83c52d787ae5a89f350999701505d78e # v2.5.0
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          publish_results: true
+      - uses: github/codeql-action/upload-sarif@ce5e7eeac396d720fe2d802714996c8ce561e311 # v3.39.0
+        with:
+          sarif_file: results.sarif

@@ -1,0 +1,46 @@
+name: Image scan
+# Scans ghcr.io/jrsamsanchez/signalith:main for known vulnerabilities once a
+# week, so new CVEs in an image that has not changed still show up in the
+# Security tab. The Image (main) workflow scans each new image as it is built.
+on:
+  schedule:
+    - cron: '7 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+      security-events: write
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/signalith
+    steps:
+      - uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 # v3.5.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Image name
+        id: tags
+        run: echo "image=$(echo "$IMAGE" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+      # The same settings as the scan in the Image (main) workflow.
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ steps.tags.outputs.image }}:main
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          limit-severities-for-sarif: true
+          format: sarif
+          output: trivy-image.sarif
+          exit-code: '0'
+          version: v0.70.0
+      - uses: github/codeql-action/upload-sarif@ce5e7eeac396d720fe2d802714996c8ce561e311 # v3.39.0
+        with:
+          sarif_file: trivy-image.sarif
+          category: image-main
