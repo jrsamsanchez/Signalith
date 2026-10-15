@@ -47,11 +47,14 @@ func TestOTelLinux(t *testing.T) {
 	if got := dig(m, exp, "otlphttp/signalith", "tls", "ca_file"); got != OTelLinuxCAPath || a.CAPath != OTelLinuxCAPath || a.CAStep == 0 {
 		t.Errorf("ca_file = %v, CAPath %q, CAStep %d", got, a.CAPath, a.CAStep)
 	}
+	if dig(m, "receivers", "filelog/web", "include_file_path") != true || len(dig(m, "receivers", "filelog/web", "include").([]any)) != len(WebAccessLogs) {
+		t.Errorf("web receiver = %v", dig(m, "receivers", "filelog/web"))
+	}
 	if dig(m, "receivers", "filelog/auth") == nil || dig(m, "receivers", "otlp") == nil {
 		t.Errorf("receivers = %v", m["receivers"])
 	}
 	recv, _ := dig(m, "service", "pipelines", "logs/signalith", "receivers").([]any)
-	if len(recv) != 2 || recv[0] != "filelog/auth" {
+	if len(recv) != 3 || recv[0] != "filelog/auth" || recv[1] != "filelog/web" {
 		t.Errorf("pipeline receivers = %v", recv)
 	}
 	if a.ConfigPath != OTelLinuxConfig || a.ConfigStep == 0 || !strings.Contains(a.Steps[a.ConfigStep-1], "config.yaml") {

@@ -179,10 +179,12 @@ func TestPackDetections(t *testing.T) {
 				t.Errorf("%s: technique %s is not in ATT&CK %s", d.ID, id, ATTACK().Version)
 			}
 		}
-		// Each rule reads only its own system's events.
+		// Each rule reads only its own system's events; only web server
+		// logs fill the Web data model.
 		if !strings.Contains(d.Query, "sourcetype=WinEventLog:") && !strings.Contains(d.Query, `sourcetype="WinEventLog:`) &&
-			!strings.Contains(d.Query, "sourcetype=sysmon:linux") && !strings.Contains(d.Query, "sourcetype=linux:audit") {
-			t.Errorf("%s: not limited to Windows, Sysmon for Linux or Linux audit events: %s", d.ID, d.Query)
+			!strings.Contains(d.Query, "sourcetype=sysmon:linux") && !strings.Contains(d.Query, "sourcetype=linux:audit") &&
+			!strings.HasPrefix(d.Query, "datamodel=Web ") {
+			t.Errorf("%s: not limited to Windows, Sysmon for Linux, Linux audit or web server events: %s", d.ID, d.Query)
 		}
 	}
 }

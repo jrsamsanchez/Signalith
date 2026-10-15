@@ -1,0 +1,4 @@
+{"rule": "9f6a34b4-2688-4eb7-a7f5-e39fef573d0e", "cases": [
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"url":"=C:/Users"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{}}
+]}

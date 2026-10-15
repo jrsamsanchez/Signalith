@@ -1,0 +1,5 @@
+{"rule": "2ea44a60-cfda-11ea-87d0-0242ac130003", "cases": [
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"POST","url":"connect\u0026target"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"url":"connect\u0026target"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"POST"}}
+]}

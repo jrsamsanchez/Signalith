@@ -311,6 +311,12 @@ func TestAntivirusCollection(t *testing.T) {
 	if strings.Contains(a.Config, "linux.clamav") {
 		t.Error("journal mode tails ClamAV files")
 	}
+	// Web servers' access logs, in either mode.
+	web := "[INPUT]\n" + line("Name", "tail") + line("Tag", "linux.web") +
+		line("Path", "/var/log/nginx/*access*.log,/var/log/apache2/*access*.log,/var/log/httpd/*access_log") + line("Path_Key", "file")
+	if !strings.Contains(a.Config, web) || !strings.Contains(a.Config, line("Match", "linux.web")+line("hostname_key", "hostname")) {
+		t.Errorf("journal mode lacks the web access logs:\n%s", a.Config)
+	}
 }
 
 // line is one setting as section writes it.

@@ -300,6 +300,19 @@ func TestOTLPFilelogAuthLine(t *testing.T) {
 	})
 }
 
+func TestOTLPFilelogAccessLine(t *testing.T) {
+	docs := otlpDocs(t, tRes{attrs: host, recs: []tRec{{
+		observed: uint64(now.UnixNano()),
+		body:     `203.0.113.7 - - [11/Oct/2026:11:58:01 +0000] "POST /wp-login.php HTTP/1.1" 200 512 "-" "curl/8.5"`,
+		attrs:    []tKV{{"log.file.name", "access.log"}, {"log.file.path", "/var/log/nginx/access.log"}},
+	}}})
+	expect(t, docs[0], map[string]any{
+		"datamodel": "Web", "sourcetype": "nginx:access", "src": "203.0.113.7", "http_method": "POST",
+		"url": "/wp-login.php", "status": "200", "http_user_agent": "curl/8.5", "host": "web1",
+		"@timestamp": "2026-10-11T11:58:01Z",
+	})
+}
+
 func TestOTLPSyslogReceiver(t *testing.T) {
 	ts := uint64(now.Add(-time.Hour).UnixNano())
 	docs := otlpDocs(t, tRes{recs: []tRec{{

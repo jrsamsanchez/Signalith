@@ -270,7 +270,7 @@ var Models = []Model{
 	},
 	{
 		Name:        "Web",
-		Description: "Web requests seen on the network (Zeek, Suricata)",
+		Description: "Web requests: seen on the network (Zeek, Suricata) or logged by web servers (Apache, Nginx)",
 		Fields: []Field{
 			{Name: "http_method", Type: "string", Description: "Request method", Examples: []string{"GET", "POST"}},
 			{Name: "url", Type: "string", Description: "Full web address asked for", Examples: []string{"http://updates.example.net/v2/check?os=win"}},
@@ -292,6 +292,10 @@ var Models = []Model{
 			{Name: "direction", Type: "string", Description: "Which way the request went, seen from your network: inbound, outbound, internal or external", Examples: []string{"outbound"}},
 			{Name: "session_id", Type: "string", Description: "The sensor's ID for the connection (Zeek uid, Suricata flow_id)"},
 			{Name: "community_id", Type: "string", Description: "Community ID of the flow, shared by Zeek and Suricata events of one connection"},
+			{Name: "url_length", Type: "number", Description: "Length of url"},
+			{Name: "http_version", Type: "string", Description: "HTTP version of the request, from a web server's log", Examples: []string{"1.1", "2.0"}},
+			{Name: "http_user_agent_length", Type: "number", Description: "Length of http_user_agent"},
+			{Name: "app", Type: "string", Description: "Web server software, for a web server's own log", Examples: []string{"apache", "nginx"}},
 		},
 	},
 	{

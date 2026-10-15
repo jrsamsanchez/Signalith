@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -306,6 +307,8 @@ func records(node string, ev map[string]string) []sigmacheck.Case {
 	switch node {
 	case AuditdNode:
 		return []sigmacheck.Case{auditdRecord(ev)}
+	case "Web":
+		return []sigmacheck.Case{webRecord(ev)}
 	case "Processes":
 		s := map[string]string{"ProcessId": "4242", "ParentProcessId": "4000"}
 		set(s, "Image", imagePath(ev["process_path"], ev["process_name"]))
@@ -909,8 +912,36 @@ func auditdRecord(ev map[string]string) sigmacheck.Case {
 	return sigmacheck.Case{Channel: sigmacheck.AuditdChannel, EventID: typ, Data: data}
 }
 
+// webRecord turns a field-level event into the access log line that
+// carries it: a target from its path and query when it names no url, and
+// GET when it names no method.
+func webRecord(ev map[string]string) sigmacheck.Case {
+	data := map[string]string{}
+	for _, f := range []string{"src", "user", "http_method", "url", "status", "bytes_out", "http_referrer", "http_user_agent"} {
+		if v := ev[f]; v != "" {
+			data[f] = v
+		}
+	}
+	if data["url"] == "" && (ev["uri_path"] != "" || ev["uri_query"] != "") {
+		data["url"] = cmp.Or(ev["uri_path"], "/")
+		if q := ev["uri_query"]; q != "" {
+			data["url"] += "?" + q
+		}
+	}
+	if data["status"] != "" {
+		if n, err := strconv.Atoi(data["status"]); err != nil || n < 100 || n > 999 {
+			// Not a status a log line can hold.
+			delete(data, "status")
+		}
+	}
+	if data["http_method"] == "" && data["url"] != "" {
+		data["http_method"] = "GET"
+	}
+	return sigmacheck.Case{Channel: sigmacheck.WebChannel, EventID: "access", Data: data}
+}
+
 // NodeModel is the Signalith data model of each node ("" for any).
-var NodeModel = map[string]string{"Processes": "Endpoint", "Filesystem": "Filesystem", "Registry": "Registry", "FileStream": "Filesystem", "Pipe": "Endpoint", "PowerShell": "Script", "ImageLoad": "Image_Load", "ProcessAccess": "Endpoint", "NetworkConnection": "Network_Traffic", "All_Traffic": "Network_Traffic", "DnsQuery": "Network_Resolution", "Logon": "Authentication", "TaskCreated": "Change", "ObjectAccess": "", "ServiceInstalled": "Change", "DirectoryChange": "Change", "ShareAccess": "Filesystem", "KerberosTGT": "Authentication", "KerberosService": "Authentication", "UserChanged": "Change", "GroupMemberAdded": "Change", AuditdNode: "Other", "ExplicitLogon": "Authentication", "NtlmAuth": "Authentication", "KerberosPreAuth": "Authentication", "ComputerChanged": "Change", "AccountRenamed": "Change", "GroupChanged": "Change", "LocalGroupRead": "Change", "CertRequest": "Change", "ProcessTerminated": "Endpoint", "RawAccessRead": "Endpoint"}
+var NodeModel = map[string]string{"Processes": "Endpoint", "Filesystem": "Filesystem", "Registry": "Registry", "FileStream": "Filesystem", "Pipe": "Endpoint", "PowerShell": "Script", "ImageLoad": "Image_Load", "ProcessAccess": "Endpoint", "NetworkConnection": "Network_Traffic", "All_Traffic": "Network_Traffic", "DnsQuery": "Network_Resolution", "Logon": "Authentication", "TaskCreated": "Change", "ObjectAccess": "", "ServiceInstalled": "Change", "DirectoryChange": "Change", "ShareAccess": "Filesystem", "KerberosTGT": "Authentication", "KerberosService": "Authentication", "UserChanged": "Change", "GroupMemberAdded": "Change", AuditdNode: "Other", "ExplicitLogon": "Authentication", "NtlmAuth": "Authentication", "KerberosPreAuth": "Authentication", "ComputerChanged": "Change", "AccountRenamed": "Change", "GroupChanged": "Change", "LocalGroupRead": "Change", "CertRequest": "Change", "ProcessTerminated": "Endpoint", "RawAccessRead": "Endpoint", "Web": "Web"}
 
 // AttackDataSource marks a test event recorded in a real attack (Splunk's
 // attack_data, by internal/detect/attackgen).
@@ -961,6 +992,7 @@ var NodeEvents = map[string][]string{
 	"CertRequest":       {"4886", "4887"},
 	"ProcessTerminated": {"5"},
 	"RawAccessRead":     {"9"},
+	"Web":               {"access"},
 }
 
 // InModel reports whether an event of a data model is one a node reads.

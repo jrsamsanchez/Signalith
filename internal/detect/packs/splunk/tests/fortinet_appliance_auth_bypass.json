@@ -1,0 +1,11 @@
+{"rule": "a83122f2-fa09-4868-a230-544dbc54bc1c", "cases": [
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","url":"x /api/v2/cmdb/system/admin x"}},
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"PUT","url":"x /api/v2/cmdb/system/admin x"}},
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","url":"x /api/v2/cmdb/system/admin y"}},
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","url":"x /api/v2/cmdb/system/admin x"}},
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"PUT","url":"x /api/v2/cmdb/system/admin y"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GEU","url":"x /api/v2/cmdb/system/admin x"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"PUT"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"PUU","url":"x /api/v2/cmdb/system/admin x"}}
+]}

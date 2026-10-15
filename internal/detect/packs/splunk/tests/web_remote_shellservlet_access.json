@@ -1,0 +1,7 @@
+{"rule": "c2a332c3-24a2-4e24-9455-0e80332e6746", "cases": [
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","status":"200","url":"x plugins/servlet/com.jsos.shell/ x"}},
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","status":"200","url":"x plugins/servlet/com.jsos.shell/ y"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"status":"200"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","status":"201","url":"x plugins/servlet/com.jsos.shell/ x"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","url":"x plugins/servlet/com.jsos.shell/ x"}}
+]}

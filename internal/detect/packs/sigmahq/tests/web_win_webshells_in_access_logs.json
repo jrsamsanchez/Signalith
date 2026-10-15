@@ -1,0 +1,5 @@
+{"rule": "7ff9db12-1b94-4a79-ba68-a2402c5d6729", "cases": [
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","url":"=ssh%"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"url":"=ssh%"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET"}}
+]}
