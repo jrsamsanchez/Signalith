@@ -89,7 +89,15 @@ func FuzzIngestBody(f *testing.F) {
 		if err != nil {
 			t.Fatalf("checkBody passed, IngestBody: %v", err)
 		}
-		if n > MaxRecords || res.Received != n || res.Indexed != n || len(b.docs) != n {
+		// Each record is a document, and so is each Linux program start
+		// joined from audit records.
+		starts := 0
+		for _, d := range b.docs {
+			if strings.HasSuffix(d.ID, processStartSuffix) && d.Doc["datamodel"] == ProcessStartModel {
+				starts++
+			}
+		}
+		if n > MaxRecords || res.Received != n || res.Indexed != len(b.docs) || len(b.docs)-starts != n {
 			t.Fatalf("%d records: %+v, %d documents", n, res, len(b.docs))
 		}
 		ids := map[string]bool{}
@@ -258,6 +266,21 @@ func FuzzReadAuditd(f *testing.F) {
 		}
 		for _, k := range []string{"process", "process_path", "process_name", "user"} {
 			checkCapped(t, fs, k, MaxValueLen)
+		}
+		// An EXECVE record is also a program start, joined with the
+		// record itself taken as each other record of the start.
+		tr := &ProcessTracker{}
+		starts := tr.Starts([]Event{ev, ev, ev})
+		if want := map[bool]int{true: 3, false: 0}[rec.Type == "EXECVE"]; len(starts) != want {
+			t.Fatalf("%d starts of %s", len(starts), rec.Type)
+		}
+		for _, st := range starts {
+			if st.Model != "Endpoint" || st.Fields["host"] != fs["host"] || st.Fields["auditd_id"] != rec.Serial {
+				t.Fatalf("start %s %v", st.Model, st.Fields)
+			}
+			for _, k := range []string{"process", "process_path", "process_name", "process_current_directory", "parent_process", "parent_process_path"} {
+				checkCapped(t, st.Fields, k, MaxValueLen)
+			}
 		}
 	})
 }
