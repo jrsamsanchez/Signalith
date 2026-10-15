@@ -132,7 +132,9 @@ their settings it is called **May run background jobs** (`cluster.leader_eligibl
 or `SIGNALITH_LEADER_ELIGIBLE`), one of each server's own settings. Leave it on: the
 servers take turns by themselves. Turn it off only on a server that should never
 run the jobs, for example one that only receives data. A change applies at the
-server's next restart.
+server's next restart. A server added as a **scanner** (its **Server role**,
+`cluster.role: scanner`) never runs them, whatever this setting says; see
+[Cluster servers and scanners](multi-server.md#cluster-servers-and-scanners).
 
 **Changing retention and feeds.** Once the servers are a cluster (see
 [Shared feeds and retention policies](#shared-feeds-and-retention-policies)), the Data retention
@@ -962,6 +964,17 @@ backend signalith
     server siem-b 10.0.0.12:8080 check
 ```
 
+**Seeing who really connected.** A load balancer that passes connections through
+(TCP mode, the usual choice, so HTTPS and syslog over TLS end at Signalith) hides the
+client's address: every browser, agent and device seems to be the balancer. Have it
+add a PROXY protocol v2 header (`send-proxy-v2` in HAProxy, plus `check-send-proxy`
+for its checks) and turn on **PROXY protocol from load balancers** for the web port
+and for syslog, with the balancer under **Trusted reverse proxies**. Sign-in limits,
+the audit log, agent limits, `syslog.allow` and each syslog event's host then see the
+real client. Samples for HAProxy, nginx and keepalived are in
+[deploy/loadbalancer](https://github.com/jrsamsanchez/Signalith/tree/main/deploy/loadbalancer),
+and [Load balancers](load-balancers.md) walks through them.
+
 Both addresses answer over HTTPS and also over plain `http://` on the same port
 (everything else on plain HTTP is sent to HTTPS), so the plain `check` above works
 while Signalith serves HTTPS, which it does by default. To check over HTTPS instead,
@@ -1030,3 +1043,25 @@ another version in `X-Signalith-Version` reloads once to get that version's page
 if a server of the other version answers again within 2 minutes, the page says that
 Signalith is being upgraded instead of reloading again. The plain
 paths (`/app.js` and so on) keep working, for pages of earlier versions.
+
+**Where agents send.** With several servers, Add data asks **Where do agents send?**:
+the shared address (the public address, which should be the load balancer's or a DNS
+name over every server) or one server's own address. It looks the shared address up
+and says which servers it reaches, and warns when it is just one server's address:
+agents sent there wait while that server is down. Agents keep their events while they
+wait, and send them once a server answers. Configurations made while several servers
+share the work also have each agent open a new connection every 100 batches
+(`net.keepalive_max_recycle`), so a server that comes back gets its share again.
+A DNS name over several servers (round robin) works without a load balancer, but an
+agent keeps trying the address it picked while that server is down, and some
+resolvers keep a down server's address for minutes; a load balancer with health
+checks moves agents at once. With neither, agents sent to one server's address are the
+fallback, and the Health page and the Servers page say when a running server gets no
+agent traffic while another does.
+
+**Syslog behind a load balancer.** Syslog over TCP and TLS goes through the balancer
+like the web port, with a PROXY protocol header. UDP has no such header: send it to a
+virtual IP (keepalived, see the sample) or straight to one server. Never send one
+device to two servers at once: each message would be stored twice. When a server
+stops, devices on TCP reconnect through the balancer to another; a few messages sent
+just before may be stored twice or lost, as with any syslog server that restarts.

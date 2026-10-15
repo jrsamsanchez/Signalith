@@ -143,6 +143,10 @@ const (
 	StateDraining = "draining"
 )
 
+// RoleScanner is the role of a server that only scans the networks picked
+// for it, and never runs the background jobs (cluster.role).
+const RoleScanner = "scanner"
+
 // Heartbeat is a server's document in the runtime index, node:<node_id>,
 // rewritten every 10 seconds.
 type Heartbeat struct {
@@ -163,6 +167,9 @@ type Heartbeat struct {
 	NodeURL       string `json:"node_url,omitempty"`
 	Listen        string `json:"listen,omitempty"`
 	Syslog        Syslog `json:"syslog"`
+	// Role is what the server is for: "" a cluster server, RoleScanner a
+	// scanner, which only scans its network zone (cluster.role).
+	Role string `json:"role,omitempty"`
 	// LeaderEligible is true when this server may run the background
 	// jobs, and NotEligible says why not otherwise.
 	LeaderEligible bool   `json:"leader_eligible"`
@@ -229,6 +236,9 @@ type Heartbeat struct {
 	// Restart is the server's restart run by request, nil when it has run
 	// none and runs none now.
 	Restart *RestartStatus `json:"restart,omitempty"`
+	// Traffic is what the server received from agents and syslog, nil
+	// from versions before it was kept (see Traffic).
+	Traffic *Traffic `json:"traffic,omitempty"`
 	// TLS is the certificate authority the server's HTTPS certificate
 	// comes from, nil from versions before it was reported.
 	TLS *TLSStatus `json:"tls_ca,omitempty"`

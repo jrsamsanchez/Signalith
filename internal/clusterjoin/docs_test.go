@@ -249,6 +249,7 @@ func TestIssueRefuses(t *testing.T) {
 		"two-line note":   func(x *IssueArgs) { x.Note = "a\nb" },
 		"node url":        func(x *IssueArgs) { x.NodeURL = "siem-c:8443" },
 		"node url w/user": func(x *IssueArgs) { x.NodeURL = "https://u:p@siem-c:8443" },
+		"role":            func(x *IssueArgs) { x.Role = "sensor" },
 	} {
 		x := good
 		change(&x)

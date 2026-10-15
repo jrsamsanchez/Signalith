@@ -106,6 +106,10 @@ func TestAnswer(t *testing.T) {
 		t.Errorf("token after use: %+v", l)
 	}
 
+	if b.Role != "" {
+		t.Errorf("a token without a role gives the role %q", b.Role)
+	}
+
 	// A second use, by the same or another server, is refused with the
 	// one text.
 	_, req2 := joiner(t, tok, "siem-d")
@@ -113,6 +117,31 @@ func TestAnswer(t *testing.T) {
 	var r *RefusedError
 	if !errors.As(err, &r) || err.Error() != Refused || !errors.Is(err, ErrTokenUsed) {
 		t.Fatalf("second use: %v (%s)", err, Reason(err))
+	}
+}
+
+// A scanner's token makes the new server a scanner: the role is in the
+// token's document, the list of tokens and the bundle.
+func TestAnswerScannerRole(t *testing.T) {
+	e := newEnv(t)
+	a, tk := e.member("siem-a")
+	view := securedView(t)
+	d := Deps{RT: a, Tokens: tk, Version: "1.5.0", View: func() View { return view }, Now: e.clock}
+	tok := e.issue(tk, func(x *IssueArgs) { x.Role = RoleScanner }).Token
+	if l := tk.List(); len(l) != 1 || l[0].Role != RoleScanner {
+		t.Fatalf("tokens: %+v", l)
+	}
+	nk, req := joiner(t, tok, "scan-plant")
+	sealed, err := Answer(context.Background(), d, req)
+	if err != nil {
+		t.Fatalf("answer: %v (%s)", err, Reason(err))
+	}
+	b, err := Open(nk, req.NodeID, tok.ID, tok.Secret, sealed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b.Role != RoleScanner {
+		t.Errorf("bundle role %q", b.Role)
 	}
 }
 

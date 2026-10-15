@@ -72,6 +72,12 @@ address. For a reverse proxy that sets `X-Forwarded-For` itself, list it under
 header**, so each person is counted by their own address. See
 [failed sign-in limits](users.md#signing-in). Applies after a restart.
 
+**PROXY protocol from load balancers**, in the **Web server** card and again in the
+**Syslog** card, reads the header a load balancer that passes connections through
+writes before each one, so Signalith sees each client's own address. Only the
+**Trusted reverse proxies** may send it. Both apply after a restart; see
+[Load balancers](load-balancers.md).
+
 Turning syslog on is two settings in the **Syslog** card (UDP and TCP address,
 such as `0.0.0.0:514`), then a restart. The **Add data** page's syslog steps send
 you there.

@@ -566,3 +566,22 @@ func TestCheckEditSharedScopes(t *testing.T) {
 		t.Errorf("reset all %v", res.Shared.Cluster)
 	}
 }
+
+// A scanner (cluster.role) never runs the background jobs, whatever
+// cluster.leader_eligible says, and a role Signalith does not know is
+// refused.
+func TestScannerRole(t *testing.T) {
+	c, err := Load(writeConfig(t, "cluster:\n  role: scanner\n  leader_eligible: true\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.Scanner() || c.LeaderEligible() || c.Detections.Scheduler || c.Value("cluster.role") != RoleScanner {
+		t.Errorf("scanner %v, eligible %v, scheduler %v, role %v", c.Scanner(), c.LeaderEligible(), c.Detections.Scheduler, c.Value("cluster.role"))
+	}
+	if c, err := Load(writeConfig(t, "")); err != nil || c.Scanner() || !c.LeaderEligible() {
+		t.Errorf("a cluster server by default: %v", err)
+	}
+	if _, err := Load(writeConfig(t, "cluster:\n  role: sensor\n")); err == nil || !strings.Contains(err.Error(), "cluster.role") {
+		t.Errorf("an unknown role is taken: %v", err)
+	}
+}

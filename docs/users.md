@@ -823,7 +823,7 @@ request, so a server that has not yet read that change reads it first (see
 **Every role** (also allowed while a password change is pending): `GET /api/me`,
 `POST /api/me/password`.
 
-**Viewer:** `GET /api/health`, `POST /api/search`, `POST /api/explain`,
+**Viewer:** `GET /api/health` (with `?scope=cluster`, totals for every server), `POST /api/search`, `POST /api/explain`,
 `POST /api/build`, `POST /api/parse`, `GET /api/datamodels`, `GET /api/fields`,
 `GET /api/fields/values`, `GET /api/language`, `GET /api/ask`,
 `GET /api/detections`, `GET /api/detections/{id}`, `GET /api/detections/{id}/yaml`,
@@ -855,7 +855,9 @@ agents that send events, shown on the [Endpoints page](endpoints.md)), `GET /api
 `POST /api/findings/{id}/investigate/preview`, `POST /api/findings/{id}/investigate`
 ([Investigate with AI](investigate.md), once an admin turns it on).
 
-**Admin:** `GET /api/agents/config`, `GET /api/sensor/install` (the line that sets up a
+**Admin:** `GET /api/agents/config`, `GET /api/agents/destinations` (where agents can send,
+with a DNS check; see [load-balancers.md](load-balancers.md)),
+`GET /api/sensor/install` (the line that sets up a
 [network sensor](network-sensor.md#building-a-new-sensor)), `GET /api/sensors` (every network
 sensor's health and checklist, and the sensor tokens), `GET /api/sensors/tuning` and
 `PUT /api/sensors/tuning` (the Suricata rule tuning sensors fetch; see

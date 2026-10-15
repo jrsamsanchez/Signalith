@@ -33,8 +33,8 @@ var joinSecured = func(c *config.Config) error { return clusterjoin.ViewOf(c).Se
 
 // tokenOptions are signalith cluster token's flags.
 type tokenOptions struct {
-	platform, note, nodeURL, url string
-	ttl                          time.Duration
+	platform, note, nodeURL, url, role string
+	ttl                                time.Duration
 	// revoke is the id of a token to cancel instead.
 	revoke string
 }
@@ -108,12 +108,12 @@ func (x *clusterCLI) token(ctx context.Context, o tokenOptions, asJSON bool) err
 		}
 	}
 	is, err := x.join.Issue(ctx, clusterjoin.IssueArgs{By: x.by, Node: x.self.Name, URL: u, CADER: ca, TTL: o.ttl,
-		Platform: o.platform, Note: o.note, NodeURL: o.nodeURL})
+		Platform: o.platform, Note: o.note, NodeURL: o.nodeURL, Role: o.role})
 	if err != nil {
 		return err
 	}
 	defer is.Token.Clear()
-	x.audit("join token made", "token", is.Token.ID, "platform", o.platform, "expires_at", is.ExpiresAt, "note", o.note)
+	x.audit("join token made", "token", is.Token.ID, "platform", o.platform, "role", o.role, "expires_at", is.ExpiresAt, "note", o.note)
 	text := is.Token.String()
 	linux, windows, docker := api.JoinLines(text)
 	commands := map[string]string{"linux": linux, "windows": windows, "docker": docker}

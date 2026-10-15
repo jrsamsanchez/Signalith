@@ -22,6 +22,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/clientaddr"
 	"github.com/jrsamsanchez/signalith/internal/httpserver"
 	"github.com/jrsamsanchez/signalith/internal/ingest"
+	"github.com/jrsamsanchez/signalith/internal/proxyproto"
 )
 
 // Defaults for the limits in Config.
@@ -85,6 +86,11 @@ type Config struct {
 	OnTLSName func(name string)
 	// Allow lists the senders that may send; empty allows any sender.
 	Allow []netip.Prefix
+	// Proxy, when set, reads a PROXY protocol header from the trusted
+	// load balancers on the TCP and TLS listeners (before TLS), so Allow,
+	// the per-sender limits and each event's host see the device. Nil
+	// reads none.
+	Proxy *proxyproto.Config
 	// PublicPort is the port senders use for UDP and TCP when something
 	// forwards it to the one listened on (Docker publishing 514 as 5514).
 	// It is only reported, as Listener.Port; zero means the listen port.
@@ -142,6 +148,7 @@ type Receiver struct {
 
 	udp       *net.UDPConn
 	lns       []net.Listener
+	proxyLns  []*proxyproto.Listener
 	listeners []Listener
 	tlsConf   *tls.Config
 
@@ -207,6 +214,9 @@ type Rejections struct {
 	BadFraming         int64 `json:"bad_framing"`          // TCP stream with an impossible octet count
 	TooManyConnections int64 `json:"too_many_connections"` // TCP connection over the limit
 	TooManyFromSender  int64 `json:"too_many_from_sender"` // TCP connection over the per-sender limit
+	// ProxyUntrusted counts TCP and TLS connections closed because a
+	// peer that is not a trusted proxy sent a PROXY header.
+	ProxyUntrusted int64 `json:"proxy_untrusted,omitempty"`
 }
 
 // Stats is what the receiver has done since start, for the health page.
@@ -329,6 +339,11 @@ func (r *Receiver) Start(ctx context.Context) error {
 		if err != nil {
 			r.closeListeners()
 			return bindError(l.setting, "tcp", l.addr, err)
+		}
+		if r.cfg.Proxy != nil {
+			pl := proxyproto.Wrap(ln, *r.cfg.Proxy)
+			r.proxyLns = append(r.proxyLns, pl)
+			ln = pl
 		}
 		r.lns = append(r.lns, ln)
 		protos = append(protos, l.proto)
@@ -495,27 +510,44 @@ func (r *Receiver) accept(ctx context.Context, ln net.Listener, proto string) {
 			continue
 		}
 		delay = 0
-		from := remoteAddr(c)
-		if !r.allowed(from) {
-			r.rejectSender(from)
-			c.Close()
-			continue
-		}
-		cs := newConnState(from)
-		switch r.track(c, cs) {
-		case trackOK:
+		if r.cfg.Proxy != nil {
+			// The sender is known once the load balancer's header is
+			// read, which may take a moment: read it on the
+			// connection's own goroutine so others are not held up.
 			r.readers.Add(1)
-			go r.serveConn(ctx, c, cs, proto)
+			go func() {
+				defer r.readers.Done()
+				r.admit(ctx, c, proto)
+			}()
 			continue
-		case trackSenderFull:
-			r.tooManyFromSender.Add(1)
-			r.warn("sender-connections", "syslog connection refused: this sender has too many open connections", "limit", r.cfg.MaxConnectionsPerSender, "sender", from.String())
-		case trackFull:
-			r.tooMany.Add(1)
-			r.warn("connections", "syslog connection refused: too many open connections", "limit", r.cfg.MaxConnections, "sender", from.String())
 		}
-		c.Close()
+		r.admit(ctx, c, proto)
 	}
+}
+
+// admit checks a new connection's sender against syslog.allow and the
+// connection limits, and serves it or closes it.
+func (r *Receiver) admit(ctx context.Context, c net.Conn, proto string) {
+	from := remoteAddr(c)
+	if !r.allowed(from) {
+		r.rejectSender(from)
+		c.Close()
+		return
+	}
+	cs := newConnState(from)
+	switch r.track(c, cs) {
+	case trackOK:
+		r.readers.Add(1)
+		go r.serveConn(ctx, c, cs, proto)
+		return
+	case trackSenderFull:
+		r.tooManyFromSender.Add(1)
+		r.warn("sender-connections", "syslog connection refused: this sender has too many open connections", "limit", r.cfg.MaxConnectionsPerSender, "sender", from.String())
+	case trackFull:
+		r.tooMany.Add(1)
+		r.warn("connections", "syslog connection refused: too many open connections", "limit", r.cfg.MaxConnections, "sender", from.String())
+	}
+	c.Close()
 }
 
 func remoteAddr(c net.Conn) netip.Addr {
@@ -915,7 +947,10 @@ func (r *Receiver) Stats() Stats {
 		s.LastNotAllowed = r.lastNotAllowed.String()
 	}
 	r.rejMu.Unlock()
-	s.Rejected = s.RejectedBy.NotAllowed + s.RejectedBy.TooLarge + s.RejectedBy.BadFraming + s.RejectedBy.TooManyConnections + s.RejectedBy.TooManyFromSender
+	for _, pl := range r.proxyLns {
+		s.RejectedBy.ProxyUntrusted += pl.Untrusted()
+	}
+	s.Rejected = s.RejectedBy.ProxyUntrusted + s.RejectedBy.NotAllowed + s.RejectedBy.TooLarge + s.RejectedBy.BadFraming + s.RejectedBy.TooManyConnections + s.RejectedBy.TooManyFromSender
 	if ns := r.lastMessage.Load(); ns > 0 {
 		s.LastMessage = time.Unix(0, ns).UTC()
 	}
@@ -923,6 +958,18 @@ func (r *Receiver) Stats() Stats {
 	s.Connections = len(r.conns)
 	r.mu.Unlock()
 	return s
+}
+
+// Traffic is how many messages this receiver took in and when the last
+// came, read without locks so a heartbeat never waits on the receiver.
+func (r *Receiver) Traffic() (received int64, last time.Time) {
+	if r == nil {
+		return 0, time.Time{}
+	}
+	if ns := r.lastMessage.Load(); ns > 0 {
+		last = time.Unix(0, ns).UTC()
+	}
+	return r.received.Load(), last
 }
 
 // senderTable keeps the most recent senders, evicting the one heard from
