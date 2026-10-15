@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"html"
 	"math"
+	"net"
 	"net/http"
 	"slices"
 	"strings"
@@ -143,6 +144,11 @@ func (s *Server) handleJoin(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
+	// The machine it comes from: the TCP peer, never a proxy header.
+	req.RemoteIP = nil
+	if from.Peer.IsValid() {
+		req.RemoteIP = net.IP(from.Peer.Unmap().AsSlice())
+	}
 	sealed, err := s.Join.Answer(ctx, &req)
 	var refused *clusterjoin.RefusedError
 	var joinErr *clusterjoin.JoinError
@@ -161,6 +167,12 @@ func (s *Server) handleJoin(w http.ResponseWriter, r *http.Request) {
 		attempt.Done()
 		logRefused(joinErr.Msg)
 		writeError(w, http.StatusForbidden, joinErr)
+	case errors.Is(err, clusterjoin.ErrSpent):
+		// The token is used: the new server needs a new one, and is told
+		// so rather than to try again.
+		attempt.Done()
+		s.Log.Warn("cluster.join failed after the token was used", slices.Concat(from.logAttrs(), []any{"err", clusterjoin.Reason(err)})...)
+		writeError(w, http.StatusInternalServerError, clusterjoin.ErrSpent)
 	default:
 		attempt.Done()
 		s.Log.Warn("cluster.join could not be answered", slices.Concat(from.logAttrs(), []any{"err", clusterjoin.Reason(err)})...)
@@ -370,7 +382,7 @@ func (s *Server) handleJoinApprove(w http.ResponseWriter, r *http.Request) {
 		case sharedError(w, err):
 		case errors.Is(err, clusterjoin.ErrNoPending):
 			writeError(w, http.StatusNotFound, err)
-		case errors.Is(err, clusterjoin.ErrFingerprint), errors.Is(err, clusterjoin.ErrNotSecured):
+		case errors.Is(err, clusterjoin.ErrFingerprint), errors.Is(err, clusterjoin.ErrNotSecured), errors.As(err, new(*clusterjoin.ClashError)):
 			writeError(w, http.StatusConflict, err)
 		default:
 			writeError(w, http.StatusServiceUnavailable, err)

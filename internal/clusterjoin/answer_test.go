@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"net"
 	"os"
 	"path/filepath"
 	"slices"
@@ -278,3 +279,93 @@ func TestViewOf(t *testing.T) {
 }
 
 func encode(b []byte) string { return base64.RawURLEncoding.EncodeToString(b) }
+
+func TestAnswerRefusesToTakeAMembersPlace(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	a, tk := e.member("siem-a")
+	view := securedView(t)
+	d := Deps{RT: a, Tokens: tk, Version: "1.5.0", View: func() View { return view }, Now: e.clock}
+	tok := e.issue(tk, nil).Token
+	cNK, req := joiner(t, tok, "siem-c")
+	sealed, err := Answer(ctx, d, req)
+	if err != nil {
+		t.Fatal(Reason(err))
+	}
+	b, _ := Open(cNK, req.NodeID, tok.ID, tok.Secret, sealed)
+	if b.Servers != 2 {
+		t.Errorf("servers %d", b.Servers)
+	}
+
+	// siem-c's node id with another node key (a copied state folder, or
+	// someone posing as siem-c): refused, and the token is not used.
+	tok2 := e.issue(tk, nil).Token
+	unused := func() bool {
+		for _, l := range tk.List() {
+			if l.ID == tok2.ID {
+				return l.State == "open"
+			}
+		}
+		return false
+	}
+	_, pose := joiner(t, tok2, "siem-c")
+	var je *JoinError
+	if _, err := Answer(ctx, d, pose); !errors.As(err, &je) || !strings.Contains(je.Msg, "another node key") || !unused() {
+		t.Fatalf("another key for a member's node id: %v (%s)", err, Reason(err))
+	}
+	// A member's name under another node id.
+	_, same := joiner(t, tok2, "SIEM-C")
+	same.NodeID = "n_other"
+	if _, err := Answer(ctx, d, same); !errors.As(err, &je) || !strings.Contains(je.Msg, "named siem-c already") || !unused() {
+		t.Fatalf("a member's name: %v (%s)", err, Reason(err))
+	}
+	kr, _ := a.Keyring().Get()
+	if kr.Members["n_siem-c"].NodePub != cNK.PublicText() || len(kr.Members) != 2 {
+		t.Errorf("the keyring changed: %+v", kr.Members)
+	}
+
+	// An OpenSearch address only the answering machine reaches, for a
+	// server on another machine.
+	_, far := joiner(t, tok2, "siem-d")
+	far.RemoteIP = net.ParseIP("203.0.113.9")
+	local := view
+	local.URL = "https://localhost:9200"
+	dl := d
+	dl.View = func() View { return local }
+	if _, err := Answer(ctx, dl, far); !errors.As(err, &je) || !strings.Contains(je.Msg, "cluster.opensearch_url") || !unused() {
+		t.Fatalf("a loopback OpenSearch address: %v (%s)", err, Reason(err))
+	}
+	// The answering server cannot read its own OpenSearch files.
+	broken := view
+	broken.OpenSearch.CAFile = filepath.Join(t.TempDir(), "missing.pem")
+	db := d
+	db.View = func() View { return broken }
+	if _, err := Answer(ctx, db, far); !errors.As(err, &je) || !strings.Contains(je.Msg, "token was not used") || !unused() {
+		t.Fatalf("unreadable OpenSearch files: %v (%s)", err, Reason(err))
+	}
+	// A failure once the token is used says so.
+	ds := d
+	ds.Credential = func(context.Context, string, []byte) (OSCredential, error) {
+		return OSCredential{}, errors.New("osca is down")
+	}
+	if _, err := Answer(ctx, ds, far); !errors.Is(err, ErrSpent) || !strings.Contains(Reason(err), "osca is down") || unused() {
+		t.Fatalf("a failure after the token was used: %v (%s)", err, Reason(err))
+	}
+}
+
+func TestMemberClash(t *testing.T) {
+	kb := &shared.KeyringBody{Members: map[string]shared.KeyringMember{"n_a": {Name: "siem-a", NodePub: "pa"}}}
+	var ce *ClashError
+	if err := memberClash(kb, "n_a", "siem-a", "pa"); err != nil {
+		t.Errorf("the same server again: %v", err)
+	}
+	if err := memberClash(kb, "n_a", "siem-a", "pb"); !errors.As(err, &ce) || ce.SameName {
+		t.Errorf("another key: %v", err)
+	}
+	if err := memberClash(kb, "n_b", "Siem-A", "pb"); !errors.As(err, &ce) || !ce.SameName {
+		t.Errorf("a member's name: %v", err)
+	}
+	if err := memberClash(nil, "n_b", "siem-b", "pb"); err != nil {
+		t.Errorf("no keyring: %v", err)
+	}
+}

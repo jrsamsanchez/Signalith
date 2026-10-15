@@ -47,7 +47,8 @@ const clusterUsage = `usage:
   signalith cluster upgrade-check  [-c file] [-json]          whether it is safe to upgrade the next server
   signalith cluster token          [-c file] [-platform linux|windows|docker] [-ttl 60m] [-note text] [-node-url url] [-url url] [-json]
                                    a join token, which adds a server with signalith join
-  signalith cluster approve        [-c file] [-yes] [<server|fingerprint>]   approve a server waiting to join (none: list them)
+  signalith cluster token          [-c file] -revoke <id>   cancel a join token
+  signalith cluster approve        [-c file] [-fingerprint fp] [-yes] [<server|fingerprint>]   approve a server waiting to join (none: list them)
 
 The servers that share one OpenSearch keep the settings they share in it
 (the <prefix>_config index), signed with the cluster key that each of them
@@ -108,6 +109,8 @@ func runCluster(args []string, in *os.File, out, errOut io.Writer) error {
 	flags.StringVar(&tok.note, "note", "", "token: a note shown with the token on the Servers page")
 	flags.StringVar(&tok.nodeURL, "node-url", "", "token: the address the other servers will reach the new server at")
 	flags.StringVar(&tok.url, "url", "", "token: this server's https address the new server reaches (default server.node_url, else server.public_url)")
+	flags.StringVar(&tok.revoke, "revoke", "", "token: cancel the join token with this id")
+	fingerprint := flags.String("fingerprint", "", "approve: the fingerprint the waiting server shows, which must match")
 	pos := parseInterleaved(flags, args)
 	switch sub {
 	case "status", "found", "export", "import", "export-key", "import-key", "reset-key", "accept-restore", "apply", "tls", "upgrade-check", "token", "approve":
@@ -169,14 +172,17 @@ func runCluster(args []string, in *os.File, out, errOut io.Writer) error {
 		return upgradeExit(x.upgradeCheck(ctx, *asJSON))
 	case "token":
 		if len(pos) != 0 {
-			return errors.New("usage: signalith cluster token [-c file] [-platform linux|windows|docker] [-ttl 60m] [-note text] [-node-url url] [-url url] [-json]")
+			return errors.New("usage: signalith cluster token [-c file] [-platform linux|windows|docker] [-ttl 60m] [-note text] [-node-url url] [-url url] [-json], or signalith cluster token -revoke <id>")
+		}
+		if tok.revoke != "" {
+			return x.revokeToken(ctx, tok.revoke)
 		}
 		return x.token(ctx, tok, *asJSON)
 	case "approve":
 		if len(pos) > 1 {
-			return errors.New("usage: signalith cluster approve [-c file] [-yes] [<server|fingerprint>]")
+			return errors.New("usage: signalith cluster approve [-c file] [-fingerprint fp] [-yes] [<server|fingerprint>]")
 		}
-		return x.approve(ctx, strings.Join(pos, ""), *yes)
+		return x.approve(ctx, strings.Join(pos, ""), *fingerprint, *yes)
 	}
 	return nil
 }

@@ -143,6 +143,7 @@ func TestClusterTokenAndApprove(t *testing.T) {
 		fake.Put("cj_runtime", shared.PendingID(id), asMap(t, p))
 	}
 	pending("n_b", "siem-b", nk.PublicText(), nk.Fingerprint())
+	other0, _ := shared.NewNodeKey()
 	out, err = run("", "approve")
 	if err != nil || !strings.Contains(out, "siem-b") || !strings.Contains(out, nk.Fingerprint()) {
 		t.Errorf("approve lists: %v\n%s", err, out)
@@ -150,10 +151,17 @@ func TestClusterTokenAndApprove(t *testing.T) {
 	if _, err := run("", "approve", "siem-x"); err == nil || !strings.Contains(err.Error(), "no server waits") {
 		t.Errorf("approve an unknown server: %v", err)
 	}
-	// By name, the fingerprint must be confirmed, and away from a terminal
-	// only -yes does that.
-	if _, err := run("y\n", "approve", "siem-b"); err == nil || !strings.Contains(err.Error(), "-yes") {
-		t.Errorf("approve by name without -yes: %v", err)
+	// By name, the admin gives or confirms the fingerprint: away from a
+	// terminal, and with -yes, only -fingerprint does that, never the
+	// fingerprint the (unsigned) pending document says.
+	if _, err := run("y\n", "approve", "siem-b"); err == nil || !strings.Contains(err.Error(), "-fingerprint") {
+		t.Errorf("approve by name away from a terminal: %v", err)
+	}
+	if _, err := run("", "approve", "-yes", "siem-b"); err == nil || !strings.Contains(err.Error(), "-fingerprint") {
+		t.Errorf("approve by name with -yes: %v", err)
+	}
+	if _, err := run("", "approve", "-yes", "-fingerprint", other0.Fingerprint(), "siem-b"); !errors.Is(err, clusterjoin.ErrFingerprint) {
+		t.Errorf("approve by name with another fingerprint: %v", err)
 	}
 	if fake.Source("cj_runtime", shared.ApprovalID("n_b")) != nil {
 		t.Fatal("approved without a confirmation")
@@ -185,4 +193,42 @@ func TestClusterTokenAndApprove(t *testing.T) {
 	if strings.Contains(out, nk.Fingerprint()) {
 		t.Errorf("the approved server still waits:\n%s", out)
 	}
+	// Its approval is lost (housekeeping removed it a day later, or it
+	// was never written): the server, which asks again, shows again and
+	// is approved again.
+	fake.Delete("cj_runtime", shared.ApprovalID("n_b"))
+	pending("n_b", "siem-b", nk.PublicText(), nk.Fingerprint())
+	if out, _ = run("", "approve"); !strings.Contains(out, nk.Fingerprint()) {
+		t.Errorf("a server whose approval is lost does not show:\n%s", out)
+	}
+	if out, err = run("", "approve", "-fingerprint", nk.Fingerprint(), "n_b"); err != nil || fake.Source("cj_runtime", shared.ApprovalID("n_b")) == nil {
+		t.Errorf("approve again: %v\n%s", err, out)
+	}
+	// A pending document for a member's node id with another key, or a
+	// member's name, is not approved: it would take that member's place.
+	fake.Delete("cj_runtime", shared.ApprovalID("n_b"))
+	pending("n_b", "siem-b", other0.PublicText(), other0.Fingerprint())
+	var clash *clusterjoin.ClashError
+	if _, err := run("", "approve", other0.Fingerprint()); !errors.As(err, &clash) {
+		t.Errorf("approve another key for a member's node id: %v", err)
+	}
+	pending("n_c", "SIEM-B", other0.PublicText(), other0.Fingerprint())
+	if _, err := run("", "approve", "-fingerprint", other0.Fingerprint(), "n_c"); !errors.As(err, &clash) {
+		t.Errorf("approve a member's name: %v", err)
+	}
+	if kr := mustKeyring(t, run); kr["n_b"].NodePub != nk.PublicText() || kr["n_c"].NodePub != "" {
+		t.Errorf("the keyring changed: %+v", kr)
+	}
+}
+
+// mustKeyring is the keyring's members as signalith cluster status -json
+// shows them.
+func mustKeyring(t *testing.T, run func(string, ...string) (string, error)) map[string]shared.KeyringMember {
+	t.Helper()
+	out, err := run("", "status", "-json")
+	var st clusterStatus
+	if err != nil || json.Unmarshal([]byte(out[:strings.LastIndex(out, "}")+1]), &st) != nil {
+		t.Fatalf("status -json: %v\n%s", err, out)
+	}
+	return st.Keyring
 }

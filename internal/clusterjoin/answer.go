@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/url"
 	"os"
 	"slices"
@@ -166,20 +167,144 @@ func (e *unavailable) Unwrap() []error {
 	return []error{ErrUnavailable, e.err}
 }
 
+// ErrSpent: the token was used, but the answering server could not finish
+// the join. The joining server needs a new token.
+var ErrSpent = errors.New("The token was used, but this server could not finish the join (its log says why). Make a new token, then run signalith join again.")
+
+// spent wraps err as ErrSpent for the caller, keeping err for the log.
+type spent struct{ err error }
+
+func (e *spent) Error() string { return ErrSpent.Error() }
+func (e *spent) Unwrap() []error {
+	return []error{ErrSpent, e.err}
+}
+
 // Reason is the real reason of a refused or failed join, for the server
 // log.
 func Reason(err error) string {
 	var r *RefusedError
 	var u *unavailable
+	var sp *spent
 	switch {
 	case errors.As(err, &r) && r.Reason != nil:
 		return r.Reason.Error()
 	case errors.As(err, &u) && u.err != nil:
 		return u.err.Error()
+	case errors.As(err, &sp) && sp.err != nil:
+		return sp.err.Error()
 	case err != nil:
 		return err.Error()
 	}
 	return ""
+}
+
+// ClashError is a server that would take another member's place in the
+// keyring: its node id is listed with another node key (a copied state
+// folder, or someone posing as that member), or another member has its
+// name. Error is for an admin who approves it, Joiner for the server that
+// joins.
+type ClashError struct {
+	NodeID, Name string
+	// SameName: another member has the name; otherwise the node id is
+	// listed with another node key.
+	SameName bool
+}
+
+func (e *ClashError) Error() string {
+	if e.SameName {
+		return fmt.Sprintf("Another server in the cluster is named %s already: the waiting server needs another name.", e.Name)
+	}
+	return fmt.Sprintf("The cluster lists %s (node id %s) with another node key, so this server cannot take its place. "+
+		"A server rebuilt with the same identity is removed from the cluster first; a copied state folder needs a new node.id.", cmp.Or(e.Name, "a server"), e.NodeID)
+}
+
+// Joiner is the text the joining server gets.
+func (e *ClashError) Joiner() string {
+	if e.SameName {
+		return fmt.Sprintf("Another server in the cluster is named %s already: give this one another name (signalith join --name), then run signalith join again.", e.Name)
+	}
+	return fmt.Sprintf("The cluster lists a server with this server's identity (node id %s, %s) and another node key. "+
+		"Its state folder may have been copied from that server: delete node.id in the cluster folder of this server's state folder, then run signalith join again. "+
+		"If that server was rebuilt, remove it from the cluster first.", e.NodeID, cmp.Or(e.Name, "no name"))
+}
+
+// memberClash refuses the server nodeID, named name, with the node key
+// nodePub (base64), when it would replace or pose as another member of
+// the keyring kb. The same server with the same key again is no clash.
+func memberClash(kb *shared.KeyringBody, nodeID, name, nodePub string) error {
+	if kb == nil {
+		return nil
+	}
+	if m, ok := kb.Members[nodeID]; ok && m.NodePub != nodePub {
+		return &ClashError{NodeID: nodeID, Name: m.Name}
+	}
+	for id, m := range kb.Members {
+		if id != nodeID && m.Name != "" && strings.EqualFold(m.Name, name) {
+			return &ClashError{NodeID: id, Name: m.Name, SameName: true}
+		}
+	}
+	return nil
+}
+
+// sameMachine reports whether ip is an address of this machine: the
+// loopback, or one of its interfaces.
+func sameMachine(ip net.IP) bool {
+	if ip == nil {
+		return true
+	}
+	if ip.IsLoopback() || ip.IsUnspecified() {
+		return true
+	}
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return true
+	}
+	for _, a := range addrs {
+		if n, ok := a.(*net.IPNet); ok && n.IP.Equal(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+// localOnlyHost reports whether host names this machine only: localhost
+// or a loopback or unspecified address.
+func localOnlyHost(host string) bool {
+	h := strings.TrimSuffix(strings.ToLower(host), ".")
+	if h == "localhost" || strings.HasSuffix(h, ".localhost") {
+		return true
+	}
+	ip := net.ParseIP(h)
+	return ip != nil && (ip.IsLoopback() || ip.IsUnspecified())
+}
+
+// checkIssuer checks, once the proof matched and before the token is
+// used, what the answering server needs to give the new server its
+// settings: OpenSearch's address must be one the new server can reach
+// (not this machine's loopback when it joins from another machine), and
+// this server's own OpenSearch certificate files must be readable. A
+// failure leaves the token usable.
+func (d *Deps) checkIssuer(req *Request, view View) error {
+	if !sameMachine(req.RemoteIP) {
+		for _, u := range append([]string{view.URL}, view.URLs...) {
+			if p, err := url.Parse(u); err == nil && localOnlyHost(p.Hostname()) {
+				return &JoinError{Msg: fmt.Sprintf("The cluster gives new servers the OpenSearch address %s, which only the server that answered reaches. "+
+					"Set cluster.opensearch_url on its Settings page to the address other servers reach OpenSearch at, then run signalith join again: the token was not used.", u)}
+			}
+		}
+	}
+	o := view.OpenSearch
+	for _, f := range []struct{ what, path string }{{"certificate authority", o.CAFile}, {"client certificate", o.CertFile}, {"client key", o.KeyFile}} {
+		if f.path == "" {
+			continue
+		}
+		if _, err := os.ReadFile(f.path); err != nil {
+			d.log().Error("cannot answer a join: this server cannot read its own OpenSearch "+f.what, "file", f.path, "err", err)
+			return &JoinError{Msg: "The server that answered cannot read its own OpenSearch " + f.what + " file, so it cannot give this server its OpenSearch settings. " +
+				"Fix that on it (its log names the file), then run signalith join again: the token was not used."}
+		}
+	}
+	return nil
 }
 
 // checkJoiner checks what the joining server says of itself against
@@ -257,7 +382,7 @@ func Answer(ctx context.Context, d Deps, req *Request) (string, error) {
 		if !CheckProof(secret, req.TokenID, p.Nonce, p.NodePub, p.Proof) {
 			return false
 		}
-		if after = cmp.Or(checkJoiner(req, d.Version, cb.Level), secured(view)); after != nil {
+		if after = cmp.Or(checkJoiner(req, d.Version, cb.Level), secured(view), d.checkIssuer(req, view), d.clash(req, p)); after != nil {
 			return false
 		}
 		return true
@@ -278,12 +403,24 @@ func Answer(ctx context.Context, d Deps, req *Request) (string, error) {
 		// The token is used: the joining server needs a new one.
 		d.log().Error("cluster.join failed after the token was used; the new server needs a new token", "audit", true,
 			"token", req.TokenID, "node_id", req.NodeID, "name", req.Name, "err", err)
-		return "", &unavailable{err}
+		return "", &spent{err}
 	}
 	d.log().Info("cluster.join: a server joined the cluster with a join token", "audit", true,
 		"token", req.TokenID, "node_id", req.NodeID, "name", req.Name, "version", req.Version, "os", req.OS, "arch", req.Arch,
 		"fingerprint", shared.Fingerprint(p.NodePub), "token_by", consumed.Body.CreatedBy)
 	return sealed, nil
+}
+
+// clash is memberClash on the keyring this server has read, as a
+// JoinError: checked before the token is used, and again when the keyring
+// is written.
+func (d *Deps) clash(req *Request, p Parsed) error {
+	kb, _ := d.RT.Keyring().Get()
+	var ce *ClashError
+	if err := memberClash(kb, req.NodeID, req.Name, base64.StdEncoding.EncodeToString(p.NodePub)); errors.As(err, &ce) {
+		return &JoinError{Msg: ce.Joiner()}
+	}
+	return nil
 }
 
 // secured is the view's secured-OpenSearch check as a JoinError.
@@ -340,17 +477,37 @@ func (d *Deps) bundle(ctx context.Context, req *Request, p Parsed, cb *shared.Cl
 	nodePub := base64.StdEncoding.EncodeToString(p.NodePub)
 	m := shared.KeyringMember{Name: req.Name, NodePub: nodePub, Fingerprint: shared.Fingerprint(p.NodePub),
 		AddedAt: d.now().Format(time.RFC3339Nano), AddedBy: shared.AddedByJoin}
-	if _, err := d.RT.Keyring().Mutate(ctx, systemUser, func(kb *shared.KeyringBody) error {
-		if old, there := kb.Members[req.NodeID]; there && old.NodePub == nodePub {
+	// The keyring is written again on a passing OpenSearch failure: the
+	// token is used already.
+	var err2 error
+	for try := range 3 {
+		if try > 0 {
+			select {
+			case <-ctx.Done():
+				return "", ctx.Err()
+			case <-time.After(time.Duration(try) * time.Second):
+			}
+		}
+		_, err2 = d.RT.Keyring().Mutate(ctx, systemUser, func(kb *shared.KeyringBody) error {
+			if err := memberClash(kb, req.NodeID, req.Name, nodePub); err != nil {
+				return err
+			}
+			if kb.Members == nil {
+				kb.Members = map[string]shared.KeyringMember{}
+			}
+			if old, there := kb.Members[req.NodeID]; !there || old.NodePub != nodePub {
+				kb.Members[req.NodeID] = m
+			}
+			b.Servers = len(kb.Members)
 			return nil
+		})
+		var ce *ClashError
+		if err2 == nil || errors.As(err2, &ce) {
+			break
 		}
-		if kb.Members == nil {
-			kb.Members = map[string]shared.KeyringMember{}
-		}
-		kb.Members[req.NodeID] = m
-		return nil
-	}); err != nil {
-		return "", fmt.Errorf("could not list the new server in the keyring: %w", err)
+	}
+	if err2 != nil {
+		return "", fmt.Errorf("could not list the new server in the keyring: %w", err2)
 	}
 	return Seal(b, p.NodePub, req.NodeID, req.TokenID, c.Secret)
 }

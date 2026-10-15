@@ -798,7 +798,9 @@ token; the others take the node key a host got when it enrolled; see
 `GET /api/cluster/join/ca` (the certificate a join token names, which is public) and
 `POST /api/cluster/join` (which takes a proof that the new server holds a join token, never the
 token itself; it counts against the sign-in limits per token and per address, its body is at most
-16 KiB, and every refusal gets the same answer). Requests from a browser that change something must come from the Signalith
+16 KiB, and every refusal gets the same answer: `403`, with its own text only once the proof
+matched and the token was left unused, such as another version; `500` when the token was used but
+the join could not be finished, so the new server needs a new token). Requests from a browser that change something must come from the Signalith
 page itself.
 
 Every answer carries the server's version in `X-Signalith-Version`. Answers to

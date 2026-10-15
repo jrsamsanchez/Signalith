@@ -7,6 +7,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
@@ -34,6 +35,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/clusterjoin"
 	"github.com/jrsamsanchez/signalith/internal/config"
 	"github.com/jrsamsanchez/signalith/internal/opensearchcheck"
+	"github.com/jrsamsanchez/signalith/internal/ospki"
 	"github.com/jrsamsanchez/signalith/internal/secrets"
 	"github.com/jrsamsanchez/signalith/internal/securefile"
 	"github.com/jrsamsanchez/signalith/internal/shared"
@@ -95,8 +97,11 @@ type joinEnv struct {
 	dropInDir string
 	// owner is the service account's uid and gid; ok false for none.
 	owner func() (uid, gid int, ok bool)
-	chown func(path string, uid, gid int) error
-	check func(context.Context, store.Config) []opensearchcheck.Finding
+	// chownFD changes the owner of a file open as fd (see giveTree).
+	chownFD func(fd int, path string, uid, gid int) error
+	// readSecret reads a line from the terminal without showing it.
+	readSecret func() (string, error)
+	check      func(context.Context, store.Config) []opensearchcheck.Finding
 	// listenFree reports why addr cannot be listened on, nil when it can.
 	listenFree func(addr string) error
 	// transport is the base of the HTTP clients, for tests.
@@ -121,7 +126,11 @@ func defaultJoinEnv() *joinEnv {
 		transport: func() *http.Transport { return http.DefaultTransport.(*http.Transport).Clone() },
 		now:       time.Now,
 		owner:     serviceOwner,
-		chown:     os.Lchown,
+		chownFD:   chownFD,
+		readSecret: func() (string, error) {
+			b, err := term.ReadPassword(int(os.Stdin.Fd()))
+			return string(b), err
+		},
 	}
 	run := func(name string, args ...string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -151,7 +160,10 @@ func defaultJoinEnv() *joinEnv {
 			}
 		}
 	case "windows":
-		e.serviceActive = func() bool { return false }
+		e.serviceActive = func() bool {
+			return run("powershell", "-NoProfile", "-NonInteractive", "-Command",
+				"if ((Get-Service -Name Signalith -ErrorAction Stop).Status -ne 'Running') { exit 1 }") == nil
+		}
 		e.startService = func() error {
 			return run("powershell", "-NoProfile", "-NonInteractive", "-Command", "Restart-Service -Name Signalith")
 		}
@@ -188,6 +200,7 @@ func parseJoinArgs(args []string, errOut io.Writer, getenv func(string) string) 
 	fs.BoolVar(&o.allowSkew, "allow-version-skew", false, "join a cluster whose servers run another version")
 	fs.Usage = func() {
 		fmt.Fprintln(errOut, "usage: signalith join '<token>' [-c file] [--name name] [--listen addr] [--node-url url] [--copy-syslog] [--no-start] [--merge] [--yes]")
+		fmt.Fprintln(errOut, "The token may be - to read it from the standard input, or left out to be asked for it without showing it.")
 		fs.PrintDefaults()
 	}
 	pos, err := parseInterspersed(fs, args)
@@ -197,7 +210,8 @@ func parseJoinArgs(args []string, errOut io.Writer, getenv func(string) string) 
 	switch {
 	case len(pos) == 1:
 		o.token = pos[0]
-	case len(pos) == 0 && getenv("SIGNALITH_JOIN") != "":
+	case len(pos) == 0:
+		// SIGNALITH_JOIN, else asked for on the terminal.
 		o.token = getenv("SIGNALITH_JOIN")
 	default:
 		fs.Usage()
@@ -248,10 +262,21 @@ type joiner struct {
 	id         cluster.Identity
 	nk         *shared.NodeKey
 	httpsKey   *ecdsa.PrivateKey
-	bundle     *clusterjoin.Bundle
-	key        *shared.ClusterKey
-	listen     string
-	// made are the paths join made or changed, for their owner.
+	// osKey is this server's own OpenSearch client key, for a client
+	// certificate the cluster issues it (OpenSearch.Managed).
+	osKey  *rsa.PrivateKey
+	bundle *clusterjoin.Bundle
+	key    *shared.ClusterKey
+	listen string
+	// name is the name this server joins with, "" for the one it has or
+	// this computer's.
+	name string
+	// stateExisted is true when the state folder was there before join.
+	stateExisted bool
+	// in reads the standard input.
+	in *bufio.Reader
+	// made are the files and folders join made or changed, given to the
+	// service's account (giveTree).
 	made []string
 	// newMaster is the master key file join made.
 	newMaster string
@@ -263,7 +288,12 @@ type joiner struct {
 func (j *joiner) printf(format string, a ...any) { fmt.Fprintf(j.env.out, format, a...) }
 
 func (j *joiner) run(ctx context.Context) error {
-	tok, err := clusterjoin.Parse(strings.TrimSpace(j.o.token))
+	j.in = bufio.NewReader(j.env.in)
+	text, err := j.tokenText()
+	if err != nil {
+		return err
+	}
+	tok, err := clusterjoin.Parse(strings.TrimSpace(text))
 	if err != nil {
 		return failf(joinExitRefused, "%s (%v)", clusterjoin.Refused, err)
 	}
@@ -273,20 +303,27 @@ func (j *joiner) run(ctx context.Context) error {
 		return failf(joinExitFailed, "Run signalith join as root (sudo) or as an Administrator: it writes the service's files and starts it.")
 	}
 
+	// 2. This machine: its config, and not in a cluster yet. Nothing is
+	// written before the admin said yes.
+	if err := j.readLocal(); err != nil {
+		return err
+	}
+	if !j.o.yes && j.env.terminal {
+		j.printf("Join this server, %s, to the cluster of %s? It then uses that cluster's OpenSearch, users and settings. [y/N] ", j.guessName(), j.tok.URL)
+		line, _ := j.in.ReadString('\n')
+		if a := strings.ToLower(strings.TrimSpace(line)); a != "y" && a != "yes" {
+			return failf(joinExitFailed, "Nothing was done; the token can still be used.")
+		}
+	}
 	// 1. The server the token names, checked by its certificate.
 	if err := j.pin(ctx); err != nil {
 		return err
 	}
-	// 2-3. This machine: its config, not in a cluster yet, its identity.
-	if err := j.local(); err != nil {
+	// 3. Its identity and keys. What join makes is the service's account's
+	// however join ends, so the service can use it.
+	defer j.ownLeftovers()
+	if err := j.makeLocal(); err != nil {
 		return err
-	}
-	if !j.o.yes && j.env.terminal {
-		j.printf("Join this server, %s, to the cluster of %s? It then uses that cluster's OpenSearch, users and settings. [y/N] ", j.id.Name, j.tok.URL)
-		line, _ := bufio.NewReader(j.env.in).ReadString('\n')
-		if a := strings.ToLower(strings.TrimSpace(line)); a != "y" && a != "yes" {
-			return failf(joinExitFailed, "Nothing was done; the token can still be used.")
-		}
 	}
 	// 4. The join.
 	if err := j.join(ctx); err != nil {
@@ -301,8 +338,49 @@ func (j *joiner) run(ctx context.Context) error {
 	if err := j.write(ctx); err != nil {
 		return err
 	}
+	// --merge: this server's own files into the cluster's, once what
+	// joins this server is written and kept.
+	merged := j.mergeAfterWrite(ctx)
 	// 9. Start.
-	return j.start()
+	if err := j.start(); err != nil {
+		return err
+	}
+	return merged
+}
+
+// tokenText is the join token: the argument, SIGNALITH_JOIN, a line of
+// the standard input for "-", or asked for on the terminal without
+// showing it, so it is not in the process list while join runs.
+func (j *joiner) tokenText() (string, error) {
+	switch j.o.token {
+	case "-":
+		line, err := j.in.ReadString('\n')
+		if strings.TrimSpace(line) == "" {
+			return "", failf(joinExitFailed, "No join token on the standard input (%v).", firstErr(err, io.EOF))
+		}
+		return line, nil
+	case "":
+		if !j.env.terminal || j.env.readSecret == nil {
+			return "", failf(joinExitFailed, "Give the join token: signalith join '<token>', or signalith join - to read it from the standard input.")
+		}
+		fmt.Fprint(j.env.out, "Join token (it is not shown): ")
+		text, err := j.env.readSecret()
+		fmt.Fprintln(j.env.out)
+		if err != nil || strings.TrimSpace(text) == "" {
+			return "", failf(joinExitFailed, "No join token was given.")
+		}
+		return text, nil
+	}
+	return j.o.token, nil
+}
+
+func firstErr(errs ...error) error {
+	for _, e := range errs {
+		if e != nil {
+			return e
+		}
+	}
+	return nil
 }
 
 // pin fetches the certificate the server at the token's address answers
@@ -348,9 +426,16 @@ func (j *joiner) pin(ctx context.Context) error {
 	return nil
 }
 
-// local reads this machine's config, refuses one that is in a cluster
-// already, and makes or reads its identity, master key and node key.
-func (j *joiner) local() error {
+// alreadyMember is the refusal of a machine that has a cluster's key
+// already.
+func alreadyMember(what, state string) error {
+	return failf(joinExitFailed, "This computer belongs to a cluster already: it has %s. If it should join this cluster instead, stop Signalith, "+
+		"move the keys folder and cache.enc out of %s, then run signalith join again.", what, state)
+}
+
+// readLocal reads this machine's config, refuses one that is in a
+// cluster already, and works out its name. It writes nothing.
+func (j *joiner) readLocal() error {
 	path := j.o.config
 	j.env.serviceEnv(path)
 	if _, err := os.Stat(path); err == nil {
@@ -361,30 +446,66 @@ func (j *joiner) local() error {
 		}
 		j.c = c
 	} else if errors.Is(err, fs.ErrNotExist) {
-		j.c = config.Default()
+		// Its folders resolve next to the file join will write.
+		j.c = config.DefaultFor(path)
 	} else {
 		return err
 	}
 	state := j.c.StateDir()
 	if keys := shared.ClusterKeyFiles(state); len(keys) > 0 {
-		return failf(joinExitFailed, "This server belongs to a cluster already (it has %s): run `signalith cluster leave` there first.", keys[0])
+		return alreadyMember(keys[0], state)
 	}
 	if _, err := os.Stat(shared.CachePath(state)); err == nil {
-		return failf(joinExitFailed, "This server belongs to a cluster already (it has %s): run `signalith cluster leave` there first.", shared.CachePath(state))
+		return alreadyMember(shared.CachePath(state), state)
 	}
+	if _, err := os.Lstat(state); err == nil {
+		j.stateExisted = true
+	}
+	// The name: --name, else the one signalith.yaml or the service's
+	// environment gives (which the service starts with), else the one it
+	// has or this computer's.
+	if j.o.name != "" && j.c.Cluster.NodeName != "" && j.o.name != j.c.Cluster.NodeName {
+		return failf(joinExitFailed, "This server is named %s in its settings (cluster.node_name in %s, or SIGNALITH_NODE_NAME), and the service starts with that name. "+
+			"Change it there to join as %s, or join without --name.", j.c.Cluster.NodeName, path, j.o.name)
+	}
+	j.name = firstSet(j.o.name, j.env.getenv("SIGNALITH_NODE_NAME"), j.c.Cluster.NodeName)
+	if j.name != "" && !config.ValidNodeName(j.name) {
+		return failf(joinExitFailed, "The name %q cannot be a server's name: use 1 to 63 letters, digits, dots, dashes or underscores, starting with a letter or digit.", j.name)
+	}
+	return nil
+}
 
-	name := firstSet(j.o.name, j.env.getenv("SIGNALITH_NODE_NAME"), j.c.Cluster.NodeName)
-	if name != "" && !config.ValidNodeName(name) {
-		return failf(joinExitFailed, "The name %q cannot be a server's name: use 1 to 63 letters, digits, dots, dashes or underscores, starting with a letter or digit.", name)
+// guessName is the name the question before joining shows: the one join
+// will use, as far as it can tell without writing anything.
+func (j *joiner) guessName() string {
+	if j.name != "" {
+		return j.name
 	}
-	local, err := cluster.OpenLocal(state, cluster.LocalOptions{Name: name, InContainer: cluster.InContainer()})
+	if id, err := cluster.ReadIdentity(j.c.StateDir()); err == nil && id.Name != "" {
+		return id.Name
+	}
+	if h, err := os.Hostname(); err == nil && h != "" {
+		return strings.ToLower(h)
+	}
+	return "this server"
+}
+
+// makeLocal makes or reads this machine's identity, master key and node
+// key, and the keys of its certificate requests.
+func (j *joiner) makeLocal() error {
+	state := j.c.StateDir()
+	if !j.stateExisted {
+		j.made = append(j.made, state)
+	}
+	local, err := cluster.OpenLocal(state, cluster.LocalOptions{Name: j.name, InContainer: cluster.InContainer()})
+	j.made = append(j.made, filepath.Join(state, "cluster"))
 	if err == nil {
 		j.id = local.Identity
 		local.Close()
 	} else if id, rerr := cluster.ReadIdentity(state); rerr == nil {
 		// The service runs and holds the folder: its identity is kept.
-		if name != "" && name != id.Name {
-			return failf(joinExitFailed, "The signalith service runs as %s. Stop it first (sudo systemctl stop signalith) to join with the name %s.", id.Name, name)
+		if j.name != "" && j.name != id.Name {
+			return failf(joinExitFailed, "The signalith service runs as %s. Stop it first (sudo systemctl stop signalith) to join with the name %s.", id.Name, j.name)
 		}
 		j.id = id
 	} else {
@@ -393,7 +514,6 @@ func (j *joiner) local() error {
 	if !config.ValidNodeName(j.id.Name) {
 		return failf(joinExitFailed, "This computer's name %q cannot be a server's name: give one with --name.", j.id.Name)
 	}
-	j.made = append(j.made, filepath.Join(state, "cluster"))
 
 	keys := j.c.Keyring()
 	keys.OnCreate = func(src secrets.Source) {
@@ -404,14 +524,33 @@ func (j *joiner) local() error {
 	if _, err := keys.Seal("init", "make the master key"); err != nil {
 		return fmt.Errorf("making the master key: %w", err)
 	}
+	if j.newMaster != "" {
+		j.made = append(j.made, j.newMaster)
+	}
 	ks := shared.KeyStore{Dir: state, Master: keys}
+	j.made = append(j.made, filepath.Join(state, "keys"))
 	if j.nk, err = ks.NodeKey(); err != nil {
 		return fmt.Errorf("this server's node key: %w", err)
 	}
 	if j.httpsKey, err = ecdsa.GenerateKey(elliptic.P256(), rand.Reader); err != nil {
 		return err
 	}
+	// The key of its own OpenSearch client certificate, which the cluster
+	// issues when Signalith keeps OpenSearch's certificate authority; it
+	// never leaves this machine.
+	if j.osKey, err = rsa.GenerateKey(rand.Reader, ospki.KeyBits); err != nil {
+		return err
+	}
 	return nil
+}
+
+// ownLeftovers gives what join made to the service's account when join
+// stops early (a refused token, a failed check): its identity and keys
+// stay, and the service, which runs as that account, must read them.
+func (j *joiner) ownLeftovers() {
+	if err := j.giveOwners(); err != nil {
+		fmt.Fprintf(j.env.errOut, "Could not give the files join made to the service's account: %v\n", err)
+	}
 }
 
 func firstSet(vals ...string) string {
@@ -454,6 +593,11 @@ func (j *joiner) join(ctx context.Context) error {
 	}
 	req.Name, req.Version, req.OS, req.Arch, req.LevelMax = j.id.Name, version, j.env.goos, runtime.GOARCH, shared.LevelMax
 	req.CSRPEM = string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: csr}))
+	osCSR, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{Subject: pkix.Name{CommonName: j.id.Name, Organization: []string{ospki.Org}}}, j.osKey)
+	if err != nil {
+		return err
+	}
+	req.OSCSRPEM = string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: osCSR}))
 	req.NodeURL, req.Names = j.o.nodeURL, j.certNames()
 	req.AllowVersionSkew, req.CopySyslog = j.o.allowSkew, j.o.copySyslog
 	body, err := json.Marshal(req)
@@ -479,7 +623,15 @@ func (j *joiner) join(ctx context.Context) error {
 	switch resp.StatusCode {
 	case http.StatusOK:
 	case http.StatusForbidden:
-		return failf(joinExitRefused, "%s", firstSet(reply.Error, clusterjoin.Refused))
+		msg := firstSet(reply.Error, clusterjoin.Refused)
+		if msg != clusterjoin.Refused && !strings.Contains(msg, "token was not used") {
+			// A version or OpenSearch refused after the token checked out:
+			// the token was not used.
+			msg += " The token was not used: run signalith join again once this is fixed."
+		}
+		return failf(joinExitRefused, "%s", msg)
+	case http.StatusInternalServerError:
+		return failf(joinExitFailed, "%s", firstSet(reply.Error, clusterjoin.ErrSpent.Error()))
 	case http.StatusTooManyRequests:
 		return failf(joinExitRefused, "The server at %s refused more tries for now; wait a few minutes, then make a new token and run signalith join again.", j.tok.URL)
 	default:
@@ -507,13 +659,17 @@ const newToken = "Nothing was written. The token is used now: make a new one on 
 // the listen address is free and the clocks agree. It writes nothing
 // outside a temporary folder.
 func (j *joiner) preflight(ctx context.Context) error {
-	tmp, err := os.MkdirTemp("", "signalith-join-")
-	if err != nil {
+	// The certificate files are checked from a private folder in the
+	// state folder, not the shared temporary one: they may hold the
+	// cluster's OpenSearch client key, and one left by a join that was
+	// killed is removed at the next.
+	tmp := filepath.Join(j.c.StateDir(), "opensearch.join-tmp")
+	if err := os.RemoveAll(tmp); err != nil {
 		return err
 	}
 	defer os.RemoveAll(tmp)
 	files := opensearchFiles(tmp)
-	if err := writeOpenSearchFiles(files, &j.bundle.OpenSearch, nil); err != nil {
+	if err := j.writeOpenSearchFiles(files, nil); err != nil {
 		return err
 	}
 	cfg := j.storeConfig(files)
@@ -585,16 +741,35 @@ func opensearchFiles(dir string) osFiles {
 	return osFiles{dir: dir, ca: filepath.Join(dir, "ca.pem"), cert: filepath.Join(dir, "client.pem"), key: filepath.Join(dir, "client-key.pem")}
 }
 
-// writeOpenSearchFiles writes the OpenSearch certificate files the bundle
-// has, each kept in u first when u is not nil.
-func writeOpenSearchFiles(f osFiles, o *clusterjoin.OpenSearch, u *undoList) error {
+// clientKeyPEM is the key of the bundle's OpenSearch client
+// certificate: this server's own for one the cluster issued it
+// (Managed), else the one the bundle carries; "" for none.
+func (j *joiner) clientKeyPEM() string {
+	o := j.bundle.OpenSearch
+	switch {
+	case o.ClientCertPEM == "":
+		return ""
+	case o.Managed && j.osKey != nil:
+		der, err := x509.MarshalPKCS8PrivateKey(j.osKey)
+		if err != nil {
+			return ""
+		}
+		return string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}))
+	}
+	return o.ClientKeyPEM
+}
+
+// writeOpenSearchFiles writes the OpenSearch certificate files of the
+// bundle in f, each kept in u first when u is not nil.
+func (j *joiner) writeOpenSearchFiles(f osFiles, u *undoList) error {
 	if u != nil {
 		u.keepDir(f.dir)
 	}
 	if err := securefile.MkdirPrivate(f.dir); err != nil {
 		return err
 	}
-	for _, w := range []struct{ path, data string }{{f.ca, o.CAPEM}, {f.cert, o.ClientCertPEM}, {f.key, o.ClientKeyPEM}} {
+	o := &j.bundle.OpenSearch
+	for _, w := range []struct{ path, data string }{{f.ca, o.CAPEM}, {f.cert, o.ClientCertPEM}, {f.key, j.clientKeyPEM()}} {
 		if w.data == "" || w.path == f.key && o.ClientCertPEM == "" {
 			continue
 		}
@@ -616,7 +791,7 @@ func (j *joiner) storeConfig(f osFiles) store.Config {
 	if o.CAPEM != "" {
 		cfg.CAFile = f.ca
 	}
-	if o.ClientCertPEM != "" && o.ClientKeyPEM != "" {
+	if o.ClientCertPEM != "" && j.clientKeyPEM() != "" {
 		cfg.CertFile, cfg.KeyFile = f.cert, f.key
 	}
 	return cfg
@@ -653,10 +828,9 @@ func (j *joiner) write(ctx context.Context) (err error) {
 	if err := keys.SaveClusterKey(j.key); err != nil {
 		return fmt.Errorf("the cluster key: %w", err)
 	}
-	j.made = append(j.made, filepath.Join(state, "keys"))
 	// OpenSearch's certificate files.
 	files := opensearchFiles(filepath.Join(state, "opensearch"))
-	if err := writeOpenSearchFiles(files, &j.bundle.OpenSearch, u); err != nil {
+	if err := j.writeOpenSearchFiles(files, u); err != nil {
 		return fmt.Errorf("OpenSearch's certificate files: %w", err)
 	}
 	j.made = append(j.made, files.dir)
@@ -683,6 +857,9 @@ func (j *joiner) write(ctx context.Context) (err error) {
 	if err != nil {
 		return err
 	}
+	if _, err := os.Lstat(filepath.Dir(file)); errors.Is(err, fs.ErrNotExist) {
+		j.made = append(j.made, filepath.Dir(file))
+	}
 	u.keepDir(filepath.Dir(file))
 	u.keepFile(file)
 	if err := j.writeSettings(path, files, now); err != nil {
@@ -692,19 +869,29 @@ func (j *joiner) write(ctx context.Context) (err error) {
 	if _, err := config.Load(path); err != nil {
 		return fmt.Errorf("the settings written do not load: %w", err)
 	}
-	// This server's own users, feeds, retention policies and settings that
-	// the cluster lacks.
-	if j.o.merge {
-		if err := j.merge(ctx, path); err != nil {
-			return fmt.Errorf("merging this server's files into the cluster's: %w", err)
-		}
-	}
 	// The service's account owns what it uses.
-	if err := j.giveOwners(path, state, file); err != nil {
+	if err := j.giveOwners(); err != nil {
 		return fmt.Errorf("giving the files to the service's account: %w", err)
 	}
 	// An archive folder outside the service's own.
 	return j.archiveDropIn(path, u)
+}
+
+// mergeAfterWrite runs --merge once everything that joins this server is
+// written: the merge writes to the cluster's shared settings, which an
+// undo of this machine's files could not take back, so it comes last,
+// and a merge that fails partway keeps the join. It returns a failure
+// with exit code joinExitWrite to report after the service started, or
+// nil.
+func (j *joiner) mergeAfterWrite(ctx context.Context) error {
+	if !j.o.merge {
+		return nil
+	}
+	if err := j.merge(ctx, j.o.config); err != nil {
+		return failf(joinExitWrite, "%s joined the cluster, but merging its own files into the cluster's failed: %v. "+
+			"The join is kept, and nothing the merge added to the cluster is taken back; add what is missing on the cluster's pages.", j.id.Name, err)
+	}
+	return nil
 }
 
 // writeConfig makes signalith.yaml as signalith init does, without an
@@ -764,7 +951,7 @@ func (j *joiner) writeSettings(path string, files osFiles, now time.Time) error 
 			return err
 		}
 	}
-	if o.ClientCertPEM != "" && o.ClientKeyPEM != "" {
+	if o.ClientCertPEM != "" && j.clientKeyPEM() != "" {
 		if err := set("opensearch.cert_file", files.cert); err != nil {
 			return err
 		}
@@ -793,35 +980,30 @@ func (j *joiner) writeSettings(path string, files osFiles, now time.Time) error 
 }
 
 // giveOwners gives what join made to the service's account on Linux, as
-// the packages' postinstall does: the folders join wrote in, and a
-// signalith.yaml it made is root's, readable by the service's group.
-func (j *joiner) giveOwners(path, state, settings string) error {
-	if j.env.goos != "linux" {
+// the packages' postinstall does: the files and folders join wrote, never
+// a folder it only wrote in (giveTree), and a signalith.yaml it made is
+// root's, readable by the service's group.
+func (j *joiner) giveOwners() error {
+	if j.env.goos != "linux" || j.c == nil {
 		return nil
 	}
 	uid, gid, ok := j.env.owner()
 	if !ok {
 		return nil
 	}
-	if err := j.env.chown(state, uid, gid); err != nil {
-		return err
-	}
-	paths := slices.Clone(j.made)
-	if j.newMaster != "" {
-		paths = append(paths, j.newMaster)
-	}
-	paths = append(paths, filepath.Dir(settings))
-	for _, p := range paths {
-		if err := giveTree(p, uid, gid, j.env.chown); err != nil {
+	for _, p := range j.made {
+		if err := giveTree(p, uid, gid, j.env.chownFD); err != nil {
 			return err
 		}
 	}
 	if !j.haveConfig {
-		if err := j.env.chown(path, 0, gid); err != nil {
-			return err
-		}
-		if err := os.Chmod(path, 0o640); err != nil {
-			return err
+		if _, err := os.Lstat(j.o.config); err == nil {
+			if err := giveTree(j.o.config, 0, gid, j.env.chownFD); err != nil {
+				return err
+			}
+			if err := os.Chmod(j.o.config, 0o640); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -887,8 +1069,14 @@ func (j *joiner) start() error {
 	return nil
 }
 
+// clusterName is the cluster's name, with how many servers it has when
+// the answering server said: "Signalith (3 servers)".
 func (j *joiner) clusterName() string {
-	return firstSet(j.bundle.ClusterName, "Signalith")
+	name := firstSet(j.bundle.ClusterName, "Signalith")
+	if n := j.bundle.Servers; n > 0 {
+		name += fmt.Sprintf(" (%d servers)", n)
+	}
+	return name
 }
 
 // undoList puts back what join wrote, last first.
@@ -935,41 +1123,46 @@ func (u *undoList) keepDir(dir string) {
 }
 
 // keepTree records the folder dir and everything in it, to be put back as
-// it is now.
+// it is now: with the same modes and owners, and through securefile, so
+// a private file is private again (on Windows, with the service's access).
 func (u *undoList) keepTree(dir string) {
 	type entry struct {
-		rel  string
-		dir  bool
-		mode fs.FileMode
-		data []byte
+		rel      string
+		dir      bool
+		mode     fs.FileMode
+		data     []byte
+		uid, gid int
+		owned    bool
 	}
 	var list []entry
-	_, statErr := os.Stat(dir)
-	if statErr == nil {
-		_ = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
-			if err != nil {
-				return nil
-			}
-			rel, _ := filepath.Rel(dir, p)
-			info, err := d.Info()
-			if err != nil {
-				return nil
-			}
-			switch {
-			case d.IsDir():
-				list = append(list, entry{rel: rel, dir: true, mode: info.Mode().Perm()})
-			case d.Type().IsRegular():
-				data, err := os.ReadFile(p)
-				if err == nil {
-					list = append(list, entry{rel: rel, mode: info.Mode().Perm(), data: data})
-				}
-			}
-			return nil
-		})
-	} else {
+	if _, err := os.Stat(dir); err != nil {
 		u.keepDir(dir)
 		return
 	}
+	_ = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		rel, _ := filepath.Rel(dir, p)
+		info, err := d.Info()
+		if err != nil {
+			return nil
+		}
+		e := entry{rel: rel, mode: info.Mode().Perm()}
+		e.uid, e.gid, e.owned = ownerOf(info)
+		switch {
+		case d.IsDir():
+			e.dir = true
+		case d.Type().IsRegular():
+			if e.data, err = os.ReadFile(p); err != nil {
+				return nil
+			}
+		default:
+			return nil
+		}
+		list = append(list, e)
+		return nil
+	})
 	u.add(func() error {
 		if err := os.RemoveAll(dir); err != nil {
 			return err
@@ -978,12 +1171,22 @@ func (u *undoList) keepTree(dir string) {
 			p := filepath.Join(dir, e.rel)
 			var err error
 			if e.dir {
-				err = os.MkdirAll(p, e.mode)
+				err = securefile.MkdirPrivate(p)
 			} else {
-				err = os.WriteFile(p, e.data, e.mode)
+				err = securefile.Replace(p, e.data)
 			}
 			if err != nil {
 				return err
+			}
+			if runtime.GOOS != "windows" {
+				if err := os.Chmod(p, e.mode); err != nil {
+					return err
+				}
+			}
+			if e.owned {
+				if err := os.Lchown(p, e.uid, e.gid); err != nil {
+					return err
+				}
 			}
 		}
 		return nil

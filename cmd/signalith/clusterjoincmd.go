@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/term"
+
 	"github.com/jrsamsanchez/signalith/internal/api"
 	"github.com/jrsamsanchez/signalith/internal/clusterjoin"
 	"github.com/jrsamsanchez/signalith/internal/config"
@@ -32,6 +34,8 @@ var joinSecured = func(c *config.Config) error { return clusterjoin.ViewOf(c).Se
 type tokenOptions struct {
 	platform, note, nodeURL, url string
 	ttl                          time.Duration
+	// revoke is the id of a token to cancel instead.
+	revoke string
 }
 
 // memberRuntime returns a read-only runtime once this server is a
@@ -122,15 +126,34 @@ func (x *clusterCLI) token(ctx context.Context, o tokenOptions, asJSON bool) err
 	fmt.Fprintf(x.out, "  Linux:                        %s\n", linux)
 	fmt.Fprintf(x.out, "  Windows (elevated PowerShell): %s\n", windows)
 	fmt.Fprintf(x.out, "  Docker (in its .env file):     %s\n", docker)
-	fmt.Fprintf(x.out, "\nThe token is not shown again. To cancel it, delete it on Servers → Add a server.\n")
+	fmt.Fprintf(x.out, "\nThe token is not shown again. To cancel it: signalith cluster token -revoke %s\n", is.Token.ID)
+	return nil
+}
+
+// revokeToken cancels the join token id: it no longer joins a server.
+func (x *clusterCLI) revokeToken(ctx context.Context, id string) error {
+	if _, err := x.memberRuntime(); err != nil {
+		return err
+	}
+	id = strings.TrimSpace(id)
+	if err := x.join.Revoke(ctx, x.by, id); err != nil {
+		if errors.Is(err, clusterjoin.ErrTokenUnknown) {
+			return fmt.Errorf("there is no join token %s (signalith cluster status lists the open ones on the Servers page)", id)
+		}
+		return err
+	}
+	x.audit("join token revoked", "token", id)
+	fmt.Fprintf(x.out, "Join token %s is cancelled: it no longer adds a server.\n", id)
 	return nil
 }
 
 // approve makes a server that waits for approval a member: who is its
-// fingerprint, its name or its node id. A name or id asks to compare the
-// fingerprint first (-yes skips that). Without who, it lists the waiting
-// servers.
-func (x *clusterCLI) approve(ctx context.Context, who string, yes bool) error {
+// fingerprint, its name or its node id. What is approved is always a
+// fingerprint the admin gave or confirmed, never the name a pending
+// document says: a name or id needs -fingerprint, or the admin confirms
+// the fingerprint shown at the terminal (-yes does not do that). Without
+// who, it lists the waiting servers.
+func (x *clusterCLI) approve(ctx context.Context, who, fingerprint string, yes bool) error {
 	rt, err := x.memberRuntime()
 	if err != nil {
 		return err
@@ -175,18 +198,35 @@ func (x *clusterCLI) approve(ctx context.Context, who string, yes bool) error {
 		return fmt.Errorf("%d waiting servers are named %q: approve one by the fingerprint it shows (%s)", len(match), who, strings.Join(fps, ", "))
 	}
 	p := match[0]
-	if !byFingerprint {
+	// The fingerprint approved: the one the admin typed, or the one shown
+	// here and confirmed at the terminal.
+	fp := strings.TrimSpace(fingerprint)
+	switch {
+	case byFingerprint:
+		fp = cmp.Or(fp, who)
+	case fp != "":
+	default:
+		if yes || !x.terminal() {
+			return fmt.Errorf("approving %s by its name needs its fingerprint: compare the one it shows on its sign-in page or in its log, then run signalith cluster approve %s -fingerprint <fingerprint> (or signalith cluster approve <fingerprint>)", who, who)
+		}
 		q := fmt.Sprintf("Approve %s (%s/%s, %s) to join the cluster? Its fingerprint is %s: it must be the one %s shows on its sign-in page and in its log.",
 			p.Name, p.OS, p.Arch, cmp.Or(strings.Join(p.Addresses, ", "), "no address given"), p.Fingerprint, p.Name)
-		if err := x.confirm(q, yes); err != nil {
+		if err := x.confirm(q, false); err != nil {
 			return err
 		}
+		fp = p.Fingerprint
 	}
-	got, err := a.Approve(ctx, p.NodeID, p.Fingerprint, x.by)
+	got, err := a.Approve(ctx, p.NodeID, fp, x.by)
 	if err != nil {
 		return err
 	}
 	x.audit("server approved to join the cluster", "server", got.Name, "node_id", got.NodeID, "fingerprint", got.Fingerprint)
 	fmt.Fprintf(x.out, "Approved %s (%s). It takes the cluster key within a minute and joins; signalith cluster status then lists it.\n", got.Name, got.Fingerprint)
 	return nil
+}
+
+// terminal reports whether the standard input is a terminal one can ask
+// questions on.
+func (x *clusterCLI) terminal() bool {
+	return x.in != nil && term.IsTerminal(int(x.in.Fd()))
 }

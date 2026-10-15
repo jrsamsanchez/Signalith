@@ -25,8 +25,8 @@ import (
 //
 // Neither document is signed: a forged pending document at most adds a
 // row an admin should not approve, and a forged approval holds a key that
-// does not verify the cluster document, so the server never joins with
-// it.
+// does not verify the cluster document: the server checks that before it
+// keeps the key, and deletes such an approval.
 
 // Kinds of the documents in the runtime index.
 const (
@@ -156,7 +156,7 @@ func (rt *Runtime) awaitApproval(ctx context.Context) {
 			name = fmt.Sprintf("cluster '%s'", b)
 		}
 		rt.mu.Lock()
-		rt.approval.waiting = fmt.Sprintf("This server waits to join %s. Approve it on the Servers page of another server: fingerprint %s", name, d.Fingerprint)
+		rt.approval.waiting = fmt.Sprintf("This server waits to join %s. Approve it on the Servers page of another server, or with signalith cluster approve there: fingerprint %s", name, d.Fingerprint)
 		rt.mu.Unlock()
 		rt.log.Warn(fmt.Sprintf("This server waits to join %s. Approve it on another server (Servers page, or signalith cluster approve): fingerprint %s", name, d.Fingerprint),
 			"fingerprint", d.Fingerprint)
@@ -236,12 +236,27 @@ func (rt *Runtime) takeApproval(ctx context.Context, nk *NodeKey, src json.RawMe
 		}
 		return false
 	}
+	c, prefix := rt.target()
+	idx := runtimeIndex(prefix)
+	// Only a key that verifies the cluster document is kept: anyone who
+	// can write the runtime index could seal a key of their own to this
+	// server's public node key.
+	switch err := rt.verifiesCluster(ctx, k); {
+	case errors.Is(err, errNotThisCluster):
+		rt.log.Warn("an approval for this server holds a key that does not verify the cluster's settings, so it was deleted: it was not written by a member. Approve this server again on the Servers page",
+			"approval", ApprovalID(self.NodeID), "kid", k.ID())
+		if err := c.DeleteIf(ctx, idx, ApprovalID(self.NodeID), ver, true); err != nil && !errors.Is(err, store.ErrNotFound) {
+			rt.log.Debug("could not delete the approval", "err", err)
+		}
+		return false
+	case err != nil:
+		rt.log.Debug("could not check the approval against the cluster's settings; trying again", "err", err)
+		return false
+	}
 	if err := rt.keyStore().SaveClusterKey(k); err != nil {
 		rt.log.Warn("could not keep the cluster key this server was approved with; trying again", "err", err)
 		return false
 	}
-	c, prefix := rt.target()
-	idx := runtimeIndex(prefix)
 	if err := c.DeleteIf(ctx, idx, ApprovalID(self.NodeID), ver, true); err != nil && !errors.Is(err, store.ErrNotFound) {
 		rt.log.Debug("could not delete the approval this server used", "err", err)
 	}
@@ -252,6 +267,51 @@ func (rt *Runtime) takeApproval(ctx context.Context, nk *NodeKey, src json.RawMe
 	rt.log.Info("this server was approved to join the cluster and received the cluster key", "audit", true, "kid", k.ID(), "approved_by", a.By)
 	rt.Kick()
 	return true
+}
+
+// errNotThisCluster: a key that does not verify the cluster document.
+var errNotThisCluster = errors.New("the key does not verify the cluster's document")
+
+// verifiesCluster checks that the key k signs the cluster document in
+// OpenSearch now: errNotThisCluster when it does not, another error when
+// the document cannot be read.
+func (rt *Runtime) verifiesCluster(ctx context.Context, k *ClusterKey) error {
+	c, prefix := rt.target()
+	src, _, found, err := c.Get(ctx, ConfigIndex(prefix), ClusterDocID)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return errors.New("the cluster document is not there")
+	}
+	var e Envelope
+	if json.Unmarshal(src, &e) != nil || Verify(NewKeySet(k), ClusterDocID, &e) != nil {
+		return errNotThisCluster
+	}
+	return nil
+}
+
+// Approved lists the servers with an approval that waits to be taken.
+func (rt *Runtime) Approved(ctx context.Context) (map[string]bool, error) {
+	c, prefix := rt.target()
+	if c == nil {
+		return nil, errors.New("OpenSearch is not set up")
+	}
+	docs, err := c.SearchDocs(ctx, runtimeIndex(prefix), map[string]any{"term": map[string]any{"kind": ApprovalKind}})
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return map[string]bool{}, nil
+		}
+		return nil, err
+	}
+	out := map[string]bool{}
+	for _, d := range docs {
+		var a ApprovalDoc
+		if json.Unmarshal(d.Source, &a) == nil && a.Kind == ApprovalKind && d.ID == ApprovalID(a.NodeID) {
+			out[a.NodeID] = true
+		}
+	}
+	return out, nil
 }
 
 // putRuntime writes the runtime document id whatever is there.
@@ -386,4 +446,19 @@ func (rt *Runtime) DropStalePending(ctx context.Context, now time.Time) (int, er
 		n++
 	}
 	return n, errors.Join(errs...)
+}
+
+// keyFileUnsecured is the warning of a server that takes the cluster key
+// from SIGNALITH_CLUSTER_KEY_FILE while OpenSearch is not secured as
+// several servers need: that way of joining keeps working, and says so.
+func (rt *Runtime) keyFileUnsecured() *Warning {
+	if rt.opts.KeyFile == "" || rt.opts.Secured == nil {
+		return nil
+	}
+	err := rt.opts.Secured()
+	if err == nil {
+		return nil
+	}
+	return &Warning{Level: "red", Text: "This server takes the cluster key from a key file (SIGNALITH_CLUSTER_KEY_FILE) while OpenSearch is not secured: " + err.Error() +
+		" Until it is, anyone who reaches OpenSearch can read and change the events and the shared settings of every server."}
 }

@@ -48,6 +48,8 @@ func (j *joiner) merge(ctx context.Context, path string) error {
 	if err := x.reports.Save(ctx, joinBy, rep); err != nil {
 		return fmt.Errorf("the migration report: %w", err)
 	}
+	newLogger(j.env.errOut).Info("cluster.merged: this server's own files were merged into the cluster's shared settings", "audit", true, "by", joinBy,
+		"node_id", j.id.NodeID, "server", j.id.Name, "added", len(rep.Added), "differ", len(rep.Differ), "retention_held", rep.Held)
 	j.printMerge(rep)
 	return nil
 }

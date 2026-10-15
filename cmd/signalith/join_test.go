@@ -2,15 +2,18 @@ package main
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
+	"maps"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
@@ -45,6 +48,8 @@ type joinFixture struct {
 	srv    *httptest.Server
 	tok    clusterjoin.Token
 	status int // what POST /api/cluster/join answers; 0 is 200
+	// reply is the error text with status; "" is Refused.
+	reply string
 
 	mu       sync.Mutex
 	requests []clusterjoin.Request
@@ -118,7 +123,7 @@ func (f *joinFixture) answer(w http.ResponseWriter, r *http.Request) {
 	f.mu.Unlock()
 	if f.status != 0 {
 		w.WriteHeader(f.status)
-		_ = json.NewEncoder(w).Encode(map[string]string{"error": clusterjoin.Refused})
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": cmp.Or(f.reply, clusterjoin.Refused)})
 		return
 	}
 	raw, _ := base64.StdEncoding.DecodeString(f.key.Text())
@@ -191,7 +196,7 @@ func newJoinMachine(t *testing.T) *joinMachine {
 		},
 		dropInDir: m.dropIn,
 		owner:     func() (int, int, bool) { return 4242, 4343, true },
-		chown: func(p string, uid, gid int) error {
+		chownFD: func(_ int, p string, uid, gid int) error {
 			mu.Lock()
 			defer mu.Unlock()
 			m.chowned[p] = [2]int{uid, gid}
@@ -245,7 +250,7 @@ func TestJoinWritesEverything(t *testing.T) {
 		t.Error("the output shows a secret")
 	}
 	req := f.requests[0]
-	if req.Name != "siem-c" || req.NodeURL != "https://siem-c.internal:8443" || !req.CopySyslog || req.CSRPEM == "" || !slices.Contains(req.Names, "siem-c.internal") {
+	if req.Name != "siem-c" || req.NodeURL != "https://siem-c.internal:8443" || !req.CopySyslog || req.CSRPEM == "" || req.OSCSRPEM == "" || !slices.Contains(req.Names, "siem-c.internal") {
 		t.Errorf("request %+v", req)
 	}
 
@@ -280,16 +285,23 @@ func TestJoinWritesEverything(t *testing.T) {
 	if tm.Store() != tlsauto.KindCluster || tm.Leaf() == nil || tm.Leaf().CheckSignatureFrom(f.ca) != nil {
 		t.Errorf("tls store %s", tm.Store())
 	}
-	// Owners: the folders join wrote in are the service's, signalith.yaml
-	// root's with the service's group.
-	if got := m.chowned[m.config]; got != [2]int{0, 4343} {
+	// Owners: what join wrote is the service's, signalith.yaml root's with
+	// the service's group, and nothing else: not the folders it only wrote
+	// in (the lookups folder of settings.yaml was made by join here).
+	if runtime.GOOS != "linux" {
+		m.chowned[m.config] = [2]int{0, 4343}
+	}
+	if got := m.chowned[m.config]; runtime.GOOS == "linux" && got != [2]int{0, 4343} {
 		t.Errorf("signalith.yaml owner %v", got)
 	}
 	for _, p := range []string{m.state, filepath.Join(m.state, "keys"), shared.ClusterKeyPath(m.state, f.key.ID()), filepath.Join(m.state, "opensearch", "ca.pem"), c.SettingsFile(),
 		filepath.Join(c.TLSDir(), "server.key")} {
-		if got := m.chowned[p]; got != [2]int{4242, 4343} {
+		if got := m.chowned[p]; runtime.GOOS == "linux" && got != [2]int{4242, 4343} {
 			t.Errorf("%s owner %v", p, got)
 		}
+	}
+	if strings.Contains(m.out.String(), "opensearch.join-tmp") || slices.ContainsFunc(files(m.dir), func(p string) bool { return strings.Contains(p, "join-tmp") }) {
+		t.Error("the preflight's folder was left")
 	}
 	for p := range m.chowned {
 		if !within(p, m.dir) {
@@ -312,7 +324,7 @@ func TestJoinWritesEverything(t *testing.T) {
 
 	// A second join on the same machine is refused: it is a member.
 	m.out.Reset()
-	if code := m.join(t, f.tok); code != joinExitFailed || !strings.Contains(m.out.String(), "signalith cluster leave") {
+	if code := m.join(t, f.tok); code != joinExitFailed || !strings.Contains(m.out.String(), "belongs to a cluster already") {
 		t.Errorf("second join: %d %s", code, m.out.String())
 	}
 	if f.joins() != 1 {
@@ -403,6 +415,25 @@ func TestJoinRollsBack(t *testing.T) {
 	}
 	before := files(m.dir)
 	tlsBefore := map[string]string{}
+	type look struct {
+		mode     os.FileMode
+		uid, gid int
+	}
+	looks := map[string]look{}
+	asRoot := runtime.GOOS == "linux" && os.Geteuid() == 0
+	_ = filepath.Walk(tlsDir, func(p string, fi os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+		if asRoot {
+			// As the service's account owns them after an install.
+			_ = os.Lchown(p, 4242, 4343)
+		}
+		fi, _ = os.Lstat(p)
+		u, g, _ := ownerOf(fi)
+		looks[p] = look{fi.Mode().Perm(), u, g}
+		return nil
+	})
 	for _, p := range files(tlsDir) {
 		b, _ := os.ReadFile(filepath.Join(tlsDir, p))
 		tlsBefore[p] = string(b)
@@ -421,6 +452,19 @@ func TestJoinRollsBack(t *testing.T) {
 	for p, data := range tlsBefore {
 		if b, err := os.ReadFile(filepath.Join(tlsDir, p)); err != nil || string(b) != data {
 			t.Errorf("tls/%s was not put back", p)
+		}
+	}
+	// With its modes, and its owners: the service must still read its
+	// HTTPS key.
+	for p, want := range looks {
+		fi, err := os.Lstat(p)
+		if err != nil {
+			t.Errorf("%s: %v", p, err)
+			continue
+		}
+		u, g, _ := ownerOf(fi)
+		if got := (look{fi.Mode().Perm(), u, g}); runtime.GOOS != "windows" && got != want {
+			t.Errorf("%s was put back as %+v, not %+v", p, got, want)
 		}
 	}
 	if len(shared.ClusterKeyFiles(m.state)) != 0 {
@@ -445,6 +489,172 @@ func TestJoinRefusals(t *testing.T) {
 	m.env.terminal, m.env.in = true, strings.NewReader("n\n")
 	if code := runJoin(context.Background(), m.env, []string{f.tok.String(), "-c", m.config, "--name", "siem-c"}); code != joinExitFailed || f.joins() != 0 {
 		t.Errorf("answered no: %d %s", code, m.out.String())
+	}
+	if !strings.Contains(m.out.String(), "Join this server, siem-c,") || len(files(m.dir)) != 0 {
+		t.Errorf("wrote %v before the admin said yes: %s", files(m.dir), m.out.String())
+	}
+	// signalith.yaml names the server otherwise: the service would start
+	// with that name, so join refuses another.
+	m.env.terminal = false
+	if err := os.MkdirAll(filepath.Dir(m.config), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(m.config, []byte("cluster:\n  node_name: siem-old\n"), 0o666); err != nil {
+		t.Fatal(err)
+	}
+	m.out.Reset()
+	if code := m.join(t, f.tok); code != joinExitFailed || !strings.Contains(m.out.String(), "siem-old") || f.joins() != 0 {
+		t.Errorf("a name other than signalith.yaml's: %d %s", code, m.out.String())
+	}
+}
+
+func TestJoinWithoutConfigUsesItsFolders(t *testing.T) {
+	// Without signalith.yaml and SIGNALITH_STATE_DIR, the state folder is
+	// the one the file join writes will have, not the current folder.
+	f := newJoinFixture(t)
+	m := newJoinMachine(t)
+	t.Setenv("SIGNALITH_STATE_DIR", "")
+	t.Chdir(t.TempDir())
+	if code := m.join(t, f.tok, "--no-start"); code != joinExitOK {
+		t.Fatalf("exit %d: %s", code, m.out.String())
+	}
+	c, err := config.Load(m.config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if keys := shared.ClusterKeyFiles(c.StateDir()); len(keys) != 1 || !within(c.StateDir(), m.dir) {
+		t.Errorf("state folder %s, keys %v", c.StateDir(), keys)
+	}
+	if cwd, _ := os.Getwd(); len(files(cwd)) != 0 {
+		t.Errorf("wrote in the current folder: %v", files(cwd))
+	}
+}
+
+func TestJoinTokenNotInTheCommandLine(t *testing.T) {
+	f := newJoinFixture(t)
+	// From the standard input.
+	m := newJoinMachine(t)
+	m.env.in = strings.NewReader(f.tok.String() + "\n")
+	if code := runJoin(context.Background(), m.env, []string{"-", "-c", m.config, "--name", "siem-c", "--yes", "--no-start"}); code != joinExitOK || f.joins() != 1 {
+		t.Fatalf("token from the standard input: %d %s", code, m.out.String())
+	}
+	// Asked for at the terminal, not shown.
+	m = newJoinMachine(t)
+	m.env.terminal = true
+	m.env.readSecret = func() (string, error) { return f.tok.String(), nil }
+	if code := runJoin(context.Background(), m.env, []string{"-c", m.config, "--name", "siem-c", "--yes", "--no-start"}); code != joinExitOK || f.joins() != 2 {
+		t.Fatalf("token asked for: %d %s", code, m.out.String())
+	}
+	if strings.Contains(m.out.String(), f.tok.String()) {
+		t.Error("the token was shown")
+	}
+	// Neither: refused before anything happens.
+	m = newJoinMachine(t)
+	if code := runJoin(context.Background(), m.env, []string{"-c", m.config, "--yes"}); code != joinExitFailed || !strings.Contains(m.out.String(), "signalith join -") {
+		t.Errorf("no token: %d %s", code, m.out.String())
+	}
+	m.env.in = strings.NewReader("")
+	if code := runJoin(context.Background(), m.env, []string{"-", "-c", m.config, "--yes"}); code != joinExitFailed || f.joins() != 2 {
+		t.Errorf("empty standard input: %d %s", code, m.out.String())
+	}
+}
+
+func TestJoinStoppedEarlyGivesItsKeys(t *testing.T) {
+	// A refused token leaves the identity and keys join made: the service
+	// runs as its own account and must read them.
+	f := newJoinFixture(t)
+	f.status = http.StatusForbidden
+	m := newJoinMachine(t)
+	if code := m.join(t, f.tok, "--no-start"); code != joinExitRefused {
+		t.Fatalf("exit %d: %s", code, m.out.String())
+	}
+	if runtime.GOOS != "linux" {
+		return
+	}
+	for _, p := range []string{m.state, filepath.Join(m.state, "cluster"), filepath.Join(m.state, "keys")} {
+		if got := m.chowned[p]; got != [2]int{4242, 4343} {
+			t.Errorf("%s owner %v", p, got)
+		}
+	}
+	if !slices.ContainsFunc(slices.Collect(maps.Keys(m.chowned)), func(p string) bool { return strings.HasPrefix(filepath.Base(p), "node") && strings.Contains(p, "keys") }) {
+		t.Errorf("the node key was not given: %v", m.chowned)
+	}
+}
+
+func TestJoinRefusalsSayTheTokenIsUnused(t *testing.T) {
+	f := newJoinFixture(t)
+	m := newJoinMachine(t)
+	f.status = http.StatusForbidden
+	f.reply = "This server runs Signalith 0.1, and the cluster runs 0.2: install Signalith 0.2 first."
+	if code := m.join(t, f.tok, "--no-start"); code != joinExitRefused || !strings.Contains(m.out.String(), "The token was not used") {
+		t.Errorf("a version refused: %d %s", code, m.out.String())
+	}
+	// Used, then failed on the answering server: a new token is needed.
+	f.status, f.reply = http.StatusInternalServerError, clusterjoin.ErrSpent.Error()
+	m = newJoinMachine(t)
+	if code := m.join(t, f.tok, "--no-start"); code != joinExitFailed || !strings.Contains(m.out.String(), "Make a new token") {
+		t.Errorf("used, then failed: %d %s", code, m.out.String())
+	}
+}
+
+func TestJoinManagedOpenSearchCertificate(t *testing.T) {
+	// The cluster issues this server its own OpenSearch client
+	// certificate for the key of the request join sent: the key stays
+	// here, and the settings use it.
+	f := newJoinFixture(t)
+	f.edit = func(b *clusterjoin.Bundle) {
+		req := f.requests[len(f.requests)-1]
+		blk, _ := pem.Decode([]byte(req.OSCSRPEM))
+		csr, err := x509.ParseCertificateRequest(blk.Bytes)
+		if err != nil || csr.CheckSignature() != nil {
+			t.Errorf("OpenSearch certificate request: %v", err)
+			return
+		}
+		tmpl := &x509.Certificate{SerialNumber: big.NewInt(9), Subject: pkix.Name{CommonName: "signalith-server-siem-c"},
+			NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(90 * 24 * time.Hour), ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}}
+		der, err := x509.CreateCertificate(rand.Reader, tmpl, f.ca, csr.PublicKey, f.caKey)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		b.OpenSearch.ClientCertPEM = string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))
+		b.OpenSearch.Managed, b.OpenSearch.Shared = true, false
+	}
+	m := newJoinMachine(t)
+	if code := m.join(t, f.tok, "--no-start"); code != joinExitOK {
+		t.Fatalf("exit %d: %s", code, m.out.String())
+	}
+	c, err := config.Load(m.config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, certFile, keyFile := c.OpenSearchTLSFiles()
+	if _, err := tls.LoadX509KeyPair(certFile, keyFile); err != nil {
+		t.Errorf("the client certificate and this server's own key: %v (%s, %s)", err, certFile, keyFile)
+	}
+}
+
+func TestJoinMergeFailureKeepsTheJoin(t *testing.T) {
+	// The merge writes to the cluster, which no undo of this machine's
+	// files takes back: it runs last, and when it fails the join is kept
+	// and the service starts.
+	f := newJoinFixture(t)
+	m := newJoinMachine(t)
+	// The migration report cannot be written.
+	f.os.SetFault(func(method, path string) *ostest.Fault {
+		if method != http.MethodGet && strings.Contains(path, "migration-report") {
+			return &ostest.Fault{Status: http.StatusInternalServerError, Type: "boom"}
+		}
+		return nil
+	})
+	if code := m.join(t, f.tok, "--merge"); code != joinExitWrite {
+		t.Fatalf("exit %d: %s", code, m.out.String())
+	}
+	if !strings.Contains(m.out.String(), "siem-c joined the cluster, but merging") || m.started != 1 {
+		t.Errorf("started %d: %s", m.started, m.out.String())
+	}
+	if len(shared.ClusterKeyFiles(m.state)) != 1 {
+		t.Error("the join was undone")
 	}
 }
 
@@ -482,30 +692,6 @@ func TestOpenSearchCheckCommand(t *testing.T) {
 	}
 	if err := runOpenSearchCheck(context.Background(), []string{f.os.URL, "--cert", "x"}, &out, env, opensearchcheck.Check); err == nil {
 		t.Error("--cert without --key")
-	}
-}
-
-func TestGiveTree(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("owners are Unix's")
-	}
-	dir := t.TempDir()
-	_ = os.MkdirAll(filepath.Join(dir, "a", "b"), 0o700)
-	_ = os.WriteFile(filepath.Join(dir, "a", "b", "f"), nil, 0o600)
-	outside := t.TempDir()
-	_ = os.Symlink(outside, filepath.Join(dir, "a", "link"))
-	var got []string
-	if err := giveTree(filepath.Join(dir, "a"), 1, 2, func(p string, uid, gid int) error {
-		got = append(got, p)
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if len(got) != 4 || slices.ContainsFunc(got, func(p string) bool { return strings.HasPrefix(p, outside) }) {
-		t.Errorf("gave %v", got)
-	}
-	if err := giveTree(filepath.Join(dir, "missing"), 1, 2, nil); err != nil {
-		t.Error(err)
 	}
 }
 

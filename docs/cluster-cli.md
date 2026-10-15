@@ -344,6 +344,7 @@ it can simply be stopped, upgraded and started, and exits 0.
 
 ```
 signalith cluster token [-c file] [-platform linux|windows|docker] [-ttl 60m] [-note text] [-node-url url] [-url url] [-json]
+signalith cluster token [-c file] -revoke <id>
 ```
 
 Makes a join token, as **Servers → Add a server** does, and prints it with the line
@@ -355,7 +356,8 @@ which the new server checks before it trusts the answer. Its secret is printed t
 once and kept in OpenSearch only encrypted with the cluster key, so a lost token
 cannot be shown again: make a new one. `-platform`, `-note` and `-node-url` (the
 address the other servers will reach the new server at) are shown with the token on
-the Servers page.
+the Servers page. `-revoke <id>` cancels a token that was not used yet (its id, such
+as `jt_…`, is printed with it), for one pasted in the wrong place.
 
 It needs a member of the cluster, OpenSearch with security turned on, and an HTTPS
 certificate from Signalith's own certificate authority or a private one whose root
@@ -364,17 +366,23 @@ is in the certificate file. Without one, approve the new server instead.
 ## approve
 
 ```
-signalith cluster approve [-c file] [-yes] [<server|fingerprint>]
+signalith cluster approve [-c file] [-fingerprint fp] [-yes] [<server|fingerprint>]
 ```
 
 A server started with the cluster's OpenSearch settings but without the cluster key
 waits to join and shows a fingerprint, such as `4F2A-91C0-…`, on its sign-in page
 and in its log. Without an argument, `approve` lists the servers that wait, with
 their fingerprints. With a fingerprint (dashes and case do not matter), it approves
-that server; with a name or node id it shows the fingerprint and asks you to compare
-it first (`-yes` answers for you). The server then gets the cluster key, encrypted
-so only it can read it, and joins within a minute. A fingerprint that does not match
-is refused, as is any approval while OpenSearch is not secured.
+that server. What is approved is always a fingerprint you read on the new server,
+never the name the waiting server gives itself, which anyone who can write to
+OpenSearch could copy: with a name or node id, give the fingerprint with
+`-fingerprint`, or compare the one shown and answer yes at a terminal (`-yes` does not
+do that comparison for you, so with a name it needs `-fingerprint`). The server then
+gets the cluster key, encrypted so only it can read it, and joins within a minute. A
+fingerprint that does not match is refused, as is any approval while OpenSearch is not
+secured, and a server that would take the place of a member (its node id listed with
+another key, or a member's name). A server whose approval was lost (it stayed away a
+day, or the approval could not be written) is listed again and can be approved again.
 
 ## join
 
@@ -387,6 +395,11 @@ token made on **Servers → Add a server** of a server of the cluster. Run it as
 sudo signalith join 'SJ1.eyJ1Ijoi...' --name siem-c --node-url https://siem-c.example.com:8080
 ```
 
+The token may also come from the standard input (`signalith join -`), or be left out
+to be asked for without being shown. Other users of the computer can see the command
+line of a running program, so on a shared computer give it one of these ways rather
+than in the command. It asks before it changes anything, unless `--yes`.
+
 It checks the server the token names by the certificate the token pins, asks it for
 what a new server needs (sealed so only this computer can read it), and checks from
 here that it can use the cluster's OpenSearch: OpenSearch answers, its certificate is
@@ -396,9 +409,18 @@ within 2 seconds. Only then does it write the cluster key, the OpenSearch settin
 (as Settings page entries, so environment variables still win), OpenSearch's
 certificate files under `<state>/opensearch/`, and the HTTPS certificate from the
 cluster's certificate authority. If anything fails to be written, what was written is
-undone. On Linux the files go to the `signalith` account, an archive folder outside
-`/var/lib/signalith` is added to the unit's `ReadWritePaths=`, and the service is
-enabled and restarted.
+undone, with the owners and access the files had. On Linux the files join made go to
+the `signalith` account (never a folder it only wrote in, and never through a link),
+an archive folder outside `/var/lib/signalith` is added to the unit's
+`ReadWritePaths=`, and the service is enabled and restarted. Its last line names the
+cluster and how many servers it has: `siem-c joined Signalith (3 servers). Add it to
+your load balancer: …`.
+
+When the name given with `--name` differs from `cluster.node_name` in `signalith.yaml`
+(or `SIGNALITH_NODE_NAME` in the service's settings), join refuses: the service would
+start under that other name. The answering server refuses a name another server of
+the cluster has, and a server that has a member's identity with another key (a state
+folder copied from that server).
 
 | Flag | What it does |
 | --- | --- |
@@ -415,14 +437,15 @@ enabled and restarted.
 | Exit code | Meaning |
 | --- | --- |
 | 0 | Joined |
-| 1 | It cannot run here (not root, already in a cluster, a bad name) or the server did not answer |
-| 2 | The token was refused (wrong, used or expired) |
+| 1 | It cannot run here (not root, already in a cluster, a bad name), the server did not answer, or it used the token but could not finish (the message says to make a new one) |
+| 2 | The token was refused: wrong, used or expired; or the token checked out but this server cannot join yet (another version, OpenSearch not secured, a name or identity another server has), and the message says the token was not used |
 | 3 | The server is not the one the token names: someone may be intercepting the connection |
 | 4 | This computer cannot use the cluster's OpenSearch; nothing was written, and the token is used |
-| 5 | Writing failed and was undone |
+| 5 | Writing failed and was undone; or, with `--merge`, the server joined but the merge failed partway (the message says so) |
 | 6 | Everything was written, but the service did not start |
 
-A token works once. After exit 2, 4 or 5, make a new one.
+A token works once. After exit 4 or 5, after exit 2 for a wrong, used or expired
+token, and after exit 1 when the message says the token was used, make a new one.
 
 Without `--merge`, the new server uses the cluster's users, feeds, retention policies and
 settings, and its own files are left as they are, unused. With `--merge`, for a server
@@ -436,9 +459,13 @@ passwords, keys and password hashes are never in it. When a retention policy dif
 retention waits until an admin confirms the policies on the **Data retention** page,
 so nothing but the disk guard deletes by a policy the servers disagree on. When the
 server's own HTTPS certificate authority is replaced by the cluster's, the report says
-its agents need a new configuration. If the merge fails, what join wrote is undone
-(exit 5). Detections and dashboards are not shared between servers yet, so they stay
-in the server's own files.
+its agents need a new configuration. The merge runs last, once everything that makes
+the server a member is written: what it adds to the cluster cannot be taken back by
+undoing this computer's files. If it fails partway, the join is kept, the service
+starts, what it added stays in the cluster, and join exits 5 saying so; add what is
+missing on the cluster's pages. Each merge is audited as `cluster.merged`. Detections
+and dashboards are not shared between servers yet, so they stay in the server's own
+files.
 
 ## opensearch-check
 

@@ -6,8 +6,8 @@ import (
 	"io/fs"
 	"os"
 	"os/user"
-	"path/filepath"
 	"strconv"
+	"syscall"
 )
 
 // runningAsAdmin reports whether this process runs as root.
@@ -25,16 +25,11 @@ func serviceOwner() (uid, gid int, ok bool) {
 	return uid, gid, err1 == nil && err2 == nil
 }
 
-// giveTree gives dir, or the file dir, and everything in it to uid:gid
-// with chown, not following links. A missing path is skipped.
-func giveTree(dir string, uid, gid int, chown func(string, int, int) error) error {
-	if _, err := os.Lstat(dir); os.IsNotExist(err) {
-		return nil
+// ownerOf returns the owner of the file info describes.
+func ownerOf(info fs.FileInfo) (uid, gid int, ok bool) {
+	st, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return 0, 0, false
 	}
-	return filepath.WalkDir(dir, func(p string, _ fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		return chown(p, uid, gid)
-	})
+	return int(st.Uid), int(st.Gid), true
 }

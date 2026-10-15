@@ -3,6 +3,7 @@ package clusterjoin
 import (
 	"encoding/base64"
 	"errors"
+	"net"
 	"strings"
 
 	"github.com/jrsamsanchez/signalith/internal/config"
@@ -49,6 +50,9 @@ type Request struct {
 	// CopySyslog asks for the answering server's syslog listeners
 	// (signalith join --copy-syslog).
 	CopySyslog bool `json:"copy_syslog,omitempty"`
+	// RemoteIP is the address the request came from, set by the server
+	// that answers it (never read from the body).
+	RemoteIP net.IP `json:"-"`
 }
 
 // Reply is the body of a successful POST /api/cluster/join.

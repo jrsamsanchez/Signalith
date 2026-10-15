@@ -1236,6 +1236,14 @@ func Default() *Config {
 	}
 }
 
+// DefaultFor returns Default for a config file at path that is not there
+// yet: its folders resolve next to path, as they will once it is written.
+func DefaultFor(path string) *Config {
+	c := Default()
+	c.path = path
+	return c
+}
+
 // Path returns the file the config was loaded from.
 func (c *Config) Path() string { return c.path }
 

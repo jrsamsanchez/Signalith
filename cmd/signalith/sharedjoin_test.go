@@ -5,6 +5,7 @@ import (
 	"encoding/pem"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -27,6 +28,18 @@ func TestJoinTokenURL(t *testing.T) {
 	if u, err := j.tokenURL("https://browser:8443"); err != nil || u != "https://browser:8443" {
 		t.Errorf("origin: %q %v", u, err)
 	}
+	// An address only this computer reaches: the new server would reach
+	// itself there.
+	for _, local := range []string{"https://localhost:8443", "https://127.0.0.1:8443", "https://[::1]:8443", "https://0.0.0.0:8443"} {
+		if u, err := j.tokenURL(local); err == nil {
+			t.Errorf("a token names %q", u)
+		}
+	}
+	c.Server.NodeURL = "https://127.0.0.1:8443"
+	if u, _ := j.tokenURL("https://browser:8443"); u != "https://browser:8443" {
+		t.Errorf("a loopback node_url was used: %q", u)
+	}
+	c.Server.NodeURL = ""
 	c.Server.PublicURL = "http://siem.example.com"
 	if u, _ := j.tokenURL("https://browser:8443"); u != "https://browser:8443" {
 		t.Errorf("an http public_url was used: %q", u)
@@ -81,7 +94,8 @@ func TestJoinThroughTheServer(t *testing.T) {
 		t.Fatal(err)
 	}
 	c.OpenSearch.URL, c.OpenSearch.Username, c.OpenSearch.Password, c.OpenSearch.CAFile = "https://os.example.com:9200", "signalith", "pw", caFile
-	c.Server.NodeURL = "https://" + a.addr
+	_, port, _ := net.SplitHostPort(a.addr)
+	c.Server.NodeURL = "https://siem-a.example.com:" + port
 	j.c = &c
 	block, _ := pem.Decode(ca)
 	ctx := context.Background()
@@ -90,7 +104,7 @@ func TestJoinThroughTheServer(t *testing.T) {
 		t.Fatal(err)
 	}
 	tok := is.Token
-	if tok.URL != "https://"+a.addr || !tok.MatchesPin(block.Bytes) {
+	if tok.URL != c.Server.NodeURL || !tok.MatchesPin(block.Bytes) {
 		t.Fatalf("token %v names %s", tok, tok.URL)
 	}
 	nk, _ := shared.NewNodeKey()

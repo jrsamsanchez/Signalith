@@ -44,6 +44,9 @@ type Bundle struct {
 	// cluster's level.
 	IssuerVersion string `json:"issuer_version"`
 	Level         int    `json:"level"`
+	// Servers is how many servers the keyring lists with the new one; 0
+	// when the answering server did not say.
+	Servers int `json:"servers,omitempty"`
 }
 
 // OpenSearch is the OpenSearch part of a bundle.

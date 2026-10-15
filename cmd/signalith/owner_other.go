@@ -2,7 +2,11 @@
 
 package main
 
-import "github.com/jrsamsanchez/signalith/internal/security"
+import (
+	"io/fs"
+
+	"github.com/jrsamsanchez/signalith/internal/security"
+)
 
 // runningAsAdmin reports whether this process runs as an elevated
 // Administrator.
@@ -12,5 +16,6 @@ func runningAsAdmin() bool { return security.Elevated() }
 // access lists (securefile and signalith service install).
 func serviceOwner() (uid, gid int, ok bool) { return 0, 0, false }
 
-// giveTree changes nothing outside Unix.
-func giveTree(string, int, int, func(string, int, int) error) error { return nil }
+// ownerOf: outside Unix a file's access is its access list, which
+// securefile sets.
+func ownerOf(fs.FileInfo) (uid, gid int, ok bool) { return 0, 0, false }

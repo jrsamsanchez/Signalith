@@ -351,6 +351,10 @@ type RuntimeOptions struct {
 	// in its pending document (version, addresses, node_url); nil gives
 	// only its name, key and platform.
 	JoinInfo func() PendingDoc
+	// Secured checks that OpenSearch is secured as several servers need
+	// (clusterjoin.RequireSecured); a server with KeyFile warns when it
+	// fails. nil checks nothing.
+	Secured func() error
 
 	// levelMax stands in for LevelMax, so tests can run a runtime of an
 	// older version; 0 is LevelMax.
@@ -705,6 +709,9 @@ func (rt *Runtime) readKeys() (localKeys, error) {
 		case err == nil:
 			if w := KeyFileWarning(p); w != "" && !warned {
 				rt.log.Warn(w)
+			}
+			if kw := rt.keyFileUnsecured(); kw != nil && !warned {
+				rt.log.Warn(kw.Text)
 			}
 			out.file = k
 			if out.get(k.ID()) == nil {
@@ -1789,6 +1796,9 @@ func (rt *Runtime) Warnings() []Warning {
 		w = append(w, Warning{Level: "red", Text: fmt.Sprintf("Shared settings were changed in OpenSearch outside Signalith (%s), so this server keeps its last good copy. "+
 			"If a snapshot of OpenSearch was restored on purpose, run signalith cluster accept-restore.", strings.Join(st.Tamper, ", ")),
 			Banner: "Shared settings were changed in OpenSearch outside Signalith."})
+	}
+	if kw := rt.keyFileUnsecured(); kw != nil {
+		w = append(w, *kw)
 	}
 	if len(st.NeedsUpgrade) > 0 {
 		w = append(w, Warning{Level: "amber", Text: fmt.Sprintf("Some shared settings were written by a newer version of Signalith (%s), so this server keeps its last good copy. Upgrade it.",

@@ -49,6 +49,7 @@ func openShared(c *config.Config, node *cluster.Node, log *slog.Logger) (*shared
 		Importers:  sharedImporters(ct.sharedDocs, ct.files()),
 		Log:        log,
 		JoinInfo:   joinInfo(c),
+		Secured:    func() error { return clusterjoin.ViewOf(c).Secured() },
 	})
 	// Join tokens are made and used by a member only.
 	ct.join.Writable = rt.Writable

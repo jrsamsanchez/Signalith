@@ -187,6 +187,9 @@ func TestClusterJoinWithToken(t *testing.T) {
 	a := addJoinServer(h, o, "siem-a", true)
 	a.start()
 	tok := a.joinToken("-platform", "linux", "-note", "integration")
+	// A token that expires before it is used (the shortest a token lasts).
+	expiring := a.joinToken("-ttl", "1m")
+	expiresAt := time.Now().Add(time.Minute)
 
 	// A token whose pin is not the server's certificate authority: exit 3,
 	// nothing written.
@@ -241,6 +244,17 @@ func TestClusterJoinWithToken(t *testing.T) {
 	}
 	if keys, _ := filepath.Glob(filepath.Join(d.dir, "keys", "cluster-*.key")); len(keys) > 0 {
 		t.Errorf("a refused join kept a cluster key: %v", keys)
+	}
+
+	// An expired token: exit 2, the one refusal text, nothing kept.
+	if wait := time.Until(expiresAt.Add(2 * time.Second)); wait > 0 {
+		time.Sleep(wait)
+	}
+	if out, code := d.runCode("join", expiring, "--yes", "--no-start"); code != 2 || !strings.Contains(out, clusterjoin.Refused) {
+		t.Fatalf("join with an expired token = %d:\n%s", code, out)
+	}
+	if keys, _ := filepath.Glob(filepath.Join(d.dir, "keys", "cluster-*.key")); len(keys) > 0 {
+		t.Errorf("a join with an expired token kept a cluster key: %v", keys)
 	}
 }
 

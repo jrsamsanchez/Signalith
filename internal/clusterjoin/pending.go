@@ -45,23 +45,28 @@ func (a *Approver) now() time.Time {
 	return time.Now().UTC()
 }
 
-// Pending lists the servers that wait for approval and are not members
-// with the same node key already (one approved that has not taken its
-// key yet).
+// Pending lists the servers that wait for approval, but those with an
+// approval waiting to be taken. A server approved before shows again
+// when its approval is gone (it could not be written, or the server
+// stayed away a day and housekeeping removed it), so it can be approved
+// again.
 func (a *Approver) Pending(ctx context.Context) ([]shared.PendingDoc, error) {
 	list, err := a.RT.Pending(ctx)
 	if err != nil {
 		return nil, err
 	}
-	kr, _ := a.RT.Keyring().Get()
+	if len(list) == 0 {
+		return list, nil
+	}
+	approved, err := a.RT.Approved(ctx)
+	if err != nil {
+		return nil, err
+	}
 	out := list[:0]
 	for _, p := range list {
-		if kr != nil {
-			if m, ok := kr.Members[p.NodeID]; ok && m.NodePub == p.NodePub {
-				continue
-			}
+		if !approved[p.NodeID] {
+			out = append(out, p)
 		}
-		out = append(out, p)
 	}
 	return out, nil
 }
@@ -122,18 +127,27 @@ func (a *Approver) Approve(ctx context.Context, nodeID, fingerprint, by string) 
 	now := a.now()
 	// The keyring first: a server that took its key before it was listed
 	// would add itself as imported.
+	// A server already listed with this key (approved before, its
+	// approval lost) is approved again; one that would take another
+	// member's place is refused.
 	m := shared.KeyringMember{Name: p.Name, NodePub: p.NodePub, Fingerprint: p.Fingerprint,
 		AddedAt: now.Format(time.RFC3339Nano), AddedBy: shared.AddedByApproval}
 	if _, err := a.RT.Keyring().Mutate(ctx, by, func(b *shared.KeyringBody) error {
-		if old, there := b.Members[nodeID]; there && old.NodePub == m.NodePub {
-			return nil
+		if err := memberClash(b, nodeID, p.Name, p.NodePub); err != nil {
+			return err
 		}
 		if b.Members == nil {
 			b.Members = map[string]shared.KeyringMember{}
 		}
-		b.Members[nodeID] = m
+		if old, there := b.Members[nodeID]; !there || old.NodePub != m.NodePub {
+			b.Members[nodeID] = m
+		}
 		return nil
 	}); err != nil {
+		var ce *ClashError
+		if errors.As(err, &ce) {
+			a.log().Warn("cluster.approve refused: the server would take another member's place", "audit", true, "node_id", nodeID, "name", p.Name, "user", by, "reason", ce.Error())
+		}
 		return nil, err
 	}
 	if err := a.RT.WriteApproval(ctx, shared.ApprovalDoc{NodeID: nodeID, KID: k.ID(), Sealed: sealed, By: by, At: now}); err != nil {

@@ -114,19 +114,24 @@ func (j *joinAPI) view() clusterjoin.View { return clusterjoin.ViewOf(j.c) }
 
 // tokenURL is the address a join token names: this server's
 // server.node_url, else server.public_url, else the address the admin's
-// browser reached it at. It must be https.
+// browser reached it at. It must be https, and not one only this computer
+// reaches (localhost, a loopback address): the new server would reach
+// itself there.
 func (j *joinAPI) tokenURL(origin string) (string, error) {
 	for _, u := range []string{j.c.Server.NodeURL, j.c.Server.PublicURL, origin} {
 		if u = strings.TrimSpace(u); u == "" {
 			continue
 		}
-		if p, err := url.Parse(u); err == nil && p.Scheme == "https" && p.Hostname() != "" {
+		if p, err := url.Parse(u); err == nil && p.Scheme == "https" && p.Hostname() != "" && !tokenHostLocal(p.Hostname()) {
 			return u, nil
 		}
 	}
-	return "", errors.New("a join token needs this server's https address: set server.node_url (or server.public_url) on the Settings page, " +
-		"or make the token from a browser that reaches this server over HTTPS")
+	return "", errTokenURL
 }
+
+// errTokenURL: no address a new server reaches this one at.
+var errTokenURL = errors.New("a join token needs this server's https address that the new server reaches: set server.node_url (or server.public_url) on the Settings page, " +
+	"or make the token from a browser that reaches this server by such an address (not localhost)")
 
 func (j *joinAPI) Issue(ctx context.Context, by string, req api.JoinTokenRequest) (*clusterjoin.Issued, error) {
 	if err := j.rt.Writable(); err != nil {

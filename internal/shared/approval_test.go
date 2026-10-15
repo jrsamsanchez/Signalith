@@ -3,6 +3,7 @@ package shared
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -56,7 +57,7 @@ func TestWaitingServerIsApproved(t *testing.T) {
 	}
 	mustContain(t, "log", b.logs.String(), "waits to join cluster 'Signalith'")
 	mustContain(t, "log", b.logs.String(), fp)
-	if w := b.rt.Waiting(); !strings.Contains(w, "waits to join cluster 'Signalith'") || !strings.Contains(w, fp) {
+	if w := b.rt.Waiting(); !strings.Contains(w, "waits to join cluster 'Signalith'") || !strings.Contains(w, fp) || !strings.Contains(w, "signalith cluster approve") {
 		t.Errorf("sign-in page line %q", w)
 	}
 	if a.rt.Waiting() != "" {
@@ -106,11 +107,31 @@ func TestWaitingServerIsApproved(t *testing.T) {
 	}
 	mustContain(t, "log", b.logs.String(), "cannot be used")
 
-	// The real approval: the key is taken, then the server joins.
+	// An approval forged by someone who can write the runtime index: a
+	// key of their own, sealed to the server's public node key. It opens,
+	// but does not verify the cluster document: nothing is kept, and the
+	// approval is deleted.
 	nk, err := (KeyStore{Dir: b.dir, Master: b.master}).LoadNodeKey()
 	if err != nil {
 		t.Fatal(err)
 	}
+	theirs, _ := NewClusterKey()
+	forged, err := SealToNode(nk.Public(), "n_siem-b", theirs.ID(), []byte(theirs.Text()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.os.Put(testRuntime, ApprovalID("n_siem-b"), map[string]any{"kind": ApprovalKind, "node_id": "n_siem-b", "kid": theirs.ID(), "sealed": forged, "at": e.clock.Now()})
+	b.step()
+	b.wantMode(ModeLegacyB)
+	if len(ClusterKeyFiles(b.dir)) != 0 {
+		t.Fatal("a server kept a key that does not verify the cluster document")
+	}
+	if e.os.Source(testRuntime, ApprovalID("n_siem-b")) != nil {
+		t.Error("the forged approval was not deleted")
+	}
+	mustContain(t, "log", b.logs.String(), "does not verify the cluster's settings")
+
+	// The real approval: the key is taken, then the server joins.
 	approve(t, a, b, nk.Public())
 	if e.os.Source(testRuntime, PendingID("n_siem-b")) != nil {
 		t.Error("the pending document is still there after the approval")
@@ -174,5 +195,39 @@ func TestReadOnlyNeverAsksToJoin(t *testing.T) {
 	b.wantMode(ModeLegacyB)
 	if e.os.Source(testRuntime, PendingID("n_siem-b")) != nil {
 		t.Error("a read-only runtime wrote a pending document")
+	}
+}
+
+func TestKeyFileWarnsWithoutSecuredOpenSearch(t *testing.T) {
+	e := newEnv(t)
+	k, err := NewClusterKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := e.server("siem-a", func(o *RuntimeOptions) {
+		o.KeyFile = writeKeyFile(t, k)
+		o.Secured = func() error { return errors.New("Multi-server needs OpenSearch with security turned on.") }
+	})
+	a.holds.Store(true)
+	a.step()
+	a.wantMode(ModeMember)
+	mustContain(t, "log", a.logs.String(), "while OpenSearch is not secured")
+	var found bool
+	for _, w := range a.rt.Warnings() {
+		found = found || w.Level == "red" && strings.Contains(w.Text, "key file") && strings.Contains(w.Text, "security turned on")
+	}
+	if !found {
+		t.Errorf("warnings %+v", a.rt.Warnings())
+	}
+	// Secured: no warning.
+	b := e.server("siem-b", func(o *RuntimeOptions) {
+		o.KeyFile = writeKeyFile(t, k)
+		o.Secured = func() error { return nil }
+	})
+	b.step()
+	for _, w := range b.rt.Warnings() {
+		if strings.Contains(w.Text, "key file") {
+			t.Errorf("a secured OpenSearch warns: %+v", w)
+		}
 	}
 }

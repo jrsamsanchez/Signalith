@@ -7,6 +7,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -31,6 +32,8 @@ type fakeJoin struct {
 	answered int
 	waiting  string
 	issueErr error
+	// approveErr is what Approve answers when set.
+	approveErr error
 }
 
 func (f *fakeJoin) Issue(_ context.Context, by string, req JoinTokenRequest) (*clusterjoin.Issued, error) {
@@ -69,6 +72,9 @@ func (f *fakeJoin) Tokens() []clusterjoin.TokenInfo {
 func (f *fakeJoin) Pending(context.Context) ([]shared.PendingDoc, error) { return f.pending, nil }
 
 func (f *fakeJoin) Approve(_ context.Context, nodeID, fp, _ string) (*shared.PendingDoc, error) {
+	if f.approveErr != nil {
+		return nil, f.approveErr
+	}
 	for _, p := range f.pending {
 		if p.NodeID == nodeID {
 			if !clusterjoin.SameFingerprint(p.Fingerprint, fp) {
@@ -166,10 +172,22 @@ func TestJoinAnswers(t *testing.T) {
 	ts, _ := newJoinServer(t, j, true)
 	id, _ := clusterjoin.NewID()
 
-	j.answer = func(*clusterjoin.Request) (string, error) { return "j1:sealed", nil }
+	var from net.IP
+	j.answer = func(r *clusterjoin.Request) (string, error) { from = r.RemoteIP; return "j1:sealed", nil }
 	code, out := joinPost(t, ts, "/api/cluster/join", joinBody(t, id))
 	if code != 200 || out["sealed"] != "j1:sealed" {
 		t.Fatalf("join = %d %v", code, out)
+	}
+	if from == nil || !from.IsLoopback() {
+		t.Errorf("the request's address is %v", from)
+	}
+	// Used, then failed: the new server is told it needs a new token,
+	// not to try again.
+	j.answer = func(*clusterjoin.Request) (string, error) {
+		return "", errors.Join(clusterjoin.ErrSpent, errors.New("keyring conflict"))
+	}
+	if code, out := joinPost(t, ts, "/api/cluster/join", joinBody(t, id)); code != 500 || out["error"] != clusterjoin.ErrSpent.Error() {
+		t.Errorf("spent = %d %v", code, out)
 	}
 	j.answer = func(*clusterjoin.Request) (string, error) {
 		return "", &clusterjoin.JoinError{Msg: "install Signalith 1.5.0 first"}
@@ -299,6 +317,11 @@ func TestJoinApproveAPI(t *testing.T) {
 	}
 	if code, out := do(t, ts, "POST", "/api/cluster/servers/n_b/approve", `{"fingerprint":"4f2a91c0"}`, true); code != 200 || out["name"] != "siem-b" {
 		t.Errorf("approve = %d %v", code, out)
+	}
+	// A server that would take a member's place.
+	j.approveErr = &clusterjoin.ClashError{NodeID: "n_b", Name: "siem-b"}
+	if code, _ := do(t, ts, "POST", "/api/cluster/servers/n_b/approve", `{"fingerprint":"4f2a91c0"}`, true); code != http.StatusConflict {
+		t.Errorf("clash = %d", code)
 	}
 }
 
