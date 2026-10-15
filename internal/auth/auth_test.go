@@ -116,3 +116,25 @@ func TestPeekDoesNotKeepSessionAlive(t *testing.T) {
 		t.Fatal("expired session still usable")
 	}
 }
+
+func TestForward(t *testing.T) {
+	s := NewSessions(time.Hour)
+	before := s.Start(NewSession{User: "admin"})
+	var got []Held
+	s.Forward(func(h Held) { got = append(got, h) })
+	after := s.Start(NewSession{User: "jlee", Method: "local"})
+	if len(got) != 1 || got[0].User != "jlee" || got[0].Hash != hash(after) || got[0].Method != "local" {
+		t.Fatalf("forwarded %+v", got)
+	}
+	if _, ok := s.Lookup(after); ok {
+		t.Error("a forwarded session is kept here too")
+	}
+	if held := s.Take(); len(held) != 1 || held[0].Hash != hash(before) {
+		t.Errorf("taken %+v", held)
+	}
+	s.Forward(nil)
+	again := s.Start(NewSession{User: "kim"})
+	if _, ok := s.Lookup(again); !ok || len(got) != 1 {
+		t.Error("a session started after Forward(nil) is not kept")
+	}
+}

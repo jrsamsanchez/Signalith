@@ -143,10 +143,32 @@ func (ua *sharedUsers) use(p *usersParts) {
 // shared users, so the switch signs out only those whom the shared
 // settings do not have as they were here (clusterauth.Sessions.Carry).
 func (p *usersParts) carry(ctx context.Context, legacy *auth.Sessions, people *users.Store, c *config.Config, log *slog.Logger) {
+	// A sign-in the old components were still finishing when the restart
+	// stopped waiting for them ends after the sessions moved: its session
+	// is carried on its own, or its browser would be signed out at once.
+	legacy.Forward(func(h auth.Held) {
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+		defer cancel()
+		if n, _ := p.sessions.Carry(ctx, carried([]auth.Held{h}, people, c)); n == 0 {
+			log.Warn("a sign-in that finished while this server moved to the shared users could not be kept; that browser signs in again",
+				"audit", true, "user", h.User)
+		}
+	})
 	held := legacy.Take()
 	if len(held) == 0 {
 		return
 	}
+	list := carried(held, people, c)
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+	n, dropped := p.sessions.Carry(ctx, list)
+	dropped += len(held) - len(list)
+	log.Info("kept the sign-in sessions made before the users were shared", "audit", true, "kept", n, "ended", dropped)
+}
+
+// carried returns the sessions of held whose users this server has as
+// they are (the built-in admin of c, or a user of people), for Carry.
+func carried(held []auth.Held, people *users.Store, c *config.Config) []clusterauth.Carried {
 	list := make([]clusterauth.Carried, 0, len(held))
 	for _, h := range held {
 		cr := clusterauth.Carried{Held: h}
@@ -173,11 +195,7 @@ func (p *usersParts) carry(ctx context.Context, legacy *auth.Sessions, people *u
 		}
 		list = append(list, cr)
 	}
-	ctx, cancel := context.WithTimeout(ctx, time.Minute)
-	defer cancel()
-	n, dropped := p.sessions.Carry(ctx, list)
-	dropped += len(held) - len(list)
-	log.Info("kept the sign-in sessions made before the users were shared", "audit", true, "kept", n, "ended", dropped)
+	return list
 }
 
 // api is what the API needs of p.

@@ -586,6 +586,7 @@ are counted for each person's own address, not the proxy's. See
 | `server.node_url` | from `listen` and this computer's name | The address other Signalith servers that share this OpenSearch reach this one at, shown in the list of servers. Set in signalith.yaml or `SIGNALITH_NODE_URL`, or, once the servers share their settings, on the Settings page (**Address for other servers**); in Docker set it, since a container cannot know it |
 | `server.shared_addresses` | none | IPs or CIDRs that many clients reach Signalith through: a reverse proxy, load balancer or NAT on another machine, or Docker Desktop's port forwarding, where every client seems to come from one address. These are not held to one client's share of connections, requests and ingest memory, only to the totals, and wrong passwords from them count per account, never pausing sign-ins from the whole address. The log names the address when one reaches its share |
 | `opensearch.url` | `http://127.0.0.1:9200` | Event store, `http(s)://host:port` (no query string). A `user:password@` in it is moved to `username` and `password` when loaded and never shown; `signalith secrets encrypt` moves it there in the file, encrypted |
+| `opensearch.urls` | none | Other nodes of the same OpenSearch cluster (same scheme, no password in them; or `SIGNALITH_OPENSEARCH_URLS`, comma-separated). Requests are spread over every address and one that is down is skipped for 30 seconds; see [OpenSearch with several nodes](https://github.com/jrsamsanchez/Signalith/blob/main/docs/opensearch-failover.md) |
 | `opensearch.username`, `opensearch.password` | none | OpenSearch credentials. Sent only over https, or plain http to this machine, unless `allow_insecure_http` is on |
 | `opensearch.ca_file` | none | PEM file with the CA that signed OpenSearch's certificate (for a private CA); system CAs are trusted too. Relative to the config file |
 | `opensearch.cert_file`, `opensearch.key_file` | none | Client certificate and key for certificate sign-in to OpenSearch; reloaded when they change |
@@ -645,7 +646,7 @@ are counted for each person's own address, not the proxy's. See
 Secrets can come from the environment instead: `SIGNALITH_OPENSEARCH_PASSWORD`,
 `SIGNALITH_ADMIN_PASSWORD`, `SIGNALITH_INGEST_TOKEN`, `SIGNALITH_LDAP_BIND_PASSWORD` (for
 `auth.ldap` in this file only; directory sign-in set up on the Users page keeps its own) (also
-`SIGNALITH_OPENSEARCH_URL`, `SIGNALITH_OPENSEARCH_USERNAME`, `SIGNALITH_OPENSEARCH_PROXY`, `SIGNALITH_OPENSEARCH_CRL_FILE`, `SIGNALITH_LISTEN`,
+`SIGNALITH_OPENSEARCH_URL`, `SIGNALITH_OPENSEARCH_URLS`, `SIGNALITH_OPENSEARCH_USERNAME`, `SIGNALITH_OPENSEARCH_PROXY`, `SIGNALITH_OPENSEARCH_CRL_FILE`, `SIGNALITH_LISTEN`,
 `SIGNALITH_PUBLIC_URL`, `SIGNALITH_DETECTIONS_DIR`, `SIGNALITH_LOOKUPS_DIR`, `SIGNALITH_DASHBOARDS_DIR`,
 `SIGNALITH_USERS_FILE`, `SIGNALITH_INTEL_FEEDS_FILE`, `SIGNALITH_NOTIFY_FILE`, `SIGNALITH_PLAYBOOKS_FILE`, `SIGNALITH_ARCHIVE_DIR`, `SIGNALITH_ASSISTANT_API_KEY`, and
 `SIGNALITH_SYSLOG_UDP` and `SIGNALITH_SYSLOG_TCP`, where `off` turns the listener off, `SIGNALITH_NODE_NAME`,

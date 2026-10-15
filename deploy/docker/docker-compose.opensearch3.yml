@@ -1,0 +1,99 @@
+# Signalith's Docker quick start with three OpenSearch nodes instead of one,
+# so that OpenSearch keeps working when any one node stops. Add this file
+# after docker-compose.yml in every command, from the Signalith folder:
+#
+#   docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.opensearch3.yml up -d
+#
+# The setup service then makes a certificate for each node (bootstrap-docker
+# -nodes 3), and Signalith spreads its requests over the three nodes
+# (SIGNALITH_OPENSEARCH_URLS), skipping one that is down.
+#
+# Each node takes 1 GB of memory for OpenSearch, plus about as much again,
+# so give Docker at least 8 GB. Three nodes on one computer guard against a
+# node that stops, not against losing that computer: for that, run them on
+# three machines (docs/opensearch-failover.md).
+#
+# Starting from a single-node quick start that already has events: the first
+# node keeps them, and the two new ones join it. Take a snapshot first
+# (docs/opensearch-failover.md), and then set Replicas on the Settings page
+# to auto, so new days get a copy on a second node.
+
+x-node: &node
+  image: opensearchproject/opensearch:2.17.1@sha256:1193b7c29c5d63028523728243cc4da047ac49f697a8f8105e5aeee2f89bcc4c
+  restart: unless-stopped
+  depends_on:
+    setup: { condition: service_completed_successfully }
+  ulimits:
+    memlock: { soft: -1, hard: -1 }
+    nofile: { soft: 65536, hard: 65536 }
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "5" }
+
+x-node-env: &node-env
+  DISABLE_INSTALL_DEMO_CONFIG: "true"
+  DISABLE_PERFORMANCE_ANALYZER_AGENT_CLI: "true"
+  OPENSEARCH_JAVA_OPTS: -Xms1g -Xmx1g
+
+x-node-healthcheck: &node-healthcheck
+  test: ["CMD-SHELL", "curl -sf -o /dev/null --cacert /usr/share/opensearch/config/certs/root-ca.pem --cert /usr/share/opensearch/config/certs/admin.pem --key /usr/share/opensearch/config/certs/admin-key.pem https://localhost:9200/_cluster/health && curl -sf -o /dev/null --cacert /usr/share/opensearch/config/certs/root-ca.pem https://localhost:9200/_plugins/_security/health || exit 1"]
+  interval: 10s
+  start_period: 10m
+  retries: 30
+
+services:
+  setup:
+    command: ["bootstrap-docker", "-opensearch-dir", "/opensearch-certs", "-signalith-dir", "/signalith-secrets", "-nodes", "3"]
+
+  # The first node is docker-compose.yml's, with its data.
+  opensearch:
+    hostname: opensearch
+    environment:
+      discovery.type: multi-node
+      NODE_NAME: opensearch
+      NODE_CERT: node
+    volumes:
+      - ./opensearch/opensearch-cluster.yml:/usr/share/opensearch/config/opensearch.yml:ro
+
+  opensearch-2:
+    <<: *node
+    hostname: opensearch-2
+    environment:
+      <<: *node-env
+      NODE_NAME: opensearch-2
+      NODE_CERT: node-2
+    healthcheck: *node-healthcheck
+    volumes:
+      - opensearch-2-data:/usr/share/opensearch/data
+      - opensearch-certs:/usr/share/opensearch/config/certs:ro
+      - ./opensearch/opensearch-cluster.yml:/usr/share/opensearch/config/opensearch.yml:ro
+      - ./opensearch/security/config.yml:/usr/share/opensearch/config/opensearch-security/config.yml:ro
+      - ./opensearch/security/internal_users.yml:/usr/share/opensearch/config/opensearch-security/internal_users.yml:ro
+      - ./opensearch/security/roles.yml:/usr/share/opensearch/config/opensearch-security/roles.yml:ro
+      - ./opensearch/security/roles_mapping.yml:/usr/share/opensearch/config/opensearch-security/roles_mapping.yml:ro
+
+  opensearch-3:
+    <<: *node
+    hostname: opensearch-3
+    environment:
+      <<: *node-env
+      NODE_NAME: opensearch-3
+      NODE_CERT: node-3
+    healthcheck: *node-healthcheck
+    volumes:
+      - opensearch-3-data:/usr/share/opensearch/data
+      - opensearch-certs:/usr/share/opensearch/config/certs:ro
+      - ./opensearch/opensearch-cluster.yml:/usr/share/opensearch/config/opensearch.yml:ro
+      - ./opensearch/security/config.yml:/usr/share/opensearch/config/opensearch-security/config.yml:ro
+      - ./opensearch/security/internal_users.yml:/usr/share/opensearch/config/opensearch-security/internal_users.yml:ro
+      - ./opensearch/security/roles.yml:/usr/share/opensearch/config/opensearch-security/roles.yml:ro
+      - ./opensearch/security/roles_mapping.yml:/usr/share/opensearch/config/opensearch-security/roles_mapping.yml:ro
+
+  signalith:
+    environment:
+      # The other two nodes; opensearch.url in signalith.yaml names the first.
+      SIGNALITH_OPENSEARCH_URLS: https://opensearch-2:9200,https://opensearch-3:9200
+
+volumes:
+  opensearch-2-data:
+  opensearch-3-data:

@@ -102,8 +102,8 @@ The first three phases are complete, and the fourth has started.
 
 **Vulnerability scanning: more**
 :   Scanning with [Nmap](https://nmap.org) and CVE matching is built
-    ([vulnerabilities.md](vulnerabilities.md)). Still to come: a scanner server for each
-    network zone, and [OpenVAS](https://www.openvas.org) as an option for deeper scans.
+    ([vulnerabilities.md](vulnerabilities.md)), with a scanner server for each network zone.
+    Still to come: [OpenVAS](https://www.openvas.org) as an option for deeper scans.
 
 **Hardening and 1.0**
 :   Fuzzing of every parser that reads data from the network, an outside security
