@@ -327,15 +327,16 @@ Content packs are rule sets from other open source projects, shipped unchanged
 inside Signalith and converted when it starts. Every pack detection is **off** until
 an admin turns it on.
 
-**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,438 rules from
+**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,455 rules from
 [SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 2,080 Windows rules
 for these Sysmon, Security, PowerShell, System, Application, Code Integrity, Windows Firewall, BITS, AppX deployment, WMI activity, Remote Desktop session, shell, SMB client, exploit protection, DNS client, Task Scheduler, NTLM, LSA, CryptoAPI, device driver, packaged app, certificate, OpenSSH, DNS Server, IIS configuration and Defender log sources, 154 Linux rules (see
 [Linux endpoints](#linux-endpoints-sysmon-for-linux) and
 [the Linux audit log](#linux-audit-log-auditd)), 13 web server rules (see
 [Web server access logs](#web-server-access-logs)), 45 network rules (see
 [Network rules](#network-rules-zeek-dns-proxy-and-firewall)), 38 AWS CloudTrail rules (see
-[AWS CloudTrail](#aws-cloudtrail)) and 108 Microsoft Entra ID and Azure rules (see
-[Entra ID and Azure](#entra-id-and-azure)):
+[AWS CloudTrail](#aws-cloudtrail)), 108 Microsoft Entra ID and Azure rules (see
+[Entra ID and Azure](#entra-id-and-azure)) and 17 Microsoft 365 rules (see
+[Microsoft 365](#microsoft-365)):
 
 | Sigma log source | Windows events | Data model |
 | --- | --- | --- |
@@ -356,6 +357,7 @@ for these Sysmon, Security, PowerShell, System, Application, Code Integrity, Win
 | `product: azure`, `service: auditlogs` | Entra ID audit records | Change |
 | `product: azure`, `service: riskdetection`, `pim` | Entra ID Protection risk detections | Alerts |
 | `product: azure`, `service: activitylogs` | Azure activity log records | Change |
+| `product: m365`, any service | Microsoft 365 audit records (see [Microsoft 365](#microsoft-365)) | Authentication, Change, Alerts or Other |
 | `service: system` | System 7045 (service installed) | Change |
 | `service: system` | Other System events, by provider and event ID (see below) | Other |
 | `service: application` | Application events, by provider and event ID (see below) | Other |
@@ -658,6 +660,17 @@ matches. After `rename properties.* as *`, a later `search` or `stats` reads the
 their old names. Rules that use `eval`, `spath`, `rex`, lookups or `transaction`, and the
 Intune rules, are left out. To send Entra ID and Azure logs, see
 [Entra ID and Azure](azure.md).
+
+### Microsoft 365
+
+SigmaHQ's 17 tested Microsoft 365 rules ship. Newer ones name a record's own fields
+(`Operation`, `Workload`, `ApplicationId`), which Signalith keeps by the same names. Older
+ones name `eventSource` (the workload), `eventName` (the operation, or for the Security &
+Compliance Center an alert's name) and `status` (success or failure), which read
+`Workload`, `signature` and `status`. A sign-in's `RequestType` is one of its
+`ExtendedProperties`, so it reads `ExtendedProperties{}.Value`. Every rule searches
+`sourcetype=o365:management:activity`. To read the audit log, see
+[Microsoft 365](microsoft-365.md).
 
 ### Splunk Security Content
 

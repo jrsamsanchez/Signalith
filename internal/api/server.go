@@ -36,6 +36,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/findings"
 	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"github.com/jrsamsanchez/signalith/internal/intel"
+	"github.com/jrsamsanchez/signalith/internal/m365"
 	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/redact"
 	"github.com/jrsamsanchez/signalith/internal/respond"
@@ -107,9 +108,14 @@ type Server struct {
 	Background context.Context
 	// Assistant is an optional AI model for plain-English questions.
 	Assistant *assistant.Client
-	UI        fs.FS // web UI files; nil disables the UI
-	Log       *slog.Logger
-	Version   string
+	// M365Cursors reads how far the Microsoft 365 audit log was read, for
+	// the health page; M365Check is the Settings page's test (nil signs
+	// in to Microsoft).
+	M365Cursors func(ctx context.Context, tenant string) ([]m365.Cursor, error)
+	M365Check   func(ctx context.Context, s m365.Settings) (map[string]bool, error)
+	UI          fs.FS // web UI files; nil disables the UI
+	Log         *slog.Logger
+	Version     string
 
 	// Syslog is the syslog receiver, for its stats; nil when it is off.
 	Syslog *syslog.Receiver
@@ -1096,6 +1102,9 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	s.addClusterHealth(r, out)
 	if sensors := s.sensorHealth(ctx); sensors != nil {
 		out["sensors"] = sensors
+	}
+	if m := s.m365Status(ctx); m != nil {
+		out["m365"] = m
 	}
 	// Everyone signed in sees whether things work. Where they run (file
 	// paths, addresses, the OpenSearch URL and its errors) and the setup

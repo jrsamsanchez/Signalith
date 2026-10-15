@@ -323,6 +323,11 @@ var knownFields = func() map[string]string {
 	// Whether a user or an app made an Entra ID change, as Splunk's add-on
 	// names it.
 	m["src_user_type"] = kw
+	// Microsoft 365 audit records (o365.go): the record's own fields, and
+	// its record type by name.
+	for _, k := range o365Mapped {
+		m[k] = kw
+	}
 	add := func(fs []datamodel.Field) {
 		for _, f := range fs {
 			if strings.HasPrefix(f.Name, "_") {

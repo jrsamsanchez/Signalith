@@ -371,6 +371,9 @@ func (c *sigmaConv) anyModel() bool {
 		// Sign-ins are Authentication events, changes Change and reads
 		// Other.
 		return true
+	case "m365":
+		// So are Microsoft 365's, and its alerts Alerts.
+		return true
 	}
 	return false
 }
@@ -529,6 +532,12 @@ func ConvertSigmaWith(src []byte, opt SigmaOptions) (*SigmaResult, error) {
 			// (signinlogs), each field by Microsoft Sentinel's name.
 			category = strings.ToLower(service)
 		}
+	}
+	if product, _ := r.Logsource["product"].(string); category == "" && strings.EqualFold(product, "m365") {
+		// Microsoft 365's audit log, whatever the service: each field by
+		// the record's name, or the older rules' eventSource, eventName
+		// and status.
+		category = "m365"
 	}
 	if category == "" {
 		// Zeek's own logs (product: zeek, service: dns, ...).
@@ -699,6 +708,10 @@ func productScope(ls map[string]any, category string) query.Expr {
 		if category == "cloudtrail" {
 			return &query.Compare{Field: "sourcetype", Op: "=", Value: ingest.CloudTrailSourcetype}
 		}
+	case "m365":
+		if category == "m365" {
+			return &query.Compare{Field: "sourcetype", Op: "=", Value: ingest.O365Sourcetype}
+		}
 	case "azure":
 		if category == "activitylogs" {
 			return &query.Compare{Field: "sourcetype", Op: "=", Value: ingest.AzureActivitySourcetype}
@@ -788,6 +801,14 @@ func (c *sigmaConv) field(name string) string {
 			c.approx("field %s is not a CloudTrail field Signalith keeps", name)
 		}
 		return name
+	}
+	if c.category == "m365" {
+		f, ok := ingest.O365SigmaField(name)
+		if !ok {
+			c.approx("field %s is not a Microsoft 365 field Signalith keeps", name)
+			return name
+		}
+		return f
 	}
 	if slices.Contains(ingest.AzureServices, c.category) {
 		f, ok := ingest.AzureSigmaField(c.category, name)
