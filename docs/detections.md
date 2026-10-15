@@ -246,32 +246,52 @@ common on their own and matter when they add up (see [Risk](#risk)).
 | --- | --- | --- | --- |
 | `ids-alert-high` | high | A network IDS such as Suricata raised a high or critical alert (Zeek notices are medium, so they do not count). One finding per signature, source and destination an hour, with risk on both hosts | on |
 | `threat-activity` | high | An address, domain, URL or file hash the sensor saw is in your threat intel | on |
-| `network-dns-tunneling` | medium | One host looked up 10 or more different names with a label of 40 characters or more in 30 minutes (DNS tunnelling, DNS command and control) | on |
-| `network-dns-nxdomain-burst` | medium | One host asked for 25 or more different names that do not exist in 15 minutes (a domain generation algorithm) | on |
-| `network-internal-scan` | medium | An internal host's connections to 20 or more internal hosts, or 50 or more ports, failed in 15 minutes | on |
-| `network-zeek-scan-notice` | medium | Zeek's scan detection reported an address, port or random scan (`Scan::*` notices) | on |
-| `network-http-executable-download` | medium | An internal host downloaded a program or script over plain HTTP from the internet (Windows Update's own addresses are left out) | on |
-| `network-cleartext-credentials` | low | A password crossed the network in clear text: HTTP basic authentication, an FTP sign-in (not anonymous) or an answered Telnet connection | on |
-| `network-sensor-packet-loss` | low | Zeek missed more than 5% of the traffic, or Suricata dropped more than 5% of packets | on |
-| `network-beaconing` | low | Six or more short (a minute or less), small (20 KB or less out) connections from one host to one outside address and port in two hours | on, risk only |
-| `network-tls-untrusted-cert` | low | An outbound TLS session to a server with a self-signed or expired certificate | on, risk only |
-| `network-large-outbound-transfer` | medium | One host sent more than 1 GB to one outside address in an hour | on, risk only |
-| `network-sensor-shell-port` | medium | The sensor saw an answered connection on a reverse shell port (4444, 1337, 31337, ...); the network side of `network-shell-port` | on, risk only |
+| `network-dns-tunneling` | medium | One host looked up 10 or more different names with a label of 40 characters or more in 30 minutes (DNS tunnelling, DNS command and control); your DNS servers are left out (see below) | on |
+| `network-dns-nxdomain-burst` | medium | One host asked for 25 or more different names that do not exist in 15 minutes (a domain generation algorithm); your DNS servers are left out (see below) | on |
+| `network-internal-scan` | medium | An internal host's TCP connections to 20 or more internal hosts, or 50 or more ports, failed in 15 minutes (connections the sensor saw only one side of do not count) | on |
+| `network-zeek-scan-notice` | medium | Zeek's scan detection reported one of your own hosts in an address, port or random scan (`Scan::*` notices); scans from the internet are left out | on |
+| `network-http-executable-download` | medium | A host that is not on the internet side downloaded a program or script over plain HTTP, whole or in ranges (status 200 or 206), from outside (Windows Update's and Google's updater addresses are left out) | on |
+| `network-cleartext-credentials` | low | A password crossed the network in clear text: HTTP basic authentication, an FTP sign-in (not anonymous) or an answered Telnet connection that did not come from the internet | on |
+| `network-sensor-packet-loss` | low | Zeek missed more than 5% of the traffic, or Suricata dropped more than 5% of packets (counted once it has received a million) | on |
+| `network-beaconing` | low | Twelve or more short (a minute or less), small (5 KB or less out) connections from one host to one outside address and port in two hours | off, risk only |
+| `network-tls-untrusted-cert` | low | A TLS session from a host not on the internet side to an outside server with a self-signed or expired certificate | on, risk only |
+| `network-large-outbound-transfer` | medium | One host sent more than 1 GB to one outside address, in connections that started within six hours | on, risk only |
+| `network-sensor-shell-port` | medium | The sensor saw an answered connection from your network to the internet on a reverse shell port (4444, 1337, 31337, ...); the network side of `network-shell-port` | on, risk only |
 | `network-new-inbound-service` | medium | A host inside answered connections from the internet on a port it had not answered on in 30 days | off |
 
 Choices worth knowing:
 
 - **Beaconing** is approximated: the search language has no standard deviation, so
   regular timing is not measured. Many separate small, short connections to one address
-  in two hours is the signal; update checks, telemetry and chat clients look the same,
-  which is why it is risk only.
+  in two hours is the signal; update checks, telemetry, chat clients, CDNs and
+  certificate status checks look the same, and an ordinary workstation talks to several
+  of them all day. So it is off by default: run its search over a day, add exceptions on
+  `dest` for the destinations many of your hosts talk to, then turn it on (risk only,
+  10 points per destination).
+- **DNS servers are left out** of the two DNS detections. With the sensor on the
+  internet link, it sees your DNS servers (in an Active Directory network, the domain
+  controllers) ask upstream on behalf of every client, so their lookups add up the
+  whole organisation's mistyped names and browser probes, and hide which client asked.
+  A source whose asset category contains `dns` or `domain-controller` in your
+  asset list (**Assets & identities**) is not counted (the rules run `enrich src` and check
+  `src_category`), so give your resolvers one of those categories. To see which client
+  is behind a resolver's lookups, mirror the traffic between clients and the resolver
+  too, or collect the resolver's own query log.
+- **Large outbound transfers** are counted by when each connection started: Zeek writes
+  a connection only when it ends, stamped with its start time, so the rule looks back
+  six hours to catch a long upload. A single upload of more than about five and a half
+  hours is missed.
 - **New inbound service** uses its 30-day throttle as its memory of what was seen. The
   first runs after you turn it on list every service already reachable from the
   internet, which is why it is off by default; turn it on when you want that inventory.
 - **Direction** comes from the sensor (`direction=outbound` means from your network to
-  the internet; see [Data models](network-sensor.md#data-models)). If your internal
-  addresses are public addresses, tell Zeek about them in `Site::local_nets`, or the
-  outbound detections see your traffic as `external`.
+  the internet; see [Data models](network-sensor.md#data-models)). Zeek says which ends
+  are local only in `conn.log`; for web requests, TLS sessions and DNS lookups the
+  direction comes from the addresses (private ranges count as local), so a client with
+  a public IPv6 or IPv4 address is `external`. The web and TLS detections therefore
+  count every direction except `inbound` and `internal`. If your internal addresses are
+  public addresses, tell Zeek about them in `Site::local_nets`, or the connection
+  detections see your traffic as `external`.
 - **Expired certificates** are known only from Zeek's `ssl/validate-certs` script (on by
   default). In TLS 1.3 the certificate is encrypted, so a sensor sees it only in TLS 1.2
   and older sessions.

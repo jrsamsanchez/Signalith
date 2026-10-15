@@ -5,7 +5,8 @@ description: One host looked up many different names with a label of 40 characte
 query: |
   datamodel=Network_Resolution query=~"[A-Za-z0-9_-]{40,}"
   | stats count, dc(query) as names, min(_time) as first_seen by src
-  | where names >= 10
+  | enrich src
+  | where names >= 10 AND NOT src_category=~"(?i)dns|domain.?controller"
 schedule: 10m
 lookback: 30m
 severity: medium
@@ -25,4 +26,9 @@ guidance: >-
   antivirus and reputation services (file hash lookups over DNS) and a few CDNs also use
   long labels; add an exception on src, or a NOT query=*.<domain> to the search, for
   those. Network sensors set src (the host that asked); host DNS logs (Sysmon 22) set
-  dest instead and are not counted here.
+  dest instead and are not counted here. Resolvers are left out: a source whose asset
+  category contains dns or domain-controller (in the asset list) is not counted,
+  because a sensor on the internet link sees your DNS servers ask upstream for every
+  client. Give your resolvers one of those categories; to find the client behind a
+  resolver, mirror the traffic between clients and the resolver, or read the
+  resolver's own query log.

@@ -163,7 +163,9 @@ func (g *gen) phishingIntrusion() {
 	g.sysmonNet(ws, alice, ws.IP, 51000, ipC2Beacon, "updates.corp-sync.example", 443, "tcp",
 		`C:\Users\alice.nguyen\update.exe`, t0.Add(16*time.Minute))
 	// The sensor sees the beacon: TLS to the C2 with a self-signed
-	// certificate every ten minutes for an hour, and a Suricata alert.
+	// certificate every five minutes for an hour, and a Suricata alert.
+	// The twelve small, short connections are also what the beaconing
+	// detection (network-beaconing, off by default) looks for.
 	g.sensorBeacon(ws, t0.Add(16*time.Minute))
 	// Command-and-control on a non-standard shell port (network-shell-port),
 	// which the sensor sees too (network-sensor-shell-port).
@@ -188,12 +190,12 @@ func (g *gen) phishingIntrusion() {
 	g.story(Story{
 		ID:      "phishing-to-c2",
 		Title:   "Phishing to credential theft and C2",
-		Summary: "A finance workstation (ws-fin-07, Alice Nguyen) follows a phishing link to a look-alike sign-in site, opens a malicious invoice that launches encoded PowerShell, downloads a tool with certutil, dumps credentials with Mimikatz, turns off Defender's real-time protection, runs discovery, installs persistence and beacons to a command-and-control address. The network sensor sees the implant downloaded over plain HTTP, its beacon to a server with a self-signed certificate every ten minutes, a connection on a reverse shell port and a 1.4 GB upload (Zeek logs and two high Suricata alerts). Microsoft Defender finds Mimikatz but cannot remove it. The domain, the tools and the C2 are all in the sample threat intel. The whole kill chain on one host, while on ws-fin-02 a protection rule stops the same invoice from starting PowerShell.",
+		Summary: "A finance workstation (ws-fin-07, Alice Nguyen) follows a phishing link to a look-alike sign-in site, opens a malicious invoice that launches encoded PowerShell, downloads a tool with certutil, dumps credentials with Mimikatz, turns off Defender's real-time protection, runs discovery, installs persistence and beacons to a command-and-control address. The network sensor sees the implant downloaded over plain HTTP, its beacon to a server with a self-signed certificate every five minutes, a connection on a reverse shell port and a 1.4 GB upload (Zeek logs and two high Suricata alerts). Microsoft Defender finds Mimikatz but cannot remove it. The domain, the tools and the C2 are all in the sample threat intel. The whole kill chain on one host, while on ws-fin-02 a protection rule stops the same invoice from starting PowerShell.",
 		Detections: []string{"endpoint-office-child-shell", "endpoint-encoded-powershell", "endpoint-lolbin-download",
 			"endpoint-credential-dumping", "endpoint-discovery-burst", "endpoint-scheduled-task",
 			"endpoint-service-created", "network-shell-port", "threat-activity",
 			"malware-detected", "malware-not-removed", "av-protection-disabled", "av-rule-block", "ids-alert-high",
-			"network-http-executable-download", "network-tls-untrusted-cert", "network-beaconing",
+			"network-http-executable-download", "network-tls-untrusted-cert",
 			"network-sensor-shell-port", "network-large-outbound-transfer"},
 	}, t0.Add(76*time.Minute), "ws-fin-07", alice, ipC2, ipC2Beacon, ipExfil)
 }

@@ -109,15 +109,13 @@ func (g *gen) newFlow(src, dest string, destPort int) sensorFlow {
 }
 
 // ids returns a Zeek record with the flow's id.* keys, UID and Community
-// ID, plus extra. It also says which ends are in Site::local_nets
-// (local_orig, local_resp), as conn.log does: the sample's own addresses
-// are a documentation range, which the parser would otherwise count as
-// outside, so every log of a flow says it, and the web, TLS and DNS
-// events get the same direction as the connection.
+// ID, plus extra. Only conn.log says which ends are in Site::local_nets
+// (zeekConnLog adds local_orig and local_resp); like real Zeek, the
+// other logs do not, so the parser decides their direction from the
+// addresses.
 func (f sensorFlow) ids(extra map[string]any) map[string]any {
 	r := map[string]any{"uid": f.uid, "id.orig_h": f.src, "id.orig_p": f.srcPort,
-		"id.resp_h": f.dest, "id.resp_p": f.destPort, "community_id": f.cid,
-		"local_orig": Internal(f.src), "local_resp": Internal(f.dest)}
+		"id.resp_h": f.dest, "id.resp_p": f.destPort, "community_id": f.cid}
 	for k, v := range extra {
 		r[k] = v
 	}
@@ -409,15 +407,15 @@ func (g *gen) sensorDownload(ws Host, t time.Time) {
 
 // sensorBeacon is the network side of the implant's command and control:
 // a lookup of the C2 domain, then a TLS session to the C2 address with a
-// self-signed certificate every ten minutes or so for an hour, and a
+// self-signed certificate every five minutes or so for an hour, and a
 // Suricata alert on the beacon.
 func (g *gen) sensorBeacon(ws Host, t time.Time) {
 	const c2Name = "updates.corp-sync.example"
 	g.zeekDNSLog(ws.IP, c2Name, ipC2Beacon, t.Add(-2*time.Second))
 	subject := "CN=" + c2Name + ",O=Default Company Ltd,C=XX"
 	g.zeekCert(t, subject, subject, c2Name, t.AddDate(0, 0, -3), t.AddDate(1, 0, -3))
-	for i := 0; i < 6; i++ {
-		ts := t.Add(time.Duration(i*10)*time.Minute + time.Duration(g.rng.intn(40))*time.Second)
+	for i := 0; i < 12; i++ {
+		ts := t.Add(time.Duration(i*5)*time.Minute + time.Duration(g.rng.intn(40))*time.Second)
 		fl := g.newFlow(ws.IP, ipC2Beacon, 443)
 		g.zeekTLS(fl, ts, c2Name, subject, subject, "self signed certificate")
 		g.zeekConnLog(fl, ts, "ssl", "SF", 1800+g.rng.intn(400), 900+g.rng.intn(300), 2.9, false)

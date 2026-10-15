@@ -242,6 +242,25 @@ func main() {
 				skip("level informational", rel)
 				continue
 			}
+			want := map[string]string{"product": product, "category": cat, "service": ""}
+			if cat == "system" || cat == "security" || cat == "auditd" || cat == "windefend" || cat == "application" {
+				want["category"], want["service"] = "", cat
+			}
+			if cat == "code_integrity" {
+				want["category"], want["service"] = "", "codeintegrity-operational"
+			}
+			if cat == "sysmon_service" {
+				want["category"], want["service"] = "", "sysmon"
+			}
+			for service := range ingest.NamedChannelServices {
+				if cat == ingest.NamedChannelCategory(service) {
+					want["category"], want["service"] = "", service
+				}
+			}
+			if product != "network" && (rule.Logsource["product"] != want["product"] || rule.Logsource["category"] != want["category"] || rule.Logsource["service"] != want["service"]) {
+				skip("log source is not plain "+product+" "+cat, rel)
+				continue
+			}
 			rcat, rbases := cat, bases
 			if product == "network" {
 				if rcat = networkCategory(rule.Logsource, cat); rcat == "" {
@@ -249,46 +268,26 @@ func main() {
 					continue
 				}
 				rbases = sigmacheck.NetworkBase(rcat)
-			} else {
-				want := map[string]string{"product": product, "category": cat, "service": ""}
-				if cat == "system" || cat == "security" || cat == "auditd" || cat == "windefend" || cat == "application" {
-					want["category"], want["service"] = "", cat
+			}
+			if cat == "system" {
+				rcat = sigmacheck.SystemCategory(rule.EventIDs()...)
+				rbases = sigmacheck.Bases[rcat]
+			}
+			if cat == "sysmon_service" {
+				rcat = sigmacheck.SysmonServiceCategory(rule.EventIDs()...)
+				rbases = sigmacheck.Bases[rcat]
+			}
+			if cat == "security" {
+				ids := rule.EventIDs()
+				rcat = sigmacheck.SecurityCategory(ids...)
+				if ingest.IsNamedSecurityEvents(ids...) {
+					rcat = "security_named"
 				}
-				if cat == "code_integrity" {
-					want["category"], want["service"] = "", "codeintegrity-operational"
-				}
-				if cat == "sysmon_service" {
-					want["category"], want["service"] = "", "sysmon"
-				}
-				for service := range ingest.NamedChannelServices {
-					if cat == ingest.NamedChannelCategory(service) {
-						want["category"], want["service"] = "", service
-					}
-				}
-				if rule.Logsource["product"] != want["product"] || rule.Logsource["category"] != want["category"] || rule.Logsource["service"] != want["service"] {
-					skip("log source is not plain "+product+" "+cat, rel)
+				if _, ok := sigmacheck.SysmonEventID(rcat); !ok || len(ids) == 0 {
+					skip("not about one Security event Signalith reads", rel)
 					continue
 				}
-				if cat == "system" {
-					rcat = sigmacheck.SystemCategory(rule.EventIDs()...)
-					rbases = sigmacheck.Bases[rcat]
-				}
-				if cat == "sysmon_service" {
-					rcat = sigmacheck.SysmonServiceCategory(rule.EventIDs()...)
-					rbases = sigmacheck.Bases[rcat]
-				}
-				if cat == "security" {
-					ids := rule.EventIDs()
-					rcat = sigmacheck.SecurityCategory(ids...)
-					if ingest.IsNamedSecurityEvents(ids...) {
-						rcat = "security_named"
-					}
-					if _, ok := sigmacheck.SysmonEventID(rcat); !ok || len(ids) == 0 {
-						skip("not about one Security event Signalith reads", rel)
-						continue
-					}
-					rbases = sigmacheck.Bases[rcat]
-				}
+				rbases = sigmacheck.Bases[rcat]
 			}
 			stem := strings.TrimSuffix(filepath.Base(f), ".yml")
 			id := old[rule.ID]

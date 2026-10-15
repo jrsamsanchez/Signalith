@@ -230,6 +230,13 @@ func ParseZeek(lt string, r map[string]any, raw string) Event {
 	}
 	if model == "Intrusion_Detection" {
 		setLocalHost(f)
+		// A notice about one address (an Address_Scan has no dst) has
+		// no direction: the scanner is local when its address is.
+		if _, ok := f["local_host"]; !ok && f["direction"] == nil {
+			if src := wstr(f["src"]); src != "" && localAddr(src) {
+				f["local_host"] = src
+			}
+		}
 	}
 	ev := Event{Model: model, Fields: f, ID: sensorDocID("zeek:"+lt, raw)}
 	if t, ok := zeekTime(r["ts"]); ok {

@@ -392,18 +392,21 @@ Besides `threat-activity` and `ids-alert-high`, the sensor's data lights up buil
 detections written for it (all on by default except the last):
 
 - **DNS**: DNS tunnelling (many long encoded names from one host) and bursts of lookups
-  of names that do not exist (a domain generation algorithm).
+  of names that do not exist (a domain generation algorithm). Your DNS servers are left
+  out: give them the asset category `dns-server` (or `domain-controller`) in the
+  asset list (**Assets & identities**), since a sensor on the internet link sees them ask upstream
+  for every client.
 - **Scanning**: an internal host whose connections to many other internal hosts or ports
   fail, and Zeek's own `Scan::*` notices.
 - **Downloads and credentials**: a program or script downloaded over plain HTTP, and
   passwords sent in clear text (HTTP basic authentication, FTP, Telnet).
 - **Risk only** (they add risk to the host, and raise a risk incident when they add up):
-  beaconing to one outside address, TLS to a server with a self-signed or expired
-  certificate, more than 1 GB sent to one outside address in an hour, and connections on
-  reverse shell ports.
+  TLS to a server with a self-signed or expired certificate, more than 1 GB sent to one
+  outside address, and connections out to the internet on reverse shell ports.
 - **Sensor health**: Zeek missing, or Suricata dropping, more than 5% of the traffic.
 - **Off by default**: a host inside answering the internet on a port it had not answered
-  on in 30 days.
+  on in 30 days, and beaconing to one outside address (turn it on after adding
+  exceptions for the services all your hosts talk to).
 
 See [Network detections](detections.md#network-detections) for each one's rule and
 threshold. The content packs also have rules for this data, off until you turn them

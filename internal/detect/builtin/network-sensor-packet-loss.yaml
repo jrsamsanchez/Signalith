@@ -3,7 +3,7 @@ title: Network sensor $host$ is missing traffic
 name: Network sensor dropping packets
 description: Zeek reported more than 5% capture loss, or Suricata dropped more than 5% of packets, so attacks in the missed traffic go unseen.
 query: |
-  datamodel=Other ((sourcetype="zeek:capture_loss" capture_loss_percent>5) OR (sourcetype="suricata:stats" drop_percent>5))
+  datamodel=Other ((sourcetype="zeek:capture_loss" capture_loss_percent>5) OR (sourcetype="suricata:stats" drop_percent>5 packets_received>=1000000))
   | stats max(capture_loss_percent) as capture_loss_percent, max(drop_percent) as drop_percent, count by host
 schedule: 1h
 lookback: 2h
@@ -17,4 +17,8 @@ guidance: >-
   The sensor sees more traffic than it can handle. Give it more CPU workers (Zeek
   workers, Suricata af-packet threads), filter out bulk traffic you do not need (backups,
   storage replication) with a capture filter, or move it to a less busy mirror port. A
-  short burst during backups is common; a steady loss means blind spots.
+  short burst during backups is common; a steady loss means blind spots. Suricata's
+  drop percentage counts from when it started, so it is checked only after a million
+  packets (a restart's first drops do not count), and one early burst can keep it over
+  5% for a while after the loss has stopped: look at packets_dropped over time
+  (timechart max(packets_dropped) by host) to see whether it is still growing.

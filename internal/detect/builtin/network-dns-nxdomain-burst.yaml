@@ -5,7 +5,8 @@ description: One host asked for 25 or more different names that do not exist wit
 query: |
   datamodel=Network_Resolution reply_code=NXDomain
   | stats count, dc(query) as names, min(_time) as first_seen by src
-  | where names >= 25
+  | enrich src
+  | where names >= 25 AND NOT src_category=~"(?i)dns|domain.?controller"
 schedule: 5m
 lookback: 15m
 severity: medium
@@ -25,3 +26,10 @@ guidance: >-
   stale drive mapping or a misconfigured search domain. If the host also looked up a
   name that did resolve right after the burst, that address is the likely command and
   control server: search datamodel=Network_Traffic src=<src> dest=<address>.
+  Resolvers are left out: a sensor on the internet link sees your DNS servers (in an
+  Active Directory network, the domain controllers) ask upstream for every client, so
+  their lookups add up the whole organisation's typos and probes, and hide which client
+  asked. A source whose asset category contains dns or domain-controller (in the asset
+  list) is not counted, so give your resolvers one of those categories. To see the
+  client behind a resolver, put the sensor where it sees clients ask the resolver, or
+  read the resolver's own query log.

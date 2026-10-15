@@ -469,6 +469,7 @@ var Models = []Model{
 			{Name: "app", Type: "string", Description: "Program that logged the event"},
 			{Name: "capture_loss_percent", Type: "number", Description: "Network sensor health (Zeek capture_loss): share of the traffic Zeek missed, in percent", Examples: []string{"0.12", "7.8"}},
 			{Name: "drop_percent", Type: "number", Description: "Network sensor health (Suricata stats): share of packets the capture dropped since Suricata started, in percent", Examples: []string{"0", "2.5"}},
+			{Name: "packets_received", Type: "number", Description: "Network sensor health (Suricata or Zeek stats): packets the capture received, since Suricata started or in Zeek's interval", Examples: []string{"18342211"}},
 		},
 	},
 }

@@ -3,7 +3,7 @@ title: $src$ connected to $dest$ with a self-signed or expired certificate
 name: Outbound TLS with a self-signed or expired certificate
 description: An internal host made a TLS session to an outside server whose certificate signs itself or has expired. Command and control servers and phishing kits often use a self-signed certificate; legitimate internet services almost never do.
 query: |
-  datamodel=Certificates signature="TLS session" direction=outbound
+  datamodel=Certificates signature="TLS session" NOT direction IN (inbound, internal)
   (ssl_self_signed=true OR ssl_validation_status IN ("self signed certificate", "self signed certificate in certificate chain", "certificate has expired"))
   | stats count, min(_time) as first_seen by src, dest, dest_port
 schedule: 15m
