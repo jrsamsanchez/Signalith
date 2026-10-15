@@ -1,0 +1,31 @@
+id: network-beaconing
+title: Possible beaconing from $src$ to $dest$ on port $dest_port$
+name: Possible beaconing to an external host
+description: An internal host opened many short, small connections to one external address and port over two hours, the pattern of malware checking in with its command and control server on a timer.
+query: |
+  datamodel=Network_Traffic direction=outbound action=allowed transport=tcp
+  | stats count, dc(src_port) as connections, max(bytes_out) as max_bytes_out, avg(bytes_out) as avg_bytes_out, max(duration) as max_duration, min(_time) as first_seen, max(_time) as last_seen by src, dest, dest_port
+  | where connections >= 6 AND max_bytes_out <= 20000 AND max_duration <= 60
+schedule: 30m
+lookback: 2h
+severity: low
+mitre: [T1071, T1573]
+throttle:
+  fields: [src, dest, dest_port]
+  window: 24h
+risk:
+  score: 20
+  objects:
+    - {field: src, type: system}
+  only: true
+enabled: true
+tags: [network, command-and-control, pci-dss:10.4.1, pci-dss:11.5.1, nist-800-53:SI-4, cis-v8:13.3]
+guidance: >-
+  Risk only: it adds risk to the source and raises no finding by itself, because update
+  checks, telemetry and chat clients also call home on a timer. Signalith's search has
+  no standard deviation, so regularity is approximated by six or more separate small
+  (20 KB or less each way out) and short (a minute or less) connections in two hours.
+  Look at the destination's name in Network_Resolution and Certificates for the same
+  dest (search datamodel=Certificates dest=<dest>): an unknown domain, a self-signed
+  certificate or a name in threat intel makes it worth a case. Add an exception on dest
+  for services you know.

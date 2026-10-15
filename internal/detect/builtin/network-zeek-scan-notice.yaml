@@ -1,0 +1,25 @@
+id: network-zeek-scan-notice
+title: Zeek saw $src$ scanning ($signature$)
+name: Scan reported by Zeek
+description: Zeek's scan detection noticed one host probing many addresses or ports (an Address_Scan, Port_Scan or Random_Scan notice).
+query: |
+  datamodel=Intrusion_Detection signature="Scan::*"
+  | stats count, min(_time) as first_seen by signature, src
+schedule: 10m
+lookback: 15m
+severity: medium
+mitre: [T1046]
+throttle:
+  fields: [signature, src]
+  window: 4h
+risk:
+  score: 30
+  objects:
+    - {field: src, type: system}
+enabled: true
+tags: [network, discovery, pci-dss:10.4.1, pci-dss:11.5.1, nist-800-53:SI-4, cis-v8:13.3]
+guidance: >-
+  The notice's reason holds Zeek's summary (how many hosts or ports in how long). Scans
+  from the internet against your public addresses are constant; this matters most when
+  src is one of your own hosts. Zeek 6 and later need a scan detection package (such as
+  zeek/scan) loaded for these notices.

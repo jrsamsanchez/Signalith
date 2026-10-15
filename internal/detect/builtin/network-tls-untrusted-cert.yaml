@@ -1,0 +1,31 @@
+id: network-tls-untrusted-cert
+title: $src$ connected to $dest$ with a self-signed or expired certificate
+name: Outbound TLS with a self-signed or expired certificate
+description: An internal host made a TLS session to an outside server whose certificate signs itself or has expired. Command and control servers and phishing kits often use a self-signed certificate; legitimate internet services almost never do.
+query: |
+  datamodel=Certificates signature="TLS session" direction=outbound
+  (ssl_self_signed=true OR ssl_validation_status IN ("self signed certificate", "self signed certificate in certificate chain", "certificate has expired"))
+  | stats count, min(_time) as first_seen by src, dest, dest_port
+schedule: 15m
+lookback: 30m
+severity: low
+mitre: [T1573.002]
+throttle:
+  fields: [src, dest]
+  window: 24h
+risk:
+  score: 25
+  objects:
+    - {field: src, type: system}
+  only: true
+enabled: true
+tags: [network, tls, command-and-control, pci-dss:10.4.1, pci-dss:11.5.1, nist-800-53:SI-4, cis-v8:13.3]
+guidance: >-
+  Risk only: it adds risk to the client and raises no finding by itself, since some
+  vendors' devices and appliances still call home with self-signed certificates. Zeek
+  says whether a certificate expired only with its ssl/validate-certs script (on by
+  default); Suricata's TLS events are counted when the certificate signs itself. Check
+  the server name (ssl_server_name) and the destination in threat intel; a self-signed
+  certificate on a domain registered days ago, contacted on a timer, is a likely C2.
+  In TLS 1.3 the certificate is encrypted, so a sensor sees it only in TLS 1.2 and older
+  sessions.

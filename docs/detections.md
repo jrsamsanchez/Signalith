@@ -238,16 +238,54 @@ To see everything a scan found on a host, search
 ## Network detections
 
 Network data from a [network sensor](network-sensor.md) (Zeek, Suricata) lights up
-these built-in detections:
+these built-in detections. Those marked *risk only* add risk to the host and raise no
+finding by themselves, like Splunk's anomaly detections: they are signals that are
+common on their own and matter when they add up (see [Risk](#risk)).
 
-| ID | Severity | Fires when |
-| --- | --- | --- |
-| `ids-alert-high` | high | A network IDS such as Suricata raised a high or critical alert (Zeek notices are medium, so they do not count). One finding per signature, source and destination an hour, with risk on both hosts. On by default |
-| `threat-activity` | high | An address, domain, URL or file hash the sensor saw is in your threat intel |
+| ID | Severity | Fires when | Default |
+| --- | --- | --- | --- |
+| `ids-alert-high` | high | A network IDS such as Suricata raised a high or critical alert (Zeek notices are medium, so they do not count). One finding per signature, source and destination an hour, with risk on both hosts | on |
+| `threat-activity` | high | An address, domain, URL or file hash the sensor saw is in your threat intel | on |
+| `network-dns-tunneling` | medium | One host looked up 10 or more different names with a label of 40 characters or more in 30 minutes (DNS tunnelling, DNS command and control) | on |
+| `network-dns-nxdomain-burst` | medium | One host asked for 25 or more different names that do not exist in 15 minutes (a domain generation algorithm) | on |
+| `network-internal-scan` | medium | An internal host's connections to 20 or more internal hosts, or 50 or more ports, failed in 15 minutes | on |
+| `network-zeek-scan-notice` | medium | Zeek's scan detection reported an address, port or random scan (`Scan::*` notices) | on |
+| `network-http-executable-download` | medium | An internal host downloaded a program or script over plain HTTP from the internet (Windows Update's own addresses are left out) | on |
+| `network-cleartext-credentials` | low | A password crossed the network in clear text: HTTP basic authentication, an FTP sign-in (not anonymous) or an answered Telnet connection | on |
+| `network-sensor-packet-loss` | low | Zeek missed more than 5% of the traffic, or Suricata dropped more than 5% of packets | on |
+| `network-beaconing` | low | Six or more short (a minute or less), small (20 KB or less out) connections from one host to one outside address and port in two hours | on, risk only |
+| `network-tls-untrusted-cert` | low | An outbound TLS session to a server with a self-signed or expired certificate | on, risk only |
+| `network-large-outbound-transfer` | medium | One host sent more than 1 GB to one outside address in an hour | on, risk only |
+| `network-sensor-shell-port` | medium | The sensor saw an answered connection on a reverse shell port (4444, 1337, 31337, ...); the network side of `network-shell-port` | on, risk only |
+| `network-new-inbound-service` | medium | A host inside answered connections from the internet on a port it had not answered on in 30 days | off |
+
+Choices worth knowing:
+
+- **Beaconing** is approximated: the search language has no standard deviation, so
+  regular timing is not measured. Many separate small, short connections to one address
+  in two hours is the signal; update checks, telemetry and chat clients look the same,
+  which is why it is risk only.
+- **New inbound service** uses its 30-day throttle as its memory of what was seen. The
+  first runs after you turn it on list every service already reachable from the
+  internet, which is why it is off by default; turn it on when you want that inventory.
+- **Direction** comes from the sensor (`direction=outbound` means from your network to
+  the internet; see [Data models](network-sensor.md#data-models)). If your internal
+  addresses are public addresses, tell Zeek about them in `Site::local_nets`, or the
+  outbound detections see your traffic as `external`.
+- **Expired certificates** are known only from Zeek's `ssl/validate-certs` script (on by
+  default). In TLS 1.3 the certificate is encrypted, so a sensor sees it only in TLS 1.2
+  and older sessions.
+
+Every network detection is tagged with the compliance controls it is evidence for:
+`pci-dss:10.4.1` (security events reviewed), `pci-dss:11.5.1` (intrusions detected and
+alerted, PCI DSS 3.2.1's 11.4), `nist-800-53:SI-4` (system monitoring) and
+`cis-v8:13.3` (network intrusion detection); the packet loss detection has
+`pci-dss:10.7.2` (failures of security controls) and `cis-v8:13.6` instead of 13.3.
 
 `network-shell-port` and `network-remote-admin-port` are about the process that made
-a connection, which only host data (Sysmon) has, so they leave sensor data alone. If
-one IDS rule is noisy on your network, add an exception on its `signature_id`.
+a connection, which only host data (Sysmon) has, so they leave sensor data alone;
+`network-sensor-shell-port` covers the sensor's side. If one IDS rule is noisy on your
+network, add an exception on its `signature_id`.
 
 ## What a finding contains
 

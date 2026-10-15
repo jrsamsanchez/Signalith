@@ -386,6 +386,34 @@ on your network, add an exception on its `signature_id` (from one of its finding
 **Don't alert on this again**; see [Exceptions](detections.md#exceptions)), or turn the
 rule off on the sensor (see [Keeping rules up to date](#keeping-rules-up-to-date)).
 
+### Network detections
+
+Besides `threat-activity` and `ids-alert-high`, the sensor's data lights up built-in
+detections written for it (all on by default except the last):
+
+- **DNS**: DNS tunnelling (many long encoded names from one host) and bursts of lookups
+  of names that do not exist (a domain generation algorithm).
+- **Scanning**: an internal host whose connections to many other internal hosts or ports
+  fail, and Zeek's own `Scan::*` notices.
+- **Downloads and credentials**: a program or script downloaded over plain HTTP, and
+  passwords sent in clear text (HTTP basic authentication, FTP, Telnet).
+- **Risk only** (they add risk to the host, and raise a risk incident when they add up):
+  beaconing to one outside address, TLS to a server with a self-signed or expired
+  certificate, more than 1 GB sent to one outside address in an hour, and connections on
+  reverse shell ports.
+- **Sensor health**: Zeek missing, or Suricata dropping, more than 5% of the traffic.
+- **Off by default**: a host inside answering the internet on a port it had not answered
+  on in 30 days.
+
+See [Network detections](detections.md#network-detections) for each one's rule and
+threshold. The SigmaHQ and Splunk content packs also have network rules for this data
+(Zeek, DNS, firewall and proxy rules), off until you turn them on; see
+[Content packs](detections.md#content-packs).
+
+The [sample data](sample-data.md) includes a DNS tunnelling story and a clear-text
+sign-in story seen only by the sensor, so you can see these fire before your own sensor
+is running.
+
 ## Keeping rules up to date
 
 Suricata only knows what its rules describe, so update them every day (see step 5 of

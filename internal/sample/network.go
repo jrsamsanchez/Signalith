@@ -109,10 +109,15 @@ func (g *gen) newFlow(src, dest string, destPort int) sensorFlow {
 }
 
 // ids returns a Zeek record with the flow's id.* keys, UID and Community
-// ID, plus extra.
+// ID, plus extra. It also says which ends are in Site::local_nets
+// (local_orig, local_resp), as conn.log does: the sample's own addresses
+// are a documentation range, which the parser would otherwise count as
+// outside, so every log of a flow says it, and the web, TLS and DNS
+// events get the same direction as the connection.
 func (f sensorFlow) ids(extra map[string]any) map[string]any {
 	r := map[string]any{"uid": f.uid, "id.orig_h": f.src, "id.orig_p": f.srcPort,
-		"id.resp_h": f.dest, "id.resp_p": f.destPort, "community_id": f.cid}
+		"id.resp_h": f.dest, "id.resp_p": f.destPort, "community_id": f.cid,
+		"local_orig": Internal(f.src), "local_resp": Internal(f.dest)}
 	for k, v := range extra {
 		r[k] = v
 	}
@@ -120,13 +125,13 @@ func (f sensorFlow) ids(extra map[string]any) map[string]any {
 }
 
 // zeekConnLog adds the conn.log line of a finished flow that started at
-// t. The client is always in Site::local_nets (the sample's own addresses
-// are a documentation range, so the sensor is told they are local);
-// localResp says whether the server is too.
+// t. The sample's own addresses are a documentation range, so the sensor
+// is told they are in Site::local_nets: the client is when it is one of
+// the company's, and localResp says whether the server is.
 func (g *gen) zeekConnLog(fl sensorFlow, t time.Time, service, state string, out, in int, dur float64, localResp bool) {
 	rec := fl.ids(map[string]any{
 		"proto": "tcp", "duration": dur, "orig_bytes": out, "resp_bytes": in,
-		"conn_state": state, "local_orig": true, "local_resp": localResp, "missed_bytes": 0,
+		"conn_state": state, "local_orig": Internal(fl.src), "local_resp": localResp, "missed_bytes": 0,
 		"orig_pkts": 4 + out/1000, "resp_pkts": 3 + in/1400,
 		"orig_ip_bytes": out + 200, "resp_ip_bytes": in + 160,
 	})

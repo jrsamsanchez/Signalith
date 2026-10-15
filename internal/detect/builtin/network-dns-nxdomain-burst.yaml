@@ -1,0 +1,27 @@
+id: network-dns-nxdomain-burst
+title: Burst of failed DNS lookups from $src$ ($names$ names)
+name: Burst of failed DNS lookups (possible DGA)
+description: One host asked for 25 or more different names that do not exist within 15 minutes. Malware with a domain generation algorithm (DGA) tries many generated names until it finds the one its operator registered.
+query: |
+  datamodel=Network_Resolution reply_code=NXDomain
+  | stats count, dc(query) as names, min(_time) as first_seen by src
+  | where names >= 25
+schedule: 5m
+lookback: 15m
+severity: medium
+mitre: [T1568.002]
+throttle:
+  fields: [src]
+  window: 4h
+risk:
+  score: 30
+  objects:
+    - {field: src, type: system}
+enabled: true
+tags: [network, dns, command-and-control, pci-dss:10.4.1, pci-dss:11.5.1, nist-800-53:SI-4, cis-v8:13.3]
+guidance: >-
+  Look at the names (View contributing events): random-looking names under one or a few
+  top-level domains point to a DGA; names of your own shares and servers point to a
+  stale drive mapping or a misconfigured search domain. If the host also looked up a
+  name that did resolve right after the burst, that address is the likely command and
+  control server: search datamodel=Network_Traffic src=<src> dest=<address>.
