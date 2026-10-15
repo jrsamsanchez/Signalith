@@ -225,14 +225,17 @@
 
   // checkRow is one check; quiet leaves optional warnings closed, as on
   // the Scanners page, where every server repeats them.
-  function checkRow(c, redraw, quiet) {
-    const open = c.state === 'fail' || (c.state === 'warn' && (!quiet || c.required));
+  // idle: the server scans no network, so a failed check is only
+  // information, shown closed and neutral.
+  function checkRow(c, redraw, quiet, idle) {
+    const state = idle && (c.state === 'fail' || c.state === 'warn') ? 'info' : c.state;
+    const open = state === 'fail' || (state === 'warn' && (!quiet || c.required));
     const extra = [];
     if (c.id === 'cve' && S.data) extra.push(lookupSwitch(redraw));
-    return el('li', { class: 'vs-check', 'data-state': c.state },
+    return el('li', { class: 'vs-check', 'data-state': state },
       el('details', open ? { open: '' } : {},
         el('summary', {},
-          el('span', { class: 'vs-check__icon' }, icon(CHECK_ICON[c.state] || 'info')),
+          el('span', { class: 'vs-check__icon' }, icon(CHECK_ICON[state] || 'info')),
           el('span', { class: 'vs-check__text' }, el('b', {}, c.title), el('span', {}, c.detail)),
           c.required ? null : el('span', { class: 'badge' }, 'Optional'),
           icon('chevron-down', 'icon--sm chev')),
@@ -891,7 +894,7 @@
         needRow('Outbound HTTPS to services.nvd.nist.gov', 'Looks the software versions up in the National Vulnerability Database to name the CVEs.', 'No: scans still list hosts, ports and software'),
         needRow('An NVD API key', 'Makes the first CVE lookups about ten times faster. One key serves every server.', 'No'),
         needRow('OpenVAS (Greenbone Community Edition)', 'Deeper scans for the networks that turn it on: tests each host for thousands of known weaknesses. Set up on the server that scans them.', 'No')))));
-    const cards = list.map(scannerCard);
+    const cards = list.map((sv) => scannerCard(sv, dedicated));
     // Once a scanner has been added, the servers come before the how-to.
     $('sc-page').replaceChildren(...[dedicated ? null : intro,
       list.length < 2 ? el('div', { class: 'alert', 'data-tone': 'info' }, icon('info'), el('div', {},
@@ -909,8 +912,11 @@
       el('td', { 'data-label': 'Needed' }, needed === 'Yes' ? el('span', { class: 'badge badge--accent' }, 'Required') : el('span', { class: 'vs-muted' }, needed)));
   }
 
-  function scannerCard(sv) {
-    const st = scannerState(sv);
+  // dedicated: a scanner server exists, so a server that scans no network
+  // is not needed and its missing setup is not an error.
+  function scannerCard(sv, dedicated) {
+    const idle = dedicated && !sv.networks.length && sv.online && sv.state !== 'removed' && sv.ready === false;
+    const st = idle ? { label: 'Not needed', tone: '' } : scannerState(sv);
     const rep = sv.report;
     const badges = [
       sv.scanner ? el('span', { class: 'badge badge--accent', title: 'Added as a scanner: it never runs the background jobs' }, 'Scanner') : null,
@@ -924,6 +930,7 @@
     if (sv.state === 'removed') sub = 'This server was removed, but networks still name it. Edit them and pick another scanner.';
     else if (!sv.online) sub = 'Not running (' + sv.state + ').' + (sv.checked_at ? ' Last checked ' + ago(sv.checked_at) + '.' : '') + ' Its networks are not scanned until it is back.';
     else if (!rep) sub = 'Has not checked itself yet. A server checks itself a few seconds after it starts; one running an older version of Signalith does not.';
+    else if (idle) sub = 'Not needed: no network uses this server. Its checks below matter only if you pick it to scan a network. Checked ' + ago(rep.at) + '.';
     else sub = 'Checked ' + ago(rep.at) + '.';
     const again = sv.self && sv.online ? el('button', { class: 'btn btn--secondary btn--sm', type: 'button' }, icon('refresh-cw'), 'Check again') : null;
     if (again) {
@@ -943,6 +950,6 @@
         el('span', { class: 'badge' + (st.tone ? ' badge--' + st.tone : '') + ' sc-card__state' }, st.label),
         again),
       nets,
-      checks.length ? el('ul', { class: 'vs-checks', role: 'list' }, ...checks.map((c) => checkRow(c, renderScanners, true))) : null));
+      checks.length ? el('ul', { class: 'vs-checks', role: 'list' }, ...checks.map((c) => checkRow(c, renderScanners, true, idle))) : null));
   }
 })();
