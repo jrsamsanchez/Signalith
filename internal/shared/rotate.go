@@ -211,9 +211,12 @@ func (rt *Runtime) pickUpKey(kr *KeyringBody) bool {
 // catchUp is for a member that finds the shared settings signed with a
 // key it lacks: it reads the keyring as stored, takes its copy from a
 // rotation in progress or the last one's catch-up copies, checks the
-// copy's proof with the old key, which it must have, opens it, checks
-// the keyring with the new key, and keeps the key. It reports whether it
-// kept one.
+// copy's proof with the old key, which it must accept now, opens it,
+// checks the keyring with the new key or one it accepts, and keeps the
+// key. It reports whether it kept one. A retired key, which stays on
+// disk for the archives, never vouches for a new one: whoever kept a copy
+// of it, such as a removed server, could otherwise hand every member a
+// key of its own.
 func (rt *Runtime) catchUp(ctx context.Context) bool {
 	c, prefix := rt.target()
 	if c == nil || rt.opts.ReadOnly {
@@ -256,6 +259,16 @@ func (rt *Runtime) catchUp(ctx context.Context) bool {
 	if len(offers) == 0 {
 		return false
 	}
+	accepted := rt.Hub().Keys()
+	if accepted == nil {
+		return false
+	}
+	var trusted []*ClusterKey
+	for _, id := range accepted.IDs() {
+		if k := accepted.Get(id); k != nil {
+			trusted = append(trusted, k)
+		}
+	}
 	nk, err := rt.nodeKey()
 	if err != nil {
 		return false
@@ -264,7 +277,7 @@ func (rt *Runtime) catchUp(ctx context.Context) bool {
 		if keys.get(o.kid) != nil {
 			continue
 		}
-		old := keys.get(o.from)
+		old := accepted.Get(o.from)
 		if old == nil {
 			continue
 		}
@@ -273,7 +286,7 @@ func (rt *Runtime) catchUp(ctx context.Context) bool {
 			rt.log.Warn("could not catch up with a rotation of the cluster key", "kid", o.kid, "err", err)
 			continue
 		}
-		if err := Verify(NewKeySet(k, keys.all...), KeyringDocID, &e); err != nil {
+		if err := Verify(NewKeySet(k, trusted...), KeyringDocID, &e); err != nil {
 			rt.log.Warn("could not catch up with a rotation of the cluster key: the keyring does not verify", "kid", o.kid, "err", err)
 			continue
 		}
@@ -409,8 +422,12 @@ func (rt *Runtime) RotateKey(ctx context.Context, o RotateOptions) (*RotateResul
 		return res, errors.New("this server does not have the new cluster key")
 	}
 	c, prefix := rt.target()
-	if res.Resigned, err = resignOld(ctx, c, prefix, k, rt.Hub().opts.NodeName); err != nil {
+	var refused []string
+	if res.Resigned, refused, err = resignOld(ctx, c, prefix, k, rt.Hub().Keys(), rt.Hub().opts.NodeName); err != nil {
 		return res, err
+	}
+	if len(refused) > 0 {
+		rt.log.Warn("shared documents that no cluster key signed were not signed with the new key", "audit", true, "docs", strings.Join(refused, ", "))
 	}
 	if err := check(); err != nil {
 		return res, err
@@ -624,31 +641,41 @@ func joinNames(names []string) string {
 // resignOld signs every document of the config index that is not signed
 // with k again with k, as it is (a compare-and-set on the version read;
 // one changed meanwhile is read again), then bumps the watch documents so
-// every server reads them again. It returns how many it signed.
-func resignOld(ctx context.Context, c *store.Client, prefix string, k *ClusterKey, node string) (int, error) {
+// every server reads them again. Only a document a key of keys signed is
+// signed again: one written without a cluster key stays refused instead
+// of turning valid under the new key. It returns how many it signed, and
+// the ids of those it refused.
+func resignOld(ctx context.Context, c *store.Client, prefix string, k *ClusterKey, keys *KeySet, node string) (int, []string, error) {
 	index := ConfigIndex(prefix)
 	n := 0
+	var refused []string
 	for pass := range 5 {
 		docs, _, err := ReadAll(ctx, c, prefix)
 		if err != nil {
-			return n, err
+			return n, refused, err
 		}
 		left := 0
 		for _, d := range docs {
 			if macKID(d.Envelope.MAC) == k.ID() {
 				continue
 			}
+			if err := Verify(keys, d.ID, &d.Envelope); err != nil {
+				if !slices.Contains(refused, d.ID) {
+					refused = append(refused, d.ID)
+				}
+				continue
+			}
 			e := d.Envelope
 			e.WriteID, e.MAC = "", ""
 			if err := Sign(k, d.ID, &e); err != nil {
-				return n, err
+				return n, refused, err
 			}
 			if _, err := c.PutIf(ctx, index, d.ID, &e, d.Version, false); err != nil {
 				if store.IsConflict(err) {
 					left++
 					continue
 				}
-				return n, fmt.Errorf("%s: %w", d.ID, err)
+				return n, refused, fmt.Errorf("%s: %w", d.ID, err)
 			}
 			n++
 		}
@@ -656,17 +683,17 @@ func resignOld(ctx context.Context, c *store.Client, prefix string, k *ClusterKe
 			break
 		}
 		if pass == 4 {
-			return n, fmt.Errorf("%d shared documents kept changing while they were signed again; the rotation goes on from here when it is asked again", left)
+			return n, refused, fmt.Errorf("%d shared documents kept changing while they were signed again; the rotation goes on from here when it is asked again", left)
 		}
 		if err := retryWait(ctx, pass+1); err != nil {
-			return n, err
+			return n, refused, err
 		}
 	}
 	h := NewHub(Options{NodeName: node})
 	h.Use(c, prefix)
 	watches, err := c.SearchVersions(ctx, index, map[string]any{"term": map[string]any{"kind": "watch"}})
 	if err != nil {
-		return n, err
+		return n, refused, err
 	}
 	var errs []error
 	for _, w := range watches {
@@ -674,7 +701,7 @@ func resignOld(ctx context.Context, c *store.Client, prefix string, k *ClusterKe
 			errs = append(errs, err)
 		}
 	}
-	return n, errors.Join(errs...)
+	return n, refused, errors.Join(errs...)
 }
 
 // RotationStatus is the key rotation as the Servers page shows it.
