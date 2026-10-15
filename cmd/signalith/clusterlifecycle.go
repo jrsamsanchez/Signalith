@@ -186,26 +186,39 @@ func (r *runner) handleRotateKey(ctx context.Context, req *shared.Request) error
 		return nil, ""
 	}
 	reqs := rt.Requests()
-	res, err := rt.RotateKey(ctx, shared.RotateOptions{By: cmp.Or(req.RequestedBy, "signalith"), Reason: cmp.Or(a.Reason, "rotate-key"),
-		Resealers: sharedResealers(ct.sharedDocs, client),
-		Progress: func(step string, done, total int) {
-			_ = req.SetResult(map[string]string{"step": step})
-			if err := reqs.SaveResult(ctx, req); err != nil {
-				r.log.Debug("could not record how far the key rotation came", "err", err)
-			}
-			_ = reqs.SetProgress(ctx, req, int64(done), int64(total))
-		}})
-	if res != nil {
-		_ = req.SetResult(res)
+	rotate := func() (*shared.RotateResult, error) {
+		res, err := rt.RotateKey(ctx, shared.RotateOptions{By: cmp.Or(req.RequestedBy, "signalith"), Reason: cmp.Or(a.Reason, "rotate-key"),
+			Resealers: sharedResealers(ct.sharedDocs, client),
+			Progress: func(step string, done, total int) {
+				_ = req.SetResult(map[string]string{"step": step})
+				if err := reqs.SaveResult(ctx, req); err != nil {
+					r.log.Debug("could not record how far the key rotation came", "err", err)
+				}
+				_ = reqs.SetProgress(ctx, req, int64(done), int64(total))
+			}})
+		if res != nil {
+			_ = req.SetResult(res)
+		}
+		return res, err
 	}
+	res, err := rotate()
 	if err != nil {
 		return err
 	}
 	var mark error
 	if len(a.Removed) > 0 {
-		mark = rt.MarkRotated(ctx, a.Removed...)
+		var left []string
+		left, mark = rt.MarkRotated(ctx, res.KID, a.Removed...)
+		if mark == nil && len(left) > 0 {
+			// The rotation it went on with began before they were removed,
+			// with a copy of its key for them: one more.
+			if res, err = rotate(); err != nil {
+				return err
+			}
+			_, mark = rt.MarkRotated(ctx, res.KID, left...)
+		}
 	} else {
-		mark = rt.MarkAllRotated(ctx)
+		mark = rt.MarkAllRotated(ctx, res.KID)
 	}
 	if mark != nil {
 		r.log.Warn("rotated the cluster key, but could not note it on the removed servers", "err", mark)
@@ -271,40 +284,50 @@ func (a lifecycleAPI) Submit(ctx context.Context, typ, target string, args any, 
 	return a.rt.Requests().Submit(ctx, typ, target, args, by)
 }
 
-func (a lifecycleAPI) Remove(ctx context.Context, nodeID, name, by string, live bool) (shared.RemovedServer, error) {
-	return removeServer(ctx, a.rt, a.osca, nodeID, name, by, live)
+func (a lifecycleAPI) Remove(ctx context.Context, nodeID, name, by string, live bool) (shared.RemovedServer, []string, error) {
+	return removeServer(ctx, a.rt, removeHooks(a.rt, a.osca), nodeID, name, by, live)
 }
 
 // removeServer takes the server nodeID out of the keyring, records it as
-// removed and deletes its nodecfg document and, unless it still runs, its
-// heartbeat.
-func removeServer(ctx context.Context, rt *shared.Runtime, osca *clusterpki.OSCA, nodeID, name, by string, live bool) (shared.RemovedServer, error) {
+// removed, deletes its nodecfg document and, unless it still runs, its
+// heartbeat, and runs hooks. An error means it was not removed. Once it
+// is out of the keyring every step is still taken, and those that failed
+// are returned as warnings: the removal stands, so the caller must still
+// audit it and rotate the key.
+func removeServer(ctx context.Context, rt *shared.Runtime, hooks []removeHook, nodeID, name, by string, live bool) (shared.RemovedServer, []string, error) {
 	rec, err := rt.RemoveMember(ctx, nodeID, name, by)
+	if err != nil && rec.NodeID == "" {
+		return rec, nil, err
+	}
+	var warnings []string
 	if err != nil {
-		return rec, err
+		warnings = append(warnings, err.Error())
 	}
-	c, prefix := rtTarget(rt)
-	if c == nil {
-		return rec, nil
-	}
-	if err := deleteDoc(ctx, c, shared.ConfigIndex(prefix), shared.NodeCfgID(nodeID)); err != nil {
-		return rec, fmt.Errorf("%s was removed, but its own settings could not be deleted: %w", rec.Name, err)
-	}
-	if !live {
-		if err := deleteDoc(ctx, c, cluster.RuntimeIndex(prefix), cluster.NodeDocID(nodeID)); err != nil {
-			return rec, fmt.Errorf("%s was removed, but its heartbeat could not be deleted: %w", rec.Name, err)
+	if c, prefix := rtTarget(rt); c != nil {
+		if err := deleteDoc(ctx, c, shared.ConfigIndex(prefix), shared.NodeCfgID(nodeID)); err != nil {
+			warnings = append(warnings, fmt.Sprintf("%s was removed, but its own settings could not be deleted: %v", rec.Name, err))
+		}
+		if !live {
+			if err := deleteDoc(ctx, c, cluster.RuntimeIndex(prefix), cluster.NodeDocID(nodeID)); err != nil {
+				warnings = append(warnings, fmt.Sprintf("%s was removed, but its heartbeat could not be deleted: %v", rec.Name, err))
+			}
 		}
 	}
-	var errs []error
-	for _, h := range removeHooks(rt, osca) {
+	for _, h := range hooks {
 		if err := h(ctx, by, nodeID); err != nil {
-			errs = append(errs, err)
+			warnings = append(warnings, fmt.Sprintf("%s was removed, but %v", rec.Name, err))
 		}
 	}
-	if err := errors.Join(errs...); err != nil {
-		return rec, fmt.Errorf("%s was removed, but %w", rec.Name, err)
+	return rec, warnings, nil
+}
+
+// removeWarnings is the error a command that removed a server returns
+// when some of the steps after the removal failed: nil when none did.
+func removeWarnings(warnings []string) error {
+	if len(warnings) == 0 {
+		return nil
 	}
-	return rec, nil
+	return errors.New(strings.Join(warnings, "; "))
 }
 
 // removeHook is told of a server removed from the cluster, for a feature
@@ -445,13 +468,14 @@ func (x *clusterCLI) removeCLI(ctx context.Context, which string, noRotate, yes 
 	if err := x.confirm(fmt.Sprintf("Remove %s from the cluster?", name), yes); err != nil {
 		return err
 	}
-	rec, err := removeServer(ctx, rt, x.osca, id, name, x.by, live)
+	rec, warnings, err := removeServer(ctx, rt, removeHooks(rt, x.osca), id, name, x.by, live)
 	if err != nil {
 		return err
 	}
-	x.audit("cluster.remove: removed a server from the cluster", "server", rec.Name, "node_id", id)
+	x.audit("cluster.remove: removed a server from the cluster", "server", rec.Name, "node_id", id, "warnings", warnings)
 	fmt.Fprintf(x.out, "Removed %s from the cluster.\n", rec.Name)
-	return x.rotateAfterRemove(ctx, rt, []string{id}, rec.Name, noRotate)
+	rotErr := x.rotateAfterRemove(ctx, rt, []string{id}, rec.Name, noRotate)
+	return errors.Join(removeWarnings(warnings), rotErr)
 }
 
 // rotateAfterRemove asks for a rotation of the cluster key after the
@@ -494,12 +518,12 @@ func (x *clusterCLI) leave(ctx context.Context, noRotate, yes bool) error {
 		if err := x.confirm(fmt.Sprintf("Take %s out of the cluster and delete its copy of the cluster key?", x.self.Name), yes); err != nil {
 			return err
 		}
-		rec, err := removeServer(ctx, rt, x.osca, x.self.NodeID, x.self.Name, x.by, false)
+		rec, warnings, err := removeServer(ctx, rt, removeHooks(rt, x.osca), x.self.NodeID, x.self.Name, x.by, false)
 		if err != nil {
 			return err
 		}
-		x.audit("cluster.remove: this server left the cluster", "server", rec.Name)
-		rotErr := x.rotateAfterRemove(ctx, rt, []string{x.self.NodeID}, rec.Name, noRotate)
+		x.audit("cluster.remove: this server left the cluster", "server", rec.Name, "warnings", warnings)
+		rotErr := errors.Join(removeWarnings(warnings), x.rotateAfterRemove(ctx, rt, []string{x.self.NodeID}, rec.Name, noRotate))
 		if err := forgetCluster(dir); err != nil {
 			return fmt.Errorf("this server left the cluster, but its copy of the cluster key could not all be deleted: %w", err)
 		}

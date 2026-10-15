@@ -433,6 +433,13 @@ func (rt *Runtime) RotateKey(ctx context.Context, o RotateOptions) (*RotateResul
 		return res, err
 	}
 	progress(4)
+	// A value sealed with the old key since the first pass would no longer
+	// open once it is retired: the resealers run once more.
+	for _, rs := range o.Resealers {
+		if err := rs(ctx); err != nil {
+			return res, fmt.Errorf("sealing the shared secrets again with the new key: %w", err)
+		}
+	}
 	if err := rt.finishRotation(ctx, o.By, n); err != nil {
 		return res, err
 	}
