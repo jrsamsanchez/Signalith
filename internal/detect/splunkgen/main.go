@@ -97,7 +97,7 @@ func main() {
 		Name:   "splunk",
 		Title:  "Splunk Security Content",
 		Format: "splunk",
-		Description: "Windows detections for process, file and registry events, web detections for web requests, network detections over connections and DNS lookups, and AWS detections for CloudTrail records, from Splunk's Threat Research Team (security_content), converted to Signalith detections. " +
+		Description: "Windows detections for process, file and registry events, web detections for web requests, network detections over connections and DNS lookups, AWS detections for CloudTrail records and Entra ID detections for its sign-in and audit logs, from Splunk's Threat Research Team (security_content), converted to Signalith detections. " +
 			"TTP rules raise findings; anomaly rules only add risk, as in Splunk's risk-based alerting. Each rule shipped here agrees with Splunk's reading of its search on its test events, checked in CI.",
 		Source:     "https://github.com/splunk/security_content",
 		Version:    commit,
@@ -158,10 +158,11 @@ func main() {
 	rules = append(rules, web...)
 	network, _ := filepath.Glob(filepath.Join(*splunkDir, "detections", "network", "*.yml"))
 	rules = append(rules, network...)
-	// Cloud detections that read CloudTrail records.
+	// Cloud detections that read CloudTrail records, or Entra ID and
+	// Azure records.
 	cloud, _ := filepath.Glob(filepath.Join(*splunkDir, "detections", "cloud", "*.yml"))
 	for _, f := range cloud {
-		if src, err := os.ReadFile(f); err == nil && cloudTrailSearch.Match(src) {
+		if src, err := os.ReadFile(f); err == nil && cloudFile.Match(src) {
 			rules = append(rules, f)
 		}
 	}
@@ -198,7 +199,7 @@ func main() {
 				skip("network detection that is not a tstats search of connections or DNS lookups", rel)
 				continue
 			}
-		} else if !slices.ContainsFunc(meta.DataSource, func(s string) bool { return slices.Contains(windowsSources, s) }) && !web && !cloudTrailSearch.MatchString(meta.Search) {
+		} else if !slices.ContainsFunc(meta.DataSource, func(s string) bool { return slices.Contains(windowsSources, s) }) && !web && !cloudSearch.MatchString(meta.Search) {
 			skip("no Windows Sysmon or Security log data source", rel)
 			continue
 		}
@@ -310,9 +311,14 @@ func markMacros(s string, macros map[string]*splcheck.Macro, used map[string]boo
 	}
 }
 
-// webSearch is a search of the Web data model.
-var cloudTrailSearch = regexp.MustCompile("(?m)^\\s*`cloudtrail`")
+// cloudSearch is a search of CloudTrail, Entra ID or Azure records, and
+// cloudFile a rule file with one.
+var (
+	cloudSearch = regexp.MustCompile("^\\s*`(cloudtrail|azure_monitor_aad|azure_monitor_activity)`")
+	cloudFile   = regexp.MustCompile("(?m)^(?:search:\\s*['|>-]*)?\\s*`(cloudtrail|azure_monitor_aad|azure_monitor_activity)`")
+)
 
+// webSearch is a search of the Web data model.
 var webSearch = regexp.MustCompile(`(?i)\bfrom\s+datamodel=Web\b`)
 
 var quoted = regexp.MustCompile(`"[^"]*"|\b[A-Z][a-z]+\.\w+`)

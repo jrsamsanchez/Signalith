@@ -422,7 +422,9 @@ func CloudTrailField(name string) bool {
 	}
 	for _, obj := range cloudTrailObjects {
 		if strings.HasPrefix(name, obj+".") {
-			return validFieldName(name) && strings.Count(name, ".") < maxFieldDepth
+			// CloudTrail's lists are kept as JSON text, not by Splunk's
+			// names for their values (items{}.userId).
+			return validFieldName(name) && !strings.Contains(name, "{") && strings.Count(name, ".") < maxFieldDepth
 		}
 	}
 	return false

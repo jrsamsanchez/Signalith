@@ -2,6 +2,7 @@ package ingest
 
 import (
 	"encoding/base64"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -57,6 +58,11 @@ func TestAzureSignIn(t *testing.T) {
 		"reason": "Authentication failed during strong authentication request.", "vendor_account": "t1",
 		"@timestamp": "2026-10-11T11:58:01.1234567Z",
 	})
+	// A list's values, by Splunk's names, as text.
+	expectLists(t, ev, map[string][]any{
+		"properties.authenticationDetails{}.succeeded":            {"true"},
+		"properties.authenticationDetails{}.authenticationMethod": {"Password"},
+	})
 	for _, k := range []string{"properties.deviceDetail.deviceId", "properties.deviceDetail.trustType"} {
 		if _, ok := ev.Fields[k]; ok {
 			t.Errorf("empty %s kept", k)
@@ -80,7 +86,11 @@ func TestAzureAuditAndActivity(t *testing.T) {
 		"properties.initiatedBy.user.userPrincipalName": "admin@example.com",
 		"action": "created", "status": "success", "user": "admin@example.com", "src": "198.51.100.4", "src_user_type": "user",
 		"object": "bob@example.com", "object_category": "user", "command": "Add member to role", "dest": "entra:t1",
-		"change_type": "Entra ID RoleManagement",
+		"change_type": "Entra ID RoleManagement", "src_user": "admin@example.com",
+	})
+	expectLists(t, ev, map[string][]any{
+		"properties.targetResources{}.type":                          {"User"},
+		"properties.targetResources{}.modifiedProperties{}.newValue": {`"Global Administrator"`},
 	})
 	if s, _ := ev.Fields["properties.targetResources"].(string); !strings.Contains(s, "Global Administrator") {
 		t.Errorf("properties.targetResources = %q", s)
@@ -149,6 +159,16 @@ func TestAzureFieldsKept(t *testing.T) {
 			if !KnownField(k) && !azureField(k) {
 				t.Errorf("field %s is neither mapped in the index template nor an Azure record's", k)
 			}
+		}
+	}
+}
+
+// expectLists checks an event's list fields.
+func expectLists(t *testing.T, ev Event, want map[string][]any) {
+	t.Helper()
+	for k, v := range want {
+		if got, _ := ev.Fields[k].([]any); !slices.Equal(got, v) {
+			t.Errorf("%s = %#v, want %#v", k, ev.Fields[k], v)
 		}
 	}
 }
