@@ -16,7 +16,8 @@ Everything is on the **Vulnerabilities** page (under **Monitor**):
   **Scan now** and **Stop**.
 - **Scans**: the last 200 scans, how long each took, what it found, and why one failed.
 - **Scanner setup** (admins): what scanning needs, whether this server has it, why, and
-  how to fix anything missing.
+  how to fix anything missing. With several servers, **Settings > Scanners** checks each
+  of them (see [Scanning each network zone](#scanning-each-network-zone-from-inside-it)).
 
 Analysts can see the results. Only admins can add networks, start or stop scans, and see
 the scanner setup.
@@ -147,13 +148,44 @@ Hosts the scans find are added to the asset list as `category=scanned`, so searc
 findings show them with asset context, unless your own list or the
 [Endpoints page](endpoints.md) already has them.
 
-## Several servers
+## Scanning each network zone from inside it
 
-When several Signalith servers share one OpenSearch ([servers.md](servers.md)), scans run
-on the server that runs the background jobs, and **Scanner setup** shows that server's
-own check of itself. Networks, scans and results are kept in OpenSearch
-(`<prefix>_vulns`), so every server shows the same ones. A scanner for each network zone
-is planned for later.
+A scan only sees the hosts and ports its server can reach. For a network behind a
+firewall, such as a plant floor, a lab or a guest network, run a Signalith server inside
+it and let that server scan it:
+
+1. Add a server inside the zone: **Settings > Servers > Add a server** (see
+   [servers.md](servers.md)). It only needs to reach OpenSearch and the network it scans.
+2. Install Nmap on it, as above.
+3. On **Vulnerabilities > Networks**, edit the network and pick that server under
+   **Scanned by**. The list shows each server's state: ready, needs setup, or offline.
+
+Networks that name no scanner are scanned by the server that runs the background jobs.
+Every server runs the scans of its own networks and writes the results to the shared
+OpenSearch, so the **Vulnerabilities** page, the dashboard, detections, findings and the
+asset list show the hosts every scanner found, whichever server you open.
+
+**Settings > Scanners** (admins) lists every server as a scanner: the networks it scans,
+whether it has what scanning needs, and how it reaches each of its networks:
+
+- **On this server's own network**: the server has an address on that network.
+- **Through a router**: the scan leaves from the address shown and crosses routers and
+  firewalls, which decide which hosts and ports it sees. Allow that address through, or
+  pick a server inside the zone.
+- **Not reached**: the server has no route to it, or a host name was not found.
+
+The reach check reads the server's own interfaces and routing table; it sends nothing to
+the network. Each server checks itself every two minutes, every 30 seconds while something
+is missing, and at once when it is given a network or one is taken away. **Check again**
+checks the server you are signed in to right away.
+
+A scheduled scan runs in the time zone of the server that scans it. **Scan now** refuses a
+network whose scanner is stopped or removed. A queued scan that its scanner has not
+started after 10 minutes, while that server has not checked in, fails with a message that
+names the server. Moving a network to another scanner takes effect from its next scan.
+
+The Docker quick start's container reaches other networks through the host, so scans leave
+from the host's address.
 
 ## Troubleshooting
 
@@ -162,6 +194,8 @@ is planned for later.
 - **The test scan fails**: run `nmap -sT -p 1 127.0.0.1` as the account Signalith runs as
   to see the whole error. On Windows, reinstall Nmap as an administrator with Npcap.
 - **No hosts were up**: check the addresses, and that the scanning server can reach that
-  network (a firewall between them, or Docker's network on a Docker install).
+  network (a firewall between them, or Docker's network on a Docker install). **Settings >
+  Scanners** shows how each server reaches its networks; pick a server inside the zone if
+  needed.
 - **Software but no CVEs**: either the version has no known CVEs, Nmap could not tell the
   version, or lookups failed (the **Scans** tab says so).
