@@ -166,6 +166,44 @@ func (b *builder) generic(t time.Time, sourcetype string, fields map[string]any)
 	b.emit(ev)
 }
 
+// sensorHost is the network sensor the sample's Zeek and Suricata events
+// come from, as Fluent Bit's sysinfo filter names it.
+const sensorHost = "nsm-01"
+
+// zeek adds one Zeek log line (log is the log type: conn, dns, http, ...)
+// the way the sensor's Fluent Bit tails it from Zeek's JSON logs: rec gets
+// Zeek's epoch "ts", is written as one JSON line, and goes through the real
+// Zeek parser. The event keeps the parser's document ID.
+func (b *builder) zeek(log string, t time.Time, rec map[string]any) {
+	line := sensorLine(rec, "ts", float64(t.UnixMicro())/1e6)
+	b.emit(ingest.Normalize(ingest.ZeekTag+"."+log, map[string]any{"log": line, "hostname": sensorHost}, t))
+}
+
+// eveTimeLayout is the timestamp layout of Suricata's eve.json.
+const eveTimeLayout = "2006-01-02T15:04:05.000000-0700"
+
+// eve adds one Suricata EVE event, read from eve.json by the sensor's
+// Fluent Bit and parsed by the real Suricata parser. rec gets the EVE
+// timestamp and the sensor's host name.
+func (b *builder) eve(t time.Time, rec map[string]any) {
+	rec["host"] = sensorHost
+	line := sensorLine(rec, "timestamp", t.UTC().Format(eveTimeLayout))
+	b.emit(ingest.Normalize(ingest.SuricataTag+".eve", map[string]any{"log": line, "hostname": sensorHost}, t))
+}
+
+// sensorLine writes rec as one JSON line with its time first, as Zeek and
+// Suricata do. The other keys follow in sorted order (json.Marshal sorts
+// map keys), so a line, and so its document ID, is deterministic.
+func sensorLine(rec map[string]any, timeKey string, t any) string {
+	head, _ := json.Marshal(map[string]any{timeKey: t})
+	delete(rec, timeKey)
+	body, _ := json.Marshal(rec)
+	if string(body) == "{}" {
+		return string(head)
+	}
+	return string(head[:len(head)-1]) + "," + string(body[1:])
+}
+
 func toAny(xs []string) []any {
 	out := make([]any, len(xs))
 	for i, x := range xs {
