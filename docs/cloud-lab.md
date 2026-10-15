@@ -50,7 +50,8 @@ and Windows remote desktop (3389).
 Cloud networks have no mirror port, so each Linux endpoint sends a copy of its traffic to
 the sensor (over VXLAN), and the sensor captures it on a port with no address, `capture0`,
 as it would a mirror port. A timer on the endpoints visits a few web pages every 10
-minutes, including `testmynids.org`, which Suricata's rules flag.
+minutes, one of them with `uid=0(root)` in the clear, which Suricata flags (the rule
+`testmynids.org` shows).
 
 ## What you need
 

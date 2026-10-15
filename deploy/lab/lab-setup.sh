@@ -376,13 +376,13 @@ volumes:
       o: bind
       device: /srv/gvmd-socket
 YML
-docker compose -p greenbone-community-edition up -d --quiet-pull
+docker compose -p greenbone-community-edition up -d --quiet-pull </dev/null
 for i in $(seq 1 90); do
-  docker compose -p greenbone-community-edition exec -T -u gvmd gvmd gvmd --get-users >/dev/null 2>&1 && break
+  docker compose -p greenbone-community-edition exec -T -u gvmd gvmd gvmd --get-users </dev/null >/dev/null 2>&1 && break
   sleep 10
 done
-if ! docker compose -p greenbone-community-edition exec -T -u gvmd gvmd gvmd --get-users | grep -qx signalith; then
-  docker compose -p greenbone-community-edition exec -T -u gvmd gvmd gvmd --create-user=signalith --password="$PW" >/dev/null
+if ! docker compose -p greenbone-community-edition exec -T -u gvmd gvmd gvmd --get-users </dev/null | grep -qx signalith; then
+  docker compose -p greenbone-community-edition exec -T -u gvmd gvmd gvmd --create-user=signalith --password="$PW" </dev/null >/dev/null
 fi
 # Signalith's account may use the socket, now and when gvmd makes it again.
 setfacl -m u:signalith:rwx /srv/gvmd-socket
@@ -498,11 +498,12 @@ ExecStart=/usr/local/sbin/lab-mirror
 [Install]
 WantedBy=multi-user.target
 UNIT
-# Some traffic for the sensor to see: web requests, look-ups, and the
-# test page that Suricata's rules flag (testmynids.org).
+# Some traffic for the sensor to see: web requests, look-ups, and one
+# that Suricata flags wherever it goes, "uid=0(root)" in the clear (GPL
+# ATTACK_RESPONSE id check returned root, the rule testmynids.org shows).
 cat >/usr/local/sbin/lab-traffic <<'SH'
 #!/bin/sh
-curl -s -o /dev/null http://testmynids.org/uid/index.html
+curl -s -o /dev/null 'http://neverssl.com/uid=0(root)'
 curl -s -o /dev/null https://example.com/
 curl -s -o /dev/null http://neverssl.com/
 getent hosts signalith.io >/dev/null
