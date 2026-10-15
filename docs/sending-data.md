@@ -87,7 +87,7 @@ limited so they cannot fill OpenSearch's mapping: at most 200 fields per event, 
 up to 128 letters, digits and `_ - @ : /` in at most 5 dot-separated parts, and at most
 1,000 new names per daily index each time Signalith starts. With several servers, those
 1,000 are shared among the servers that stored events in the last 10 minutes (at least
-100 each), and no server adds new names to a day whose index already has 1,600 fields
+100 each), and no server adds new names to a day whose index already has 1,800 fields
 (see [Servers](servers.md#field-names-when-several-servers-receive-events)). Fields Signalith itself
 produces are always kept, so an event is never lost to extra fields. Fields left out are
 counted in the event's `dropped_fields` (search `dropped_fields>0`), their values stay in

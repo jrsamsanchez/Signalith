@@ -35,7 +35,7 @@ const (
 	// beyond the known fields, for all servers together: each server that
 	// stored events in the last 10 minutes gets an equal share, and at
 	// least minNamesPerServer (see Pipeline.Servers). With the known
-	// fields it stays well under the template's limit of 2000, which
+	// fields it stays well under the template's limit (totalFieldsLimit), which
 	// leaves room for names added before a restart.
 	maxNewNamesPerIndex = 1000
 	// minNamesPerServer is the smallest share of maxNewNamesPerIndex one

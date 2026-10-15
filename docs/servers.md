@@ -761,8 +761,8 @@ the old list or the new one, never a mix.
 
 ## Field names when several servers receive events
 
-Each day's events go to one index per data model, and OpenSearch allows at most 2,000
-fields in one index. Signalith's own fields always fit; the names senders choose (JSON
+Each day's events go to one index per data model, and Signalith lets one index hold at
+most 2,200 fields. Signalith's own fields always fit; the names senders choose (JSON
 keys, syslog structured data, CEF extensions) share what is left (see
 [Ingest limits](sending-data.md#ingest-limits)). With several servers:
 
@@ -771,7 +771,7 @@ keys, syslog structured data, CEF extensions) share what is left (see
   at least 100 for each. Each server's heartbeat says when it last stored an event, so
   the shares follow servers as they start and stop.
 - Before adding new names to an index, a server also looks at how many fields the index
-  really has (checked at most every 30 seconds) and adds none once it has 1,600.
+  really has (checked at most every 30 seconds) and adds none once it has 1,800.
 
 Fields over the limit are not lost: their values stay in the event's raw message
 (`_raw`), and the event says how many were left out in `dropped_fields`. Fields
