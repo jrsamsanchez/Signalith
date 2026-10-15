@@ -187,7 +187,7 @@ func (c Case) Record(host string, t time.Time) (string, map[string]any) {
 		return ingest.AzureTag, ingest.AzureRecord(host, t, c.EventID, c.Data)
 	}
 	if c.Channel == O365Channel {
-		return ingest.O365Tag, ingest.O365SigmaRecord(t, c.Data)
+		return ingest.O365Tag, ingest.O365SigmaRecord(host, t, c.Data)
 	}
 	if c.Channel == WebChannel {
 		return ingest.WebTag, ingest.WebRecord(ingest.AccessLine(t, c.Data), "/var/log/nginx/access.log", host, t)

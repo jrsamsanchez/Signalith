@@ -3,7 +3,10 @@ package ingest
 import (
 	"bytes"
 	"cmp"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"maps"
 	"net/netip"
 	"slices"
@@ -164,6 +167,11 @@ func ParseO365(r map[string]any) Event {
 		if v != "" {
 			f[k] = CapValue(v)
 		}
+	}
+	// The machine that sent the record, when it says (Microsoft 365
+	// itself has no host).
+	if h, ok := r["hostname"].(string); ok {
+		set("host", h)
 	}
 	op := str(r, "Operation")
 	workload := str(r, "Workload")
@@ -392,7 +400,7 @@ func O365Record(t time.Time, workload string, data map[string]string) map[string
 // fields describe, for test events: the older rules' eventSource,
 // eventName and status become the workload, the operation (an alert's
 // name, for the Security & Compliance Center's alerts) and the result.
-func O365SigmaRecord(t time.Time, data map[string]string) map[string]any {
+func O365SigmaRecord(host string, t time.Time, data map[string]string) map[string]any {
 	d := map[string]string{}
 	for k, v := range data {
 		switch k {
@@ -418,6 +426,14 @@ func O365SigmaRecord(t time.Time, data map[string]string) map[string]any {
 		}
 	}
 	r := O365Record(t, workload, d)
+	r["hostname"] = host
+	// Each test record its own Id, as the same Id is stored once.
+	h := sha256.New()
+	fmt.Fprintln(h, host, t.UnixNano())
+	for _, k := range slices.Sorted(maps.Keys(data)) {
+		fmt.Fprintln(h, k, data[k])
+	}
+	r["Id"] = hex.EncodeToString(h.Sum(nil))[:32]
 	if _, ok := d["ResultStatus"]; !ok {
 		// A record without a result, so a rule's status is not met.
 		delete(r, "ResultStatus")

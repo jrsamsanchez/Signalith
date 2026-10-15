@@ -111,3 +111,13 @@ func TestO365Records(t *testing.T) {
 		t.Errorf("time %v, want %v", ev.Time, now)
 	}
 }
+
+func TestO365SigmaRecord(t *testing.T) {
+	a := Normalize(O365Tag, O365SigmaRecord("case-1", now, map[string]string{"eventSource": "SecurityComplianceCenter", "eventName": "Impossible travel activity", "status": "success"}), now)
+	b := Normalize(O365Tag, O365SigmaRecord("case-2", now, map[string]string{"eventSource": "SecurityComplianceCenter", "eventName": "Impossible travel activity", "status": "success"}), now)
+	expect(t, a.Document(), map[string]any{"host": "case-1", "Workload": "SecurityComplianceCenter", "signature": "Impossible travel activity",
+		"status": "success", "datamodel": "Alerts"})
+	if a.ID == b.ID {
+		t.Error("two test records share an ID, so only one is stored")
+	}
+}
