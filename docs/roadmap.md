@@ -35,7 +35,7 @@ The first four phases are complete, and work on hardening for 1.0 has started.
 
 - Scheduled [detections](detections.md) mapped to MITRE ATT&CK, with throttling, a
   findings queue for triage, and an ATT&CK coverage map.
-- Content packs of tested community rules: 2,330 from
+- Content packs of tested community rules: 2,438 from
   [SigmaHQ](https://github.com/SigmaHQ/sigma) and 1,062 from Splunk Security Content,
   each with test events that prove it fires, and signed content updates.
 - [Sigma](https://github.com/SigmaHQ/sigma) rule import.
@@ -72,6 +72,8 @@ The first four phases are complete, and work on hardening for 1.0 has started.
 - Apache and Nginx access logs, with web rules from SigmaHQ and Splunk.
 - [AWS CloudTrail](aws-cloudtrail.md) through the OpenTelemetry Collector, with 38 SigmaHQ
   and 32 Splunk CloudTrail rules.
+- [Microsoft Entra ID and Azure](azure.md) sign-ins, audit log, risk detections and
+  activity log through an Event Hub and the OpenTelemetry Collector, with 108 SigmaHQ rules.
 - A [network sensor](network-sensor.md) with Zeek and Suricata, installed with one line,
   network detections for sensor, firewall, DNS and proxy data, and a Network dashboard.
 - [Vulnerability scanning](vulnerabilities.md) with Nmap and CVE matching, a scanner for
@@ -96,7 +98,7 @@ The first four phases are complete, and work on hardening for 1.0 has started.
     noisy rule on all sensors or revoke a sensor.
 
 **More cloud logs**
-:   Microsoft Entra ID and Microsoft 365 audit logs, with their detections.
+:   Splunk's Azure detections and Microsoft 365 audit logs.
 
 ## Next <span class="sg-pill sg-pill--next">Planned</span> { #next data-toc-label="Next" }
 

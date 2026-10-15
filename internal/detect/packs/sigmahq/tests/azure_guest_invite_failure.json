@@ -1,0 +1,5 @@
+{"rule": "0b4b72e3-4c53-4d5b-b198-2c58cfef39a9", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"Status":"failure","properties.message":"Invite external user"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"properties.message":"Invite external user"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"Status":"failure"}}
+]}

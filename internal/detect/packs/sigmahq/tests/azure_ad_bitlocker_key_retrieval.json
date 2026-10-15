@@ -1,0 +1,5 @@
+{"rule": "a0413867-daf3-43dd-9245-734b3a787942", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"Category":"KeyManagement","OperationName":"Read BitLocker key"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"OperationName":"Read BitLocker key"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"Category":"KeyManagement"}}
+]}

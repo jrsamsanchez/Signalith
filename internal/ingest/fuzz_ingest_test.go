@@ -3,6 +3,7 @@ package ingest
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net/netip"
@@ -604,6 +605,37 @@ func FuzzSuricataText(f *testing.F) {
 			if ev.ID == "" {
 				t.Fatal("no ID")
 			}
+		}
+	})
+}
+
+func FuzzAzureRecords(f *testing.F) {
+	f.Add(`{"records": [` + azureSignInRecord + `, ` + azureActivityRecord + `]}`)
+	f.Add(`{"records": [` + azureAuditRecord + `]}`)
+	f.Add(`{"records": [{"time": 1, "category": [], "operationName": {}, "tenantId": null, "properties": [1, {"a": {"b": {"c": {"d": {"e": 1}}}}}]}]}`)
+	f.Add(`{"records": [{"time": "x", "category": "SignInLogs", "operationName": "x", "tenantId": "t", "properties": {"status": "x", "authenticationDetails": [1], "initiatedBy": {"user": 1}}}]}`)
+	f.Fuzz(func(t *testing.T, msg string) {
+		recs := AzureRecords([]byte(msg))
+		for _, r := range recs {
+			ev := ParseAzure(r)
+			if ev.Model == "" || ev.Fields["message"] == nil {
+				t.Fatalf("model %q fields %v", ev.Model, ev.Fields)
+			}
+			if _, err := json.Marshal(ev.Document()); err != nil {
+				t.Fatal(err)
+			}
+			if len(ev.Fields) > maxFieldsPerEvent {
+				t.Fatalf("%d fields", len(ev.Fields))
+			}
+			for k := range ev.Fields {
+				if !KnownField(k) && !validFieldName(k) {
+					t.Fatalf("field name %q", k)
+				}
+			}
+		}
+		b64 := azureFromOTLP(base64.StdEncoding.EncodeToString([]byte(msg)))
+		if len(b64) != len(recs) && strings.HasPrefix(msg, "{") {
+			t.Fatalf("%d records from base64, %d from text", len(b64), len(recs))
 		}
 	})
 }

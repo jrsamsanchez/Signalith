@@ -1,0 +1,4 @@
+{"rule": "665e2d43-70dc-4ccc-9d27-026c9dd7ed9c", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"properties.message":"Remove member from group"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{}}
+]}

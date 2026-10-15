@@ -1,0 +1,4 @@
+{"rule": "9541f321-7cba-4b43-80fc-fbd1fb922808", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"activitylogs","data":{"operationName":"MICROSOFT.KUBERNETES/CONNECTEDCLUSTERS/DELETE"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"activitylogs","data":{}}
+]}

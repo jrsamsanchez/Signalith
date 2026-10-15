@@ -121,7 +121,12 @@ var webCategories = map[string]string{
 // the folders their rules live in. Not Sigma categories: each is a
 // product's service (product: aws, service: cloudtrail).
 var cloudCategories = map[string][2]string{
-	"cloudtrail": {"aws", "rules/cloud/aws/cloudtrail"},
+	"cloudtrail":    {"aws", "rules/cloud/aws/cloudtrail"},
+	"signinlogs":    {"azure", "rules/cloud/azure/signin_logs"},
+	"auditlogs":     {"azure", "rules/cloud/azure/audit_logs"},
+	"activitylogs":  {"azure", "rules/cloud/azure/activity_logs"},
+	"riskdetection": {"azure", "rules/cloud/azure/identity_protection"},
+	"pim":           {"azure", "rules/cloud/azure/privileged_identity_management"},
 }
 
 // networkCategories are the network log sources, and the folders their

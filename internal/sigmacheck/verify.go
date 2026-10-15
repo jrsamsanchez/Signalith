@@ -36,6 +36,10 @@ const (
 	// CloudTrailChannel is AWS CloudTrail records, whose data are the
 	// record's fields by their dotted names (userIdentity.type).
 	CloudTrailChannel = ingest.CloudTrailChannel
+	// AzureChannel is Entra ID and Azure records, whose data are the
+	// fields Sigma's rules name (ResultType), and whose event ID is the
+	// rule's service (signinlogs).
+	AzureChannel = ingest.AzureChannel
 )
 
 // TestFile holds a shipped rule's test events.
@@ -85,8 +89,9 @@ func (c Case) SigmaView() (map[string]string, bool) {
 			out["cs-uri-stem"], _, _ = strings.Cut(u, "?")
 		}
 		return out, true
-	case c.Channel == CloudTrailChannel:
-		// Sigma's CloudTrail rules name the record's own fields.
+	case c.Channel == CloudTrailChannel, c.Channel == AzureChannel:
+		// Sigma's CloudTrail rules name the record's own fields, and its
+		// Azure rules the fields the record is built from.
 		return maps.Clone(c.Data), true
 	case c.Channel == AuditdChannel:
 		// A recorded line's fields, or the fields a line is built from.
@@ -174,6 +179,9 @@ func (c Case) Record(host string, t time.Time) (string, map[string]any) {
 	}
 	if c.Channel == CloudTrailChannel {
 		return ingest.CloudTrailTag, ingest.CloudTrailRecord(host, t, c.Data)
+	}
+	if c.Channel == AzureChannel {
+		return ingest.AzureTag, ingest.AzureRecord(host, t, c.EventID, c.Data)
 	}
 	if c.Channel == WebChannel {
 		return ingest.WebTag, ingest.WebRecord(ingest.AccessLine(t, c.Data), "/var/log/nginx/access.log", host, t)
@@ -305,6 +313,11 @@ func init() {
 	// So are a CloudTrail record's.
 	Bases["cloudtrail"] = map[string]string{}
 	sysmonEvents["cloudtrail"] = "AwsApiCall"
+	// And an Azure record's, by its service.
+	for _, service := range ingest.AzureServices {
+		Bases[service] = map[string]string{}
+		sysmonEvents[service] = service
+	}
 	Bases["sysmon_event"] = map[string]string{}
 	Bases["security_named"] = map[string]string{}
 	Bases["sysmon_file_block"] = Bases["file_event"]
@@ -338,6 +351,9 @@ func Channel(category string) string {
 		return WebChannel
 	case "cloudtrail":
 		return CloudTrailChannel
+	}
+	if slices.Contains(ingest.AzureServices, category) {
+		return AzureChannel
 	}
 	for service, channel := range ingest.NamedChannelServices {
 		if category == ingest.NamedChannelCategory(service) {

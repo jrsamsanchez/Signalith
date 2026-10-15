@@ -1,0 +1,4 @@
+{"rule": "bcfcc962-0e4a-4fd9-84bb-a833e672df3f", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"activitylogs","data":{"operationName":"MICROSOFT.NETWORK/VIRTUALNETWORKS//WRITE"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"activitylogs","data":{}}
+]}

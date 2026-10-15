@@ -1,0 +1,4 @@
+{"rule": "61171ffc-d79c-4ae5-8e10-9323dba19cd3", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"activitylogs","data":{"operationName":"MICROSOFT.NETWORK/VPNGATEWAYS/VPNCONNECTIONS/DELETE"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"activitylogs","data":{}}
+]}

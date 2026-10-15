@@ -1,0 +1,6 @@
+{"rule": "5afa454e-030c-4ab4-9253-a90aa7fcc581", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"signinlogs","data":{"ResourceDisplayName":"Device Registration Service","conditionalAccessStatus":"success"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"signinlogs","data":{"AuthenticationRequirement":"multiFactorAuthentication","ResourceDisplayName":"Device Registration Service","conditionalAccessStatus":"success"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"signinlogs","data":{"conditionalAccessStatus":"success"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"signinlogs","data":{"ResourceDisplayName":"Device Registration Service"}}
+]}

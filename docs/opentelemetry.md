@@ -19,7 +19,8 @@ Either way the Collector also listens on `127.0.0.1:4317` (gRPC) and `127.0.0.1:
 (HTTP) for apps on that host that export OTLP logs, and passes those on too.
 
 To read AWS CloudTrail with a Collector, choose **AWS CloudTrail** instead (see
-[AWS CloudTrail](aws-cloudtrail.md)).
+[AWS CloudTrail](aws-cloudtrail.md)), and for Microsoft Entra ID and Azure logs, **Entra ID
+and Azure** (see [Entra ID and Azure](azure.md)).
 
 The page gives the steps and a complete `config.yaml` for the
 [Collector Contrib](https://github.com/open-telemetry/opentelemetry-collector-releases/releases)

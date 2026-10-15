@@ -1,0 +1,4 @@
+{"rule": "9a60e676-26ac-44c3-814b-0c2a8b977adf", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"signinlogs","data":{"ResultType":"53003"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"signinlogs","data":{}}
+]}

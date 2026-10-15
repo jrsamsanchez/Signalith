@@ -1,0 +1,4 @@
+{"rule": "d9557b75-267b-4b43-922f-a775e2d1f792", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"activitylogs","data":{"operationName":"MICROSOFT.NETWORK/P2SVPNGATEWAYS/RESET/ACTION"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"activitylogs","data":{}}
+]}

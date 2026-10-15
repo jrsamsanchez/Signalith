@@ -1,0 +1,4 @@
+{"rule": "6555754e-5e7f-4a67-ad1c-4041c413a007", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"riskdetection","data":{"riskEventType":"anomalousToken"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"riskdetection","data":{}}
+]}

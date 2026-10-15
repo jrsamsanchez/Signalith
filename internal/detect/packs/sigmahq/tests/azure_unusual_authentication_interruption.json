@@ -1,0 +1,11 @@
+{"rule": "8366030e-7216-476b-9927-271d79f13cf3", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"signinlogs","data":{"ResultDescription":"Device authentication is required","ResultType":"50097"}},
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"signinlogs","data":{"ResultDescription":"DeviceAuthenticationFailed","ResultType":"50155"}},
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"signinlogs","data":{"ResultDescription":"ExternalSecurityChallenge - External security challenge was not satisfied","ResultType":"50158"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"signinlogs","data":{"ResultType":"50097"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"signinlogs","data":{"ResultDescription":"Device authentication is required"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"signinlogs","data":{"ResultType":"50155"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"signinlogs","data":{"ResultDescription":"DeviceAuthenticationFailed"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"signinlogs","data":{"ResultType":"50158"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"signinlogs","data":{"ResultDescription":"ExternalSecurityChallenge - External security challenge was not satisfied"}}
+]}
