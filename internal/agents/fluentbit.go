@@ -34,7 +34,7 @@ const TokenPlaceholder = "@@AGENT_TOKEN@@"
 
 // Options select what an agent collects.
 type Options struct {
-	OS        string // "linux", "windows", "otel" (an OpenTelemetry Collector) or "osquery"
+	OS        string // "linux", "windows", "otel" (an OpenTelemetry Collector), "aws" (a Collector reading AWS CloudTrail) or "osquery"
 	ServerURL string // Signalith public URL
 	Token     string // agent token (TokenPlaceholder for the Add data page)
 	// LinuxSource is "file" (tail /var/log/auth.log and /var/log/secure),
@@ -89,6 +89,10 @@ type Options struct {
 	// events when Zeek runs too (off: Zeek covers them, and sending both
 	// would count each connection twice).
 	SuricataProtocols bool
+	// For OS "aws" (an OpenTelemetry Collector that reads AWS CloudTrail):
+	// the S3 bucket CloudTrail writes to and the URL of the SQS queue S3
+	// tells about each new file. Examples stand in for them until given.
+	AWSBucket, AWSQueueURL string
 	// SensorLayout is how a sensor built by the sensor install script
 	// (deploy/sensor/install.sh) lays out its files: SensorPackages or
 	// SensorDocker. "" is a box the admin set up (Add data's "I already
@@ -394,7 +398,7 @@ func IsLoopback(u *url.URL) bool {
 // Generate returns a Fluent Bit config and install steps.
 func Generate(o Options) (*Agent, error) {
 	switch o.OS {
-	case "otel":
+	case "otel", "aws":
 		return generateOTel(o)
 	case "osquery":
 		return generateOsquery(o)

@@ -1,0 +1,6 @@
+{"rule": "f8103686-e3e8-46f3-be72-65f7fcb4aa53", "cases": [
+  {"expect":true,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"eventName":"GetSigninToken","eventSource":"signin.amazonaws.com"}},
+  {"expect":false,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"eventName":"GetSigninToken","eventSource":"signin.amazonaws.com","userAgent":"Jersey/${project.version}"}},
+  {"expect":false,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"eventSource":"signin.amazonaws.com"}},
+  {"expect":false,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"eventName":"GetSigninToken"}}
+]}

@@ -54,6 +54,7 @@
 <symbol id="i-circle-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></symbol>
 <symbol id="i-clipboard-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/><path d="M16 4h2a2 2 0 0 1 2 2v4"/><path d="M21 14H11"/><path d="m15 10-4 4 4 4"/></symbol>
 <symbol id="i-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></symbol>
+<symbol id="i-cloud" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></symbol>
 <symbol id="i-cloud-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M12 13v8l-4-4"/><path d="m12 21 4-4"/><path d="M4.393 15.269A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.436 8.284"/></symbol>
 <symbol id="i-code" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="m16 18 6-6-6-6"/><path d="m8 6-6 6 6 6"/></symbol>
 <symbol id="i-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></symbol>
@@ -912,6 +913,11 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
           <span class="agent-os__text"><b>Network sensor</b><span>Zeek and Suricata: connections, DNS, web, TLS and IDS alerts</span></span>
           <input type="radio" name="os" value="sensor">
         </label>
+        <label class="card agent-os__card">
+          <span class="agent-os__icon"><svg class="icon" aria-hidden="true"><use href="#i-cloud"/></svg></span>
+          <span class="agent-os__text"><b>AWS CloudTrail</b><span>Sign-ins and API calls in your AWS accounts</span></span>
+          <input type="radio" name="os" value="aws">
+        </label>
       </fieldset>
 
       <div class="card agent-setup" id="agent-setup">
@@ -1001,6 +1007,19 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
                   <button type="button" data-layout="docker" aria-pressed="false">Docker</button>
                 </div>
               </div>
+            </div>
+            <div id="aws-paths" class="hidden">
+              <div class="agent-addr__row">
+                <label class="label" for="aws-bucket">CloudTrail bucket</label>
+                <input id="aws-bucket" class="input input--sm mono" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="my-cloudtrail-bucket" aria-describedby="aws-bucket-error aws-paths-help">
+              </div>
+              <p id="aws-bucket-error" class="field-error hidden" role="alert"></p>
+              <div class="agent-addr__row">
+                <label class="label" for="aws-queue">SQS queue URL</label>
+                <input id="aws-queue" class="input input--sm mono" type="text" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://sqs.us-east-1.amazonaws.com/123456789012/signalith-cloudtrail" aria-describedby="aws-queue-error aws-paths-help">
+              </div>
+              <p id="aws-queue-error" class="field-error hidden" role="alert"></p>
+              <p id="aws-paths-help" class="hint agent-token__help"><span>The S3 bucket your trail writes to, and the queue S3 tells about each new file. The steps below make the queue; the <a href="https://github.com/jrsamsanchez/Signalith/blob/main/docs/aws-cloudtrail.md" target="_blank" rel="noopener">CloudTrail guide</a> walks through it.</span></p>
             </div>
             <div class="agent-addr__row agent-token" id="agent-token-row">
               <label class="label" for="agent-token-name" id="agent-token-label">Token for these agents</label>

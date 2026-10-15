@@ -367,6 +367,10 @@ func (c *sigmaConv) anyModel() bool {
 	switch c.category {
 	case "security_4656", "security_4661", "security_4663", "security_4656_4663":
 		return true
+	case "cloudtrail":
+		// Sign-ins are Authentication events, changes Change and reads
+		// Other.
+		return true
 	}
 	return false
 }
@@ -513,6 +517,12 @@ func ConvertSigmaWith(src []byte, opt SigmaOptions) (*SigmaResult, error) {
 			category = "auditd"
 		}
 	}
+	if product, _ := r.Logsource["product"].(string); category == "" && strings.EqualFold(product, "aws") {
+		if service, _ := r.Logsource["service"].(string); strings.EqualFold(service, "cloudtrail") {
+			// AWS CloudTrail records, each field by CloudTrail's name.
+			category = "cloudtrail"
+		}
+	}
 	if category == "" {
 		// Zeek's own logs (product: zeek, service: dns, ...).
 		category = sigmaNetworkCategory(r.Logsource)
@@ -587,7 +597,7 @@ func ConvertSigmaWith(src []byte, opt SigmaOptions) (*SigmaResult, error) {
 	if r.Status != "" && r.Status != "stable" && r.Status != "test" {
 		c.warn("rule status is %q; review it before enabling", r.Status)
 	}
-	if dm == "" {
+	if dm == "" && !c.anyModel() {
 		c.warn("log source %v has no Signalith data model, so the rule searches all events", r.Logsource)
 	}
 	d.Defaults()
@@ -678,6 +688,10 @@ func productScope(ls map[string]any, category string) query.Expr {
 			return and([]query.Expr{st, &query.In{Field: "signature_id", Values: ids}})
 		}
 		return st
+	case "aws":
+		if category == "cloudtrail" {
+			return &query.Compare{Field: "sourcetype", Op: "=", Value: ingest.CloudTrailSourcetype}
+		}
 	case "linux", "macos":
 		if category == "auditd" {
 			return &query.Compare{Field: "sourcetype", Op: "=", Value: ingest.AuditdSourcetype}
@@ -741,6 +755,19 @@ func (c *sigmaConv) datamodel(ls map[string]any) string {
 func (c *sigmaConv) field(name string) string {
 	if c.category == "auditd" {
 		return c.auditdField(name)
+	}
+	if c.category == "cloudtrail" {
+		switch name {
+		case "requestParameters":
+			// The call's parameters as a whole: their JSON text.
+			return "request_parameters"
+		case "responseElements":
+			return "response_elements"
+		}
+		if !ingest.CloudTrailField(name) {
+			c.approx("field %s is not a CloudTrail field Signalith keeps", name)
+		}
+		return name
 	}
 	if c.category == "system_event" {
 		return c.systemField(name)

@@ -1,0 +1,5 @@
+{"rule": "25cb1ba1-8a19-4a23-a198-d252664c8cef", "cases": [
+  {"expect":true,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"eventName":"DeleteFileSystem","eventSource":"elasticfilesystem.amazonaws.com"}},
+  {"expect":false,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"eventSource":"elasticfilesystem.amazonaws.com"}},
+  {"expect":false,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"eventName":"DeleteFileSystem"}}
+]}

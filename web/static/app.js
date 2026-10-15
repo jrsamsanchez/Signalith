@@ -2349,7 +2349,7 @@ $('powershell').addEventListener('change', loadAgentConfig);
 ['sensor-zeek', 'sensor-suricata', 'sensor-protocols'].forEach((id) => $(id).addEventListener('change', loadAgentConfig));
 // The paths are asked for as they are typed, like the server address.
 let sensorPathTimer = 0;
-['sensor-zeek-dir', 'sensor-eve-path'].forEach((id) => $(id).addEventListener('input', () => {
+['sensor-zeek-dir', 'sensor-eve-path', 'aws-bucket', 'aws-queue'].forEach((id) => $(id).addEventListener('input', () => {
   clearTimeout(sensorPathTimer);
   sensorPathTimer = setTimeout(loadAgentConfig, 400);
 }));
@@ -2385,13 +2385,14 @@ agentServerEl.addEventListener('change', async () => {
 // in storage; changing the name or the source drops it, so the next copy
 // makes a new token. "Use a token I already have" takes a pasted token
 // instead (checked here only).
-const AGENT_TOKEN_DEFAULTS = { linux: 'Linux servers', windows: 'Windows servers', otel: 'OpenTelemetry Collector', osquery: 'osquery hosts', wazuh: 'Wazuh manager', sensor: 'Network sensor' };
+const AGENT_TOKEN_DEFAULTS = { linux: 'Linux servers', windows: 'Windows servers', otel: 'OpenTelemetry Collector', osquery: 'osquery hosts', wazuh: 'Wazuh manager', sensor: 'Network sensor', aws: 'AWS CloudTrail' };
 // AGENT_TOKEN_PURPOSES is the token purpose of a source whose agent is
-// another's: Fluent Bit on the Wazuh manager is a Linux agent.
-const AGENT_TOKEN_PURPOSES = { wazuh: 'linux' };
+// another's: Fluent Bit on the Wazuh manager is a Linux agent, and the
+// Collector that reads AWS CloudTrail an OpenTelemetry Collector.
+const AGENT_TOKEN_PURPOSES = { wazuh: 'linux', aws: 'otel' };
 const agentTokenNameKey = 'signalith.agentTokenName.';
 const agentTok = {
-  purpose: '', // linux, windows, otel, osquery, wazuh or sensor: what the setup on screen is for
+  purpose: '', // linux, windows, otel, osquery, wazuh, sensor or aws: what the setup on screen is for
   secret: '', // the token made on this page for name + purpose
   madeFor: '', // purpose + name the secret was made for
   made: null, // the token record of the secret, for the success line
@@ -2639,8 +2640,13 @@ async function agentSetupLoad() {
   // Network sensor: Fluent Bit on the Linux machine that runs Zeek or
   // Suricata.
   const sensor = os === 'sensor';
-  const host = otel ? $('otel-host').value : osq || sensor ? '' : os;
+  // AWS CloudTrail: an OpenTelemetry Collector, on Linux or Windows, that
+  // reads CloudTrail's bucket.
+  const aws = os === 'aws';
+  const collector = otel || aws;
+  const host = collector ? $('otel-host').value : osq || sensor ? '' : os;
   agentTokPurpose(otel ? 'otel' : osq ? 'osquery' : sensor ? 'sensor' : os);
+  $('aws-paths').classList.toggle('hidden', !aws);
   $('sensor-opts').classList.toggle('hidden', !sensor);
   $('sensor-paths').classList.toggle('hidden', !sensor);
   $('sensor-note').classList.toggle('hidden', !sensor);
@@ -2649,19 +2655,21 @@ async function agentSetupLoad() {
   $('sensor-protocols-opt').classList.toggle('hidden', !(zeek && suricata));
   $('sensor-zeek-row').classList.toggle('hidden', !zeek);
   $('sensor-eve-row').classList.toggle('hidden', !suricata);
-  $('otel-opts').classList.toggle('hidden', !otel);
+  $('otel-opts').classList.toggle('hidden', !collector);
   $('osquery-opts').classList.toggle('hidden', !osq);
-  $('linux-opts').classList.toggle('hidden', host !== 'linux');
+  $('linux-opts').classList.toggle('hidden', host !== 'linux' || aws);
   // The Collector reads Sysmon for Linux's events with Fluent Bit only.
   $('sysmon-linux').closest('label').classList.toggle('hidden', otel);
-  $('windows-opts').classList.toggle('hidden', host !== 'windows');
+  $('windows-opts').classList.toggle('hidden', host !== 'windows' || aws);
   $('wazuh-note').classList.toggle('hidden', !wazuh);
   const osqName = { linux: 'Linux', windows: 'Windows', darwin: 'macOS' }[$('osquery-platform').value];
   $('agent-title').textContent = osq ? 'Manage ' + osqName + ' hosts with osquery' : otel ? 'Set up the OpenTelemetry Collector on ' + (host === 'windows' ? 'Windows' : 'Linux')
+    : aws ? 'Read AWS CloudTrail with the OpenTelemetry Collector on ' + (host === 'windows' ? 'Windows' : 'Linux')
     : wazuh ? 'Set up Fluent Bit on the Wazuh manager'
     : sensor ? 'Send network sensor logs with Fluent Bit'
     : 'Set up Fluent Bit on ' + (os === 'windows' ? 'Windows' : 'Linux');
   $('agent-sub').textContent = wazuh ? 'Do this once, on the Wazuh manager. Your Wazuh agents keep reporting to it as before.'
+    : aws ? 'Do this once, on a machine that can reach AWS and this server, such as a small EC2 instance.'
     : sensor ? 'Do this on the machine that runs Zeek or Suricata.'
     : 'Do this on each host you want to collect from.';
   // Network sensor > Set up a new sensor: one line instead of a
@@ -2674,8 +2682,9 @@ async function agentSetupLoad() {
   const q = wazuh ? new URLSearchParams({ os: 'linux', source: 'wazuh' })
     : sensor ? new URLSearchParams({ os: 'linux', source: 'sensor', zeek, suricata, suricata_protocols: $('sensor-protocols').checked,
       zeek_dir: $('sensor-zeek-dir').value.trim(), eve_path: $('sensor-eve-path').value.trim() })
+    : aws ? new URLSearchParams({ os, aws_bucket: $('aws-bucket').value.trim(), aws_queue: $('aws-queue').value.trim() })
     : new URLSearchParams({ os, source: $('linux-source').value, sysmon: (host === 'linux' ? !otel && $('sysmon-linux').checked : $('sysmon').checked), powershell: $('powershell').checked });
-  if (otel) q.set('collector', host);
+  if (collector) q.set('collector', host);
   if (osq) q.set('platform', $('osquery-platform').value);
   const server = agentServerValue();
   agentServerSent = server;
@@ -2686,6 +2695,7 @@ async function agentSetupLoad() {
     if (!server && agentServerFirst(a)) return loadAgentConfig();
     agentServerError('');
     sensorFieldError('');
+    awsFieldError('');
     try {
       if (server && server !== agentServerGuess) localStorage.setItem(agentServerKey, server);
       else localStorage.removeItem(agentServerKey);
@@ -2695,6 +2705,7 @@ async function agentSetupLoad() {
     if (seq !== agentSetupSeq) return;
     if (e.field === 'server') agentServerError(e.message);
     else if (sensor && ['tools', 'zeek_dir', 'eve_path'].includes(e.field)) sensorFieldError(e.field, e.message);
+    else if (aws && ['aws_bucket', 'aws_queue'].includes(e.field)) awsFieldError(e.field, e.message);
     else agentSetupError(e);
   } finally {
     if (seq === agentSetupSeq) steps.removeAttribute('aria-busy');
@@ -2714,6 +2725,26 @@ function sensorFieldError(field, msg) {
       if (on) $(inputId).setAttribute('aria-invalid', 'true');
       else $(inputId).removeAttribute('aria-invalid');
     }
+  }
+  // nothing to show for a config that can't be made
+  if (field) {
+    agentSetupConfig = '';
+    $('agent-steps').replaceChildren();
+    agentFileEl.classList.add('hidden');
+  }
+}
+
+// awsFieldError shows a CloudTrail option's error under it (field
+// aws_bucket or aws_queue), or clears both when field is empty.
+function awsFieldError(field, msg) {
+  for (const f of ['aws_bucket', 'aws_queue']) {
+    const id = f === 'aws_bucket' ? 'aws-bucket' : 'aws-queue';
+    const on = f === field && msg;
+    const err = $(id + '-error');
+    err.replaceChildren(...(on ? [icon('circle-alert'), msg.charAt(0).toUpperCase() + msg.slice(1) + (/[.?!]$/.test(msg) ? '' : '.')] : []));
+    err.classList.toggle('hidden', !on);
+    if (on) $(id).setAttribute('aria-invalid', 'true');
+    else $(id).removeAttribute('aria-invalid');
   }
   // nothing to show for a config that can't be made
   if (field) {
@@ -3029,7 +3060,7 @@ function loadDataSource() {
 }
 
 // pickDataSource selects a source card on the Add data page: linux,
-// windows, syslog, antivirus, otel, osquery, wazuh or sensor. It is false
+// windows, syslog, antivirus, otel, osquery, wazuh, sensor or aws. It is false
 // for anything else.
 function pickDataSource(src) {
   const r = document.querySelector(`input[name=os][value="${CSS.escape(String(src))}"]`);

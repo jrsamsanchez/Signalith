@@ -332,6 +332,8 @@ Supported sources in Phase 1:
 | OpenTelemetry Collector or SDK logs over OTLP/HTTP ([docs/opentelemetry.md](docs/opentelemetry.md)) | the same models for Windows, Linux and syslog records; Other for app logs |
 | osquery ([docs/endpoints.md](docs/endpoints.md)): file changes, software, accounts, ports, services, startup items, configuration checks | Filesystem, Inventory, Configuration_Check |
 | Wazuh alerts from a Wazuh manager ([docs/wazuh.md](docs/wazuh.md)) | Authentication, Filesystem, Registry, Configuration_Check, Endpoint, Change or Alerts |
+| Apache and Nginx access logs (Linux agent; see [Detections](docs/detections.md#web-server-access-logs)) | Web |
+| AWS CloudTrail sign-ins and API calls, through the OpenTelemetry Collector ([docs/aws-cloudtrail.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/aws-cloudtrail.md)) | Authentication, Change or Other |
 | Zeek and Suricata on a network sensor, or Suricata EVE over syslog from pfSense and OPNsense ([docs/network-sensor.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/network-sensor.md)) | Network_Traffic, Network_Resolution, Web, Certificates, File_Transfers, Intrusion_Detection or Other |
 | Anything else | Other (searchable by text and fields) |
 
@@ -829,8 +831,9 @@ changes and more, plus two risk incident rules); 19 are on by default.
 - **Import Sigma rule** converts a [Sigma](https://github.com/SigmaHQ/sigma) rule to a
   Signalith query and lists anything it had to approximate. Imported rules start
   disabled so you can test them first.
-- **Content packs** add community rules, off until you turn them on: 2,292 tested
-  [SigmaHQ](https://github.com/SigmaHQ/sigma) Windows, Linux, web server and network rules and 1,028 Windows, Linux, web and network detections
+- **Content packs** add community rules, off until you turn them on: 2,330 tested
+  [SigmaHQ](https://github.com/SigmaHQ/sigma) Windows, Linux, web server, network and AWS CloudTrail rules and 1,028
+  Windows, Linux, web and network detections
   from Splunk's open source
   [security_content](https://github.com/splunk/security_content) (Apache 2.0). With
   both packs on, detections cover 160 ATT&CK techniques. Newer tested rules arrive as

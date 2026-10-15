@@ -1,0 +1,6 @@
+{"rule": "c3f265c7-ff03-4056-8ab2-d486227b4599", "cases": [
+  {"expect":true,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"eventName":"RestoreDBInstanceFromDBSnapshot","eventSource":"rds.amazonaws.com","responseElements.publiclyAccessible":"true"}},
+  {"expect":false,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"eventSource":"rds.amazonaws.com","responseElements.publiclyAccessible":"true"}},
+  {"expect":false,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"eventName":"RestoreDBInstanceFromDBSnapshot","responseElements.publiclyAccessible":"true"}},
+  {"expect":false,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"eventName":"RestoreDBInstanceFromDBSnapshot","eventSource":"rds.amazonaws.com"}}
+]}
