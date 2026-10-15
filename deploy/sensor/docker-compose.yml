@@ -7,9 +7,10 @@
 # digest in .env next to this file; Signalith does not rebuild or ship them.
 # Linux hosts only: Docker Desktop cannot listen on a physical port.
 #
-# The host prepares the capture port and runs two timers: the status line
-# every 5 minutes, and the daily Suricata rules update (it runs the
-# suricata-update service below, then has Suricata load the new rules).
+# The host prepares the capture port and runs three timers: the status
+# line every 5 minutes, the daily Suricata rules update, and the rule
+# tuning set on Signalith every 10 minutes (both run the suricata-update
+# service below, then have Suricata load the new rules).
 name: signalith-sensor
 
 x-hardened: &hardened
@@ -57,8 +58,9 @@ services:
       - suricata-logs:/var/log/suricata
       - suricata-rules:/var/lib/suricata
       - /etc/signalith-sensor/docker/suricata/signalith-sensor.yaml:/etc/suricata/signalith-sensor.yaml:ro
-      - /etc/signalith-sensor/docker/suricata/disable.conf:/etc/suricata/disable.conf:ro
-      - /etc/signalith-sensor/docker/suricata/threshold.config:/etc/suricata/threshold.config:ro
+      # Your disable.conf and threshold.config with the rule tuning set on
+      # Signalith, which the host's timers fetch and merge.
+      - /var/lib/signalith-sensor/tuning:/etc/suricata/signalith-tuning:ro
 
   # The daily rules update, not started with the others: the host's timer
   # runs it, and Suricata loads the new rules once they passed its test.
@@ -76,13 +78,14 @@ services:
       - /tmp
       - /var/log/suricata
     entrypoint: ["suricata-update"]
-    command: ["--etopen", "--suricata-conf", "/etc/suricata/signalith-sensor.yaml", "--disable-conf", "/etc/suricata/disable.conf",
-      "--local", "/etc/suricata/local.rules", "--no-reload", "--fail"]
+    # The host's rules-update.sh gives these arguments itself.
+    command: ["--etopen", "--suricata-conf", "/etc/suricata/signalith-sensor.yaml", "--disable-conf", "/etc/suricata/signalith-tuning/disable.conf",
+      "--local", "/etc/suricata/local.rules", "--local", "/etc/suricata/signalith-tuning/server.local.rules", "--no-reload", "--fail"]
     cap_drop: [ALL]
     volumes:
       - suricata-rules:/var/lib/suricata
       - /etc/signalith-sensor/docker/suricata/signalith-sensor.yaml:/etc/suricata/signalith-sensor.yaml:ro
-      - /etc/signalith-sensor/docker/suricata/disable.conf:/etc/suricata/disable.conf:ro
+      - /var/lib/signalith-sensor/tuning:/etc/suricata/signalith-tuning:ro
       - /etc/signalith-sensor/docker/suricata/local.rules:/etc/suricata/local.rules:ro
 
   fluent-bit:

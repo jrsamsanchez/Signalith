@@ -1,8 +1,9 @@
 # Written by the Signalith sensor install script (deploy/sensor/install.sh).
-# Downloads the Emerging Threats Open rules, has Suricata test them, and
-# only then loads them; a failed test keeps the rules in use. It runs as
-# root and writes only root's folders (the rules are in
-# /var/lib/signalith-sensor/suricata), never one the suricata user owns.
+# Downloads the Emerging Threats Open rules and the rule tuning set on
+# Signalith, has Suricata test them, and only then loads them; a failed
+# test keeps the rules in use. It runs as root and writes only root's
+# folders (the rules are in /var/lib/signalith-sensor/suricata), never one
+# the suricata user owns.
 [Unit]
 Description=Signalith sensor: update the Suricata rules
 Documentation=https://github.com/jrsamsanchez/Signalith/blob/main/docs/network-sensor.md
@@ -12,6 +13,8 @@ After=network-online.target
 [Service]
 Type=oneshot
 ExecStart=/usr/lib/signalith-sensor/rules-update.sh
+# The sensor's token, to fetch the tuning (only root reads the file).
+EnvironmentFile=/etc/signalith-sensor/token.env
 # With --docker, the docker command keeps its settings here.
 Environment=DOCKER_CONFIG=/var/lib/signalith-sensor/docker
 NoNewPrivileges=yes

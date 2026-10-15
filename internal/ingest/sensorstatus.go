@@ -60,8 +60,19 @@ type SensorStatus struct {
 	TimeSynced      bool    `json:"time_synced"`
 	// Warnings are the IDs of what the line found wrong (capture_ip,
 	// capture_link, no_traffic, drops, rules_old, rules_failed,
-	// zeek_stopped, suricata_stopped, disk_low, time_not_synced).
+	// zeek_stopped, suricata_stopped, disk_low, time_not_synced,
+	// tuning_failed).
 	Warnings []string `json:"warnings,omitempty"`
+	// TuningHash is the start of the hash of the rule tuning the sensor
+	// runs (sensortune.ShortHash), TuningResult how its last fetch went
+	// (ok, failed, unreachable, never), TuningApplied when the tuning in
+	// use was applied (RFC 3339) and TuningError why the last one failed.
+	// All empty for a sensor whose script fetches no tuning. They are
+	// kept for the Settings page only, never as event fields.
+	TuningHash    string `json:"tuning_hash,omitempty"`
+	TuningResult  string `json:"tuning_result,omitempty"`
+	TuningApplied string `json:"tuning_applied,omitempty"`
+	TuningError   string `json:"tuning_error,omitempty"`
 }
 
 // SensorTool is one of the sensor's programs.
@@ -84,14 +95,18 @@ func parseSensorStatus(r map[string]any) Event {
 	}
 	raw := strings.TrimSpace(line)
 	s := &SensorStatus{
-		Role:         word(rec["role"]),
-		Version:      word(rec["sensor_version"]),
-		Layout:       word(rec["layout"]),
-		FluentBit:    word(wget(rec, "fluentbit", "version")),
-		RulesUpdated: word(wget(rec, "rules", "updated")),
-		RulesUpdate:  word(wget(rec, "rules", "update")),
-		Interface:    word(wget(rec, "interface", "name")),
-		Link:         word(wget(rec, "interface", "link")),
+		Role:          word(rec["role"]),
+		Version:       word(rec["sensor_version"]),
+		Layout:        word(rec["layout"]),
+		FluentBit:     word(wget(rec, "fluentbit", "version")),
+		RulesUpdated:  word(wget(rec, "rules", "updated")),
+		RulesUpdate:   word(wget(rec, "rules", "update")),
+		Interface:     word(wget(rec, "interface", "name")),
+		Link:          word(wget(rec, "interface", "link")),
+		TuningHash:    hexWord(wget(rec, "tuning", "hash")),
+		TuningResult:  word(wget(rec, "tuning", "result")),
+		TuningApplied: word(wget(rec, "tuning", "applied")),
+		TuningError:   sentence(wget(rec, "tuning", "error")),
 	}
 	if t, err := time.Parse(time.RFC3339, wstr(rec["time"])); err == nil {
 		s.At = t.UTC()
@@ -238,6 +253,32 @@ func plural(n int, unit string) string {
 func word(v any) string {
 	s := strings.TrimSpace(wstr(v))
 	if len(s) > maxSensorWord || strings.ContainsFunc(s, func(c rune) bool { return c < ' ' || c == 0x7f }) {
+		return ""
+	}
+	return s
+}
+
+// maxSensorSentence is the length of an error the status line reports.
+const maxSensorSentence = 200
+
+// sentence returns a short text the status line reports, such as an
+// error: no control characters, cut at maxSensorSentence bytes.
+func sentence(v any) string {
+	s := strings.TrimSpace(wstr(v))
+	if strings.ContainsFunc(s, func(c rune) bool { return c < ' ' || c == 0x7f }) {
+		return ""
+	}
+	if len(s) > maxSensorSentence {
+		s = strings.ToValidUTF8(s[:maxSensorSentence], "")
+	}
+	return s
+}
+
+// hexWord returns a hash of at most 64 lower-case hex digits, "" for
+// anything else.
+func hexWord(v any) string {
+	s := word(v)
+	if strings.ContainsFunc(s, func(c rune) bool { return !('0' <= c && c <= '9' || 'a' <= c && c <= 'f') }) {
 		return ""
 	}
 	return s
