@@ -1,0 +1,39 @@
+# S9, CI size: one of three OpenSearch nodes stops for a minute and a
+# half under light load. Run it against the Docker quick start with
+# deploy/docker/docker-compose.opensearch3.yml added, with each node's
+# port published (9200, 9201, 9202 here). The servers list every node in
+# opensearch.urls and carry on through the others; Signalith's own
+# indices ({prefix}_*) lose a copy (yellow) but never their last one
+# (red). Skipped on servers without opensearch.urls.
+name: s9-small
+description: Stop one of three OpenSearch nodes under light load; ingest carries on.
+needs: [opensearch_urls]
+targets: [https://localhost:8441, https://localhost:8442]
+ca_files: [loadtest/compose/out/siem-a-ca.pem, loadtest/compose/out/siem-b-ca.pem]
+credentials:
+  admin_file: loadtest/compose/out/admin.txt
+  token_file: loadtest/compose/out/token.txt
+opensearch:
+  url: https://localhost:9200
+  urls: [https://localhost:9201, https://localhost:9202]
+  ca: loadtest/compose/out/opensearch-ca.pem
+  cert: loadtest/compose/out/opensearch-client.pem
+  key: loadtest/compose/out/opensearch-client-key.pem
+phases:
+  - {name: warm, for: 30s, agents: {n: 10, rate: 200, switch_on_error: true}, users: {n: 4, create: true, think: 3s}}
+  - {name: one_node_down, for: 90s, agents: {n: 10, rate: 200, switch_on_error: true}, users: {n: 4, create: true, think: 3s}}
+  - {name: back, for: 60s, agents: {n: 10, rate: 200, switch_on_error: true}, users: {n: 4, create: true, think: 3s}}
+faults:
+  # The second node's container, whatever Compose named it.
+  - {at: 30s, kind: cmd, for: 90s, cmd: "docker stop $(docker ps -qf name=opensearch-2)", undo: "docker start $(docker ps -aqf name=opensearch-2)"}
+criteria:
+  - {name: opensearch_red_samples, max: 0}
+  # If the stopped node was the cluster manager, the other two take a few
+  # seconds to choose a new one, and health samples (every 2s) can miss.
+  - {name: opensearch_unreachable_samples, max: 5}
+  - {name: ingest_error_rate, phase: one_node_down, max: 0.01}
+  - {name: unexpected_signouts, max: 0}
+  - {name: events_lost, max: 0}
+  - {name: events_duplicated, max: 0}
+  - {name: events_undelivered, max: 0}
+  - {name: servers_ready, min: 2}
