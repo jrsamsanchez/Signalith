@@ -427,6 +427,26 @@ func (s *Scanner) finish(ctx context.Context, sc *Scan, state, msg string) {
 	}
 }
 
+// requeue gives back a scan cut short because this server is stopping or
+// restarting in place: it goes back in the queue and runs again from the
+// start, here once the server is back or on whichever server takes the
+// network. A scan someone stopped is recorded as stopped.
+func (s *Scanner) requeue(parent context.Context, sc *Scan, t Target, stopped bool) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(parent), 10*time.Second)
+	defer cancel()
+	if stopped {
+		s.finish(ctx, sc, StateStopped, "")
+		return
+	}
+	ok, err := s.Store.RequeueScan(ctx, sc.ID, s.NodeID)
+	switch {
+	case err != nil:
+		s.log().Warn("vulnerability scans: could not put back a scan cut short by a restart; it is marked interrupted shortly", "scan", sc.ID, "err", err)
+	case ok:
+		s.log().Info("vulnerability scan put back in the queue: this server is stopping or restarting", "network", t.Name, "scan", sc.ID)
+	}
+}
+
 // runScan runs one scan, already claimed, to its end.
 func (s *Scanner) runScan(parent context.Context, sc *Scan, t Target, set Settings) {
 	s.mu.Lock()
@@ -524,6 +544,11 @@ func (s *Scanner) runScan(parent context.Context, sc *Scan, t Target, set Settin
 	wasStopped := stopped
 	pmu.Unlock()
 	switch {
+	case parent.Err() != nil:
+		// This server is stopping, or restarting in place to take new
+		// settings: give the scan back so it is not lost.
+		s.requeue(parent, sc, t, wasStopped)
+		return
 	case wasStopped:
 		s.finish(parent, sc, StateStopped, "")
 		s.log().Info("vulnerability scan stopped", "network", t.Name, "scan", sc.ID)
@@ -532,10 +557,6 @@ func (s *Scanner) runScan(parent context.Context, sc *Scan, t Target, set Settin
 		s.finish(parent, sc, StateFailed, fmt.Sprintf("The scan ran longer than %s and was stopped. Split the network into smaller ones, or scan fewer ports.", maxScanTime))
 		return
 	case err != nil:
-		if parent.Err() != nil {
-			// This server is stopping; the next one to run scans marks it.
-			return
-		}
 		s.finish(parent, sc, StateFailed, err.Error())
 		s.log().Warn("vulnerability scan failed", "network", t.Name, "scan", sc.ID, "err", err)
 		return
