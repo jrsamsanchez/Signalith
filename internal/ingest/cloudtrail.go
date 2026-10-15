@@ -168,6 +168,7 @@ func ParseCloudTrail(r map[string]any) Event {
 			set("reason", cmp.Or(wstr(f["errorMessage"]), v))
 		}
 		f["action"] = status
+		f["status"] = status
 		f["app"] = "aws:console"
 		f["dest"] = "aws:" + wstr(f["vendor_account"])
 		if f["dest"] == "aws:" {
