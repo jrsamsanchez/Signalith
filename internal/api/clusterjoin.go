@@ -382,7 +382,8 @@ func (s *Server) handleJoinApprove(w http.ResponseWriter, r *http.Request) {
 		case sharedError(w, err):
 		case errors.Is(err, clusterjoin.ErrNoPending):
 			writeError(w, http.StatusNotFound, err)
-		case errors.Is(err, clusterjoin.ErrFingerprint), errors.Is(err, clusterjoin.ErrNotSecured), errors.As(err, new(*clusterjoin.ClashError)):
+		case errors.Is(err, clusterjoin.ErrFingerprint), errors.Is(err, clusterjoin.ErrNotSecured), errors.Is(err, clusterjoin.ErrRotating),
+			errors.As(err, new(*clusterjoin.ClashError)):
 			writeError(w, http.StatusConflict, err)
 		default:
 			writeError(w, http.StatusServiceUnavailable, err)

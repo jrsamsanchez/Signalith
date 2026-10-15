@@ -1,0 +1,4 @@
+{"rule": "d29a20b2-be4b-4827-81f2-3d8a59eab5fc", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-AppModel-Runtime/Admin","event_id":"201","data":{"ImageName":"livekd.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-AppModel-Runtime/Admin","event_id":"201","data":{}}
+]}

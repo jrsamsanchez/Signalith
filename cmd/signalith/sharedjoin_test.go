@@ -15,6 +15,7 @@ import (
 
 	"github.com/jrsamsanchez/signalith/internal/api"
 	"github.com/jrsamsanchez/signalith/internal/clusterjoin"
+	"github.com/jrsamsanchez/signalith/internal/clusterpki"
 	"github.com/jrsamsanchez/signalith/internal/config"
 	"github.com/jrsamsanchez/signalith/internal/shared"
 )
@@ -139,4 +140,21 @@ func TestJoinThroughTheServer(t *testing.T) {
 	}
 	joinHousekeep(ctx, a.r.shared, j.tokens, is.ExpiresAt.Add(time.Second), log)
 	eventually(t, "the expired token is gone", func() bool { return len(j.Tokens()) == 0 })
+}
+
+// Without OpenSearch's certificate authority in the cluster (no osca, or
+// one without its document), a joining server gets the answering
+// server's credential, which the servers then share.
+func TestJoinCredentialWithoutOSCAIsShared(t *testing.T) {
+	view := func() clusterjoin.View {
+		return clusterjoin.View{OpenSearch: config.OpenSearch{Username: "signalith", Password: "pw"}}
+	}
+	for name, o := range map[string]*clusterpki.OSCA{"no osca": nil, "no osca document": clusterpki.New()} {
+		for _, csr := range [][]byte{nil, []byte("-----BEGIN CERTIFICATE REQUEST-----")} {
+			cr, err := joinCredential(view, o)(context.Background(), "siem-b", "n2", csr)
+			if err != nil || !cr.Shared || cr.Managed || cr.Password != "pw" {
+				t.Errorf("%s, csr %t: %+v %v", name, csr != nil, cr, err)
+			}
+		}
+	}
 }

@@ -712,3 +712,39 @@ func TestFrozenLeaseDoesNotMoveWhenWritesReturn(t *testing.T) {
 		}
 	}
 }
+
+// Moving the jobs to a named server: the lease is released naming it, and
+// it takes the lease while the others wait PreferWait for it.
+func TestReleaseToHandsTheLeaseToTheNamedServer(t *testing.T) {
+	s := newSim(t)
+	a, b, c := s.add("n_a", nil), s.add("n_b", nil), s.add("n_c", nil)
+	s.run(time.Second)
+	if !a.l.Holding() {
+		t.Fatalf("a does not hold the lease: %+v", s.lease())
+	}
+	a.l.ReleaseTo("an admin moved the background jobs", "n_c")
+	if d := s.lease(); d.Holder != "" || d.Prefer != "n_c" || d.ReleasedBy != "n_a" {
+		t.Fatalf("released lease = %+v", d)
+	}
+	s.run(3 * time.Second)
+	if !c.l.Holding() || b.l.Holding() || a.l.Holding() {
+		t.Fatalf("lease %+v: the named server did not take it", s.lease())
+	}
+}
+
+// The named server never takes it: the others do once PreferWait passed.
+func TestReleaseToAnAbsentServerFallsBack(t *testing.T) {
+	s := newSim(t)
+	a, b := s.add("n_a", nil), s.add("n_b", nil)
+	s.run(time.Second)
+	a.l.ReleaseTo("an admin moved the background jobs", "n_gone")
+	a.paused = true
+	s.run(DefaultTiming.PreferWait / 2)
+	if b.l.Holding() {
+		t.Fatal("b took the lease before the named server had its turn")
+	}
+	s.run(DefaultTiming.PreferWait + 3*time.Second)
+	if !b.l.Holding() {
+		t.Fatalf("nobody took the lease: %+v", s.lease())
+	}
+}

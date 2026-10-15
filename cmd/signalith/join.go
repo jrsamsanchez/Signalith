@@ -430,7 +430,7 @@ func (j *joiner) pin(ctx context.Context) error {
 // already.
 func alreadyMember(what, state string) error {
 	return failf(joinExitFailed, "This computer belongs to a cluster already: it has %s. If it should join this cluster instead, stop Signalith, "+
-		"move the keys folder and cache.enc out of %s, then run signalith join again.", what, state)
+		"run signalith cluster leave (or move the keys folder and cache.enc out of %s), then run signalith join again.", what, state)
 }
 
 // readLocal reads this machine's config, refuses one that is in a

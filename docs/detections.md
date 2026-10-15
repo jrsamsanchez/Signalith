@@ -23,6 +23,19 @@ You can edit detections in the UI or drop YAML files into the folder and restart
 `signalith validate` checks every file and reports problems with the field to fix;
 a broken file is skipped at startup and logged, so it never stops the server.
 
+### On several servers
+
+The servers of a cluster share their detections: custom ones, overrides, and the choices
+made for built-in and pack ones. Each server's detections folder is then an inbox: a
+file added or changed there is shared, and a change made on any server is written back
+into every server's folder. Removing a file changes nothing unless
+`detections.sync` is `mirror`. See
+[Shared detections, dashboards and asset lists](servers.md#shared-detections-dashboards-and-asset-lists).
+
+Saving a detection sends the version the page read (`If-Match` with the `etag` from
+`GET /api/detections/{id}`); if someone else saved it meanwhile, the save is refused
+with `412`, naming who changed it, on which server and when.
+
 ## Format
 
 ```yaml
@@ -242,9 +255,9 @@ Content packs are rule sets from other open source projects, shipped unchanged
 inside Signalith and converted when it starts. Every pack detection is **off** until
 an admin turns it on.
 
-**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,185 rules from
-[SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 2,031 Windows rules
-for these Sysmon, Security, PowerShell, System, Application, Code Integrity, Windows Firewall, BITS, AppX deployment, WMI activity and Defender log sources, and 154 Linux rules (see
+**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,234 rules from
+[SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 2,080 Windows rules
+for these Sysmon, Security, PowerShell, System, Application, Code Integrity, Windows Firewall, BITS, AppX deployment, WMI activity, Remote Desktop session, shell, SMB client, exploit protection, DNS client, Task Scheduler, NTLM, LSA, CryptoAPI, device driver, packaged app, certificate, OpenSSH, DNS Server, IIS configuration and Defender log sources, and 154 Linux rules (see
 [Linux endpoints](#linux-endpoints-sysmon-for-linux) and
 [the Linux audit log](#linux-audit-log-auditd)):
 
@@ -269,6 +282,23 @@ for these Sysmon, Security, PowerShell, System, Application, Code Integrity, Win
 | `service: bits-client` | BITS events (jobs created, transfers started), by event ID and data (see below) | Other |
 | `service: appxdeployment-server` | App package (MSIX, AppX) events (deployed, downloaded, blocked), by event ID and data (see below) | Other |
 | `service: wmi` | WMI activity events (operations failed, event subscriptions registered), by event ID and data (see below) | Other |
+| `service: sysmon` | Sysmon's own events: files blocked (27, 28) and executables detected (29) in Filesystem with `action` blocked or created, a configuration change (16) in Other | Filesystem, Other |
+| `service: terminalservices-localsessionmanager` | Remote Desktop session events (logon, logoff, disconnect, reconnect), by event ID and data (see below) | Other |
+| `service: shell-core` | Shell events (app shortcuts added to the app resolver cache), by event ID and data (see below) | Other |
+| `service: smbclient-security` | SMB client security events (insecure guest logons refused), by event ID and data (see below) | Other |
+| `service: security-mitigations` | Exploit protection blocks in kernel mode (images not signed by Microsoft), by event ID and data (see below) | Other |
+| `service: dns-client` | DNS client queries (3008), by event ID and data (see below) | Other |
+| `service: taskscheduler` | Task Scheduler events (a task started a process, a task deleted or disabled), by event ID and data (see below) | Other |
+| `service: ntlm` | NTLM authentications audited (outgoing, incoming, to a domain controller), by event ID and data (see below) | Other |
+| `service: lsa-server` | The groups of a user logging on (LSA 300), by event ID and data (see below) | Other |
+| `service: capi2` | CryptoAPI events (a certificate's private key acquired), by event ID | Other |
+| `service: driver-framework` | Devices plugged in (user-mode drivers loaded, Plug and Play operations), by event ID | Other |
+| `service: appmodel-runtime` | Packaged app processes created, by event ID and data (see below) | Other |
+| `service: appxpackaging-om` | App package signing certificates read, by event ID and data (see below) | Other |
+| `service: certificateservicesclient-lifecycle-system` | Computer certificates exported, by event ID | Other |
+| `service: openssh` | OpenSSH server messages, by event ID and data (see below) | Other |
+| `service: dns-server` | DNS Server plug-in DLLs loaded and zone transfers refused, by event ID | Other |
+| `service: iis-configuration` | IIS configuration changes, by event ID and data (see below) | Other |
 | `service: windefend` | Microsoft Defender Antivirus events (threats, attack surface reduction blocks, protection turned off, settings changed; `Path` is `file_path`, `ProcessName` `process_path`, `NewValue` `new_value`, `SourceName` `detection_source`, a 5013's `Value` `setting`) | Malware |
 | `service: security` | The Security log events in the next table | See the next table |
 
@@ -298,6 +328,7 @@ logs each event only with its audit policy setting on:
 | 5140 (network share accessed, once per session) | Filesystem | Audit File Share |
 | 5136 (directory object changed), 4662 (operation on a directory object) | Change | Audit Directory Service Changes, Audit Directory Service Access (domain controllers) |
 | 5156, 5157 (connection allowed or blocked) | Network_Traffic | Audit Filtering Platform Connection |
+| 4611 (logon process registered), 4616 (time changed), 4649 (Kerberos replay), 4673, 4674 (privileged service called, privileged object operation), 4692 (DPAPI master key backup), 4704 (user right assigned), 4765, 4766 (SID History added or refused), 4825 (Remote Desktop denied), 4898, 4899 (certificate template loaded or changed), 5379 (Credential Manager credentials read), 5441, 5447, 5449 (filtering platform filters and provider contexts), 6416, 6423 (device recognized or blocked) | Other, by name: each value is `security_` and its name in snake case (`FilterName` is `security_filter_name`), and the account that acted is `user` | Audit Security System Extension, Audit System Integrity, Audit Sensitive Privilege Use, Audit Other Policy Change Events, Audit Authorization Policy Change, Audit User Account Management, Audit Other Logon/Logoff Events, Audit Certification Services, Audit Filtering Platform Policy Change, Audit PNP Activity |
 
 Handle requests, object accesses and registry value changes are logged only for
 objects whose auditing (SACL) asks for them. Directory object
@@ -594,11 +625,37 @@ agent collects) find their events the same way, with the event's data values as
 Windows Firewall rules (`Microsoft-Windows-Windows Firewall With Advanced Security/Firewall`),
 BITS rules (`Microsoft-Windows-Bits-Client/Operational`), app package rules
 (`Microsoft-Windows-AppXDeploymentServer/Operational`) and WMI activity rules
-(`Microsoft-Windows-WMI-Activity/Operational`) find their events in Other by event ID,
-and name their data the way Windows does: each value is `firewall_`, `bits_`, `appx_` or
-`wmi_` and its name in snake case (`ApplicationPath` is `firewall_application_path`,
+(`Microsoft-Windows-WMI-Activity/Operational`), and Remote Desktop session
+(`Microsoft-Windows-TerminalServices-LocalSessionManager/Operational`), shell
+(`Microsoft-Windows-Shell-Core/Operational`), SMB client security
+(`Microsoft-Windows-SmbClient/Security`) and exploit protection
+(`Microsoft-Windows-Security-Mitigations/KernelMode`) rules, and the rules for the logs in the
+table below, find their events in Other by
+event ID, and name their data the way Windows does: each value is the log's prefix
+(`firewall_`, `bits_`, `appx_`, `wmi_`, `rdp_`, `shell_`, `smbclient_`, `mitigation_`, or the one
+in the table) and
+its name in snake case (`ApplicationPath` is `firewall_application_path`,
 `RemoteName` `bits_remote_name`, `PackageFullName` `appx_package_full_name`, `Operation`
 `wmi_operation`). The Windows agent collects these logs, which Windows keeps by default.
+
+| Log (channel) | Prefix | Kept by default |
+|---|---|---|
+| DNS client (`Microsoft-Windows-DNS-Client/Operational`) | `dnsclient_` | No: `wevtutil sl Microsoft-Windows-DNS-Client/Operational /e:true` |
+| Task Scheduler (`Microsoft-Windows-TaskScheduler/Operational`) | `taskscheduler_` | Servers yes; on clients turn on the task history (`wevtutil sl Microsoft-Windows-TaskScheduler/Operational /e:true`) |
+| NTLM (`Microsoft-Windows-NTLM/Operational`) | `ntlm_` | Only with the "Network security: Restrict NTLM" audit policies set |
+| LSA (`Microsoft-Windows-LSA/Operational`) | `lsa_` | Yes |
+| CryptoAPI (`Microsoft-Windows-CAPI2/Operational`) | `capi2_` | No: `wevtutil sl Microsoft-Windows-CAPI2/Operational /e:true` |
+| Device drivers (`Microsoft-Windows-DriverFrameworks-UserMode/Operational`) | `driver_` | No: `wevtutil sl Microsoft-Windows-DriverFrameworks-UserMode/Operational /e:true` |
+| Packaged apps (`Microsoft-Windows-AppModel-Runtime/Admin`) | `appmodel_` | Yes |
+| App packages (`Microsoft-Windows-AppxPackaging/Operational`) | `appxpackaging_` | Yes |
+| Certificates (`Microsoft-Windows-CertificateServicesClient-Lifecycle-System/Operational`) | `certlifecycle_` | Yes |
+| OpenSSH server (`OpenSSH/Operational`) | `openssh_` | When OpenSSH Server is installed |
+| DNS Server (`DNS Server`) | `dnsserver_` | On DNS servers |
+| IIS configuration (`Microsoft-IIS-Configuration/Operational`) | `iisconfig_` | On web servers, after `wevtutil sl Microsoft-IIS-Configuration/Operational /e:true` |
+
+Fluent Bit skips the logs a computer doesn't have. The OpenTelemetry Collector stops on a log
+it can't open, so its configuration leaves out the OpenSSH, DNS Server and IIS logs; add a
+`windowseventlog` receiver for each one a server has.
 A rule that searches an event's free text (the WMI persistence rule) is left out of the
 pack.
 
@@ -807,7 +864,7 @@ Imported rules start disabled with a 5 minute schedule and 10 minute lookback.
 | `GET /api/cases/summary` | Open cases, and open cases you own |
 | `GET /api/risk?since=24h&type=` | Risk objects by total score, with context |
 | `GET /api/risk/object?object=&type=&since=7d` | Risk events for one object |
-| `GET`, `PUT /api/lookups/assets`, `/api/lookups/identities` | List or replace a list (CSV body of up to 16 MB and 1,000,000 rows; 400 lists every bad line) |
+| `GET`, `PUT /api/lookups/assets`, `/api/lookups/identities` | List or replace a list (CSV body of up to 16 MB and 1,000,000 rows; 400 lists every bad line). On several servers the list is shared, and `PUT` honours `If-Match` (see [Servers](servers.md#shared-detections-dashboards-and-asset-lists)) |
 | `GET /api/lookups/assets.csv`, `/api/lookups/identities.csv` | Download the current CSV |
 | `GET /api/lookups/context?field=&value=` | Context for one value |
 

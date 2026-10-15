@@ -41,7 +41,7 @@ const (
 // these servers, one at a time), so it is raised the same way.
 const (
 	LevelMin = 1
-	LevelMax = 5
+	LevelMax = LevelKeyRotation
 )
 
 // LevelSharedUsers is the level from which users are kept in the shared
@@ -141,7 +141,11 @@ type ClusterBody struct {
 	// Migrations holds, per migration run once for the cluster, when it
 	// ran.
 	Migrations map[string]string `json:"migrations,omitempty"`
-	Extra      `json:"-"`
+	// Removed lists the servers removed from the cluster, newest last:
+	// such a server is never given the cluster key again, and does not add
+	// itself back to the keyring.
+	Removed []RemovedServer `json:"removed,omitempty"`
+	Extra   `json:"-"`
 }
 
 // ErrClusterExists is a founding that found a cluster already there.

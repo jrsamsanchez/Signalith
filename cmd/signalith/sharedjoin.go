@@ -14,6 +14,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/api"
 	"github.com/jrsamsanchez/signalith/internal/cluster"
 	"github.com/jrsamsanchez/signalith/internal/clusterjoin"
+	"github.com/jrsamsanchez/signalith/internal/clusterpki"
 	"github.com/jrsamsanchez/signalith/internal/config"
 	"github.com/jrsamsanchez/signalith/internal/shared"
 	"github.com/jrsamsanchez/signalith/internal/tlsauto"
@@ -66,6 +67,9 @@ type joinAPI struct {
 	// leaf signs a joining server's HTTPS certificate from the cluster's
 	// certificate authority; nil gives none.
 	leaf clusterjoin.LeafFunc
+	// osca issues a joining server its own OpenSearch certificate when
+	// the cluster keeps OpenSearch's certificate authority; nil shares.
+	osca *clusterpki.OSCA
 }
 
 // sharedJoin returns the API's view of the cluster's joins for the start
@@ -75,7 +79,7 @@ func (r *runner) sharedJoin(c *config.Config, certs *tlsauto.Manager) api.Cluste
 	if r.shared == nil || r.sharedContent == nil {
 		return nil
 	}
-	j := &joinAPI{rt: r.shared, tokens: r.sharedContent.join, c: c, log: r.log}
+	j := &joinAPI{rt: r.shared, tokens: r.sharedContent.join, c: c, log: r.log, osca: r.sharedContent.osca}
 	if r.node != nil {
 		j.node = r.node.Name()
 	}
@@ -171,14 +175,28 @@ func (j *joinAPI) Approve(ctx context.Context, nodeID, fingerprint, by string) (
 
 func (j *joinAPI) Answer(ctx context.Context, req *clusterjoin.Request) (string, error) {
 	return clusterjoin.Answer(ctx, clusterjoin.Deps{RT: j.rt, Tokens: j.tokens, Version: version, View: j.view,
-		IssueLeaf: j.leaf, Credential: joinCredential(j.view), Log: j.log}, req)
+		IssueLeaf: j.leaf, Credential: joinCredential(j.view, j.osca), Log: j.log}, req)
 }
 
 // joinCredential is the OpenSearch credential a joining server gets:
-// the answering server's own, until Signalith keeps OpenSearch's
-// certificate authority and issues each server its own (the osca hook).
-var joinCredential = func(view func() clusterjoin.View) clusterjoin.CredentialFunc {
-	return clusterjoin.DefaultCredential(view)
+// its own certificate, issued for the key of its CSR, when the cluster
+// keeps OpenSearch's certificate authority (osca); otherwise the
+// answering server's own, which the servers then share.
+func joinCredential(view func() clusterjoin.View, osca *clusterpki.OSCA) clusterjoin.CredentialFunc {
+	shared := clusterjoin.DefaultCredential(view)
+	return func(ctx context.Context, name, nodeID string, csrPEM []byte) (clusterjoin.OSCredential, error) {
+		if osca == nil || len(csrPEM) == 0 {
+			return shared(ctx, name, nodeID, csrPEM)
+		}
+		cr, err := osca.JoinCredential(ctx, name, nodeID, csrPEM)
+		if errors.Is(err, clusterpki.ErrShared) {
+			return shared(ctx, name, nodeID, csrPEM)
+		}
+		if err != nil {
+			return clusterjoin.OSCredential{}, fmt.Errorf("could not issue %s its OpenSearch certificate: %w", name, err)
+		}
+		return clusterjoin.OSCredential{ClientCertPEM: string(cr.ClientCertPEM), CAPEM: string(cr.CAPEM), Managed: true}, nil
+	}
 }
 
 // Install and Binary hand out nothing yet: a new server installs

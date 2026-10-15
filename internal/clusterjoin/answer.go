@@ -67,18 +67,18 @@ type OSCredential struct {
 	Shared  bool
 }
 
-// CredentialFunc gives the new server name its OpenSearch credential;
-// csrPEM is its own OpenSearch client CSR, or nil. The OpenSearch
+// CredentialFunc gives the new server name, with node id nodeID, its
+// OpenSearch credential; csrPEM is its own OpenSearch client CSR, or nil. The OpenSearch
 // identity per server (the cluster's osca) replaces DefaultCredential
 // through Deps.Credential.
-type CredentialFunc func(ctx context.Context, name string, csrPEM []byte) (OSCredential, error)
+type CredentialFunc func(ctx context.Context, name, nodeID string, csrPEM []byte) (OSCredential, error)
 
 // DefaultCredential gives every new server the answering server's own
 // credential: its password, or its client certificate and key, with the
 // certificate authority of OpenSearch's certificate. The bundle then says
 // the credential is shared.
 func DefaultCredential(view func() View) CredentialFunc {
-	return func(context.Context, string, []byte) (OSCredential, error) {
+	return func(context.Context, string, string, []byte) (OSCredential, error) {
 		o := view().OpenSearch
 		cr := OSCredential{Username: o.Username, Password: o.Password, Shared: true}
 		read := func(what, path string) (string, error) {
@@ -224,8 +224,8 @@ func (e *ClashError) Joiner() string {
 		return fmt.Sprintf("Another server in the cluster is named %s already: give this one another name (signalith join --name), then run signalith join again.", e.Name)
 	}
 	return fmt.Sprintf("The cluster lists a server with this server's identity (node id %s, %s) and another node key. "+
-		"Its state folder may have been copied from that server: delete node.id in the cluster folder of this server's state folder, then run signalith join again. "+
-		"If that server was rebuilt, remove it from the cluster first.", e.NodeID, cmp.Or(e.Name, "no name"))
+		"Its state folder may have been copied from that server: run signalith cluster new-identity on this server, then run signalith join again. "+
+		"If that server was rebuilt, remove it from the cluster first (signalith cluster remove).", e.NodeID, cmp.Or(e.Name, "no name"))
 }
 
 // memberClash refuses the server nodeID, named name, with the node key
@@ -382,7 +382,7 @@ func Answer(ctx context.Context, d Deps, req *Request) (string, error) {
 		if !CheckProof(secret, req.TokenID, p.Nonce, p.NodePub, p.Proof) {
 			return false
 		}
-		if after = cmp.Or(checkJoiner(req, d.Version, cb.Level), secured(view), d.checkIssuer(req, view), d.clash(req, p)); after != nil {
+		if after = cmp.Or(checkJoiner(req, d.Version, cb.Level), secured(view), d.checkIssuer(req, view), d.clash(req, p), d.rotating()); after != nil {
 			return false
 		}
 		return true
@@ -423,6 +423,30 @@ func (d *Deps) clash(req *Request, p Parsed) error {
 	return nil
 }
 
+// ErrRotating: a key rotation is in progress. A server that joined now
+// would get the key being replaced and no copy of the new one.
+var ErrRotating = errors.New("the cluster key is being rotated: add the server once the rotation ends (signalith cluster rotate-key shows it)")
+
+// rotating refuses a join while the cluster key is being rotated.
+func rotating(kb *shared.KeyringBody) error {
+	if kb == nil {
+		return nil
+	}
+	if n, err := kb.Rotation(); err != nil || n != nil {
+		return ErrRotating
+	}
+	return nil
+}
+
+// rotating is rotating as a JoinError: the token stays unused.
+func (d *Deps) rotating() error {
+	kb, _ := d.RT.Keyring().Get()
+	if err := rotating(kb); err != nil {
+		return &JoinError{Msg: err.Error()}
+	}
+	return nil
+}
+
 // secured is the view's secured-OpenSearch check as a JoinError.
 func secured(v View) error {
 	if err := v.Secured(); err != nil {
@@ -450,7 +474,7 @@ func (d *Deps) bundle(ctx context.Context, req *Request, p Parsed, cb *shared.Cl
 	if req.OSCSRPEM != "" {
 		osCSR = []byte(req.OSCSRPEM)
 	}
-	cr, err := credential(ctx, req.Name, osCSR)
+	cr, err := credential(ctx, req.Name, req.NodeID, osCSR)
 	if err != nil {
 		return "", fmt.Errorf("the new server's OpenSearch credential: %w", err)
 	}
@@ -489,7 +513,7 @@ func (d *Deps) bundle(ctx context.Context, req *Request, p Parsed, cb *shared.Cl
 			}
 		}
 		_, err2 = d.RT.Keyring().Mutate(ctx, systemUser, func(kb *shared.KeyringBody) error {
-			if err := memberClash(kb, req.NodeID, req.Name, nodePub); err != nil {
+			if err := cmp.Or(memberClash(kb, req.NodeID, req.Name, nodePub), rotating(kb)); err != nil {
 				return err
 			}
 			if kb.Members == nil {
@@ -502,7 +526,7 @@ func (d *Deps) bundle(ctx context.Context, req *Request, p Parsed, cb *shared.Cl
 			return nil
 		})
 		var ce *ClashError
-		if err2 == nil || errors.As(err2, &ce) {
+		if err2 == nil || errors.As(err2, &ce) || errors.Is(err2, ErrRotating) {
 			break
 		}
 	}

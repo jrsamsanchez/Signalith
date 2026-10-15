@@ -474,6 +474,16 @@ func ConvertSigmaWith(src []byte, opt SigmaOptions) (*SigmaResult, error) {
 		case "codeintegrity-operational":
 			// Code Integrity's log, each rule naming its events.
 			category = "code_integrity"
+		case "sysmon":
+			// Sysmon's own events, by event ID: its file blocks (27, 28,
+			// 29) are file events, the rest (a configuration change)
+			// Other.
+			category = "sysmon_event"
+			if ids := sigmaEventIDs(r.Detection); len(ids) > 0 && !slices.ContainsFunc(ids, func(id string) bool {
+				return id != "27" && id != "28" && id != "29"
+			}) {
+				category = "sysmon_file_block"
+			}
 		default:
 			// A log the parser reads by name (Windows Firewall, BITS, AppX
 			// deployment, WMI), each rule naming its events and their
@@ -485,7 +495,10 @@ func ConvertSigmaWith(src []byte, opt SigmaOptions) (*SigmaResult, error) {
 			// A Security log rule's fields are its event's own, so it
 			// converts for one event, or events with the same data.
 			category = "security"
-			if ids := modernEventIDs(sigmaEventIDs(r.Detection)); len(ids) > 0 {
+			if ids := modernEventIDs(sigmaEventIDs(r.Detection)); ingest.IsNamedSecurityEvents(ids...) {
+				// Events no data model holds, read by name.
+				category = "security_named"
+			} else if len(ids) > 0 {
 				if _, ok := sigmaWindowsEvents["security_"+strings.Join(ids, "_")]; ok {
 					category = "security_" + strings.Join(ids, "_")
 				}
@@ -646,6 +659,12 @@ func productScope(ls map[string]any, category string) query.Expr {
 		if ch, ok := sigmaNamedChannels[category]; ok {
 			return &query.Compare{Field: "sourcetype", Op: "=", Value: "WinEventLog:" + ch}
 		}
+		if category == "security_named" {
+			return &query.Compare{Field: "sourcetype", Op: "=", Value: "WinEventLog:" + ingest.SecurityChannel}
+		}
+		if category == "sysmon_event" || category == "sysmon_file_block" {
+			return &query.Compare{Field: "sourcetype", Op: "=", Value: "WinEventLog:Microsoft-Windows-Sysmon/Operational"}
+		}
 		st := &query.Compare{Field: "sourcetype", Op: "=", Value: windowsSourcetypes}
 		if ids := sigmaWindowsEvents[category]; len(ids) > 0 {
 			return and([]query.Expr{st, &query.In{Field: "signature_id", Values: ids}})
@@ -685,8 +704,10 @@ func (c *sigmaConv) datamodel(ls map[string]any) string {
 		return "Script"
 	case "system":
 		return "Change"
-	case "system_event", "application", "code_integrity":
+	case "system_event", "application", "code_integrity", "sysmon_event", "security_named":
 		return "Other"
+	case "sysmon_file_block":
+		return "Filesystem"
 	case "auditd":
 		return "Other"
 	case "windefend":
@@ -716,6 +737,14 @@ func (c *sigmaConv) field(name string) string {
 	}
 	if ch, ok := sigmaNamedChannels[c.category]; ok {
 		return c.channelField(ch, name)
+	}
+	if c.category == "security_named" {
+		return c.channelField(ingest.SecurityChannel, name)
+	}
+	if c.category == "sysmon_file_block" {
+		if f, ok := sigmaEventFields["file_event"][strings.ToLower(name)]; ok {
+			return f
+		}
 	}
 	if m, ok := sigmaEventFields[c.category]; ok {
 		if f := m[strings.ToLower(name)]; f != "" {

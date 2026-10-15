@@ -12,7 +12,18 @@ import (
 
 	"github.com/jrsamsanchez/signalith/internal/detect"
 	"github.com/jrsamsanchez/signalith/internal/findings"
+	"github.com/jrsamsanchez/signalith/internal/shared"
 )
+
+// ifMatch returns the version a change was based on, from If-Match
+// (quoted or not); "" when the request sent none.
+func ifMatch(r *http.Request) string {
+	v := strings.TrimSpace(r.Header.Get("If-Match"))
+	if u, err := strconv.Unquote(v); err == nil {
+		return u
+	}
+	return v
+}
 
 func (s *Server) routeDetections(api *router) {
 	api.viewer("GET /api/detections", s.handleListDetections)
@@ -58,6 +69,9 @@ func (s *Server) detectionsReady(w http.ResponseWriter) bool {
 // writeDetectionError maps library errors to status codes. Validation
 // errors carry the full problem list so the form can show each one.
 func writeDetectionError(w http.ResponseWriter, err error) {
+	if libraryError(w, err) {
+		return
+	}
 	var ve *detect.ValidationError
 	switch {
 	case errors.As(err, &ve):
@@ -69,8 +83,40 @@ func writeDetectionError(w http.ResponseWriter, err error) {
 	}
 }
 
+// libraryError answers the errors of a change to the shared library: a
+// change someone else made first (412, naming who, where and when), and
+// changes paused on this server (503). It reports whether err was one.
+func libraryError(w http.ResponseWriter, err error) bool {
+	var stale *detect.StaleError
+	if errors.As(err, &stale) {
+		writeJSON(w, http.StatusPreconditionFailed, staleBody(err, &shared.StaleError{By: stale.By, Node: stale.Node, At: stale.At}))
+		return true
+	}
+	return sharedError(w, err)
+}
+
+// savedDetection is a detection as a change returns it, with its version
+// for If-Match on the next change.
+type savedDetection struct {
+	*detect.Detection
+	ETag string `json:"etag"`
+}
+
+// detectionSaved answers a change with the detection as saved.
+func (s *Server) detectionSaved(w http.ResponseWriter, status int, id string) {
+	saved, err := s.Detections.Get(id)
+	if err != nil {
+		writeDetectionError(w, err)
+		return
+	}
+	writeJSON(w, status, savedDetection{Detection: saved, ETag: s.Detections.ETag(id)})
+}
+
 type detectionView struct {
 	*detect.Detection
+	// ETag is the version of what was saved of the detection, for
+	// If-Match on a change.
+	ETag  string          `json:"etag,omitempty"`
 	State detect.RunState `json:"state"`
 	// StateError says the run state could not be read just now.
 	StateError string `json:"state_error,omitempty"`
@@ -82,14 +128,19 @@ func (s *Server) handleListDetections(w http.ResponseWriter, r *http.Request) {
 	}
 	states, serr := s.Scheduler.StatusCtx(r.Context())
 	ds := s.Detections.List()
+	etags := s.Detections.ETags()
 	out := make([]detectionView, 0, len(ds))
 	for _, d := range ds {
-		out = append(out, detectionView{Detection: d, State: states[d.ID]})
+		out = append(out, detectionView{Detection: d, ETag: etags[d.ID], State: states[d.ID]})
 	}
 	// scheduler says whether detections run on this server now; when they
 	// run on another one, runs_on names it. The run state is shared, so
 	// it is the same on every server.
 	resp := map[string]any{"detections": out, "scheduler": s.conf().Detections.Scheduler}
+	if s.Detections.Shared() {
+		// Every server of the cluster reads and changes the same ones.
+		resp["shared"] = true
+	}
 	if serr != nil {
 		resp["state_error"] = "The run state of the detections could not be read just now, so what is shown may be out of date: " + serr.Error()
 	}
@@ -113,7 +164,7 @@ func (s *Server) handleGetDetection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	states, serr := s.Scheduler.StatusCtx(r.Context())
-	v := detectionView{Detection: d, State: states[d.ID]}
+	v := detectionView{Detection: d, ETag: s.Detections.ETag(d.ID), State: states[d.ID]}
 	if serr != nil {
 		v.StateError = "The run state of this detection could not be read just now, so what is shown may be out of date: " + serr.Error()
 	}
@@ -152,13 +203,19 @@ func (s *Server) handleCreateDetection(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, errors.New("a detection with id "+d.ID+" already exists"))
 		return
 	}
-	if err := s.Detections.Put(&d); err != nil {
+	// Saved only over nothing, so one made meanwhile on another server is
+	// not overwritten.
+	if err := s.Detections.PutIf(r.Context(), userOf(r), &d, detect.ETag(nil, nil)); err != nil {
+		var stale *detect.StaleError
+		if errors.As(err, &stale) {
+			writeError(w, http.StatusConflict, errors.New("a detection with id "+d.ID+" already exists"))
+			return
+		}
 		writeDetectionError(w, err)
 		return
 	}
 	s.Log.Info("detection created", "detection", d.ID, "by", userOf(r))
-	saved, _ := s.Detections.Get(d.ID)
-	writeJSON(w, http.StatusCreated, saved)
+	s.detectionSaved(w, http.StatusCreated, d.ID)
 }
 
 func (s *Server) handlePutDetection(w http.ResponseWriter, r *http.Request) {
@@ -177,13 +234,14 @@ func (s *Server) handlePutDetection(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, errors.New("id in the body does not match the URL"))
 		return
 	}
-	if err := s.Detections.Put(&d); err != nil {
+	// With If-Match, a change made since the page read the detection is
+	// not overwritten: 412 names who made it.
+	if err := s.Detections.PutIf(r.Context(), userOf(r), &d, ifMatch(r)); err != nil {
 		writeDetectionError(w, err)
 		return
 	}
 	s.Log.Info("detection saved", "detection", d.ID, "enabled", d.Enabled, "by", userOf(r))
-	saved, _ := s.Detections.Get(d.ID)
-	writeJSON(w, http.StatusOK, saved)
+	s.detectionSaved(w, http.StatusOK, d.ID)
 }
 
 func (s *Server) handleDeleteDetection(w http.ResponseWriter, r *http.Request) {
@@ -191,7 +249,7 @@ func (s *Server) handleDeleteDetection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := r.PathValue("id")
-	if err := s.Detections.Delete(id); err != nil {
+	if err := s.Detections.DeleteIf(r.Context(), userOf(r), id, ifMatch(r)); err != nil {
 		writeDetectionError(w, err)
 		return
 	}
@@ -346,7 +404,7 @@ func (s *Server) handleEnableDetections(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, fmt.Errorf("send between 1 and %d detection ids", maxEnableIDs))
 		return
 	}
-	if err := s.Detections.SetEnabled(req.IDs, req.Enabled); err != nil {
+	if err := s.Detections.SetEnabledBy(r.Context(), userOf(r), req.IDs, req.Enabled); err != nil {
 		writeDetectionError(w, err)
 		return
 	}

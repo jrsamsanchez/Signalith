@@ -1,6 +1,7 @@
 package clusterjoin
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -133,7 +134,7 @@ func (a *Approver) Approve(ctx context.Context, nodeID, fingerprint, by string) 
 	m := shared.KeyringMember{Name: p.Name, NodePub: p.NodePub, Fingerprint: p.Fingerprint,
 		AddedAt: now.Format(time.RFC3339Nano), AddedBy: shared.AddedByApproval}
 	if _, err := a.RT.Keyring().Mutate(ctx, by, func(b *shared.KeyringBody) error {
-		if err := memberClash(b, nodeID, p.Name, p.NodePub); err != nil {
+		if err := cmp.Or(memberClash(b, nodeID, p.Name, p.NodePub), rotating(b)); err != nil {
 			return err
 		}
 		if b.Members == nil {

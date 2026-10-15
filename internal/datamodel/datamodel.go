@@ -177,9 +177,9 @@ var Models = []Model{
 	},
 	{
 		Name:        "Filesystem",
-		Description: "Files created, changed or deleted on hosts (Sysmon 11, 23 and 26, osquery file integrity monitoring)",
+		Description: "Files created, changed or deleted on hosts (Sysmon 11, 23 and 26; executables and shredding blocked, 27 to 29; osquery file integrity monitoring)",
 		Fields: []Field{
-			{Name: "action", Type: "string", Description: "What happened to the file", Examples: []string{"created", "modified", "deleted"}},
+			{Name: "action", Type: "string", Description: "What happened to the file", Examples: []string{"created", "modified", "deleted", "blocked"}},
 			{Name: "file_path", Type: "string", Description: "Full path of the file"},
 			{Name: "file_name", Type: "string", Description: "File name without its folder"},
 			{Name: "file_hash", Type: "string", Description: "SHA-256 of the file, lower case, when the source reports it"},

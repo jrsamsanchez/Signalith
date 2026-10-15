@@ -276,6 +276,9 @@ var Registry = []Setting{
 	{Key: "opensearch.key_file", Scope: ScopeBootstrap, File: true, Section: "opensearch", Label: "Client key file", Type: TypeText, Restart: true,
 		Help:        "Full path of the client certificate's PEM private key.",
 		Placeholder: "/etc/signalith/opensearch-client-key.pem"},
+	{Key: "opensearch.crl_file", Scope: ScopeBootstrap, File: true, Section: "opensearch", Label: "Revocation list file", Type: TypeText, Restart: true,
+		Help:        "Full path of the revocation list OpenSearch checks client certificates against (plugins.security.ssl.http.crl.file_path). Signalith keeps it, so a removed server's certificate stops working at once.",
+		Placeholder: "/etc/opensearch/crl.pem", EmptyMeans: "none: a removed server's certificate works until it expires", Env: "SIGNALITH_OPENSEARCH_CRL_FILE"},
 	{Key: "opensearch.proxy", Scope: ScopeBootstrap, Section: "opensearch", Label: "Proxy", Type: TypeText, Restart: true,
 		Help:        "A proxy to reach OpenSearch through, such as http://proxy:3128. It sees every event, so use one only when the network needs it.",
 		Placeholder: "http://proxy:3128", EmptyMeans: "connect directly", Env: "SIGNALITH_OPENSEARCH_PROXY",
@@ -343,6 +346,11 @@ var Registry = []Setting{
 			"Manual: an admin checks for them on the Detections page, or uploads them on a computer without internet access. " +
 			"Daily: this server checks once a day and installs them. Rules you turned on stay on, and new rules start off.",
 		Choices: []Choice{{ContentManual, "Manual"}, {ContentDaily, "Daily"}}, EmptyMeans: ContentManual},
+	{Key: "detections.sync", Scope: ScopeServer, Section: "detections", Label: "Detection and dashboard folders", Type: TypeChoice, SharedOnly: true,
+		Help: "The servers of a cluster share one set of detections and dashboards; this server's folders are an inbox for them. " +
+			"Inbox: a file added or changed in a folder, such as by a git pull, is shared with every server, and removing a file changes nothing. " +
+			"Mirror: removing a file also removes that detection or dashboard from every server.",
+		Choices: []Choice{{SyncInbox, "Inbox"}, {SyncMirror, "Mirror"}}, EmptyMeans: SyncInbox},
 	{Key: "detections.content_url", Scope: ScopeCluster, Section: "detections", Label: "Content update address", Type: TypeURL,
 		Help:        "Where content updates are downloaded from, such as a copy on your own web server. Only bundles signed by the Signalith project are installed, wherever they come from.",
 		Placeholder: DefaultContentURL, EmptyMeans: "the Signalith project's GitHub releases"},

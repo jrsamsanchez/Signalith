@@ -120,6 +120,10 @@ func TestSchedulerTurnedOffStartsNoJob(t *testing.T) {
 	t.Cleanup(func() { jobStarting = nil })
 	rs := startRunnerWith(t, runOptions{scheduler: true, server: plainHTTP})
 	node := rs.r.node
+	// The founding of the cluster, and the restarts that switch to the
+	// shared settings, end before the settings are changed: this test is
+	// about the jobs, not about a change made during that switch.
+	rs.settingsShared()
 	eventually(t, "this server runs the jobs", node.RunsJobs)
 	eventually(t, "the jobs start", func() bool {
 		mu.Lock()

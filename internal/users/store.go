@@ -208,7 +208,12 @@ type Store struct {
 	// servers of a cluster keep them apart from the users, so a sign-in
 	// does not change the user. builtin is true for the built-in admin.
 	SignIns func(ctx context.Context, name string, builtin bool)
-	Now     func() time.Time
+	// Hold, when set, is taken around each change made on the Users page
+	// or by a user to their password (not sign-ins, which may be lost):
+	// release ends it, and an error refuses the change. A server holds
+	// off the move of the users file into the shared settings with it.
+	Hold func() (release func(), err error)
+	Now  func() time.Time
 
 	b    Backend
 	path string
@@ -392,6 +397,14 @@ func (s *Store) reserved(name string) bool {
 	return b != "" && strings.EqualFold(name, b)
 }
 
+// hold takes Hold, when set.
+func (s *Store) hold() (func(), error) {
+	if s.Hold == nil {
+		return func() {}, nil
+	}
+	return s.Hold()
+}
+
 // Create adds a local user.
 func (s *Store) Create(ctx context.Context, in NewUser) (User, error) {
 	name := NormalizeUsername(in.Username)
@@ -418,6 +431,11 @@ func (s *Store) Create(ctx context.Context, in NewUser) (User, error) {
 	if err != nil {
 		return User{}, fieldError("password", err)
 	}
+	release, err := s.hold()
+	if err != nil {
+		return User{}, err
+	}
+	defer release()
 	now := s.now()
 	r, err := s.b.Create(ctx, Actor(ctx), Record{User: User{Username: name, Name: in.Name, Email: in.Email, Role: in.Role, Source: SourceLocal,
 		MustChangePassword: in.MustChangePassword, Created: now, Updated: now}, Hash: hash, Epoch: 1})
@@ -476,6 +494,11 @@ func (s *Store) Update(ctx context.Context, name string, ch Change) (User, error
 // changes the user as it is now.
 func (s *Store) UpdateIf(ctx context.Context, name, etag string, ch Change) (User, error) {
 	name = NormalizeUsername(name)
+	release, err := s.hold()
+	if err != nil {
+		return User{}, err
+	}
+	defer release()
 	r, err := s.b.Change(ctx, Actor(ctx), name, etag, func(r *Record) error {
 		cur := r.User
 		u := cur
@@ -532,8 +555,13 @@ func (s *Store) Delete(ctx context.Context, name string) (User, error) {
 // DeleteIf is Delete for a user read at etag (see UpdateIf).
 func (s *Store) DeleteIf(ctx context.Context, name, etag string) (User, error) {
 	name = NormalizeUsername(name)
+	release, err := s.hold()
+	if err != nil {
+		return User{}, err
+	}
+	defer release()
 	var gone User
-	err := s.b.Delete(ctx, Actor(ctx), name, etag, func(r Record) error {
+	err = s.b.Delete(ctx, Actor(ctx), name, etag, func(r Record) error {
 		cur := r.User
 		if cur.Source == SourceLocal && cur.Role == Admin && !cur.Disabled && s.adminsLeft(name, Viewer, true) == 0 {
 			return ErrLastAdmin
@@ -566,6 +594,11 @@ func (s *Store) SetPasswordIf(ctx context.Context, name, etag, password string, 
 	if err != nil {
 		return User{}, fieldError("password", err)
 	}
+	release, err := s.hold()
+	if err != nil {
+		return User{}, err
+	}
+	defer release()
 	r, err := s.b.Change(ctx, Actor(ctx), name, etag, func(r *Record) error {
 		if r.Source != SourceLocal {
 			return ErrManaged

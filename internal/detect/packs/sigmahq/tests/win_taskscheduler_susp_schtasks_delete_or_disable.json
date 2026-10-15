@@ -1,0 +1,6 @@
+{"rule": "9e3cb244-bdb8-4632-8c90-6079c8f4f16d", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-TaskScheduler/Operational","event_id":"141","data":{"TaskName":"\\Windows\\ExploitGuard"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-TaskScheduler/Operational","event_id":"141","data":{"TaskName":"\\Windows\\ExploitGuard","UserName":"AUTHORI"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-TaskScheduler/Operational","event_id":"141","data":{}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-TaskScheduler/Operational","event_id":"142","data":{"#attributes":"{\"Name\":\"TaskDisabled\"}","TaskName":"\\Microsoft\\Windows\\SystemRestore\\SR","UserName":"System"}}
+]}

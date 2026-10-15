@@ -158,10 +158,11 @@ var knownFields = func() map[string]string {
 		"system_dirty_pages": kw, "system_caption": kw, "system_message": "wildcard",
 		// An Application log event's data values, one per line.
 		"event_data": "wildcard",
-		// The data of Windows Firewall, BITS, AppX deployment and WMI
-		// events, by name (ChannelDataField): firewall rules and settings
-		// changed, transfer jobs, app packages installed and WMI
-		// subscriptions.
+		// The data of the Windows logs the parser reads by name
+		// (ChannelDataField): firewall rules and settings changed, BITS
+		// transfer jobs, app packages installed, WMI subscriptions,
+		// Remote Desktop sessions, app shortcuts added, SMB guest logons
+		// refused and exploit protection blocks.
 		"firewall_action": kw, "firewall_active": kw, "firewall_application_path": kw, "firewall_direction": kw,
 		"firewall_edge_traversal": kw, "firewall_embedded_context": kw, "firewall_error_code": kw, "firewall_flags": kw,
 		"firewall_local_addresses": kw, "firewall_local_only_mapped": kw, "firewall_local_ports": kw,
@@ -188,7 +189,45 @@ var knownFields = func() map[string]string {
 		"wmi_client_machine": kw, "wmi_client_process_id": kw, "wmi_component": kw, "wmi_consumer": kw, "wmi_ess": kw,
 		"wmi_id": kw, "wmi_namespace": kw, "wmi_namespace_name": kw, "wmi_operation": kw, "wmi_possible_cause": kw,
 		"wmi_processid": kw, "wmi_provider_name": kw, "wmi_query": kw, "wmi_queryid": kw, "wmi_result_code": kw,
-		"wmi_user": kw,
+		"wmi_user":    kw,
+		"rdp_address": kw, "rdp_session_id": kw, "rdp_user": kw, "shell_app_id": kw, "shell_flags": kw, "shell_name": kw,
+		"smbclient_server_name": kw, "smbclient_server_name_length": kw, "smbclient_user_name": kw,
+		"smbclient_user_name_length": kw, "mitigation_image_name": kw, "mitigation_image_name_length": kw,
+		"mitigation_process_command_line": kw, "mitigation_process_command_line_length": kw,
+		"mitigation_process_create_time": kw, "mitigation_process_id": kw, "mitigation_process_path": kw,
+		"mitigation_process_path_length": kw, "mitigation_process_protection": kw,
+		"mitigation_process_section_signature_level": kw, "mitigation_process_signature_level": kw,
+		"mitigation_process_start_key": kw, "mitigation_required_signature_level": kw, "mitigation_signature_level": kw,
+		"appmodel_application_name": kw, "appmodel_image_name": kw, "appmodel_message": kw, "appmodel_package_name": kw, "appmodel_process_id": kw, "appxpackaging_subject_name": kw, "dnsclient_query_name": kw, "dnsclient_query_options": kw, "dnsclient_query_results": kw, "dnsclient_query_status": kw, "dnsclient_query_type": kw, "driver_argument1": kw, "driver_argument2": kw, "driver_argument3": kw, "driver_argument4": kw, "driver_instance_id": kw, "driver_lifetime_id": kw, "driver_major_code": kw, "driver_minor_code": kw, "driver_status": kw, "iisconfig_config_path": kw, "iisconfig_configuration": kw, "iisconfig_edit_operation_type": kw, "iisconfig_effective_location_path": kw, "iisconfig_new_value": kw, "iisconfig_old_value": kw, "iisconfig_physical_path": kw, "lsa_event_count_total": kw, "lsa_event_orginal": kw, "lsa_sid_list": kw, "lsa_target_domain_name": kw, "lsa_target_logon_guid": kw, "lsa_target_logon_id": kw, "lsa_target_user_name": kw, "lsa_target_user_sid": kw, "ntlm_caller_pid": kw, "ntlm_client_domain_name": kw, "ntlm_client_luid": kw, "ntlm_client_user_name": kw, "ntlm_domain_name": kw, "ntlm_mechanism_oid": kw, "ntlm_process_name": kw, "ntlm_schannel_name": kw, "ntlm_schannel_type": kw, "ntlm_target_name": kw, "ntlm_user_name": kw, "ntlm_workstation_name": kw, "openssh_payload": kw, "openssh_process": kw, "taskscheduler_path": kw, "taskscheduler_priority": kw, "taskscheduler_process_id": kw, "taskscheduler_task_name": kw, "taskscheduler_user_name": kw,
+		"mitigation_target_thread_create_time": kw, "mitigation_target_thread_id": kw,
+		// Security log events no data model holds, by name
+		// (ChannelDataField); a certificate template's contents and a
+		// filter's conditions are long text rules search words inside.
+		"security_access_mask": kw, "security_account_domain": kw, "security_account_name": kw, "security_action": kw,
+		"security_authentication_package": kw, "security_callout_key": kw, "security_callout_name": kw,
+		"security_change_type": kw, "security_class_id": kw, "security_class_name": kw, "security_client_address": kw,
+		"security_client_process_id": kw, "security_compatible_ids": kw, "security_conditions": "wildcard",
+		"security_count_of_credentials_returned": kw, "security_dcdnsname": kw, "security_device_description": kw,
+		"security_device_id": kw, "security_failure_reason": kw, "security_filter_id": kw, "security_filter_key": kw,
+		"security_filter_name": kw, "security_filter_type": kw, "security_handle_id": kw, "security_hardware_ids": kw,
+		"security_layer_id": kw, "security_layer_key": kw, "security_layer_name": kw, "security_location_information": kw,
+		"security_logon_id": kw, "security_logon_process_name": kw, "security_master_key_id": kw,
+		"security_new_template_content": "wildcard", "security_new_time": kw, "security_object_name": kw,
+		"security_object_server": kw, "security_object_type": kw, "security_old_template_content": "wildcard",
+		"security_previous_time": kw, "security_privilege_list": kw, "security_process_creation_time": kw,
+		"security_process_id": kw, "security_process_name": kw, "security_provider_context_key": kw,
+		"security_provider_context_name": kw, "security_provider_context_type": kw, "security_provider_key": kw,
+		"security_provider_name": kw, "security_read_operation": kw, "security_recovery_key_id": kw,
+		"security_recovery_server": kw, "security_request_type": kw, "security_return_code": kw,
+		"security_security_descriptor": kw, "security_service": kw, "security_sid_list": kw, "security_source_sid": kw,
+		"security_source_user_name": kw, "security_subject_domain_name": kw, "security_subject_logon_id": kw,
+		"security_subject_user_name": kw, "security_subject_user_sid": kw, "security_target_domain_name": kw,
+		"security_target_name": kw, "security_target_sid": kw, "security_target_user_name": kw,
+		"security_template_content": "wildcard", "security_template_dsobject_fqdn": kw,
+		"security_template_internal_name": kw, "security_template_oid": kw, "security_template_schema_version": kw,
+		"security_template_version": kw, "security_transmitted_services": kw, "security_type": kw,
+		"security_user_name": kw, "security_user_sid": kw, "security_vendor_ids": kw, "security_weight": kw,
+		"security_workstation_name": kw,
 		// Linux audit records (auditd.go): each field as auditd names it,
 		// the names of an ENRICHED record's numbers (auditd_uid_name), and
 		// a program's arguments one by one and joined, which rules search

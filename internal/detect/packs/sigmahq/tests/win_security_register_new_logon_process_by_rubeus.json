@@ -1,0 +1,4 @@
+{"rule": "12e6d621-194f-4f59-90cc-1959e21e69f7", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4611","data":{"LogonProcessName":"User32LogonProcesss"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4611","data":{}}
+]}

@@ -111,6 +111,9 @@ func (e *SettingsError) Error() string {
 // cluster.
 type Directory struct {
 	b DirectoryBackend
+	// Hold, when set, is taken around a save (see Store.Hold): release
+	// ends it, and an error refuses the save.
+	Hold func() (release func(), err error)
 }
 
 // DirectoryBackend keeps the directory sign-in settings.
@@ -365,6 +368,13 @@ func (d *Directory) SaveIf(ctx context.Context, etag string, s LDAPSettings) err
 	s.Normalize()
 	if p := s.Problems(); len(p) > 0 {
 		return &SettingsError{Problems: p}
+	}
+	if d.Hold != nil {
+		release, err := d.Hold()
+		if err != nil {
+			return err
+		}
+		defer release()
 	}
 	return d.b.Save(ctx, Actor(ctx), etag, s)
 }

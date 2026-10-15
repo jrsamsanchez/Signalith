@@ -12,8 +12,9 @@ signalith`), on a server whose `signalith.yaml` names the OpenSearch the servers
 share. Every command takes `-c <file>` for another configuration file. Each change is
 written to the log as an audit record, with who ran it.
 
-`found` and `reset-key` change the cluster without a running server's help; the
-others may run while Signalith runs on the same computer.
+`found` and `reset-key` change the cluster without a running server's help, and
+`leave` and `new-identity` need Signalith stopped on the same computer; the others
+may run while it runs.
 
 | Command | What it does |
 | --- | --- |
@@ -29,6 +30,10 @@ others may run while Signalith runs on the same computer.
 | [`tls`](#tls) | The cluster's certificate authority and each server's; `tls choose` keeps one for the whole cluster |
 | [`token`](#token) | Makes a join token, which adds a server with `signalith join` |
 | [`approve`](#approve) | Approves a server that waits to join, by its fingerprint |
+| [`rotate-key`](#rotate-key) | Gives the cluster a new key, so copies of the old one open nothing new |
+| [`remove`](#remove-and-leave) | Takes a drained or stopped server out of the cluster |
+| [`leave`](#remove-and-leave) | Takes this stopped server out of the cluster |
+| [`new-identity`](#new-identity) | Makes this stopped server a new one, for a cloned computer or a copied state folder |
 
 `signalith join` and `signalith opensearch-check`, which are not `cluster` commands,
 add a server with a join token and check an OpenSearch for several servers; see
@@ -222,6 +227,58 @@ changed outside Signalith. After you restore an OpenSearch snapshot on purpose, 
 this on a member of the cluster: every server accepts the shared settings now in
 OpenSearch within seconds.
 
+## rotate-key
+
+```
+signalith cluster rotate-key [-c file] [-yes]
+```
+
+Asks the server that runs the background jobs to rotate the cluster key, as
+**Rotate cluster key** on the Servers page does, and prints each step until it is
+done (Ctrl-C stops waiting, not the rotation). See
+[Draining and removing a server](servers.md#draining-and-removing-a-server) for the
+steps, and what happens to servers that are offline. A rotation that stopped part
+way goes on from where it stopped when you run it again. It needs every server on a
+version that supports it.
+
+## remove and leave
+
+```
+signalith cluster remove [-c file] [-yes] [-no-rotate] <server name or node id>
+signalith cluster leave  [-c file] [-yes] [-no-rotate]
+```
+
+`remove` takes another server out of the cluster: out of the keyring and off the list
+of servers. The server must be drained (on the Servers page), stopped, or offline for
+10 minutes. `leave` does it for this server: stop Signalith first. It also deletes this
+server's copy of the cluster key and of the shared settings, and keeps its HTTPS
+certificate. Uninstall the server afterwards, or run `new-identity` on it before you
+add it again.
+
+Both then rotate the cluster key, so the removed server's copy opens nothing new;
+`-no-rotate` skips that, and `rotate-key` does it later. A removed server that starts
+again with its old copy runs no background jobs and says it was removed; `import-key`
+brings it back on purpose.
+
+## new-identity
+
+```
+signalith cluster new-identity [-c file] [-yes]
+```
+
+For a computer cloned from another server, or a state folder copied from one: two
+servers with one identity refuse to run side by side. Stop Signalith, then run this on
+the copy. It moves `node.id` aside (to `node.id.replaced-<time>`), deletes the node key
+and the copy of the cluster key, and the server makes a new identity when it starts.
+Give it the cluster key again with `export-key` and `import-key`. It needs no
+OpenSearch. In Docker:
+
+```
+docker compose -f deploy/docker/docker-compose.yml stop signalith
+docker compose -f deploy/docker/docker-compose.yml run --rm signalith signalith cluster new-identity
+docker compose -f deploy/docker/docker-compose.yml up -d
+```
+
 ## The built-in admin's password
 
 ```
@@ -263,6 +320,9 @@ in a cluster, `-local` writes `admin-password-hash` and needs a restart, as
 | The built-in admin's password is lost or must change on every server | `signalith passwd` on any server |
 | You want a password for one server that works while OpenSearch is down | `signalith passwd -local` on that server |
 | Servers set up separately each have their own certificate authority | `tls`, then `tls choose` the one to keep |
+| A server is retired for good | Drain it and remove it on the Servers page, or `remove`; on the server itself, stop it and `leave` |
+| A copy of the cluster key may have leaked | `rotate-key` |
+| A server was cloned from another, or its state folder copied | Stop the copy, `new-identity`, then `import-key` |
 
 ## tls
 
@@ -380,9 +440,10 @@ OpenSearch could copy: with a name or node id, give the fingerprint with
 do that comparison for you, so with a name it needs `-fingerprint`). The server then
 gets the cluster key, encrypted so only it can read it, and joins within a minute. A
 fingerprint that does not match is refused, as is any approval while OpenSearch is not
-secured, and a server that would take the place of a member (its node id listed with
-another key, or a member's name). A server whose approval was lost (it stayed away a
-day, or the approval could not be written) is listed again and can be approved again.
+secured or while the cluster key is being rotated, and a server that would take the
+place of a member (its node id listed with another key, or a member's name). A server
+whose approval was lost (it stayed away a day, or the approval could not be written) is
+listed again and can be approved again.
 
 ## join
 
@@ -438,7 +499,7 @@ folder copied from that server).
 | --- | --- |
 | 0 | Joined |
 | 1 | It cannot run here (not root, already in a cluster, a bad name), the server did not answer, or it used the token but could not finish (the message says to make a new one) |
-| 2 | The token was refused: wrong, used or expired; or the token checked out but this server cannot join yet (another version, OpenSearch not secured, a name or identity another server has), and the message says the token was not used |
+| 2 | The token was refused: wrong, used or expired; or the token checked out but this server cannot join yet (another version, OpenSearch not secured, a name or identity another server has, a cluster key rotation in progress), and the message says the token was not used |
 | 3 | The server is not the one the token names: someone may be intercepting the connection |
 | 4 | This computer cannot use the cluster's OpenSearch; nothing was written, and the token is used |
 | 5 | Writing failed and was undone; or, with `--merge`, the server joined but the merge failed partway (the message says so) |
@@ -473,3 +534,33 @@ files.
 runs the OpenSearch checks of `join` on their own, from the computer it runs on, and
 says what to fix for each that fails. The password of `--user` is read from
 `SIGNALITH_OPENSEARCH_PASSWORD`, or asked for. It exits 1 when a check fails.
+## opensearch-ca
+
+```
+signalith cluster opensearch-ca        [-c file] [-json]
+signalith cluster opensearch-ca import [-c file] [-cert root-ca.pem] <root-ca-key.pem>
+signalith cluster opensearch-ca revoke [-c file] [-yes] <server>
+signalith cluster opensearch-ca crl    [-c file] [-o file]
+```
+
+`opensearch-ca` shows OpenSearch's certificate authority, if the cluster keeps one, and
+who each server signs in to OpenSearch as: its own certificate, the shared one or a user
+name, when that expires, and why it could not get or renew its own. `-json` prints the
+same as JSON, without the CA's key.
+
+`opensearch-ca import` hands OpenSearch's certificate authority to the cluster, so each
+server gets its own OpenSearch certificate (see
+[Each server's own OpenSearch certificate](servers.md#each-servers-own-opensearch-certificate)).
+Give it the CA's key; its certificate is `root-ca.pem` next to it unless `-cert` names
+another file. It refuses a CA that is not the one in `opensearch.ca_file`, and one other
+than the cluster keeps already. In Docker, use `bootstrap-docker -export-ca-key` instead.
+
+`opensearch-ca revoke` ends a server's OpenSearch access at once: every certificate the
+cluster issued it that has not expired goes on the revocation list, and it gets no new
+one unless it joins the cluster again. Name the server by its name or node id; it asks
+first unless `-yes` is given, and refuses this server itself. Removing a server does the
+same. OpenSearch hears of it through the revocation list (see
+[Ending a server's OpenSearch access at once](servers.md#ending-a-servers-opensearch-access-at-once)).
+
+`opensearch-ca crl` prints that revocation list, or writes it to the file `-o` names, to
+copy to OpenSearch nodes that no Signalith server keeps it for.

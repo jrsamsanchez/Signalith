@@ -9,6 +9,9 @@ import (
 // settings being changed.
 const FirewallChannel = "Microsoft-Windows-Windows Firewall With Advanced Security/Firewall"
 
+// SecurityChannel is the Windows Security log.
+const SecurityChannel = "Security"
+
 // AppxChannel is where Windows logs app packages (MSIX and AppX) being
 // installed, and blocked.
 const AppxChannel = "Microsoft-Windows-AppXDeploymentServer/Operational"
@@ -17,9 +20,72 @@ const AppxChannel = "Microsoft-Windows-AppXDeploymentServer/Operational"
 // subscriptions.
 const WmiChannel = "Microsoft-Windows-WMI-Activity/Operational"
 
+// RdpSessionChannel is where Remote Desktop Services logs sessions
+// logging on, off, disconnecting and reconnecting, with the client's
+// address.
+const RdpSessionChannel = "Microsoft-Windows-TerminalServices-LocalSessionManager/Operational"
+
+// ShellCoreChannel is where the Windows shell logs, among others, apps
+// added to its app resolver cache (Start menu shortcuts).
+const ShellCoreChannel = "Microsoft-Windows-Shell-Core/Operational"
+
+// SmbClientSecurityChannel is where the SMB client logs security events,
+// such as insecure guest logons it refused.
+const SmbClientSecurityChannel = "Microsoft-Windows-SmbClient/Security"
+
+// MitigationsChannel is where Windows logs exploit protection blocks in
+// kernel mode, such as an unsigned image a protected process refused.
+const MitigationsChannel = "Microsoft-Windows-Security-Mitigations/KernelMode"
+
 // BitsChannel is where the Background Intelligent Transfer Service logs
 // its download and upload jobs.
 const BitsChannel = "Microsoft-Windows-Bits-Client/Operational"
+
+// DnsClientChannel is where the DNS client logs the names it looked up
+// (turned off by default).
+const DnsClientChannel = "Microsoft-Windows-DNS-Client/Operational"
+
+// TaskSchedulerChannel is where Task Scheduler logs tasks started,
+// deleted and disabled (its history, turned off by default on clients).
+const TaskSchedulerChannel = "Microsoft-Windows-TaskScheduler/Operational"
+
+// NtlmChannel is where Windows logs NTLM authentications audited by the
+// "Restrict NTLM" policies.
+const NtlmChannel = "Microsoft-Windows-NTLM/Operational"
+
+// LsaChannel is where the Local Security Authority logs, among others,
+// the groups of the users logging on.
+const LsaChannel = "Microsoft-Windows-LSA/Operational"
+
+// Capi2Channel is where CryptoAPI logs certificate operations (turned
+// off by default).
+const Capi2Channel = "Microsoft-Windows-CAPI2/Operational"
+
+// DriverFrameworksChannel is where the user-mode driver framework logs
+// devices plugged in (turned off by default).
+const DriverFrameworksChannel = "Microsoft-Windows-DriverFrameworks-UserMode/Operational"
+
+// AppModelRuntimeChannel is where Windows logs packaged app processes.
+const AppModelRuntimeChannel = "Microsoft-Windows-AppModel-Runtime/Admin"
+
+// AppxPackagingChannel is where Windows logs app package files read,
+// with their signing certificate.
+const AppxPackagingChannel = "Microsoft-Windows-AppxPackaging/Operational"
+
+// CertLifecycleChannel is where Windows logs the computer's certificates
+// being installed, renewed and exported.
+const CertLifecycleChannel = "Microsoft-Windows-CertificateServicesClient-Lifecycle-System/Operational"
+
+// OpenSshChannel is where the Windows OpenSSH server logs (when it is
+// installed).
+const OpenSshChannel = "OpenSSH/Operational"
+
+// DnsServerChannel is the DNS Server log (on DNS servers).
+const DnsServerChannel = "DNS Server"
+
+// IisConfigurationChannel is where IIS logs its configuration being
+// changed (on web servers, turned off by default).
+const IisConfigurationChannel = "Microsoft-IIS-Configuration/Operational"
 
 // namedChannel is a Windows log whose events the parser reads by name:
 // the prefix of its stored fields, and its events.
@@ -47,6 +113,21 @@ var appxDeploymentFailed = []string{"DeploymentOperation", "PackageFullName", "P
 	"IsInRelatedSet", "IsPackageUsingBDC", "MainPackageFamilyName", "CallingProcess", "IsInPlaceUpdate", "ErrorFileInfo",
 	"DetailedMessageInfo", "RollbackErrorFileInfo", "RollbackDetailedMessageInfo", "IsOptional", "PackageFlags", "PackageFlags2",
 	"HasWin32alacarte", "HasFullTrust", "ExternalLocation", "PackageSourceUri", "PackageDisplayName"}
+
+// securitySubject is the account that acted, the first data of most
+// Security events.
+var securitySubject = []string{"SubjectUserSid", "SubjectUserName", "SubjectDomainName", "SubjectLogonId"}
+
+// driverOperation is the data of a Plug and Play or power operation a
+// device received or finished (DriverFrameworks-UserMode 2100, 2102).
+var driverOperation = []string{"LifetimeId", "InstanceId", "MajorCode", "MinorCode", "Argument1", "Argument2", "Argument3",
+	"Argument4", "Status"}
+
+// mitigationImage is the data of an image load a code integrity
+// mitigation blocked or audited (Security-Mitigations 11 and 12).
+var mitigationImage = []string{"ProcessPathLength", "ProcessPath", "ProcessCommandLineLength", "ProcessCommandLine", "ProcessId",
+	"ProcessCreateTime", "ProcessStartKey", "ProcessSignatureLevel", "ProcessSectionSignatureLevel", "ProcessProtection",
+	"TargetThreadId", "TargetThreadCreateTime", "RequiredSignatureLevel", "SignatureLevel", "ImageNameLength", "ImageName"}
 
 // namedChannels are the Windows logs, besides the System log, whose
 // events the parser keeps the data of by name, by channel (lower case):
@@ -87,6 +168,115 @@ var namedChannels = map[string]namedChannel{
 		"5859": {"A WMI event filter was registered", []string{"NamespaceName", "Query", "User", "processid", "providerName", "queryid", "PossibleCause"}},
 		"5861": {"A WMI permanent event subscription was registered", []string{"Namespace", "ESS", "CONSUMER", "PossibleCause"}},
 	}},
+	strings.ToLower(RdpSessionChannel): {"rdp", map[string]systemEvent{
+		"21": {"A Remote Desktop session logged on", []string{"User", "SessionID", "Address"}},
+		"22": {"A Remote Desktop session's shell started", []string{"User", "SessionID", "Address"}},
+		"23": {"A Remote Desktop session logged off", []string{"User", "SessionID"}},
+		"24": {"A Remote Desktop session disconnected", []string{"User", "SessionID", "Address"}},
+		"25": {"A Remote Desktop session reconnected", []string{"User", "SessionID", "Address"}},
+	}},
+	strings.ToLower(ShellCoreChannel): {"shell", map[string]systemEvent{
+		"28115": {"An app shortcut was added to the app resolver cache", []string{"Name", "AppID", "Flags"}},
+	}},
+	strings.ToLower(SmbClientSecurityChannel): {"smbclient", map[string]systemEvent{
+		"31017": {"The SMB client refused an insecure guest logon", []string{"UserNameLength", "UserName", "ServerNameLength", "ServerName"}},
+	}},
+	strings.ToLower(MitigationsChannel): {"mitigation", map[string]systemEvent{
+		"11": {"A process was blocked from loading an image not signed by Microsoft (audit)", mitigationImage},
+		"12": {"A process was blocked from loading an image not signed by Microsoft", mitigationImage},
+	}},
+	strings.ToLower(DnsClientChannel): {"dnsclient", map[string]systemEvent{
+		"3008": {"A DNS query completed", []string{"QueryName", "QueryType", "QueryOptions", "QueryStatus", "QueryResults"}},
+	}},
+	strings.ToLower(TaskSchedulerChannel): {"taskscheduler", map[string]systemEvent{
+		"129": {"A scheduled task started a process", []string{"TaskName", "Path", "ProcessID", "Priority"}},
+		"141": {"A scheduled task was deleted", []string{"TaskName", "UserName"}},
+		"142": {"A scheduled task was disabled", []string{"TaskName", "UserName"}},
+	}},
+	strings.ToLower(NtlmChannel): {"ntlm", map[string]systemEvent{
+		"8001": {"An outgoing NTLM authentication was audited", []string{"TargetName", "UserName", "DomainName", "CallerPID",
+			"ProcessName", "ClientLUID", "ClientUserName", "ClientDomainName", "MechanismOID"}},
+		"8002": {"An incoming NTLM authentication was audited", []string{"CallerPID", "ProcessName", "ClientLUID", "ClientUserName",
+			"ClientDomainName", "MechanismOID"}},
+		"8004": {"An NTLM authentication to this domain controller was audited", []string{"SChannelName", "UserName", "DomainName",
+			"WorkstationName", "SChannelType"}},
+	}},
+	strings.ToLower(LsaChannel): {"lsa", map[string]systemEvent{
+		"300": {"A user's groups were recorded at logon", []string{"TargetUserSid", "TargetUserName", "TargetDomainName",
+			"TargetLogonId", "TargetLogonGuid", "EventOrginal", "EventCountTotal", "SidList"}},
+	}},
+	strings.ToLower(Capi2Channel): {"capi2", map[string]systemEvent{
+		"70": {"A certificate's private key was acquired", nil},
+	}},
+	strings.ToLower(DriverFrameworksChannel): {"driver", map[string]systemEvent{
+		"2003": {"A user-mode driver was loaded for a device", []string{"LifetimeId", "InstanceId"}},
+		"2100": {"A device received a Plug and Play or power operation", driverOperation},
+		"2102": {"A device finished a Plug and Play or power operation", driverOperation},
+	}},
+	strings.ToLower(AppModelRuntimeChannel): {"appmodel", map[string]systemEvent{
+		"201": {"A packaged app process was created", []string{"ProcessID", "PackageName", "ImageName", "ApplicationName", "Message"}},
+	}},
+	strings.ToLower(AppxPackagingChannel): {"appxpackaging", map[string]systemEvent{
+		"157": {"An app package's signing certificate was read", []string{"subjectName"}},
+	}},
+	strings.ToLower(CertLifecycleChannel): {"certlifecycle", map[string]systemEvent{
+		"1007": {"A certificate was exported", nil},
+	}},
+	strings.ToLower(OpenSshChannel): {"openssh", map[string]systemEvent{
+		"4": {"The OpenSSH server logged a message", []string{"process", "payload"}},
+	}},
+	strings.ToLower(DnsServerChannel): {"dnsserver", map[string]systemEvent{
+		"150":  {"The DNS server could not load a server-level plug-in DLL", nil},
+		"770":  {"The DNS server loaded a server-level plug-in DLL", nil},
+		"771":  {"The DNS server could not load a server-level plug-in DLL", nil},
+		"6004": {"The DNS server refused a zone transfer for a zone it does not hold", nil},
+	}},
+	strings.ToLower(IisConfigurationChannel): {"iisconfig", map[string]systemEvent{
+		"29": {"An IIS configuration setting changed", []string{"PhysicalPath", "ConfigPath", "EffectiveLocationPath",
+			"Configuration", "EditOperationType", "OldValue", "NewValue"}},
+	}},
+	// Security log events no data model holds, read by name for the
+	// rules about them: logon processes registered, time changed,
+	// Kerberos replays, privileged services called and objects
+	// operated on, DPAPI backups, user rights and SID history changed,
+	// RDP denied, certificate templates changed, credentials read,
+	// filtering platform filters and providers added, and devices
+	// plugged in or blocked.
+	strings.ToLower(SecurityChannel): {"security", map[string]systemEvent{
+		"4611": {"A trusted logon process was registered", append(securitySubject, "LogonProcessName")},
+		"4616": {"The system time was changed", append(securitySubject, "PreviousTime", "NewTime", "ProcessId", "ProcessName")},
+		"4649": {"A replay attack was detected", append(securitySubject, "TargetUserName", "TargetDomainName", "RequestType",
+			"LogonProcessName", "AuthenticationPackage", "WorkstationName", "TransmittedServices", "ProcessId", "ProcessName")},
+		"4673": {"A privileged service was called", append(securitySubject, "ObjectServer", "Service", "PrivilegeList", "ProcessId", "ProcessName")},
+		"4674": {"An operation was attempted on a privileged object", append(securitySubject, "ObjectServer", "ObjectType", "ObjectName",
+			"HandleId", "AccessMask", "PrivilegeList", "ProcessId", "ProcessName")},
+		"4692": {"Backup of data protection master key was attempted", append(securitySubject, "MasterKeyId", "RecoveryServer",
+			"RecoveryKeyId", "FailureReason")},
+		"4704": {"A user right was assigned", append(securitySubject, "TargetSid", "PrivilegeList")},
+		"4765": {"SID History was added to an account", []string{"SourceUserName", "SourceSid", "TargetUserName", "TargetDomainName",
+			"TargetSid", "SubjectUserSid", "SubjectUserName", "SubjectDomainName", "SubjectLogonId", "PrivilegeList", "SidList"}},
+		"4766": {"An attempt to add SID History to an account failed", []string{"SourceUserName", "TargetUserName", "TargetDomainName",
+			"TargetSid", "SubjectUserName", "SubjectDomainName", "SubjectLogonId", "PrivilegeList"}},
+		"4825": {"A user was denied access to Remote Desktop", []string{"AccountName", "AccountDomain", "LogonID", "ClientAddress"}},
+		"4898": {"Certificate Services loaded a template", []string{"TemplateInternalName", "TemplateVersion", "TemplateSchemaVersion",
+			"TemplateOID", "TemplateDSObjectFQDN", "DCDNSName", "TemplateContent", "SecurityDescriptor"}},
+		"4899": {"A Certificate Services template was updated", []string{"TemplateInternalName", "TemplateVersion",
+			"TemplateSchemaVersion", "TemplateOID", "TemplateDSObjectFQDN", "DCDNSName", "NewTemplateContent", "OldTemplateContent"}},
+		"5379": {"Credential Manager credentials were read", append(securitySubject, "TargetName", "Type", "CountOfCredentialsReturned",
+			"ReadOperation", "ReturnCode", "ProcessCreationTime", "ClientProcessId")},
+		"5441": {"A Windows Filtering Platform filter was present at startup", []string{"ProviderKey", "ProviderName", "FilterKey",
+			"FilterName", "FilterType", "FilterId", "LayerKey", "LayerName", "LayerId", "Weight", "Conditions", "Action", "CalloutKey",
+			"CalloutName"}},
+		"5447": {"A Windows Filtering Platform filter was changed", []string{"ProcessId", "UserSid", "UserName", "ProviderKey",
+			"ProviderName", "ChangeType", "FilterKey", "FilterName", "FilterType", "FilterId", "LayerKey", "LayerName", "LayerId",
+			"Weight", "Conditions", "Action", "CalloutKey", "CalloutName"}},
+		"5449": {"A Windows Filtering Platform provider context was changed", []string{"ProcessId", "UserSid", "UserName",
+			"ProviderKey", "ProviderName", "ChangeType", "ProviderContextKey", "ProviderContextName", "ProviderContextType"}},
+		"6416": {"A new external device was recognized", append(securitySubject, "DeviceId", "DeviceDescription", "ClassId",
+			"ClassName", "VendorIds", "CompatibleIds", "LocationInformation")},
+		"6423": {"The installation of a device was blocked by policy", append(securitySubject, "DeviceId", "DeviceDescription",
+			"ClassId", "ClassName", "HardwareIds", "CompatibleIds", "LocationInformation")},
+	}},
 	strings.ToLower(BitsChannel): {"bits", map[string]systemEvent{
 		"3": {"A BITS job was created", []string{"jobTitle", "jobId", "jobOwner", "processPath", "processId", "ClientProcessStartKey"}},
 		"16403": {"A BITS transfer started", []string{"User", "jobTitle", "jobId", "jobOwner", "fileCount", "RemoteName", "LocalName",
@@ -97,10 +287,37 @@ var namedChannels = map[string]namedChannel{
 // NamedChannelServices are the Sigma log source services of the logs
 // namedChannels lists, and their channels.
 var NamedChannelServices = map[string]string{
-	"firewall-as":           FirewallChannel,
-	"bits-client":           BitsChannel,
-	"appxdeployment-server": AppxChannel,
-	"wmi":                   WmiChannel,
+	"firewall-as":                          FirewallChannel,
+	"bits-client":                          BitsChannel,
+	"appxdeployment-server":                AppxChannel,
+	"wmi":                                  WmiChannel,
+	"terminalservices-localsessionmanager": RdpSessionChannel,
+	"shell-core":                           ShellCoreChannel,
+	"smbclient-security":                   SmbClientSecurityChannel,
+	"security-mitigations":                 MitigationsChannel,
+	"dns-client":                           DnsClientChannel,
+	"taskscheduler":                        TaskSchedulerChannel,
+	"ntlm":                                 NtlmChannel,
+	"lsa-server":                           LsaChannel,
+	"capi2":                                Capi2Channel,
+	"driver-framework":                     DriverFrameworksChannel,
+	"appmodel-runtime":                     AppModelRuntimeChannel,
+	"appxpackaging-om":                     AppxPackagingChannel,
+	"certificateservicesclient-lifecycle-system": CertLifecycleChannel,
+	"openssh":           OpenSshChannel,
+	"dns-server":        DnsServerChannel,
+	"iis-configuration": IisConfigurationChannel,
+}
+
+// IsNamedSecurityEvents reports whether the parser reads each of these
+// Security events by name (ChannelDataField with SecurityChannel).
+func IsNamedSecurityEvents(eventIDs ...string) bool {
+	for _, id := range eventIDs {
+		if _, ok := namedChannelEvent(SecurityChannel, id); !ok {
+			return false
+		}
+	}
+	return len(eventIDs) > 0
 }
 
 // NamedChannelCategory is the category of the Sigma rules of a log
@@ -127,10 +344,11 @@ func namedChannelEvent(channel, eventID string) (systemEvent, bool) {
 }
 
 // IsNamedChannel reports whether the parser reads a channel's events by
-// name (ChannelDataField).
+// name (ChannelDataField). The Security log is not one: the parser reads
+// only some of its events by name (IsNamedSecurityEvents).
 func IsNamedChannel(channel string) bool {
 	_, ok := namedChannelFor(channel)
-	return ok
+	return ok && !strings.EqualFold(channel, SecurityChannel)
 }
 
 // ChannelDataField is the stored field of a data value of a channel's

@@ -250,6 +250,54 @@ func TestWindowsFirewallAndBitsEvents(t *testing.T) {
 		"datamodel": "Other", "signature_id": "854", "appx_path": "https://example.org/app.msix",
 		"signature": "An app package file was downloaded",
 	})
+	// A Security event no data model holds (a filtering platform filter
+	// changed, 5447), by name, from Fluent Bit and the OpenTelemetry
+	// Collector alike.
+	ins = []string{"4242", "S-1-5-18", "NT AUTHORITY\\SYSTEM", "{p}", "Windows Defender", "1", "{f}", "Custom Outbound Filter"}
+	rec = map[string]any{"Channel": "Security", "Computer": "WS1", "EventID": "5447", "StringInserts": ins}
+	b, _ = json.Marshal(rec)
+	expect(t, Normalize("win.events", decode(t, string(b)), now).Document(), map[string]any{
+		"datamodel": "Other", "signature_id": "5447", "security_filter_name": "Custom Outbound Filter",
+		"security_process_id": "4242", "signature": "A Windows Filtering Platform filter was changed",
+	})
+	ev = otlpWindows(map[string]any{"channel": "Security", "computer": "WS1", "event_id": map[string]any{"id": "4611"},
+		"event_data": map[string]any{"SubjectUserName": "alice", "SubjectDomainName": "CORP", "LogonProcessName": "User32LogonProcesss"}})
+	if ev.Fields["security_logon_process_name"] != "User32LogonProcesss" || ev.Fields["user"] != "alice" || ev.Fields["user_domain"] != "CORP" {
+		t.Errorf("otlp 4611 = %v", ev.Fields)
+	}
+	if IsNamedChannel("Security") || !IsNamedSecurityEvents("4611", "5447") || IsNamedSecurityEvents("4624") || IsNamedSecurityEvents() {
+		t.Error("Security events read by name")
+	}
+	// A Remote Desktop logon, its channel named in another case.
+	rec = map[string]any{"Channel": "Microsoft-Windows-TerminalServices-LocalSessionManager/operational", "Computer": "WS1",
+		"EventID": "21", "StringInserts": []string{`CORP\alice`, "2", "203.0.113.7"}}
+	b, _ = json.Marshal(rec)
+	expect(t, Normalize("win.events", decode(t, string(b)), now).Document(), map[string]any{
+		"datamodel": "Other", "signature_id": "21", "rdp_user": `CORP\alice`, "rdp_session_id": "2", "rdp_address": "203.0.113.7",
+	})
+	// A scheduled task starting a process, from Fluent Bit; a DNS query
+	// from the OpenTelemetry Collector; a DNS Server event with no data.
+	rec = map[string]any{"Channel": TaskSchedulerChannel, "Computer": "WS1", "EventID": "129",
+		"StringInserts": []string{`\Updater`, `C:\Users\Public\run.exe`, "4242", "16384"}}
+	b, _ = json.Marshal(rec)
+	expect(t, Normalize("win.events", decode(t, string(b)), now).Document(), map[string]any{
+		"datamodel": "Other", "signature_id": "129", "sourcetype": "WinEventLog:" + TaskSchedulerChannel,
+		"taskscheduler_task_name": `\Updater`, "taskscheduler_path": `C:\Users\Public\run.exe`,
+		"signature": "A scheduled task started a process",
+	})
+	ev = otlpWindows(map[string]any{"channel": DnsClientChannel, "computer": "WS1", "event_id": map[string]any{"id": "3008"},
+		"event_data": map[string]any{"QueryName": "userstorage.mega.co.nz", "QueryStatus": "0"}})
+	if ev.Fields["dnsclient_query_name"] != "userstorage.mega.co.nz" || ev.Fields["signature"] != "A DNS query completed" {
+		t.Errorf("otlp 3008 = %v", ev.Fields)
+	}
+	rec = map[string]any{"Channel": DnsServerChannel, "Computer": "DC1", "EventID": "6004", "StringInserts": []string{"203.0.113.9", "corp.example"}}
+	b, _ = json.Marshal(rec)
+	expect(t, Normalize("win.events", decode(t, string(b)), now).Document(), map[string]any{
+		"datamodel": "Other", "signature_id": "6004", "sourcetype": "WinEventLog:DNS Server",
+	})
+	if f, ok := ChannelDataField(NtlmChannel, "workstationname"); !ok || f != "ntlm_workstation_name" {
+		t.Errorf("ntlm WorkstationName = %q %v", f, ok)
+	}
 }
 
 // The search engine knows every wildcard field, as it takes backslashes
@@ -437,6 +485,21 @@ func TestSysmonProcessHashes(t *testing.T) {
 	ev := Normalize("win.sysmon", decode(t, string(b)), now)
 	expect(t, ev.Document(), map[string]any{
 		"process_md5": strings.Repeat("b", 32), "process_sha1": strings.Repeat("a", 40), "process_sha256": strings.Repeat("c", 64),
+	})
+}
+
+// Sysmon's file blocks are file events; its configuration changing stays in
+// Other.
+func TestSysmonFileBlocks(t *testing.T) {
+	msg := "File Block Executable:\r\nImage: C:\\Windows\\System32\\curl.exe\r\nTargetFilename: C:\\Users\\bob\\x.exe\r\nUser: CORP\\bob"
+	b, _ := json.Marshal(map[string]any{"Channel": "Microsoft-Windows-Sysmon/Operational", "Computer": "WS1", "EventID": 27, "Message": msg})
+	expect(t, Normalize("win.sysmon", decode(t, string(b)), now).Document(), map[string]any{
+		"datamodel": "Filesystem", "action": "blocked", "signature": "Executable file creation blocked",
+		"file_path": `C:\Users\bob\x.exe`, "file_name": "x.exe", "process_path": `C:\Windows\System32\curl.exe`,
+	})
+	b, _ = json.Marshal(map[string]any{"Channel": "Microsoft-Windows-Sysmon/Operational", "Computer": "WS1", "EventID": 16, "Message": "Sysmon config state changed:"})
+	expect(t, Normalize("win.sysmon", decode(t, string(b)), now).Document(), map[string]any{
+		"datamodel": "Other", "signature": "Sysmon configuration changed",
 	})
 }
 

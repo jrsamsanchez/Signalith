@@ -1,0 +1,4 @@
+{"rule": "9e1a1fdf-ee58-40ce-8e15-b66ca5a80e1f", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-IIS-Configuration/Operational","event_id":"29","data":{"Configuration":"/system.webServer/modules/remove"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-IIS-Configuration/Operational","event_id":"29","data":{}}
+]}

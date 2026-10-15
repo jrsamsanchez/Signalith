@@ -47,6 +47,12 @@ type Config struct {
 	// to OpenSearch. They are read again when they change on disk, so a
 	// renewed certificate needs no restart.
 	CertFile, KeyFile string
+	// ManagedCertFile and ManagedKeyFile are the client certificate and
+	// key the cluster issued this server (internal/clusterpki). Whenever
+	// both are there and the certificate has not expired, they are
+	// presented instead of CertFile and KeyFile; until then, and when
+	// they cannot be read, CertFile and KeyFile are.
+	ManagedCertFile, ManagedKeyFile string
 	// TLSSkipVerify turns certificate checks off. Anyone on the network
 	// path can then read and change the traffic; for lab clusters only.
 	TLSSkipVerify bool
@@ -157,6 +163,10 @@ func Transport(cfg Config) (*http.Transport, error) {
 		} else {
 			tlsCfg.GetClientCertificate = kp.get
 		}
+	}
+	if cfg.ManagedCertFile != "" && cfg.ManagedKeyFile != "" {
+		m := &managedPair{managed: keyPair{cert: cfg.ManagedCertFile, key: cfg.ManagedKeyFile}, fallback: tlsCfg.GetClientCertificate}
+		tlsCfg.GetClientCertificate = m.get
 	}
 	return tr, errors.Join(errs...)
 }
@@ -275,6 +285,27 @@ func (k *keyPair) get(*tls.CertificateRequestInfo) (*tls.Certificate, error) {
 	}
 	k.loaded, k.stamp = &c, stamp
 	return k.loaded, nil
+}
+
+// managedPair presents the client certificate the cluster issued this
+// server while it is there and valid, and the configured one (fallback)
+// otherwise. Checked on each connection, so the switch needs no restart.
+type managedPair struct {
+	managed  keyPair
+	fallback func(*tls.CertificateRequestInfo) (*tls.Certificate, error)
+}
+
+func (m *managedPair) get(info *tls.CertificateRequestInfo) (*tls.Certificate, error) {
+	if _, err := os.Stat(m.managed.cert); err == nil {
+		if c, err := m.managed.get(info); err == nil && c.Leaf != nil && time.Now().Before(c.Leaf.NotAfter) {
+			return c, nil
+		}
+	}
+	if m.fallback != nil {
+		return m.fallback(info)
+	}
+	// No certificate: the same as not being asked for one.
+	return &tls.Certificate{}, nil
 }
 
 // Error is a non-2xx response from OpenSearch.

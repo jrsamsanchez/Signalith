@@ -872,7 +872,13 @@ agents that send events, shown on the [Endpoints page](endpoints.md)), `GET /api
 `POST /api/cluster/tokens`, `DELETE /api/cluster/tokens/{id}` (join tokens that add a server to
 the cluster; a token is shown once, in the answer that makes it), `GET /api/cluster/pending`,
 `POST /api/cluster/servers/{id}/approve` (servers that wait to join, approved by their
-fingerprint), `GET /api/requests/{id}`
+fingerprint), `GET /api/cluster/opensearch-identity`
+(who each server signs in to OpenSearch as; see
+[servers.md](servers.md#each-servers-own-opensearch-certificate)), `GET /api/cluster/lifecycle`,
+`POST /api/cluster/servers/{id}/drain`, `POST /api/cluster/servers/{id}/resume`,
+`DELETE /api/cluster/servers/{id}`, `POST /api/cluster/jobs/move`, `POST /api/cluster/rotate-key`
+(draining and removing servers, and rotating the cluster key; see
+[servers.md](servers.md#draining-and-removing-a-server)), `GET /api/requests/{id}`
 (work asked of the server that runs the background jobs, such as a feed download or a retention
 run; see [servers.md](servers.md#shared-feeds-and-retention-policies)), every
 `/api/notify` route (the Notifications page; see [notifications.md](notifications.md)), every

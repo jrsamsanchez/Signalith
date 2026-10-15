@@ -1080,6 +1080,8 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	archiveCrypto(ret.Archive, c, r.clusterKey)
 	if sharedOn {
 		r.sharedContent.sharedRetention(ret)
+	} else {
+		r.sharedContent.holdRetention(ret)
 	}
 	r.useAudit(ctx, in, c, cl, ret)
 	maxAge := c.MaxEventAge(retentionKeepDays(ret))
@@ -1151,6 +1153,8 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	feeds := newFeeds(c, indicators, log)
 	if sharedOn {
 		r.sharedContent.sharedFeeds(ctx, feeds, indicators, cl, c.OpenSearch.IndexPrefix, &in.jobs)
+	} else {
+		r.sharedContent.holdFeeds(feeds)
 	}
 	if err := feeds.Load(); err != nil {
 		if sharedOn {
@@ -1180,6 +1184,17 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		for _, p := range problems {
 			log.Error("dashboard file has errors; fix it to show the dashboard", "file", p.File, "err", p.Error)
 		}
+	}
+	if r.sharedContent != nil {
+		// Saved in this server's folders until the shared library is in
+		// use: held while they move into it (importhold.go).
+		lib.Hold = r.sharedContent.holdFile(shared.ImportDetections)
+		boards.Hold = r.sharedContent.holdFile(shared.ImportDashboards)
+		lists.Hold = r.sharedContent.holdFile(shared.ImportLookups)
+		if err := r.sharedContent.library.start(ctx, r.shared, sharedOn && r.shared.SharedLibrary(), c, lib, boards, &in.jobs); err != nil {
+			return nil, err
+		}
+		r.sharedContent.library.startLists(ctx, r.shared, sharedOn && r.shared.SharedLookups(), c, lists, &in.jobs)
 	}
 	// The users, the directory sign-in settings and the sessions: shared
 	// by the servers of the cluster once every one reads them there, else
@@ -1369,6 +1384,9 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		Leader: func() bool { return r.node != nil && r.node.RunsJobs() }}
 	// The cluster's one certificate authority, once it has one.
 	tlsStatus := r.sharedTLS(ctx, in, c, certs, agentsInv)
+	// This server's own OpenSearch certificate, once the cluster keeps
+	// OpenSearch's certificate authority.
+	osIdentity := r.osIdentity(ctx, in, c)
 	r.agents.Store(agentsInv)
 	in.jobs.Go(func() { agentsInv.Run(ctx) })
 	srv := &api.Server{
@@ -1551,7 +1569,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		}},
 	}
 	if r.shared != nil {
-		in.jobsList = append(in.jobsList, requestsJob(r.shared, contentHandlers(feeds, ret, r.auditHandlers(ret))))
+		in.jobsList = append(in.jobsList, requestsJob(r.shared, contentHandlers(feeds, ret, r.auditHandlers(ret), r.lifecycleLeaderHandlers())))
 		in.jobsList = append(in.jobsList, r.auditJobs(c, cl, ret)...)
 		in.jobsList = append(in.jobsList, r.joinJobs()...)
 	}
@@ -1595,6 +1613,8 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			srv.Cluster = sharedCluster{Node: r.node, rt: r.shared}
 			srv.Shared = sharedAPI{rt: r.shared, on: sharedOn}
 			srv.ClusterTLS = r.clusterTLSAPI()
+			srv.ClusterServers = r.clusterServersAPI()
+			srv.ClusterOSIdentity = r.clusterOSIdentityAPI()
 			srv.ConfigToken = configToken{rt: r.shared}
 			// A start that keeps the settings in settings.yaml has the
 			// store too, so a save there holds off the move of this
@@ -1637,8 +1657,9 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 				fp.Users = usersFingerprint(people, dir)
 				return sharedFingerprints(fp, r.shared, sharedOn)
 			},
-			Indexed: pipeline.LastIndexed,
-			TLS:     tlsStatus,
+			Indexed:    pipeline.LastIndexed,
+			TLS:        tlsStatus,
+			OSIdentity: osIdentity,
 		}
 		if rt := r.shared; rt != nil {
 			settings.Shared = func() cluster.SharedStatus { return sharedStatus(rt, r.sharedContent) }
@@ -1894,6 +1915,7 @@ func (r *runner) openUsers(c *config.Config) (*users.Store, *users.Directory, er
 		if err != nil {
 			return nil, nil, err
 		}
+		people.Hold = r.sharedContent.holdFile(shared.ImportUsers)
 		r.people = people
 	}
 	if r.people.BuiltinAdmin != c.Auth.AdminUser {
@@ -1907,6 +1929,7 @@ func (r *runner) openUsers(c *config.Config) (*users.Store, *users.Directory, er
 	if err != nil {
 		return nil, nil, err
 	}
+	dir.Hold = r.sharedContent.holdFile(shared.ImportDirectory)
 	return r.people, dir, nil
 }
 

@@ -79,6 +79,9 @@ type Problem struct {
 	At     time.Time `json:"at"`
 	// ver is the version reported, so that one is logged once.
 	ver store.Version
+	// unknownKID is the key a document is signed with that this server
+	// neither has nor finds in the keyring it read.
+	unknownKID string
 }
 
 // ProblemError is a write refused because the document has a problem.
@@ -314,6 +317,8 @@ func (h *Hub) open(id, kind string, format int, src json.RawMessage) (*Envelope,
 		return nil, &Problem{Kind: ProblemTamper, Reason: "it was changed in OpenSearch outside Signalith, or written by a newer version of Signalith (" + err.Error() + ")"}
 	case errors.As(err, &uk) && listed[uk.KID]:
 		return nil, &Problem{Kind: ProblemKeyMissing, Reason: err.Error()}
+	case uk != nil:
+		return nil, &Problem{Kind: ProblemTamper, Reason: "it was changed in OpenSearch outside Signalith (" + err.Error() + ")", unknownKID: uk.KID}
 	case err != nil:
 		return nil, &Problem{Kind: ProblemTamper, Reason: "it was changed in OpenSearch outside Signalith (" + err.Error() + ")"}
 	case e.ID != id:

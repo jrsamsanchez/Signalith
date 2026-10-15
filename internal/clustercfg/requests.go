@@ -101,3 +101,35 @@ type SettingsCheckResult struct {
 	Changed  []string          `json:"changed,omitempty"`
 	Confirm  []string          `json:"confirm,omitempty"`
 }
+
+// Requests of adding and removing servers. Drain and resume are run by
+// the server they name; release_jobs and rotate_key by the server that
+// runs the background jobs.
+const (
+	// RequestDrain drains the server it names: it wants no traffic and
+	// gives the background jobs up, until it is resumed.
+	RequestDrain = "drain"
+	// RequestResume undoes a drain.
+	RequestResume = "resume"
+	// RequestLeave is reserved for a server asked to leave the cluster by
+	// itself.
+	RequestLeave = "leave"
+	// RequestReleaseJobs hands the background jobs to another server.
+	RequestReleaseJobs = "release_jobs"
+	// RequestRotateKey rotates the cluster key.
+	RequestRotateKey = "rotate_key"
+)
+
+// ReleaseJobsArgs are the arguments of a release_jobs request: the node
+// id of the server to take the background jobs.
+type ReleaseJobsArgs struct {
+	To string `json:"to"`
+}
+
+// RotateKeyArgs are the arguments of a rotate_key request: why it was
+// asked for ("rotate-key", or the removal of a server), and the servers
+// whose removal it follows.
+type RotateKeyArgs struct {
+	Reason  string   `json:"reason,omitempty"`
+	Removed []string `json:"removed,omitempty"`
+}

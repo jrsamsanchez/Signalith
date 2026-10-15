@@ -25,6 +25,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/clusterauth"
 	"github.com/jrsamsanchez/signalith/internal/clustercfg"
 	"github.com/jrsamsanchez/signalith/internal/clusterjoin"
+	"github.com/jrsamsanchez/signalith/internal/clusterpki"
 	"github.com/jrsamsanchez/signalith/internal/config"
 	"github.com/jrsamsanchez/signalith/internal/securefile"
 	"github.com/jrsamsanchez/signalith/internal/shared"
@@ -49,6 +50,14 @@ const clusterUsage = `usage:
                                    a join token, which adds a server with signalith join
   signalith cluster token          [-c file] -revoke <id>   cancel a join token
   signalith cluster approve        [-c file] [-fingerprint fp] [-yes] [<server|fingerprint>]   approve a server waiting to join (none: list them)
+  signalith cluster rotate-key     [-c file] [-yes]           give the cluster a new key; copies of the old one open nothing new
+  signalith cluster remove         [-c file] [-yes] [-no-rotate] <server>   take a drained or stopped server out of the cluster
+  signalith cluster leave          [-c file] [-yes] [-no-rotate]   take this stopped server out of the cluster
+  signalith cluster new-identity   [-c file] [-yes]           make this stopped server a new one (a cloned computer or copied folder)
+  signalith cluster opensearch-ca  [-c file] [-json]          OpenSearch's certificate authority, which gives each server its own certificate
+  signalith cluster opensearch-ca import [-c file] [-cert file] <root-ca-key.pem>   hand OpenSearch's certificate authority to the cluster
+  signalith cluster opensearch-ca revoke [-c file] [-yes] <server>   end a server's OpenSearch access at once
+  signalith cluster opensearch-ca crl    [-c file] [-o file]   the revocation list OpenSearch checks, for its nodes
 
 The servers that share one OpenSearch keep the settings they share in it
 (the <prefix>_config index), signed with the cluster key that each of them
@@ -83,6 +92,8 @@ type clusterCLI struct {
 	// migration reports.
 	join    *clusterjoin.Tokens
 	reports *clustercfg.Reports
+	// osca holds OpenSearch's certificate authority of the same runtime.
+	osca *clusterpki.OSCA
 }
 
 // runCluster is cmdCluster with its input and output.
@@ -111,9 +122,12 @@ func runCluster(args []string, in *os.File, out, errOut io.Writer) error {
 	flags.StringVar(&tok.url, "url", "", "token: this server's https address the new server reaches (default server.node_url, else server.public_url)")
 	flags.StringVar(&tok.revoke, "revoke", "", "token: cancel the join token with this id")
 	fingerprint := flags.String("fingerprint", "", "approve: the fingerprint the waiting server shows, which must match")
+	noRotate := flags.Bool("no-rotate", false, "with remove or leave, do not rotate the cluster key")
+	caCert := flags.String("cert", "", "with opensearch-ca import, the certificate authority's certificate (default root-ca.pem next to the key)")
 	pos := parseInterleaved(flags, args)
 	switch sub {
-	case "status", "found", "export", "import", "export-key", "import-key", "reset-key", "accept-restore", "apply", "tls", "upgrade-check", "token", "approve":
+	case "status", "found", "export", "import", "export-key", "import-key", "reset-key", "accept-restore", "apply", "tls", "upgrade-check", "opensearch-ca",
+		"rotate-key", "remove", "leave", "new-identity", "token", "approve":
 	default:
 		return fmt.Errorf("unknown cluster command %q\n\n%s", sub, clusterUsage)
 	}
@@ -126,6 +140,10 @@ func runCluster(args []string, in *os.File, out, errOut io.Writer) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 	x := &clusterCLI{c: c, log: log, in: in, out: out, errOut: errOut, by: cliUser()}
+	if sub == "new-identity" {
+		// The server is stopped, and OpenSearch is not needed.
+		return newIdentity(c.StateDir(), out, errOut, func(q string) error { return x.confirm(q, *yes) })
+	}
 	if x.self, err = cluster.ReadIdentity(c.StateDir()); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return fmt.Errorf("this server has no identity yet (no node.id in %s): start it once with signalith serve, or check SIGNALITH_STATE_DIR", c.StateDir())
@@ -183,6 +201,17 @@ func runCluster(args []string, in *os.File, out, errOut io.Writer) error {
 			return errors.New("usage: signalith cluster approve [-c file] [-fingerprint fp] [-yes] [<server|fingerprint>]")
 		}
 		return x.approve(ctx, strings.Join(pos, ""), *fingerprint, *yes)
+	case "rotate-key":
+		return x.rotateKey(ctx, *yes)
+	case "remove":
+		if len(pos) != 1 {
+			return errors.New("usage: signalith cluster remove [-yes] [-no-rotate] <server name or node id>")
+		}
+		return x.removeCLI(ctx, pos[0], *noRotate, *yes)
+	case "leave":
+		return x.leave(ctx, *noRotate, *yes)
+	case "opensearch-ca":
+		return x.osCACommand(ctx, pos, *caCert, *outFile, *asJSON, *yes)
 	}
 	return nil
 }
@@ -212,7 +241,7 @@ func (x *clusterCLI) keyStore() shared.KeyStore {
 // readOnly writes nothing to OpenSearch or the state folder.
 func (x *clusterCLI) runtime(readOnly bool, name string) *shared.Runtime {
 	d := newSharedDocs(clusterauth.NewDocs())
-	x.docs, x.auth, x.tls, x.join, x.reports = d.docs, d.auth, d.tls, d.join, d.reports
+	x.docs, x.auth, x.tls, x.osca, x.join, x.reports = d.docs, d.auth, d.tls, d.osca, d.join, d.reports
 	files := x.files()
 	var made atomic.Pointer[shared.Runtime]
 	files.NodeCfg = func() *shared.Doc[shared.NodeCfg] {
@@ -625,6 +654,12 @@ func (x *clusterCLI) importKey(ctx context.Context, file string) error {
 	x.audit("imported a cluster key", "cluster_key", k.ID())
 	rt := x.runtime(true, "")
 	m, _ := rt.Mode()
+	if m == shared.ModeMember && rt.RemovedSelf() {
+		// Given the key again on purpose: it may add itself back.
+		if err := rt.ForgetRemoved(ctx, x.self.NodeID); err != nil {
+			fmt.Fprintf(x.errOut, "warning: this server was removed from the cluster before, and that could not be undone: %v\n", err)
+		}
+	}
 	switch {
 	case rt.Status().ClusterKID == k.ID() && (m == shared.ModeMember || m == shared.ModeImporting):
 		fmt.Fprintf(x.out, "Kept cluster key %s in this server's state folder. The shared settings check out with it; a running server joins within seconds.\n", k.ID())

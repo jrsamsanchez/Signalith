@@ -805,7 +805,11 @@ func (l *Lease) waitDraining() {
 // meanwhile as long as Step keeps being called), then the lease is
 // written with no holder, so another server takes over within seconds. A
 // Release while another one is in progress waits for that one.
-func (l *Lease) Release(reason string) {
+func (l *Lease) Release(reason string) { l.ReleaseTo(reason, "") }
+
+// ReleaseTo is Release naming the server prefer (a node id) to take the
+// lease: the others wait PreferWait for it first. "" names none.
+func (l *Lease) ReleaseTo(reason, prefer string) {
 	l.mu.Lock()
 	switch l.state {
 	case standby:
@@ -853,6 +857,7 @@ func (l *Lease) Release(reason string) {
 	doc, ver := l.doc, l.ver
 	l.mu.Unlock()
 	doc.Holder, doc.HolderBoot, doc.ReleasedBy, doc.ReleaseReason, doc.RenewedAt = "", "", l.Self.NodeID, reason, l.Clock.Now().UTC()
+	doc.Prefer = prefer
 	if !fp.Unknown {
 		doc.Fingerprints, doc.Fingerprint = fp, fp.Combined()
 	}

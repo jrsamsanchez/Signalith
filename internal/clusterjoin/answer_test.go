@@ -3,6 +3,7 @@ package clusterjoin
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"net"
 	"os"
@@ -245,7 +246,7 @@ func TestAnswerCredentialHook(t *testing.T) {
 	view := securedView(t)
 	var asked string
 	d := Deps{RT: a, Tokens: tk, Version: "1.5.0", View: func() View { return view },
-		Credential: func(_ context.Context, name string, csr []byte) (OSCredential, error) {
+		Credential: func(_ context.Context, name, _ string, csr []byte) (OSCredential, error) {
 			asked = name + ":" + string(csr)
 			return OSCredential{CAPEM: "CA", ClientCertPEM: "CERT", Managed: true}, nil
 		}}
@@ -345,7 +346,7 @@ func TestAnswerRefusesToTakeAMembersPlace(t *testing.T) {
 	}
 	// A failure once the token is used says so.
 	ds := d
-	ds.Credential = func(context.Context, string, []byte) (OSCredential, error) {
+	ds.Credential = func(context.Context, string, string, []byte) (OSCredential, error) {
 		return OSCredential{}, errors.New("osca is down")
 	}
 	if _, err := Answer(ctx, ds, far); !errors.Is(err, ErrSpent) || !strings.Contains(Reason(err), "osca is down") || unused() {
@@ -367,5 +368,40 @@ func TestMemberClash(t *testing.T) {
 	}
 	if err := memberClash(nil, "n_b", "siem-b", "pb"); err != nil {
 		t.Errorf("no keyring: %v", err)
+	}
+}
+
+// While the cluster key is being rotated a server that joined would get
+// the key being replaced and no copy of the new one: the join is refused
+// and the token stays unused.
+func TestAnswerRefusesDuringAKeyRotation(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	a, tk := e.member("siem-a")
+	view := securedView(t)
+	d := Deps{RT: a, Tokens: tk, Version: "1.5.0", View: func() View { return view }, Now: e.clock}
+	if _, err := a.Keyring().Mutate(ctx, "test", func(kb *shared.KeyringBody) error {
+		kb.Next = json.RawMessage(`{"kid":"k_next","from":"` + kb.Active + `","phase":"copies"}`)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	tok := e.issue(tk, nil).Token
+	_, req := joiner(t, tok, "siem-c")
+	var je *JoinError
+	if _, err := Answer(ctx, d, req); !errors.As(err, &je) || !strings.Contains(je.Msg, "being rotated") {
+		t.Fatalf("joined during a rotation: %v (%s)", err, Reason(err))
+	}
+	for _, l := range tk.List() {
+		if l.ID == tok.ID && l.State != "open" {
+			t.Errorf("the token is %s", l.State)
+		}
+	}
+	kr, _ := a.Keyring().Get()
+	if _, listed := kr.Members[req.NodeID]; listed {
+		t.Error("the joining server was listed")
+	}
+	if err := rotating(&shared.KeyringBody{}); err != nil {
+		t.Errorf("no rotation: %v", err)
 	}
 }
