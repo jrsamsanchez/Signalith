@@ -203,11 +203,16 @@ type joinTokenAnswer struct {
 	InstallSHA256 map[string]string `json:"install_sha256"`
 }
 
-// joinCommands are the lines an admin pastes on the new server.
+// joinCommands are the lines an admin pastes on the new server: the
+// one-line installs of internal/clusterinstall when this server hands
+// them out (Install), else the join of a server Signalith is installed on.
 type joinCommands struct {
-	Linux   string `json:"linux"`
-	Windows string `json:"windows"`
-	Docker  string `json:"docker"`
+	Linux       string `json:"linux"`
+	LinuxNote   string `json:"linux_note,omitempty"`
+	Windows     string `json:"windows"`
+	WindowsNote string `json:"windows_note,omitempty"`
+	Docker      string `json:"docker"`
+	DockerRun   string `json:"docker_run,omitempty"`
 }
 
 // commandsFor returns the lines that join a server with the token tok:
@@ -275,9 +280,12 @@ func (s *Server) handleJoinTokenNew(w http.ResponseWriter, r *http.Request) {
 	defer is.Token.Clear()
 	s.audit(r, "join token made", "token", is.Token.ID, "platform", req.Platform, "expires_at", is.ExpiresAt, "note", req.Note)
 	text := is.Token.String()
-	// The install scripts and their SHA-256 come from
-	// internal/clusterinstall; until it is wired install_sha256 is empty.
 	out := joinTokenAnswer{ID: is.Token.ID, Token: text, ExpiresAt: is.ExpiresAt, Commands: commandsFor(text), InstallSHA256: map[string]string{}}
+	if c, sums, err := s.Install.lines(is.Token.URL, text, s.Version); err == nil {
+		out.Commands, out.InstallSHA256 = c, sums
+	} else if s.Install != nil {
+		s.Log.Warn("the join token's one-line installs could not be made; the answer has the plain join lines", "err", err)
+	}
 	writeJSON(w, http.StatusCreated, out)
 }
 

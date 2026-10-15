@@ -107,7 +107,9 @@ func TestClusterTokenAndApprove(t *testing.T) {
 	if tok.URL != "https://siem-a.example.com:8080" || !tok.MatchesPin(caBlock.Bytes) {
 		t.Errorf("token = %v %s, pin of %s", tok.URL, tok.CA, clusterjoin.Pin(caBlock.Bytes))
 	}
-	for _, want := range []string{"sudo signalith join '" + text + "'", "SIGNALITH_JOIN=" + text, "signalith.exe\" join '" + text + "'", "works once"} {
+	// The one-line installs of Servers > Add a server, the token never an
+	// argument of a command.
+	for _, want := range []string{"echo '" + text + "' | sudo sh \"$f\"", "--join -", "SIGNALITH_JOIN=" + text, "-Join '" + text + "'", "docker-compose.server.yml", "works once"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("token output lacks %q:\n%s", want, out)
 		}
@@ -123,7 +125,7 @@ func TestClusterTokenAndApprove(t *testing.T) {
 	out, err = run("", "token", "-url", "https://siem-a.example.com:8080", "-json")
 	var ans tokenAnswer
 	if err != nil || json.Unmarshal([]byte(out[:strings.LastIndex(out, "}")+1]), &ans) != nil || ans.ID == "" || ans.ID == tok.ID ||
-		!strings.HasPrefix(ans.Token, "SJ1.") || ans.Commands["docker"] != "SIGNALITH_JOIN="+ans.Token || time.Until(ans.ExpiresAt) < 59*time.Minute {
+		!strings.HasPrefix(ans.Token, "SJ1.") || !strings.Contains(ans.Commands["docker"], "\nSIGNALITH_JOIN="+ans.Token+"\n") || !strings.Contains(ans.Commands["linux"], "--join -") || time.Until(ans.ExpiresAt) < 59*time.Minute {
 		t.Fatalf("token -json: %v %+v\n%s", err, ans, out)
 	}
 

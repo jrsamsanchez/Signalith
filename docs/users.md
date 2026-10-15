@@ -800,7 +800,9 @@ token; the others take the node key a host got when it enrolled; see
 token itself; it counts against the sign-in limits per token and per address, its body is at most
 16 KiB, and every refusal gets the same answer: `403`, with its own text only once the proof
 matched and the token was left unused, such as another version; `500` when the token was used but
-the join could not be finished, so the new server needs a new token). Requests from a browser that change something must come from the Signalith
+the join could not be finished, so the new server needs a new token), and `GET /api/cluster/join/install.sh`,
+`GET /api/cluster/join/install.ps1` and `GET /api/cluster/join/binary` (the install scripts and this server's
+program, which a new server downloads before it can sign in; see [multi-server.md](multi-server.md)). Requests from a browser that change something must come from the Signalith
 page itself.
 
 Every answer carries the server's version in `X-Signalith-Version`. Answers to
@@ -883,7 +885,8 @@ fingerprint), `GET /api/cluster/opensearch-identity`
 `DELETE /api/cluster/servers/{id}`, `POST /api/cluster/jobs/move`, `POST /api/cluster/rotate-key`
 (draining and removing servers, and rotating the cluster key; see
 [servers.md](servers.md#draining-and-removing-a-server)), `GET /api/cluster/upgrade` (the upgrade checklist of the Servers
-page; see [servers.md](servers.md#upgrading-servers-you-set-up-by-hand)), `GET /api/requests/{id}`
+page; see [servers.md](servers.md#upgrading-servers-you-set-up-by-hand)), `GET /api/cluster/join/prepare`,
+`GET /api/cluster/servers/{id}/check` (Add a server; see [multi-server.md](multi-server.md)), `GET /api/requests/{id}`
 (work asked of the server that runs the background jobs, such as a feed download or a retention
 run; see [servers.md](servers.md#shared-feeds-and-retention-policies)), every
 `/api/notify` route (the Notifications page; see [notifications.md](notifications.md)), every
@@ -897,7 +900,8 @@ run; see [servers.md](servers.md#shared-feeds-and-retention-policies)), every
 A route added without a role is admin-only, and a test fails until it gets one. That
 includes routes registered outside the role table, straight on the server's outer
 router: any `/api/` route there other than the public ones (sign-in, sign-out, agent
-ingest, the CA certificate, `GET /api/tls/ca.pem`, and the two join routes) is admin-only.
+ingest, the CA certificate, `GET /api/tls/ca.pem`, the two join routes and the three install
+downloads) is admin-only.
 
 A refused request:
 

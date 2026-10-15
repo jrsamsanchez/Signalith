@@ -204,6 +204,9 @@ type Server struct {
 	// Servers page's checklist (GET /api/cluster/upgrade); nil on a
 	// server without a cluster.
 	Upgrade func(ctx context.Context) (upgradecheck.Verdict, error)
+	// Install hands new servers the install scripts and this server's
+	// program; nil turns that off.
+	Install *ClusterInstall
 
 	authOnce     sync.Once
 	creds        credCache  // recently checked Basic credentials
@@ -323,6 +326,7 @@ func (s *Server) Handler() http.Handler {
 	s.routeClusterFeatures(api)
 	s.routeClusterUpgrade(api)
 	s.routeClusterOSIdentity(api)
+	s.routeClusterInstall(mux, api)
 	s.routeTokens(api)
 	s.routeAPITokens(api)
 	s.routeAgents(api)

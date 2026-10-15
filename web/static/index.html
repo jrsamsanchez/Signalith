@@ -1428,7 +1428,11 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
         <h2 class="page-head__title">Servers</h2>
         <p class="page-head__desc">The Signalith servers that share this OpenSearch. One of them runs the background jobs: detections, threat intel downloads and data retention.</p>
       </div>
+      <div class="page-head__actions">
+        <button class="btn btn--primary" type="button" id="sv-add" hidden><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg><span>Add a server</span></button>
+      </div>
     </div>
+    <div id="servers-join" class="sv-page"></div>
     <div id="servers" class="sv-page"></div>
     <div id="servers-ca" class="sv-page"></div>
     <div id="servers-life" class="sv-page"></div>
@@ -1558,6 +1562,7 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
 <script src="servers-lifecycle.js"></script>
 <script src="servers-osid.js"></script>
 <script src="servers-upgrade.js"></script>
+<script src="servers-join.js"></script>
 <script src="audit.js"></script>
 </body>
 </html>
