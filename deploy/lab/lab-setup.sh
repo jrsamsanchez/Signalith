@@ -389,7 +389,7 @@ EOF
 
 endpoints() {
   local token cfg
-  token=$(sg tokens create -purpose linux "Lab Linux endpoints")
+  token=$(sg tokens create -purpose linux "Lab Linux endpoints $(date +%m%d-%H%M%S)")
   cfg=$(api "/api/agents/config?os=linux&server=$SIEM_URL")
   for m in $(names linux); do
     say "  $m"
@@ -518,7 +518,7 @@ EOF
 
 sensor() {
   local token out line
-  token=$(sg tokens create -purpose sensor "Lab sensor")
+  token=$(sg tokens create -purpose sensor "Lab sensor $(date +%m%d-%H%M%S)")
   out=$(api "/api/sensor/install?server=$SIEM_URL&interface=capture0")
   line=$(jq -r .linux <<<"$out")
   line=${line//"$(jq -r .token_placeholder <<<"$out")"/$token}
