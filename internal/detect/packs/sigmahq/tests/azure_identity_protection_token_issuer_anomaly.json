@@ -1,0 +1,4 @@
+{"rule": "e3393cba-31f0-4207-831e-aef90ab17a8c", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"riskdetection","data":{"riskEventType":"tokenIssuerAnomaly"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"riskdetection","data":{}}
+]}

@@ -86,8 +86,17 @@ func (p *Pipeline) IngestOTLP(ctx context.Context, body []byte, isJSON bool) (*R
 		return nil
 	}
 	err := walk(body, true, func(l *otlpLog, rawSize int) error {
-		batch = append(batch, otlpEvent(l, p.now()))
-		total.noteHost(&batch[len(batch)-1])
+		evs := otlpEvents(l, p.now())
+		if extra := len(evs) - 1; extra > 0 {
+			// An Event Hub message's records count as received one by one.
+			n += extra
+			total.Received += extra
+			p.stats.Received.Add(int64(extra))
+		}
+		for _, ev := range evs {
+			batch = append(batch, ev)
+			total.noteHost(&batch[len(batch)-1])
+		}
 		size += rawSize
 		if len(batch) >= batchEvents || size >= batchBytes {
 			return flush()
@@ -107,6 +116,35 @@ func (p *Pipeline) IngestOTLP(ctx context.Context, body []byte, isJSON bool) (*R
 		}
 	}
 	return total, nil
+}
+
+// otlpEvents maps one OTLP log record to its events: one, or each record
+// of an Azure Event Hub message.
+func otlpEvents(l *otlpLog, now time.Time) []Event {
+	recs := azureFromOTLP(l.body)
+	if recs == nil {
+		return []Event{otlpEvent(l, now)}
+	}
+	host, _ := l.resource["host.name"].(string)
+	out := make([]Event, 0, len(recs))
+	for _, r := range recs {
+		ev := ParseAzure(r)
+		if s, _ := ev.Fields["host"].(string); s == "" && host != "" {
+			ev.Fields["host"] = host
+		}
+		// The record's own time, else when Event Hubs took the message.
+		switch {
+		case !ev.Time.IsZero():
+		case l.time > 0:
+			ev.Time = otlpTime(l.time)
+		case l.observed > 0:
+			ev.Time = otlpTime(l.observed)
+		default:
+			ev.Time = now.UTC()
+		}
+		out = append(out, ev)
+	}
+	return out
 }
 
 // otlpEvent maps one OTLP log record to an event.

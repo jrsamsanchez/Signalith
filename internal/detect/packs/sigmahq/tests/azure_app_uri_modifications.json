@@ -1,0 +1,4 @@
+{"rule": "0055ad1f-be85-4798-83cf-a6da17c993b3", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"properties.message":"Update Application Sucess- Property Name AppAddress"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{}}
+]}

@@ -1,0 +1,4 @@
+{"rule": "448fd1ea-2116-4c62-9cde-a92d120e0f08", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"operationName":"Remove service principal"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{}}
+]}

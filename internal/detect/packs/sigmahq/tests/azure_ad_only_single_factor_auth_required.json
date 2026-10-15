@@ -1,0 +1,5 @@
+{"rule": "28eea407-28d7-4e42-b0be-575d5ba60b2c", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"signinlogs","data":{"AuthenticationRequirement":"singleFactorAuthentication","Status":"Success"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"signinlogs","data":{"Status":"Success"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"signinlogs","data":{"AuthenticationRequirement":"singleFactorAuthentication"}}
+]}

@@ -1,0 +1,4 @@
+{"rule": "72af37e2-ec32-47dc-992b-bc288a2708cb", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"activitylogs","data":{"operationName":"MICROSOFT.PORTAL/CONSOLES/WRITE"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"activitylogs","data":{}}
+]}

@@ -54,6 +54,7 @@
 <symbol id="i-circle-help" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></symbol>
 <symbol id="i-circle-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></symbol>
 <symbol id="i-clipboard-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/><path d="M16 4h2a2 2 0 0 1 2 2v4"/><path d="M21 14H11"/><path d="m15 10-4 4 4 4"/></symbol>
+<symbol id="i-clipboard-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 14 2 2 4-4"/></symbol>
 <symbol id="i-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></symbol>
 <symbol id="i-cloud" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></symbol>
 <symbol id="i-cloud-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M12 13v8l-4-4"/><path d="m12 21 4-4"/><path d="M4.393 15.269A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.436 8.284"/></symbol>
@@ -190,6 +191,7 @@
       <div class="nav__label">Detect &amp; respond</div>
       <a class="nav__item" href="#detections" data-page="detections"><svg class="icon" aria-hidden="true"><use href="#i-crosshair"/></svg><span>Detections</span></a>
       <a class="nav__item" href="#coverage" data-page="coverage"><svg class="icon" aria-hidden="true"><use href="#i-grid-3x3"/></svg><span>ATT&amp;CK coverage</span></a>
+      <a class="nav__item" href="#compliance" data-page="compliance"><svg class="icon" aria-hidden="true"><use href="#i-clipboard-check"/></svg><span>Compliance</span></a>
       <a class="nav__item" href="#playbooks" data-page="playbooks" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-list-checks"/></svg><span>Playbooks</span></a>
       <a class="nav__item" href="#respond" data-page="respond" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-zap"/></svg><span>Response actions</span></a>
     </div>
@@ -922,6 +924,11 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
           <span class="agent-os__text"><b>AWS CloudTrail</b><span>Sign-ins and API calls in your AWS accounts</span></span>
           <input type="radio" name="os" value="aws">
         </label>
+        <label class="card agent-os__card">
+          <span class="agent-os__icon"><svg class="icon" aria-hidden="true"><use href="#i-cloud"/></svg></span>
+          <span class="agent-os__text"><b>Entra ID and Azure</b><span>Microsoft sign-ins, directory changes and Azure activity</span></span>
+          <input type="radio" name="os" value="azure">
+        </label>
       </fieldset>
 
       <div class="card agent-setup" id="agent-setup">
@@ -1127,6 +1134,21 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
     <dialog id="ep-host" class="modal ep-host" aria-labelledby="ep-host-title"></dialog>
     <dialog id="ep-settings-dialog" class="modal ep-set" aria-labelledby="ep-set-title"></dialog>
     <dialog id="ep-remove" class="modal" aria-labelledby="ep-remove-title"></dialog>
+  </section>
+
+  <!-- Compliance: framework controls, their evidence, and reports -->
+  <section id="page-compliance" class="page">
+    <div class="page-head">
+      <div>
+        <h2 class="page-head__title">Compliance</h2>
+        <p class="page-head__desc">Where your data, detections and checks give evidence for common security frameworks, what is still missing, and a report to hand your auditor.</p>
+      </div>
+      <div class="page-head__actions">
+        <button id="cp-refresh" class="btn btn--ghost btn--icon" type="button" aria-label="Check again" title="Check again"><svg class="icon" aria-hidden="true"><use href="#i-refresh-cw"/></svg></button>
+      </div>
+    </div>
+    <div id="cp-frameworks" class="cp-fws" role="tablist" aria-label="Frameworks"></div>
+    <div id="cp-body" class="cp-body" aria-live="polite"></div>
   </section>
 
   <!-- Vulnerabilities (analysts and admins): network scans with Nmap -->
@@ -1663,6 +1685,7 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
 <script src="endpoints.js"></script>
 <script src="sensor-setup.js"></script>
 <script src="vulns.js"></script>
+<script src="compliance.js"></script>
 <script src="tokens.js"></script>
 <script src="apitokens.js"></script>
 <script src="sso.js"></script>

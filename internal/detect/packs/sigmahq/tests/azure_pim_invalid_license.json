@@ -1,0 +1,4 @@
+{"rule": "58af08eb-f9e1-43c8-9805-3ad9b0482bd8", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"pim","data":{"riskEventType":"invalidLicenseAlertIncident"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"pim","data":{}}
+]}

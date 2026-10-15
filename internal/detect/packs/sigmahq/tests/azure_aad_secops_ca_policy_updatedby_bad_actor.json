@@ -1,0 +1,4 @@
+{"rule": "50a3c7aa-ec29-44a4-92c1-fce229eef6fc", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"properties.message":"Update conditional access policy"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{}}
+]}

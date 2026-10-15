@@ -1,0 +1,4 @@
+{"rule": "a2cb56ff-4f46-437a-a0fa-ffa4d1303cba", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"riskdetection","data":{"riskEventType":"investigationsThreatIntelligence"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"riskdetection","data":{}}
+]}

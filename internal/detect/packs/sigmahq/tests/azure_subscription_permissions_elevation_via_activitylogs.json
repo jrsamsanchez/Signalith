@@ -1,0 +1,4 @@
+{"rule": "09438caa-07b1-4870-8405-1dbafe3dad95", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"activitylogs","data":{"operationName":"MICROSOFT.AUTHORIZATION/ELEVATEACCESS/ACTION"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"activitylogs","data":{}}
+]}

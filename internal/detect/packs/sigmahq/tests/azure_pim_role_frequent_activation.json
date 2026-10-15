@@ -1,0 +1,4 @@
+{"rule": "645fd80d-6c07-435b-9e06-7bc1b5656cba", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"pim","data":{"riskEventType":"sequentialActivationRenewalsAlertIncident"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"pim","data":{}}
+]}

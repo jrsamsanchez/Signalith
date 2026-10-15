@@ -523,6 +523,13 @@ func ConvertSigmaWith(src []byte, opt SigmaOptions) (*SigmaResult, error) {
 			category = "cloudtrail"
 		}
 	}
+	if product, _ := r.Logsource["product"].(string); category == "" && strings.EqualFold(product, "azure") {
+		if service, _ := r.Logsource["service"].(string); slices.Contains(ingest.AzureServices, strings.ToLower(service)) {
+			// Entra ID's and Azure's logs, by Sigma's service
+			// (signinlogs), each field by Microsoft Sentinel's name.
+			category = strings.ToLower(service)
+		}
+	}
 	if category == "" {
 		// Zeek's own logs (product: zeek, service: dns, ...).
 		category = sigmaNetworkCategory(r.Logsource)
@@ -692,6 +699,13 @@ func productScope(ls map[string]any, category string) query.Expr {
 		if category == "cloudtrail" {
 			return &query.Compare{Field: "sourcetype", Op: "=", Value: ingest.CloudTrailSourcetype}
 		}
+	case "azure":
+		if category == "activitylogs" {
+			return &query.Compare{Field: "sourcetype", Op: "=", Value: ingest.AzureActivitySourcetype}
+		}
+		if slices.Contains(ingest.AzureServices, category) {
+			return &query.Compare{Field: "sourcetype", Op: "=", Value: ingest.AzureADSourcetype}
+		}
 	case "linux", "macos":
 		if category == "auditd" {
 			return &query.Compare{Field: "sourcetype", Op: "=", Value: ingest.AuditdSourcetype}
@@ -739,6 +753,12 @@ func (c *sigmaConv) datamodel(ls map[string]any) string {
 		return "Other"
 	case "windefend":
 		return "Malware"
+	case "signinlogs":
+		return "Authentication"
+	case "auditlogs", "activitylogs":
+		return "Change"
+	case "riskdetection", "pim":
+		return "Alerts"
 	}
 	if _, ok := sigmaNamedChannels[c.category]; ok {
 		return "Other"
@@ -768,6 +788,14 @@ func (c *sigmaConv) field(name string) string {
 			c.approx("field %s is not a CloudTrail field Signalith keeps", name)
 		}
 		return name
+	}
+	if slices.Contains(ingest.AzureServices, c.category) {
+		f, ok := ingest.AzureSigmaField(c.category, name)
+		if !ok {
+			c.approx("field %s has no Azure %s field Signalith keeps", name, c.category)
+			return name
+		}
+		return f
 	}
 	if c.category == "system_event" {
 		return c.systemField(name)

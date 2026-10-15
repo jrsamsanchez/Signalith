@@ -1,0 +1,4 @@
+{"rule": "b02f9591-12c3-4965-986a-88028629b2e1", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"activitylogs","data":{"operationName":"MICROSOFT.KUBERNETES/CONNECTEDCLUSTERS/PODS/DELETE"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"activitylogs","data":{}}
+]}

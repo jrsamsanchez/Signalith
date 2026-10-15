@@ -1,0 +1,4 @@
+{"rule": "db6c06c4-bf3b-421c-aa88-15672b88c743", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"properties.message":"Update role setting in PIM"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{}}
+]}
