@@ -2385,14 +2385,15 @@ agentServerEl.addEventListener('change', async () => {
 // in storage; changing the name or the source drops it, so the next copy
 // makes a new token. "Use a token I already have" takes a pasted token
 // instead (checked here only).
-const AGENT_TOKEN_DEFAULTS = { linux: 'Linux servers', windows: 'Windows servers', otel: 'OpenTelemetry Collector', osquery: 'osquery hosts', wazuh: 'Wazuh manager', sensor: 'Network sensor', aws: 'AWS CloudTrail' };
+const AGENT_TOKEN_DEFAULTS = { linux: 'Linux servers', windows: 'Windows servers', otel: 'OpenTelemetry Collector', osquery: 'osquery hosts', wazuh: 'Wazuh manager', sensor: 'Network sensor', aws: 'AWS CloudTrail', azure: 'Entra ID and Azure' };
 // AGENT_TOKEN_PURPOSES is the token purpose of a source whose agent is
 // another's: Fluent Bit on the Wazuh manager is a Linux agent, and the
-// Collector that reads AWS CloudTrail an OpenTelemetry Collector.
-const AGENT_TOKEN_PURPOSES = { wazuh: 'linux', aws: 'otel' };
+// Collectors that read AWS CloudTrail or Azure's event hub OpenTelemetry
+// Collectors.
+const AGENT_TOKEN_PURPOSES = { wazuh: 'linux', aws: 'otel', azure: 'otel' };
 const agentTokenNameKey = 'signalith.agentTokenName.';
 const agentTok = {
-  purpose: '', // linux, windows, otel, osquery, wazuh, sensor or aws: what the setup on screen is for
+  purpose: '', // linux, windows, otel, osquery, wazuh, sensor, aws or azure: what the setup on screen is for
   secret: '', // the token made on this page for name + purpose
   madeFor: '', // purpose + name the secret was made for
   made: null, // the token record of the secret, for the success line
@@ -2643,7 +2644,11 @@ async function agentSetupLoad() {
   // AWS CloudTrail: an OpenTelemetry Collector, on Linux or Windows, that
   // reads CloudTrail's bucket.
   const aws = os === 'aws';
-  const collector = otel || aws;
+  // Entra ID and Azure: an OpenTelemetry Collector that reads the event
+  // hub they send their logs to.
+  const azure = os === 'azure';
+  const cloud = aws || azure;
+  const collector = otel || cloud;
   const host = collector ? $('otel-host').value : osq || sensor ? '' : os;
   agentTokPurpose(otel ? 'otel' : osq ? 'osquery' : sensor ? 'sensor' : os);
   $('aws-paths').classList.toggle('hidden', !aws);
@@ -2657,19 +2662,21 @@ async function agentSetupLoad() {
   $('sensor-eve-row').classList.toggle('hidden', !suricata);
   $('otel-opts').classList.toggle('hidden', !collector);
   $('osquery-opts').classList.toggle('hidden', !osq);
-  $('linux-opts').classList.toggle('hidden', host !== 'linux' || aws);
+  $('linux-opts').classList.toggle('hidden', host !== 'linux' || cloud);
   // The Collector reads Sysmon for Linux's events with Fluent Bit only.
   $('sysmon-linux').closest('label').classList.toggle('hidden', otel);
-  $('windows-opts').classList.toggle('hidden', host !== 'windows' || aws);
+  $('windows-opts').classList.toggle('hidden', host !== 'windows' || cloud);
   $('wazuh-note').classList.toggle('hidden', !wazuh);
   const osqName = { linux: 'Linux', windows: 'Windows', darwin: 'macOS' }[$('osquery-platform').value];
   $('agent-title').textContent = osq ? 'Manage ' + osqName + ' hosts with osquery' : otel ? 'Set up the OpenTelemetry Collector on ' + (host === 'windows' ? 'Windows' : 'Linux')
     : aws ? 'Read AWS CloudTrail with the OpenTelemetry Collector on ' + (host === 'windows' ? 'Windows' : 'Linux')
+    : azure ? 'Read Entra ID and Azure logs with the OpenTelemetry Collector on ' + (host === 'windows' ? 'Windows' : 'Linux')
     : wazuh ? 'Set up Fluent Bit on the Wazuh manager'
     : sensor ? 'Send network sensor logs with Fluent Bit'
     : 'Set up Fluent Bit on ' + (os === 'windows' ? 'Windows' : 'Linux');
   $('agent-sub').textContent = wazuh ? 'Do this once, on the Wazuh manager. Your Wazuh agents keep reporting to it as before.'
     : aws ? 'Do this once, on a machine that can reach AWS and this server, such as a small EC2 instance.'
+    : azure ? 'Do this once, on a machine that can reach Azure and this server, such as a small Azure VM.'
     : sensor ? 'Do this on the machine that runs Zeek or Suricata.'
     : 'Do this on each host you want to collect from.';
   // Network sensor > Set up a new sensor: one line instead of a
@@ -2683,6 +2690,7 @@ async function agentSetupLoad() {
     : sensor ? new URLSearchParams({ os: 'linux', source: 'sensor', zeek, suricata, suricata_protocols: $('sensor-protocols').checked,
       zeek_dir: $('sensor-zeek-dir').value.trim(), eve_path: $('sensor-eve-path').value.trim() })
     : aws ? new URLSearchParams({ os, aws_bucket: $('aws-bucket').value.trim(), aws_queue: $('aws-queue').value.trim() })
+    : azure ? new URLSearchParams({ os })
     : new URLSearchParams({ os, source: $('linux-source').value, sysmon: (host === 'linux' ? !otel && $('sysmon-linux').checked : $('sysmon').checked), powershell: $('powershell').checked });
   if (collector) q.set('collector', host);
   if (osq) q.set('platform', $('osquery-platform').value);
@@ -3162,7 +3170,7 @@ function loadDataSource() {
 }
 
 // pickDataSource selects a source card on the Add data page: linux,
-// windows, syslog, antivirus, otel, osquery, wazuh, sensor or aws. It is false
+// windows, syslog, antivirus, otel, osquery, wazuh, sensor, aws or azure. It is false
 // for anything else.
 function pickDataSource(src) {
   const r = document.querySelector(`input[name=os][value="${CSS.escape(String(src))}"]`);

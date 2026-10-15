@@ -1,0 +1,5 @@
+{"rule": "ebbeb024-5b1d-4e16-9c0c-917f86c708a7", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"operationName":"Add member to role","properties.targetResources":"Administrator"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"properties.targetResources":"Administrator"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"operationName":"Add member to role"}}
+]}

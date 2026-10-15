@@ -1,0 +1,4 @@
+{"rule": "636e30d5-3736-42ea-96b1-e6e2f8429fd6", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"operationName":"Remove owner from application"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{}}
+]}

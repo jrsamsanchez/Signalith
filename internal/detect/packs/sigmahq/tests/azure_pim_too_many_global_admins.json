@@ -1,0 +1,4 @@
+{"rule": "7bbc309f-e2b1-4eb1-8369-131a367d67d3", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"pim","data":{"riskEventType":"tooManyGlobalAdminsAssignedToTenantAlertIncident"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"pim","data":{}}
+]}

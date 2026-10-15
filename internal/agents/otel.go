@@ -48,6 +48,9 @@ func generateOTel(o Options) (*Agent, error) {
 	}
 	// AWS CloudTrail: a Collector that reads CloudTrail's bucket alone.
 	trail := o.OS == "aws"
+	// Entra ID and Azure: a Collector that reads their event hub alone.
+	hub := o.OS == "azure"
+	cloud := trail || hub
 	var src cloudTrailSource
 	if trail {
 		if src, err = cloudTrailOptions(o); err != nil {
@@ -72,7 +75,7 @@ func generateOTel(o Options) (*Agent, error) {
 	case "linux":
 		a.ConfigPath = OTelLinuxConfig
 		fmt.Fprintf(&b, "    directory: %s\n", otelLinuxState)
-		if trail {
+		if cloud {
 			break
 		}
 		b.WriteString("\nreceivers:\n")
@@ -93,7 +96,7 @@ func generateOTel(o Options) (*Agent, error) {
 	case "windows":
 		a.ConfigPath = OTelWindowsConfig
 		fmt.Fprintf(&b, "    directory: %s\n", yamlPath(otelWindowsState))
-		if trail {
+		if cloud {
 			break
 		}
 		b.WriteString("\nreceivers:\n")
@@ -161,6 +164,10 @@ func generateOTel(o Options) (*Agent, error) {
 		extensions += ", aws_logs_encoding/cloudtrail"
 		b.WriteString("\nreceivers:\n" + src.receiver())
 		receivers = append(receivers, "aws_s3/cloudtrail")
+	} else if hub {
+		// The messages Entra ID and Azure send to the event hub.
+		b.WriteString("\nreceivers:\n" + azureReceiver())
+		receivers = append(receivers, "azure_event_hub/signalith")
 	} else {
 		b.WriteString("  # Apps and SDKs on this host can send OTLP logs here too.\n" +
 			"  otlp:\n    protocols:\n      grpc:\n        endpoint: 127.0.0.1:4317\n      http:\n        endpoint: 127.0.0.1:4318\n")
@@ -199,6 +206,11 @@ func generateOTel(o Options) (*Agent, error) {
 		version = "0.153"
 		a.Steps = src.steps()
 	}
+	if hub {
+		// The first with the azure_event_hub receiver by this name.
+		version = "0.145"
+		a.Steps = azureSteps()
+	}
 	if host == "linux" {
 		a.Steps = append(a.Steps, "Install the OpenTelemetry Collector Contrib package (otelcol-contrib, "+version+" or later, .deb or .rpm) from https://opentelemetry.io/docs/collector/installation/")
 		if useCA {
@@ -216,6 +228,11 @@ func generateOTel(o Options) (*Agent, error) {
 				"Not on EC2 with a role? Add the IAM user's access key to the Collector's environment file, "+otelLinuxEnv+", as two lines, AWS_ACCESS_KEY_ID=... and AWS_SECRET_ACCESS_KEY=..., then keep it private: sudo chmod 640 "+otelLinuxEnv+" && sudo chgrp otelcol-contrib "+otelLinuxEnv,
 				"Restart the Collector: sudo systemctl restart otelcol-contrib",
 				"CloudTrail writes a file every few minutes, so events appear in Search within about 15 minutes; check the Health page if they do not, and the Collector's own log with journalctl -u otelcol-contrib.")
+		} else if hub {
+			a.Steps = append(a.Steps,
+				"Give the Collector the event hub's connection string: add it to the Collector's environment file, "+otelLinuxEnv+", as one line, "+azureHubEnv+"=Endpoint=sb://..., then keep the file private: sudo chmod 640 "+otelLinuxEnv+" && sudo chgrp otelcol-contrib "+otelLinuxEnv,
+				"Restart the Collector: sudo systemctl restart otelcol-contrib",
+				"Entra ID and Azure send their logs within a few minutes, so events appear in Search within about 10 minutes; check the Health page if they do not, and the Collector's own log with journalctl -u otelcol-contrib.")
 		} else {
 			read := "Let the Collector read the system logs, then restart it"
 			if o.LinuxSource != "journal" {
@@ -227,10 +244,10 @@ func generateOTel(o Options) (*Agent, error) {
 				"Events appear in Search within a minute; check the Health page if they do not, and the Collector's own log with journalctl -u otelcol-contrib.")
 		}
 	} else {
-		if o.Sysmon && !trail {
+		if o.Sysmon && !cloud {
 			a.Steps = append(a.Steps, "Install Sysmon with a config such as SwiftOnSecurity's sysmon-config, so process and network events are recorded")
 		}
-		if o.PowerShell && !trail {
+		if o.PowerShell && !cloud {
 			a.Steps = append(a.Steps, scriptBlockLoggingStep)
 		}
 		a.Steps = append(a.Steps, "Install the OpenTelemetry Collector Contrib for Windows (the otelcol-contrib .msi, "+version+" or later) from https://github.com/open-telemetry/opentelemetry-collector-releases/releases")
@@ -245,6 +262,9 @@ func generateOTel(o Options) (*Agent, error) {
 		if trail {
 			queue = "CloudTrail records"
 		}
+		if hub {
+			queue = "Entra ID and Azure records"
+		}
 		a.Steps = append(a.Steps,
 			"In an elevated PowerShell, put them in place from your Downloads folder, and let only SYSTEM and Administrators read the configuration, which holds the agent token, and the Collector's queue, which holds "+queue+": "+
 				`cd "$env:USERPROFILE\Downloads"`+"\n"+
@@ -257,9 +277,16 @@ func generateOTel(o Options) (*Agent, error) {
 				"Not on EC2 with a role? Give the Collector's service the IAM user's access key, in an elevated PowerShell (put the key's two parts in place of the dots): "+
 					`Set-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Services\otelcol-contrib' -Name Environment -Type MultiString -Value 'AWS_ACCESS_KEY_ID=...','AWS_SECRET_ACCESS_KEY=...'`)
 		}
+		if hub {
+			a.Steps = append(a.Steps,
+				"Give the Collector's service the event hub's connection string, in an elevated PowerShell (paste the connection string in place of the dots, inside the quotes): "+
+					`Set-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Services\otelcol-contrib' -Name Environment -Type MultiString -Value '`+azureHubEnv+`=...'`)
+		}
 		a.Steps = append(a.Steps, "Restart the Collector in an elevated PowerShell: Set-Service otelcol-contrib -StartupType Automatic; Restart-Service otelcol-contrib")
 		if trail {
 			a.Steps = append(a.Steps, "CloudTrail writes a file every few minutes, so events appear in Search within about 15 minutes; check the Health page if they do not, and the Collector's events in the Application log of Event Viewer.")
+		} else if hub {
+			a.Steps = append(a.Steps, "Entra ID and Azure send their logs within a few minutes, so events appear in Search within about 10 minutes; check the Health page if they do not, and the Collector's events in the Application log of Event Viewer.")
 		} else {
 			a.Steps = append(a.Steps, "Events appear in Search within a minute; check the Health page if they do not, and the Collector's events in the Application log of Event Viewer.")
 		}

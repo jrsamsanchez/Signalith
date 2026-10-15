@@ -1,0 +1,4 @@
+{"rule": "94a66f46-5b64-46ce-80b2-75dcbe627cc0", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"pim","data":{"riskEventType":"noMfaOnRoleActivationAlertIncident"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"pim","data":{}}
+]}

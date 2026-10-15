@@ -1,0 +1,5 @@
+{"rule": "f7b5b004-dece-46e4-a4a5-f6fd0e1c6947", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"Status":"Success","properties.message":"Add userAdd member to role"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"properties.message":"Add userAdd member to role"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"Status":"Success"}}
+]}
