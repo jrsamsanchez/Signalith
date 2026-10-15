@@ -76,10 +76,7 @@ func TestJoinThroughTheServer(t *testing.T) {
 		t.Fatalf("join ca = %d %q", resp.StatusCode, body)
 	}
 	// The fake OpenSearch speaks plain http without sign-in: no token.
-	// Signed in once the users are shared: founding moves them into the
-	// shared settings with a restart in place, which ends a session made
-	// before it.
-	a.usersShared()
+	a.signIn()
 	code, out, err := a.call("", "POST", "/api/cluster/tokens", `{"platform":"linux"}`)
 	if err != nil || code != http.StatusConflict || !strings.Contains(out["error"].(string), "security turned on") {
 		t.Fatalf("token with an unsecured OpenSearch: %d %v %v", code, out, err)
