@@ -3,6 +3,7 @@
 package securefile
 
 import (
+	"errors"
 	"os"
 	"strings"
 
@@ -131,3 +132,11 @@ func linkAllowed(string, os.FileInfo) error { return nil }
 func otherLinks(string) int { return 0 }
 
 func isBusy(error) bool { return false }
+
+// inUse reports whether a rename failed because another program, or this
+// one, has the file open for a moment: Windows does not replace a file
+// that is open without delete sharing, as Go opens files to read.
+func inUse(err error) bool {
+	return errors.Is(err, windows.ERROR_ACCESS_DENIED) || errors.Is(err, windows.ERROR_SHARING_VIOLATION) ||
+		errors.Is(err, windows.ERROR_LOCK_VIOLATION)
+}

@@ -3,6 +3,7 @@ package api
 import (
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/jrsamsanchez/signalith/internal/query"
@@ -130,6 +131,30 @@ func describeAggs(aggs []query.Agg) string {
 			s = "the smallest " + a.Field
 		case "max":
 			s = "the largest " + a.Field
+		case "median":
+			s = "the median " + a.Field
+		case "stdev":
+			s = "the standard deviation of " + a.Field
+		case "var":
+			s = "the variance of " + a.Field
+		case "range":
+			s = "the range (largest minus smallest) of " + a.Field
+		case "mode":
+			s = "the most common " + a.Field
+		case "values":
+			s = "the distinct values of " + a.Field
+		case "list":
+			s = "every value of " + a.Field
+		case "first", "latest":
+			s = "the newest " + a.Field
+		case "last", "earliest":
+			s = "the oldest " + a.Field
+		default:
+			if n := query.Percentile(a.Func); n > 0 {
+				s = fmt.Sprintf("the %s percentile of %s", ordinal(n), a.Field)
+			} else {
+				s = a.String()
+			}
 		}
 		if a.Alias != "" {
 			s += fmt.Sprintf(" (as %s)", a.Alias)
@@ -137,6 +162,20 @@ func describeAggs(aggs []query.Agg) string {
 		parts[i] = s
 	}
 	return strings.Join(parts, ", ")
+}
+
+func ordinal(n int) string {
+	suffix := "th"
+	switch {
+	case n%100 >= 11 && n%100 <= 13:
+	case n%10 == 1:
+		suffix = "st"
+	case n%10 == 2:
+		suffix = "nd"
+	case n%10 == 3:
+		suffix = "rd"
+	}
+	return strconv.Itoa(n) + suffix
 }
 
 func describeCommand(c query.Command) string {

@@ -200,14 +200,6 @@ func groupKey(r Row, fields []string) (string, bool) {
 	return b.String(), true
 }
 
-type aggState struct {
-	count    int64
-	sum      float64
-	numeric  int64
-	min, max float64
-	distinct map[string]bool
-}
-
 // goStats aggregates rows in memory, for stats after another transform.
 func goStats(ctx context.Context, rows []Row, st *query.Stats) ([]Row, []string, error) {
 	type group struct {
@@ -231,7 +223,7 @@ func goStats(ctx context.Context, rows []Row, st *query.Stats) ([]Row, []string,
 				g.keys[f] = r[f]
 			}
 			for range st.Aggs {
-				g.states = append(g.states, &aggState{min: math.Inf(1), max: math.Inf(-1), distinct: map[string]bool{}})
+				g.states = append(g.states, newAggState())
 			}
 			groups[k] = g
 			order = append(order, k)
@@ -246,14 +238,7 @@ func goStats(ctx context.Context, rows []Row, st *query.Stats) ([]Row, []string,
 			if !ok || v == nil {
 				continue
 			}
-			s.count++
-			s.distinct[fmt.Sprint(v)] = true
-			if f, ok := asFloat(v); ok {
-				s.numeric++
-				s.sum += f
-				s.min = math.Min(s.min, f)
-				s.max = math.Max(s.max, f)
-			}
+			s.add(a, v, r)
 		}
 	}
 	sort.Strings(order)
@@ -265,29 +250,7 @@ func goStats(ctx context.Context, rows []Row, st *query.Stats) ([]Row, []string,
 			row[f] = v
 		}
 		for i, a := range st.Aggs {
-			s := g.states[i]
-			var v any
-			switch a.Func {
-			case "count":
-				v = s.count
-			case "dc":
-				v = int64(len(s.distinct))
-			case "sum":
-				v = toNumber(s.sum)
-			case "avg":
-				if s.numeric > 0 {
-					v = s.sum / float64(s.numeric)
-				}
-			case "min":
-				if s.numeric > 0 {
-					v = toNumber(s.min)
-				}
-			case "max":
-				if s.numeric > 0 {
-					v = toNumber(s.max)
-				}
-			}
-			row[a.Column()] = v
+			row[a.Column()] = g.states[i].result(a)
 		}
 		out = append(out, row)
 	}

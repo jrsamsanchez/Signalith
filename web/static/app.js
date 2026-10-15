@@ -904,7 +904,7 @@ const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
 // colouring for its examples.
 const lang = {
   commands: ['stats', 'eventstats', 'timechart', 'top', 'rare', 'where', 'eval', 'rex', 'dedup', 'fillnull', 'sort', 'head', 'table', 'rename', 'enrich', 'threatmatch', 'intel'],
-  functions: ['count', 'dc', 'sum', 'avg', 'min', 'max'],
+  functions: ['count', 'dc', 'sum', 'avg', 'min', 'max', 'median', 'perc95', 'stdev', 'var', 'range', 'mode', 'values', 'list', 'first', 'last', 'earliest', 'latest'],
   // eval and where expression functions (query.EvalFuncs).
   evalFunctions: ['abs', 'case', 'ceil', 'ceiling', 'cidrmatch', 'coalesce', 'exp', 'false', 'floor', 'if', 'in', 'isnotnull', 'isnull', 'isnum', 'isstr', 'len', 'like', 'ln', 'log', 'lower', 'ltrim', 'match', 'max', 'md5', 'min', 'mvappend', 'mvcount', 'mvdedup', 'mvindex', 'mvjoin', 'mvsort', 'now', 'null', 'nullif', 'pow', 'replace', 'round', 'rtrim', 'sha1', 'sha256', 'split', 'sqrt', 'strftime', 'strptime', 'substr', 'time', 'tonumber', 'tostring', 'trim', 'true', 'typeof', 'upper', 'urldecode'],
 };
@@ -947,7 +947,7 @@ function tokenizeQuery(text) {
       const lw = w.toLowerCase();
       const next = (text.slice(j).match(/^\s*(\S)/) || [])[1];
       if (afterPipe) { cls = 'tok-cmd'; cmd = lw; } else if (QL_KEYWORDS.has(lw) && (cmd || w === w.toUpperCase())) cls = 'tok-kw';
-      else if (QL_FUNCS.has(lw) && (next === '(' || (lw === 'count' && ['stats', 'eventstats', 'timechart'].includes(cmd)))) cls = 'tok-fn';
+      else if ((QL_FUNCS.has(lw) || /^perc\d{1,2}$/.test(lw)) && (next === '(' || (lw === 'count' && ['stats', 'eventstats', 'timechart'].includes(cmd)))) cls = 'tok-fn';
       else if (QL_EVAL_FUNCS.has(lw) && next === '(' && (cmd === 'eval' || cmd === 'where')) cls = 'tok-fn';
       else if (!cmd && QL_KEYS.has(lw) && next === '=') cls = 'tok-cmd';
       else if (afterOp) cls = 'tok-str';

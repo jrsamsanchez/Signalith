@@ -23,6 +23,7 @@ var fuzzSeeds = []string{
 	`a=1 | where NOT (x=1 OR y!=2) AND z<3 | sort 10 +dc(user), -max(bytes)`,
 	`* | stats distinct_count(user) as u, mean(bytes) by src | rename "a b" as c, d as "e f"`,
 	`"AND" "*" "" OR=1`,
+	`* | stats median(a), p95(b) as x, perc1(c), stdev(d), var(e), range(f), mode(g), values(h), list(i), first(j), last(k), earliest(l), latest(m) by n | sort -perc1(c)`,
 	`a==b c<=d e>f g!=h`,
 	`(a=1`, `a="x`, `a=1 | bogus`, `a=1 | head 5 6`, `a ! b`,
 	"\xff\xfe(\x00",
