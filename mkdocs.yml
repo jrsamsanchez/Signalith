@@ -140,6 +140,7 @@ nav:
       - Users and sign-in: users.md
       - Agent tokens: agent-tokens.md
       - Servers: servers.md
+      - Adding servers: multi-server.md
       - signalith cluster: cluster-cli.md
       - Performance and sizing: performance.md
       - Data retention: retention.md

@@ -761,6 +761,10 @@ them as a file, for configuration as code. See
 [Settings on several servers](docs/settings.md#settings-on-several-servers) and
 [signalith cluster apply](docs/cluster-cli.md#apply).
 
+To add a server, click **Add a server** on the Servers page and run the one line it gives
+on the new Linux, Windows or Docker computer: it installs Signalith, checks the computer
+reaches OpenSearch, and joins it ([Adding servers](https://signalith.io/docs/multi-server/)).
+
 See [docs/servers.md](docs/servers.md) for the Servers page, how the jobs move,
 adding a server by hand, and load balancer examples.
 

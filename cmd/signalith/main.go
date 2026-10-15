@@ -169,6 +169,8 @@ func main() {
 		os.Exit(runJoinCommand(args))
 	case "opensearch-check":
 		err = cmdOpenSearchCheck(args)
+	case "tcp-forward":
+		err = cmdTCPForward(args)
 	case "version", "-v", "--version":
 		fmt.Println("signalith", version)
 	case "help", "-h", "--help":
@@ -917,6 +919,11 @@ func serve(ctx context.Context, path string, log *slog.Logger) error {
 	// GOTRACEBACK set in the environment, and on Linux hardenProcess
 	// keeps even GOTRACEBACK=crash from writing a core file.
 	debug.SetTraceback("single")
+	// A new server started with SIGNALITH_JOIN (Docker) joins its cluster
+	// first, which writes the settings and keys loaded next.
+	if err := joinFromEnv(path, log); err != nil {
+		return err
+	}
 	c, err := loadConfig(path, log)
 	if err != nil {
 		return err
@@ -1639,6 +1646,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		}
 		in.node = r.node
 	}
+	srv.Install = clusterInstall()
 	tokenSrv.Store(srv)
 	in.srv, in.handler = srv, srv.Handler()
 	r.srv.Store(srv)
