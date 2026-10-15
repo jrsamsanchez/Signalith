@@ -368,9 +368,16 @@ var Registry = []Setting{
 		Help:    "Lets this server run detections, threat intel downloads, notifications and retention. Servers that share one OpenSearch take turns automatically; turn it off only on a server that should never run them.",
 		Env:     "SIGNALITH_LEADER_ELIGIBLE",
 		Confirm: "This server will stop running detections, threat intel downloads, notifications and retention. If no other server shares its OpenSearch, none of them run until this is turned on again.", ConfirmWhen: "off"},
+	{Key: "cluster.role", Scope: ScopeServer, Section: "detections", Label: "Server role", Type: TypeChoice, Restart: true, SharedOnly: true,
+		Help: "A cluster server shares the work: it can run the background jobs and take over when another server stops. " +
+			"A scanner only scans the networks picked for it on the Vulnerabilities page, from inside their zone, and never runs the background jobs. " +
+			"Add a server sets it when the server joins; the Servers page shows it.",
+		Choices: []Choice{{RoleServer, "Cluster server: shares the work"}, {RoleScanner, "Scanner: scans its network zone only"}},
+		Confirm: "As a scanner, this server never runs detections, threat intel downloads, notifications, playbooks or retention; as a cluster server it may take them over. " +
+			"If only scanners are left, none of those jobs run."},
 	{Key: "cluster.leader_eligible", Scope: ScopeServer, Section: "detections", Label: "May run background jobs", Type: TypeBool, Restart: true, SharedOnly: true,
 		Help: "Lets this server run detections, threat intel downloads, notifications, playbooks and retention. The servers take turns automatically, one at a time; " +
-			"turn it off only on a server that should never run them. Its old name in signalith.yaml, detections.scheduler, still works.",
+			"turn it off only on a server that should never run them. A scanner (Server role) never runs them, whatever this says. Its old name in signalith.yaml, detections.scheduler, still works.",
 		Env:     "SIGNALITH_LEADER_ELIGIBLE",
 		Confirm: "This server will stop running detections, threat intel downloads, notifications, playbooks and retention. If no other server may run them, none of them run until this is turned on again.", ConfirmWhen: "off"},
 	{Key: "detections.max_findings_per_run", Scope: ScopeCluster, Section: "detections", Label: "Most findings per run", Type: TypeNumber, Min: intp(1), Max: intp(10000),

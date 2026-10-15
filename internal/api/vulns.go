@@ -197,6 +197,8 @@ type vulnServer struct {
 	State    string `json:"state"`
 	Online   bool   `json:"online"`
 	RunsJobs bool   `json:"runs_jobs"`
+	// Scanner is true for a server added as a scanner (cluster.role).
+	Scanner bool `json:"scanner,omitempty"`
 	// Ready is nil until the server has checked itself.
 	Ready     *bool         `json:"ready,omitempty"`
 	CheckedAt time.Time     `json:"checked_at,omitzero"`
@@ -239,6 +241,9 @@ func (s *Server) vulnServers(set vulnscan.Settings, reports []*vulnscan.Report, 
 	} else {
 		for _, st := range s.Cluster.Status().Servers {
 			sv := vulnServer{ID: st.NodeID, Name: st.Name, Self: st.Self, State: st.State, RunsJobs: st.Jobs == "runs"}
+			if st.Detail != nil {
+				sv.Scanner = st.Detail.Role == cluster.RoleScanner
+			}
 			switch st.State {
 			case cluster.StateReady, cluster.StateStarting, cluster.StateDraining:
 				sv.Online = true

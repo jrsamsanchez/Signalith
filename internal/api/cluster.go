@@ -84,6 +84,8 @@ type clusterServer struct {
 	Version        string    `json:"version"`
 	Jobs           string    `json:"jobs"`
 	StartedAt      time.Time `json:"started_at"`
+	// Role is "" for a cluster server, or "scanner" (cluster.role).
+	Role string `json:"role,omitempty"`
 
 	NodeID         string                `json:"node_id"`
 	HeartbeatAt    time.Time             `json:"heartbeat_at"`
@@ -177,7 +179,7 @@ func (s *Server) handleCluster(w http.ResponseWriter, r *http.Request) {
 			osInfo.Endpoint = redact.URL(osInfo.Endpoint)
 			out.NodeURL, out.Listen, out.Syslog, out.OS, out.Arch, out.Deployment = d.NodeURL, d.Listen, &syslog, d.OS, d.Arch, d.Deployment
 			out.ClockOffsetMS, out.NotEligible, out.Fingerprints, out.OpenSearch = d.ClockOffsetMS, d.NotEligible, &fp, &osInfo
-			out.MachineMoved, out.Problems, out.Features = d.MachineMoved, d.Problems, d.Features
+			out.MachineMoved, out.Problems, out.Features, out.Role = d.MachineMoved, d.Problems, d.Features, d.Role
 			if d.Mode != "" {
 				out.Shared = &clusterShared{Mode: d.Mode, ConfigSeq: d.ConfigSeq, NeedsUpgrade: d.NeedsUpgrade, Tamper: d.Tamper,
 					SettingsDrift: d.SettingsDrift, RestartNeeded: d.RestartNeeded, SettingsRefused: d.SettingsRefused, Restart: d.Restart,
