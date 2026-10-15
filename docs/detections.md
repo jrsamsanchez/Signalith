@@ -255,9 +255,9 @@ Content packs are rule sets from other open source projects, shipped unchanged
 inside Signalith and converted when it starts. Every pack detection is **off** until
 an admin turns it on.
 
-**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,210 rules from
-[SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 2,056 Windows rules
-for these Sysmon, Security, PowerShell, System, Application, Code Integrity, Windows Firewall, BITS, AppX deployment, WMI activity, Remote Desktop session, shell, SMB client, exploit protection and Defender log sources, and 154 Linux rules (see
+**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,234 rules from
+[SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 2,080 Windows rules
+for these Sysmon, Security, PowerShell, System, Application, Code Integrity, Windows Firewall, BITS, AppX deployment, WMI activity, Remote Desktop session, shell, SMB client, exploit protection, DNS client, Task Scheduler, NTLM, LSA, CryptoAPI, device driver, packaged app, certificate, OpenSSH, DNS Server, IIS configuration and Defender log sources, and 154 Linux rules (see
 [Linux endpoints](#linux-endpoints-sysmon-for-linux) and
 [the Linux audit log](#linux-audit-log-auditd)):
 
@@ -287,6 +287,18 @@ for these Sysmon, Security, PowerShell, System, Application, Code Integrity, Win
 | `service: shell-core` | Shell events (app shortcuts added to the app resolver cache), by event ID and data (see below) | Other |
 | `service: smbclient-security` | SMB client security events (insecure guest logons refused), by event ID and data (see below) | Other |
 | `service: security-mitigations` | Exploit protection blocks in kernel mode (images not signed by Microsoft), by event ID and data (see below) | Other |
+| `service: dns-client` | DNS client queries (3008), by event ID and data (see below) | Other |
+| `service: taskscheduler` | Task Scheduler events (a task started a process, a task deleted or disabled), by event ID and data (see below) | Other |
+| `service: ntlm` | NTLM authentications audited (outgoing, incoming, to a domain controller), by event ID and data (see below) | Other |
+| `service: lsa-server` | The groups of a user logging on (LSA 300), by event ID and data (see below) | Other |
+| `service: capi2` | CryptoAPI events (a certificate's private key acquired), by event ID | Other |
+| `service: driver-framework` | Devices plugged in (user-mode drivers loaded, Plug and Play operations), by event ID | Other |
+| `service: appmodel-runtime` | Packaged app processes created, by event ID and data (see below) | Other |
+| `service: appxpackaging-om` | App package signing certificates read, by event ID and data (see below) | Other |
+| `service: certificateservicesclient-lifecycle-system` | Computer certificates exported, by event ID | Other |
+| `service: openssh` | OpenSSH server messages, by event ID and data (see below) | Other |
+| `service: dns-server` | DNS Server plug-in DLLs loaded and zone transfers refused, by event ID | Other |
+| `service: iis-configuration` | IIS configuration changes, by event ID and data (see below) | Other |
 | `service: windefend` | Microsoft Defender Antivirus events (threats, attack surface reduction blocks, protection turned off, settings changed; `Path` is `file_path`, `ProcessName` `process_path`, `NewValue` `new_value`, `SourceName` `detection_source`, a 5013's `Value` `setting`) | Malware |
 | `service: security` | The Security log events in the next table | See the next table |
 
@@ -617,12 +629,33 @@ BITS rules (`Microsoft-Windows-Bits-Client/Operational`), app package rules
 (`Microsoft-Windows-TerminalServices-LocalSessionManager/Operational`), shell
 (`Microsoft-Windows-Shell-Core/Operational`), SMB client security
 (`Microsoft-Windows-SmbClient/Security`) and exploit protection
-(`Microsoft-Windows-Security-Mitigations/KernelMode`) rules find their events in Other by
+(`Microsoft-Windows-Security-Mitigations/KernelMode`) rules, and the rules for the logs in the
+table below, find their events in Other by
 event ID, and name their data the way Windows does: each value is the log's prefix
-(`firewall_`, `bits_`, `appx_`, `wmi_`, `rdp_`, `shell_`, `smbclient_`, `mitigation_`) and
+(`firewall_`, `bits_`, `appx_`, `wmi_`, `rdp_`, `shell_`, `smbclient_`, `mitigation_`, or the one
+in the table) and
 its name in snake case (`ApplicationPath` is `firewall_application_path`,
 `RemoteName` `bits_remote_name`, `PackageFullName` `appx_package_full_name`, `Operation`
 `wmi_operation`). The Windows agent collects these logs, which Windows keeps by default.
+
+| Log (channel) | Prefix | Kept by default |
+|---|---|---|
+| DNS client (`Microsoft-Windows-DNS-Client/Operational`) | `dnsclient_` | No: `wevtutil sl Microsoft-Windows-DNS-Client/Operational /e:true` |
+| Task Scheduler (`Microsoft-Windows-TaskScheduler/Operational`) | `taskscheduler_` | Servers yes; on clients turn on the task history (`wevtutil sl Microsoft-Windows-TaskScheduler/Operational /e:true`) |
+| NTLM (`Microsoft-Windows-NTLM/Operational`) | `ntlm_` | Only with the "Network security: Restrict NTLM" audit policies set |
+| LSA (`Microsoft-Windows-LSA/Operational`) | `lsa_` | Yes |
+| CryptoAPI (`Microsoft-Windows-CAPI2/Operational`) | `capi2_` | No: `wevtutil sl Microsoft-Windows-CAPI2/Operational /e:true` |
+| Device drivers (`Microsoft-Windows-DriverFrameworks-UserMode/Operational`) | `driver_` | No: `wevtutil sl Microsoft-Windows-DriverFrameworks-UserMode/Operational /e:true` |
+| Packaged apps (`Microsoft-Windows-AppModel-Runtime/Admin`) | `appmodel_` | Yes |
+| App packages (`Microsoft-Windows-AppxPackaging/Operational`) | `appxpackaging_` | Yes |
+| Certificates (`Microsoft-Windows-CertificateServicesClient-Lifecycle-System/Operational`) | `certlifecycle_` | Yes |
+| OpenSSH server (`OpenSSH/Operational`) | `openssh_` | When OpenSSH Server is installed |
+| DNS Server (`DNS Server`) | `dnsserver_` | On DNS servers |
+| IIS configuration (`Microsoft-IIS-Configuration/Operational`) | `iisconfig_` | On web servers, after `wevtutil sl Microsoft-IIS-Configuration/Operational /e:true` |
+
+Fluent Bit skips the logs a computer doesn't have. The OpenTelemetry Collector stops on a log
+it can't open, so its configuration leaves out the OpenSSH, DNS Server and IIS logs; add a
+`windowseventlog` receiver for each one a server has.
 A rule that searches an event's free text (the WMI persistence rule) is left out of the
 pack.
 

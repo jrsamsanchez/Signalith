@@ -1,0 +1,6 @@
+{"rule": "a5b40a90-baf5-4bf7-a6f7-373494881d22", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-IIS-Configuration/Operational","event_id":"29","data":{"Configuration":"@logTargetW3C","OldValue":"ETW"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-IIS-Configuration/Operational","event_id":"29","data":{"Configuration":"@logTargetW3C","NewValue":"ETW","OldValue":"ETW"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-IIS-Configuration/Operational","event_id":"29","data":{"OldValue":"ETW"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-IIS-Configuration/Operational","event_id":"29","data":{"Configuration":"@logTargetW3C"}}
+]}
