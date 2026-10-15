@@ -21,6 +21,12 @@ const (
 	// SenderField is the address that sent the event, without a port:
 	// the client behind a trusted reverse proxy, not the proxy.
 	SenderField = "signalith_sender"
+	// TokenPurposeField is what that agent token was made for (linux,
+	// windows, otel, osquery, sensor), when it was made for one. What
+	// only a network sensor may say (the hosts of the asset list it
+	// discovered) is believed only with purpose sensor, so another
+	// agent's token cannot claim to be a sensor by naming a Zeek log.
+	TokenPurposeField = "signalith_token_purpose"
 )
 
 // Intakes, the values of IntakeField.
@@ -40,6 +46,8 @@ type Origin struct {
 	TokenID   string
 	TokenName string
 	Sender    string
+	// Purpose is the agent token's purpose; empty for a shared token.
+	Purpose string
 }
 
 // IsZero reports whether o says nothing.
@@ -62,7 +70,7 @@ func OriginFrom(ctx context.Context) Origin {
 
 // stamp writes o into an event's fields.
 func (o Origin) stamp(f map[string]any) {
-	for k, v := range map[string]string{IntakeField: o.Intake, TokenField: o.TokenName, TokenIDField: o.TokenID, SenderField: o.Sender} {
+	for k, v := range map[string]string{IntakeField: o.Intake, TokenField: o.TokenName, TokenIDField: o.TokenID, SenderField: o.Sender, TokenPurposeField: o.Purpose} {
 		if v != "" {
 			f[k] = v
 		}

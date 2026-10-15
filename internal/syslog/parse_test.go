@@ -381,3 +381,12 @@ func TestRecordRightAfterTimestamp(t *testing.T) {
 		}
 	}
 }
+
+// TestCEFRequestContext: a proxy's requestContext is the referrer, so
+// ingest.url_query finds its query string.
+func TestCEFRequestContext(t *testing.T) {
+	d := doc(`<134>Oct 12 13:59:00 zs CEF:0|Zscaler|NSSWeblog|5.0|Allowed|Allowed|3|request=http://x.example/a?t\=1 requestContext=http://y.example/r?sid\=2`)
+	if d["http_referrer"] != "http://y.example/r?sid=2" || d["url"] != "http://x.example/a?t=1" {
+		t.Errorf("referrer %v url %v", d["http_referrer"], d["url"])
+	}
+}

@@ -305,7 +305,9 @@ osquery's management server and the hosts appear on the **Endpoints** page (see
 If you run Wazuh, pick **Wazuh** to send the alerts your Wazuh manager raises, through
 Fluent Bit on the manager or its own syslog output (see [docs/wazuh.md](docs/wazuh.md)).
 If you run Zeek or Suricata on a network sensor, pick **Network sensor** to send
-their connections, DNS lookups, web requests, certificates, files and IDS alerts (see
+their connections, DNS lookups, web requests, certificates and TLS fingerprints (JA3, JA4),
+files, sign-ins (SSH, RDP, Kerberos, NTLM), file share activity and IDS alerts; the hosts
+it sees join the asset list (see
 [docs/network-sensor.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/network-sensor.md)).
 
 Agents on other machines must send to an address they can reach, such as
@@ -334,7 +336,7 @@ Supported sources in Phase 1:
 | Wazuh alerts from a Wazuh manager ([docs/wazuh.md](docs/wazuh.md)) | Authentication, Filesystem, Registry, Configuration_Check, Endpoint, Change or Alerts |
 | Apache and Nginx access logs (Linux agent; see [Detections](docs/detections.md#web-server-access-logs)) | Web |
 | AWS CloudTrail sign-ins and API calls, through the OpenTelemetry Collector ([docs/aws-cloudtrail.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/aws-cloudtrail.md)) | Authentication, Change or Other |
-| Zeek and Suricata on a network sensor, or Suricata EVE over syslog from pfSense and OPNsense ([docs/network-sensor.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/network-sensor.md)) | Network_Traffic, Network_Resolution, Web, Certificates, File_Transfers, Intrusion_Detection or Other |
+| Zeek and Suricata on a network sensor, or Suricata EVE over syslog from pfSense and OPNsense ([docs/network-sensor.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/network-sensor.md)) | Network_Traffic, Network_Resolution, Web, Certificates, File_Transfers, Intrusion_Detection, Authentication, Filesystem or Other |
 | Anything else | Other (searchable by text and fields) |
 
 Antivirus: see [docs/antivirus.md](docs/antivirus.md).

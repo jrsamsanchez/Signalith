@@ -2,6 +2,8 @@ package sample
 
 import (
 	"encoding/base64"
+	"slices"
+	"strings"
 	"time"
 )
 
@@ -167,17 +169,58 @@ func (g *gen) zeekDNSLog(src, query, answer string, t time.Time) {
 	g.b.zeek("dns", t, rec)
 }
 
+// tlsClient is the TLS fingerprints (JA3 and JA4, from Zeek's ja3 and
+// ja4 packages) of a client program.
+type tlsClient struct{ ja3, ja4 string }
+
+var (
+	// browserTLS is the company's browser, on every workstation.
+	browserTLS = tlsClient{"e7d705a3286e19ea42f587b344ee6865", "t13d1516h2_8daaf6152771_02713d6af862"}
+	// implantTLS is the implant of the phishing story: one host only, so
+	// it is the rarest fingerprint on the Network dashboard.
+	implantTLS = tlsClient{"72a589da586844d7f0818ce684948eea", "t13d190900_9dc949149365_97f8aa674fd9"}
+)
+
 // zeekTLS adds the ssl.log line of a TLS session, with the certificate's
 // names and Zeek's validation status (ssl/validate-certs loaded).
-func (g *gen) zeekTLS(fl sensorFlow, t time.Time, sni, subject, issuer, status string) {
+func (g *gen) zeekTLS(fl sensorFlow, t time.Time, sni, subject, issuer, status string, client tlsClient) {
 	g.b.zeek("ssl", t, fl.ids(map[string]any{
 		"version": "TLSv13", "cipher": "TLS_AES_128_GCM_SHA256", "curve": "x25519",
 		"server_name": sni, "resumed": false, "established": true, "next_protocol": "h2",
 		"subject": subject, "issuer": issuer, "validation_status": status,
 		"cert_chain_fps": []any{g.hexString(64)},
-		"ja3":            "e7d705a3286e19ea42f587b344ee6865", "ja3s": "f4febc55ea12b31ae17cfb7e614afda8",
+		"ja3":            client.ja3, "ja3s": "f4febc55ea12b31ae17cfb7e614afda8", "ja4": client.ja4,
 	}))
 }
+
+// zeekShare adds what Zeek logs of a workstation's session on the file
+// server: its user's Kerberos ticket for the server (the domain
+// controller is the KDC) and a file it saved on a share.
+func (g *gen) zeekShare(fl sensorFlow, ws, srv Host, t time.Time) {
+	user := "svc-backup"
+	for _, u := range g.org.Users {
+		if slices.Contains(u.Hosts, ws.Name) {
+			user = u.Login
+			break
+		}
+	}
+	dc := g.org.host("dc-01")
+	kf := g.newFlow(ws.IP, dc.IP, 88)
+	g.b.zeek("kerberos", t.Add(-200*time.Millisecond), kf.ids(map[string]any{
+		"request_type": "TGS", "client": user + "/" + strings.ToUpper(Domain), "service": "cifs/" + srv.FQDN(),
+		"success": true, "cipher": "aes256-cts-hmac-sha1-96", "forwardable": true, "renewable": true,
+		"till": float64(t.Add(10 * time.Hour).Unix()),
+	}))
+	name := sampleShareFiles[g.rng.intn(len(sampleShareFiles))]
+	g.b.zeek("smb_files", t.Add(2*time.Second), fl.ids(map[string]any{
+		"fuid": g.zeekUID('F'), "action": "SMB::FILE_WRITE", "path": `\\` + strings.ToUpper(srv.Name) + `\Shared`,
+		"name": name, "size": 20000 + g.rng.intn(900000),
+		"times.modified": float64(t.Unix()), "times.accessed": float64(t.Unix()),
+	}))
+}
+
+// sampleShareFiles are files the workstations save on the file share.
+var sampleShareFiles = []string{`Finance\Q3 budget.xlsx`, `Sales\pipeline.xlsx`, `HR\holidays.docx`, `IT\inventory.csv`}
 
 // zeekCert adds the x509.log line of a certificate.
 func (g *gen) zeekCert(t time.Time, subject, issuer, san string, from, to time.Time) {
@@ -299,7 +342,7 @@ func (g *gen) networkBackground(day window) {
 			g.zeekDNSLog(h.IP, site.name, site.ip, t)
 			fl := g.newFlow(h.IP, site.ip, 443)
 			ts := t.Add(40 * time.Millisecond)
-			g.zeekTLS(fl, ts, site.name, "CN="+site.name, site.issuer, "ok")
+			g.zeekTLS(fl, ts, site.name, "CN="+site.name, site.issuer, "ok", browserTLS)
 			out, in := 900+g.rng.intn(4000), 4000+g.rng.intn(400000)
 			g.zeekConnLog(fl, ts, "ssl", "SF", out, in, float64(1+g.rng.intn(900))/10, false)
 		case r < 14: // update checks over plain HTTP
@@ -322,6 +365,9 @@ func (g *gen) networkBackground(day window) {
 			}
 			fl := g.newFlow(h.IP, srv.IP, port)
 			g.zeekConnLog(fl, t, svc, "SF", 2000+g.rng.intn(90000), 3000+g.rng.intn(900000), float64(5+g.rng.intn(6000))/10, true)
+			if port == 445 {
+				g.zeekShare(fl, h, srv, t)
+			}
 		default: // a name nobody answers for
 			g.zeekDNSLog(h.IP, nxNames[g.rng.intn(len(nxNames))], "", t)
 		}
@@ -350,7 +396,7 @@ func (g *gen) networkBackground(day window) {
 		h := ws[g.rng.intn(len(ws))]
 		t := g.rng.timeIn(day.start, day.end)
 		fl := g.newFlow(h.IP, netCompany+"240", 443)
-		g.zeekTLS(fl, t, "printer-2f.corp.example", "CN=printer-2f.corp.example,O=Printer", "CN=printer-2f.corp.example,O=Printer", "self signed certificate")
+		g.zeekTLS(fl, t, "printer-2f.corp.example", "CN=printer-2f.corp.example,O=Printer", "CN=printer-2f.corp.example,O=Printer", "self signed certificate", browserTLS)
 		g.zeekConnLog(fl, t, "ssl", "SF", 1400, 22000, 3.9, true)
 	}
 
@@ -417,7 +463,7 @@ func (g *gen) sensorBeacon(ws Host, t time.Time) {
 	for i := 0; i < 12; i++ {
 		ts := t.Add(time.Duration(i*5)*time.Minute + time.Duration(g.rng.intn(40))*time.Second)
 		fl := g.newFlow(ws.IP, ipC2Beacon, 443)
-		g.zeekTLS(fl, ts, c2Name, subject, subject, "self signed certificate")
+		g.zeekTLS(fl, ts, c2Name, subject, subject, "self signed certificate", implantTLS)
 		g.zeekConnLog(fl, ts, "ssl", "SF", 1800+g.rng.intn(400), 900+g.rng.intn(300), 2.9, false)
 		if i == 0 {
 			g.eveAlert(fl, ts.Add(300*time.Millisecond), false, 9100102, "SAMPLE MALWARE Beacon to command and control server",

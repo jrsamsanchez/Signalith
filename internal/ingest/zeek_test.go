@@ -112,7 +112,7 @@ func TestZeekSSLAndX509(t *testing.T) {
 		"ssl_subject_common_name": "c2.badcorp.example", "ssl_issuer_common_name": "c2.badcorp.example",
 		"ssl_self_signed": "true", "ssl_validation_status": "self signed certificate",
 		"ja3": "72a589da586844d7f0818ce684948eea", "ja3s": "f4febc55ea12b31ae17cfb7e614afda8",
-		"ja4": "t13d1516h2_8daaf6152771_e5627efa2ab1", "zeek_established": "true", "zeek_curve": "secp256r1",
+		"ja4": "t13d1516h2_8daaf6152771_e5627efa2ab1", "ja4s": "t120200_c030_52d195ce1d92", "zeek_established": "true", "zeek_curve": "secp256r1",
 	})
 	// Zeek 5 and later log no subject in ssl.log: nothing to say about it.
 	expect(t, d[1], map[string]any{"ssl_self_signed": nil, "zeek_next_protocol": "h2", "zeek_resumed": "true"})
