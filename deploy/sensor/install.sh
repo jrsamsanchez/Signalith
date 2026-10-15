@@ -61,9 +61,9 @@ KEY_FPR_FLUENTBIT=C3C0A28534B9293EAF51FABD9F9DDC083888C1CD
 # the PPA's page; the key is fetched from keyserver.ubuntu.com by it.
 KEY_FPR_OISF_PPA=121504ADE276E141AD704A75AC10378CF205C960
 # Zeek's openSUSE Build Service project (security:zeek, Release.key).
-KEY_FPR_ZEEK_OBS=''
+KEY_FPR_ZEEK_OBS=F9FA0223B56B116C363737EF5DA57BDD6DD785CA
 # OISF's Fedora COPR for Rocky and Alma Linux (@oisf/suricata-8.0).
-KEY_FPR_OISF_COPR=''
+KEY_FPR_OISF_COPR=76F7EC544835D6B60BB559799E86AAEAE704C1FB
 # The two empty ones could not be checked against their publishers when
 # this was written. Until they are filled in, the checklist says so before
 # anything is installed (sensor_sources), and points to what works:
