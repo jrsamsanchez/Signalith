@@ -66,6 +66,7 @@ func (s *Server) routeCluster(api *router) {
 	// to them from the banner on every page (cluster_banners in
 	// api/health).
 	api.admin("GET /api/cluster", s.handleCluster)
+	s.routeClusterJoin(api)
 }
 
 // clusterServer is one server in GET /api/cluster.
@@ -201,6 +202,11 @@ func (s *Server) handleCluster(w http.ResponseWriter, r *http.Request) {
 	if text := s.usersPending().warning(); text != "" {
 		st.Warnings = append(st.Warnings, cluster.Warning{Level: "amber", Text: text})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"self": st.Self, "servers": servers, "lease": lease, "warnings": st.Warnings,
-		"writes_refused": st.WritesRefused, "opensearch": osOut})
+	out := map[string]any{"self": st.Self, "servers": servers, "lease": lease, "warnings": st.Warnings,
+		"writes_refused": st.WritesRefused, "opensearch": osOut}
+	// The join tokens and the servers waiting for approval.
+	for k, v := range s.clusterJoinView(ctx) {
+		out[k] = v
+	}
+	writeJSON(w, http.StatusOK, out)
 }

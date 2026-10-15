@@ -24,6 +24,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/cluster"
 	"github.com/jrsamsanchez/signalith/internal/clusterauth"
 	"github.com/jrsamsanchez/signalith/internal/clustercfg"
+	"github.com/jrsamsanchez/signalith/internal/clusterjoin"
 	"github.com/jrsamsanchez/signalith/internal/clusterpki"
 	"github.com/jrsamsanchez/signalith/internal/config"
 	"github.com/jrsamsanchez/signalith/internal/securefile"
@@ -45,6 +46,10 @@ const clusterUsage = `usage:
   signalith cluster tls            [-c file] [-json]          the cluster's certificate authority and each server's
   signalith cluster tls choose     [-c file] [-yes] <server|fingerprint>   keep that certificate authority for the whole cluster
   signalith cluster upgrade-check  [-c file] [-json]          whether it is safe to upgrade the next server
+  signalith cluster token          [-c file] [-platform linux|windows|docker] [-ttl 60m] [-note text] [-node-url url] [-url url] [-json]
+                                   a join token, which adds a server with signalith join
+  signalith cluster token          [-c file] -revoke <id>   cancel a join token
+  signalith cluster approve        [-c file] [-fingerprint fp] [-yes] [<server|fingerprint>]   approve a server waiting to join (none: list them)
   signalith cluster rotate-key     [-c file] [-yes]           give the cluster a new key; copies of the old one open nothing new
   signalith cluster remove         [-c file] [-yes] [-no-rotate] <server>   take a drained or stopped server out of the cluster
   signalith cluster leave          [-c file] [-yes] [-no-rotate]   take this stopped server out of the cluster
@@ -83,6 +88,10 @@ type clusterCLI struct {
 	docs *clustercfg.Docs
 	// tls holds the cluster's certificate authority of the same runtime.
 	tls *sharedTLS
+	// join holds the join tokens of the same runtime, and reports its
+	// migration reports.
+	join    *clusterjoin.Tokens
+	reports *clustercfg.Reports
 	// osca holds OpenSearch's certificate authority of the same runtime.
 	osca *clusterpki.OSCA
 }
@@ -105,12 +114,20 @@ func runCluster(args []string, in *os.File, out, errOut io.Writer) error {
 	settingsOnly := flags.Bool("settings", false, "export the settings the servers share, as a file signalith cluster apply takes")
 	server := flags.String("server", "", "with -settings, only this server's own settings (a name or node id)")
 	file := flags.String("f", "", "the file of settings to apply")
+	var tok tokenOptions
+	flags.StringVar(&tok.platform, "platform", "", "token: the new server's platform, linux, windows or docker")
+	flags.DurationVar(&tok.ttl, "ttl", clusterjoin.DefaultTTL, "token: how long the token works (at most 24h)")
+	flags.StringVar(&tok.note, "note", "", "token: a note shown with the token on the Servers page")
+	flags.StringVar(&tok.nodeURL, "node-url", "", "token: the address the other servers will reach the new server at")
+	flags.StringVar(&tok.url, "url", "", "token: this server's https address the new server reaches (default server.node_url, else server.public_url)")
+	flags.StringVar(&tok.revoke, "revoke", "", "token: cancel the join token with this id")
+	fingerprint := flags.String("fingerprint", "", "approve: the fingerprint the waiting server shows, which must match")
 	noRotate := flags.Bool("no-rotate", false, "with remove or leave, do not rotate the cluster key")
 	caCert := flags.String("cert", "", "with opensearch-ca import, the certificate authority's certificate (default root-ca.pem next to the key)")
 	pos := parseInterleaved(flags, args)
 	switch sub {
 	case "status", "found", "export", "import", "export-key", "import-key", "reset-key", "accept-restore", "apply", "tls", "upgrade-check", "opensearch-ca",
-		"rotate-key", "remove", "leave", "new-identity":
+		"rotate-key", "remove", "leave", "new-identity", "token", "approve":
 	default:
 		return fmt.Errorf("unknown cluster command %q\n\n%s", sub, clusterUsage)
 	}
@@ -171,6 +188,19 @@ func runCluster(args []string, in *os.File, out, errOut io.Writer) error {
 		return x.tlsCommand(ctx, pos, *asJSON, *yes)
 	case "upgrade-check":
 		return upgradeExit(x.upgradeCheck(ctx, *asJSON))
+	case "token":
+		if len(pos) != 0 {
+			return errors.New("usage: signalith cluster token [-c file] [-platform linux|windows|docker] [-ttl 60m] [-note text] [-node-url url] [-url url] [-json], or signalith cluster token -revoke <id>")
+		}
+		if tok.revoke != "" {
+			return x.revokeToken(ctx, tok.revoke)
+		}
+		return x.token(ctx, tok, *asJSON)
+	case "approve":
+		if len(pos) > 1 {
+			return errors.New("usage: signalith cluster approve [-c file] [-fingerprint fp] [-yes] [<server|fingerprint>]")
+		}
+		return x.approve(ctx, strings.Join(pos, ""), *fingerprint, *yes)
 	case "rotate-key":
 		return x.rotateKey(ctx, *yes)
 	case "remove":
@@ -211,7 +241,7 @@ func (x *clusterCLI) keyStore() shared.KeyStore {
 // readOnly writes nothing to OpenSearch or the state folder.
 func (x *clusterCLI) runtime(readOnly bool, name string) *shared.Runtime {
 	d := newSharedDocs(clusterauth.NewDocs())
-	x.docs, x.auth, x.tls, x.osca = d.docs, d.auth, d.tls, d.osca
+	x.docs, x.auth, x.tls, x.osca, x.join, x.reports = d.docs, d.auth, d.tls, d.osca, d.join, d.reports
 	files := x.files()
 	var made atomic.Pointer[shared.Runtime]
 	files.NodeCfg = func() *shared.Doc[shared.NodeCfg] {
@@ -602,6 +632,10 @@ func (x *clusterCLI) exportKey(ctx context.Context, outFile string) error {
 }
 
 func (x *clusterCLI) importKey(ctx context.Context, file string) error {
+	// No second member on an OpenSearch without https and sign-in.
+	if err := joinSecured(x.c); err != nil {
+		return err
+	}
 	data, err := os.ReadFile(file)
 	if err != nil {
 		return err

@@ -92,6 +92,8 @@ type Runtime struct {
 	keyFileWarned bool
 	// fingerprint is this server's node key's, once read or made.
 	fingerprint string
+	// approval is a waiting server's request to join (approval.go).
+	approval approvalState
 }
 
 // Mode is how this server uses the shared configuration.
@@ -361,6 +363,14 @@ type RuntimeOptions struct {
 	Clock         Clock
 	Timing        Timing
 	Log           *slog.Logger
+	// JoinInfo says what a server waiting for approval tells about itself
+	// in its pending document (version, addresses, node_url); nil gives
+	// only its name, key and platform.
+	JoinInfo func() PendingDoc
+	// Secured checks that OpenSearch is secured as several servers need
+	// (clusterjoin.RequireSecured); a server with KeyFile warns when it
+	// fails. nil checks nothing.
+	Secured func() error
 
 	// levelMax stands in for LevelMax, so tests can run a runtime of an
 	// older version; 0 is LevelMax.
@@ -720,6 +730,9 @@ func (rt *Runtime) readKeys() (localKeys, error) {
 			if w := KeyFileWarning(p); w != "" && !warned {
 				rt.log.Warn(w)
 			}
+			if kw := rt.keyFileUnsecured(); kw != nil && !warned {
+				rt.log.Warn(kw.Text)
+			}
 			out.file = k
 			if out.get(k.ID()) == nil {
 				out.all = append(out.all, k)
@@ -854,7 +867,7 @@ func (rt *Runtime) evaluate(ctx context.Context, mayFound bool) {
 		return
 	}
 	if len(keys.all) == 0 {
-		rt.notMember()
+		rt.notMember(ctx)
 		return
 	}
 	var active *ClusterKey
@@ -880,7 +893,7 @@ func (rt *Runtime) evaluate(ctx context.Context, mayFound bool) {
 				}
 				return
 			}
-			rt.notMember()
+			rt.notMember(ctx)
 			return
 		}
 		rt.log.Error("config.tamper: the cluster document in OpenSearch was changed outside Signalith", "audit", true, "doc", ClusterDocID, "reason", err.Error())
@@ -956,14 +969,16 @@ func (rt *Runtime) noteHolder() {
 
 // notMember is a look that found a cluster this server has no key to:
 // legacy (b). Its node key is made now, so the Servers page can show the
-// fingerprint an admin approves it by.
-func (rt *Runtime) notMember() {
+// fingerprint an admin approves it by, and it asks to join.
+func (rt *Runtime) notMember(ctx context.Context) {
 	rt.setMode(ModeLegacyB, "")
 	if !rt.opts.ReadOnly {
 		if _, err := rt.nodeKey(); err != nil {
 			rt.log.Debug("could not make this server's node key", "err", err)
 		}
 	}
+	// It asks to join, and takes the key once an admin approves it.
+	rt.awaitApproval(ctx)
 }
 
 // nodeKey returns this server's node key, making it the first time, and
@@ -1799,7 +1814,7 @@ func (rt *Runtime) Warnings() []Warning {
 			fp = " Its fingerprint is " + st.Fingerprint + "."
 		}
 		w = append(w, Warning{Level: "red", Text: "This server is not part of the cluster yet, so it uses its own files and runs no background jobs. " +
-			"Give it the cluster key: export it on a member with signalith cluster export-key and run signalith cluster import-key here, or set SIGNALITH_CLUSTER_KEY_FILE. " +
+			"Approve it on another server after comparing the fingerprint (signalith cluster approve there), or give it the cluster key: export it on a member with signalith cluster export-key and run signalith cluster import-key here, or set SIGNALITH_CLUSTER_KEY_FILE. " +
 			"It joins within seconds of having the key." + fp,
 			Banner: "This server is not part of the cluster yet, so it runs no background jobs."})
 	case ModeLegacyC:
@@ -1854,6 +1869,9 @@ func (rt *Runtime) Warnings() []Warning {
 		w = append(w, Warning{Level: "red", Text: fmt.Sprintf("Shared settings were changed in OpenSearch outside Signalith (%s), so this server keeps its last good copy. "+
 			"If a snapshot of OpenSearch was restored on purpose, run signalith cluster accept-restore.", strings.Join(st.Tamper, ", ")),
 			Banner: "Shared settings were changed in OpenSearch outside Signalith."})
+	}
+	if kw := rt.keyFileUnsecured(); kw != nil {
+		w = append(w, *kw)
 	}
 	if len(st.NeedsUpgrade) > 0 {
 		w = append(w, Warning{Level: "amber", Text: fmt.Sprintf("Some shared settings were written by a newer version of Signalith (%s), so this server keeps its last good copy. Upgrade it.",

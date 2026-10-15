@@ -87,7 +87,9 @@ Usage:
   signalith secrets   status|encrypt|set|rotate-master [-c file] ...  the master key and stored passwords
   signalith content   status|install|remove [-c file] ...  content pack updates (newer tested rules)
   signalith security  [-c file] [-json]   print the security report (exit 2 when something is at risk)
-  signalith cluster   status|found|export|import|export-key|import-key|reset-key|accept-restore [-c file] ...  the settings the servers share in OpenSearch
+  signalith cluster   status|found|export|import|export-key|import-key|reset-key|accept-restore|token|approve [-c file] ...  the settings the servers share in OpenSearch
+  signalith join      '<token>' [-c file] [--name] [--listen] [--node-url] [--copy-syslog] [--no-start] [--merge] [--yes]   add this server to a cluster
+  signalith opensearch-check <url> [--ca file] [--cert file --key file] [--user u]   check OpenSearch is ready for several servers
   signalith service   install|uninstall|start|stop     manage the Windows service
   signalith opensearch-certs [-ca-dir DIR] -node NAME [-san ...] [-peer ...] -out DIR   certificates to secure your own OpenSearch
   signalith bootstrap-docker [-opensearch-name NAME] [-nodes N] [-export-ca-key] [-apply-security] [-new-ca]   prepare the Docker quick start (its setup service runs this)
@@ -163,6 +165,10 @@ func main() {
 		err = cmdSecurity(args)
 	case "cluster":
 		err = cmdCluster(args)
+	case "join":
+		os.Exit(runJoinCommand(args))
+	case "opensearch-check":
+		err = cmdOpenSearchCheck(args)
 	case "version", "-v", "--version":
 		fmt.Println("signalith", version)
 	case "help", "-h", "--help":
@@ -1423,6 +1429,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		Version:    version,
 	}
 	srv.KnownBrowsers = r.browsers
+	srv.Join = r.sharedJoin(c, certs)
 	if parts != nil {
 		srv.SessionStore, srv.KnownBrowsers, srv.SharedUsers = parts.sessions, parts.browsers, parts.api(c)
 		if rt := r.shared; rt != nil {
@@ -1572,6 +1579,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	if r.shared != nil {
 		in.jobsList = append(in.jobsList, requestsJob(r.shared, contentHandlers(feeds, ret, r.auditHandlers(ret), r.lifecycleLeaderHandlers())))
 		in.jobsList = append(in.jobsList, r.auditJobs(c, cl, ret)...)
+		in.jobsList = append(in.jobsList, r.joinJobs()...)
 	}
 	if parts != nil {
 		// Signed-in directory users are checked again by this one server

@@ -184,6 +184,9 @@ type Server struct {
 	// ClusterTLS is the cluster's one certificate authority; nil on a
 	// server that is not a member of a cluster.
 	ClusterTLS ClusterTLS
+	// Join adds servers to the cluster: join tokens, the public join and
+	// approvals (clusterjoin.go); nil on a server without shared settings.
+	Join ClusterJoin
 	// ClusterServers drains and removes servers and rotates the cluster
 	// key; nil on a server that is not a member of a cluster.
 	ClusterServers ClusterServers
