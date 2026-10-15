@@ -1678,7 +1678,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			Indexed:    pipeline.LastIndexed,
 			TLS:        tlsStatus,
 			OSIdentity: osIdentity,
-			Busy:       jobsBusy(ret),
+			Busy:       jobsBusy(ret, r.shared),
 		}
 		if rt := r.shared; rt != nil {
 			settings.Shared = func() cluster.SharedStatus { return sharedStatus(rt, r.sharedContent) }

@@ -54,16 +54,28 @@
     const hint = node.nextElementSibling && node.nextElementSibling.classList.contains('feature-wait') ? node.nextElementSibling : null;
     if (!f || f.on) {
       if (node.dataset.featureWait) {
-        // It waited before and is on now: give the control back.
+        // It waited before and is on now: give the control back as it
+        // was, disabled if its page had it disabled.
+        const wasDisabled = node.dataset.featurePrevDisabled === '1';
+        const wasTitle = node.dataset.featurePrevTitle;
         delete node.dataset.featureWait;
-        node.disabled = false;
-        node.removeAttribute('aria-disabled');
-        node.removeAttribute('title');
+        delete node.dataset.featurePrevDisabled;
+        delete node.dataset.featurePrevTitle;
+        node.disabled = wasDisabled;
+        if (wasDisabled) node.setAttribute('aria-disabled', 'true');
+        else node.removeAttribute('aria-disabled');
+        if (wasTitle) node.title = wasTitle;
+        else node.removeAttribute('title');
         if (hint) hint.remove();
       }
       return;
     }
     const t = text(f);
+    if (!node.dataset.featureWait) {
+      // What the page set, to give back once the feature is on.
+      node.dataset.featurePrevDisabled = node.disabled ? '1' : '';
+      if (node.title) node.dataset.featurePrevTitle = node.title;
+    }
     node.dataset.featureWait = '1';
     node.disabled = true;
     node.setAttribute('aria-disabled', 'true');

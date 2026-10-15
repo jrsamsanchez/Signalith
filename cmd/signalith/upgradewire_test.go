@@ -7,10 +7,10 @@ import (
 )
 
 func TestJobsBusy(t *testing.T) {
-	if got := jobsBusy(nil)(); got != "" {
+	if got := jobsBusy(nil, nil)(); got != "" {
 		t.Errorf("no retention: %q", got)
 	}
-	if got := jobsBusy(&retention.Manager{})(); got != "" {
+	if got := jobsBusy(&retention.Manager{}, nil)(); got != "" {
 		t.Errorf("idle retention: %q", got)
 	}
 }

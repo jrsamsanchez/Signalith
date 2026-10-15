@@ -13,9 +13,13 @@ import (
 
 // jobsBusy names the step of the background jobs that a hand-over of the
 // jobs to a newer version, and an upgrade, must wait for: a retention run
-// or an archive restore. "" when none runs.
-func jobsBusy(ret *retention.Manager) func() string {
+// or an archive restore, or a level migration of the shared settings
+// (rt, nil without them). "" when none runs.
+func jobsBusy(ret *retention.Manager, rt *shared.Runtime) func() string {
 	return func() string {
+		if m := rt.MigrationBusy(); m != "" {
+			return m
+		}
 		if ret == nil {
 			return ""
 		}

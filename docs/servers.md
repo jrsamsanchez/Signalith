@@ -800,9 +800,15 @@ users stay signed in:
 3. Install the new version on it: the new package on Linux (or by hand, as the
    [README](https://github.com/jrsamsanchez/Signalith/blob/main/README.md#linux) says),
    the new MSI or `install.ps1` on
-   [Windows](https://github.com/jrsamsanchez/Signalith/blob/main/README.md#windows), or
-   `git pull && docker compose up -d` in Docker.
-4. Wait until the Servers page shows it **Ready** on the new version.
+   [Windows](https://github.com/jrsamsanchez/Signalith/blob/main/README.md#windows)
+   (with apt, run `sudo apt update` first). In Docker, in the Signalith folder,
+   `git pull && docker compose -f deploy/docker/docker-compose.yml up -d`; for a
+   server added with **Add a server**, set `SIGNALITH_VERSION` in
+   `deploy/docker/join.env` to the new version, then
+   `docker compose -f deploy/docker/docker-compose.server.yml --env-file deploy/docker/join.env up -d`.
+4. Wait until the Servers page shows it on the new version: **Draining**, since a
+   drained server stays drained across the restart (or **Ready** if you did not drain
+   it). Upgrade no other server until then.
 5. **Resume** it, and go on with the next server.
 
 ### Which server runs the jobs
@@ -820,8 +826,9 @@ A feature that needs every server to read a newer format is greyed out, with
 **Available when every server runs** and the version, until every server seen in the
 last 24 hours runs the new version. Then the cluster's level rises by itself and the
 feature turns on; the Servers page names the servers it still waits for. After the
-raise, a server of an older version refuses to start, and its message names the
-version to install. A server you took away for good still counts for 24 hours:
+raise, a server of an older version refuses to start. From this version on, its
+message names the version to install; an older release says only which level the
+shared settings are at, and that a newer version wrote them. A server you took away for good still counts for 24 hours:
 remove it on the Servers page so it stops counting at once.
 
 ### Going back to the previous version
@@ -830,16 +837,35 @@ Before the level rose, install the previous version again, one server at a time 
 above. After it rose, the previous version cannot read the shared settings, so they
 go back into each server's own files:
 
-1. On each server, run `signalith cluster export --to-files <new folder>` (see
-   [export --to-files](cluster-cli.md#export-to-files)). The files are for that
-   server: their passwords and keys are sealed with its master key.
-2. Stop every server.
-3. On one server, run `signalith cluster export -retire --to-files <new folder>`,
-   then `signalith cluster export -retire` on each of the others. This puts the shared
-   settings and the cluster keys aside.
-4. Copy the files on each server as the `README.txt` of its export says, install the
-   previous version and start the servers. The server that runs the jobs makes a new
-   cluster from its files.
+1. Stop every server, so no change is made after the export.
+2. On each server but one, run `sudo signalith cluster export -c /etc/signalith/signalith.yaml --to-files <new folder>`
+   (see [export --to-files](cluster-cli.md#export-to-files)). The files are for that
+   server: their passwords and keys are sealed with its master key. A server cannot
+   export once the shared settings are put aside, and `-retire` refuses on a server
+   that has not exported.
+3. On the remaining server, run
+   `sudo signalith cluster export -c /etc/signalith/signalith.yaml -retire --to-files <new folder>`,
+   then `sudo signalith cluster export -c /etc/signalith/signalith.yaml -retire` on
+   each of the others. This puts the shared settings and the cluster keys aside.
+4. Copy the files on each server as the `README.txt` of its export says: it gives the
+   commands for the platform the export ran on.
+5. Install the previous version and start the servers. The server that runs the jobs
+   makes a new cluster, with a new cluster key, from its files.
+6. Give the other servers that key: `signalith cluster export-key` on that server and
+   `signalith cluster import-key` on each of the others (see
+   [export-key and import-key](cluster-cli.md#export-key-and-import-key)). Until then
+   they keep using their own files and never take the jobs over. Servers with
+   `SIGNALITH_CLUSTER_KEY_FILE` set to the same key file use it again instead.
+
+On Windows, run the commands in an administrator PowerShell with
+`& "$env:ProgramFiles\Signalith\signalith.exe"` in place of `sudo signalith`. In
+Docker, stop the server with `docker compose -f deploy/docker/docker-compose.yml stop signalith`
+and run each command as
+`docker compose -f deploy/docker/docker-compose.yml run --rm signalith cluster export -c /etc/signalith/signalith.yaml ...`
+(for a server added with **Add a server**, use the `docker-compose.server.yml` command
+of step 3 above and `-c /var/lib/signalith/signalith.yaml`). The export folder must
+then be a new folder directly in `/var/lib/signalith`, such as
+`/var/lib/signalith/export`, as that is the only folder Docker keeps.
 
 ### Versions before the servers took turns
 

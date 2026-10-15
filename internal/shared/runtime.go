@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/securefile"
@@ -95,6 +96,12 @@ type Runtime struct {
 	fingerprint string
 	// approval is a waiting server's request to join (approval.go).
 	approval approvalState
+	// migMu lets one run of the level migrations go at a time; migAgain
+	// asks the run going on to go round once more, and migRunning says
+	// one runs (Busy), see runLevelMigrations.
+	migMu      sync.Mutex
+	migAgain   atomic.Bool
+	migRunning atomic.Bool
 }
 
 // Mode is how this server uses the shared configuration.

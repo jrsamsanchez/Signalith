@@ -188,7 +188,7 @@ func TestClusterExportToFiles(t *testing.T) {
 	}
 
 	// Not into a folder this server uses, nor one that holds anything.
-	if _, err := run("export", "--to-files", filepath.Join(stateA, "out")); err == nil || !strings.Contains(err.Error(), "a folder this server uses") {
+	if _, err := run("export", "--to-files", filepath.Join(stateA, "keys", "out")); err == nil || !strings.Contains(err.Error(), "a folder this server uses") {
 		t.Errorf("export into the state folder: %v", err)
 	}
 	full := filepath.Join(t.TempDir(), "full")
@@ -237,8 +237,15 @@ func TestClusterExportToFiles(t *testing.T) {
 		t.Errorf("the archives are not listed as skipped: %+v", m.Skipped)
 	}
 	readme, err := os.ReadFile(filepath.Join(out1, "README.txt"))
-	if err != nil || !strings.Contains(string(readme), "docker compose cp") || !strings.Contains(string(readme), "Copy-Item") {
+	wantCopy := "sudo install -D -o signalith -g signalith"
+	if runtime.GOOS == "windows" {
+		wantCopy = "Copy-Item"
+	}
+	if err != nil || !strings.Contains(string(readme), wantCopy) || !strings.Contains(string(readme), "import-key") {
 		t.Errorf("README.txt: %v\n%s", err, readme)
+	}
+	if len(exportMarks(stateA)) != 1 {
+		t.Errorf("no mark of the export in the state folder: %v", exportMarks(stateA))
 	}
 	raw, _ := os.ReadFile(filepath.Join(out1, filepath.FromSlash(byName["feeds"].Path)))
 	if strings.Contains(string(raw), "feed-pass") {
@@ -284,6 +291,11 @@ func TestClusterExportToFiles(t *testing.T) {
 	}
 	clusterServerDir(t, stateB, "siem-b")
 	copyTo(t, keys[0], filepath.Join(stateB, "keys", filepath.Base(keys[0])))
+	// It exported its own files first (its copy of the key here is not
+	// sealed with its own master key, so only the mark is made).
+	if err := os.WriteFile(exportMarkPath(stateB, "c1"), []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	t.Setenv("SIGNALITH_STATE_DIR", stateA)
 
 	before := len(fakeDocs(t, fake, shared.ConfigIndex("cx")))
@@ -320,6 +332,21 @@ func TestClusterExportToFiles(t *testing.T) {
 	t.Setenv("SIGNALITH_STATE_DIR", stateB)
 	if _, err := run("export", "-retire", "--to-files", filepath.Join(t.TempDir(), "b"), "-yes"); err == nil || !strings.Contains(err.Error(), "put aside already") {
 		t.Errorf("-retire --to-files on a later server: %v", err)
+	}
+	// Not on one that never exported its files, unless -force.
+	marks := exportMarks(stateB)
+	for _, mk := range marks {
+		if err := os.Rename(mk, mk+".aside"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := run("export", "-retire", "-yes"); err == nil || !strings.Contains(err.Error(), "never ran") {
+		t.Errorf("-retire on a server that never exported: %v", err)
+	}
+	for _, mk := range marks {
+		if err := os.Rename(mk+".aside", mk); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if out, err := run("export", "-retire", "-yes"); err != nil || len(shared.ClusterKeyFiles(stateB)) != 0 {
 		t.Fatalf("-retire on a later server: %v\n%s", err, out)
@@ -485,5 +512,33 @@ func TestTLSExporter(t *testing.T) {
 	cert, signer, _ := tlsauto.LocalFiles(filepath.Dir(list[0].Path))
 	if cert == nil || !bytes.Equal(cert.Raw, der) || signer == nil || !caKey.Public().(*ecdsa.PublicKey).Equal(signer.Public()) {
 		t.Fatalf("read back %v %v", cert, signer)
+	}
+}
+
+// README.txt gives the commands of the platform the export ran on only.
+func TestExportReadmePlatforms(t *testing.T) {
+	m := &exportManifest{Server: "siem-a", NodeID: "n_a", Version: "1.6.0", ClusterID: "c1",
+		Folders: []manifestFolder{{Path: "state", Dest: "/var/lib/signalith"}, {Path: "config", Dest: "/etc/signalith"}},
+		Files: []manifestFile{{Name: "users", Path: "state/lookups/users.json", Dest: "/var/lib/signalith/lookups/users.json", Secret: true},
+			{Name: "settings", Path: "config/settings.yaml", Dest: "/etc/signalith/settings.yaml"}}}
+	for platform, want := range map[string][]string{
+		"linux":   {"sudo install -D -o signalith -g signalith -m 0600", "/etc/signalith/settings.yaml\"", "sudo signalith cluster export"},
+		"windows": {"Copy-Item", "signalith.exe"},
+		"docker":  {"run --rm --entrypoint cp signalith", "not in the signalith-data volume", "--user 0 --entrypoint chown", "docker-compose.server.yml"},
+	} {
+		got := exportReadme(m, "/var/lib/signalith/export", readmeEnv{platform: platform, state: "/var/lib/signalith"})
+		for _, w := range want {
+			if !strings.Contains(got, w) {
+				t.Errorf("%s: no %q in\n%s", platform, w, got)
+			}
+		}
+		for other, words := range map[string]string{"linux": "sudo install", "windows": "Copy-Item", "docker": "docker compose"} {
+			if other != platform && strings.Contains(got, words) {
+				t.Errorf("%s: %q of %s in\n%s", platform, words, other, got)
+			}
+		}
+		if strings.Contains(got, "chown -R signalith") {
+			t.Errorf("%s: a whole folder changes owner:\n%s", platform, got)
+		}
 	}
 }

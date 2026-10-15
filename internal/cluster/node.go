@@ -1355,7 +1355,10 @@ func (n *Node) observe(ctx context.Context, c *store.Client, prefix string) {
 			age = min(max(age, 0), 8*24*time.Hour)
 			n.members[hb.NodeID] = &member{hb: hb, ver: d.Version, since: now - age, readySince: now}
 		case !m.ver.Same(d.Version):
-			if hb.State == StateReady && m.hb.State != StateReady {
+			// A server ready again, or started again or on another version
+			// between two looks (a quick restart in place), is ready only
+			// from now: the hand-over waits its settle time from here.
+			if hb.State == StateReady && (m.hb.State != StateReady || hb.BootID != m.hb.BootID || hb.Version != m.hb.Version) {
 				m.readySince = now
 			}
 			m.hb, m.ver, m.since = hb, d.Version, now

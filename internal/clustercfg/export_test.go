@@ -2,6 +2,7 @@ package clustercfg
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -196,5 +197,21 @@ func TestExportIsTheInverseOfImport(t *testing.T) {
 	}
 	if got, err := openFor(b.rt.Hub().Keys(), "assistant.api_key", key.Secret, key.SentTo); err != nil || got != "sk-page-secret" || key.SentTo != "https://api.anthropic.com:443" {
 		t.Errorf("the API key opens to %q (%v), sent to %s", got, err, key.SentTo)
+	}
+
+	// While the policies wait to be confirmed, the export is refused.
+	if _, err := a.docs.Retention().Mutate(ctx, "test", func(b *RetentionBody) error {
+		b.Confirm = &Confirm{Reason: ConfirmImport, At: "2026-10-15T10:00:00Z"}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, ex := range Exporters(a.docs, a.files) {
+		if ex.Name != ImportRetention {
+			continue
+		}
+		if _, err := ex.Run(ctx, exportUnder(t, dir, t.TempDir())); !errors.Is(err, ErrRetentionUnconfirmed) {
+			t.Errorf("exported unconfirmed policies: %v", err)
+		}
 	}
 }

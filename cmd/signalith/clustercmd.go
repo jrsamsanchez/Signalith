@@ -38,7 +38,7 @@ const clusterUsage = `usage:
   signalith cluster export         [-c file] [-o file]        the shared settings as YAML (stored passwords stay encrypted)
   signalith cluster export -settings [-c file] [-o file] [-server s]   the settings the servers share, as a file cluster apply takes
   signalith cluster export --to-files <dir> [-c file] [-server s]   the shared settings as the files of a server on its own, for a downgrade
-  signalith cluster export -retire [--to-files <dir>] [-c file] [-yes]   with every server stopped, put the shared settings aside for a downgrade
+  signalith cluster export -retire [--to-files <dir>] [-c file] [-yes] [-force]   with every server stopped, put the shared settings aside for a downgrade
   signalith cluster apply          [-c file] -f file [-yes]   change the settings the servers share to those of a file
   signalith cluster import         [-c file] -from-cache      write this server's copy of the shared settings back to OpenSearch
   signalith cluster export-key     [-c file] [-o file]        the cluster key, encrypted with a passphrase, for another server
@@ -110,7 +110,7 @@ func runCluster(args []string, in *os.File, out, errOut io.Writer) error {
 	flags.Usage = func() { fmt.Fprint(errOut, clusterUsage) }
 	path := configFlag(flags)
 	asJSON := flags.Bool("json", false, "print as JSON")
-	force := flags.Bool("force", false, "found even though a server that may run the background jobs seems up")
+	force := flags.Bool("force", false, "found: even though a server that may run the background jobs seems up; export -retire: on a server that never exported its files")
 	name := flags.String("name", "", "the cluster's name (default Signalith)")
 	outFile := flags.String("o", "", "write to this file instead of the standard output")
 	fromCache := flags.Bool("from-cache", false, "write this server's copy of the shared settings (cache.enc) back")
@@ -166,7 +166,7 @@ func runCluster(args []string, in *os.File, out, errOut io.Writer) error {
 		return x.found(ctx, *force, *name)
 	case "export":
 		if *toFiles != "" || *retire {
-			return x.exportToFiles(ctx, *toFiles, *server, *retire, *yes)
+			return x.exportToFiles(ctx, *toFiles, *server, *retire, *yes, *force)
 		}
 		if *settingsOnly {
 			return x.exportSettings(ctx, *outFile, *server)

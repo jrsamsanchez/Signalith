@@ -2,8 +2,8 @@
 // under the list of servers says whether the next server may be upgraded
 // now, as signalith cluster upgrade-check does, and gives each server its
 // steps, in the order to follow (the server running the background jobs
-// last): Drain, Upgrade (the command for how it runs), Wait for Ready,
-// Resume. Everything comes from api/cluster/upgrade, read every 15
+// last): Drain, Upgrade (the command for how it runs), Wait for the new
+// version, Resume. Everything comes from api/cluster/upgrade, read every 15
 // seconds while the page shows; Drain and Resume are the requests of the
 // Maintenance part of a server's panel. Nothing is kept beyond the page's
 // life: a version that changed since the page opened counts as upgraded.
@@ -92,31 +92,36 @@
   }
 
   function commands(dep) {
-    const linux = el('li', {}, 'Linux: ', el('code', {}, 'sudo apt upgrade signalith'), ' or ', el('code', {}, 'sudo dnf upgrade signalith'),
+    const linux = el('li', {}, 'Linux: ', el('code', {}, 'sudo apt update && sudo apt install --only-upgrade signalith'), ' or ', el('code', {}, 'sudo dnf upgrade signalith'),
       ', or replace the program as the ',
       el('a', { href: README, target: '_blank', rel: 'noopener noreferrer' }, 'README says', icon('arrow-up-right', 'icon--xs'),
         el('span', { class: 'sr-only' }, ' (opens in a new tab)')), '.');
     const win = el('li', {}, 'Windows: run the new release’s MSI, or ', el('code', {}, 'install.ps1'), ' from the new release’s folder.');
-    const docker = el('li', {}, 'Docker: ', el('code', {}, 'git pull && docker compose up -d'), ' in the Signalith folder.');
+    const docker = el('li', {}, 'Docker, in the Signalith folder: ', el('code', {}, 'git pull && docker compose -f deploy/docker/docker-compose.yml up -d'),
+      '. A server added with Add a server: set ', el('code', {}, 'SIGNALITH_VERSION'), ' in ', el('code', {}, 'deploy/docker/join.env'),
+      ' to the new version, then ', el('code', {}, 'docker compose -f deploy/docker/docker-compose.server.yml --env-file deploy/docker/join.env up -d'), '.');
     const pick = { systemd: [linux], 'windows-service': [win], docker: [docker] }[dep] || [linux, win, docker];
     return el('ul', { class: 'sv-upgrade__cmds', role: 'list' }, ...pick);
   }
 
   // steps are the four steps of a server, each done, now or later.
+  // A drained server keeps its drained state across the restart, so it
+  // runs the new version drained rather than ready until it is resumed.
   function steps(v, s, single, isNext) {
     const up = upgraded(v, s);
     const ready = s.live && s.state === 'ready';
     const drained = !!s.drained;
+    const running = s.live && (ready || drained);
     const acting = S.acting[s.node_id];
     const st = { drain: 'later', upgrade: 'later', wait: 'later', resume: 'later' };
     if (up) {
       st.drain = st.upgrade = 'done';
-      st.wait = ready || drained ? 'done' : 'now';
-      st.resume = drained ? (s.live ? 'now' : 'later') : 'done';
-      if (!drained && ready) st.wait = 'done';
+      st.wait = running ? 'done' : 'now';
+      st.resume = drained ? (running ? 'now' : 'later') : 'done';
     } else if (isNext) {
-      st.drain = single || drained ? 'done' : 'now';
-      st.upgrade = single || drained ? 'now' : 'later';
+      // A server stopped without draining is past that step too.
+      st.drain = single || drained || !s.live ? 'done' : 'now';
+      st.upgrade = st.drain === 'done' ? 'now' : 'later';
     }
     const row = (key, title, ...body) => el('li', { class: 'sv-upgrade__step', 'data-state': st[key] },
       el('span', { class: 'sv-upgrade__mark', 'aria-hidden': 'true' }, icon(st[key] === 'done' ? 'circle-check' : st[key] === 'now' ? 'circle-dot' : 'clock', 'icon--sm')),
@@ -129,8 +134,9 @@
         onclick: () => act(s, 'drain') }, icon('power'), acting === 'drain' ? 'Draining…' : 'Drain ' + s.name) : null));
     }
     out.push(row('upgrade', 'Upgrade', el('p', { class: 'sv-upgrade__text' }, `Stop ${s.name}, install the new version and start it.`), commands(s.deployment)));
-    out.push(row('wait', 'Wait for Ready', el('p', { class: 'sv-upgrade__text' },
-      up && !ready ? `${s.name} is ${s.state}: this list updates by itself.` : 'Its state turns ready on the new version.')));
+    out.push(row('wait', 'Wait until it runs the new version', el('p', { class: 'sv-upgrade__text' },
+      up && !running ? `${s.name} is ${s.state}: this list updates by itself.`
+        : single ? 'It starts on the new version and turns Ready.' : 'It starts on the new version: Draining if you drained it, else Ready.')));
     if (!single) {
       out.push(row('resume', 'Resume', el('p', { class: 'sv-upgrade__text' }, 'A drained server stays drained after the restart until it is resumed.'),
         drained && st.resume === 'now' ? el('button', { type: 'button', class: 'btn btn--secondary btn--sm', disabled: !!acting,
@@ -181,12 +187,18 @@
     const focus = a && box.contains(a) && a.dataset ? a.dataset.focus : '';
     const servers = order(v);
     const single = !!v.single || servers.length < 2;
-    const nextUp = servers.find((s) => !upgraded(v, s) && s.live);
+    // A server not upgraded yet that is drained or not running is the one
+    // being upgraded: it stays next until it runs the new version, and
+    // nothing else is safe to take down before.
+    const busy = single ? null : servers.find((s) => !upgraded(v, s) && (s.drained || !s.live));
+    const nextUp = busy || servers.find((s) => !upgraded(v, s) && s.live);
+    const safe = v.safe && !busy;
     const urgent = mixed(v) || (v.blockers || []).length > 0;
     const open = S.open == null ? urgent : S.open;
     const body = [];
-    body.push(el('div', { class: 'alert', 'data-tone': v.safe ? 'success' : 'warning', role: 'status' }, icon(v.safe ? 'circle-check' : 'hourglass'),
-      el('div', {}, el('b', {}, v.safe ? 'Safe to upgrade the next server' : 'Not safe yet'), v.next ? el('p', {}, v.next) : null)));
+    const nextText = busy ? `Finish ${busy.name} first: it does not run the new version yet. (If it is gone for good, remove it on its panel.)` : v.next;
+    body.push(el('div', { class: 'alert', 'data-tone': safe ? 'success' : 'warning', role: 'status' }, icon(safe ? 'circle-check' : 'hourglass'),
+      el('div', {}, el('b', {}, safe ? 'Safe to upgrade the next server' : 'Not safe yet'), nextText ? el('p', {}, nextText) : null)));
     body.push(notes('Wait for this first', v.blockers, 'danger'), notes('Good to know', v.warnings, 'warning'));
     if (S.failed) body.push(el('p', { class: 'sv-panel__text sv-warn' }, 'Couldn’t read the checklist: ' + (S.failed.message || 'no answer') + '. Trying again.'));
     body.push(el('ol', { class: 'sv-upgrade__servers', role: 'list' }, ...servers.map((s, i) => {

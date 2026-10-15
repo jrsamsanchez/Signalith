@@ -139,13 +139,20 @@ func exportFeedStatus(ctx context.Context, f Files, t shared.ExportTarget) ([]sh
 	return []shared.ExportedFile{{Path: p, Dest: dest}}, nil
 }
 
+// ErrRetentionUnconfirmed refuses an export while the shared retention
+// policies wait to be confirmed.
+var ErrRetentionUnconfirmed = errors.New("the shared retention policies wait to be confirmed: confirm them on the Retention page first. " +
+	"A server on its own has no such hold, so policies no admin confirmed would delete data as soon as it starts")
+
 func exportRetention(d *Docs, f Files, t shared.ExportTarget) ([]shared.ExportedFile, error) {
 	body, ok := d.Retention().Get()
 	if !ok {
 		return nil, nil
 	}
 	if body.Confirm != nil {
-		t.Logger().Warn("the shared retention policies wait to be confirmed; a server on its own has no such hold, so they apply as soon as it starts")
+		// A server on its own has no such hold: the policies no admin
+		// confirmed would delete data as soon as it starts.
+		return nil, ErrRetentionUnconfirmed
 	}
 	dest := RetentionFile(f.Config())
 	p, err := exportPath(t, dest)

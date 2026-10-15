@@ -126,7 +126,7 @@ func Read(ctx context.Context, cl *store.Client, prefix, self string, rt *shared
 	if rt != nil {
 		in.Status, in.Head = rt.Status(), rt.Hub().MaxRev()
 		if body, ok := rt.Cluster().Get(); ok && body != nil {
-			in.Migrations = maps.Clone(body.Migrations)
+			in.Migrations, in.LevelVersions = maps.Clone(body.Migrations), maps.Clone(body.LevelVersions)
 		}
 	}
 	in.Tasks, err = RunningTasks(ctx, cl, prefix)

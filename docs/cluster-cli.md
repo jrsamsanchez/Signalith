@@ -584,13 +584,15 @@ copy to OpenSearch nodes that no Signalith server keeps it for.
 
 ```
 signalith cluster export --to-files <dir> [-c file] [-server s]
-signalith cluster export -retire [--to-files <dir>] [-c file] [-yes]
+signalith cluster export -retire [--to-files <dir>] [-c file] [-yes] [-force]
 ```
 
 `export --to-files` writes the shared settings as the files a server on its own keeps,
 for going back to a version from before the cluster's level rose (see
 [Going back to the previous version](servers.md#going-back-to-the-previous-version)).
-`<dir>` must be a new or empty folder outside this server's folders. It holds:
+`<dir>` must be a new or empty folder outside this server's folders, or a new folder
+directly in the state folder (in Docker, `/var/lib/signalith/export`: the state folder
+is the only one Docker keeps). It holds:
 
 - the feeds (`intel_feeds.yaml`, the feeds of signalith.yaml included) and their status
   (`intel_feeds.json`), the retention policies (`retention.yaml`) and history
@@ -602,7 +604,8 @@ for going back to a version from before the cluster's level rose (see
   state folder's `tls` folder);
 - each laid out as on this server (`config/`, `state/`, `detections/`, `dashboards/`),
   with `MANIFEST.json`, which lists every file and where it goes, and `README.txt`,
-  with the commands that copy them on Linux, Windows and Docker.
+  with the steps and the commands that copy them on the platform the export ran on
+  (Linux, Windows or Docker).
 
 Passwords and keys are sealed again with this server's master key, as its own files
 keep them, so an export is for the server it ran on: run it on each server. One that
@@ -611,13 +614,19 @@ Not written, and listed as skipped in `MANIFEST.json`: the archive manifests (th
 files in the archive folder already), API tokens, join tokens, the reports of servers
 that joined with `-merge`, the keyring, sign-in sessions and OpenSearch's certificate
 authority. The built-in admin stays as signalith.yaml and `signalith passwd` set it.
+While the shared retention policies wait to be confirmed (after servers with different
+policies joined), the export is refused: confirm them on the Retention page first,
+since a server on its own has no such hold. Each export leaves
+`exported-<cluster id>.json` in the state folder, which `-retire` checks for.
 
 `-retire` runs with every server stopped: it watches the heartbeats first and refuses
 while any server runs, and this server must be stopped too. On the first server it
-needs `--to-files`: it writes the files, copies the `<prefix>_config` index into
-`<prefix>_config_retired_<UTC time>`, checks that the copy holds as many documents,
-and deletes `<prefix>_config`. On every server it moves this server's copy of the
+needs `--to-files`: it writes the files, blocks writes to the `<prefix>_config`
+index, copies it into `<prefix>_config_retired_<UTC time>`, checks that the copy and
+the original hold as many documents as were read, and deletes `<prefix>_config` (on a
+failure it lifts the block and deletes the partial copy). On every server it moves this server's copy of the
 shared settings (`cache.enc`) and its cluster keys into `retired-<UTC time>` in the
 state folder; `node.id` and `node.key` stay. On the other servers, run it without
-`--to-files`. It asks first unless `-yes` is given. The retired copy is kept, so going
+`--to-files`, after `export --to-files` there: it refuses on a server that never
+exported, since that server cannot export any more, unless `-force` is given. It asks first unless `-yes` is given. The retired copy is kept, so going
 forward again is possible. Both are audited.

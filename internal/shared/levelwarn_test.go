@@ -43,7 +43,7 @@ func TestLevelVersionsAndWarning(t *testing.T) {
 		gone.Live, gone.SeenAgo, gone.OfflineSince = false, time.Hour, &since
 		peers.set(self, gone)
 		got := warningsText(a.rt)
-		mustContain(t, "warnings", got, "upgrade siem-c (1.5.0), offline since 08:00, stops counting at 08:00 tomorrow, or remove it.")
+		mustContain(t, "warnings", got, "upgrade siem-c (1.5.0), offline since 08:00 UTC, stops counting at 08:00 UTC tomorrow, or remove it.")
 		if strings.Contains(got, "A server stopped for 24 hours") {
 			t.Errorf("the general note with an offline server:\n%s", got)
 		}
@@ -51,7 +51,7 @@ func TestLevelVersionsAndWarning(t *testing.T) {
 		// long ago it was seen.
 		gone.OfflineSince = nil
 		peers.set(self, gone)
-		mustContain(t, "warnings", warningsText(a.rt), "offline since 08:00, stops counting at 08:00 tomorrow")
+		mustContain(t, "warnings", warningsText(a.rt), "offline since 08:00 UTC, stops counting at 08:00 UTC tomorrow")
 	})
 	t.Run("none on a single server", func(t *testing.T) {
 		peers.set(self)
@@ -129,10 +129,10 @@ func TestLevelErrorText(t *testing.T) {
 func TestClockTime(t *testing.T) {
 	now := time.Date(2026, 10, 12, 9, 0, 0, 0, time.UTC)
 	for at, want := range map[time.Time]string{
-		now.Add(-time.Hour):      "08:00",
-		now.Add(23 * time.Hour):  "08:00 tomorrow",
-		now.Add(-25 * time.Hour): "2026-10-11 08:00",
-		now.Add(50 * time.Hour):  "2026-10-14 11:00",
+		now.Add(-time.Hour):      "08:00 UTC",
+		now.Add(23 * time.Hour):  "08:00 UTC tomorrow",
+		now.Add(-25 * time.Hour): "2026-10-11 08:00 UTC",
+		now.Add(50 * time.Hour):  "2026-10-14 11:00 UTC",
 	} {
 		if got := clockTime(now, at); got != want {
 			t.Errorf("clockTime(%v) = %q, want %q", at, got, want)

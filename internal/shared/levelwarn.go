@@ -86,19 +86,21 @@ func (rt *Runtime) levelWarning() *Warning {
 	return &Warning{Level: "amber", Text: text}
 }
 
-// clockTime writes t for someone reading it at now: "10:42" today,
-// "10:42 tomorrow", else with its date ("2026-10-12 10:42").
+// clockTime writes t for someone reading it at now, in this server's
+// time zone, which it names (a container runs in UTC, the reader may
+// not): "10:42 UTC" today, "10:42 UTC tomorrow", else with its date
+// ("2026-10-12 10:42 UTC").
 func clockTime(now, t time.Time) string {
 	t = t.In(now.Location())
 	y, m, d := now.Date()
 	ty, tm, td := t.Date()
 	switch {
 	case y == ty && m == tm && d == td:
-		return t.Format("15:04")
+		return t.Format("15:04 MST")
 	case now.AddDate(0, 0, 1).Format(time.DateOnly) == t.Format(time.DateOnly):
-		return t.Format("15:04") + " tomorrow"
+		return t.Format("15:04 MST") + " tomorrow"
 	}
-	return t.Format("2006-01-02 15:04")
+	return t.Format("2006-01-02 15:04 MST")
 }
 
 // andList writes "a", "a and b", "a, b and c".

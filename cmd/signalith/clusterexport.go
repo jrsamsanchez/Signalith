@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"crypto/x509"
 	"encoding/json"
@@ -9,8 +10,10 @@ import (
 	"fmt"
 	"io/fs"
 	"maps"
+	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"time"
@@ -21,6 +24,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/clusterlib"
 	"github.com/jrsamsanchez/signalith/internal/securefile"
 	"github.com/jrsamsanchez/signalith/internal/shared"
+	"github.com/jrsamsanchez/signalith/internal/store"
 	"github.com/jrsamsanchez/signalith/internal/tlsauto"
 )
 
@@ -218,22 +222,34 @@ func (l exportLayout) used(files []manifestFile) []manifestFolder {
 }
 
 // checkExportDir refuses an export folder that holds anything, or that
-// is in a folder this server uses, and makes it.
+// is in a folder this server uses, and makes it. A new folder directly in
+// the state folder is the exception: in Docker the state folder is the
+// only one kept (the signalith-data volume), and nothing there is in it.
 func (x *clusterCLI) checkExportDir(dir string) (string, error) {
 	if strings.TrimSpace(dir) == "" {
 		return "", errors.New("name the folder to write the files into: --to-files <dir>")
 	}
 	root := absPath(dir)
+	state := ""
+	if x.c.StateDir() != "" {
+		state = absPath(x.c.StateDir())
+	}
+	inState := false
+	if rel, ok := relWithin(state, root); ok && rel != "." && !strings.ContainsAny(rel, `/\`) {
+		if _, err := os.Lstat(root); errors.Is(err, fs.ErrNotExist) {
+			inState = true
+		}
+	}
 	live := []string{x.c.StateDir(), x.c.LookupsDir(), x.c.DetectionsDir(), x.c.DashboardsDir()}
 	if x.c.Path() != "" {
 		live = append(live, filepath.Dir(x.c.Path()))
 	}
 	for _, d := range live {
-		if d == "" {
+		if d == "" || inState && absPath(d) == state {
 			continue
 		}
 		if _, ok := relWithin(absPath(d), root); ok {
-			return "", fmt.Errorf("%s is in %s, a folder this server uses: write the files somewhere else", root, absPath(d))
+			return "", fmt.Errorf("%s is in %s, a folder this server uses: write the files somewhere else, or into a new folder directly in %s", root, absPath(d), state)
 		}
 	}
 	entries, err := os.ReadDir(root)
@@ -268,9 +284,9 @@ func (x *clusterCLI) exportServer(ctx context.Context, server string) (string, s
 }
 
 // exportToFiles is signalith cluster export --to-files and -retire.
-func (x *clusterCLI) exportToFiles(ctx context.Context, dir, server string, retire, yes bool) error {
+func (x *clusterCLI) exportToFiles(ctx context.Context, dir, server string, retire, yes, force bool) error {
 	if retire {
-		return x.retire(ctx, dir, server, yes)
+		return x.retire(ctx, dir, server, yes, force)
 	}
 	root, err := x.checkExportDir(dir)
 	if err != nil {
@@ -333,40 +349,145 @@ func (x *clusterCLI) writeExport(ctx context.Context, root, server string) (*exp
 	if err := securefile.WriteFile(filepath.Join(root, "MANIFEST.json"), append(data, '\n')); err != nil {
 		return nil, err
 	}
-	if err := securefile.WriteFile(filepath.Join(root, "README.txt"), []byte(exportReadme(m, root))); err != nil {
+	if err := securefile.WriteFile(filepath.Join(root, "README.txt"), []byte(exportReadme(m, root, x.readmeEnv()))); err != nil {
 		return nil, err
+	}
+	// The mark that this server exported its files, which a later -retire
+	// on it checks for: once the shared settings are put aside, it cannot
+	// export them any more.
+	mark, err := json.Marshal(exportMark{Dir: root, At: m.At, Version: m.Version, ClusterID: m.ClusterID})
+	if err != nil {
+		return nil, err
+	}
+	if err := securefile.WriteFile(exportMarkPath(x.c.StateDir(), m.ClusterID), append(mark, '\n')); err != nil {
+		return nil, fmt.Errorf("wrote the files, but could not note that in the state folder: %w", err)
 	}
 	x.audit("exported the shared settings to files", "dir", root, "files", len(m.Files), "own_settings_of", name)
 	return m, nil
 }
 
+// exportMark is <state>/exported-<cluster id>.json: this server ran
+// signalith cluster export --to-files, into Dir.
+type exportMark struct {
+	Dir       string `json:"dir"`
+	At        string `json:"at"`
+	Version   string `json:"version"`
+	ClusterID string `json:"cluster_id,omitempty"`
+}
+
+// exportMarkPath is where the mark of an export of cluster id goes.
+func exportMarkPath(stateDir, id string) string {
+	return filepath.Join(stateDir, "exported-"+cmp.Or(id, "cluster")+".json")
+}
+
+// exportMarks lists the marks of exports in the state folder.
+func exportMarks(stateDir string) []string {
+	list, _ := filepath.Glob(filepath.Join(stateDir, "exported-*.json"))
+	return list
+}
+
+// readmeEnv is what README.txt says the commands for: the platform
+// ("linux", "windows" or "docker") and this server's configuration file.
+type readmeEnv struct {
+	platform string
+	config   string
+	state    string
+}
+
+func (x *clusterCLI) readmeEnv() readmeEnv {
+	env := readmeEnv{platform: runtime.GOOS, config: x.c.Path(), state: x.c.StateDir()}
+	if deployment() == "docker" {
+		env.platform = "docker"
+	} else if env.platform != "windows" {
+		env.platform = "linux"
+	}
+	return env
+}
+
+// downgradeDocs is the section of docs/servers.md on going back.
+const downgradeDocs = "https://github.com/jrsamsanchez/Signalith/blob/main/docs/servers.md#going-back-to-the-previous-version"
+
+// dockerCompose is the start of a Docker Compose command, for README.txt.
+const dockerCompose = "docker compose -f deploy/docker/docker-compose.yml"
+
 // exportReadme is README.txt: where each folder of the export goes, with
 // the commands that copy it on Linux, Windows and Docker.
-func exportReadme(m *exportManifest, root string) string {
+func exportReadme(m *exportManifest, root string, env readmeEnv) string {
 	var b strings.Builder
+	cli, cfg := "signalith", ""
+	switch env.platform {
+	case "linux":
+		cli = "sudo signalith"
+	case "windows":
+		cli = "& \"$env:ProgramFiles\\Signalith\\signalith.exe\""
+	case "docker":
+		cli = dockerCompose + " run --rm signalith"
+	}
+	if env.config != "" {
+		cfg = fmt.Sprintf(" -c \"%s\"", env.config)
+	}
 	fmt.Fprintf(&b, `The shared settings of cluster %s, written by signalith cluster export
 --to-files on %s (%s), version %s, at %s.
 
 They are the files a server on its own keeps, for a version that keeps its
 settings in files. Passwords and keys in them are sealed with the master key
-of %s, so they are for that server only: on each server you take back,
-run the export there.
+of %s, so they are for that server only: each server you take back needs its
+own export, made on it.
 
-Do this with every server stopped (see "Going back to the previous version"
-in docs/servers.md):
+The steps (see "Going back to the previous version",
+%s):
 
-  1. signalith cluster export -retire --to-files <new folder> on one server,
-     signalith cluster export -retire on each of the others.
-  2. Copy each folder below into the folder of this server it names.
-  3. Install and start the previous version.
-
-`, m.ClusterID, m.Server, m.NodeID, m.Version, m.At, m.Server)
+  1. Stop every server.
+  2. On each server but one: %s cluster export%s --to-files <new folder>
+  3. On that one: %s cluster export%s -retire --to-files <new folder>
+     On each of the others: %s cluster export%s -retire
+  4. On each server, copy the files of its export as below.
+  5. Install the previous version and start the servers. The server that runs
+     the background jobs makes a new cluster, with a new cluster key, from its
+     files.
+  6. Give the other servers that key: signalith cluster export-key there, and
+     signalith cluster import-key on each of the others. (A server with
+     SIGNALITH_CLUSTER_KEY_FILE set uses that key file again instead.)
+`, m.ClusterID, m.Server, m.NodeID, m.Version, m.At, m.Server, downgradeDocs, cli, cfg, cli, cfg, cli, cfg)
+	if env.platform == "docker" {
+		fmt.Fprintf(&b, `
+In Docker, the export folder must be a new folder directly in %s (the
+signalith-data volume), such as %s/export: anything else is lost with the
+container. For a server added with "Add a server", use
+  docker compose -f deploy/docker/docker-compose.server.yml --env-file deploy/docker/join.env
+in place of %s, and -c /var/lib/signalith/signalith.yaml.
+`, cmp.Or(env.state, "/var/lib/signalith"), cmp.Or(env.state, "/var/lib/signalith"), dockerCompose)
+	}
+	b.WriteString("\nCopying the files:\n\n")
 	for _, f := range m.Folders {
 		src := filepath.Join(root, filepath.FromSlash(f.Path))
 		fmt.Fprintf(&b, "%s -> %s\n", src, f.Dest)
-		fmt.Fprintf(&b, "  Linux:   sudo cp -r \"%s/.\" \"%s/\" && sudo chown -R signalith: \"%s\"\n", src, f.Dest, f.Dest)
-		fmt.Fprintf(&b, "  Windows: Copy-Item -Path \"%s\\*\" -Destination \"%s\" -Recurse -Force\n", src, f.Dest)
-		fmt.Fprintf(&b, "  Docker:  docker compose cp \"%s/.\" signalith:\"%s\"\n\n", src, f.Dest)
+		switch env.platform {
+		case "windows":
+			fmt.Fprintf(&b, "  Copy-Item -Path \"%s\\*\" -Destination \"%s\" -Recurse -Force\n\n", src, f.Dest)
+		case "docker":
+			if _, ok := relWithin(env.state, f.Dest); env.state != "" && ok {
+				fmt.Fprintf(&b, "  %s run --rm --entrypoint cp signalith -r \"%s/.\" \"%s/\"\n\n", dockerCompose, src, f.Dest)
+			} else {
+				fmt.Fprintf(&b, "  This folder is not in the signalith-data volume. Copy the folder out with\n"+
+					"    %s cp signalith:\"%s\" ./signalith-export-%s\n"+
+					"  and its files into what your compose file mounts at %s.\n\n", dockerCompose, src, f.Path, f.Dest)
+			}
+		default:
+			// One file at a time, so only the files copied change owner.
+			for _, file := range m.Files {
+				if file.Path != f.Path && !strings.HasPrefix(file.Path, f.Path+"/") {
+					continue
+				}
+				fmt.Fprintf(&b, "  sudo install -D -o signalith -g signalith -m 0600 \"%s\" \"%s\"\n",
+					filepath.Join(root, filepath.FromSlash(file.Path)), file.Dest)
+			}
+			b.WriteString("\n")
+		}
+	}
+	if env.platform == "docker" {
+		fmt.Fprintf(&b, "Then give the files to the user Signalith runs as:\n  %s run --rm --user 0 --entrypoint chown signalith -R 65532:65532 \"%s\"\n\n",
+			dockerCompose, cmp.Or(env.state, "/var/lib/signalith"))
 	}
 	b.WriteString("The files:\n")
 	for _, f := range m.Files {
@@ -401,7 +522,7 @@ Also:
 // state folder. The previous version then starts with no cluster
 // document and no key, and the server that runs the jobs founds a new
 // cluster from the files.
-func (x *clusterCLI) retire(ctx context.Context, dir, server string, yes bool) error {
+func (x *clusterCLI) retire(ctx context.Context, dir, server string, yes, force bool) error {
 	peers, err := x.peers(ctx, cliWatch)
 	if err != nil {
 		return fmt.Errorf("could not read the servers' heartbeats: %w", err)
@@ -414,6 +535,10 @@ func (x *clusterCLI) retire(ctx context.Context, dir, server string, yes bool) e
 	return cluster.WhileStopped(x.c.StateDir(), func() error {
 		cfg := shared.ConfigIndex(x.prefix())
 		have, err := x.cl.ListIndices(ctx, cfg)
+		// OpenSearch answers an exact name that is not there with 404.
+		if se := (*store.Error)(nil); errors.As(err, &se) && se.Status == http.StatusNotFound {
+			have, err = nil, nil
+		}
 		if err != nil {
 			return err
 		}
@@ -452,6 +577,11 @@ func (x *clusterCLI) retire(ctx context.Context, dir, server string, yes bool) e
 			}
 			index = slices.Max(retired)
 			stamp = strings.TrimPrefix(index, shared.RetiredConfigIndex(x.prefix(), ""))
+			if len(exportMarks(x.c.StateDir())) == 0 && !force {
+				return fmt.Errorf("this server never ran signalith cluster export --to-files, and the shared settings were put aside already (%s), "+
+					"so its feed passwords, shared secret settings and directory bind password could not be opened by the previous version. "+
+					"Copy %s back into %s to export first, or add -force to go on without files", index, index, cfg)
+			}
 			if err := x.confirm(fmt.Sprintf("Put this server's copy of the shared settings and its cluster keys aside (%s)?", index), yes); err != nil {
 				return err
 			}
