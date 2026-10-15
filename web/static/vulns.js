@@ -861,8 +861,12 @@
   }
 
   function renderScanners() {
-    // The server running the background jobs first, then by name.
-    const list = [...SC.data.servers].sort((a, b) => (b.runs_jobs - a.runs_jobs) || a.name.localeCompare(b.name));
+    // Dedicated scanners first, so whether one exists shows at a glance,
+    // then servers that scan a network, then the server running the
+    // background jobs, then by name.
+    const list = [...SC.data.servers].sort((a, b) => (!!b.scanner - !!a.scanner) || ((b.networks.length > 0) - (a.networks.length > 0)) ||
+      (!!b.runs_jobs - !!a.runs_jobs) || a.name.localeCompare(b.name));
+    const dedicated = list.some((sv) => sv.scanner);
     const scanning = list.filter((sv) => sv.networks.length);
     const intro = el('div', { class: 'card sc-intro' }, el('div', { class: 'card__body' },
       el('span', { class: 'vs-start__icon' }, icon('radar')),
@@ -888,13 +892,15 @@
         needRow('An NVD API key', 'Makes the first CVE lookups about ten times faster. One key serves every server.', 'No'),
         needRow('OpenVAS (Greenbone Community Edition)', 'Deeper scans for the networks that turn it on: tests each host for thousands of known weaknesses. Set up on the server that scans them.', 'No')))));
     const cards = list.map(scannerCard);
-    $('sc-page').replaceChildren(...[intro,
+    // Once a scanner has been added, the servers come before the how-to.
+    $('sc-page').replaceChildren(...[dedicated ? null : intro,
       list.length < 2 ? el('div', { class: 'alert', 'data-tone': 'info' }, icon('info'), el('div', {},
         el('b', {}, 'This is your only server, so it scans every network.'),
         el('p', {}, 'To scan a network it cannot reach, ', el('a', { href: '#servers', 'data-page': 'servers' }, 'add a server'), ' inside that network’s zone.'))) : null,
       el('h3', { class: 'sc-heading' }, list.length === 1 ? 'Your server' : list.length + ' servers', el('span', { class: 'vs-muted' },
         scanning.length ? ' · ' + scanning.length + ' scanning' : ' · none scans a network yet')),
       el('div', { class: 'sc-list' }, ...cards),
+      dedicated ? intro : null,
       needs].filter(Boolean));
   }
 
