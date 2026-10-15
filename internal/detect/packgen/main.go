@@ -117,6 +117,13 @@ var webCategories = map[string]string{
 	"webserver": "rules/web/webserver_generic",
 }
 
+// cloudCategories are the log sources of cloud services, by product, and
+// the folders their rules live in. Not Sigma categories: each is a
+// product's service (product: aws, service: cloudtrail).
+var cloudCategories = map[string][2]string{
+	"cloudtrail": {"aws", "rules/cloud/aws/cloudtrail"},
+}
+
 // maxWildcardTerms keeps a rule's searches under
 // OpenSearch's default limit of 1,024 clauses in one search (see
 // search.WildcardFieldTerms and search.Clauses).
@@ -183,6 +190,9 @@ func main() {
 	for c, dir := range webCategories {
 		sources = append(sources, source{"", c, dir})
 	}
+	for c, pd := range cloudCategories {
+		sources = append(sources, source{pd[0], c, pd[1]})
+	}
 	sort.Slice(sources, func(i, j int) bool { return sources[i].dir < sources[j].dir })
 	for _, src := range sources {
 		cat, product := src.cat, src.product
@@ -223,6 +233,9 @@ func main() {
 			}
 			want := map[string]string{"product": product, "category": cat, "service": ""}
 			if cat == "system" || cat == "security" || cat == "auditd" || cat == "windefend" || cat == "application" {
+				want["category"], want["service"] = "", cat
+			}
+			if _, ok := cloudCategories[cat]; ok {
 				want["category"], want["service"] = "", cat
 			}
 			if cat == "code_integrity" {

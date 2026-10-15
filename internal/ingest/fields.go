@@ -296,6 +296,15 @@ var knownFields = func() map[string]string {
 		// Sensor health: Zeek capture_loss and stats, Suricata stats.
 		"capture_loss_percent": double, "packets_received": long, "packets_dropped": long,
 		"drop_percent": double, "uptime_seconds": long, "sensor_interface": kw,
+
+		// AWS CloudTrail (cloudtrail.go): the caller's name as Splunk's AWS
+		// add-on names it, and a call's whole parameters and response as
+		// JSON text, which rules search for words inside.
+		"user_name": kw, "request_parameters": "wildcard", "response_elements": "wildcard",
+	}
+	// And the record's own fields, by CloudTrail's names.
+	for _, k := range cloudTrailFields {
+		m[k] = kw
 	}
 	add := func(fs []datamodel.Field) {
 		for _, f := range fs {

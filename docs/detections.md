@@ -269,12 +269,13 @@ Content packs are rule sets from other open source projects, shipped unchanged
 inside Signalith and converted when it starts. Every pack detection is **off** until
 an admin turns it on.
 
-**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,247 rules from
+**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,285 rules from
 [SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 2,080 Windows rules
 for these Sysmon, Security, PowerShell, System, Application, Code Integrity, Windows Firewall, BITS, AppX deployment, WMI activity, Remote Desktop session, shell, SMB client, exploit protection, DNS client, Task Scheduler, NTLM, LSA, CryptoAPI, device driver, packaged app, certificate, OpenSSH, DNS Server, IIS configuration and Defender log sources, 154 Linux rules (see
 [Linux endpoints](#linux-endpoints-sysmon-for-linux) and
-[the Linux audit log](#linux-audit-log-auditd)), and 13 web server rules (see
-[Web server access logs](#web-server-access-logs)):
+[the Linux audit log](#linux-audit-log-auditd)), 13 web server rules (see
+[Web server access logs](#web-server-access-logs)), and 38 AWS CloudTrail rules (see
+[AWS CloudTrail](#aws-cloudtrail)):
 
 | Sigma log source | Windows events | Data model |
 | --- | --- | --- |
@@ -290,6 +291,7 @@ for these Sysmon, Security, PowerShell, System, Application, Code Integrity, Win
 | `raw_access_thread` | Sysmon 9 (a drive read directly; `Device` is `device`) | Endpoint |
 | `ps_script` | PowerShell 4104 | Script |
 | `webserver` | Apache and Nginx access log lines (see [Web server access logs](#web-server-access-logs)) | Web |
+| `product: aws`, `service: cloudtrail` | AWS CloudTrail records (see [AWS CloudTrail](#aws-cloudtrail)) | Authentication, Change or Other |
 | `service: system` | System 7045 (service installed) | Change |
 | `service: system` | Other System events, by provider and event ID (see below) | Other |
 | `service: application` | Application events, by provider and event ID (see below) | Other |
@@ -519,6 +521,14 @@ go test ./internal/detect/
 
 The generator keeps each rule's Signalith ID across runs, rewrites `rules/`,
 `tests/`, `pack.yaml` and `REPORT.md`, and only lists rules whose checks pass.
+
+### AWS CloudTrail
+
+The 38 CloudTrail rules read CloudTrail's own field names (`eventName`, `eventSource`,
+`userIdentity.type`, `requestParameters.*`), which Signalith keeps as CloudTrail writes
+them, and each searches `sourcetype=aws:cloudtrail`. Rules that compare one field with
+another, or that match text inside the call's parameters in a way no test record
+exercises, are left out. To send CloudTrail records, see [AWS CloudTrail](aws-cloudtrail.md).
 
 ### Splunk Security Content
 

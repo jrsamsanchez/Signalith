@@ -1,0 +1,5 @@
+{"rule": "14f3f1c8-02d5-43a2-a191-91ffb52d3015", "cases": [
+  {"expect":true,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"eventName":"CreateDBSecurityGroup","eventSource":"rds.amazonaws.com"}},
+  {"expect":false,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"eventSource":"rds.amazonaws.com"}},
+  {"expect":false,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"eventName":"CreateDBSecurityGroup"}}
+]}

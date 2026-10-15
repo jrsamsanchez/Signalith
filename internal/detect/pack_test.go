@@ -183,8 +183,8 @@ func TestPackDetections(t *testing.T) {
 		// logs fill the Web data model.
 		if !strings.Contains(d.Query, "sourcetype=WinEventLog:") && !strings.Contains(d.Query, `sourcetype="WinEventLog:`) &&
 			!strings.Contains(d.Query, "sourcetype=sysmon:linux") && !strings.Contains(d.Query, "sourcetype=linux:audit") &&
-			!strings.HasPrefix(d.Query, "datamodel=Web ") {
-			t.Errorf("%s: not limited to Windows, Sysmon for Linux, Linux audit or web server events: %s", d.ID, d.Query)
+			!strings.HasPrefix(d.Query, "datamodel=Web ") && !strings.HasPrefix(d.Query, "sourcetype=aws:cloudtrail ") {
+			t.Errorf("%s: not limited to Windows, Sysmon for Linux, Linux audit, web server or CloudTrail events: %s", d.ID, d.Query)
 		}
 	}
 }

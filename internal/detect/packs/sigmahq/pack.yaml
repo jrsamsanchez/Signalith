@@ -93,6 +93,158 @@ rules:
     rule_id: 4f6c43e2-f989-4ea5-bcd8-843b49a0317c
     file: proc_access_win_uac_bypass_wow64_logger.yml
     path: rules/windows/process_access/proc_access_win_uac_bypass_wow64_logger.yml
+  - id: sigma-aws-cloudtrail-disable-logging
+    rule_id: 4db60cc0-36fb-42b7-9b58-a5b53019fb74
+    file: aws_cloudtrail_disable_logging.yml
+    path: rules/cloud/aws/cloudtrail/aws_cloudtrail_disable_logging.yml
+  - id: sigma-aws-cloudtrail-imds-malicious-usage
+    rule_id: 352a918a-34d8-4882-8470-44830c507aa3
+    file: aws_cloudtrail_imds_malicious_usage.yml
+    path: rules/cloud/aws/cloudtrail/aws_cloudtrail_imds_malicious_usage.yml
+  - id: sigma-aws-cloudtrail-new-acl-entries
+    rule_id: e1f7febb-7b94-4234-b5c6-00fb8500f5dd
+    file: aws_cloudtrail_new_acl_entries.yml
+    path: rules/cloud/aws/cloudtrail/aws_cloudtrail_new_acl_entries.yml
+  - id: sigma-aws-cloudtrail-new-route-added
+    rule_id: c803b2ce-c4a2-4836-beae-b112010390b1
+    file: aws_cloudtrail_new_route_added.yml
+    path: rules/cloud/aws/cloudtrail/aws_cloudtrail_new_route_added.yml
+  - id: sigma-aws-cloudtrail-security-group-change-ingress-egress
+    rule_id: 6fb77778-040f-4015-9440-572aa9b6b580
+    file: aws_cloudtrail_security_group_change_ingress_egress.yml
+    path: rules/cloud/aws/cloudtrail/aws_cloudtrail_security_group_change_ingress_egress.yml
+  - id: sigma-aws-cloudtrail-security-group-change-loadbalancer
+    rule_id: 7a4409fc-f8ca-45f6-8006-127d779eaad9
+    file: aws_cloudtrail_security_group_change_loadbalancer.yml
+    path: rules/cloud/aws/cloudtrail/aws_cloudtrail_security_group_change_loadbalancer.yml
+  - id: sigma-aws-cloudtrail-security-group-change-rds
+    rule_id: 14f3f1c8-02d5-43a2-a191-91ffb52d3015
+    file: aws_cloudtrail_security_group_change_rds.yml
+    path: rules/cloud/aws/cloudtrail/aws_cloudtrail_security_group_change_rds.yml
+  - id: sigma-aws-cloudtrail-ssm-malicious-usage
+    rule_id: 38e7f511-3f74-41d4-836e-f57dfa18eead
+    file: aws_cloudtrail_ssm_malicious_usage.yml
+    path: rules/cloud/aws/cloudtrail/aws_cloudtrail_ssm_malicious_usage.yml
+  - id: sigma-aws-config-disable-recording
+    rule_id: 07330162-dba1-4746-8121-a9647d49d297
+    file: aws_config_disable_recording.yml
+    path: rules/cloud/aws/cloudtrail/aws_config_disable_recording.yml
+  - id: sigma-aws-console-getsignintoken
+    rule_id: f8103686-e3e8-46f3-be72-65f7fcb4aa53
+    file: aws_console_getsignintoken.yml
+    path: rules/cloud/aws/cloudtrail/aws_console_getsignintoken.yml
+  - id: sigma-aws-delete-identity
+    rule_id: 20f754db-d025-4a8f-9d74-e0037e999a9a
+    file: aws_delete_identity.yml
+    path: rules/cloud/aws/cloudtrail/aws_delete_identity.yml
+  - id: sigma-aws-disable-bucket-versioning
+    rule_id: a136ac98-b2bc-4189-a14d-f0d0388e57a7
+    file: aws_disable_bucket_versioning.yml
+    path: rules/cloud/aws/cloudtrail/aws_disable_bucket_versioning.yml
+  - id: sigma-aws-ec2-disable-encryption
+    rule_id: 16124c2d-e40b-4fcc-8f2c-5ab7870a2223
+    file: aws_ec2_disable_encryption.yml
+    path: rules/cloud/aws/cloudtrail/aws_ec2_disable_encryption.yml
+  - id: sigma-aws-ec2-startup-script-change
+    rule_id: 1ab3c5ed-5baf-417b-bb6b-78ca33f6c3df
+    file: aws_ec2_startup_script_change.yml
+    path: rules/cloud/aws/cloudtrail/aws_ec2_startup_script_change.yml
+  - id: sigma-aws-ec2-vm-export-failure
+    rule_id: 54b9a76a-3c71-4673-b4b3-2edb4566ea7b
+    file: aws_ec2_vm_export_failure.yml
+    path: rules/cloud/aws/cloudtrail/aws_ec2_vm_export_failure.yml
+  - id: sigma-aws-ecs-task-definition-cred-endpoint-query
+    rule_id: b94bf91e-c2bf-4047-9c43-c6810f43baad
+    file: aws_ecs_task_definition_cred_endpoint_query.yml
+    path: rules/cloud/aws/cloudtrail/aws_ecs_task_definition_cred_endpoint_query.yml
+  - id: sigma-aws-efs-fileshare-modified-or-deleted
+    rule_id: 25cb1ba1-8a19-4a23-a198-d252664c8cef
+    file: aws_efs_fileshare_modified_or_deleted.yml
+    path: rules/cloud/aws/cloudtrail/aws_efs_fileshare_modified_or_deleted.yml
+  - id: sigma-aws-efs-fileshare-mount-modified-or-deleted
+    rule_id: 6a7ba45c-63d8-473e-9736-2eaabff79964
+    file: aws_efs_fileshare_mount_modified_or_deleted.yml
+    path: rules/cloud/aws/cloudtrail/aws_efs_fileshare_mount_modified_or_deleted.yml
+  - id: sigma-aws-eks-cluster-created-or-deleted
+    rule_id: 33d50d03-20ec-4b74-a74e-1e65a38af1c0
+    file: aws_eks_cluster_created_or_deleted.yml
+    path: rules/cloud/aws/cloudtrail/aws_eks_cluster_created_or_deleted.yml
+  - id: sigma-aws-elasticache-security-group-created
+    rule_id: 4ae68615-866f-4304-b24b-ba048dfa5ca7
+    file: aws_elasticache_security_group_created.yml
+    path: rules/cloud/aws/cloudtrail/aws_elasticache_security_group_created.yml
+  - id: sigma-aws-elasticache-security-group-modified-or-deleted
+    rule_id: 7c797da2-9cf2-4523-ba64-33b06339f0cc
+    file: aws_elasticache_security_group_modified_or_deleted.yml
+    path: rules/cloud/aws/cloudtrail/aws_elasticache_security_group_modified_or_deleted.yml
+  - id: sigma-aws-enum-buckets
+    rule_id: f305fd62-beca-47da-ad95-7690a0620084
+    file: aws_enum_buckets.yml
+    path: rules/cloud/aws/cloudtrail/aws_enum_buckets.yml
+  - id: sigma-aws-guardduty-disruption
+    rule_id: 6e61ee20-ce00-4f8d-8aee-bedd8216f7e3
+    file: aws_guardduty_disruption.yml
+    path: rules/cloud/aws/cloudtrail/aws_guardduty_disruption.yml
+  - id: sigma-aws-iam-s3browser-loginprofile-creation
+    rule_id: db014773-b1d3-46bd-ba26-133337c0ffee
+    file: aws_iam_s3browser_loginprofile_creation.yml
+    path: rules/cloud/aws/cloudtrail/aws_iam_s3browser_loginprofile_creation.yml
+  - id: sigma-aws-iam-s3browser-templated-s3-bucket-policy-creation
+    rule_id: db014773-7375-4f4e-b83b-133337c0ffee
+    file: aws_iam_s3browser_templated_s3_bucket_policy_creation.yml
+    path: rules/cloud/aws/cloudtrail/aws_iam_s3browser_templated_s3_bucket_policy_creation.yml
+  - id: sigma-aws-iam-s3browser-user-or-accesskey-creation
+    rule_id: db014773-d9d9-4792-91e5-133337c0ffee
+    file: aws_iam_s3browser_user_or_accesskey_creation.yml
+    path: rules/cloud/aws/cloudtrail/aws_iam_s3browser_user_or_accesskey_creation.yml
+  - id: sigma-aws-passed-role-to-glue-development-endpoint
+    rule_id: 4990c2e3-f4b8-45e3-bc3c-30b14ff0ed26
+    file: aws_passed_role_to_glue_development_endpoint.yml
+    path: rules/cloud/aws/cloudtrail/aws_passed_role_to_glue_development_endpoint.yml
+  - id: sigma-aws-rds-public-db-restore
+    rule_id: c3f265c7-ff03-4056-8ab2-d486227b4599
+    file: aws_rds_public_db_restore.yml
+    path: rules/cloud/aws/cloudtrail/aws_rds_public_db_restore.yml
+  - id: sigma-aws-root-account-usage
+    rule_id: 8ad1600d-e9dc-4251-b0ee-a65268f29add
+    file: aws_root_account_usage.yml
+    path: rules/cloud/aws/cloudtrail/aws_root_account_usage.yml
+  - id: sigma-aws-route-53-domain-transferred-lock-disabled
+    rule_id: 3940b5f1-3f46-44aa-b746-ebe615b879e0
+    file: aws_route_53_domain_transferred_lock_disabled.yml
+    path: rules/cloud/aws/cloudtrail/aws_route_53_domain_transferred_lock_disabled.yml
+  - id: sigma-aws-route-53-domain-transferred-to-another-account
+    rule_id: b056de1a-6e6e-4e40-a67e-97c9808cf41b
+    file: aws_route_53_domain_transferred_to_another_account.yml
+    path: rules/cloud/aws/cloudtrail/aws_route_53_domain_transferred_to_another_account.yml
+  - id: sigma-aws-s3-data-management-tampering
+    rule_id: 78b3756a-7804-4ef7-8555-7b9024a02e2d
+    file: aws_s3_data_management_tampering.yml
+    path: rules/cloud/aws/cloudtrail/aws_s3_data_management_tampering.yml
+  - id: sigma-aws-securityhub-finding-evasion
+    rule_id: a607e1fe-74bf-4440-a3ec-b059b9103157
+    file: aws_securityhub_finding_evasion.yml
+    path: rules/cloud/aws/cloudtrail/aws_securityhub_finding_evasion.yml
+  - id: sigma-aws-snapshot-backup-exfiltration
+    rule_id: abae8fec-57bd-4f87-aff6-6e3db989843d
+    file: aws_snapshot_backup_exfiltration.yml
+    path: rules/cloud/aws/cloudtrail/aws_snapshot_backup_exfiltration.yml
+  - id: sigma-aws-sso-idp-change
+    rule_id: d3adb3ef-b7e7-4003-9092-1924c797db35
+    file: aws_sso_idp_change.yml
+    path: rules/cloud/aws/cloudtrail/aws_sso_idp_change.yml
+  - id: sigma-aws-sts-assumerole-misuse
+    rule_id: 905d389b-b853-46d0-9d3d-dea0d3a3cd49
+    file: aws_sts_assumerole_misuse.yml
+    path: rules/cloud/aws/cloudtrail/aws_sts_assumerole_misuse.yml
+  - id: sigma-aws-sts-getsessiontoken-misuse
+    rule_id: b45ab1d2-712f-4f01-a751-df3826969807
+    file: aws_sts_getsessiontoken_misuse.yml
+    path: rules/cloud/aws/cloudtrail/aws_sts_getsessiontoken_misuse.yml
+  - id: sigma-aws-susp-saml-activity
+    rule_id: f43f5d2f-3f2a-4cc8-b1af-81fde7dbaf0e
+    file: aws_susp_saml_activity.yml
+    path: rules/cloud/aws/cloudtrail/aws_susp_saml_activity.yml
   - id: sigma-create-stream-hash-ads-executable
     rule_id: b69888d4-380c-45ce-9cf9-d9ce46e67821
     file: create_stream_hash_ads_executable.yml
