@@ -134,6 +134,14 @@ func (r *Report) WriteText(w io.Writer) {
 			l := p.Latencies[n]
 			fmt.Fprintf(w, "  %-32s n=%d p50=%gms p95=%gms p99=%gms max=%gms\n", n+" time", l.Count, l.P50, l.P95, l.P99, l.Max)
 		}
+		names = names[:0]
+		for n := range p.Values {
+			names = append(names, n)
+		}
+		sort.Strings(names)
+		for _, n := range names {
+			fmt.Fprintf(w, "  %-32s %g\n", n, math.Round(p.Values[n]*1000)/1000)
+		}
 	}
 	for _, f := range r.Faults {
 		fmt.Fprintf(w, "\nFault %s on %s at %.0fs", f.Kind, orNone(f.Server), f.At)
