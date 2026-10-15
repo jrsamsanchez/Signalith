@@ -42,8 +42,10 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/retention"
 	"github.com/jrsamsanchez/signalith/internal/sample"
 	"github.com/jrsamsanchez/signalith/internal/search"
+	"github.com/jrsamsanchez/signalith/internal/shared"
 	"github.com/jrsamsanchez/signalith/internal/syslog"
 	"github.com/jrsamsanchez/signalith/internal/tlsauto"
+	"github.com/jrsamsanchez/signalith/internal/upgradecheck"
 	"github.com/jrsamsanchez/signalith/internal/users"
 )
 
@@ -193,6 +195,15 @@ type Server struct {
 	// ClusterOSIdentity is OpenSearch's certificate authority the cluster
 	// keeps; nil on a server that is not a member of a cluster.
 	ClusterOSIdentity ClusterOSIdentity
+	// Features says which features that come with a cluster level are on
+	// (GET /api/cluster/features), and ClusterLevel the cluster's level;
+	// nil on a server without shared settings.
+	Features     func() []shared.FeatureState
+	ClusterLevel func() int
+	// Upgrade judges whether the next server may be upgraded, for the
+	// Servers page's checklist (GET /api/cluster/upgrade); nil on a
+	// server without a cluster.
+	Upgrade func(ctx context.Context) (upgradecheck.Verdict, error)
 	// Install hands new servers the install scripts and this server's
 	// program; nil turns that off.
 	Install *ClusterInstall
@@ -312,6 +323,8 @@ func (s *Server) Handler() http.Handler {
 	s.routeCluster(api)
 	s.routeClusterTLS(api)
 	s.routeClusterServers(api)
+	s.routeClusterFeatures(api)
+	s.routeClusterUpgrade(api)
 	s.routeClusterOSIdentity(api)
 	s.routeClusterInstall(mux, api)
 	s.routeTokens(api)

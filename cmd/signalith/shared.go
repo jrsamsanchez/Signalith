@@ -52,6 +52,8 @@ func openShared(c *config.Config, node *cluster.Node, log *slog.Logger) (*shared
 		Log:        log,
 		JoinInfo:   joinInfo(c),
 		Secured:    func() error { return clusterjoin.ViewOf(c).Secured() },
+		Version:    version,
+		Migrations: sharedMigrations(),
 	})
 	// Join tokens are made and used by a member only.
 	ct.join.Writable = rt.Writable
@@ -176,7 +178,7 @@ func peersOf(st cluster.Status) []shared.Peer {
 	out := make([]shared.Peer, 0, len(st.Servers))
 	for _, s := range st.Servers {
 		p := shared.Peer{NodeID: s.NodeID, Name: s.Name, Leader: s.Jobs == "runs",
-			Live: s.State != cluster.StateOffline && s.State != cluster.StateStopped}
+			Live: s.State != cluster.StateOffline && s.State != cluster.StateStopped, Version: s.Version, OfflineSince: s.OfflineSince}
 		if s.Detail != nil {
 			p.Eligible, p.MaxRev = s.Detail.LeaderEligible, s.Detail.MaxRev
 			p.LevelMax, p.Users = s.Detail.LevelMax, s.Detail.FilesFingerprint.Users

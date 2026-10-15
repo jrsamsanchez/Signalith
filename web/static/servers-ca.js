@@ -177,7 +177,7 @@
     }
     const radios = cands.map((c, i) => candidate(c, i));
     const chosen = cands.find((c) => c.ca_sha256 === S.choice);
-    const go = el('button', { type: 'button', class: 'btn btn--primary btn--sm', 'data-focus': 'ca-keep', onclick: () => confirmChoice(chosen) }, 'Keep this one…');
+    const go = el('button', { type: 'button', class: 'btn btn--primary btn--sm', 'data-focus': 'ca-keep', 'data-feature': 'shared_tls', onclick: () => confirmChoice(chosen) }, 'Keep this one…');
     // Only a server that runs can publish its certificate authority.
     go.disabled = !!S.asking || !chosen || !chosen.up;
     return [

@@ -135,6 +135,17 @@ func ReadFile(path string) (map[string]Record, *time.Time, error) {
 	return f.recs, f.builtinLast, nil
 }
 
+// WriteFile writes recs as the users file at path, the inverse of
+// ReadFile (signalith cluster export --to-files), with each user's
+// password hash and session epoch as given.
+func WriteFile(path string, recs map[string]Record, builtinLast *time.Time) error {
+	f := newFileBackend(path)
+	f.recs, f.builtinLast = recs, builtinLast
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.saveLocked()
+}
+
 func newFileBackend(path string) *fileBackend {
 	return &fileBackend{path: path, recs: map[string]Record{}}
 }
