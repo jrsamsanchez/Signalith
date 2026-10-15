@@ -68,6 +68,11 @@ type Settings struct {
 	// OSIdentity says who this server signs in to OpenSearch as, for its
 	// heartbeat; nil has none. It must not call the node.
 	OSIdentity func() *OSIdentityStatus
+	// Busy names a step of the background jobs that must not be cut
+	// short, such as "retention run", while one runs, for the hand-over
+	// of the jobs to a newer version and for upgrade-check; nil is never
+	// busy. It must not call the node.
+	Busy func() string
 }
 
 // SharedStatus is how a server uses the shared configuration in
@@ -175,6 +180,17 @@ type Node struct {
 	drained string
 	// security is this server's last security check, for its heartbeat.
 	security SecuritySummary
+	// heldEpoch is the epoch of the lease this server holds, seen first
+	// at heldSince (heldSet once seen); yielded and lastYield say when it
+	// last handed the jobs to a newer version, yieldedTo and yieldedAt
+	// to whom and when, for its heartbeat (see maybeYield).
+	heldSet   bool
+	heldEpoch int64
+	heldSince time.Duration
+	yielded   bool
+	lastYield time.Duration
+	yieldedTo string
+	yieldedAt *time.Time
 
 	wake      chan struct{}
 	leaseWake chan struct{}
@@ -198,8 +214,10 @@ type heartbeatState struct {
 type member struct {
 	hb  Heartbeat
 	ver store.Version
-	// since is when this version was first seen, on the monotonic clock.
-	since time.Duration
+	// since is when this version was first seen, on the monotonic clock,
+	// and readySince when its state turned ready (see maybeYield).
+	since      time.Duration
+	readySince time.Duration
 }
 
 // New returns the node for an open state folder. Start starts it.
@@ -212,6 +230,12 @@ func New(o Options) *Node {
 	}
 	if o.Timing.FilesWait == 0 {
 		o.Timing.FilesWait = DefaultTiming.FilesWait
+	}
+	if o.Timing.YieldEvery == 0 {
+		o.Timing.YieldEvery = DefaultTiming.YieldEvery
+	}
+	if o.Timing.YieldSettle == 0 {
+		o.Timing.YieldSettle = DefaultTiming.YieldSettle
 	}
 	if o.Log == nil {
 		o.Log = slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -577,6 +601,7 @@ func (n *Node) tick(ctx context.Context) time.Duration {
 			n.mu.Unlock()
 		}
 		n.observe(ctx, c, prefix)
+		n.maybeYield()
 	}
 	// Give the lease up when this server may no longer hold it, or should
 	// leave it to a server whose clock is right.
@@ -801,8 +826,12 @@ func (n *Node) heartbeatDoc(state string) Heartbeat {
 	eligible, why := n.eligible()
 	view := n.lease.View()
 	n.mu.Lock()
-	sharedFn, restartFn, pendingFn := n.settings.Shared, n.settings.Restart, n.settings.Pending
+	sharedFn, restartFn, pendingFn, busyFn := n.settings.Shared, n.settings.Restart, n.settings.Pending, n.settings.Busy
 	n.mu.Unlock()
+	busy := ""
+	if busyFn != nil {
+		busy = busyFn()
+	}
 	var sh *SharedStatus
 	if sharedFn != nil {
 		s := sharedFn()
@@ -860,6 +889,7 @@ func (n *Node) heartbeatDoc(state string) Heartbeat {
 		hb.KeyIDs = sh.KeyIDs
 	}
 	hb.Restart, hb.RestartNeeded, hb.SettingsRefused = restart, restartNeeded, refused
+	hb.Upgrade = n.upgradeStatusLocked(busy)
 	if f := n.settings.TLS; f != nil {
 		hb.TLS = f()
 	}
@@ -1323,8 +1353,14 @@ func (n *Node) observe(ctx context.Context, c *store.Client, prefix string) {
 				age += *n.offset - time.Duration(*hb.ClockOffsetMS)*time.Millisecond
 			}
 			age = min(max(age, 0), 8*24*time.Hour)
-			n.members[hb.NodeID] = &member{hb: hb, ver: d.Version, since: now - age}
+			n.members[hb.NodeID] = &member{hb: hb, ver: d.Version, since: now - age, readySince: now}
 		case !m.ver.Same(d.Version):
+			// A server ready again, or started again or on another version
+			// between two looks (a quick restart in place), is ready only
+			// from now: the hand-over waits its settle time from here.
+			if hb.State == StateReady && (m.hb.State != StateReady || hb.BootID != m.hb.BootID || hb.Version != m.hb.Version) {
+				m.readySince = now
+			}
 			m.hb, m.ver, m.since = hb, d.Version, now
 		case gap && hb.State != StateStopped:
 			m.since = now

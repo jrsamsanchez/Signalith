@@ -1441,6 +1441,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	}
 	srv.KnownBrowsers = r.browsers
 	srv.Join = r.sharedJoin(c, certs)
+	wireFeatures(srv, r.shared)
 	if parts != nil {
 		srv.SessionStore, srv.KnownBrowsers, srv.SharedUsers = parts.sessions, parts.browsers, parts.api(c)
 		if rt := r.shared; rt != nil {
@@ -1628,6 +1629,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		sched.Epoch, sched.NodeID, sched.ClusterNow = r.node.Lease().Epoch, r.node.ID(), r.node.ClusterNow
 		srv.Cluster = r.node
 		srv.NodeURLChanged = func(c *config.Config) { r.node.SetNodeURL(nodeURL(c)) }
+		wireUpgrade(srv, r.node, r.shared, cl, c.OpenSearch.IndexPrefix)
 		if r.shared != nil {
 			srv.Cluster = sharedCluster{Node: r.node, rt: r.shared}
 			srv.Shared = sharedAPI{rt: r.shared, on: sharedOn}
@@ -1680,6 +1682,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			Indexed:    pipeline.LastIndexed,
 			TLS:        tlsStatus,
 			OSIdentity: osIdentity,
+			Busy:       jobsBusy(ret, r.shared),
 		}
 		if rt := r.shared; rt != nil {
 			settings.Shared = func() cluster.SharedStatus { return sharedStatus(rt, r.sharedContent) }
@@ -1905,7 +1908,7 @@ func openNode(c *config.Config, log *slog.Logger) (*cluster.Node, *slog.Logger, 
 		log.Warn(w)
 	}
 	log.Info("this server's identity", "node_id", local.Identity.NodeID, "state_dir", local.Dir)
-	node := cluster.New(cluster.Options{Local: local, Version: version, Deployment: deployment(), Log: log})
+	node := cluster.New(cluster.Options{Local: local, Version: version, Deployment: deployment(), Log: log, Timing: nodeTiming()})
 	return node, log, nil
 }
 

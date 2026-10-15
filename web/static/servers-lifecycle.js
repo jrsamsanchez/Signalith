@@ -174,7 +174,7 @@
     }
     const busy = !!S.rotating || !!rot.in_progress;
     const btn = el('button', { type: 'button', class: 'btn btn--secondary btn--sm', 'data-focus': 'rotate', disabled: !rot.on || !!S.rotating,
-      title: rot.on ? '' : 'Every server must run a version that supports it.', onclick: askRotate }, icon('key-round'),
+      'data-feature': 'key_rotation', onclick: askRotate }, icon('key-round'),
     rot.in_progress ? 'Finish the rotation' : 'Rotate cluster key');
     body.push(el('div', { class: 'sv-life__actions' }, btn, busy && S.rotating ? el('span', { class: 'sv-panel__key' }, S.rotating) : null));
     fill(box, el('section', { class: 'card ca-card', 'aria-labelledby': 'sv-life-title' },

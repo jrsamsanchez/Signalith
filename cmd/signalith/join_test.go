@@ -53,6 +53,8 @@ type joinFixture struct {
 	status int // what POST /api/cluster/join answers; 0 is 200
 	// reply is the error text with status; "" is Refused.
 	reply string
+	// unavailable is how many joins are answered 503 before the others.
+	unavailable int
 
 	mu       sync.Mutex
 	requests []clusterjoin.Request
@@ -123,7 +125,16 @@ func (f *joinFixture) answer(w http.ResponseWriter, r *http.Request) {
 	}
 	f.mu.Lock()
 	f.requests = append(f.requests, req)
+	busy := f.unavailable > 0
+	if busy {
+		f.unavailable--
+	}
 	f.mu.Unlock()
+	if busy {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "this server cannot answer a join now"})
+		return
+	}
 	if f.status != 0 {
 		w.WriteHeader(f.status)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": cmp.Or(f.reply, clusterjoin.Refused)})
@@ -362,6 +373,30 @@ func TestJoinRefusedToken(t *testing.T) {
 	}
 	if code := runJoin(context.Background(), m.env, []string{"SJ1.nonsense", "--yes"}); code != joinExitRefused {
 		t.Errorf("a token that is not one: %d", code)
+	}
+}
+
+func TestJoinAsksAgainWhileTheServerIsBusy(t *testing.T) {
+	wait, tries := joinUnavailableWait, joinUnavailableTries
+	t.Cleanup(func() { joinUnavailableWait, joinUnavailableTries = wait, tries })
+	joinUnavailableWait, joinUnavailableTries = time.Millisecond, 3
+
+	f := newJoinFixture(t)
+	f.unavailable = 2
+	m := newJoinMachine(t)
+	if code := m.join(t, f.tok, "--no-start"); code != 0 || f.joins() != 3 {
+		t.Fatalf("exit %d after %d joins: %s", code, f.joins(), m.out.String())
+	}
+	if !strings.Contains(m.out.String(), "asking again") {
+		t.Errorf("no word of asking again: %s", m.out.String())
+	}
+
+	// It gives up after the last try.
+	f = newJoinFixture(t)
+	f.unavailable = 5
+	m = newJoinMachine(t)
+	if code := m.join(t, f.tok, "--no-start"); code != joinExitFailed || f.joins() != 3 || !strings.Contains(m.out.String(), "cannot answer joins now") {
+		t.Errorf("exit %d after %d joins: %s", code, f.joins(), m.out.String())
 	}
 }
 
