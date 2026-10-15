@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"os"
 	"sort"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -50,20 +49,22 @@ func TestGreenbone(t *testing.T) {
 	})
 	t.Logf("gvmd speaks GMP %s", version)
 
-	// The setup check Signalith runs on the Scanners page.
-	if ck := (&Checker{OpenVAS: ov}).openVASCheck(ctx, []Target{{OpenVAS: true}}); ck.State != CheckOK {
-		t.Errorf("setup check = %s: %s", ck.State, ck.Detail)
-	}
-
 	// "Full and fast" fills with tests once gvmd has read them from the
 	// scanner, which takes a while after a first start.
 	waitFor(ctx, t, 90*time.Minute, "the feed to load", func() (bool, string) {
-		n, err := configVTs(ctx, ov)
+		_, n, err := ov.Ready(ctx)
 		if err != nil {
 			return false, err.Error()
 		}
 		return n >= 1000, fmt.Sprintf("Full and fast has %d tests", n)
 	})
+
+	// The setup check Signalith runs on the Scanners page.
+	if ck := (&Checker{OpenVAS: ov}).openVASCheck(ctx, []Target{{OpenVAS: true}}); ck.State != CheckOK {
+		t.Errorf("setup check = %s: %s", ck.State, ck.Detail)
+	} else {
+		t.Logf("setup check: %s", ck.Detail)
+	}
 
 	start := time.Now()
 	last := -1.0
@@ -85,6 +86,7 @@ func TestGreenbone(t *testing.T) {
 	}
 	byHost := map[string]int{}
 	for _, f := range found {
+		t.Logf("found %s port %d/%s: %s %.1f %s %v (%s)", f.Address, f.Port, f.Transport, f.Vuln.Severity, f.Vuln.CVSS, f.Vuln.Name, f.Vuln.CVEs, f.Vuln.OID)
 		byHost[f.Address]++
 		if f.Vuln.OID == "" || f.Vuln.Name == "" || f.Vuln.Severity == "" || f.Vuln.Source != SourceOpenVAS {
 			t.Errorf("incomplete finding %+v", f)
@@ -118,35 +120,6 @@ func waitFor(ctx context.Context, t *testing.T, limit time.Duration, what string
 		}
 		time.Sleep(15 * time.Second)
 	}
-}
-
-type gmpGetConfigs struct {
-	XMLName  xml.Name `xml:"get_configs"`
-	ConfigID string   `xml:"config_id,attr"`
-}
-
-type gmpConfigs struct {
-	gmpStatus
-	Config struct {
-		NVTCount struct {
-			N string `xml:",chardata"`
-		} `xml:"nvt_count"`
-	} `xml:"config"`
-}
-
-// configVTs is how many tests "Full and fast" has.
-func configVTs(ctx context.Context, ov *OpenVAS) (int, error) {
-	g, err := ov.open(ctx)
-	if err != nil {
-		return 0, err
-	}
-	defer g.Close()
-	var c gmpConfigs
-	if err := g.do(ctx, gmpGetConfigs{ConfigID: gvmConfigFullAndFast}, &c); err != nil {
-		return 0, err
-	}
-	n, _ := strconv.Atoi(strings.TrimSpace(c.Config.NVTCount.N))
-	return n, nil
 }
 
 type gmpGetByFilter struct {

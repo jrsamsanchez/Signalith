@@ -3,10 +3,12 @@ package vulnscan
 import (
 	"context"
 	"encoding/xml"
+	"errors"
 	"io"
 	"net"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -37,6 +39,7 @@ type fakeGVMD struct {
 	commands []string
 	polls    int
 	password string
+	noFeed   atomic.Bool // the feed is still loading
 }
 
 func (f *fakeGVMD) dial(context.Context) (net.Conn, error) {
@@ -88,6 +91,12 @@ func (f *fakeGVMD) serve(c net.Conn) {
 			}
 		case "get_reports":
 			out = gmpReport
+		case "get_configs":
+			if f.noFeed.Load() {
+				out = `<get_configs_response status="404" status_text="Failed to find config 'daba56c8-73ec-11df-a475-002264764cea'"/>`
+			} else {
+				out = `<get_configs_response status="200" status_text="OK"><config id="daba56c8-73ec-11df-a475-002264764cea"><nvt_count>95870<growing>1</growing></nvt_count></config></get_configs_response>`
+			}
 		default:
 			out = "<" + name + `_response status="200" status_text="OK"/>`
 		}
@@ -208,9 +217,20 @@ func TestOpenVASCheck(t *testing.T) {
 	}
 	f := &fakeGVMD{password: "pw"}
 	c.OpenVAS = &OpenVAS{Address: "/run/gvmd/gvmd.sock", Username: "signalith", Password: "pw", Dial: f.dial}
-	if ck := c.openVASCheck(ctx, []Target{tg}); ck.State != CheckOK || !strings.Contains(ck.Detail, "GMP 22.5") {
+	if ck := c.openVASCheck(ctx, []Target{tg}); ck.State != CheckOK || !strings.Contains(ck.Detail, "GMP 22.5, 95870 tests") {
 		t.Errorf("set up = %+v", ck)
 	}
+	f.noFeed.Store(true)
+	if ck := c.openVASCheck(ctx, []Target{tg}); ck.State != CheckWarn || !strings.Contains(ck.Detail, "still loading") {
+		t.Errorf("feed loading = %+v", ck)
+	}
+	if _, err := c.OpenVAS.Scan(ctx, tg, "x", nil); !errors.Is(err, ErrFeedLoading) {
+		t.Errorf("scan while the feed loads: %v", err)
+	}
+	if strings.Contains(f.sent(), "create_target") {
+		t.Errorf("made a target while the feed loads: %s", f.sent())
+	}
+	f.noFeed.Store(false)
 	c.OpenVAS.Password = "nope"
 	if ck := c.openVASCheck(ctx, nil); ck.State != CheckWarn || ck.Required {
 		t.Errorf("wrong password = %+v", ck)
