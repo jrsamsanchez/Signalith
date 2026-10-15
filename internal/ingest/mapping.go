@@ -20,9 +20,11 @@ import (
 // mappingStop. The count is kept for mappingTTL, so a burst of new names
 // can pass mappingStop by up to one window's worth of shares, which still
 // leaves room under the template's limit of 2000; past that, write keeps
-// events with their known fields only (see retryable).
+// events with their known fields only (see retryable). It sits above the
+// known fields plus a whole day's budget of new names (about 1,700 since
+// the network sensor models), so a server alone always gets its budget.
 const (
-	mappingStop    = 1600
+	mappingStop    = 1750
 	mappingTTL     = 30 * time.Second
 	mappingTimeout = 2 * time.Second
 )

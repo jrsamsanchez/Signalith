@@ -268,3 +268,15 @@ func TestAFailedFieldCountIsNotKept(t *testing.T) {
 		t.Errorf("fetched %d times", calls)
 	}
 }
+
+// A server alone must always get its whole budget of new names: the known
+// fields and that budget stay under mappingStop, which leaves room under
+// OpenSearch's limit of 2,000 for a burst.
+func TestMappingStopLeavesRoomForTheBudget(t *testing.T) {
+	if n := len(knownFields) + maxNewNamesPerIndex; n >= mappingStop {
+		t.Errorf("known fields (%d) and the budget (%d) reach mappingStop (%d)", len(knownFields), maxNewNamesPerIndex, mappingStop)
+	}
+	if mappingStop > 2000-200 {
+		t.Errorf("mappingStop %d leaves too little room under 2000", mappingStop)
+	}
+}
