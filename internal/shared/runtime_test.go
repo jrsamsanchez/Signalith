@@ -710,3 +710,49 @@ func TestReplacedClusterWithoutCache(t *testing.T) {
 		t.Error("the server is ready")
 	}
 }
+
+// An importer's hold covers reading its source and recording the import,
+// also when there is nothing to import: a change of the source made
+// after the read waits until the import is recorded, and then finds it
+// moved, instead of landing in a file no longer read.
+func TestImportHoldCoversNothingToImport(t *testing.T) {
+	for _, source := range []string{"", "h"} {
+		e := newEnv(t)
+		var events []string
+		var held bool
+		a := e.server("siem-a", func(o *RuntimeOptions) {
+			o.Importers = []Importer{{Name: "feeds",
+				Hold: func() func() {
+					events, held = append(events, "hold"), true
+					return func() {
+						if _, b := clusterBody(t, e); b.Import.Done["feeds"] != "" {
+							events = append(events, "recorded")
+						}
+						events, held = append(events, "release"), false
+					}
+				},
+				Source: func() (string, error) {
+					if !held {
+						t.Error("the source was read without the hold")
+					}
+					events = append(events, "read")
+					return source, nil
+				},
+				Run: func(context.Context, string) error {
+					events = append(events, "run")
+					return nil
+				}}}
+		})
+		a.holds.Store(true)
+		if err := a.rt.found(context.Background(), "signalith", false); err != nil {
+			t.Fatal(err)
+		}
+		want := "hold,read,recorded,release"
+		if source != "" {
+			want = "hold,read,run,recorded,release"
+		}
+		if got := strings.Join(events, ","); got != want {
+			t.Errorf("source %q: %s, want %s", source, got, want)
+		}
+	}
+}

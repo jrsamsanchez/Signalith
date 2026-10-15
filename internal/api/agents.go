@@ -9,6 +9,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/agenttokens"
 	"github.com/jrsamsanchez/signalith/internal/clientaddr"
 	"github.com/jrsamsanchez/signalith/internal/ingest"
+	"github.com/jrsamsanchez/signalith/internal/users"
 )
 
 // The agents that send events (Fluent Bit and OpenTelemetry Collectors),
@@ -104,9 +105,19 @@ func (s *Server) handleAgents(w http.ResponseWriter, r *http.Request) {
 	}
 	current, next := s.caPins()
 	now := time.Now()
+	p := principalOf(r)
+	admin := p != nil && p.Role.AtLeast(users.Admin)
 	out := make([]agentView, 0, len(list))
 	silent, needs := 0, 0
 	for _, a := range list {
+		if a.Sensor != nil && !admin {
+			// Why a sensor refused the rule tuning often quotes the
+			// tuning's own lines, which only admins read (Settings >
+			// Network sensors); the others see that it failed.
+			c := *a.Sensor
+			c.TuningError, c.TuningHash, c.TuningFailed = "", "", ""
+			a.Sensor = &c
+		}
 		v := s.agentFlags(a, current, next, now)
 		if v.Silent {
 			silent++

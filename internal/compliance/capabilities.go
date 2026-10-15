@@ -400,7 +400,15 @@ func evalChecks(s *Snapshot, c *controlCtx) (Status, string) {
 		ev.Pending += ch.Pending
 		ev.Error += ch.Error
 		if ch.Fail > 0 {
-			ev.Failing = append(ev.Failing, CheckRef{ID: ch.ID, Title: ch.Title, Platform: ch.Platform, Hosts: ch.Fail})
+			hosts := slices.Clone(ch.Failing)
+			sort.Slice(hosts, func(i, j int) bool { return strings.ToLower(hosts[i].Hostname) < strings.ToLower(hosts[j].Hostname) })
+			if len(hosts) > MaxHosts {
+				hosts = hosts[:MaxHosts]
+			}
+			if hosts == nil {
+				hosts = []HostRef{}
+			}
+			ev.Failing = append(ev.Failing, CheckRef{ID: ch.ID, Title: ch.Title, Platform: ch.Platform, Hosts: ch.Fail, Failing: hosts})
 		}
 	}
 	sort.SliceStable(ev.Failing, func(i, j int) bool { return ev.Failing[i].Hosts > ev.Failing[j].Hosts })

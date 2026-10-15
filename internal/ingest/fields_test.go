@@ -43,6 +43,16 @@ func TestValidFieldName(t *testing.T) {
 		"a\x00b":                     false,
 		"a.-b":                       false,
 		"\xff":                       false,
+		"a{}.b":                      true, // a list's values, as Splunk names them
+		"a{}{}":                      true,
+		"a.b{}":                      true,
+		"{}":                         false,
+		"a.{}":                       false,
+		"a{}b":                       false,
+		"a{b}":                       false,
+		"a}":                         false,
+		"}a":                         false,
+		"a{":                         false,
 	} {
 		if got := validFieldName(name); got != want {
 			t.Errorf("validFieldName(%.40q) = %v, want %v", name, got, want)

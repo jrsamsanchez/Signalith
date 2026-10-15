@@ -198,6 +198,14 @@ func (b *builder) eve(t time.Time, rec map[string]any) {
 	b.emit(ingest.Normalize(ingest.SuricataTag+".eve", map[string]any{"log": line, "hostname": sensorHost}, t))
 }
 
+// sensorStatus adds one status line of the sensor's status.sh, read by
+// the sensor's Fluent Bit and parsed by the real status line parser.
+func (b *builder) sensorStatus(t time.Time, rec map[string]any) {
+	rec["kind"], rec["v"], rec["host"], rec["role"] = "signalith-sensor-status", 1, sensorHost, "sensor"
+	line := sensorLine(rec, "time", t.UTC().Format(time.RFC3339))
+	b.emit(ingest.Normalize(ingest.SensorStatusTag, map[string]any{"log": line, "hostname": sensorHost}, t))
+}
+
 // sensorLine writes rec as one JSON line with its time first, as Zeek and
 // Suricata do. The other keys follow in sorted order (json.Marshal sorts
 // map keys), so a line, and so its document ID, is deterministic.

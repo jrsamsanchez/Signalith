@@ -253,6 +253,7 @@ common on their own and matter when they add up (see [Risk](#risk)).
 | `network-http-executable-download` | medium | A host that is not on the internet side downloaded a program or script over plain HTTP, whole or in ranges (status 200 or 206), from outside (Windows Update's and Google's updater addresses are left out) | on |
 | `network-cleartext-credentials` | low | A password crossed the network in clear text: HTTP basic authentication, an FTP sign-in (not anonymous) or an answered Telnet connection that did not come from the internet | on |
 | `network-sensor-packet-loss` | low | Zeek missed more than 5% of the traffic, or Suricata dropped more than 5% of packets (counted once it has received a million) | on |
+| `network-sensor-unhealthy` | medium | A network sensor reported Zeek or Suricata stopped, its capture port down or idle, rules or rule tuning failing or old, or a full disk, or Signalith found it silent. One finding per sensor and problem a day; fix it from **Settings > Network sensors** | on |
 | `network-beaconing` | low | Twelve or more short (a minute or less), small (5 KB or less out) connections from one host to one outside address and port in two hours | off, risk only |
 | `network-tls-untrusted-cert` | low | A TLS session from a host not on the internet side to an outside server with a self-signed or expired certificate | on, risk only |
 | `network-large-outbound-transfer` | medium | One host sent more than 1 GB to one outside address, in connections that started within six hours | on, risk only |
@@ -299,7 +300,7 @@ Choices worth knowing:
 Every network detection is tagged with the compliance controls it is evidence for:
 `pci-dss:10.4.1` (security events reviewed), `pci-dss:11.5.1` (intrusions detected and
 alerted, PCI DSS 3.2.1's 11.4), `nist-800-53:SI-4` (system monitoring) and
-`cis-v8:13.3` (network intrusion detection); the packet loss detection has
+`cis-v8:13.3` (network intrusion detection); the packet loss and sensor health detections have
 `pci-dss:10.7.2` (failures of security controls) and `cis-v8:13.6` instead of 13.3.
 
 `network-shell-port` and `network-remote-admin-port` are about the process that made
@@ -646,13 +647,23 @@ service, and a sign-in's `Status` reads `signin_status` (`Success`, or `Failure`
 Older rules that name an audit record's operation `properties.message` read
 `operationName`. Rules that name a field no record has, or that search free text, are left
 out. Sign-in and audit rules search `sourcetype=azure:monitor:aad`, and activity log rules
-`sourcetype=azure:monitor:activity`. To send Entra ID and Azure logs, see
+`sourcetype=azure:monitor:activity`.
+
+The Splunk pack adds 30 Entra ID detections (see
+[Splunk Security Content](#splunk-security-content)): admin roles assigned, MFA turned
+off, new federated domains, guest invitations, single-factor and device code sign-ins,
+password spraying and MFA fatigue. They name fields as Splunk's add-on does, which
+Signalith keeps too: a list's values by Splunk's name for them
+(`properties.targetResources{}.modifiedProperties{}.newValue`), any of which a search
+matches. After `rename properties.* as *`, a later `search` or `stats` reads the fields by
+their old names. Rules that use `eval`, `spath`, `rex`, lookups or `transaction`, and the
+Intune rules, are left out. To send Entra ID and Azure logs, see
 [Entra ID and Azure](azure.md).
 
 ### Splunk Security Content
 
-**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,062 Windows,
-Linux, web, network and AWS CloudTrail detections from Splunk's Threat Research Team
+**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,092 Windows,
+Linux, web, network, AWS CloudTrail and Entra ID detections from Splunk's Threat Research Team
 ([security_content](https://github.com/splunk/security_content)), pinned to one
 commit. They are the production TTP and anomaly rules that search the CIM
 `Endpoint.Processes`, `Endpoint.Filesystem`, `Endpoint.Registry` and `Web` nodes with
@@ -699,6 +710,7 @@ names, so each rule's `where` clause becomes a Signalith filter field for field:
 | `` `linux_auditd` `` (raw search) | Linux audit records, each field by auditd's name (see [the Linux audit log](#linux-audit-log-auditd)) | Other |
 | `Web` (`datamodel=Web` or `Web.Web`) | Apache and Nginx access log lines (see [Web server access logs](#web-server-access-logs)), and a network sensor's web requests (Zeek's http.log) | Web |
 | `` `cloudtrail` `` (raw search) | AWS CloudTrail records, by CloudTrail's field names and the CIM fields Splunk's AWS add-on gives them (`errorCode=success` reads a record with no error code; see [AWS CloudTrail](#aws-cloudtrail)) | Authentication, Change or Other |
+| `` `azure_monitor_aad` `` (raw search) | Entra ID sign-in, audit and risk records, by the record's own field names and the CIM fields Splunk's add-on for Microsoft cloud services gives them (see [Entra ID and Azure](#entra-id-and-azure)) | Authentication, Change or Alerts |
 | `Network_Traffic` (network detections) | Any connection: Zeek's conn.log, a firewall, Sysmon 3 (`app` is the protocol, Zeek's `service`) | Network_Traffic |
 | `Network_Resolution` (network detections) | A DNS lookup that names who asked (`src`), as Zeek's dns.log does (`record_type` is `query_type`); a host's own lookups (Sysmon 22) name only the host and are left to the endpoint rules | Network_Resolution |
 

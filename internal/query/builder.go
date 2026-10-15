@@ -11,8 +11,9 @@ type Spec struct {
 	Filters   []Filter `json:"filters,omitempty"`
 	Earliest  string   `json:"earliest,omitempty"`
 
-	// Mode is "events" (list matching events), "stats" (a table) or
-	// "timechart" (a series over time).
+	// Mode is "events" (list matching events), "latest" (the newest event
+	// for each value of By), "stats" (a table) or "timechart" (a series
+	// over time).
 	Mode     string   `json:"mode,omitempty"`
 	AggFunc  string   `json:"agg_func,omitempty"`  // count, dc, sum, avg, min, max
 	AggField string   `json:"agg_field,omitempty"` // required unless AggFunc is count
@@ -66,6 +67,10 @@ func Build(s Spec) *Query {
 			tc.By = s.By[0]
 		}
 		q.Commands = append(q.Commands, tc)
+	case "latest":
+		if len(s.By) > 0 {
+			q.Commands = append(q.Commands, &Dedup{N: 1, Fields: s.By})
+		}
 	}
 	// One leading sign is the order; a second is part of the field name.
 	if k := (SortKey{Field: s.Sort}); s.Sort != "" {
@@ -135,9 +140,15 @@ func FromQuery(q *Query) (s Spec, ok bool) {
 				s.By = []string{c.By}
 			}
 			cmds = cmds[1:]
+		case *Dedup:
+			if c.N != 1 || c.KeepEmpty || c.Consecutive {
+				return s, false
+			}
+			s.Mode, s.By = "latest", c.Fields
+			cmds = cmds[1:]
 		}
 	}
-	if s.Mode == "events" && len(cmds) > 0 {
+	if (s.Mode == "events" || s.Mode == "latest") && len(cmds) > 0 {
 		if c, isTable := cmds[len(cmds)-1].(*Table); isTable {
 			s.Fields = c.Fields
 			cmds = cmds[:len(cmds)-1]

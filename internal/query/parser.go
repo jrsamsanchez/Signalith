@@ -6,7 +6,7 @@ import (
 )
 
 // Commands lists every pipe command, for autocomplete and error messages.
-var Commands = []string{"stats", "timechart", "top", "where", "sort", "head", "table", "rename", "enrich", "intel", "threatmatch"}
+var Commands = []string{"stats", "eventstats", "timechart", "top", "rare", "where", "eval", "rex", "dedup", "fillnull", "sort", "head", "table", "rename", "enrich", "intel", "threatmatch"}
 
 // AggFuncs lists the aggregation functions stats, timechart and top accept.
 var AggFuncs = []string{"count", "dc", "sum", "avg", "min", "max"}
@@ -303,7 +303,7 @@ func (p *parser) parseCommand() (Command, error) {
 		return nil, errorf(t.pos, "expected a command after |, such as %s", strings.Join(Commands, ", "))
 	}
 	switch strings.ToLower(t.text) {
-	case "stats":
+	case "stats", "eventstats":
 		aggs, err := p.parseAggs(t.pos)
 		if err != nil {
 			return nil, err
@@ -311,6 +311,9 @@ func (p *parser) parseCommand() (Command, error) {
 		by, err := p.parseBy()
 		if err != nil {
 			return nil, err
+		}
+		if strings.EqualFold(t.text, "eventstats") {
+			return &EventStats{Aggs: aggs, By: by}, p.endCommand()
 		}
 		return &Stats{Aggs: aggs, By: by}, p.endCommand()
 	case "timechart":
@@ -347,8 +350,8 @@ func (p *parser) parseCommand() (Command, error) {
 			tc.By = by[0]
 		}
 		return tc, p.endCommand()
-	case "top":
-		top := &Top{Limit: 10}
+	case "top", "rare":
+		top := &Top{Limit: 10, Rare: strings.EqualFold(t.text, "rare")}
 		if p.isKeywordFold("limit") && p.peekAt(1).kind == tokOp {
 			p.next()
 			p.next()
@@ -366,7 +369,7 @@ func (p *parser) parseCommand() (Command, error) {
 			return nil, err
 		}
 		if len(fields) == 0 {
-			return nil, errorf(t.pos, "top needs at least one field")
+			return nil, errorf(t.pos, "%s needs at least one field", strings.ToLower(t.text))
 		}
 		top.Fields = fields
 		by, err := p.parseBy()
@@ -376,15 +379,24 @@ func (p *parser) parseCommand() (Command, error) {
 		top.By = by
 		return top, p.endCommand()
 	case "where":
-		start := p.peek()
-		e, err := p.parseWhereOr()
+		raw := p.next()
+		e, err := parseWhere(raw.text, raw.pos)
 		if err != nil {
 			return nil, err
 		}
-		if e == nil {
-			return nil, errorf(start.pos, "where needs a condition, for example: where count > 10")
+		return &Where{Expr: e}, nil
+	case "eval":
+		raw := p.next()
+		if strings.TrimSpace(raw.text) == "" {
+			return nil, errorf(t.pos, "eval needs an assignment, for example: eval kb=round(bytes/1024, 1)")
 		}
-		return &Where{Expr: e}, p.endCommand()
+		return parseEvalCommand(raw.text, raw.pos)
+	case "rex":
+		return p.parseRex(t)
+	case "dedup":
+		return p.parseDedup(t)
+	case "fillnull":
+		return p.parseFillnull()
 	case "sort":
 		s := &Sort{}
 		for {

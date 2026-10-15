@@ -323,7 +323,7 @@ type translator struct {
 	earliest  string
 	latest    string
 
-	mode      string // "", stats, timechart, top
+	mode      string // "", stats, timechart, top, latest
 	agg       query.Agg
 	by        []string
 	pending   []string // nouns that may be a group-by
@@ -396,7 +396,7 @@ func (t *translator) setModel(m string) {
 // the matching rule consumed.
 func (t *translator) step() int {
 	for _, rule := range []func() int{
-		t.ruleQuoted, t.ruleTime, t.ruleThreshold, t.ruleMalware, t.ruleVulns, t.ruleNegation, t.ruleTop, t.ruleAgg, t.ruleGroup,
+		t.ruleQuoted, t.ruleTime, t.ruleThreshold, t.ruleMalware, t.ruleVulns, t.ruleNegation, t.ruleLatest, t.ruleTop, t.ruleAgg, t.ruleGroup,
 		t.ruleShowFields, t.ruleContains, t.rulePreposition, t.ruleNoun, t.ruleWords, t.ruleValue,
 	} {
 		if n := rule(); n > 0 {
@@ -565,6 +565,24 @@ func (t *translator) ruleNegation() int {
 		}
 	}
 	return 0
+}
+
+// ruleLatest handles "latest login per user", "most recent process on
+// each host": the newest event for each value, which dedup keeps since
+// events come newest first.
+func (t *translator) ruleLatest() int {
+	k := 0
+	switch {
+	case t.low(0) == "latest" || t.low(0) == "newest":
+		k = 1
+	case t.low(0) == "most" && t.low(1) == "recent":
+		k = 2
+	}
+	if k == 0 || t.mode != "" {
+		return 0
+	}
+	t.mode = "latest"
+	return t.note(k, "only the newest event")
 }
 
 func (t *translator) ruleTop() int {
@@ -736,6 +754,9 @@ func (t *translator) ruleGroup() int {
 	}
 	if t.mode == "" {
 		t.mode = "stats"
+	}
+	if t.mode == "latest" {
+		return t.note(k, "for each %s", strings.Join(names, " and "))
 	}
 	return t.note(k, "one row per %s", strings.Join(names, " and "))
 }
@@ -1317,7 +1338,10 @@ func (t *translator) finish() *query.Query {
 		mode = "stats"
 		t.steps[t.chartStep].Meaning = "not applied: counts cover the whole time range, not each interval"
 	}
-	needEntity := mode == "top" || t.threshold != nil
+	if mode == "latest" && t.threshold != nil {
+		mode = "stats"
+	}
+	needEntity := mode == "top" || mode == "latest" || t.threshold != nil
 	if len(by) == 0 && needEntity {
 		if len(t.pending) > 0 {
 			by = []string{resolve(t.pending[0])}
@@ -1340,8 +1364,8 @@ func (t *translator) finish() *query.Query {
 		if n == 0 {
 			n = 10
 		}
-		if agg.Func == "count" && !t.ascending && t.threshold == nil {
-			q.Commands = append(q.Commands, &query.Top{Fields: by, Limit: n})
+		if agg.Func == "count" && t.threshold == nil {
+			q.Commands = append(q.Commands, &query.Top{Fields: by, Limit: n, Rare: t.ascending})
 			break
 		}
 		q.Commands = append(q.Commands, &query.Stats{Aggs: []query.Agg{agg}, By: by})
@@ -1356,6 +1380,11 @@ func (t *translator) finish() *query.Query {
 		}
 		if len(by) > 0 {
 			q.Commands = append(q.Commands, &query.Sort{Keys: []query.SortKey{{Field: col, Desc: !t.ascending}}})
+		}
+	case "latest":
+		q.Commands = append(q.Commands, &query.Dedup{N: 1, Fields: by})
+		if len(t.fields) > 0 {
+			q.Commands = append(q.Commands, &query.Table{Fields: append([]string{"_time"}, dedupe(mapStrings(t.fields, resolve))...)})
 		}
 	default:
 		if len(t.fields) > 0 {

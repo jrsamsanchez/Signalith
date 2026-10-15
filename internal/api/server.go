@@ -27,6 +27,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/auth"
 	"github.com/jrsamsanchez/signalith/internal/cases"
 	"github.com/jrsamsanchez/signalith/internal/clientaddr"
+	"github.com/jrsamsanchez/signalith/internal/compliance"
 	"github.com/jrsamsanchez/signalith/internal/config"
 	"github.com/jrsamsanchez/signalith/internal/content"
 	"github.com/jrsamsanchez/signalith/internal/dashboards"
@@ -42,6 +43,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/retention"
 	"github.com/jrsamsanchez/signalith/internal/sample"
 	"github.com/jrsamsanchez/signalith/internal/search"
+	"github.com/jrsamsanchez/signalith/internal/sensortune"
 	"github.com/jrsamsanchez/signalith/internal/shared"
 	"github.com/jrsamsanchez/signalith/internal/syslog"
 	"github.com/jrsamsanchez/signalith/internal/tlsauto"
@@ -92,6 +94,9 @@ type Server struct {
 	// Endpoints manages the hosts that run osquery (the Endpoints page and
 	// osquery's remote API); nil disables them.
 	Endpoints *endpoint.Store
+	// SensorTuning keeps the Suricata rule tuning network sensors fetch
+	// (Settings > Network sensors); nil without OpenSearch.
+	SensorTuning *sensortune.Store
 	// Vulns backs the Vulnerabilities page (network scans with Nmap); nil
 	// disables it.
 	Vulns *Vulns
@@ -186,6 +191,10 @@ type Server struct {
 	// ClusterTLS is the cluster's one certificate authority; nil on a
 	// server that is not a member of a cluster.
 	ClusterTLS ClusterTLS
+	// ComplianceNotes keeps the notes on compliance controls in the
+	// shared settings, used while this server takes its content from them;
+	// nil, or until then, they stay in the state folder.
+	ComplianceNotes compliance.NoteStore
 	// Join adds servers to the cluster: join tokens, the public join and
 	// approvals (clusterjoin.go); nil on a server without shared settings.
 	Join ClusterJoin
@@ -234,10 +243,14 @@ type Server struct {
 	sec           *SecurityChecker
 	comp          complianceState
 	caMu          sync.Mutex // one change of certificate authority at a time
-	blockedLog    logOnce    // blocked osquery hosts that tried to enroll
-	tokensOnce    sync.Once
-	tokenRate     tokenRate         // agent token creation
-	sensorCache   sensorHealthCache // the Health page's network sensor counts
+	// badTuning is the hash of the stored rule tuning last refused to
+	// sensors (refusedTuning), so it is logged once.
+	badTuningMu sync.Mutex
+	badTuning   string
+	blockedLog  logOnce // blocked osquery hosts that tried to enroll
+	tokensOnce  sync.Once
+	tokenRate   tokenRate         // agent token creation
+	sensorCache sensorHealthCache // the Health page's network sensor counts
 }
 
 // EventAge is what keeps the age of events the server accepts in step
@@ -332,6 +345,7 @@ func (s *Server) Handler() http.Handler {
 	s.routeClusterOSIdentity(api)
 	s.routeClusterInstall(mux, api)
 	s.routeSensor(mux, api)
+	s.routeSensors(api)
 	s.routeTokens(api)
 	s.routeAPITokens(api)
 	s.routeAgents(api)
@@ -906,6 +920,14 @@ func (s *Server) handleLanguage(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"commands":  query.Commands,
 		"functions": query.AggFuncs,
+		"eval_functions": func() []string {
+			names := make([]string, 0, len(query.EvalFuncs))
+			for n := range query.EvalFuncs {
+				names = append(names, n)
+			}
+			sort.Strings(names)
+			return names
+		}(),
 		"operators": []string{"=", "!=", "<", "<=", ">", ">=", "IN", "AND", "OR", "NOT"},
 	})
 }

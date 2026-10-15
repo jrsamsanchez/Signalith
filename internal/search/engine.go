@@ -257,6 +257,9 @@ func (e *Engine) Compile(q *query.Query) (*Plan, error) {
 		if !ok {
 			break
 		}
+		if _, expr := w.Expr.(*query.Cond); expr {
+			break // runs in the server, over the events OpenSearch returns
+		}
 		filters = append(filters, w.Expr)
 		cmds = cmds[1:]
 	}
@@ -402,7 +405,7 @@ func needsAllEvents(cmds []query.Command) bool {
 		switch c.(type) {
 		case *query.Head:
 			return false
-		case *query.Sort, *query.Where, *query.Stats, *query.Top:
+		case *query.Sort, *query.Where, *query.Stats, *query.Top, *query.Dedup, *query.EventStats:
 			return true
 		}
 	}
@@ -414,7 +417,7 @@ func leadingHead(cmds []query.Command) (int, bool) {
 		switch c := c.(type) {
 		case *query.Head:
 			return c.N, true
-		case *query.Table, *query.Rename, *query.Enrich, *query.Intel:
+		case *query.Table, *query.Rename, *query.Enrich, *query.Intel, *query.Eval, *query.Rex, *query.Fillnull:
 			continue
 		}
 		return 0, false
@@ -494,6 +497,7 @@ func (e *Engine) Execute(ctx context.Context, q *query.Query) (*Result, error) {
 	if p.threat != nil {
 		e.threatAnnotate(res, p.threat, p.Mode == "events")
 	}
+	ctx = withEvaluator(ctx)
 	for _, c := range p.post {
 		if err := ctx.Err(); err != nil {
 			return nil, err

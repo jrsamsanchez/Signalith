@@ -91,7 +91,7 @@ the job if not.
   updates over plain HTTP, use the file server and the domain controllers, and look
   up a few names that do not exist, and Suricata raises a few low and medium alerts
   with made-up rules (SIDs 9100001 and up). Zeek's packet loss and Suricata's
-  statistics arrive every hour. In the phishing story the sensor sees the implant
+  statistics arrive every hour, with the sensor's own status line. In the phishing story the sensor sees the implant
   being downloaded and its beacon to the C2 (below). They fill the Network
   dashboard.
 - **An OT flavour:** an engineering workstation, two HMIs and three PLCs, with
@@ -112,9 +112,10 @@ days of light background, about 1,000 events in all.
 
 ## A guided tour of the attacks
 
-Ten stories are woven into the week. Six are intrusions designed so that
-every built-in detection that is on fires; the others are benign activity
-and everyday weaknesses that trip detections you can close as benign or fix.
+Eleven stories are woven into the week. Six are intrusions designed so that
+every built-in detection that is on fires; the others are benign activity,
+everyday weaknesses and upkeep that trip detections you can close as benign
+or fix.
 
 Some detections raise a **finding** on the Findings page. Others only add
 **risk** to the users and hosts involved, which shows on the Risk page and
@@ -131,6 +132,7 @@ counts toward the risk findings below. The table keeps them apart.
 | **Nightly scan finds vulnerable servers** | Signalith's own [vulnerability scan](vulnerabilities.md) of the server network finds Apache httpd 2.4.49 on `web-01` with two vulnerabilities attackers are known to use (CVE-2021-41773 and CVE-2021-42013) and a critical one (CVE-2023-25690), a critical OpenSSH flaw on `app-01` (CVE-2023-38408), and Telnet still open on the jump host `jump-01`. The results are events in Search; the **Vulnerabilities** page lists only your own scans. | vuln-known-exploited, vuln-critical, vuln-cleartext-remote-login | |
 | **DNS tunnelling and an internal scan** | Malware on the engineering workstation `eng-ws-02` tries 32 generated domain names that do not exist until one resolves, then hides its traffic in DNS (TXT lookups whose names carry 48 characters of encoded data), then scans 26 internal addresses for SMB, which Zeek also reports as an address scan. Seen only by the network sensor. | network-dns-nxdomain-burst, network-dns-tunneling, network-internal-scan, network-zeek-scan-notice | |
 | **Clear-text sign-ins and a blind spot** | An admin signs in to `jump-01` over Telnet, a user opens a printer's admin page with HTTP basic authentication and `file-01` uploads a report to a partner over FTP, all sending passwords in clear text (the parser never stores them). During the nightly backup the sensor misses 7.8% of the traffic. A test service on `web-01` answers the internet on port 8443. | network-cleartext-credentials, network-sensor-packet-loss | |
+| **Network sensors need attention** | The mirror port of the network sensor `nsm-01` goes down for 25 minutes, so Zeek and Suricata see nothing; a nightly Suricata rules update fails; and the branch office's sensor `nsm-02` stops sending, which Signalith notices itself (a *Sensor silent* event). [Settings > Network sensors](network-sensor.md#settings-network-sensors) shows real sensors only, not these. | network-sensor-unhealthy, once for each problem | |
 | **Benign activity that looks malicious** | A backup job on `file-01` runs encoded PowerShell, and IT fetches a tool with `certutil`. | endpoint-encoded-powershell on `file-01`: one finding to close as benign | endpoint-lolbin-download on `ws-it-02` |
 
 The risk that builds up then raises two more findings on its own:
@@ -138,7 +140,7 @@ The risk that builds up then raises two more findings on its own:
 - **risk-threshold-exceeded**: a user or host passed the risk threshold;
 - **risk-multiple-tactics**: risk from several ATT&CK tactics on one entity.
 
-So 45 of the 48 built-in detections fire from the sample, all of them on.
+So 46 of the 49 built-in detections fire from the sample, all of them on.
 Each detection adds its risk once per thing it found, so the totals on the
 Risk page and the dashboards are the same every time you load.
 

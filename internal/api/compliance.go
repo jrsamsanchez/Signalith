@@ -1,6 +1,7 @@
 package api
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -36,10 +37,11 @@ func (s *Server) routeCompliance(api *router) {
 }
 
 // complianceState caches the snapshot of the system the report is worked
-// out from, which takes a few searches, and keeps the notes on controls.
+// out from, which takes a few searches, and keeps this server's own notes
+// on controls (see complianceNotes).
 type complianceState struct {
 	once  sync.Once
-	notes *compliance.Notes
+	local *compliance.Notes
 
 	mu   sync.Mutex
 	snap *compliance.Snapshot
@@ -49,19 +51,26 @@ type complianceState struct {
 // complianceTTL is how long a snapshot is reused.
 const complianceTTL = time.Minute
 
-// complianceFile keeps the notes on controls, in the state folder.
-const complianceFile = "compliance-notes.json"
-
 func (s *Server) compliance() *complianceState {
 	c := &s.comp
 	c.once.Do(func() {
 		path := ""
 		if dir := s.conf().StateDir(); dir != "" {
-			path = filepath.Join(dir, complianceFile)
+			path = filepath.Join(dir, compliance.NotesFile)
 		}
-		c.notes = compliance.NewNotes(path)
+		c.local = compliance.NewNotes(path)
 	})
 	return c
+}
+
+// complianceNotes is where the notes on controls are kept: the shared
+// settings once this server takes its content from them, so every server
+// shows the same notes, else this server's file.
+func (s *Server) complianceNotes() compliance.NoteStore {
+	if s.ComplianceNotes != nil && s.sharedContent() {
+		return s.ComplianceNotes
+	}
+	return s.compliance().local
 }
 
 func (s *Server) complianceReport(r *http.Request) *compliance.Report {
@@ -74,8 +83,9 @@ func (s *Server) complianceReport(r *http.Request) *compliance.Report {
 		cancel()
 		c.at = time.Now()
 	}
-	rep := compliance.Evaluate(c.snap, c.notes.All())
-	if err := c.notes.Err(); err != nil {
+	notes := s.complianceNotes()
+	rep := compliance.Evaluate(c.snap, notes.All())
+	if err := notes.Err(); err != nil {
 		rep.Notes = append(rep.Notes, "The notes on controls could not be read: "+err.Error())
 	}
 	return rep
@@ -146,11 +156,13 @@ func (s *Server) handleComplianceNote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	by := userOf(r)
-	a, err := s.compliance().notes.Set(in.Framework, in.Control, in.Status, in.Note, by, time.Now())
+	a, err := s.complianceNotes().Set(r.Context(), in.Framework, in.Control, in.Status, in.Note, by, time.Now())
 	var ie *compliance.InputError
 	switch {
 	case errors.As(err, &ie):
 		writeError(w, http.StatusBadRequest, err)
+		return
+	case sharedError(w, err):
 		return
 	case err != nil:
 		writeError(w, http.StatusInternalServerError, err)
@@ -395,6 +407,7 @@ func (s *Server) complianceChecks(ctx context.Context, snap *compliance.Snapshot
 				st.Pass++
 			case "fail":
 				st.Fail++
+				st.Failing = append(st.Failing, compliance.HostRef{ID: n.ID, Hostname: cmp.Or(n.Hostname, n.HostIdentifier, n.ID)})
 			case "n/a":
 				st.NA++
 			default:
