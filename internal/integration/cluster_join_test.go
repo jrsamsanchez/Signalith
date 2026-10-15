@@ -16,6 +16,7 @@ package integration
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
@@ -31,8 +32,14 @@ import (
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/cluster/ostest"
+	"github.com/jrsamsanchez/signalith/internal/clustercfg"
 	"github.com/jrsamsanchez/signalith/internal/clusterjoin"
 	"github.com/jrsamsanchez/signalith/internal/config"
+	"github.com/jrsamsanchez/signalith/internal/retention"
+	"github.com/jrsamsanchez/signalith/internal/secrets"
+	"github.com/jrsamsanchez/signalith/internal/shared"
+	"github.com/jrsamsanchez/signalith/internal/store"
+	"github.com/jrsamsanchez/signalith/internal/users"
 )
 
 // joinOS is how the servers of a join test sign in to OpenSearch.
@@ -269,4 +276,75 @@ func TestClusterJoinByApproval(t *testing.T) {
 		st, ok := e.clusterStatus()
 		return ok && st.Shared.Mode == "member" && st.Keyring[st.NodeID].AddedBy == "approval"
 	})
+}
+
+// configDoc reads a document of the shared settings and returns its body.
+func configDoc(t *testing.T, h *clusterHarness, o joinOS, id string) (string, bool) {
+	t.Helper()
+	cfg := store.Config{URL: o.url, CAFile: o.caFile, CertFile: o.certFile, KeyFile: o.keyFile, Username: o.user,
+		Password: secrets.New("opensearch.password", o.password)}
+	cl := store.New(cfg)
+	defer cl.CloseIdleConnections()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	raw, _, found, err := cl.Get(ctx, shared.ConfigIndex(h.prefix), id)
+	if err != nil || !found {
+		return "", false
+	}
+	var e shared.Envelope
+	if json.Unmarshal(raw, &e) != nil {
+		return "", false
+	}
+	return e.Body, true
+}
+
+// A server that served alone with users and retention policies of its
+// own joins with --merge: the cluster gains the user it lacked, keeps its
+// own where they differ, holds retention until an admin confirms, and
+// keeps the server's migration report.
+func TestClusterJoinMerge(t *testing.T) {
+	h, o := newJoinHarness(t)
+	a := addJoinServer(h, o, "siem-a", true)
+	a.start()
+	tok := a.joinToken()
+
+	b := addJoinServer(h, o, "siem-b", true)
+	us, err := users.Open(filepath.Join(b.dir, "lookups", "users.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := us.Create(users.WithActor(context.Background(), "sam"), users.NewUser{Username: "newbie", Role: users.Viewer, Password: "a-good-password"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := retention.NewStore(filepath.Join(b.dir, "lookups", "retention.yaml")).Update(func(s *retention.Saved) {
+		s.Policies = map[string]retention.Policy{"findings": {KeepDays: 45}}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	out, code := b.runCode("join", tok, "--yes", "--no-start", "--merge", "--listen", fmt.Sprintf("127.0.0.1:%d", b.port))
+	if code != 0 || !strings.Contains(out, "added user") || !strings.Contains(out, "newbie") || !strings.Contains(out, "siem-b joined") {
+		t.Fatalf("join --merge = %d:\n%s", code, out)
+	}
+	if strings.Contains(out, "a-good-password") || strings.Contains(out, "$2") {
+		t.Errorf("the merge printed a secret:\n%s", out)
+	}
+	st, ok := b.clusterStatus()
+	if !ok {
+		t.Fatal("no status of siem-b")
+	}
+	report, ok := configDoc(t, h, o, clustercfg.MigrationKind+":"+st.NodeID)
+	if !ok || !strings.Contains(report, `"newbie"`) || !strings.Contains(report, `"siem-b"`) {
+		t.Fatalf("migration report %q", report)
+	}
+	b.start()
+	waitUntil(t, 60*time.Second, "siem-b is a member", func() bool {
+		st, ok := b.clusterStatus()
+		return ok && st.Shared.Mode == "member"
+	})
+	// Differing policies: none here (the cluster had no findings policy),
+	// so it was added, and retention is not held.
+	ret, ok := configDoc(t, h, o, "retention")
+	if !ok || !strings.Contains(ret, `"findings"`) || strings.Contains(ret, `"reason":"merge"`) {
+		t.Errorf("shared retention %q", ret)
+	}
 }

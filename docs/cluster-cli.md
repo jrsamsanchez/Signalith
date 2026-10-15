@@ -408,7 +408,7 @@ enabled and restarted.
 | `--node-url` | The address the other servers reach this one at (`server.node_url`) |
 | `--copy-syslog` | Receive syslog on the same addresses as the answering server |
 | `--no-start` | Write everything but do not start the service |
-| `--merge` | Not in this version yet: refused |
+| `--merge` | For a server that kept its own files: adds its users, feeds, retention policies and settings that the cluster lacks (see below) |
 | `--yes` | Do not ask before joining |
 | `--allow-version-skew` | Join a cluster whose servers run another version (the cluster level must still allow it) |
 
@@ -423,6 +423,22 @@ enabled and restarted.
 | 6 | Everything was written, but the service did not start |
 
 A token works once. After exit 2, 4 or 5, make a new one.
+
+Without `--merge`, the new server uses the cluster's users, feeds, retention policies and
+settings, and its own files are left as they are, unused. With `--merge`, for a server
+that served alone (or waited to join) with files of its own, join adds to the cluster
+what the cluster lacks: its users (with their passwords), threat intel feeds, retention
+policies and shared settings. It never changes what the cluster has. What differs (a
+user with another role or password, a feed of the same name at another address, a
+policy that keeps data for another time, a setting with another value) is printed and
+kept in the server's migration report in the shared settings, for an admin to decide;
+passwords, keys and password hashes are never in it. When a retention policy differs,
+retention waits until an admin confirms the policies on the **Data retention** page,
+so nothing but the disk guard deletes by a policy the servers disagree on. When the
+server's own HTTPS certificate authority is replaced by the cluster's, the report says
+its agents need a new configuration. If the merge fails, what join wrote is undone
+(exit 5). Detections and dashboards are not shared between servers yet, so they stay
+in the server's own files.
 
 ## opensearch-check
 

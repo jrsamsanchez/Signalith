@@ -257,7 +257,9 @@ and starts. Or start the new server with the same OpenSearch settings and no key
 waits with a fingerprint on its sign-in page, and `signalith cluster approve` on a
 member gives it the key once the fingerprints match (see
 [approve](cluster-cli.md#approve)). Users, settings and detections then come from
-the cluster.
+the cluster. A server that served alone with users, feeds and retention policies of
+its own can add those the cluster lacks with `signalith join --merge`; what differs is
+kept in its migration report for you to decide.
 
 By hand:
 

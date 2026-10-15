@@ -78,8 +78,10 @@ type clusterCLI struct {
 	docs *clustercfg.Docs
 	// tls holds the cluster's certificate authority of the same runtime.
 	tls *sharedTLS
-	// join holds the join tokens of the same runtime.
-	join *clusterjoin.Tokens
+	// join holds the join tokens of the same runtime, and reports its
+	// migration reports.
+	join    *clusterjoin.Tokens
+	reports *clustercfg.Reports
 }
 
 // runCluster is cmdCluster with its input and output.
@@ -204,7 +206,7 @@ func (x *clusterCLI) keyStore() shared.KeyStore {
 // readOnly writes nothing to OpenSearch or the state folder.
 func (x *clusterCLI) runtime(readOnly bool, name string) *shared.Runtime {
 	d := newSharedDocs(clusterauth.NewDocs())
-	x.docs, x.auth, x.tls, x.join = d.docs, d.auth, d.tls, d.join
+	x.docs, x.auth, x.tls, x.join, x.reports = d.docs, d.auth, d.tls, d.join, d.reports
 	files := x.files()
 	var made atomic.Pointer[shared.Runtime]
 	files.NodeCfg = func() *shared.Doc[shared.NodeCfg] {

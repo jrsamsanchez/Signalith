@@ -73,12 +73,15 @@ type sharedDocs struct {
 	tls *sharedTLS
 	// join holds the join tokens (see sharedjoin.go).
 	join *clusterjoin.Tokens
+	// reports holds the migration reports of servers that joined with
+	// signalith join --merge.
+	reports *clustercfg.Reports
 }
 
 // newSharedDocs returns the documents of a process, with auth as the
 // users' documents.
 func newSharedDocs(auth *clusterauth.Docs) sharedDocs {
-	d := sharedDocs{docs: clustercfg.NewDocs(), auth: auth, tls: newSharedTLS(), join: clusterjoin.New(nil)}
+	d := sharedDocs{docs: clustercfg.NewDocs(), auth: auth, tls: newSharedTLS(), join: clusterjoin.New(nil), reports: clustercfg.NewReports()}
 	// The users and directory importers and the auth settings of
 	// signalith.yaml reach the users' documents.
 	d.docs.UseAuth(auth)
@@ -100,6 +103,7 @@ func (d sharedDocs) trackers() []sharedTracker {
 		d.auth,
 		d.tls.tls,
 		d.join,
+		d.reports,
 		// Append a new shared collection here.
 	}
 }

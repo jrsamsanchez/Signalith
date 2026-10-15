@@ -437,10 +437,6 @@ func TestJoinRefusals(t *testing.T) {
 	}
 	m.env.admin = true
 	m.out.Reset()
-	if code := m.join(t, f.tok, "--merge"); code != joinExitFailed || f.joins() != 0 {
-		t.Errorf("--merge: %d %s", code, m.out.String())
-	}
-	m.out.Reset()
 	if code := runJoin(context.Background(), m.env, []string{f.tok.String(), "-c", m.config, "--name", "not a name", "--yes"}); code != joinExitFailed || f.joins() != 0 {
 		t.Errorf("bad name: %d %s", code, m.out.String())
 	}

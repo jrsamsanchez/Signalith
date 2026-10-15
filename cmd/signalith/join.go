@@ -255,6 +255,9 @@ type joiner struct {
 	made []string
 	// newMaster is the master key file join made.
 	newMaster string
+	// ownCAPEM is this server's own certificate authority, before the
+	// join gave it the cluster's.
+	ownCAPEM []byte
 }
 
 func (j *joiner) printf(format string, a ...any) { fmt.Fprintf(j.env.out, format, a...) }
@@ -266,9 +269,6 @@ func (j *joiner) run(ctx context.Context) error {
 	}
 	j.tok = tok
 	defer j.tok.Clear()
-	if j.o.merge {
-		return failf(joinExitFailed, "--merge is not in this version of Signalith yet. Join without it: this server then uses the cluster's users, detections and dashboards, and its own files are kept as they are.")
-	}
 	if !j.env.admin {
 		return failf(joinExitFailed, "Run signalith join as root (sudo) or as an Administrator: it writes the service's files and starts it.")
 	}
@@ -298,7 +298,7 @@ func (j *joiner) run(ctx context.Context) error {
 		return err
 	}
 	// 6-8. Write it all, or nothing.
-	if err := j.write(); err != nil {
+	if err := j.write(ctx); err != nil {
 		return err
 	}
 	// 9. Start.
@@ -624,7 +624,7 @@ func (j *joiner) storeConfig(f osFiles) store.Config {
 
 // write writes everything the server needs, or, when anything fails,
 // undoes what it wrote.
-func (j *joiner) write() (err error) {
+func (j *joiner) write(ctx context.Context) (err error) {
 	u := &undoList{}
 	defer func() {
 		if err != nil {
@@ -663,6 +663,11 @@ func (j *joiner) write() (err error) {
 	// The HTTPS certificate from the cluster's certificate authority.
 	if j.bundle.LeafPEM != "" && j.c.Server.TLSMode() == config.TLSAuto {
 		u.keepTree(j.c.TLSDir())
+		// This server's own certificate authority, which agents set up
+		// before the join may trust.
+		if b, err := os.ReadFile(filepath.Join(j.c.TLSDir(), "ca.pem")); err == nil {
+			j.ownCAPEM = b
+		}
 		der, err := x509.MarshalPKCS8PrivateKey(j.httpsKey)
 		if err != nil {
 			return err
@@ -686,6 +691,13 @@ func (j *joiner) write() (err error) {
 	j.made = append(j.made, file)
 	if _, err := config.Load(path); err != nil {
 		return fmt.Errorf("the settings written do not load: %w", err)
+	}
+	// This server's own users, feeds, retention policies and settings that
+	// the cluster lacks.
+	if j.o.merge {
+		if err := j.merge(ctx, path); err != nil {
+			return fmt.Errorf("merging this server's files into the cluster's: %w", err)
+		}
 	}
 	// The service's account owns what it uses.
 	if err := j.giveOwners(path, state, file); err != nil {
