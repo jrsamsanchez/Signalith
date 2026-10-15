@@ -274,6 +274,47 @@ func TestSensorStatusOnEndpointsAndHealth(t *testing.T) {
 	}
 }
 
+// Only a sensor's token reports a sensor's health: a status line sent
+// with another agent token is stored as an event and changes no row.
+func TestSensorStatusNeedsSensorToken(t *testing.T) {
+	ts, _ := newSensorServer(t)
+	_, sensor := makeToken(t, ts, "token 7", "sensor")
+	_, linux := makeToken(t, ts, "token 8", "linux")
+	status := func(drop string) string {
+		line := `{"kind":"signalith-sensor-status","v":1,"time":"` + time.Now().UTC().Format(time.RFC3339) + `","host":"nsm-01","role":"sensor",` +
+			`"suricata":{"version":"8.0.1","running":true},"interface":{"name":"eth1","link":"up","drop_percent":` + drop + `}}`
+		rec, _ := json.Marshal([]map[string]any{{"log": line}})
+		return string(rec)
+	}
+	hdr := map[string]string{"X-Signalith-Tag": "sensor.status", "X-Signalith-Agent": "nsm-01"}
+	sensorOf := func() map[string]any {
+		t.Helper()
+		_, out, _ := call(t, ts, "GET", "/api/agents", "", "admin", adminPass, nil)
+		agents, _ := out["agents"].([]any)
+		for _, a := range agents {
+			if s, ok := a.(map[string]any)["sensor"].(map[string]any); ok {
+				return s
+			}
+		}
+		return nil
+	}
+	if code, body := agentSend(t, ts.URL, "/api/ingest", linux, status("0"), hdr); code != 200 {
+		t.Fatalf("linux token: %d %s", code, body)
+	}
+	if s := sensorOf(); s != nil {
+		t.Fatalf("a linux token made a sensor: %v", s)
+	}
+	if code, body := agentSend(t, ts.URL, "/api/ingest", sensor, status("30"), hdr); code != 200 {
+		t.Fatalf("sensor token: %d %s", code, body)
+	}
+	if code, body := agentSend(t, ts.URL, "/api/ingest", linux, status("0"), hdr); code != 200 {
+		t.Fatalf("linux token again: %d %s", code, body)
+	}
+	if s := sensorOf(); s == nil || s["drop_percent"] != 30.0 {
+		t.Errorf("a linux token changed the sensor's status: %v", s)
+	}
+}
+
 func TestCountSensors(t *testing.T) {
 	now := time.Date(2026, 10, 15, 12, 0, 0, 0, time.UTC)
 	fresh := now.Add(-time.Hour).Format(time.RFC3339)

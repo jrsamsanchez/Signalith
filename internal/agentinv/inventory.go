@@ -129,7 +129,14 @@ type Doc struct {
 	// sensor sends one every 5 minutes, and its Zeek and Suricata batches
 	// in between keep it.
 	Sensor *ingest.SensorStatus `json:"sensor,omitempty"`
+	// SensorToken is the token the status line in Sensor came with.
+	SensorToken string `json:"sensor_token,omitempty"`
 }
+
+// sensorTakeover is how long a sensor's status line holds its row
+// against status lines that come with another token: three missed
+// lines, after which a reinstalled sensor's new token takes over.
+const sensorTakeover = 15 * time.Minute
 
 // Transports.
 const (
@@ -427,13 +434,16 @@ func (v *Inventory) Note(c Contact) {
 	d.LastSeen = now
 	// The status line of the batch that came last, whatever time the line
 	// gives itself (see ingest's storedSensor).
-	if c.Sensor != nil {
+	// A recent line that came with another token is kept: a token never
+	// rewrites the health of a sensor another token speaks for.
+	if c.Sensor != nil && (d.Sensor == nil || d.SensorToken == c.TokenID || now.Sub(d.Sensor.Received) > sensorTakeover) {
 		s := *c.Sensor
 		if s.At.IsZero() || s.At.After(now) {
 			s.At = now
 		}
 		s.Received = now
 		d.Sensor = &s
+		d.SensorToken = c.TokenID
 	}
 	e.events.add(now, int64(c.Events))
 	e.dirty = true

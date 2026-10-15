@@ -462,7 +462,14 @@ func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 	res, err = s.Pipeline.IngestBody(withOrigin(r, ingest.IntakeAgent, who), tag, body)
 	if res != nil {
 		s.tokens().Note(who.ID, from.String(), res.Indexed+res.Duplicates)
-		s.noteAgent(r, ingest.IntakeAgent, tag, who, res.Indexed+res.Duplicates, nil, res.Sensor)
+		// Only a token made for a sensor speaks for a sensor's health:
+		// any other agent token could otherwise keep a stopped sensor
+		// looking healthy, or add sensors that are not there.
+		sensor := res.Sensor
+		if who.Legacy || who.Purpose != agenttokens.PurposeSensor {
+			sensor = nil
+		}
+		s.noteAgent(r, ingest.IntakeAgent, tag, who, res.Indexed+res.Duplicates, nil, sensor)
 	}
 	if err != nil {
 		var bad *ingest.BodyError

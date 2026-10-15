@@ -99,6 +99,7 @@ version=''
 token=''
 name=''
 iface=''
+old_iface=''
 networks=''
 zeek=yes
 suricata=yes
@@ -302,6 +303,7 @@ common_args() {
     '' | -* | *[!A-Za-z0-9._-]*) fail "The sensor's name must be letters, digits, dots, dashes and underscores: $name" "Give one with --name, like --name nsm-01." ;;
   esac
   [ ${#name} -le 63 ] || fail "The sensor's name is longer than 63 characters." "Give a shorter one with --name."
+  old_iface=$(conf_get INTERFACE)
   [ -n "$iface" ] || iface=$(conf_get INTERFACE)
   if [ -n "$iface" ]; then
     case "$iface" in
@@ -2188,6 +2190,11 @@ sensor_units() {
   fi
   # write_unit puts it in with sed, which would read \x2d as "-".
   dev=$(printf '%s' "$dev" | sed 's/\\/\\\\/g')
+  # A new capture port: the service stops as written for the old one,
+  # which puts that port back as it was, before the units name the new.
+  if [ -n "$old_iface" ] && [ "$old_iface" != "$iface" ]; then
+    run systemctl stop signalith-sensor-capture.service || true
+  fi
   for u in $units; do
     u=${u%:*}
     write_unit "$u"

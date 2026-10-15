@@ -57,3 +57,28 @@ func TestSensorStatusKept(t *testing.T) {
 		}
 	}
 }
+
+// A status line that comes with another token does not replace a recent
+// one; once the sensor's own lines stop for longer than sensorTakeover
+// (a reinstall with a new token), the new token's line takes the row.
+func TestSensorStatusHeldByItsToken(t *testing.T) {
+	fos := ostest.New(t)
+	c := store.New(store.Config{URL: fos.URL})
+	clk := &clock{t: time.Date(2026, 10, 15, 12, 0, 0, 0, time.UTC)}
+	n := newInv(c, "n1", clk, pinA)
+	own := Contact{Name: "nsm-01", Address: "192.0.2.20", Tag: "sensor.status", Intake: "agent", TLS: true, TokenID: "tok1", Events: 1,
+		Sensor: &ingest.SensorStatus{Interface: "eth1", DropPercent: 40}}
+	n.Note(own)
+	clk.add(time.Minute)
+	forged := own
+	forged.TokenID, forged.Sensor = "tok2", &ingest.SensorStatus{Interface: "eth1", DropPercent: 0}
+	n.Note(forged)
+	if s := list(t, n)[0].Sensor; s == nil || s.DropPercent != 40 {
+		t.Errorf("another token replaced the status: %+v", s)
+	}
+	clk.add(sensorTakeover + time.Minute)
+	n.Note(forged)
+	if s := list(t, n)[0].Sensor; s == nil || s.DropPercent != 0 {
+		t.Errorf("a new token does not take over a silent sensor: %+v", s)
+	}
+}

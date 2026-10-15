@@ -947,3 +947,26 @@ func TestSensorStatusNoStatsLine(t *testing.T) {
 		t.Errorf("next stats line: %v%% dropped, want 1", d)
 	}
 }
+
+// Run again with another capture port: the capture service stops as
+// written for the old port, which puts that port back as it was.
+func TestSensorScriptNewPort(t *testing.T) {
+	m := newSensorMachine(t, "eth0", "eth1", "eth2")
+	root, _ := m.install(t, "4", "--interface", "eth1")
+	again := func(port string) string {
+		t.Helper()
+		out, err := m.run(t, "4", testToken, "--role", "sensor", "--from", "https://siem.example.com:8443", "--ca-sha256", m.caSHA,
+			"--version", "1.6.0", "--token", "-", "--interface", port, "--dry-run", root)
+		if err != nil {
+			t.Fatalf("again with %s: %v\n%s", port, err, out)
+		}
+		return out
+	}
+	const stop = "would run: systemctl stop signalith-sensor-capture.service"
+	if out := again("eth1"); strings.Contains(out, stop) {
+		t.Errorf("same port: %s", out)
+	}
+	if out := again("eth2"); !strings.Contains(out, stop) {
+		t.Errorf("new port: %s", out)
+	}
+}
