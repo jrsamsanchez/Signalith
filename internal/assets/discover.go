@@ -2,6 +2,7 @@ package assets
 
 import (
 	"net/netip"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -36,6 +37,22 @@ const (
 // network (Zeek logs them only for Site::local_nets by default).
 var discoverySourcetypes = []string{"zeek:known_hosts", "zeek:known_services", "zeek:software"}
 
+// Fields ingest sets on every event an agent token sent (see
+// ingest.IntakeField and ingest.TokenPurposeField), which no sender can
+// set itself. Only what came with a token made for a network sensor is
+// read: a Linux or Windows agent's token (or an OpenTelemetry sender)
+// could otherwise post an event with sourcetype zeek:known_services and
+// add hosts, names and categories of its choosing to the asset list.
+const (
+	intakeField       = "signalith_intake"
+	tokenPurposeField = "signalith_token_purpose"
+)
+
+// exemptCategory is what the built-in DNS detections leave out (a host
+// whose category says it is a resolver or a domain controller): only the
+// list's owner may give a host such a category, never the network.
+var exemptCategory = regexp.MustCompile(`dns|domain.?controller`)
+
 // DiscoveryIndex is the index pattern the discovery query reads: the
 // Other data model's daily indices, where these logs are stored.
 func DiscoveryIndex(prefix string) string {
@@ -46,7 +63,8 @@ func DiscoveryIndex(prefix string) string {
 // learned since since: each host Zeek named (dest of known_hosts,
 // known_services and software) with the services it offers (app), and
 // each address a DHCP server leased (src) with the latest name the
-// client gave (src_host). The sample data's events are left out.
+// client gave (src_host). Only events a network sensor's token sent are
+// read, and the sample data's events are left out.
 func DiscoveryQuery(since time.Time) map[string]any {
 	terms := func(field string, size int) map[string]any {
 		return map[string]any{"field": field, "size": size}
@@ -56,6 +74,8 @@ func DiscoveryQuery(since time.Time) map[string]any {
 		"query": map[string]any{"bool": map[string]any{
 			"filter": []any{
 				map[string]any{"terms": map[string]any{"sourcetype": append(slices.Clone(discoverySourcetypes), "zeek:dhcp")}},
+				map[string]any{"term": map[string]any{intakeField: "agent"}},
+				map[string]any{"term": map[string]any{tokenPurposeField: "sensor"}},
 				map[string]any{"range": map[string]any{"@timestamp": map[string]any{"gte": since.UTC().Format(time.RFC3339)}}},
 			},
 			"must_not": []any{map[string]any{"exists": map[string]any{"field": datamodel.SampleField}}},
@@ -111,11 +131,14 @@ func ParseDiscovery(resp map[string]any) []Asset {
 			continue
 		}
 		for _, s := range buckets(b, "svc") {
-			// Not DNS: an asset category with dns in it leaves the host
-			// out of the DNS detections (a resolver asks for everyone),
-			// which only the list's owner should decide.
-			if svc := keyOf(s); validName(svc, 64) && !strings.Contains(strings.ToLower(svc), "dns") {
-				cat := "service:" + strings.ToLower(svc)
+			// Not DNS, nor anything named a domain controller: an asset
+			// category like that leaves the host out of the DNS
+			// detections (a resolver asks for everyone), which only the
+			// list's owner should decide. Zeek's service names are
+			// analyzer names, made of letters, digits, _ and -.
+			svc := strings.ToLower(keyOf(s))
+			if validName(svc, 64) && hostName(svc) && !exemptCategory.MatchString(svc) {
+				cat := "service:" + svc
 				if !slices.Contains(a.Category, cat) && len(a.Category) <= maxServices {
 					a.Category = append(a.Category, cat)
 				}

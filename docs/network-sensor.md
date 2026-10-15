@@ -474,7 +474,7 @@ Sysmon too).
 | `conn` | `flow`, `netflow` | Network_Traffic | `src`, `src_port`, `dest`, `dest_port`, `transport`, `app`, `bytes`, `bytes_in`, `bytes_out`, `packets_in`, `packets_out`, `duration`, `direction`, `conn_state`, `action`, `vlan`, `src_mac`, `dest_mac` |
 | `dns` | `dns` | Network_Resolution | `src` (who asked), `dest_ip` (the DNS server), `query`, `query_type`, `answer`, `reply_code`, `reply_code_id`, `ttl` |
 | `http` | `http` | Web | `http_method`, `url`, `url_domain`, `uri_path`, `uri_query`, `status`, `http_user_agent`, `http_referrer`, `http_content_type`, `bytes_in`, `bytes_out`, `user` |
-| `ssl`, `x509` | `tls` | Certificates | `ssl_server_name`, `ssl_version`, `ssl_cipher`, `ssl_subject`, `ssl_issuer` and their common names, `ssl_serial`, `ssl_hash`, `ssl_start_time`, `ssl_end_time`, `ssl_validation_status`, `ssl_self_signed`, `ja3`, `ja3s`, `ja4` |
+| `ssl`, `x509` | `tls` | Certificates | `ssl_server_name`, `ssl_version`, `ssl_cipher`, `ssl_subject`, `ssl_issuer` and their common names, `ssl_serial`, `ssl_hash`, `ssl_start_time`, `ssl_end_time`, `ssl_validation_status`, `ssl_self_signed`, `ja3`, `ja3s`, `ja4`, `ja4s` |
 | `files` | `fileinfo` | File_Transfers | `file_name`, `file_size`, `file_hash` (SHA-256), `file_md5`, `file_sha1`, `file_sha256`, `mime_type`, `app`, `src` (sender), `dest` (receiver), `url` |
 | `notice` | `alert` | Intrusion_Detection | `signature`, `signature_id`, `category`, `severity`, `severity_id`, `action`, `mitre`, `dest_host`, `url`, `reason`, `local_host` |
 | `ssh`, `rdp`, `kerberos`, `ntlm` | | Authentication | `app` (`ssh`, `rdp`, `kerberos`, `ntlm`), `action` (`success`, `failure` or `unknown`), `user`, `user_domain`, `src`, `src_host`, `dest`, `dest_port`, `dest_host`, `authentication_method`, `reason`, `kerberos_service`, `ticket_encryption_type` |
@@ -517,23 +517,30 @@ Some details worth knowing:
 - **Sign-ins** (Authentication): Zeek sees the sign-in on the wire, not on the host, so
   `action` is what it can tell. SSH is `success` or `failure` from Zeek's guess
   (`auth_success`, from the sizes of the encrypted packets), `unknown` when it made none;
-  Zeek cannot see the user name. RDP's `user` is the name the client offered (Windows cuts
-  it to 9 characters) and its `src_host` the client's computer name; with network level
-  authentication (`authentication_method=HYBRID`) the sign-in is encrypted, so `action` is
-  `unknown`, or `failure` when the server refused the connection (`reason`). Kerberos is
-  `success` or `failure` (`reason` is the KDC's error, such as `KDC_ERR_PREAUTH_FAILED`), and
-  `unknown` for `KDC_ERR_PREAUTH_REQUIRED`, the usual first step of every sign-in. NTLM is
+  Zeek cannot see the user name. RDP's `user` is the name the client offered before
+  signing in (Windows cuts it to 9 characters) and its `src_host` the client's computer
+  name. RDP is always `unknown`: the sign-in itself is encrypted (Zeek's result is
+  `encrypted` with network level authentication, `authentication_method=HYBRID`), and the
+  other results (`reason`, such as `HYBRID_REQUIRED_BY_SERVER`) say only how the connection
+  was negotiated. Anyone who reaches the port chooses that name, so it never counts as a
+  failed sign-in. Kerberos is `success`, `failure` for an error about the client's
+  credentials (`KDC_ERR_PREAUTH_FAILED`, `KDC_ERR_C_PRINCIPAL_UNKNOWN`,
+  `KDC_ERR_CLIENT_REVOKED`, `KDC_ERR_KEY_EXPIRED`, `KRB_AP_ERR_BAD_INTEGRITY`), and
+  `unknown` for every other error (`reason` is the KDC's error): `KDC_ERR_PREAUTH_REQUIRED`,
+  the usual first step of every sign-in, a service without an SPN
+  (`KDC_ERR_S_PRINCIPAL_UNKNOWN`), referrals, clock skew, expired tickets. NTLM is
   `success` or `failure`, with the workstation name the client sent as `src_host` (never
   the sensor's name) and the server's name as `dest_host`. Failures count in the brute
   force and password spray detections like any other; a host whose own logs you also
   collect is counted from both, so its thresholds are reached sooner.
 - **SMB file activity** (Filesystem): each file used on a share, with the share as
   `share_name` (`\\FILE-01\Finance`) and the path inside it as `share_target`, as on a
-  Windows share access (Security 5145). Named pipes opened over `IPC$` have `pipe_name`.
+  Windows share access (Security 5145). Named pipes opened over `IPC$` (as a pipe, or as a
+  file on the `IPC$` share, as Zeek usually logs them) have `pipe_name` instead of `file_path`.
   `smb_mapping` (a share connected to) stays in Other with `share_name`.
 - **Inventory**: `known_hosts`, `known_services`, `software` and `dhcp` stay in Other, with
-  the host as `dest` (for a DHCP lease, the client as `src`, its MAC as `src_mac` and the name
-  it gave as `src_host`); they fill the asset list (see
+  the host as `dest` (for a DHCP lease, the address the server assigned as `src`, the
+  client's MAC as `src_mac` and the name it gave as `src_host`); they fill the asset list (see
   [Hosts in the asset list](#hosts-in-the-asset-list)).
 - **Zeek's own field names** stay too, for every log above but conn, dns, http, ssl, x509,
   files and notice: each value is also kept as `zeek_<name>` (`zeek_cipher`,
@@ -572,8 +579,8 @@ firewall data does not mix in.
 
 A TLS client says hello the same way wherever it connects, so a fingerprint of its hello
 names the program: every browser of one version shares one, and a piece of malware has its
-own, whatever address it calls. `ja3` and `ja4` are the client's fingerprints, `ja3s` the
-server's answer. Suricata logs JA3 and JA3S when `ja3-fingerprints` is on in `suricata.yaml`
+own, whatever address it calls. `ja3` and `ja4` are the client's fingerprints, `ja3s` and
+`ja4s` (Zeek's ja4 package) the server's answer. Suricata logs JA3 and JA3S when `ja3-fingerprints` is on in `suricata.yaml`
 (and JA4, on versions that have it, with `ja4-fingerprints`); Zeek logs them once its
 [ja3](https://github.com/salesforce/ja3) or [ja4](https://github.com/FoxIO-LLC/ja4)
 package is installed (`zkg install ja4`, then `zeekctl deploy`), which the install script
@@ -584,7 +591,7 @@ To pivot on one, click it in a search result (they show under each TLS event) an
 - **Search every event with this TLS client fingerprint**: every session of that program,
   from every host, over the time range picked;
 - **List the clients with this TLS client fingerprint**: the hosts that run it, with how
-  many servers each reached (for `ja3s`, the servers that answered that way).
+  many servers each reached (for `ja3s` and `ja4s`, the servers that answered that way).
 
 A connection's `community_id` offers **Show this connection in every log**: what Zeek and
 Suricata both logged of it. On the Network dashboard, the fingerprints in the two TLS
@@ -607,8 +614,16 @@ install script turns on), and which names your DHCP server hands out (`dhcp.log`
 server reads these from the last 7 days every 10 minutes and adds each address to the asset
 list (**Assets & identities**) as a found host, with category `discovered` and
 `service:<name>` for each service seen (`service:ssh`, `service:smb`, at most 8), and the
-DHCP name the client gave as its host name. Searches, `enrich` and findings then show those
-hosts with asset context.
+DHCP name the client gave as its host name (for the address the DHCP server assigned it,
+never one the client claims). Searches, `enrich` and findings then show those hosts with
+asset context.
+
+Only events sent with a token made for a network sensor (**Agents > Network sensor**) are
+read: Signalith records each event's token purpose (`signalith_token_purpose`), which no
+sender can set, so a Linux or Windows agent's token, an OpenTelemetry sender or syslog
+cannot add hosts to the list by sending an event that looks like a Zeek log. A sensor set
+up with a shared token from the configuration (no purpose) adds no hosts: give it a sensor
+token.
 
 Like the osquery hosts of the [Endpoints page](endpoints.md) and the hosts
 [scans](vulnerabilities.md) find, these are never written to your list: they are kept in
@@ -616,11 +631,15 @@ memory, go when the sensor has not seen the host for 7 days, and your own rows a
 A host your list names (by host name or address) is described by your row; one inside a
 network (CIDR) row of your list is looked up as that row, and is still listed as found, so
 you can see it. The order is your list, the sample data, then the osquery hosts, the scanned
-hosts and the hosts the sensor saw. To describe a discovered host (owner, priority), add a
+hosts and the hosts the sensor saw; a host name goes to the first of them that has it, so a
+device that announces another host's name in its DHCP request does not take that name
+over. To describe a discovered host (owner, priority), add a
 row for it to your list.
 
-DNS is never added as a service: the DNS detections leave out hosts whose category contains
-`dns` (see [Network detections](#network-detections)), which only you should decide. Zeek
+DNS is never added as a service, nor anything named a domain controller: the DNS detections
+leave out hosts whose category contains `dns` or `domain controller` (see
+[Network detections](#network-detections)), which only you should decide. Service names are
+Zeek's analyzer names (letters, digits, `_` and `-`); anything else is left out. Zeek
 logs these only for the networks it knows as yours (`Site::local_nets`, from the script's
 `--networks`), so internet hosts do not fill the list.
 
@@ -749,14 +768,26 @@ Air-gapped networks can load rules from a file: `suricata-update --local /path/t
 
 With **Hide values** or **Remove them**, Signalith changes every event that holds a web
 address before it is stored, whatever sent it: the sensor's web requests (Zeek's `http.log`,
-Suricata's `http` events), Suricata alerts and file downloads that name the address, web
-server access logs (Apache, Nginx) and proxy logs over syslog. It changes:
+Suricata's `http` events), Suricata alerts and file downloads (with or without a Host
+header), web server access logs (Apache, Nginx), proxy logs in CEF over syslog (Zscaler,
+Forcepoint, Blue Coat: `request` and `requestContext`) and OpenTelemetry's web attributes.
+It changes:
 
-- `url` and `http_referrer`: the query is hidden or removed (and `url_length` follows);
-- `uri_query`: hidden, or removed;
-- `_raw`, Suricata's `payload_printable` and an unmapped Suricata event's details: the same
-  query string is replaced wherever it appears as the fields hold it, as it is or written as
-  JSON text, so the values are not kept in the raw event either.
+- the fields that hold a web address: `url`, `http_referrer`, `http_redirect` (Suricata's
+  Location header, where sign-in redirects carry codes and tokens), OpenTelemetry's
+  `url_original`, `http_url` and `http_target`, and a generic JSON record's `uri` and
+  `request`: the query is hidden or removed (and `url_length` follows);
+- `uri_query` and `url_query`: hidden, or removed;
+- `_raw`, Suricata's `payload_printable`, an unmapped Suricata event's details and every
+  Zeek `zeek_*` field: each query string a field held is replaced wherever it appears, as it
+  is or written as JSON, CEF (`\=`) or Apache (`\"`) text, up to where it ends there (so
+  one longer than a field keeps, 4 KB, goes whole). Then every other query string of a web
+  address there (a path or address, then `?`) goes too, so one that no field holds, such as
+  in a Zeek or Suricata log Signalith has no mapping for, is not kept either.
+
+The raw text of events that hold no web address field and come from neither a network
+sensor, a web server nor a CEF or LEEF sender (a Windows event, a script) is left as it was
+sent. The [sample data](sample-data.md) follows the setting too.
 
 In `signalith.yaml`:
 
@@ -770,9 +801,8 @@ already stored keep what they had (delete them with [retention](retention.md) if
 go). The trade-off: detections that look at query values, such as the web attack rules of
 the content packs (SQL injection, path traversal, web shells called with `?cmd=`), see only
 `REDACTED` with **Hide values** (parameter names still match) and nothing with **Remove
-them**. A query string the raw event writes differently from the fields (percent-encoded
-where the field is decoded) is left in `_raw`: Zeek, Suricata and the web servers write
-them alike.
+them**. A query string written percent-encoded in `_raw` where a field holds it decoded
+is still found by the second step, as long as it follows a web address.
 
 ## Licences
 

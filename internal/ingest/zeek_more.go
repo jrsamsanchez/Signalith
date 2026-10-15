@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"net/netip"
 	"strings"
+	"unicode/utf8"
 )
 
 // Zeek logs mapped onto a data model besides the zeek_<key> fields every
@@ -19,10 +20,10 @@ var zeekAuthApps = map[string]string{"ssh": "ssh", "rdp": "rdp", "kerberos": "ke
 
 // zeekAuth maps ssh, rdp, kerberos and ntlm onto Authentication: src
 // signed in to dest. action is success or failure where Zeek can tell,
-// and unknown where it cannot (an encrypted RDP sign-in, an SSH
-// connection whose outcome Zeek could not guess, a Kerberos request
-// that is only asked to pre-authenticate), so the brute force
-// detections count real failures only.
+// and unknown where it cannot (every RDP connection, an SSH connection
+// whose outcome Zeek could not guess, a Kerberos error that is not about
+// the client's credentials), so the brute force detections count real
+// failures only.
 func zeekAuth(lt string, r, f map[string]any) {
 	f["app"] = zeekAuthApps[lt]
 	f["action"] = "unknown"
@@ -33,18 +34,21 @@ func zeekAuth(lt string, r, f map[string]any) {
 			f["action"] = outcome(ok)
 		}
 	case "rdp":
-		// The cookie is the user name the client offered (mstshash),
-		// which Windows clients cut to 9 characters. With network level
-		// authentication (HYBRID) the sign-in itself is encrypted: result
-		// says only whether the connection was set up.
+		// The cookie is the user name the client offered (mstshash)
+		// before any sign-in, which Windows clients cut to 9 characters.
+		// The sign-in itself is encrypted (with network level
+		// authentication, HYBRID, Zeek's result is "encrypted"), and the
+		// other results say only how the connection was negotiated (a
+		// client offering a protocol the server refuses, such as
+		// HYBRID_REQUIRED_BY_SERVER, has not failed to sign in). So an RDP
+		// connection is always unknown: anyone who reaches the port
+		// chooses the cookie and the result, and must not be able to
+		// raise brute force detections against a user they name.
 		f["signature"] = "RDP sign-in"
 		setUser(f, wstr(r["cookie"]))
-		setStr(f, "authentication_method", r["security_protocol"])
+		setCapped(f, "authentication_method", r["security_protocol"], 64)
 		setHostName(f, "src_host", wstr(r["client_name"]))
-		setStr(f, "reason", r["result"])
-		if res := strings.ToLower(wstr(r["result"])); res != "" && res != "success" && res != "unknown" {
-			f["action"] = "failure"
-		}
+		setCapped(f, "reason", r["result"], 255)
 	case "kerberos":
 		req := strings.ToUpper(wstr(r["request_type"]))
 		f["signature"] = "Kerberos " + cmp.Or(req, "request")
@@ -54,19 +58,22 @@ func zeekAuth(lt string, r, f map[string]any) {
 		if realm != "" && len(realm) <= 255 {
 			f["user_domain"] = realm
 		}
-		setStr(f, "kerberos_service", r["service"])
-		setStr(f, "ticket_encryption_type", r["cipher"])
+		setCapped(f, "kerberos_service", r["service"], 1024)
+		setCapped(f, "ticket_encryption_type", r["cipher"], 64)
 		msg := wstr(r["error_msg"])
-		setStr(f, "reason", msg)
+		setCapped(f, "reason", msg, 255)
 		if ok, known := zeekBool(wstr(r["success"])); known {
 			switch {
 			case ok:
 				f["action"] = "success"
-			case msg == "KDC_ERR_PREAUTH_REQUIRED":
-				// The first step of every AS exchange: the KDC asks the
-				// client to pre-authenticate. Not a failed sign-in.
-			default:
+			case kerberosCredentialErrors[strings.ToUpper(strings.TrimSpace(msg))]:
 				f["action"] = "failure"
+			default:
+				// Not about the client's credentials: the KDC asking to
+				// pre-authenticate (the first step of every AS exchange),
+				// a service without an SPN, a referral, clock skew, an
+				// expired ticket, delegation options. Not a failed
+				// sign-in; reason says which.
 			}
 		}
 	case "ntlm":
@@ -87,6 +94,38 @@ func zeekAuth(lt string, r, f map[string]any) {
 			f["reason"] = st
 		}
 	}
+}
+
+// kerberosCredentialErrors are the KDC errors that mean the client's
+// credentials were refused: a wrong password, an unknown, disabled or
+// locked account, an expired password, a ticket that does not match its
+// key. The others are counted as unknown.
+var kerberosCredentialErrors = map[string]bool{
+	"KDC_ERR_PREAUTH_FAILED":      true,
+	"KDC_ERR_C_PRINCIPAL_UNKNOWN": true,
+	"KDC_ERR_CLIENT_REVOKED":      true,
+	"KDC_ERR_KEY_EXPIRED":         true,
+	"KRB_AP_ERR_BAD_INTEGRITY":    true,
+}
+
+// setCapped sets a string field read off the network, made valid UTF-8
+// and cut to at most n bytes (and MaxValueLen): long values would be
+// stored but not searchable.
+func setCapped(f map[string]any, k string, v any, n int) {
+	if s := capLen(CapValue(wstr(v)), n); s != "" {
+		f[k] = s
+	}
+}
+
+// capLen cuts s to at most n bytes without splitting a character.
+func capLen(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n]
 }
 
 func outcome(ok bool) string {
@@ -137,10 +176,10 @@ func zeekSMBFiles(r, f map[string]any) {
 	} else if act != "" {
 		f["action"] = strings.ToLower(act)
 	}
-	share := wstr(r["path"])
-	name := wstr(r["name"])
-	setStr(f, "share_name", share)
-	setStr(f, "share_target", name)
+	share := capLen(CapValue(wstr(r["path"])), 1024)
+	name := CapValue(wstr(r["name"]))
+	setCapped(f, "share_name", share, 1024)
+	setCapped(f, "share_target", name, MaxValueLen)
 	if name != "" {
 		base := name
 		if i := strings.LastIndexAny(base, `\/`); i >= 0 {
@@ -149,11 +188,14 @@ func zeekSMBFiles(r, f map[string]any) {
 		if base != "" {
 			f["file_name"] = base
 		}
+		// A named pipe: a PIPE_ action, or (as Zeek usually logs one) a
+		// file opened on the IPC$ share.
+		ipc := strings.HasSuffix(strings.ToUpper(strings.TrimRight(share, `\`)), `\IPC$`)
 		switch {
-		case strings.HasPrefix(act, "PIPE_"):
-			f["pipe_name"] = name
+		case strings.HasPrefix(act, "PIPE_") || ipc:
+			f["pipe_name"] = capLen(name, 1024)
 		case share != "":
-			f["file_path"] = strings.TrimRight(share, `\`) + `\` + strings.TrimLeft(name, `\`)
+			f["file_path"] = capLen(strings.TrimRight(share, `\`)+`\`+strings.TrimLeft(name, `\`), MaxValueLen)
 		default:
 			f["file_path"] = name
 		}
@@ -167,7 +209,7 @@ func zeekSMBFiles(r, f map[string]any) {
 func zeekSMBMapping(r, f map[string]any) {
 	f["signature"] = "SMB share connected"
 	f["app"] = "smb"
-	setStr(f, "share_name", r["path"])
+	setCapped(f, "share_name", r["path"], 1024)
 }
 
 // zeekInventory keeps what Zeek learned about the hosts of your network
@@ -182,7 +224,7 @@ func zeekInventory(lt string, r, f map[string]any) {
 		f["signature"] = "Service seen"
 		setAddr(f, "dest", r["host"])
 		setInt(f, "dest_port", r["port_num"])
-		setStr(f, "transport", r["port_proto"])
+		setCapped(f, "transport", r["port_proto"], 16)
 		if svc := strings.ToLower(wstr(listFirst(r["service"]))); svc != "" && len(svc) <= 64 {
 			f["app"] = svc
 		}
@@ -192,11 +234,12 @@ func zeekInventory(lt string, r, f map[string]any) {
 		setInt(f, "dest_port", r["host_p"])
 	case "dhcp":
 		f["signature"] = "DHCP lease"
-		if !setAddr(f, "src", r["assigned_addr"]) {
-			setAddr(f, "src", r["client_addr"])
-		}
+		// Only the address a DHCP server assigned (its ACK): the client's
+		// own address (ciaddr) is whatever the client says, and a forged
+		// DHCPINFORM could otherwise put a name on someone else's.
+		setAddr(f, "src", r["assigned_addr"])
 		setAddr(f, "dest", r["server_addr"])
-		setStr(f, "src_mac", r["mac"])
+		setCapped(f, "src_mac", r["mac"], 64)
 		setHostName(f, "src_host", cmp.Or(wstr(r["client_fqdn"]), wstr(r["host_name"])))
 		if uids := sensorList(r["uids"]); len(uids) > 0 && f["session_id"] == nil {
 			f["session_id"] = uids[0]

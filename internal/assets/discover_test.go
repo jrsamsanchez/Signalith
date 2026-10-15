@@ -10,7 +10,7 @@ import (
 
 const discoveryAnswer = `{"aggregations":{
  "hosts":{"doc_count":9,"ip":{"buckets":[
-  {"key":"192.168.10.5","doc_count":5,"svc":{"buckets":[{"key":"ssh","doc_count":2},{"key":"smb","doc_count":2},{"key":"=cmd|' /C calc'!A0","doc_count":1}]}},
+  {"key":"192.168.10.5","doc_count":5,"svc":{"buckets":[{"key":"ssh","doc_count":2},{"key":"smb","doc_count":2},{"key":"=cmd|' /C calc'!A0","doc_count":1},{"key":"domain-controller","doc_count":1},{"key":"Domain_Controller","doc_count":1},{"key":"my.dns","doc_count":1}]}},
   {"key":"192.168.10.21","doc_count":3,"svc":{"buckets":[{"key":"dns","doc_count":1}]}},
   {"key":"::ffff:192.168.10.30","doc_count":1,"svc":{"buckets":[{"key":"rdp","doc_count":1}]}},
   {"key":"not-an-address","doc_count":1,"svc":{"buckets":[]}}
@@ -49,7 +49,8 @@ func TestDiscoveryQuery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, s := range []string{`"zeek:known_hosts"`, `"zeek:dhcp"`, `"gte":"2026-10-08T00:00:00Z"`, `"field":"dest"`, `"field":"src_host"`, `"must_not"`} {
+	for _, s := range []string{`"zeek:known_hosts"`, `"zeek:dhcp"`, `"gte":"2026-10-08T00:00:00Z"`, `"field":"dest"`, `"field":"src_host"`, `"must_not"`,
+		`{"term":{"signalith_intake":"agent"}}`, `{"term":{"signalith_token_purpose":"sensor"}}`} {
 		if !strings.Contains(string(b), s) {
 			t.Errorf("query has no %s: %s", s, b)
 		}
@@ -91,5 +92,31 @@ func TestDiscoveredNeverOverride(t *testing.T) {
 	// describes the network, not the host.
 	if strings.Join(ips, ",") != "192.168.10.21,192.168.20.7" {
 		t.Errorf("found listed: %v", ips)
+	}
+}
+
+// TestFoundNameFirstWins: a discovered host that announces the name of
+// an osquery host (its DHCP client chose it) does not take that name's
+// lookups over; it keeps its address.
+func TestFoundNameFirstWins(t *testing.T) {
+	s, err := NewStore("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.SetFound([]Asset{
+		{Host: []string{"fileserver01.corp.example", "fileserver01"}, IP: []string{"10.0.0.5"}, Category: []string{"endpoint", "linux"}},
+		{Host: []string{"FileServer01"}, IP: []string{"10.0.0.66"}, Category: []string{"discovered"}},
+		{Host: []string{"fileserver01.evil.example"}, IP: []string{"10.0.0.67"}, Category: []string{"discovered"}},
+	})
+	for _, name := range []string{"fileserver01", "fileserver01.corp.example"} {
+		if a, ok := s.Asset(name); !ok || a.IP[0] != "10.0.0.5" {
+			t.Errorf("%s: %+v", name, a)
+		}
+	}
+	if a, ok := s.Asset("10.0.0.66"); !ok || len(a.Host) != 0 {
+		t.Errorf("10.0.0.66: %+v", a)
+	}
+	if a, ok := s.Asset("fileserver01.evil.example"); !ok || a.IP[0] != "10.0.0.67" {
+		t.Errorf("a new full name is the host's own: %+v", a)
 	}
 }

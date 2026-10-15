@@ -1,6 +1,9 @@
 package ingest
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestZeekSSH(t *testing.T) {
 	d := zeekDocs(t, "ssh")
@@ -20,10 +23,12 @@ func TestZeekRDP(t *testing.T) {
 	d := zeekDocs(t, "rdp")
 	expect(t, d[0], map[string]any{
 		"datamodel": "Authentication", "app": "rdp", "action": "unknown", "user": "jsmith", "src_host": "WS-0042",
-		"authentication_method": "HYBRID", "reason": "Success", "dest": "192.168.10.30", "dest_port": int64(3389),
+		"authentication_method": "HYBRID", "reason": "encrypted", "dest": "192.168.10.30", "dest_port": int64(3389),
 		"zeek_cookie": "jsmith",
 	})
-	expect(t, d[1], map[string]any{"action": "failure", "user": "administr", "reason": "HYBRID_REQUIRED_BY_SERVER", "direction": "inbound"})
+	// A negotiation the server refused: the client chose the cookie and
+	// never signed in, so it is no failed sign-in for that user.
+	expect(t, d[1], map[string]any{"action": "unknown", "user": "administr", "reason": "HYBRID_REQUIRED_BY_SERVER", "direction": "inbound"})
 }
 
 func TestZeekKerberos(t *testing.T) {
@@ -37,6 +42,8 @@ func TestZeekKerberos(t *testing.T) {
 	expect(t, d[1], map[string]any{"action": "unknown", "reason": "KDC_ERR_PREAUTH_REQUIRED"})
 	expect(t, d[2], map[string]any{"action": "success", "signature": "Kerberos TGS", "kerberos_service": "cifs/file-01.corp.example",
 		"zeek_cipher": "rc4-hmac", "zeek_request_type": "TGS"})
+	// A service with no SPN is not about the client's credentials.
+	expect(t, d[3], map[string]any{"action": "unknown", "reason": "KDC_ERR_S_PRINCIPAL_UNKNOWN", "kerberos_service": "http/old-app.corp.example"})
 }
 
 func TestZeekNTLM(t *testing.T) {
@@ -61,6 +68,14 @@ func TestZeekSMBFiles(t *testing.T) {
 	})
 	expect(t, d[1], map[string]any{"action": "opened", "pipe_name": "atsvc", "file_path": nil, "share_name": `\\FILE-01\IPC$`})
 	expect(t, d[2], map[string]any{"action": "deleted", "file_path": `\\FILE-01\Finance\old.txt`})
+	// Long values are cut to what a keyword indexes.
+	long := strings.Repeat("a", 9000)
+	f := ParseZeek("smb_files", map[string]any{"ts": 1791720600.0, "action": "SMB::FILE_OPEN", "path": `\\X\` + long, "name": long}, "").Fields
+	for _, k := range []string{"share_name", "share_target", "file_path", "file_name"} {
+		if v, _ := f[k].(string); len(v) > MaxValueLen {
+			t.Errorf("%s is %d bytes", k, len(v))
+		}
+	}
 
 	m := zeekDocs(t, "smb_mapping")[0]
 	expect(t, m, map[string]any{"datamodel": "Other", "share_name": `\\FILE-01\Finance`, "signature": "SMB share connected"})
@@ -74,6 +89,9 @@ func TestZeekInventoryLogs(t *testing.T) {
 		"zeek_name": "OpenSSH", "zeek_software_type": "SSH::SERVER"})
 	expect(t, zeekDocs(t, "dhcp")[0], map[string]any{"signature": "DHCP lease", "src": "192.168.10.21", "dest": "192.168.10.1",
 		"src_mac": "00:50:56:aa:bb:01", "src_host": "ws-0042.corp.example", "session_id": "CdhcpAbCdEfGhIjKl"})
+	// No address assigned (a DHCPINFORM): the client's own address is
+	// whatever it says, so the name is tied to no address.
+	expect(t, zeekDocs(t, "dhcp")[1], map[string]any{"src": nil, "src_host": "file-01"})
 	// A host that is not an address is not taken as one.
 	f := ParseZeek("known_hosts", map[string]any{"ts": 1791720600.0, "host": "$(rm -rf /)"}, "").Fields
 	if f["dest"] != nil {

@@ -249,6 +249,9 @@ func eveAlert(r, f map[string]any) {
 		f["mitre"] = ids
 	}
 	host := wstr(wget(r, "http", "hostname"))
+	if h, ok := r["http"].(map[string]any); ok {
+		eveHTTPAddresses(h, f)
+	}
 	switch {
 	case host != "":
 		f["dest_host"] = host
@@ -443,12 +446,21 @@ func eveHTTP(r, f map[string]any) {
 		f["url_domain"] = host
 		f["url"] = webURL("http", host, uri, eveServerPort(r))
 	}
-	splitURI(f, uri)
+	eveHTTPAddresses(h, f)
 	setStr(f, "status", h["status"])
 	setStr(f, "http_user_agent", h["http_user_agent"])
-	setStr(f, "http_referrer", h["http_refer"])
 	setStr(f, "http_content_type", h["http_content_type"])
 	setInt(f, "bytes_in", h["length"])
+}
+
+// eveHTTPAddresses maps the web addresses of an EVE http object (of a
+// web request, an alert or a file seen): the target's path and query,
+// the referrer and the redirect (the Location header), so ingest.url_query
+// finds their query strings whether or not the request named a host.
+func eveHTTPAddresses(h, f map[string]any) {
+	splitURI(f, wstr(h["url"]))
+	setStr(f, "http_referrer", h["http_refer"])
+	setStr(f, "http_redirect", h["redirect"])
 }
 
 // eveTLS maps a TLS session onto Certificates.
@@ -518,6 +530,7 @@ func eveFileinfo(r, f map[string]any) {
 		if host := wstr(h["hostname"]); host != "" {
 			f["url"] = webURL("http", host, wstr(h["url"]), fileServerPort(r))
 		}
+		eveHTTPAddresses(h, f)
 	}
 	// Suricata already writes a file's addresses in the file's own
 	// direction: for a download src is the server that sent it.

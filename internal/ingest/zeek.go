@@ -419,7 +419,7 @@ func zeekSSL(r, f map[string]any) {
 	setStr(f, "ssl_issuer", r["issuer"])
 	status := wstr(r["validation_status"])
 	setStr(f, "ssl_validation_status", status)
-	for _, k := range []string{"ja3", "ja3s", "ja4"} {
+	for _, k := range []string{"ja3", "ja3s", "ja4", "ja4s"} {
 		setStr(f, k, r[k])
 	}
 	setCertNames(f, status == "self signed certificate")
@@ -602,6 +602,11 @@ func zeekGeneric(lt string, r, f map[string]any) {
 				f[name] = x
 			}
 		case string:
+			if zeekAlsoGeneric[lt] {
+				// A copy of a mapped log's value, capped as the mapped
+				// fields are, so it is searchable too.
+				v = CapValue(v)
+			}
 			f[name] = v
 		case bool:
 			f[name] = strconv.FormatBool(v)

@@ -125,7 +125,7 @@ var zeekLogFields = map[string]map[string]string{
 	},
 	"ssl": {
 		"version": "ssl_version", "cipher": "ssl_cipher", "server_name": "ssl_server_name", "subject": "ssl_subject",
-		"issuer": "ssl_issuer", "validation_status": "ssl_validation_status", "ja3": "ja3", "ja3s": "ja3s", "ja4": "ja4",
+		"issuer": "ssl_issuer", "validation_status": "ssl_validation_status", "ja3": "ja3", "ja3s": "ja3s", "ja4": "ja4", "ja4s": "ja4s",
 		"established": "zeek_established", "resumed": "zeek_resumed", "curve": "zeek_curve", "next_protocol": "zeek_next_protocol",
 	},
 	"x509": {

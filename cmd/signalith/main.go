@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"os/signal"
@@ -1316,6 +1317,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		Risk:     &risk.Store{Client: cl, Prefix: c.OpenSearch.IndexPrefix},
 		Server:   sampleServer,
 		NodeID:   sampleNode,
+		URLQuery: pipeline.URLQuery,
 		Log:      log,
 	}
 	dispatcher := &notify.Dispatcher{
@@ -2126,7 +2128,16 @@ func feedFoundAssets(ctx context.Context, es *endpoint.Store, vs *vulnscan.Store
 	failed, vfailed := false, false
 	for {
 		var as []assets.Asset
-		known := map[string]bool{}
+		// Addresses already given to a host, compared in their canonical
+		// form (an osquery host may list ::ffff:10.0.0.1).
+		known := map[netip.Addr]bool{}
+		canon := func(ip string) netip.Addr {
+			a, err := netip.ParseAddr(strings.TrimSpace(ip))
+			if err != nil {
+				return netip.Addr{}
+			}
+			return a.Unmap().WithZone("")
+		}
 		nodes, err := es.Nodes(ctx)
 		if err == nil {
 			for _, n := range nodes {
@@ -2135,7 +2146,9 @@ func feedFoundAssets(ctx context.Context, es *endpoint.Store, vs *vulnscan.Store
 					a.Host = append(a.Host, short)
 				}
 				for _, ip := range n.IPs {
-					known[ip] = true
+					if a := canon(ip); a.IsValid() {
+						known[a] = true
+					}
 				}
 				as = append(as, a)
 			}
@@ -2147,10 +2160,12 @@ func feedFoundAssets(ctx context.Context, es *endpoint.Store, vs *vulnscan.Store
 		hosts, verr := vs.Hosts(ctx)
 		if verr == nil {
 			for _, h := range hosts {
-				if known[h.Address] {
-					continue
+				if a := canon(h.Address); a.IsValid() {
+					if known[a] {
+						continue
+					}
+					known[a] = true
 				}
-				known[h.Address] = true
 				as = append(as, scannedAsset(h))
 			}
 			vfailed = false
@@ -2160,10 +2175,11 @@ func feedFoundAssets(ctx context.Context, es *endpoint.Store, vs *vulnscan.Store
 		}
 		seen, serr := sd.Hosts(ctx)
 		for _, a := range seen {
-			if known[a.IP[0]] {
+			ip := canon(a.IP[0])
+			if !ip.IsValid() || known[ip] {
 				continue
 			}
-			known[a.IP[0]] = true
+			known[ip] = true
 			as = append(as, a)
 		}
 		if err == nil || verr == nil || serr == nil {
