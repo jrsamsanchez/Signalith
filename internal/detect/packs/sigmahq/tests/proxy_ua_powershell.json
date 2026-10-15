@@ -1,0 +1,4 @@
+{"rule": "c8557060-9221-4448-8794-96320e6f3e74", "cases": [
+  {"expect":true,"source":"synthesized","channel":"zeek:http","event_id":"proxy","data":{"c-useragent":"x WindowsPowerShell/"}},
+  {"expect":false,"source":"synthesized","channel":"zeek:http","event_id":"proxy","data":{}}
+]}

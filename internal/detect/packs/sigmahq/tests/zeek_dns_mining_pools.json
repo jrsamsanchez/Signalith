@@ -1,0 +1,6 @@
+{"rule": "bf74135c-18e8-4a72-a926-0e4f47888c19", "cases": [
+  {"expect":true,"source":"synthesized","channel":"zeek:dns","event_id":"","data":{"query":"tubepool.xyz"}},
+  {"expect":false,"source":"synthesized","channel":"zeek:dns","event_id":"","data":{"answers":"0.0.0.0","query":"tubepool.xyz"}},
+  {"expect":false,"source":"synthesized","channel":"zeek:dns","event_id":"","data":{"query":"tubepool.xyz","rejected":"true"}},
+  {"expect":false,"source":"synthesized","channel":"zeek:dns","event_id":"","data":{}}
+]}

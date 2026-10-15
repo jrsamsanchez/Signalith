@@ -13,5 +13,5 @@ throttle:
   fields: [host, sensor_warnings]
   window: 24h
 enabled: true
-tags: [network, sensor-health]
+tags: [network, health, pci-dss:10.7.2, pci-dss:11.5.1, nist-800-53:SI-4, cis-v8:13.6]
 guidance: Open Settings > Network sensors; the sensor's checklist says what is wrong and what to run on it. Packet loss is the separate detection network-sensor-packet-loss, and a capture port with an address or a clock out of sync shows on the checklist only.

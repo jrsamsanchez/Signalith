@@ -109,7 +109,10 @@ func (g *gen) newFlow(src, dest string, destPort int) sensorFlow {
 }
 
 // ids returns a Zeek record with the flow's id.* keys, UID and Community
-// ID, plus extra.
+// ID, plus extra. Only conn.log says which ends are in Site::local_nets
+// (zeekConnLog adds local_orig and local_resp); like real Zeek, the
+// other logs do not, so the parser decides their direction from the
+// addresses.
 func (f sensorFlow) ids(extra map[string]any) map[string]any {
 	r := map[string]any{"uid": f.uid, "id.orig_h": f.src, "id.orig_p": f.srcPort,
 		"id.resp_h": f.dest, "id.resp_p": f.destPort, "community_id": f.cid}
@@ -120,13 +123,13 @@ func (f sensorFlow) ids(extra map[string]any) map[string]any {
 }
 
 // zeekConnLog adds the conn.log line of a finished flow that started at
-// t. The client is always in Site::local_nets (the sample's own addresses
-// are a documentation range, so the sensor is told they are local);
-// localResp says whether the server is too.
+// t. The sample's own addresses are a documentation range, so the sensor
+// is told they are in Site::local_nets: the client is when it is one of
+// the company's, and localResp says whether the server is.
 func (g *gen) zeekConnLog(fl sensorFlow, t time.Time, service, state string, out, in int, dur float64, localResp bool) {
 	rec := fl.ids(map[string]any{
 		"proto": "tcp", "duration": dur, "orig_bytes": out, "resp_bytes": in,
-		"conn_state": state, "local_orig": true, "local_resp": localResp, "missed_bytes": 0,
+		"conn_state": state, "local_orig": Internal(fl.src), "local_resp": localResp, "missed_bytes": 0,
 		"orig_pkts": 4 + out/1000, "resp_pkts": 3 + in/1400,
 		"orig_ip_bytes": out + 200, "resp_ip_bytes": in + 160,
 	})
@@ -406,15 +409,15 @@ func (g *gen) sensorDownload(ws Host, t time.Time) {
 
 // sensorBeacon is the network side of the implant's command and control:
 // a lookup of the C2 domain, then a TLS session to the C2 address with a
-// self-signed certificate every ten minutes or so for an hour, and a
+// self-signed certificate every five minutes or so for an hour, and a
 // Suricata alert on the beacon.
 func (g *gen) sensorBeacon(ws Host, t time.Time) {
 	const c2Name = "updates.corp-sync.example"
 	g.zeekDNSLog(ws.IP, c2Name, ipC2Beacon, t.Add(-2*time.Second))
 	subject := "CN=" + c2Name + ",O=Default Company Ltd,C=XX"
 	g.zeekCert(t, subject, subject, c2Name, t.AddDate(0, 0, -3), t.AddDate(1, 0, -3))
-	for i := 0; i < 6; i++ {
-		ts := t.Add(time.Duration(i*10)*time.Minute + time.Duration(g.rng.intn(40))*time.Second)
+	for i := 0; i < 12; i++ {
+		ts := t.Add(time.Duration(i*5)*time.Minute + time.Duration(g.rng.intn(40))*time.Second)
 		fl := g.newFlow(ws.IP, ipC2Beacon, 443)
 		g.zeekTLS(fl, ts, c2Name, subject, subject, "self signed certificate")
 		g.zeekConnLog(fl, ts, "ssl", "SF", 1800+g.rng.intn(400), 900+g.rng.intn(300), 2.9, false)

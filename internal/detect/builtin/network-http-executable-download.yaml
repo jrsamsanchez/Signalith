@@ -1,0 +1,31 @@
+id: network-http-executable-download
+title: $src$ downloaded a program over plain HTTP from $url_domain$
+name: Executable downloaded over HTTP
+description: An internal host fetched a Windows or Linux program or script over unencrypted HTTP from the internet. Droppers and download cradles often fetch their next stage this way.
+query: |
+  datamodel=Web NOT direction IN (inbound, internal) http_method=GET status IN (200, 206)
+  (http_content_type IN (application/x-dosexec, application/x-msdownload, application/x-msdos-program, application/vnd.microsoft.portable-executable, application/x-executable, application/x-elf, application/x-sharedlib, application/x-sh, application/hta, application/x-ms-shortcut)
+  OR uri_path IN (*.exe, *.dll, *.scr, *.hta, *.ps1, *.vbs, *.bat, *.msi, *.lnk, *.elf))
+  NOT url_domain IN (*.windowsupdate.com, *.update.microsoft.com, *.delivery.mp.microsoft.com, download.microsoft.com, *.gvt1.com)
+  | stats count, min(_time) as first_seen by src, dest, url_domain, uri_path
+schedule: 10m
+lookback: 15m
+severity: medium
+mitre: [T1105]
+throttle:
+  fields: [src, url_domain, uri_path]
+  window: 24h
+risk:
+  score: 30
+  objects:
+    - {field: src, type: system}
+enabled: true
+tags: [network, command-and-control, pci-dss:10.4.1, pci-dss:11.5.1, nist-800-53:SI-4, cis-v8:13.3]
+guidance: >-
+  Find the file in File_Transfers by the same session_id or community_id; its file_hash
+  is checked against threat intel. Look at what the host ran next (datamodel=Endpoint
+  dest=<host>). Software updaters that still use plain HTTP are the usual false
+  positive; add an exception on url_domain for those. Partial responses (206) count,
+  since BITS and updaters fetch in ranges. Zeek writes which ends are local only in
+  conn.log, so for web requests a client counts as inside unless it is outside every
+  private range and the server is inside: an IPv6 or public-address client also counts.

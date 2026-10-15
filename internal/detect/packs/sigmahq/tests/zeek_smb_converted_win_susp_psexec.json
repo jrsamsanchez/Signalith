@@ -1,0 +1,6 @@
+{"rule": "f1b3a22a-45e6-4004-afb5-4291f9c21166", "cases": [
+  {"expect":true,"source":"synthesized","channel":"zeek:smb_files","event_id":"","data":{"name":"-stdin","path":"\\\\IPC$"}},
+  {"expect":false,"source":"synthesized","channel":"zeek:smb_files","event_id":"","data":{"name":"PSEXESVC -stdin","path":"\\\\IPC$"}},
+  {"expect":false,"source":"synthesized","channel":"zeek:smb_files","event_id":"","data":{"path":"\\\\IPC$"}},
+  {"expect":false,"source":"synthesized","channel":"zeek:smb_files","event_id":"","data":{"name":"-stdin"}}
+]}

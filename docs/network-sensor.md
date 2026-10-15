@@ -664,6 +664,42 @@ no sensor: they keep the tuning they have, and Signalith logs it for the audit t
 Limits: 256 KB a box and 8 KB a line; at most 5,000 rules to turn off, 2,000 limits and
 5,000 rules of your own.
 
+### Network detections
+
+Besides `threat-activity` and `ids-alert-high`, the sensor's data lights up built-in
+detections written for it (all on by default except the last):
+
+- **DNS**: DNS tunnelling (many long encoded names from one host) and bursts of lookups
+  of names that do not exist (a domain generation algorithm). Your DNS servers are left
+  out: give them the asset category `dns-server` (or `domain-controller`) in the
+  asset list (**Assets & identities**), since a sensor on the internet link sees them ask upstream
+  for every client.
+- **Scanning**: an internal host whose connections to many other internal hosts or ports
+  fail, and Zeek's own `Scan::*` notices.
+- **Downloads and credentials**: a program or script downloaded over plain HTTP, and
+  passwords sent in clear text (HTTP basic authentication, FTP, Telnet).
+- **Risk only** (they add risk to the host, and raise a risk incident when they add up):
+  TLS to a server with a self-signed or expired certificate, more than 1 GB sent to one
+  outside address, and connections out to the internet on reverse shell ports.
+- **Sensor health**: Zeek missing, or Suricata dropping, more than 5% of the traffic.
+- **Off by default**: a host inside answering the internet on a port it had not answered
+  on in 30 days, and beaconing to one outside address (turn it on after adding
+  exceptions for the services all your hosts talk to).
+
+See [Network detections](detections.md#network-detections) for each one's rule and
+threshold. The content packs also have rules for this data, off until you turn them
+on: 45 SigmaHQ rules (Zeek SMB, DCE-RPC, Kerberos, RDP and certificate rules, DNS
+rules such as mining pools and Cobalt Strike names, and web proxy rules such as
+malicious user agents and paste sites) and 5 Splunk network rules (Cisco Smart Install,
+the F5 iControl REST exploit, ngrok, protocol on an unusual port, Tor). The web rules
+of both packs, written for web server logs, also search the sensor's web requests (see
+[Network rules](detections.md#network-rules-zeek-dns-proxy-and-firewall) and
+[Content packs](detections.md#content-packs)).
+
+The [sample data](sample-data.md) includes a DNS tunnelling story and a clear-text
+sign-in story seen only by the sensor, so you can see these fire before your own sensor
+is running.
+
 ## Keeping rules up to date
 
 Suricata only knows what its rules describe, so they are updated every day. On a sensor the

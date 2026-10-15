@@ -176,7 +176,14 @@ const sensorHost = "nsm-01"
 // Zeek parser. The event keeps the parser's document ID.
 func (b *builder) zeek(log string, t time.Time, rec map[string]any) {
 	line := sensorLine(rec, "ts", float64(t.UnixMicro())/1e6)
-	b.emit(ingest.Normalize(ingest.ZeekTag+"."+log, map[string]any{"log": line, "hostname": sensorHost}, t))
+	ev := ingest.Normalize(ingest.ZeekTag+"."+log, map[string]any{"log": line, "hostname": sensorHost}, t)
+	// A notice about one address (an Address_Scan) is local when the
+	// scanner is: the parser counts private ranges as local, and the
+	// sample's company range stands in for one of them.
+	if src, _ := ev.Fields["src"].(string); log == "notice" && ev.Fields["local_host"] == nil && Internal(src) {
+		ev.Fields["local_host"] = src
+	}
+	b.emit(ev)
 }
 
 // eveTimeLayout is the timestamp layout of Suricata's eve.json.

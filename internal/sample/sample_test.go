@@ -13,6 +13,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/detect"
 	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"github.com/jrsamsanchez/signalith/internal/query"
+	"github.com/jrsamsanchez/signalith/internal/search"
 )
 
 var fixedNow = time.Date(2026, 10, 13, 12, 0, 0, 0, time.UTC)
@@ -267,7 +268,8 @@ func TestRecipeEveryEnabledDetectionHasData(t *testing.T) {
 }
 
 // anyMatch reports whether any sample event matches the query's leading
-// search (datamodel + filter), or, for a threatmatch query, carries a value
+// search (datamodel + filter, evaluated as OpenSearch would by
+// search.MatchDoc, so =~ and numeric comparisons count too), or, for a threatmatch query, carries a value
 // that is in the sample threat intel.
 func anyMatch(d *Data, q *query.Query, indicators map[string]bool) bool {
 	threat := false
@@ -280,7 +282,9 @@ func anyMatch(d *Data, q *query.Query, indicators map[string]bool) bool {
 		if q.Datamodel != "" && !strings.EqualFold(e.Model, q.Datamodel) {
 			continue
 		}
-		if !matchExpr(q.Search, e) {
+		if ok, err := search.MatchDoc(q.Search, e.Document()); err != nil {
+			panic(fmt.Sprintf("search %v: %v", q.Search, err))
+		} else if !ok {
 			continue
 		}
 		if threat {
@@ -312,147 +316,14 @@ func eventHitsIntel(e ingest.Event, indicators map[string]bool) bool {
 	return false
 }
 
-// matchExpr evaluates a leading-search filter against one event. It supports
-// the operators the built-in recipes use, including glob values with '*'.
-func matchExpr(e query.Expr, ev ingest.Event) bool {
-	switch x := e.(type) {
-	case nil:
-		return true
-	case *query.And:
-		for _, c := range x.Children {
-			if !matchExpr(c, ev) {
-				return false
-			}
-		}
-		return true
-	case *query.Or:
-		for _, c := range x.Children {
-			if matchExpr(c, ev) {
-				return true
-			}
-		}
-		return false
-	case *query.Not:
-		return !matchExpr(x.Child, ev)
-	case *query.Text:
-		return strings.Contains(strings.ToLower(fieldStr(ev, "_raw")), strings.ToLower(x.Value))
-	case *query.In:
-		for _, v := range fieldStrs(ev, x.Field) {
-			for _, w := range x.Values {
-				if globFold(w, v) {
-					return true
-				}
-			}
-		}
-		return false
-	case *query.Compare:
-		return matchCompare(x, ev)
-	}
-	return false
-}
-
-func matchCompare(c *query.Compare, ev ingest.Event) bool {
-	vs := fieldStrs(ev, c.Field)
-	// A list field matches when any of its values does, as in OpenSearch.
-	any := func(match func(string) bool) bool {
-		for _, v := range vs {
-			if match(v) {
-				return true
-			}
-		}
-		return false
-	}
-	switch c.Op {
-	case "=":
-		if c.Value == "*" {
-			return len(vs) > 0
-		}
-		return any(func(v string) bool { return globFold(c.Value, v) })
-	case "!=":
-		if c.Value == "*" {
-			return len(vs) == 0
-		}
-		return !any(func(v string) bool { return globFold(c.Value, v) })
-	}
-	// Numeric comparisons only appear in post-stats where-clauses, not in a
-	// leading search, so they do not gate whether matching data exists.
-	return true
-}
-
-// fieldStrs returns a field's values: one for a single value, each item
-// of a list, none when it is missing or empty.
-func fieldStrs(ev ingest.Event, field string) []string {
-	if field == "_raw" {
-		field = "message"
-	}
-	switch v := ev.Fields[field].(type) {
-	case nil:
-		return nil
-	case []string:
-		return v
-	case []any:
-		out := make([]string, 0, len(v))
-		for _, x := range v {
-			out = append(out, fmt.Sprint(x))
-		}
-		return out
-	}
-	if s := fieldStr(ev, field); s != "" {
-		return []string{s}
-	}
-	return nil
-}
-
-func fieldStr(ev ingest.Event, field string) string {
-	if field == "_raw" {
-		field = "message"
-	}
-	if v, ok := ev.Fields[field]; ok {
-		return fmt.Sprint(v)
-	}
-	return ""
-}
-
-// globFold matches a pattern that may contain '*' wildcards against s, case
-// insensitively. Without a '*' it is an exact (folded) match.
-func globFold(pattern, s string) bool {
-	if !strings.Contains(pattern, "*") {
-		return strings.EqualFold(pattern, s)
-	}
-	p := strings.ToLower(pattern)
-	v := strings.ToLower(s)
-	parts := strings.Split(p, "*")
-	pos := 0
-	for i, seg := range parts {
-		if seg == "" {
-			continue
-		}
-		if i == 0 && !strings.HasPrefix(p, "*") {
-			if !strings.HasPrefix(v[pos:], seg) {
-				return false
-			}
-			pos += len(seg)
-			continue
-		}
-		if i == len(parts)-1 && !strings.HasSuffix(p, "*") {
-			return strings.HasSuffix(v, seg) && len(v) >= pos+len(seg)
-		}
-		idx := strings.Index(v[pos:], seg)
-		if idx < 0 {
-			return false
-		}
-		pos += idx + len(seg)
-	}
-	return true
-}
-
 // TestStories: the four intrusion stories, the benign story, the two
-// antivirus stories, the vulnerability scan and the sensor upkeep are present, and the sample investigation has the phishing story's host and
+// antivirus stories, the vulnerability scan, the network stories and the
+// sensor upkeep are present, and the sample investigation has the phishing story's host and
 // user to gather its findings by.
 func TestStories(t *testing.T) {
 	d := genData(t, SizeSmall)
 	want := []string{"linux-ssh-intrusion", "phishing-to-c2", "ransomware-prep", "domain-persistence", "benign-lookalikes",
-		"malware-outbreak", "antivirus-housekeeping", "vulnerability-scan", "sensor-upkeep"}
+		"malware-outbreak", "antivirus-housekeeping", "vulnerability-scan", "dns-tunnel-and-scan", "network-hygiene", "sensor-upkeep"}
 	if len(d.Stories) != len(want) {
 		t.Errorf("%d stories, want %d", len(d.Stories), len(want))
 	}

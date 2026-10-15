@@ -91,6 +91,7 @@
 <symbol id="i-package" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z"/><path d="M12 22V12"/><path d="M3.29 7 12 12l8.71-5"/><path d="m7.5 4.27 9 5.15"/></symbol>
 <symbol id="i-flag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M4 22V4a1 1 0 0 1 .4-.8A6 6 0 0 1 8 2c3 0 5 2 7.333 2q2 0 3.067-.8A1 1 0 0 1 20 4v10a1 1 0 0 1-.4.8A6 6 0 0 1 16 16c-3 0-5-2-8-2a6 6 0 0 0-4 1.528"/></symbol>
 <symbol id="i-scan" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="12" r="3"/><path d="m16 16-1.9-1.9"/></symbol>
+<symbol id="i-plug" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/></symbol>
 <symbol id="i-menu" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/></symbol>
 </svg>
 
@@ -119,6 +120,7 @@
     <a href="#features">Features</a>
     <a href="#query">Queries</a>
     <a href="#security">Security</a>
+    <a href="#soon">Coming soon</a>
     <a href="#start">Get started</a>
     <a href="docs/">Docs</a>
     <a href="https://github.com/jrsamsanchez/signalith">GitHub</a>
@@ -133,14 +135,14 @@
     <div class="hero__copy">
       <p class="eyebrow"><span class="dot"></span>Free and open source · Apache 2.0</p>
       <h1 class="hero__title">Find the <em>signal</em><br>in a monolith of logs.</h1>
-      <p class="hero__lede">Signalith is an open-source SIEM for Windows and Linux, inspired by Splunk Enterprise Security. Search every event, ask questions in plain English, detect threats with ATT&amp;CK-mapped rules and triage findings together, on your own servers.</p>
+      <p class="hero__lede">Signalith is an open-source SIEM for Windows and Linux, inspired by Splunk Enterprise Security. Search every event, ask questions in plain English, detect threats with ATT&amp;CK-mapped rules and triage findings together, on one server of your own or several.</p>
       <div class="hero__cta">
         <a class="btn btn--primary btn--lg" href="#start">Get started<svg class="icon" aria-hidden="true"><use href="#i-arrow-right"/></svg></a>
         <a class="btn btn--glass btn--lg" href="https://github.com/jrsamsanchez/signalith"><svg class="icon" aria-hidden="true"><use href="#i-github"/></svg>View on GitHub</a>
       </div>
       <ul class="hero__facts">
-        <li>Windows and Linux</li>
-        <li>One Go binary, web UI built in</li>
+        <li>Windows, Linux and Docker</li>
+        <li>One server or several</li>
         <li>HTTPS by default</li>
       </ul>
     </div>
@@ -178,12 +180,14 @@
       <button role="tab" id="t-findings" aria-controls="p-tour" aria-selected="true" data-shot="findings" data-cap="A triage queue for findings, ranked by urgency, with triage guidance, evidence, ATT&amp;CK techniques and Investigate with AI next to each one.">Findings</button>
       <button role="tab" id="t-search" aria-controls="p-tour" aria-selected="false" tabindex="-1" data-shot="search" data-cap="Ask a question in plain English or write a pipe query. Results come back as tables, charts and events you can click to dig further.">Search</button>
       <button role="tab" id="t-dashboard" aria-controls="p-tour" aria-selected="false" tabindex="-1" data-shot="dashboard" data-cap="A security posture dashboard out of the box: open findings, triage speed, top risk and data health, compared with the previous period.">Dashboards</button>
+      <button role="tab" id="t-network" aria-controls="p-tour" aria-selected="false" tabindex="-1" data-shot="network" data-cap="What the network sensor saw, from Zeek and Suricata: IDS alerts, connections to the internet, DNS lookups, web requests and whether the sensor keeps up.">Network</button>
       <button role="tab" id="t-detections" aria-controls="p-tour" aria-selected="false" tabindex="-1" data-shot="detections" data-cap="Thousands of tested SigmaHQ and Splunk rules ship with Signalith, off until you turn them on, next to your own detections.">Detections</button>
       <button role="tab" id="t-investigation" aria-controls="p-tour" aria-selected="false" tabindex="-1" data-shot="investigation" data-cap="Investigation cases gather findings, notes, saved searches and pinned events on one timeline, with the users, hosts and IPs involved.">Investigations</button>
       <button role="tab" id="t-endpoints" aria-controls="p-tour" aria-selected="false" tabindex="-1" data-shot="endpoints" data-cap="Every host running osquery, with its failing configuration checks, file changes and inventory, and whether its log agent is sending.">Endpoints</button>
       <button role="tab" id="t-vulnerabilities" aria-controls="p-tour" aria-selected="false" tabindex="-1" data-shot="vulnerabilities" data-cap="Nmap scans matched to CVEs from the National Vulnerability Database, with the ones attackers are known to use first.">Vulnerabilities</button>
       <button role="tab" id="t-malware" aria-controls="p-tour" aria-selected="false" tabindex="-1" data-shot="malware" data-cap="Antivirus logs from Defender, ClamAV and syslog products in one place: what was found, what the antivirus did, and where protection is off.">Malware</button>
       <button role="tab" id="t-intel" aria-controls="p-tour" aria-selected="false" tabindex="-1" data-shot="intel" data-cap="Add free threat intel feeds from a catalog, any list or STIX file, or a TAXII 2.1 server, and match every event against them.">Threat intel</button>
+      <button role="tab" id="t-servers" aria-controls="p-tour" aria-selected="false" tabindex="-1" data-shot="servers" data-cap="Several servers share one OpenSearch: one runs the background jobs, the others take over if it stops, and one certificate authority covers them all.">Servers</button>
     </div>
     <figure class="frame" id="p-tour" role="tabpanel" aria-labelledby="t-findings">
       <div class="frame__bar" aria-hidden="true"><i></i><i></i><i></i><span>https://signalith.corp.example:8080</span></div>
@@ -196,7 +200,7 @@
 <!-- Strip of facts -->
 <section class="facts" aria-label="At a glance">
   <div class="wrap facts__in">
-    <div><b>2,900+</b><span>tested detection rules from SigmaHQ and Splunk</span></div>
+    <div><b>3,300+</b><span>tested detection rules from SigmaHQ and Splunk</span></div>
     <div><b>ATT&amp;CK</b><span>mapping on every rule, with a coverage map</span></div>
     <div><b>2</b><span>platforms: Windows and Linux packages</span></div>
     <div><b>$0</b><span>license cost, Apache 2.0</span></div>
@@ -241,7 +245,7 @@
       <article class="card">
         <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-crosshair"/></svg></span>
         <h3>Thousands of detections, tested</h3>
-        <p>2,028 SigmaHQ and 855 Splunk Security Content rules, each with test events that prove it fires, mapped to ATT&amp;CK. Turn on the high and critical ones in one click, and get new rules through signed content updates.</p>
+        <p>2,292 SigmaHQ and 1,028 Splunk Security Content rules, each with test events that prove it fires and mapped to ATT&amp;CK, next to 48 built-in detections. Turn on the high and critical ones in one click, and get new rules through signed content updates.</p>
       </article>
       <article class="card">
         <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-gauge"/></svg></span>
@@ -251,7 +255,12 @@
       <article class="card">
         <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-sparkles"/></svg></span>
         <h3>Investigate with AI</h3>
-        <p>One click on a finding gathers the evidence, lets an AI model run a few searches of its own, and returns a verdict with a timeline. Off until an admin turns it on, and you see exactly what is sent.</p>
+        <p>One click on a finding gathers the evidence, lets an AI model run a few searches of its own, and returns a verdict with a timeline. Use Claude, an OpenAI-compatible service or Ollama on your own hardware. Off until an admin turns it on.</p>
+      </article>
+      <article class="card">
+        <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-plug"/></svg></span>
+        <h3>AI tools over MCP</h3>
+        <p>Ask Claude Desktop, Claude Code, VS Code or Cursor about your data. A read-only MCP server runs searches and reads findings and cases with an API token that can never change anything.</p>
       </article>
       <article class="card">
         <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-zap"/></svg></span>
@@ -259,9 +268,19 @@
         <p>Block an IP, disable a directory account or isolate a host from a finding. Chain steps into playbooks that wait for an analyst&rsquo;s approval, and send alerts to Slack, Teams, email or a webhook.</p>
       </article>
       <article class="card">
+        <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-server"/></svg></span>
+        <h3>One server or several</h3>
+        <p>Add a server from the Servers page with one line for Linux, Windows or Docker. Servers share users, settings and detections, take over each other&rsquo;s jobs, upgrade one at a time and can be drained and removed.</p>
+      </article>
+      <article class="card">
+        <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-network"/></svg></span>
+        <h3>Network sensor</h3>
+        <p>Zeek and Suricata on a small Linux box plugged into a mirror port, installed with one line from Add data. Network detections catch DNS tunnelling, beaconing, cleartext passwords and scans, and a Network dashboard shows it all.</p>
+      </article>
+      <article class="card">
         <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-bug"/></svg></span>
         <h3>Vulnerability scanning</h3>
-        <p>Scan the networks you list with Nmap on a schedule, and match the software it finds to CVEs from the National Vulnerability Database, worst hosts first, with a dashboard.</p>
+        <p>Nmap scans matched to CVEs from the National Vulnerability Database, worst hosts first. Place a scanner inside each network zone, and add OpenVAS where you want deeper scans.</p>
       </article>
       <article class="card">
         <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-monitor"/></svg></span>
@@ -271,7 +290,7 @@
       <article class="card">
         <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-shield-alert"/></svg></span>
         <h3>Antivirus and malware</h3>
-        <p>Microsoft Defender, ClamAV and syslog antivirus products land in one Malware data model, with detections for disabled protection and new exclusions, and a malware dashboard.</p>
+        <p>Microsoft Defender, ClamAV and antivirus consoles that send CEF or LEEF land in one Malware data model, with detections for disabled protection and new exclusions, and a malware dashboard.</p>
       </article>
       <article class="card">
         <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-radar"/></svg></span>
@@ -286,12 +305,12 @@
       <article class="card">
         <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-layout"/></svg></span>
         <h3>Dashboards</h3>
-        <p>Security posture, vulnerabilities and malware dashboards out of the box, plus your own: ask a question, pick a chart, done. Dashboards are YAML files, so they can live in Git.</p>
+        <p>Security posture, network, vulnerabilities and malware dashboards out of the box, plus your own: ask a question, pick a chart, done. Dashboards are YAML files, so they can live in Git.</p>
       </article>
       <article class="card">
         <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-database"/></svg></span>
         <h3>Easy data collection</h3>
-        <p>Ready Fluent Bit setups for Windows and Linux, syslog and CEF from network devices, and OpenTelemetry logs, each agent with its own token you can revoke. Or load sample data in one click.</p>
+        <p>Ready Fluent Bit setups for Windows and Linux, syslog and CEF, OpenTelemetry logs, and Apache and Nginx access logs with web attack rules. Each agent has its own token you can revoke. Or load sample data in one click.</p>
       </article>
     </div>
   </div>
@@ -339,13 +358,13 @@
       <div class="flow__col">
         <div class="node"><b>Fluent Bit agents</b><span>Windows event logs, Sysmon, Linux auth and audit</span></div>
         <div class="node"><b>Syslog devices</b><span>Firewalls, switches and appliances: UDP, TCP or TLS, CEF</span></div>
-        <div class="node"><b>More sources</b><span>OpenTelemetry, osquery, Wazuh and Nmap scans</span></div>
+        <div class="node"><b>More sources</b><span>OpenTelemetry, osquery, Wazuh, web servers, and Zeek and Suricata sensors</span></div>
       </div>
       <div class="flow__arrow" aria-hidden="true"><span>HTTPS</span></div>
       <div class="node node--core">
         <svg class="node__mark" viewBox="6 2 20 28" aria-hidden="true"><path fill="currentColor" d="M6 4.5A2.5 2.5 0 0 1 8.5 2H22A4 4 0 0 1 26 6V6H16A6 6 0 0 0 10 12A6 6 0 0 0 16 18A2 2 0 0 1 18 20A2 2 0 0 1 16 22H6Z"/><path style="fill:var(--brand-signal)" d="M26 27.5A2.5 2.5 0 0 1 23.5 30H10A4 4 0 0 1 6 26V26H16A6 6 0 0 0 22 20A6 6 0 0 0 16 14A2 2 0 0 1 14 12A2 2 0 0 1 16 10H26Z"/></svg>
         <b>Signalith</b>
-        <span>Parsing and data models · query language · detections and risk · threat intel · cases · response · web UI and API</span>
+        <span>Parsing and data models · query language · detections and risk · threat intel · cases · response · scanners · web UI and API, on one server or several</span>
       </div>
       <div class="flow__arrow" aria-hidden="true"><span>TLS</span></div>
       <div class="flow__col">
@@ -357,9 +376,9 @@
       <li><b>OpenSearch</b><span>storage and search</span></li>
       <li><b>Fluent Bit</b><span>log collection</span></li>
       <li><b>Sigma</b><span>detection rules</span></li>
-      <li><b>MITRE ATT&amp;CK</b><span>technique mapping</span></li>
       <li><b>osquery</b><span>endpoint visibility</span></li>
-      <li><b>Nmap</b><span>vulnerability scanning</span></li>
+      <li><b>Zeek and Suricata</b><span>network sensor</span></li>
+      <li><b>Nmap and OpenVAS</b><span>vulnerability scanning</span></li>
     </ul>
   </div>
 </section>
@@ -378,6 +397,9 @@
         <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>Roles and directory sign-in:</b> viewer, analyst and admin, from your AD or LDAP groups.</span></li>
         <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>A token per agent,</b> so one lost machine is revoked without touching the rest.</span></li>
         <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>Hardened service:</b> its own account on Windows, systemd sandboxing on Linux.</span></li>
+        <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>One certificate authority for every server,</b> each server with its own OpenSearch certificate, revoked at once when a server is removed.</span></li>
+        <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>Encrypted archives</b> of old data that you can check and restore when an investigation needs them.</span></li>
+        <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>Fuzz-tested parsers:</b> every parser that reads data from the network is fuzzed in CI and every night.</span></li>
         <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>Verifiable releases</b> with an SBOM and build attestations for every package and image.</span></li>
       </ul>
     </div>
@@ -418,10 +440,14 @@ cd signalith</code></pre><button class="copy" type="button" aria-label="Copy"><s
 
       <div class="start__panel" role="tabpanel" id="sp-linux" aria-labelledby="s-linux" hidden>
         <ol class="steps">
-          <li><p>Install <a href="https://opensearch.org/docs/latest/install-and-configure/install-opensearch/index/">OpenSearch 2.x</a>, then download the <code>.deb</code> or <code>.rpm</code> for your system from the <a href="https://github.com/jrsamsanchez/Signalith/releases/latest">latest release</a>.</p></li>
-          <li><p>Install it. Signalith starts as a systemd service:</p>
-<div class="code"><pre><code>sudo apt install ./signalith_*_amd64.deb      # Debian, Ubuntu
-sudo dnf install ./signalith-*.x86_64.rpm     # Red Hat, Rocky, Alma, Fedora</code></pre><button class="copy" type="button" aria-label="Copy"><svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg></button></div></li>
+          <li><p>Install <a href="https://opensearch.org/docs/latest/install-and-configure/install-opensearch/index/">OpenSearch 2.x</a>, then add Signalith&rsquo;s package repository so updates arrive with the rest of the system. On Debian or Ubuntu:</p>
+<div class="code"><pre><code>sudo install -d -m 0755 /etc/apt/keyrings
+sudo curl -fsSL -o /etc/apt/keyrings/signalith.asc https://signalith.io/apt/signalith.asc
+echo "deb [signed-by=/etc/apt/keyrings/signalith.asc] https://signalith.io/apt stable main" | sudo tee /etc/apt/sources.list.d/signalith.list
+sudo apt update &amp;&amp; sudo apt install signalith</code></pre><button class="copy" type="button" aria-label="Copy"><svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg></button></div></li>
+          <li><p>Or on Red Hat, Rocky, Alma or Fedora. Either way Signalith starts as a systemd service:</p>
+<div class="code"><pre><code>sudo curl -fsSL -o /etc/yum.repos.d/signalith.repo https://signalith.io/rpm/signalith.repo
+sudo dnf install signalith</code></pre><button class="copy" type="button" aria-label="Copy"><svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg></button></div></li>
           <li><p>Show the admin password, then open <code>https://&lt;server&gt;:8080</code> and sign in as <code>admin</code>.</p>
 <div class="code"><pre><code>sudo signalith initial-password</code></pre><button class="copy" type="button" aria-label="Copy"><svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg></button></div></li>
         </ol>
@@ -435,7 +461,7 @@ sudo dnf install ./signalith-*.x86_64.rpm     # Red Hat, Rocky, Alma, Fedora</co
 <div class="code"><pre><code>signalith initial-password</code></pre><button class="copy" type="button" aria-label="Copy"><svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg></button></div></li>
         </ol>
       </div>
-      <p class="start__more"><svg class="icon" aria-hidden="true"><use href="#i-book"/></svg>Full instructions, upgrades, checking a download and every setting are in the <a href="docs/getting-started/">documentation</a>.</p>
+      <p class="start__more"><svg class="icon" aria-hidden="true"><use href="#i-book"/></svg>Full instructions, upgrades, checking a download and every setting are in the <a href="docs/getting-started/">documentation</a>. To add a second server later, see <a href="docs/multi-server/">Adding servers</a>.</p>
     </div>
   </div>
 </section>
@@ -450,28 +476,28 @@ sudo dnf install ./signalith-*.x86_64.rpm     # Red Hat, Rocky, Alma, Fedora</co
     </div>
     <div class="soon">
       <article class="soon__item">
-        <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-server"/></svg></span>
-        <div><h3>Add a server</h3><p>Add Signalith servers from the UI to share the load, with users, settings and detections shared between them.</p></div>
-      </article>
-      <article class="soon__item">
-        <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-scan"/></svg></span>
-        <div><h3>A scanner for each network</h3><p>Vulnerability scanners placed in each network zone, with OpenVAS as an option for deeper scans.</p></div>
-      </article>
-      <article class="soon__item">
         <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-clipboard"/></svg></span>
         <div><h3>Compliance and evidence</h3><p>Detections and reports mapped to frameworks such as PCI DSS, NIST 800-53 and ISO 27001, with evidence an auditor can take away.</p></div>
       </article>
       <article class="soon__item">
         <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-network"/></svg></span>
-        <div><h3>Network sensor</h3><p>An optional sensor running Zeek and Suricata with free Emerging Threats rules, feeding network events and alerts into Signalith.</p></div>
+        <div><h3>Network sensors in Settings</h3><p>One page listing every network sensor with its health, where you can turn off a noisy rule on all sensors or revoke one.</p></div>
+      </article>
+      <article class="soon__item">
+        <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-server"/></svg></span>
+        <div><h3>Load balancers</h3><p>Several servers behind one address, with the real sender of every connection kept, and sample HAProxy and nginx setups.</p></div>
+      </article>
+      <article class="soon__item">
+        <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-database"/></svg></span>
+        <div><h3>Cloud logs</h3><p>AWS CloudTrail through the OpenTelemetry Collector, with the SigmaHQ cloud rules that go with it.</p></div>
       </article>
       <article class="soon__item">
         <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-package"/></svg></span>
-        <div><h3>Easier installs and upgrades</h3><p>apt and dnf repositories so updates arrive with the rest of the system, and a code-signed Windows installer.</p></div>
+        <div><h3>A signed Windows installer</h3><p>A code-signed <code>.msi</code>, so Windows trusts the installer and the service it puts in place.</p></div>
       </article>
       <article class="soon__item">
         <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-flag"/></svg></span>
-        <div><h3>Version 1.0</h3><p>Fuzzing of every network parser, an outside security review, published load test numbers, and then 1.0.</p></div>
+        <div><h3>Version 1.0</h3><p>An outside security review, load test numbers from a real lab, and then 1.0.</p></div>
       </article>
     </div>
   </div>
