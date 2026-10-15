@@ -228,6 +228,24 @@ func TestEndToEnd(t *testing.T) {
 			t.Errorf("no src has both outcomes, got %v", res.Rows)
 		}
 	})
+	t.Run("eval, rex, dedup and eventstats", func(t *testing.T) {
+		res := run(t, eng, `datamodel=Authentication action=failure
+| rex "port (?<port>\d+)"
+| eval port=tonumber(port), high=if(port >= 40106, "yes", "no")
+| where like(user, "ora%")
+| stats count by high`)
+		got := map[any]any{}
+		for _, r := range res.Rows {
+			got[r["high"]] = r["count"]
+		}
+		if got["yes"] != int64(6) || got["no"] != int64(6) {
+			t.Errorf("rows = %v", res.Rows)
+		}
+		res = run(t, eng, `datamodel=Authentication action=failure | dedup src | eventstats count as n | table src, n`)
+		if len(res.Rows) != 2 || res.Rows[0]["n"] != int64(2) {
+			t.Errorf("rows = %v", res.Rows)
+		}
+	})
 	t.Run("plain-English questions run", func(t *testing.T) {
 		ip, err := nlq.Translate("failed logins from 203.0.113.9", nil)
 		if err != nil {
