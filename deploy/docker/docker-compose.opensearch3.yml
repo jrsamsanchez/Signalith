@@ -49,7 +49,9 @@ services:
   opensearch:
     hostname: opensearch
     environment:
-      discovery.type: multi-node
+      # Replaces the quick start's single-node: "zen" is OpenSearch's own
+      # name for finding the other nodes (discovery.seed_hosts).
+      discovery.type: zen
       NODE_NAME: opensearch
       NODE_CERT: node
     volumes:
