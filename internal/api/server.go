@@ -45,6 +45,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/shared"
 	"github.com/jrsamsanchez/signalith/internal/syslog"
 	"github.com/jrsamsanchez/signalith/internal/tlsauto"
+	"github.com/jrsamsanchez/signalith/internal/upgradecheck"
 	"github.com/jrsamsanchez/signalith/internal/users"
 )
 
@@ -199,6 +200,10 @@ type Server struct {
 	// nil on a server without shared settings.
 	Features     func() []shared.FeatureState
 	ClusterLevel func() int
+	// Upgrade judges whether the next server may be upgraded, for the
+	// Servers page's checklist (GET /api/cluster/upgrade); nil on a
+	// server without a cluster.
+	Upgrade func(ctx context.Context) (upgradecheck.Verdict, error)
 
 	authOnce     sync.Once
 	creds        credCache  // recently checked Basic credentials
@@ -316,6 +321,7 @@ func (s *Server) Handler() http.Handler {
 	s.routeClusterTLS(api)
 	s.routeClusterServers(api)
 	s.routeClusterFeatures(api)
+	s.routeClusterUpgrade(api)
 	s.routeClusterOSIdentity(api)
 	s.routeTokens(api)
 	s.routeAPITokens(api)

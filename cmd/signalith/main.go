@@ -1618,6 +1618,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		scanner.Allowed = r.node.RunsJobs
 		srv.Cluster = r.node
 		srv.NodeURLChanged = func(c *config.Config) { r.node.SetNodeURL(nodeURL(c)) }
+		wireUpgrade(srv, r.node, r.shared, cl, c.OpenSearch.IndexPrefix)
 		if r.shared != nil {
 			srv.Cluster = sharedCluster{Node: r.node, rt: r.shared}
 			srv.Shared = sharedAPI{rt: r.shared, on: sharedOn}

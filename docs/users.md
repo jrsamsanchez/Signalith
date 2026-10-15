@@ -882,7 +882,8 @@ fingerprint), `GET /api/cluster/opensearch-identity`
 `POST /api/cluster/servers/{id}/drain`, `POST /api/cluster/servers/{id}/resume`,
 `DELETE /api/cluster/servers/{id}`, `POST /api/cluster/jobs/move`, `POST /api/cluster/rotate-key`
 (draining and removing servers, and rotating the cluster key; see
-[servers.md](servers.md#draining-and-removing-a-server)), `GET /api/requests/{id}`
+[servers.md](servers.md#draining-and-removing-a-server)), `GET /api/cluster/upgrade` (the upgrade checklist of the Servers
+page; see [servers.md](servers.md#upgrading-servers-you-set-up-by-hand)), `GET /api/requests/{id}`
 (work asked of the server that runs the background jobs, such as a feed download or a retention
 run; see [servers.md](servers.md#shared-feeds-and-retention-policies)), every
 `/api/notify` route (the Notifications page; see [notifications.md](notifications.md)), every

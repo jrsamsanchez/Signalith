@@ -67,7 +67,7 @@ func TestJudgeUpgrade(t *testing.T) {
 		{name: "only eligible", hbs: []cluster.Heartbeat{hb("a", "0.2.0", leads), hb("b", "0.2.0", func(h *cluster.Heartbeat) { h.LeaderEligible = false })}, st: member, tasksOK: true,
 			warnings: []string{"only_eligible"}},
 		{name: "older server", hbs: []cluster.Heartbeat{hb("a", "0.2.0", leads), hb("b", "0.1.0", func(h *cluster.Heartbeat) { h.Mode, h.MaxRev, h.LevelMax = "", 0, 0 })}, st: member, tasksOK: true,
-			warnings: []string{"caught_up_unknown"}, next: "Upgrade siem-b next: it does not run the jobs. Upgrade siem-a, which runs them, last."},
+			warnings: []string{"caught_up_unknown"}, next: "Upgrade siem-b next: siem-a, which runs the jobs, runs the new version already."},
 		{name: "offline", hbs: []cluster.Heartbeat{hb("a", "0.2.0", leads), hb("b", "0.2.0"), hb("c", "0.2.0", func(h *cluster.Heartbeat) { h.HeartbeatAt = now.Add(-5 * time.Minute) })}, st: member, tasksOK: true,
 			warnings: []string{"offline"}},
 		{name: "needs upgrade and restart", hbs: []cluster.Heartbeat{hb("a", "0.2.0", leads), hb("b", "0.2.0", func(h *cluster.Heartbeat) {
@@ -190,7 +190,7 @@ func TestNextAfterTheHandOver(t *testing.T) {
 	b := cluster.Heartbeat{NodeID: "n_b", Name: "siem-b", Version: "1.6.0", Leader: true, Features: []string{cluster.FeatureYieldNewer}}
 	a := cluster.Heartbeat{NodeID: "n_a", Name: "siem-a", Version: "1.5.0"}
 	got := Next([]cluster.Heartbeat{a, b}, &b, map[string]int{"1.5.0": 3, "1.6.0": 3})
-	if strings.Contains(got, "hands the jobs") || !strings.HasPrefix(got, "Upgrade siem-a next") {
+	if got != "Upgrade siem-a next: siem-b, which runs the jobs, runs the new version already." {
 		t.Errorf("next %q", got)
 	}
 }

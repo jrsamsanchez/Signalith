@@ -345,6 +345,8 @@ func Next(live []cluster.Heartbeat, leader *cluster.Heartbeat, levels map[string
 		// The leader runs the older version and hands the jobs to the
 		// first server upgraded.
 		return fmt.Sprintf("Upgrade %s next. %s hands the jobs to it once it is ready, then upgrade %s.", n.Name, leader.Name, leader.Name)
+	case leader != nil && len(levels) > 1 && leader.Version == top:
+		return fmt.Sprintf("Upgrade %s next: %s, which runs the jobs, runs the new version already.", n.Name, leader.Name)
 	case leader != nil:
 		return fmt.Sprintf("Upgrade %s next: it does not run the jobs. Upgrade %s, which runs them, last.", n.Name, leader.Name)
 	}

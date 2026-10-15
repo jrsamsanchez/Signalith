@@ -4901,3 +4901,24 @@ details[open] > summary .inv-exact__chev { transform: rotate(90deg); }
 
 /* Features that wait for older servers (levels.js). */
 .feature-wait { display: inline-block; margin-left: var(--sp-2); color: var(--text-3); font-size: var(--fs-sm); }
+
+/* Servers: the upgrade checklist (servers-upgrade.js). */
+#page-servers .sv-upgrade > summary { cursor: pointer; list-style: none; }
+#page-servers .sv-upgrade > summary::-webkit-details-marker { display: none; }
+#page-servers .sv-upgrade:not([open]) > .card__head { box-shadow: none; }
+.sv-upgrade__servers, .sv-upgrade__steps, .sv-upgrade__notes, .sv-upgrade__cmds { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; min-width: 0; }
+.sv-upgrade__server { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--line-subtle); border-radius: var(--r-md); min-width: 0; }
+.sv-upgrade__server[data-upgraded="true"] { opacity: .8; }
+.sv-upgrade__head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.sv-upgrade__n { width: 22px; height: 22px; display: grid; place-items: center; border-radius: 50%; background: var(--hover); color: var(--text-2); font-size: var(--fs-xs); }
+.sv-upgrade__step { display: grid; grid-template-columns: 20px 1fr; gap: 8px; align-items: start; min-width: 0; }
+.sv-upgrade__step > div { display: grid; gap: 4px; min-width: 0; justify-items: start; }
+.sv-upgrade__step[data-state="done"] .sv-upgrade__mark { color: var(--success); }
+.sv-upgrade__step[data-state="now"] .sv-upgrade__mark { color: var(--accent); }
+.sv-upgrade__step[data-state="later"] { color: var(--text-3); }
+.sv-upgrade__text { margin: 0; color: var(--text-2); font-size: var(--fs-sm); }
+.sv-upgrade__cmds { gap: 4px; font-size: var(--fs-sm); color: var(--text-2); overflow-wrap: anywhere; }
+.sv-upgrade__cmds code { font-size: var(--fs-xs); }
+.sv-upgrade__notes { gap: 4px; }
+.sv-upgrade__details > summary { cursor: pointer; color: var(--text-2); font-size: var(--fs-sm); }
+.sv-upgrade__details[open] { display: grid; gap: 10px; }
