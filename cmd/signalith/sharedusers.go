@@ -146,8 +146,9 @@ func (p *usersParts) carry(ctx context.Context, legacy *auth.Sessions, people *u
 	// A sign-in the old components were still finishing when the restart
 	// stopped waiting for them ends after the sessions moved: its session
 	// is carried on its own, or its browser would be signed out at once.
+	late := context.WithoutCancel(ctx) // ctx itself is replaced below
 	legacy.Forward(func(h auth.Held) {
-		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+		ctx, cancel := context.WithTimeout(late, time.Minute)
 		defer cancel()
 		if n, _ := p.sessions.Carry(ctx, carried([]auth.Held{h}, people, c)); n == 0 {
 			log.Warn("a sign-in that finished while this server moved to the shared users could not be kept; that browser signs in again",
