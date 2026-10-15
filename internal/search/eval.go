@@ -24,8 +24,10 @@ import (
 // concatenations cannot double a value until the server runs out of memory.
 const maxEvalValue = 1 << 20
 
-// maxEvalTotal caps the bytes of new strings one eval, where or rex
-// command builds across all rows.
+// maxEvalTotal caps the bytes of values that eval and where expressions
+// build in one search, across all rows and commands. Multivalue results
+// count every value's bytes, even when they share memory, since writing
+// the result out copies each one.
 const maxEvalTotal = 256 << 20
 
 // maxMultiValues caps the values of one multivalue field (split, mvappend,
@@ -35,16 +37,70 @@ const maxMultiValues = 10000
 // maxCachedRegexes caps the compiled regular expressions one search keeps.
 const maxCachedRegexes = 256
 
-// evaluator computes eval expressions over rows. It is used by one search
-// at a time; regular expressions are compiled once and kept.
+// evaluator computes eval expressions over rows. One search uses one
+// evaluator for all its commands, so the size budget covers the whole
+// search; regular expressions are compiled once and kept.
 type evaluator struct {
+	ctx      context.Context
 	now      time.Time
 	regexes  map[string]*regexp.Regexp
 	produced int
+	steps    int
 	err      error
 }
 
-func newEvaluator() *evaluator { return &evaluator{now: time.Now()} }
+func newEvaluator(ctx context.Context) *evaluator {
+	return &evaluator{ctx: ctx, now: time.Now()}
+}
+
+type evaluatorKey struct{}
+
+// withEvaluator gives the commands of one search a shared evaluator.
+func withEvaluator(ctx context.Context) context.Context {
+	return context.WithValue(ctx, evaluatorKey{}, newEvaluator(ctx))
+}
+
+// evaluatorFor returns the search's evaluator, or a new one when the
+// commands run outside a search (as in tests).
+func evaluatorFor(ctx context.Context) *evaluator {
+	if ctx == nil {
+		return newEvaluator(nil)
+	}
+	if ev, ok := ctx.Value(evaluatorKey{}).(*evaluator); ok {
+		return ev
+	}
+	return newEvaluator(ctx)
+}
+
+// checkSteps is how often, in expression steps and list values, the
+// evaluator checks whether the search has been cancelled or timed out.
+const checkSteps = 256
+
+// step counts work and stops the evaluation once the search's context
+// ends, so a few expensive rows cannot outlive the search timeout.
+func (ev *evaluator) step() bool {
+	if ev.err != nil {
+		return false
+	}
+	if ev.steps++; ev.steps%checkSteps == 0 && ev.ctx != nil {
+		if err := ev.ctx.Err(); err != nil {
+			ev.err = err
+			return false
+		}
+	}
+	return true
+}
+
+// safeEval evaluates e for one row. A bug in a function fails the search
+// with an error instead of crashing the server.
+func (ev *evaluator) safeEval(e query.EvalExpr, r Row) (v any) {
+	defer func() {
+		if p := recover(); p != nil {
+			v = ev.fail("an expression failed: %v", p)
+		}
+	}()
+	return ev.eval(e, r)
+}
 
 func (ev *evaluator) fail(format string, args ...any) any {
 	if ev.err == nil {
@@ -79,20 +135,62 @@ func (ev *evaluator) regex(pattern string) *regexp.Regexp {
 
 // str returns a new string after checking it against the size limits.
 func (ev *evaluator) str(s string) any {
-	if len(s) > maxEvalValue {
-		return ev.fail("a computed value is longer than %d MB; eval cannot build values that large", maxEvalValue>>20)
-	}
-	if ev.produced += len(s); ev.produced > maxEvalTotal {
-		return ev.fail("eval built more than %d MB of values; narrow the search first", maxEvalTotal>>20)
+	if !ev.fits(len(s)) || !ev.charge(len(s)) {
+		return nil
 	}
 	return s
 }
 
+// fits reports whether a value of n bytes is small enough to build. Check
+// it before building a value whose size is known in advance.
+func (ev *evaluator) fits(n int) bool {
+	if n > maxEvalValue {
+		ev.fail("a computed value is longer than %d MB; eval cannot build values that large", maxEvalValue>>20)
+		return false
+	}
+	return true
+}
+
+// charge counts n bytes against the search's budget.
+func (ev *evaluator) charge(n int) bool {
+	if ev.produced += n; ev.produced > maxEvalTotal {
+		ev.fail("eval built more than %d MB of values; narrow the search first", maxEvalTotal>>20)
+		return false
+	}
+	return true
+}
+
+// list returns a new multivalue result after checking its count and its
+// bytes against the limits.
 func (ev *evaluator) list(vs []any) any {
 	if len(vs) > maxMultiValues {
 		return ev.fail("a multivalue field would hold %d values; the limit is %d", len(vs), maxMultiValues)
 	}
+	n := 0
+	for _, v := range vs {
+		n += valueSize(v) + 1
+	}
+	if !ev.fits(n) || !ev.charge(n) {
+		return nil
+	}
 	return mvOut(vs)
+}
+
+// valueSize is about how many bytes v takes once written out as text.
+func valueSize(v any) int {
+	switch x := v.(type) {
+	case string:
+		return len(x)
+	case []any:
+		n := 0
+		for _, e := range x {
+			n += valueSize(e) + 1
+		}
+		return n
+	case nil:
+		return 0
+	}
+	return 8
 }
 
 func mvOut(vs []any) any {
@@ -205,7 +303,7 @@ func evCompare(a, b any) int {
 }
 
 func (ev *evaluator) eval(e query.EvalExpr, r Row) any {
-	if ev.err != nil {
+	if !ev.step() {
 		return nil
 	}
 	switch e := e.(type) {
@@ -282,6 +380,9 @@ func (ev *evaluator) binary(e *query.Binary, r Row) any {
 	case ".":
 		ls, _ := evStr(l)
 		rs, _ := evStr(rv)
+		if !ev.fits(len(ls) + len(rs)) {
+			return nil
+		}
 		return ev.str(ls + rs)
 	}
 	fl, okl := evNum(l)
@@ -290,7 +391,7 @@ func (ev *evaluator) binary(e *query.Binary, r Row) any {
 		if e.Op == "+" {
 			ls, lok := l.(string)
 			rs, rok := rv.(string)
-			if lok && rok {
+			if lok && rok && ev.fits(len(ls)+len(rs)) {
 				return ev.str(ls + rs)
 			}
 		}
@@ -342,6 +443,9 @@ func (ev *evaluator) like(v, pattern any) bool {
 		return false
 	}
 	for _, x := range asList(v) {
+		if !ev.step() {
+			return false
+		}
 		if s, ok := evStr(x); ok && re.MatchString(s) {
 			return true
 		}
@@ -502,11 +606,13 @@ func (ev *evaluator) call(c *query.Call, r Row) any {
 	case "substr":
 		s, ok := text(0)
 		start, ok2 := num(1)
-		if !ok || !ok2 {
+		if !ok || !ok2 || !finite(start) {
 			return nil
 		}
 		rs := []rune(s)
 		n := len(rs)
+		// Clamp before converting, so a huge start cannot overflow.
+		start = math.Max(-float64(n)-1, math.Min(start, float64(n)+1))
 		i := int(start) - 1
 		if start < 0 {
 			i = n + int(start)
@@ -517,7 +623,7 @@ func (ev *evaluator) call(c *query.Call, r Row) any {
 		j := n
 		if len(args) > 2 {
 			l, ok := num(2)
-			if !ok {
+			if !ok || !finite(l) {
 				return nil
 			}
 			if l < 0 {
@@ -537,7 +643,7 @@ func (ev *evaluator) call(c *query.Call, r Row) any {
 		if re == nil {
 			return nil
 		}
-		return ev.str(re.ReplaceAllString(s, goReplacement(repl)))
+		return ev.replace(re, s, goReplacement(repl))
 	case "split":
 		s, ok := text(0)
 		sep, ok2 := text(1)
@@ -563,7 +669,7 @@ func (ev *evaluator) call(c *query.Call, r Row) any {
 		n := len(l)
 		at := func(i int) (int, bool) {
 			f, ok := num(i)
-			if !ok {
+			if !ok || !finite(f) || math.Abs(f) > float64(n)+1 {
 				return 0, false
 			}
 			k := int(f)
@@ -589,9 +695,14 @@ func (ev *evaluator) call(c *query.Call, r Row) any {
 			return nil
 		}
 		parts := make([]string, 0)
+		size := 0
 		for _, v := range asList(args[0]) {
 			if s, ok := evStr(v); ok {
 				parts = append(parts, s)
+				size += len(s) + len(sep)
+			}
+			if !ev.fits(size) {
+				return nil
 			}
 		}
 		return ev.str(strings.Join(parts, sep))
@@ -608,6 +719,9 @@ func (ev *evaluator) call(c *query.Call, r Row) any {
 		seen := map[string]bool{}
 		var out []any
 		for _, v := range asList(args[0]) {
+			if !ev.step() {
+				return nil
+			}
 			k, _ := evStr(v)
 			if !seen[k] {
 				seen[k] = true
@@ -633,6 +747,9 @@ func (ev *evaluator) call(c *query.Call, r Row) any {
 			return false
 		}
 		for _, v := range asList(args[0]) {
+			if !ev.step() {
+				return false
+			}
 			if s, ok := evStr(v); ok && re.MatchString(s) {
 				return true
 			}
@@ -654,6 +771,9 @@ func (ev *evaluator) call(c *query.Call, r Row) any {
 		}
 		p = p.Masked()
 		for _, v := range asList(args[1]) {
+			if !ev.step() {
+				return false
+			}
 			s, _ := evStr(v)
 			if a, err := netip.ParseAddr(strings.TrimSpace(s)); err == nil && p.Contains(a.Unmap()) {
 				return true
@@ -665,6 +785,9 @@ func (ev *evaluator) call(c *query.Call, r Row) any {
 			return false
 		}
 		for _, x := range asList(args[0]) {
+			if !ev.step() {
+				return false
+			}
 			for _, v := range args[1:] {
 				if v != nil && evCompare(x, v) == 0 {
 					return true
@@ -826,6 +949,34 @@ func goReplacement(s string) string {
 	}
 	return b.String()
 }
+
+// replace is regexp's ReplaceAllString with the size limit checked as
+// the result grows, so a pattern that matches everywhere (such as "")
+// cannot build a huge string before the check.
+func (ev *evaluator) replace(re *regexp.Regexp, s, template string) any {
+	refs := strings.Count(template, "${")
+	var out []byte
+	last := 0
+	for _, m := range re.FindAllStringSubmatchIndex(s, -1) {
+		if !ev.step() {
+			return nil
+		}
+		// A group's text lies within its match.
+		if !ev.fits(len(out) + m[0] - last + len(template) + refs*(m[1]-m[0])) {
+			return nil
+		}
+		out = append(out, s[last:m[0]]...)
+		out = re.ExpandString(out, template, s, m)
+		last = m[1]
+	}
+	if !ev.fits(len(out) + len(s) - last) {
+		return nil
+	}
+	out = append(out, s[last:]...)
+	return ev.str(string(out))
+}
+
+func finite(f float64) bool { return !math.IsNaN(f) && !math.IsInf(f, 0) }
 
 func withCommas(f float64) string {
 	s := strconv.FormatFloat(math.Abs(f), 'f', -1, 64)
@@ -1027,14 +1178,14 @@ func addColumn(res *Result, name string) {
 }
 
 func applyEval(ctx context.Context, res *Result, c *query.Eval) error {
-	ev := newEvaluator()
+	ev := evaluatorFor(ctx)
 	for i, r := range res.Rows {
 		if i%checkEvery == 0 && ctx.Err() != nil {
 			return ctx.Err()
 		}
 		// Each assignment sees the ones before it, as in SPL.
 		for _, a := range c.Assigns {
-			v := ev.eval(a.Expr, r)
+			v := ev.safeEval(a.Expr, r)
 			if ev.err != nil {
 				return ev.err
 			}

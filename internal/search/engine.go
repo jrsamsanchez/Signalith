@@ -497,6 +497,7 @@ func (e *Engine) Execute(ctx context.Context, q *query.Query) (*Result, error) {
 	if p.threat != nil {
 		e.threatAnnotate(res, p.threat, p.Mode == "events")
 	}
+	ctx = withEvaluator(ctx)
 	for _, c := range p.post {
 		if err := ctx.Err(); err != nil {
 			return nil, err

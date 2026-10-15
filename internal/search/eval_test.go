@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -17,7 +18,7 @@ func evalOn(t *testing.T, src string, r Row) any {
 	if err != nil {
 		t.Fatalf("ParseEvalExpr(%q): %v", src, err)
 	}
-	ev := newEvaluator()
+	ev := newEvaluator(context.Background())
 	ev.now = time.Date(2026, 10, 15, 12, 0, 0, 0, time.UTC)
 	v := ev.eval(e, r)
 	if ev.err != nil {
@@ -116,7 +117,7 @@ func TestEvalFunctions(t *testing.T) {
 }
 
 func TestEvalLimits(t *testing.T) {
-	ev := newEvaluator()
+	ev := newEvaluator(context.Background())
 	e, _ := query.ParseEvalExpr(`s . s`)
 	r := Row{"s": strings.Repeat("x", maxEvalValue/2+1)}
 	ev.eval(e, r)
@@ -124,13 +125,13 @@ func TestEvalLimits(t *testing.T) {
 	if !errors.As(ev.err, &qe) || !strings.Contains(qe.Msg, "longer than") {
 		t.Errorf("err = %v", ev.err)
 	}
-	ev = newEvaluator()
+	ev = newEvaluator(context.Background())
 	e, _ = query.ParseEvalExpr(`split(s, "")`)
 	ev.eval(e, Row{"s": strings.Repeat("x", maxMultiValues+1)})
 	if ev.err == nil {
 		t.Error("split into too many values should fail")
 	}
-	ev = newEvaluator()
+	ev = newEvaluator(context.Background())
 	e, _ = query.ParseEvalExpr(`match(s, "(")`)
 	ev.eval(e, Row{"s": "x"})
 	if !errors.As(ev.err, &qe) {
@@ -284,6 +285,132 @@ func TestEvalStopsWhenCancelled(t *testing.T) {
 	}
 }
 
+func evalErr(t *testing.T, ev *evaluator, src string, r Row) error {
+	t.Helper()
+	e, err := query.ParseEvalExpr(src)
+	if err != nil {
+		t.Fatalf("ParseEvalExpr(%q): %v", src, err)
+	}
+	ev.eval(e, r)
+	return ev.err
+}
+
+func TestEvalMultivalueBytesCount(t *testing.T) {
+	// A list of copies shares memory, but writing it out copies each value,
+	// so its bytes count against the limits.
+	s := strings.Repeat("x", 200<<10)
+	err := evalErr(t, newEvaluator(context.Background()), `mvappend(s, s, s, s, s, s)`, Row{"s": s})
+	if err == nil || !strings.Contains(err.Error(), "longer than") {
+		t.Errorf("err = %v, want the value size limit", err)
+	}
+	// Nesting does not get around it.
+	err = evalErr(t, newEvaluator(context.Background()), `mvappend(mvappend(s, s, s), mvappend(s, s, s))`, Row{"s": s})
+	if err == nil {
+		t.Error("nested mvappend past the limit should fail")
+	}
+}
+
+func TestEvalBudgetCoversTheWholeSearch(t *testing.T) {
+	// Each eval stays under the budget; together they do not.
+	s := strings.Repeat("x", 100<<10)
+	rows := make([]Row, 160)
+	for i := range rows {
+		rows[i] = Row{"s": s}
+	}
+	res := &Result{Rows: rows}
+	ctx := withEvaluator(context.Background())
+	c := &query.Eval{Assigns: []query.Assign{{Field: "m", Expr: mustEval(t, `mvappend(s, s, s, s, s, s, s, s, s)`)}}}
+	if err := applyCommand(ctx, res, c); err != nil {
+		t.Fatalf("first eval: %v", err)
+	}
+	if err := applyCommand(ctx, res, c); err == nil || !strings.Contains(err.Error(), "MB of values") {
+		t.Errorf("second eval err = %v, want the search budget", err)
+	}
+	if evaluatorFor(ctx) != evaluatorFor(ctx) {
+		t.Error("one search should share one evaluator")
+	}
+}
+
+func mustEval(t *testing.T, src string) query.EvalExpr {
+	t.Helper()
+	e, err := query.ParseEvalExpr(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return e
+}
+
+func TestEvalReplaceChecksSizeAsItGrows(t *testing.T) {
+	s := strings.Repeat("ab", 1<<10)
+	start := time.Now()
+	err := evalErr(t, newEvaluator(context.Background()), `replace(s, "", s)`, Row{"s": s})
+	if err == nil || !strings.Contains(err.Error(), "longer than") {
+		t.Errorf("err = %v, want the value size limit", err)
+	}
+	if d := time.Since(start); d > 5*time.Second {
+		t.Errorf("took %v", d)
+	}
+	err = evalErr(t, newEvaluator(context.Background()), `mvjoin(split(s, ""), s)`, Row{"s": s})
+	if err == nil || !strings.Contains(err.Error(), "longer than") {
+		t.Errorf("mvjoin err = %v, want the value size limit", err)
+	}
+	// Results match regexp's own ReplaceAllString.
+	for _, c := range [][3]string{
+		{"aXbXc", "X", "-"}, {"abc", "", "-"}, {"abab", "(a)(b)", "${2}${1}"}, {"xyz", "q*", "!"},
+		{"héllo", "", "."}, {"aaa", "a*", "b"}, {"a.b", `\.`, "$$"},
+	} {
+		re := regexp.MustCompile(c[1])
+		got := newEvaluator(context.Background()).replace(re, c[0], c[2])
+		if want := re.ReplaceAllString(c[0], c[2]); got != want {
+			t.Errorf("replace(%q, %q, %q) = %v, want %q", c[0], c[1], c[2], got, want)
+		}
+	}
+}
+
+func TestEvalSubstrRejectsNaN(t *testing.T) {
+	r := Row{"n": "NaN", "mv": []any{"a", "b"}}
+	for _, src := range []string{
+		`substr("abc", 1, "NaN")`, `substr("abc", "NaN")`, `substr("abc", n, n)`, `substr("abc", 1, "Inf")`,
+		`mvindex(mv, "NaN")`, `mvindex(mv, 0, "Inf")`,
+	} {
+		if got := evalOn(t, src, r); got != nil {
+			t.Errorf("%s = %#v, want null", src, got)
+		}
+	}
+	for src, want := range map[string]any{
+		`substr("abc", 1e300)`: "", `substr("abc", -1e300)`: "abc", `substr("abc", 2, 1e300)`: "bc",
+	} {
+		if got := evalOn(t, src, r); got != want {
+			t.Errorf("%s = %#v, want %#v", src, got, want)
+		}
+	}
+}
+
+func TestEvalRecoversFromPanics(t *testing.T) {
+	// A call with fewer arguments than the parser allows reaches past the
+	// end of its arguments; the search fails instead of the server.
+	res := &Result{Rows: []Row{{"a": int64(1)}}}
+	c := &query.Eval{Assigns: []query.Assign{{Field: "b", Expr: &query.Call{Func: "mvcount"}}}}
+	err := applyCommand(context.Background(), res, c)
+	var qe *QueryError
+	if !errors.As(err, &qe) {
+		t.Errorf("err = %v, want a QueryError", err)
+	}
+}
+
+func TestEvalStopsWithinARow(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	mv := make([]any, 1000)
+	for i := range mv {
+		mv[i] = "value"
+	}
+	err := evalErr(t, newEvaluator(ctx), `match(mv, "^nope$")`, Row{"mv": mv})
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("err = %v, want context.Canceled", err)
+	}
+}
+
 // FuzzEvalCommands checks that eval, where expressions, rex, dedup,
 // fillnull and eventstats never panic on queries Parse accepts, whatever
 // the rows hold.
@@ -295,6 +422,8 @@ func FuzzEvalCommands(f *testing.F) {
 		`* | eventstats count, dc(s) as d, avg(a) by s | eval t=strftime(a, "%F %T %3N"), u=strptime(s, "%Y-%m-%d")`,
 		`* | eval m=mvappend(s, s, a), n=mvjoin(mvsort(mvdedup(m)), ";"), h=sha256(n), c=tostring(a, "commas")`,
 		`* | eval r=replace(s, "(a)(b)?", "\2\1$1"), p=pow(a, b), l=log(a, b), q=tonumber(s, 36)`,
+		`* | eval x=substr("abc", 1, "NaN"), y=substr(s, a), z=mvindex(s, "NaN"), w=substr(s, 1e300, -1e300)`,
+		`* | eval x=replace(s, "", s) | eval y=mvjoin(mvappend(x, x, x), x)`,
 	} {
 		f.Add(s, "a,b,10.1.2.3", 3.5)
 	}
@@ -308,12 +437,17 @@ func FuzzEvalCommands(f *testing.F) {
 			{"s": []any{s, "x"}, "a": s},
 			{},
 		}}
+		ctx := withEvaluator(context.Background())
 		for _, c := range q.Commands {
 			switch c.(type) {
 			case *query.Enrich, *query.Intel, *query.ThreatMatch, *query.Timechart:
 				continue
 			}
-			if err := applyCommand(context.Background(), res, c); err != nil {
+			if err := applyCommand(ctx, res, c); err != nil {
+				// A recovered panic is still a bug.
+				if strings.Contains(err.Error(), "an expression failed") {
+					t.Fatalf("%q: %v", src, err)
+				}
 				return
 			}
 		}

@@ -77,6 +77,9 @@ var EvalFuncs = map[string][2]int{
 // query cannot exhaust the stack.
 const maxEvalDepth = 100
 
+// maxEvalNodes bounds the terms and operators in one expression.
+const maxEvalNodes = 10000
+
 // ---- printing ----
 
 func (e *Num) String() string { return e.Text }
@@ -87,31 +90,57 @@ func (e *Field) String() string {
 	}
 	return quoteSingle(e.Name)
 }
-func (e *Call) String() string {
-	args := make([]string, len(e.Args))
-	for i, a := range e.Args {
-		args[i] = a.String()
-	}
-	return e.Func + "(" + strings.Join(args, ", ") + ")"
-}
-func (e *Unary) String() string {
-	if e.Op == "NOT" {
-		return "NOT " + wrap(e.X, precOf(e.X) < precNot)
-	}
-	_, num := e.X.(*Num)
-	return "-" + wrap(e.X, num || precOf(e.X) < precUnary)
-}
-func (e *Binary) String() string {
-	p := binaryPrec[e.Op]
-	op := " " + e.Op + " "
-	return wrap(e.L, precOf(e.L) < p) + op + wrap(e.R, precOf(e.R) <= p)
+func (e *Call) String() string   { return evalText(e) }
+func (e *Unary) String() string  { return evalText(e) }
+func (e *Binary) String() string { return evalText(e) }
+
+// evalText prints an expression into one buffer, so a long chain such as
+// a OR b OR c ... prints in linear time.
+func evalText(e EvalExpr) string {
+	var b strings.Builder
+	writeEval(&b, e)
+	return b.String()
 }
 
-func wrap(e EvalExpr, paren bool) string {
-	if paren {
-		return "(" + e.String() + ")"
+func writeEval(b *strings.Builder, e EvalExpr) {
+	switch e := e.(type) {
+	case *Call:
+		b.WriteString(e.Func)
+		b.WriteByte('(')
+		for i, a := range e.Args {
+			if i > 0 {
+				b.WriteString(", ")
+			}
+			writeEval(b, a)
+		}
+		b.WriteByte(')')
+	case *Unary:
+		if e.Op == "NOT" {
+			b.WriteString("NOT ")
+			writeWrapped(b, e.X, precOf(e.X) < precNot)
+			return
+		}
+		_, num := e.X.(*Num)
+		b.WriteByte('-')
+		writeWrapped(b, e.X, num || precOf(e.X) < precUnary)
+	case *Binary:
+		p := binaryPrec[e.Op]
+		writeWrapped(b, e.L, precOf(e.L) < p)
+		b.WriteString(" " + e.Op + " ")
+		writeWrapped(b, e.R, precOf(e.R) <= p)
+	default:
+		b.WriteString(e.String())
 	}
-	return e.String()
+}
+
+func writeWrapped(b *strings.Builder, e EvalExpr, paren bool) {
+	if paren {
+		b.WriteByte('(')
+	}
+	writeEval(b, e)
+	if paren {
+		b.WriteByte(')')
+	}
 }
 
 const (
@@ -314,6 +343,16 @@ type evalParser struct {
 	toks  []evalTok
 	i     int
 	depth int
+	nodes int
+}
+
+// node counts one more piece of the expression being built and fails once
+// there are too many.
+func (p *evalParser) node() error {
+	if p.nodes++; p.nodes > maxEvalNodes {
+		return errorf(p.peek().pos, "the expression is too long; the limit is %d terms", maxEvalNodes)
+	}
+	return nil
 }
 
 func (p *evalParser) peek() evalTok { return p.toks[p.i] }
@@ -448,6 +487,9 @@ func (p *evalParser) binary(prec int) (EvalExpr, error) {
 		if op == "" || opPrec != prec {
 			return l, nil
 		}
+		if err := p.node(); err != nil {
+			return nil, err
+		}
 		p.next()
 		r, err := operand()
 		if err != nil {
@@ -498,6 +540,9 @@ func (p *evalParser) unary() (EvalExpr, error) {
 }
 
 func (p *evalParser) primary() (EvalExpr, error) {
+	if err := p.node(); err != nil {
+		return nil, err
+	}
 	t := p.next()
 	switch t.kind {
 	case etNum:

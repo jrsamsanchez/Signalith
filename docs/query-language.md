@@ -114,9 +114,10 @@ name it is read as an expression, so `where bytes_out > bytes_in` compares the t
 | Time | `now()` and `time()` (epoch seconds), `strftime(_time, "%Y-%m-%d %H:%M:%S")`, `strptime("2026-10-15", "%Y-%m-%d")` (to epoch seconds). Times are UTC; `strftime` takes epoch seconds or an event's `_time` |
 
 Regular expressions use RE2 syntax and are case-sensitive unless they start with `(?i)`.
-To keep one search from exhausting the server, a value `eval` builds can be up to 1 MB,
-one command builds at most 256 MB of new text across all rows, and a multivalue field
-holds up to 10,000 values.
+To keep one search from exhausting the server, a value `eval` builds can be up to 1 MB
+(a multivalue field counts all its values), expressions build at most 256 MB across all
+rows and commands of one search, a multivalue field holds up to 10,000 values, and one
+expression has at most 10,000 terms.
 
 ## Asking in plain English
 

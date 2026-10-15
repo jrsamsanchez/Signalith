@@ -32,6 +32,7 @@ var fuzzSeeds = []string{
 	`* | where 'my field' = other_field | eval 'a b'=case(x=1, "one", x=2, "two"), y=coalesce(a, b, "d") XOR c LIKE "a_%"`,
 	`x | where name=O'Brien | where (a) = 1 | eval n=-x * 2 - -3 % 4, s=substr(cmd, -5, 2), t=strftime(_time, "%Y-%m-%d")`,
 	`* | eval a=`, `* | rex "(?<x"`, `* | dedup`, `* | where NOT`, `* | eval 'x|y'=1 | head 2`,
+	`* | where substr("abc", 1, "NaN") = "" OR replace(s, "", s) != s`,
 }
 
 // FuzzParse checks that Parse never panics, that its errors carry a

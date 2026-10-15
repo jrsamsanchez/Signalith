@@ -403,9 +403,9 @@ func (m *matcher) eval(e query.Expr, r Row) bool {
 		return !m.eval(e.Child, r)
 	case *query.Cond:
 		if m.ev == nil {
-			m.ev = newEvaluator()
+			m.ev = evaluatorFor(m.ctx)
 		}
-		ok := truth(m.ev.eval(e.X, r))
+		ok := truth(m.ev.safeEval(e.X, r))
 		if m.ev.err != nil && m.err == nil {
 			m.err = m.ev.err
 		}
