@@ -282,7 +282,7 @@ func TestDockerCompose(t *testing.T) {
 		t.Errorf("signalith hardening: read_only %v tmpfs %v cap_drop %v cap_add %v security_opt %v ulimits %v",
 			s.ReadOnly, s.Tmpfs, s.CapDrop, s.CapAdd, s.SecurityOpt, s.Ulimits)
 	}
-	for _, p := range []string{"8080:8080", "514:5514/udp", "514:5514/tcp", "6514:6514"} {
+	for _, p := range []string{"9000:9000", "7779:7779", "514:5514/udp", "514:5514/tcp", "6514:6514"} {
 		if !slices.Contains(s.Ports, p) {
 			t.Errorf("signalith does not publish %s", p)
 		}
@@ -336,6 +336,7 @@ func TestDockerConfigLoads(t *testing.T) {
 	}
 	t.Setenv("SIGNALITH_STATE_DIR", data)
 	t.Setenv("SIGNALITH_PUBLIC_URL", "")
+	t.Setenv("SIGNALITH_AGENT_LISTEN", "")
 	c, err := config.Load(path)
 	if err != nil {
 		t.Fatal(err)
@@ -347,8 +348,12 @@ func TestDockerConfigLoads(t *testing.T) {
 	}
 	// A new install refuses agents on plain HTTP: no plaintext_ingest is
 	// set, and nothing says it was upgraded.
-	if c.Server.TLSMode() != config.TLSAuto || c.Server.PlaintextIngest() || c.Server.PublicURL != "https://localhost:8080" {
+	if c.Server.TLSMode() != config.TLSAuto || c.Server.PlaintextIngest() || c.Server.PublicURL != "https://localhost:9000" {
 		t.Errorf("server: mode %s plaintext %v url %s", c.Server.TLSMode(), c.Server.PlaintextIngest(), c.Server.PublicURL)
+	}
+	// Agents send to a port of their own, and only there.
+	if c.Server.AgentListen != "0.0.0.0:7779" || c.AgentsOnWebPort() {
+		t.Errorf("agent_listen %q, agents on the web port %v", c.Server.AgentListen, c.AgentsOnWebPort())
 	}
 	if c.OpenSearch.URL != "https://opensearch:9200" || c.OpenSearch.Username != "" || c.Syslog.TLS != "0.0.0.0:6514" {
 		t.Errorf("opensearch %s user %q syslog.tls %q", c.OpenSearch.URL, c.OpenSearch.Username, c.Syslog.TLS)
@@ -384,12 +389,14 @@ func dockerOpenSearch(t *testing.T, made map[string]time.Time) *store.Client {
 	return store.New(store.Config{URL: ts.URL})
 }
 
-// dockerServer serves c as the Docker quick start's container does, over
-// plain HTTP and HTTPS on the same port, and posts a batch of one
-// Windows event with a token.
+// dockerServer serves c's agent port as the Docker quick start's
+// container does, over plain HTTP and HTTPS on the same port, and posts a
+// batch of one Windows event with a token.
 type dockerServer struct {
 	srv           *api.Server
 	plain, secure *httptest.Server
+	// web is the web port, over HTTPS.
+	web *httptest.Server
 }
 
 func newDockerServer(t *testing.T, c *config.Config) *dockerServer {
@@ -400,10 +407,13 @@ func newDockerServer(t *testing.T, c *config.Config) *dockerServer {
 		Log:      slog.New(slog.DiscardHandler),
 		Runtime:  &api.Runtime{OS: "linux", Container: true, Addresses: []string{}},
 	}}
-	d.plain = httptest.NewServer(d.srv.PlainHandler(d.srv.Handler()))
-	d.secure = httptest.NewTLSServer(d.srv.Handler())
+	agents := d.srv.AgentHandler()
+	d.plain = httptest.NewServer(d.srv.AgentPlainHandler(agents))
+	d.secure = httptest.NewTLSServer(agents)
+	d.web = httptest.NewTLSServer(d.srv.Handler())
 	t.Cleanup(d.plain.Close)
 	t.Cleanup(d.secure.Close)
+	t.Cleanup(d.web.Close)
 	return d
 }
 
@@ -554,9 +564,9 @@ func dockerUpgrade(t *testing.T, path string, setup time.Time) {
 	slices.Reverse(c.Ingest.Tokens)
 	h, _ := config.HashPassword("an admin password")
 	c.Auth.AdminPasswordHash = h
-	req, _ := http.NewRequest("GET", d.secure.URL+"/api/agents/config?os=windows", nil)
+	req, _ := http.NewRequest("GET", d.web.URL+"/api/agents/config?os=windows", nil)
 	req.SetBasicAuth("admin", "an admin password")
-	resp, err := d.secure.Client().Do(req)
+	resp, err := d.web.Client().Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
