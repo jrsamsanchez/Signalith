@@ -13,13 +13,16 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/netip"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
 	"sync"
+	"time"
 )
 
 // Priorities, lowest first. Priority scales risk and raises urgency.
@@ -679,10 +682,22 @@ func replaceFile(path string, data []byte) error {
 		err = os.Chmod(name, 0o640)
 	}
 	if err == nil {
-		err = os.Rename(name, path)
+		err = renameOver(name, path)
 	}
 	if err != nil {
 		_ = os.Remove(name)
+	}
+	return err
+}
+
+// renameOver renames from over to. On Windows a file another goroutine
+// or program is reading at that moment cannot be replaced (access is
+// denied until it is closed), so it tries again for a short while.
+func renameOver(from, to string) error {
+	err := os.Rename(from, to)
+	for i := 0; err != nil && runtime.GOOS == "windows" && errors.Is(err, fs.ErrPermission) && i < 20; i++ {
+		time.Sleep(25 * time.Millisecond)
+		err = os.Rename(from, to)
 	}
 	return err
 }
