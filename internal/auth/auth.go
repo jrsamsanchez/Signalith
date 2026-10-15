@@ -62,6 +62,9 @@ type Sessions struct {
 
 	mu   sync.Mutex
 	byID map[[32]byte]*Session
+	// forward, when set, takes each new session instead of the store
+	// (see Forward).
+	forward func(Held)
 }
 
 // NewSessions returns a store with the given idle timeout and a 7 day
@@ -85,13 +88,19 @@ func (s *Sessions) Start(n NewSession) string {
 	}
 	token := base64.RawURLEncoding.EncodeToString(b)
 	now := s.Now()
+	ss := &Session{User: n.User, Created: now, LastSeen: now, Remember: n.Remember, Version: n.Version, Epoch: n.Epoch, Method: n.Method}
 	s.mu.Lock()
+	if f := s.forward; f != nil {
+		s.mu.Unlock()
+		f(Held{Hash: hash(token), Session: *ss})
+		return token
+	}
 	defer s.mu.Unlock()
 	s.pruneLocked(now)
 	if len(s.byID) >= s.Limit {
 		s.evictLocked(len(s.byID) - s.Limit + 1)
 	}
-	s.byID[hash(token)] = &Session{User: n.User, Created: now, LastSeen: now, Remember: n.Remember, Version: n.Version, Epoch: n.Epoch, Method: n.Method}
+	s.byID[hash(token)] = ss
 	return token
 }
 
@@ -216,6 +225,17 @@ func (s *Sessions) Take() []Held {
 	}
 	clear(s.byID)
 	return out
+}
+
+// Forward hands each session started from now on to f instead of
+// keeping it, or keeps them again when f is nil: for a server that moved
+// its sessions to another store (Take), whose sign-ins already under way
+// when it switched still finish here. Call it before Take, so every
+// session is either taken or handed to f.
+func (s *Sessions) Forward(f func(Held)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.forward = f
 }
 
 // Len reports how many sessions are stored.
