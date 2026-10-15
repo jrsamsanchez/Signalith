@@ -1,0 +1,3 @@
+{"rule": "23b71bc5-953e-4971-be4c-c896cda73fc2", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"27","data":{}}
+]}

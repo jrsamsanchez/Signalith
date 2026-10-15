@@ -90,12 +90,19 @@ func generateOTel(o Options) (*Agent, error) {
 		b.WriteString("  windowseventlog/codeintegrity:\n    channel: Microsoft-Windows-CodeIntegrity/Operational\n    storage: file_storage/signalith\n")
 		receivers = append(receivers, "windowseventlog/codeintegrity")
 		// Windows Firewall's rules and settings changed, BITS's download
-		// and upload jobs, app packages installed and WMI activity.
+		// and upload jobs, app packages installed, WMI activity, Remote
+		// Desktop sessions, shell app shortcuts, SMB client security and
+		// exploit protection blocks.
 		b.WriteString("  windowseventlog/firewall:\n    channel: Microsoft-Windows-Windows Firewall With Advanced Security/Firewall\n    storage: file_storage/signalith\n")
 		b.WriteString("  windowseventlog/bits:\n    channel: Microsoft-Windows-Bits-Client/Operational\n    storage: file_storage/signalith\n")
 		b.WriteString("  windowseventlog/appx:\n    channel: Microsoft-Windows-AppXDeploymentServer/Operational\n    storage: file_storage/signalith\n")
 		b.WriteString("  windowseventlog/wmi:\n    channel: Microsoft-Windows-WMI-Activity/Operational\n    storage: file_storage/signalith\n")
-		receivers = append(receivers, "windowseventlog/firewall", "windowseventlog/bits", "windowseventlog/appx", "windowseventlog/wmi")
+		b.WriteString("  windowseventlog/rdp:\n    channel: Microsoft-Windows-TerminalServices-LocalSessionManager/Operational\n    storage: file_storage/signalith\n")
+		b.WriteString("  windowseventlog/shell:\n    channel: Microsoft-Windows-Shell-Core/Operational\n    storage: file_storage/signalith\n")
+		b.WriteString("  windowseventlog/smbclient:\n    channel: Microsoft-Windows-SmbClient/Security\n    storage: file_storage/signalith\n")
+		b.WriteString("  windowseventlog/mitigations:\n    channel: Microsoft-Windows-Security-Mitigations/KernelMode\n    storage: file_storage/signalith\n")
+		receivers = append(receivers, "windowseventlog/firewall", "windowseventlog/bits", "windowseventlog/appx", "windowseventlog/wmi",
+			"windowseventlog/rdp", "windowseventlog/shell", "windowseventlog/smbclient", "windowseventlog/mitigations")
 		if o.Sysmon {
 			b.WriteString("  windowseventlog/sysmon:\n    channel: Microsoft-Windows-Sysmon/Operational\n    storage: file_storage/signalith\n")
 			receivers = append(receivers, "windowseventlog/sysmon")

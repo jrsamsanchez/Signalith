@@ -41,7 +41,7 @@ const (
 // these servers, one at a time), so it is raised the same way.
 const (
 	LevelMin = 1
-	LevelMax = 5
+	LevelMax = LevelSharedLibrary
 )
 
 // LevelSharedUsers is the level from which users are kept in the shared

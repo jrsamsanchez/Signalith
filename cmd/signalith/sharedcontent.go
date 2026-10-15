@@ -69,6 +69,9 @@ type sharedContent struct {
 	// settings.yaml (runner.importOwn), and by a save there on the
 	// Settings page (settingsStore.HoldFile).
 	ownMu sync.Mutex
+	// library links the shared detections and dashboards (see
+	// sharedlibrary.go).
+	library *sharedLibrary
 }
 
 type osTarget struct {
@@ -81,6 +84,7 @@ func newSharedContent(c *config.Config, node *cluster.Node, log *slog.Logger) *s
 	users := newSharedUsers(log)
 	ct := &sharedContent{sharedDocs: newSharedDocs(users.docs), users: users, node: node, log: log, settingsKick: make(chan struct{}, 1)}
 	ct.cfg.Store(c)
+	ct.library = newSharedLibrary(ct.lib, node, func() *config.Config { return ct.cfg.Load() }, log)
 	return ct
 }
 
@@ -274,6 +278,12 @@ var sharedPrints = []func(fp *cluster.Fingerprints, rt *shared.Runtime, s string
 	func(fp *cluster.Fingerprints, rt *shared.Runtime, s string) {
 		if rt.SharedUsers() {
 			fp.Users = s
+		}
+	},
+	// The detections and dashboards, once they are shared too.
+	func(fp *cluster.Fingerprints, rt *shared.Runtime, s string) {
+		if rt.SharedLibrary() {
+			fp.Detections = s
 		}
 	},
 	// Append a new shared feature's entry here.

@@ -10,6 +10,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/cluster"
 	"github.com/jrsamsanchez/signalith/internal/clusterauth"
 	"github.com/jrsamsanchez/signalith/internal/clustercfg"
+	"github.com/jrsamsanchez/signalith/internal/clusterlib"
 	"github.com/jrsamsanchez/signalith/internal/clusterpki"
 	"github.com/jrsamsanchez/signalith/internal/config"
 	"github.com/jrsamsanchez/signalith/internal/shared"
@@ -63,6 +64,8 @@ func openShared(c *config.Config, node *cluster.Node, log *slog.Logger) (*shared
 // entry to trackers and one to sharedImporters.
 type sharedDocs struct {
 	docs *clustercfg.Docs
+	// lib holds the detections and dashboards (see sharedlibrary.go).
+	lib *clusterlib.Docs
 	// auth holds the users, the directory sign-in settings and the
 	// sessions; on the server, the same documents as sharedUsers.docs.
 	auth *clusterauth.Docs
@@ -76,7 +79,7 @@ type sharedDocs struct {
 // newSharedDocs returns the documents of a process, with auth as the
 // users' documents.
 func newSharedDocs(auth *clusterauth.Docs) sharedDocs {
-	d := sharedDocs{docs: clustercfg.NewDocs(), auth: auth, tls: newSharedTLS(), osca: clusterpki.New()}
+	d := sharedDocs{docs: clustercfg.NewDocs(), auth: auth, tls: newSharedTLS(), lib: clusterlib.NewDocs(), osca: clusterpki.New()}
 	// The users and directory importers and the auth settings of
 	// signalith.yaml reach the users' documents.
 	d.docs.UseAuth(auth)
@@ -97,6 +100,7 @@ func (d sharedDocs) trackers() []sharedTracker {
 		d.docs,
 		d.auth,
 		d.tls.tls,
+		d.lib,
 		d.osca,
 		// Append a new shared collection here.
 	}
@@ -130,6 +134,7 @@ func sharedImporters(d sharedDocs, f clustercfg.Files) []shared.Importer {
 		auditImporters(f),
 		// The founder's certificate authority, as the cluster's.
 		[]shared.Importer{d.tls.importer(f)},
+		clusterlib.Importers(d.lib, libraryFiles(f)),
 		// Append a new shared feature's importers here.
 	)
 }

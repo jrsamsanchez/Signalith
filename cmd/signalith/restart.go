@@ -377,6 +377,9 @@ func (r *runner) followShared(ctx context.Context) {
 			{r.wantAudit(), r.auditOn(), switchWhy(r.wantAudit(),
 				"every server now keeps its audit records, the retention history and the archive list in OpenSearch",
 				"this server now keeps its retention history and archive list in its own files")},
+			{want && r.shared.SharedLibrary(), ct.library.on.Load(), switchWhy(want && r.shared.SharedLibrary(),
+				"the detections and dashboards are now shared by every server of the cluster",
+				"this server now keeps the detections and dashboards in its own folders")},
 			// Append a new shared feature's switch here.
 		}
 		i := slices.IndexFunc(switches, func(s sharedSwitch) bool { return s.want != s.on })

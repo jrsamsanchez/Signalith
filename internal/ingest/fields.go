@@ -158,10 +158,11 @@ var knownFields = func() map[string]string {
 		"system_dirty_pages": kw, "system_caption": kw, "system_message": "wildcard",
 		// An Application log event's data values, one per line.
 		"event_data": "wildcard",
-		// The data of Windows Firewall, BITS, AppX deployment and WMI
-		// events, by name (ChannelDataField): firewall rules and settings
-		// changed, transfer jobs, app packages installed and WMI
-		// subscriptions.
+		// The data of the Windows logs the parser reads by name
+		// (ChannelDataField): firewall rules and settings changed, BITS
+		// transfer jobs, app packages installed, WMI subscriptions,
+		// Remote Desktop sessions, app shortcuts added, SMB guest logons
+		// refused and exploit protection blocks.
 		"firewall_action": kw, "firewall_active": kw, "firewall_application_path": kw, "firewall_direction": kw,
 		"firewall_edge_traversal": kw, "firewall_embedded_context": kw, "firewall_error_code": kw, "firewall_flags": kw,
 		"firewall_local_addresses": kw, "firewall_local_only_mapped": kw, "firewall_local_ports": kw,
@@ -188,7 +189,16 @@ var knownFields = func() map[string]string {
 		"wmi_client_machine": kw, "wmi_client_process_id": kw, "wmi_component": kw, "wmi_consumer": kw, "wmi_ess": kw,
 		"wmi_id": kw, "wmi_namespace": kw, "wmi_namespace_name": kw, "wmi_operation": kw, "wmi_possible_cause": kw,
 		"wmi_processid": kw, "wmi_provider_name": kw, "wmi_query": kw, "wmi_queryid": kw, "wmi_result_code": kw,
-		"wmi_user": kw,
+		"wmi_user":    kw,
+		"rdp_address": kw, "rdp_session_id": kw, "rdp_user": kw, "shell_app_id": kw, "shell_flags": kw, "shell_name": kw,
+		"smbclient_server_name": kw, "smbclient_server_name_length": kw, "smbclient_user_name": kw,
+		"smbclient_user_name_length": kw, "mitigation_image_name": kw, "mitigation_image_name_length": kw,
+		"mitigation_process_command_line": kw, "mitigation_process_command_line_length": kw,
+		"mitigation_process_create_time": kw, "mitigation_process_id": kw, "mitigation_process_path": kw,
+		"mitigation_process_path_length": kw, "mitigation_process_protection": kw,
+		"mitigation_process_section_signature_level": kw, "mitigation_process_signature_level": kw,
+		"mitigation_process_start_key": kw, "mitigation_required_signature_level": kw, "mitigation_signature_level": kw,
+		"mitigation_target_thread_create_time": kw, "mitigation_target_thread_id": kw,
 		// Linux audit records (auditd.go): each field as auditd names it,
 		// the names of an ENRICHED record's numbers (auditd_uid_name), and
 		// a program's arguments one by one and joined, which rules search
