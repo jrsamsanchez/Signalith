@@ -477,6 +477,8 @@ Sysmon too).
 | `ssl`, `x509` | `tls` | Certificates | `ssl_server_name`, `ssl_version`, `ssl_cipher`, `ssl_subject`, `ssl_issuer` and their common names, `ssl_serial`, `ssl_hash`, `ssl_start_time`, `ssl_end_time`, `ssl_validation_status`, `ssl_self_signed`, `ja3`, `ja3s`, `ja4` |
 | `files` | `fileinfo` | File_Transfers | `file_name`, `file_size`, `file_hash` (SHA-256), `file_md5`, `file_sha1`, `file_sha256`, `mime_type`, `app`, `src` (sender), `dest` (receiver), `url` |
 | `notice` | `alert` | Intrusion_Detection | `signature`, `signature_id`, `category`, `severity`, `severity_id`, `action`, `mitre`, `dest_host`, `url`, `reason`, `local_host` |
+| `ssh`, `rdp`, `kerberos`, `ntlm` | | Authentication | `app` (`ssh`, `rdp`, `kerberos`, `ntlm`), `action` (`success`, `failure` or `unknown`), `user`, `user_domain`, `src`, `src_host`, `dest`, `dest_port`, `dest_host`, `authentication_method`, `reason`, `kerberos_service`, `ticket_encryption_type` |
+| `smb_files` | | Filesystem | `action` (`read`, `modified`, `opened`, `closed`, `deleted`, `renamed`), `app` (`smb`), `file_path`, `file_name`, `file_size`, `share_name`, `share_target`, `pipe_name`, `src` (client), `dest` (file server) |
 
 Every sensor event also has:
 
@@ -512,7 +514,31 @@ Some details worth knowing:
 - **Alerts** also have `local_host`, your network's end of the traffic (see
   [The Network dashboard](#the-network-dashboard)).
 - **Web status** is text (`status=404`), as elsewhere in Signalith.
-- **Other Zeek logs** (ssh, rdp, smb, kerberos, dhcp, weird and the rest) go to Other with
+- **Sign-ins** (Authentication): Zeek sees the sign-in on the wire, not on the host, so
+  `action` is what it can tell. SSH is `success` or `failure` from Zeek's guess
+  (`auth_success`, from the sizes of the encrypted packets), `unknown` when it made none;
+  Zeek cannot see the user name. RDP's `user` is the name the client offered (Windows cuts
+  it to 9 characters) and its `src_host` the client's computer name; with network level
+  authentication (`authentication_method=HYBRID`) the sign-in is encrypted, so `action` is
+  `unknown`, or `failure` when the server refused the connection (`reason`). Kerberos is
+  `success` or `failure` (`reason` is the KDC's error, such as `KDC_ERR_PREAUTH_FAILED`), and
+  `unknown` for `KDC_ERR_PREAUTH_REQUIRED`, the usual first step of every sign-in. NTLM is
+  `success` or `failure`, with the workstation name the client sent as `src_host` (never
+  the sensor's name) and the server's name as `dest_host`. Failures count in the brute
+  force and password spray detections like any other; a host whose own logs you also
+  collect is counted from both, so its thresholds are reached sooner.
+- **SMB file activity** (Filesystem): each file used on a share, with the share as
+  `share_name` (`\\FILE-01\Finance`) and the path inside it as `share_target`, as on a
+  Windows share access (Security 5145). Named pipes opened over `IPC$` have `pipe_name`.
+  `smb_mapping` (a share connected to) stays in Other with `share_name`.
+- **Inventory**: `known_hosts`, `known_services`, `software` and `dhcp` stay in Other, with
+  the host as `dest` (for a DHCP lease, the client as `src`, its MAC as `src_mac` and the name
+  it gave as `src_host`); they fill the asset list (see
+  [Hosts in the asset list](#hosts-in-the-asset-list)).
+- **Zeek's own field names** stay too, for every log above but conn, dns, http, ssl, x509,
+  files and notice: each value is also kept as `zeek_<name>` (`zeek_cipher`,
+  `zeek_auth_attempts`), as Sigma's Zeek rules name them.
+- **Other Zeek logs** (dce_rpc, weird and the rest) go to Other with
   `sourcetype=zeek:<log>`, `src`, `src_port`, `dest`, `dest_port`, and up to 64 of their
   other values as `zeek_<name>` fields. **Other Suricata events** (anomaly, ssh, smb and
   the rest) go to Other with `sourcetype=suricata:<type>` and their details as text in
@@ -530,8 +556,10 @@ Some details worth knowing:
 high alerts, connections, data sent to the internet, alerts over time by severity, the top
 alert signatures, the hosts with the most alerts, the top talkers and destinations on the
 internet, the top DNS lookups and the hosts with the most failed lookups, web requests by
-status, the top user agents, files by type, servers with self-signed certificates, and the
-sensor's packet loss. See [Dashboards](dashboards.md).
+status, the top user agents, files by type, servers with self-signed certificates, the
+commonest and the rarest TLS client fingerprints, sign-ins seen on the network (by protocol
+and outcome), files changed on shares, and the sensor's packet loss. See
+[Dashboards](dashboards.md).
 
 The alert panels count `local_host`: your network's end of each alert. Suricata keeps the
 direction of the packet that matched, so for most malware and command and control rules your
@@ -539,6 +567,29 @@ computer is `src` and the outside server `dest`; `local_host` is `src` for traff
 out, `dest` for traffic that came in, and both for traffic that stayed inside. The panels
 about connections, DNS, web and files count only Zeek and Suricata events, so Sysmon or
 firewall data does not mix in.
+
+### TLS fingerprints (JA3, JA4)
+
+A TLS client says hello the same way wherever it connects, so a fingerprint of its hello
+names the program: every browser of one version shares one, and a piece of malware has its
+own, whatever address it calls. `ja3` and `ja4` are the client's fingerprints, `ja3s` the
+server's answer. Suricata logs JA3 and JA3S when `ja3-fingerprints` is on in `suricata.yaml`
+(and JA4, on versions that have it, with `ja4-fingerprints`); Zeek logs them once its
+[ja3](https://github.com/salesforce/ja3) or [ja4](https://github.com/FoxIO-LLC/ja4)
+package is installed (`zkg install ja4`, then `zeekctl deploy`), which the install script
+does not do for you.
+
+To pivot on one, click it in a search result (they show under each TLS event) and choose:
+
+- **Search every event with this TLS client fingerprint**: every session of that program,
+  from every host, over the time range picked;
+- **List the clients with this TLS client fingerprint**: the hosts that run it, with how
+  many servers each reached (for `ja3s`, the servers that answered that way).
+
+A connection's `community_id` offers **Show this connection in every log**: what Zeek and
+Suricata both logged of it. On the Network dashboard, the fingerprints in the two TLS
+fingerprint panels open the same search; the rarest ones, seen on a single host, are the
+ones to look at first.
 
 ### Threat intel matches
 

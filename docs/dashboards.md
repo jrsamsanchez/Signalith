@@ -54,8 +54,9 @@ A built-in panel dashboard for a [network sensor](network-sensor.md) (Zeek,
 Suricata): IDS alerts and the hosts with high ones, connections and data sent to the
 internet, alerts over time by severity, the top signatures, talkers and external
 destinations, DNS lookups and failed lookups, web requests by status and user agent,
-files by type, self-signed certificates, and the sensor's packet loss. It opens on the
-last 24 hours. Until sensor events arrive it shows a **Set up a network sensor** button
+files by type, self-signed certificates, the commonest and rarest TLS client fingerprints
+(JA4, JA3; click one to search every event with it), sign-ins seen on the network, files
+changed on shares, and the sensor's packet loss. It opens on the last 24 hours. Until sensor events arrive it shows a **Set up a network sensor** button
 (for admins) that opens Add data.
 
 ## Vulnerabilities

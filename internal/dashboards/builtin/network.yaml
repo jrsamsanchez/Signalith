@@ -1,6 +1,6 @@
 id: network
 title: Network
-description: What the network sensor saw, from Zeek and Suricata - IDS alerts, connections to the internet, DNS lookups, web requests, files, certificates and whether the sensor is keeping up.
+description: What the network sensor saw, from Zeek and Suricata - IDS alerts, connections to the internet, DNS lookups, web requests, files, certificates and TLS fingerprints, sign-ins and share activity, and whether the sensor is keeping up.
 time_range: 24h
 panels:
   - title: IDS alerts
@@ -73,6 +73,25 @@ panels:
     query: datamodel=Certificates ssl_self_signed=true | stats count, dc(ssl_server_name) as server_names, dc(src) as clients by dest | sort -count | head 20
     viz: table
     width: full
+  # TLS fingerprints name the client program (JA3, JA4) whatever address
+  # it connects to; a rare one among your hosts is worth a look. Each
+  # value opens every event with it.
+  - title: TLS client fingerprints (JA4)
+    query: datamodel=Certificates ja4=* | stats count, dc(src) as clients, dc(dest) as servers by ja4 | sort -count | head 10
+    viz: table
+    width: half
+  - title: Rarest TLS client fingerprints (JA3)
+    query: datamodel=Certificates ja3=* | stats dc(src) as clients, count by ja3 | sort clients, count | head 10
+    viz: table
+    width: half
+  - title: Sign-ins seen on the network
+    query: datamodel=Authentication vendor_product=Zeek | stats count by app, action | sort -count | head 10
+    viz: table
+    width: half
+  - title: Files changed on shares
+    query: datamodel=Filesystem app=smb action IN (modified, deleted, renamed) | stats count, dc(src) as clients by share_name | sort -count | head 10
+    viz: table
+    width: half
   - title: Sensor packet loss (percent)
     # Zeek's capture_loss.log and Suricata's stats events. Above a few
     # percent the sensor is missing traffic: see docs/network-sensor.md.
