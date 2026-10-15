@@ -574,8 +574,21 @@ Changes sent without `If-Match`, such as from scripts, apply to the latest versi
 While a server cannot use the shared settings, changes there answer `503`.
 
 While some servers still run an earlier version, each server keeps its own detections
-and dashboards in its folders, as before. Asset and identity lists are still kept by
-each server for now.
+and dashboards in its folders, as before.
+
+**Asset and identity lists.** Once every server runs a version that shares them, the
+asset and identity lists are shared too: a list uploaded on the **Assets & identities**
+page of any server is used for urgency and risk on every server within a few seconds.
+The server that founds the cluster brings its `assets.csv` and `identities.csv`. Each
+server's lookups folder is then an inbox in the same way as the detections folder: a new
+`assets.csv` or `identities.csv` copied there (an export from a CMDB or HR system) is
+shared, a list uploaded anywhere is written back into every server's folder, and the
+files a server has when it joins are only its starting point. Each server records what
+it last saw in `lookups-seen.json` in its state folder. `GET /api/lookups/assets` and
+`/api/lookups/identities` give the list's version (`etag`) for `If-Match`, as above. The
+rows the sample data adds stay on the server that loaded it, and lists of up to
+1,000,000 rows are kept in parts, so a server reading a list while it is replaced gets
+the old list or the new one, never a mix.
 
 ## Field names when several servers receive events
 

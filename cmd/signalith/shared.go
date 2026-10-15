@@ -130,6 +130,7 @@ func sharedImporters(d sharedDocs, f clustercfg.Files) []shared.Importer {
 		// The founder's certificate authority, as the cluster's.
 		[]shared.Importer{d.tls.importer(f)},
 		clusterlib.Importers(d.lib, libraryFiles(f)),
+		clusterlib.LookupImporters(d.lib, libraryFiles(f)),
 		// Append a new shared feature's importers here.
 	)
 }

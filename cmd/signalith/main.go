@@ -1179,6 +1179,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		if err := r.sharedContent.library.start(ctx, r.shared, sharedOn && r.shared.SharedLibrary(), c, lib, boards, &in.jobs); err != nil {
 			return nil, err
 		}
+		r.sharedContent.library.startLists(ctx, r.shared, sharedOn && r.shared.SharedLookups(), c, lists, &in.jobs)
 	}
 	// The users, the directory sign-in settings and the sessions: shared
 	// by the servers of the cluster once every one reads them there, else

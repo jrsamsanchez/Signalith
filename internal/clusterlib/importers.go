@@ -24,6 +24,8 @@ type Files struct {
 	// DetectionsDir and DashboardsDir return the folders in use now.
 	DetectionsDir func() string
 	DashboardsDir func() string
+	// LookupsDir returns the folder of the asset and identity lists.
+	LookupsDir func() string
 	// Node is this server's name.
 	Node string
 	Log  *slog.Logger
