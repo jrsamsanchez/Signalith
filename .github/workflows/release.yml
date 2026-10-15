@@ -173,6 +173,18 @@ jobs:
         with:
           name: windows-signed
           path: release
+      - name: Install script and Windows zip
+        run: |
+          # The script that installs a server and joins it to a cluster (each
+          # server hands out the same one), and the program with install.ps1
+          # for Windows computers set up without the .msi. Made before the
+          # checksums, so they cover both.
+          cp deploy/linux/install.sh release/install.sh
+          name="signalith-$VERSION-windows-amd64"
+          mkdir "$RUNNER_TEMP/$name"
+          cp release/signalith-windows-amd64.exe "$RUNNER_TEMP/$name/signalith.exe"
+          cp deploy/windows/install.ps1 LICENSE NOTICE "$RUNNER_TEMP/$name/"
+          (cd "$RUNNER_TEMP" && zip -qr "$GITHUB_WORKSPACE/release/$name.zip" "$name")
       - uses: anchore/sbom-action/download-syft@7b36ad622f042cab6f59a75c2ac24ccb256e9b45 # v0.20.4
         id: syft
         with:
