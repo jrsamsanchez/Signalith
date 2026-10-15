@@ -296,6 +296,14 @@ var knownFields = func() map[string]string {
 		// Sensor health: Zeek capture_loss and stats, Suricata stats.
 		"capture_loss_percent": double, "packets_received": long, "packets_dropped": long,
 		"drop_percent": double, "uptime_seconds": long, "sensor_interface": kw,
+		// The status line of a sensor the install script built
+		// (sensorstatus.go). rules_updated stays text, like device_time:
+		// it is the sensor's word, not a time Signalith checked.
+		"sensor_role": kw, "sensor_version": kw, "zeek_version": kw, "suricata_version": kw,
+		"fluentbit_version": kw, "sensor_zeek_running": kw, "sensor_suricata_running": kw,
+		"sensor_link": kw, "rules_updated": kw, "rules_count": long, "rules_update": kw,
+		"disk_free_percent": double, "disk_free_bytes": long, "sensor_disk_encrypted": kw,
+		"sensor_time_synced": kw, "sensor_warnings": kw,
 
 		// AWS CloudTrail (cloudtrail.go): the caller's name as Splunk's AWS
 		// add-on names it, and a call's whole parameters and response as

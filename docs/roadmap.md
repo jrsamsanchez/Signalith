@@ -97,8 +97,8 @@ The first three phases are complete, and the fourth has started.
 
 **Network sensor**
 :   Zeek and Suricata logs are read today ([Network sensor](network-sensor.md)); still to
-    come: a one-line sensor install, sensor health in Settings and network detection
-    packs.
+    come: network detection packs. A new sensor is installed with one line
+    from Add data, and its health shows on the Endpoints and Health pages.
 
 **Vulnerability scanning: more**
 :   Scanning with [Nmap](https://nmap.org) and CVE matching is built

@@ -2475,6 +2475,7 @@ function agentTokDrop() {
   $('agent-token-made').classList.add('hidden');
   $('agent-token-made').replaceChildren();
   if (had && agentSetupData) agentSetupRender(agentSetupData);
+  if (had && typeof sensorSetupRender === 'function') sensorSetupRender();
 }
 
 function agentTokError(msg) {
@@ -2554,6 +2555,7 @@ async function agentTokEnsure() {
       agentTokError('');
       agentTokMadeNote();
       if (agentSetupData) agentSetupRender(agentSetupData);
+      if (typeof sensorSetupRender === 'function') sensorSetupRender();
       if (typeof tokensReload === 'function') tokensReload();
       return true;
     } catch (e) {
@@ -2571,22 +2573,25 @@ function agentTokMadeNote() {
   const box = $('agent-token-made');
   box.replaceChildren(icon('circle-check'), el('div', {},
     el('b', {}, `Created token “${agentTok.made.name}”.`),
-    el('p', {}, 'It’s in the configuration below. Signalith shows it only now, so copy or download the configuration before you leave this page.')));
+    el('p', {}, typeof sensorSetupActive === 'function' && sensorSetupActive()
+      ? 'It’s in the line below. Signalith shows it only now, so copy the line before you leave this page.'
+      : 'It’s in the configuration below. Signalith shows it only now, so copy or download the configuration before you leave this page.')));
   box.classList.remove('hidden');
 }
 
 // agentTokFill puts the token into text, when there is one to put in.
 const agentTokFill = (text) => (agentTok.secret ? String(text).split(agentTokPlaceholder()).join(agentTok.secret) : String(text));
 // agentTokShown is what the page shows for text: the token made here, or
-// a chip where it will go.
-function agentTokShown(text) {
+// a chip where it will go (copyOnly: text that can only be copied).
+function agentTokShown(text, copyOnly) {
   const ph = agentTokPlaceholder();
   if (agentTok.secret && !agentTok.paste) return [agentTokFill(text)];
   const parts = String(text).split(ph);
   const out = [parts[0]];
   for (let i = 1; i < parts.length; i++) {
-    out.push(el('span', { class: 'agent-token-chip', title: 'Signalith puts the agent token here when you copy or download' },
-      icon('key-round', 'icon--xs'), agentTok.paste ? 'your token added when you copy or download' : 'token added when you copy or download'), parts[i]);
+    const when = copyOnly ? 'when you copy' : 'when you copy or download';
+    out.push(el('span', { class: 'agent-token-chip', title: 'Signalith puts the agent token here ' + when },
+      icon('key-round', 'icon--xs'), (agentTok.paste ? 'your token added ' : 'token added ') + when), parts[i]);
   }
   return out;
 }
@@ -2667,6 +2672,9 @@ async function agentSetupLoad() {
     : aws ? 'Do this once, on a machine that can reach AWS and this server, such as a small EC2 instance.'
     : sensor ? 'Do this on the machine that runs Zeek or Suricata.'
     : 'Do this on each host you want to collect from.';
+  // Network sensor > Set up a new sensor: one line instead of a
+  // configuration (sensor-setup.js).
+  if (typeof sensorSetupSync === 'function' && sensorSetupSync(sensor)) return;
   const steps = $('agent-steps');
   const seq = ++agentSetupSeq;
   steps.setAttribute('aria-busy', 'true');
@@ -3902,7 +3910,8 @@ function healthPageRender(h) {
       healthPageRow('database', 'OpenSearch', os.url || '', osRow[0], osRow[1], osRow[2]),
       healthPageRow('inbox', 'Ingest', 'api/ingest', ingRow[0], ingRow[1], ingRow[2]),
       healthPageRow('server', 'Signalith server', h.version ? 'Version ' + h.version : '', '', 'Running',
-        h.config_file ? ['Config file ', el('code', {}, h.config_file)] : can('admin') ? 'No config file.' : '')));
+        h.config_file ? ['Config file ', el('code', {}, h.config_file)] : can('admin') ? 'No config file.' : ''),
+      h.sensors ? healthSensorRow(h.sensors) : null));
   const card = el('div', { class: 'card' },
     el('div', { class: 'card__head' }, el('div', {}, el('h3', { class: 'card__title' }, 'Components'))),
     el('div', { class: 'table-wrap' }, table),
@@ -3911,6 +3920,16 @@ function healthPageRender(h) {
   box.removeAttribute('aria-busy');
   box.replaceChildren(...(alerts.length ? [el('div', { class: 'hp-alerts' }, ...alerts)] : []), kpis, card, healthSyslogCard(sl));
   healthPageFoot();
+}
+
+// healthSensorRow is the network sensors' row: how many send, went
+// silent or drop packets, and whether any runs on old rules.
+function healthSensorRow(c) {
+  const bad = c.silent || c.dropping || c.rules_old;
+  const text = `${healthPageNum(c.sending)} sending, ${healthPageNum(c.silent)} silent, ${healthPageNum(c.dropping)} dropping packets` +
+    (c.rules_old ? `, ${healthPageNum(c.rules_old)} with old rules` : '') + '. ';
+  return healthPageRow('activity', 'Network sensors', c.total === 1 ? '1 sensor' : healthPageNum(c.total) + ' sensors', bad ? 'warn' : '',
+    bad ? 'Needs a look' : 'Healthy', [text, el('a', { href: '#endpoints', 'data-page': 'endpoints', 'data-min-role': 'analyst' }, 'Endpoints')]);
 }
 
 // healthSyslogCard shows the syslog receiver: its listeners, what it did

@@ -22,12 +22,14 @@ const joinTokenEnv = "SIGNALITH_JOIN"
 var (
 	installFiles = &clusterinstall.Files{}
 	installGate  = &clusterinstall.Gate{}
+	// The scripts are small: more downloads an hour than the program.
+	scriptGate = &clusterinstall.Gate{PerHour: 60}
 )
 
 // clusterInstall hands new servers the install scripts and this server's
 // program (Servers > Add a server).
 func clusterInstall() *api.ClusterInstall {
-	return &api.ClusterInstall{Files: installFiles, Gate: installGate, Deployment: deployment()}
+	return &api.ClusterInstall{Files: installFiles, Gate: installGate, ScriptGate: scriptGate, Deployment: deployment()}
 }
 
 // joinFromEnv joins this server to a cluster with the token in

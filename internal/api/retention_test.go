@@ -210,9 +210,10 @@ func TestRetentionAPI(t *testing.T) {
 	if code != 202 || len(out["restores"].([]any)) != 1 {
 		t.Fatalf("restore = %d %v", code, out)
 	}
-	for range 500 {
+	// The restore runs in the background; like a run, it can be slow on CI.
+	for deadline := time.Now().Add(2 * time.Minute); time.Now().Before(deadline); {
 		_, out = call("GET", "/api/retention/archive", "")
-		if r, _ := out["archives"].([]any)[0].(map[string]any)["restore"].(map[string]any); r != nil && r["state"] == "done" {
+		if r, _ := out["archives"].([]any)[0].(map[string]any)["restore"].(map[string]any); r != nil && (r["state"] == "done" || r["state"] == "failed") {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
