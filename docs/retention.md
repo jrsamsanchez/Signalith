@@ -31,6 +31,10 @@ the run in progress already skips anything the new settings keep. The same setti
 | Filesystem | `filesystem` | `<prefix>-filesystem-YYYY.MM.DD` | Event policy |
 | Registry | `registry` | `<prefix>-registry-YYYY.MM.DD` | Event policy |
 | Network resolution | `network_resolution` | `<prefix>-network_resolution-YYYY.MM.DD` | Event policy |
+| Intrusion detection | `intrusion_detection` | `<prefix>-intrusion_detection-YYYY.MM.DD` | Event policy |
+| Web | `web` | `<prefix>-web-YYYY.MM.DD` | Event policy |
+| Certificates | `certificates` | `<prefix>-certificates-YYYY.MM.DD` | Event policy |
+| File transfers | `file_transfers` | `<prefix>-file_transfers-YYYY.MM.DD` | Event policy |
 | Image load | `image_load` | `<prefix>-image_load-YYYY.MM.DD` | Event policy |
 | Script | `script` | `<prefix>-script-YYYY.MM.DD` | Event policy |
 | Inventory | `inventory` | `<prefix>-inventory-YYYY.MM.DD` | Event policy |
