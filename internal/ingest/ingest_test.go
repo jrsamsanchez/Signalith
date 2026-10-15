@@ -275,6 +275,29 @@ func TestWindowsFirewallAndBitsEvents(t *testing.T) {
 	expect(t, Normalize("win.events", decode(t, string(b)), now).Document(), map[string]any{
 		"datamodel": "Other", "signature_id": "21", "rdp_user": `CORP\alice`, "rdp_session_id": "2", "rdp_address": "203.0.113.7",
 	})
+	// A scheduled task starting a process, from Fluent Bit; a DNS query
+	// from the OpenTelemetry Collector; a DNS Server event with no data.
+	rec = map[string]any{"Channel": TaskSchedulerChannel, "Computer": "WS1", "EventID": "129",
+		"StringInserts": []string{`\Updater`, `C:\Users\Public\run.exe`, "4242", "16384"}}
+	b, _ = json.Marshal(rec)
+	expect(t, Normalize("win.events", decode(t, string(b)), now).Document(), map[string]any{
+		"datamodel": "Other", "signature_id": "129", "sourcetype": "WinEventLog:" + TaskSchedulerChannel,
+		"taskscheduler_task_name": `\Updater`, "taskscheduler_path": `C:\Users\Public\run.exe`,
+		"signature": "A scheduled task started a process",
+	})
+	ev = otlpWindows(map[string]any{"channel": DnsClientChannel, "computer": "WS1", "event_id": map[string]any{"id": "3008"},
+		"event_data": map[string]any{"QueryName": "userstorage.mega.co.nz", "QueryStatus": "0"}})
+	if ev.Fields["dnsclient_query_name"] != "userstorage.mega.co.nz" || ev.Fields["signature"] != "A DNS query completed" {
+		t.Errorf("otlp 3008 = %v", ev.Fields)
+	}
+	rec = map[string]any{"Channel": DnsServerChannel, "Computer": "DC1", "EventID": "6004", "StringInserts": []string{"203.0.113.9", "corp.example"}}
+	b, _ = json.Marshal(rec)
+	expect(t, Normalize("win.events", decode(t, string(b)), now).Document(), map[string]any{
+		"datamodel": "Other", "signature_id": "6004", "sourcetype": "WinEventLog:DNS Server",
+	})
+	if f, ok := ChannelDataField(NtlmChannel, "workstationname"); !ok || f != "ntlm_workstation_name" {
+		t.Errorf("ntlm WorkstationName = %q %v", f, ok)
+	}
 }
 
 // The search engine knows every wildcard field, as it takes backslashes

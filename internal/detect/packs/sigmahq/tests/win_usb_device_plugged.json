@@ -1,0 +1,3 @@
+{"rule": "1a4bd6e3-4c6e-405d-a9a3-53a116e341d4", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-DriverFrameworks-UserMode/Operational","event_id":"2102","data":{}}
+]}
