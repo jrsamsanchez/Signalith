@@ -55,16 +55,19 @@ const (
 
 // Scan is one run of Nmap over one network.
 type Scan struct {
-	ID          string    `json:"id"`
-	TargetID    string    `json:"target_id"`
-	TargetName  string    `json:"target_name"`
-	State       string    `json:"state"`
-	Trigger     string    `json:"trigger"`
-	RequestedBy string    `json:"requested_by,omitempty"`
-	Scanner     string    `json:"scanner,omitempty"`
-	CreatedAt   time.Time `json:"created_at"`
-	StartedAt   time.Time `json:"started_at,omitzero"`
-	FinishedAt  time.Time `json:"finished_at,omitzero"`
+	ID          string `json:"id"`
+	TargetID    string `json:"target_id"`
+	TargetName  string `json:"target_name"`
+	State       string `json:"state"`
+	Trigger     string `json:"trigger"`
+	RequestedBy string `json:"requested_by,omitempty"`
+	// Scanner names the server that ran the scan, and ScannerID is its
+	// node ID.
+	Scanner    string    `json:"scanner,omitempty"`
+	ScannerID  string    `json:"scanner_id,omitempty"`
+	CreatedAt  time.Time `json:"created_at"`
+	StartedAt  time.Time `json:"started_at,omitzero"`
+	FinishedAt time.Time `json:"finished_at,omitzero"`
 	// Heartbeat is written while the scan runs; one that stops beating
 	// was cut off (its server stopped).
 	Heartbeat time.Time `json:"heartbeat,omitzero"`
@@ -149,7 +152,10 @@ type Vuln struct {
 // Report is what a scanner found when it checked itself: whether Nmap is
 // there and works, and whether CVE lookups reach the database.
 type Report struct {
-	Server string    `json:"server"`
+	Server string `json:"server"`
+	// NodeID is the server's node ID; empty from a version before
+	// per-zone scanners.
+	NodeID string    `json:"node_id,omitempty"`
 	At     time.Time `json:"at"`
 	Checks []Check   `json:"checks"`
 	Ready  bool      `json:"ready"`
@@ -342,6 +348,34 @@ func (s *Store) Scan(ctx context.Context, id string) (*Scan, store.Version, erro
 // PutScan writes a scan whole.
 func (s *Store) PutScan(ctx context.Context, sc *Scan, v store.Version) (store.Version, error) {
 	return s.Docs.PutIf(ctx, s.Index, scanDocID(sc.ID), scanDoc{kindScan, sc}, v, true)
+}
+
+// ClaimScan starts a queued scan on this server: it marks it running with
+// fields, unless another server started, stopped or removed it first.
+// ok is false then.
+func (s *Store) ClaimScan(ctx context.Context, id string, fields map[string]any) (ok bool, err error) {
+	src, v, found, err := s.Docs.Get(ctx, s.Index, scanDocID(id))
+	if err != nil || !found {
+		return false, err
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(src, &doc); err != nil {
+		return false, err
+	}
+	if doc["state"] != StateQueued || doc["stop"] == true {
+		return false, nil
+	}
+	for k, val := range fields {
+		doc[k] = val
+	}
+	doc["state"] = StateRunning
+	if _, err := s.Docs.PutIf(ctx, s.Index, scanDocID(id), doc, v, true); err != nil {
+		if errors.Is(err, store.ErrConflict) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
 }
 
 // UpdateScan changes some fields of a scan.
@@ -599,7 +633,11 @@ type reportDoc struct {
 
 // PutReport keeps a scanner's latest check of itself.
 func (s *Store) PutReport(ctx context.Context, r *Report) error {
-	id := "scanner:" + hashID(r.Server)
+	key := r.Server
+	if r.NodeID != "" {
+		key = "node:" + r.NodeID
+	}
+	id := "scanner:" + hashID(key)
 	doc := reportDoc{kindReport, r}
 	_, v, found, err := s.Docs.Get(ctx, s.Index, id)
 	if err != nil {
