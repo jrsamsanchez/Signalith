@@ -646,13 +646,23 @@ service, and a sign-in's `Status` reads `signin_status` (`Success`, or `Failure`
 Older rules that name an audit record's operation `properties.message` read
 `operationName`. Rules that name a field no record has, or that search free text, are left
 out. Sign-in and audit rules search `sourcetype=azure:monitor:aad`, and activity log rules
-`sourcetype=azure:monitor:activity`. To send Entra ID and Azure logs, see
+`sourcetype=azure:monitor:activity`.
+
+The Splunk pack adds 30 Entra ID detections (see
+[Splunk Security Content](#splunk-security-content)): admin roles assigned, MFA turned
+off, new federated domains, guest invitations, single-factor and device code sign-ins,
+password spraying and MFA fatigue. They name fields as Splunk's add-on does, which
+Signalith keeps too: a list's values by Splunk's name for them
+(`properties.targetResources{}.modifiedProperties{}.newValue`), any of which a search
+matches. After `rename properties.* as *`, a later `search` or `stats` reads the fields by
+their old names. Rules that use `eval`, `spath`, `rex`, lookups or `transaction`, and the
+Intune rules, are left out. To send Entra ID and Azure logs, see
 [Entra ID and Azure](azure.md).
 
 ### Splunk Security Content
 
-**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,062 Windows,
-Linux, web, network and AWS CloudTrail detections from Splunk's Threat Research Team
+**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,092 Windows,
+Linux, web, network, AWS CloudTrail and Entra ID detections from Splunk's Threat Research Team
 ([security_content](https://github.com/splunk/security_content)), pinned to one
 commit. They are the production TTP and anomaly rules that search the CIM
 `Endpoint.Processes`, `Endpoint.Filesystem`, `Endpoint.Registry` and `Web` nodes with
@@ -699,6 +709,7 @@ names, so each rule's `where` clause becomes a Signalith filter field for field:
 | `` `linux_auditd` `` (raw search) | Linux audit records, each field by auditd's name (see [the Linux audit log](#linux-audit-log-auditd)) | Other |
 | `Web` (`datamodel=Web` or `Web.Web`) | Apache and Nginx access log lines (see [Web server access logs](#web-server-access-logs)), and a network sensor's web requests (Zeek's http.log) | Web |
 | `` `cloudtrail` `` (raw search) | AWS CloudTrail records, by CloudTrail's field names and the CIM fields Splunk's AWS add-on gives them (`errorCode=success` reads a record with no error code; see [AWS CloudTrail](#aws-cloudtrail)) | Authentication, Change or Other |
+| `` `azure_monitor_aad` `` (raw search) | Entra ID sign-in, audit and risk records, by the record's own field names and the CIM fields Splunk's add-on for Microsoft cloud services gives them (see [Entra ID and Azure](#entra-id-and-azure)) | Authentication, Change or Alerts |
 | `Network_Traffic` (network detections) | Any connection: Zeek's conn.log, a firewall, Sysmon 3 (`app` is the protocol, Zeek's `service`) | Network_Traffic |
 | `Network_Resolution` (network detections) | A DNS lookup that names who asked (`src`), as Zeek's dns.log does (`record_type` is `query_type`); a host's own lookups (Sysmon 22) name only the host and are left to the endpoint rules | Network_Resolution |
 
