@@ -598,6 +598,13 @@ func (j *joiner) certNames() []string {
 	return names
 }
 
+// joinUnavailableTries and joinUnavailableWait are how often, and how far
+// apart, join asks a server that answers 503 (tests shorten the wait).
+var (
+	joinUnavailableTries = 12
+	joinUnavailableWait  = 5 * time.Second
+)
+
 // join asks the server for the bundle, and opens it.
 func (j *joiner) join(ctx context.Context) error {
 	csr, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{Subject: pkix.Name{CommonName: j.id.Name}}, j.httpsKey)
@@ -621,22 +628,38 @@ func (j *joiner) join(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	hr, err := http.NewRequestWithContext(ctx, http.MethodPost, j.tok.URL+"/api/cluster/join", bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	hr.Header.Set("Content-Type", "application/json")
-	resp, err := j.client.Do(hr)
-	if err != nil {
-		return failf(joinExitFailed, "Could not reach the server at %s: %v", j.tok.URL, err)
-	}
-	defer resp.Body.Close()
-	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	var resp *http.Response
 	var reply struct {
 		clusterjoin.Reply
 		Error string `json:"error"`
 	}
-	_ = json.Unmarshal(raw, &reply)
+	// A server that cannot answer joins yet (it is still founding the
+	// cluster, or its shared settings are paused) answers 503 before it
+	// looks at the token, so asking again a little later is safe.
+	for try := 1; ; try++ {
+		hr, err := http.NewRequestWithContext(ctx, http.MethodPost, j.tok.URL+"/api/cluster/join", bytes.NewReader(body))
+		if err != nil {
+			return err
+		}
+		hr.Header.Set("Content-Type", "application/json")
+		if resp, err = j.client.Do(hr); err != nil {
+			return failf(joinExitFailed, "Could not reach the server at %s: %v", j.tok.URL, err)
+		}
+		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		resp.Body.Close()
+		reply.Reply, reply.Error = clusterjoin.Reply{}, ""
+		_ = json.Unmarshal(raw, &reply)
+		if resp.StatusCode != http.StatusServiceUnavailable || try >= joinUnavailableTries {
+			break
+		}
+		fmt.Fprintf(j.env.errOut, "The server at %s cannot answer joins yet (%s); asking again in %s.\n",
+			j.tok.URL, firstSet(reply.Error, "no reason given"), joinUnavailableWait)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(joinUnavailableWait):
+		}
+	}
 	switch resp.StatusCode {
 	case http.StatusOK:
 	case http.StatusForbidden:
