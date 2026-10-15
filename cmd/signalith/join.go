@@ -515,7 +515,9 @@ func (j *joiner) makeLocal() error {
 		j.made = append(j.made, state)
 	}
 	local, err := cluster.OpenLocal(state, cluster.LocalOptions{Name: j.name, InContainer: cluster.InContainer()})
-	j.made = append(j.made, filepath.Join(state, "cluster"))
+	// node.id sits in the state folder itself, which the packages make:
+	// giving the folder would not give it.
+	j.made = append(j.made, filepath.Join(state, "cluster"), cluster.IdentityPath(state))
 	if err == nil {
 		j.id = local.Identity
 		local.Close()

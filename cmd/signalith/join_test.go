@@ -654,6 +654,36 @@ func TestJoinStoppedEarlyGivesItsKeys(t *testing.T) {
 	}
 }
 
+// With the state folder a package made (the service's already), every
+// file join writes in it is still given to the service's account:
+// node.id among them, or the service cannot start.
+func TestJoinIntoThePackagesStateFolderGivesEveryFile(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("owners are given on Linux")
+	}
+	f := newJoinFixture(t)
+	m := newJoinMachine(t)
+	if err := os.MkdirAll(m.state, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if code := m.join(t, f.tok, "--listen", freeAddr(t), "--no-start"); code != joinExitOK {
+		t.Fatalf("exit %d:\n%s", code, m.out.String())
+	}
+	var missed []string
+	_ = filepath.WalkDir(m.state, func(p string, d fs.DirEntry, err error) error {
+		if err == nil && p != m.state && d.Type()&fs.ModeSymlink == 0 && m.chowned[p] != [2]int{4242, 4343} {
+			missed = append(missed, p)
+		}
+		return nil
+	})
+	if len(missed) > 0 {
+		t.Errorf("not given to the service's account: %v", missed)
+	}
+	if _, ok := m.chowned[m.state]; ok {
+		t.Error("the package's state folder itself changed owner")
+	}
+}
+
 func TestJoinRefusalsSayTheTokenIsUnused(t *testing.T) {
 	f := newJoinFixture(t)
 	m := newJoinMachine(t)
