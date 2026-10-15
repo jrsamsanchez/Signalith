@@ -236,6 +236,10 @@ var Registry = []Setting{
 	{Key: "server.shared_addresses", Scope: ScopeServer, Section: "web", Label: "Proxies and gateways", Type: TypeList, Restart: true,
 		Help:        "IP addresses or ranges of a reverse proxy, load balancer or NAT gateway that many people and agents reach Signalith through. They are not limited like one computer: wrong passwords from them count against each account, and never pause sign-ins from the whole address.",
 		Placeholder: "10.0.0.5", EmptyMeans: "none", check: checkAddressList, problem: listProblem("server.shared_addresses")},
+	{Key: "server.proxy_protocol", Scope: ScopeServer, Section: "web", Label: "PROXY protocol from load balancers", Type: TypeBool, Restart: true,
+		Help: "Accept a PROXY protocol header (v1 or v2) on the web port from the trusted reverse proxies, as a load balancer that passes connections on sends it, so sign-in limits, the audit log and agent limits see each client's own address. " +
+			"Only the trusted reverse proxies may send one; a header from anyone else closes the connection.",
+		Env: "SIGNALITH_PROXY_PROTOCOL"},
 	{Key: "server.node_url", Scope: ScopeServer, Section: "web", Label: "Address for other servers", Type: TypeURL, SharedOnly: true,
 		Help: "The address the other Signalith servers that share this OpenSearch reach this one at, shown on the Servers page. " +
 			"In a container set it, since a container cannot know the address it is reached at.",
@@ -353,6 +357,9 @@ var Registry = []Setting{
 	{Key: "syslog.allow", Scope: ScopeCluster, Section: "syslog", Label: "Allowed senders", Type: TypeList, Restart: true,
 		Help:        "IP addresses or ranges, such as 10.0.0.0/8, that may send syslog. Others are dropped and counted.",
 		Placeholder: "10.0.0.0/8", EmptyMeans: "any sender", check: checkAddressList, problem: listProblem("syslog.allow")},
+	{Key: "syslog.proxy_protocol", Scope: ScopeServer, Section: "syslog", Label: "PROXY protocol from load balancers", Type: TypeBool, Restart: true,
+		Help: "Accept a PROXY protocol header (v1 or v2) on the TCP and TLS addresses from the trusted reverse proxies, so a load balancer in front still lets Signalith see each device's address for Allowed senders, limits and the host field. UDP is not affected.",
+		Env:  "SIGNALITH_SYSLOG_PROXY_PROTOCOL"},
 	{Key: "syslog.public_port", Scope: ScopeCluster, Section: "syslog", Label: "Port devices send to", Type: TypeNumber, Restart: true, Min: intp(0), Max: intp(65535),
 		Help:       "When Docker or a firewall forwards another port to the one Signalith listens on, the port devices send to. Add data shows it.",
 		EmptyMeans: "the listen port"},

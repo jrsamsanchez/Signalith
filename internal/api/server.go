@@ -296,6 +296,7 @@ func (s *Server) Handler() http.Handler {
 	// Agent configs hold a placeholder the page fills with a new agent
 	// token (POST /api/agent-tokens).
 	api.admin("GET /api/agents/config", s.handleAgentConfig)
+	api.admin("GET /api/agents/destinations", s.handleAgentDestinations)
 	// Adds the address agents or syslog devices send to to the HTTPS
 	// certificate.
 	api.admin("POST /api/tls/names", s.handleTLSName)
@@ -933,6 +934,15 @@ func (s *Server) handleAgentConfig(w http.ResponseWriter, r *http.Request) {
 		}
 		server = o
 	}
+	otherServer := false
+	if to := v.Get("to"); to != "" && v.Get("server") == "" {
+		dest, other, err := s.agentDestination(to)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error(), "field": "to"})
+			return
+		}
+		server, otherServer = dest, other
+	}
 	u, err := agents.ParseServerURL(server)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, fmt.Errorf("server.public_url: %w", err))
@@ -948,7 +958,7 @@ func (s *Server) handleAgentConfig(w http.ResponseWriter, r *http.Request) {
 	// the certificate (POST api/tls/names) once it is entered, not while
 	// it is being typed. Here it only checks that it can.
 	addName := ""
-	if u.Scheme == "https" && certs != nil {
+	if u.Scheme == "https" && certs != nil && !otherServer {
 		if err := certs.CanCover(u.Hostname()); err != nil {
 			fieldError(err)
 			return
@@ -969,6 +979,7 @@ func (s *Server) handleAgentConfig(w http.ResponseWriter, r *http.Request) {
 		CollectorOS: v.Get("collector"),
 		Platform:    v.Get("platform"),
 		Version:     s.Version,
+		Recycle:     s.agentRecycleFor(),
 		// A network sensor: both tools unless the page says otherwise.
 		Zeek:              v.Get("zeek") != "false",
 		Suricata:          v.Get("suricata") != "false",
@@ -1080,6 +1091,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 			out["cluster_banners"] = b
 		}
 	}
+	s.addClusterHealth(r, out)
 	if sensors := s.sensorHealth(ctx); sensors != nil {
 		out["sensors"] = sensors
 	}
@@ -1141,6 +1153,9 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	}
 	warnings = append(warnings, s.behindWarnings(time.Now())...)
 	warnings = append(warnings, s.notifyWarnings(ctx)...)
+	if s.Cluster != nil {
+		warnings = append(warnings, agentTrafficWarnings(s.Cluster.Status())...)
+	}
 	if len(warnings) > 0 {
 		out["warnings"] = warnings
 	}

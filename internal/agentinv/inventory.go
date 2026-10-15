@@ -227,6 +227,8 @@ type Inventory struct {
 
 	logMu    sync.Mutex
 	lastFail time.Time
+
+	traffic traffic
 }
 
 func (v *Inventory) now() time.Time {
@@ -395,6 +397,7 @@ func (v *Inventory) Note(c Contact) {
 		return
 	}
 	now := v.now().UTC()
+	v.traffic.note(now, c.Events)
 	name := CleanName(c.Name)
 	key := Key(name, c.Address, c.TokenID)
 	ca, version, _ := ParseConfig(c.Config)

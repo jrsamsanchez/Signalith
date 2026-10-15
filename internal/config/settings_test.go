@@ -106,6 +106,7 @@ func TestRegistryEnvMatchesTheEnvironment(t *testing.T) {
 		"SIGNALITH_SYSLOG_UDP": "0.0.0.0:5514", "SIGNALITH_SYSLOG_TCP": "0.0.0.0:5514",
 		"SIGNALITH_NVD_API_KEY": "nvd-key", "SIGNALITH_NVD_URL": "https://nvd-mirror.example/rest/json/cves/2.0",
 		"SIGNALITH_NODE_URL": "https://10.0.0.5:8081", "SIGNALITH_LEADER_ELIGIBLE": "false",
+		"SIGNALITH_PROXY_PROTOCOL": "true", "SIGNALITH_SYSLOG_PROXY_PROTOCOL": "true",
 	}
 	for k, v := range values {
 		t.Setenv(k, v)

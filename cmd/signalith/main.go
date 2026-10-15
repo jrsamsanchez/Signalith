@@ -1109,6 +1109,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			Allow: c.Syslog.AllowList(), Ready: templateReady,
 			MaxAge: maxAge, PublicPort: c.Syslog.PublicPort,
 			Servers: indexingServers,
+			Proxy:   proxyFor(c, c.Syslog.ProxyProtocol, log),
 		}
 		if certs != nil {
 			sc.GetCertificate = certs.GetCertificate
@@ -1448,6 +1449,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		Log:        log,
 		Version:    version,
 	}
+	followProxyTrust(srv)
 	srv.KnownBrowsers = r.browsers
 	srv.Join = r.sharedJoin(c, certs)
 	wireFeatures(srv, r.shared)
@@ -1693,6 +1695,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			OSIdentity: osIdentity,
 			Busy:       jobsBusy(ret, r.shared),
 		}
+		settings.Traffic = trafficOf(agentsInv, receiver)
 		if rt := r.shared; rt != nil {
 			settings.Shared = func() cluster.SharedStatus { return sharedStatus(rt, r.sharedContent) }
 			settings.Restart = r.restartStatus

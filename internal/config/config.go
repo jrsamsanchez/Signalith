@@ -216,6 +216,12 @@ type Server struct {
 	// it out from the listen address and this computer's name, except in a
 	// container, which cannot know it. SIGNALITH_NODE_URL overrides it.
 	NodeURL string `yaml:"node_url,omitempty"`
+	// ProxyProtocol accepts a PROXY protocol (v1 or v2) header on the web
+	// port from TrustedProxies, such as a load balancer that passes TCP
+	// connections on, so the client's own address is seen. Peers that are
+	// not trusted proxies may not send one. SIGNALITH_PROXY_PROTOCOL
+	// overrides it.
+	ProxyProtocol bool `yaml:"proxy_protocol,omitempty"`
 
 	// proxied is set by Validate for a config written before HTTPS was the
 	// default whose public_url is https:// although Signalith had no
@@ -870,6 +876,11 @@ type Syslog struct {
 	// 514 to 5514, say. The Add data page puts it in the setup it shows.
 	// Zero means the listen port.
 	PublicPort int `yaml:"public_port,omitempty"`
+	// ProxyProtocol accepts a PROXY protocol (v1 or v2) header on the TCP
+	// and TLS listeners from server.trusted_proxies, so a load balancer in
+	// front still lets Signalith see each device's address.
+	// SIGNALITH_SYSLOG_PROXY_PROTOCOL overrides it.
+	ProxyProtocol bool `yaml:"proxy_protocol,omitempty"`
 }
 
 // Enabled reports whether any syslog listener is set.
@@ -2080,6 +2091,19 @@ func (c *Config) applyEnv() error {
 		c.Syslog.TCP = offToEmpty(v)
 		c.fromEnv("syslog.tcp", "SIGNALITH_SYSLOG_TCP")
 	}
+	for _, e := range []struct {
+		env, key string
+		to       *bool
+	}{{"SIGNALITH_PROXY_PROTOCOL", "server.proxy_protocol", &c.Server.ProxyProtocol}, {"SIGNALITH_SYSLOG_PROXY_PROTOCOL", "syslog.proxy_protocol", &c.Syslog.ProxyProtocol}} {
+		if v := strings.TrimSpace(os.Getenv(e.env)); v != "" {
+			b, err := strconv.ParseBool(v)
+			if err != nil {
+				return fmt.Errorf("%s %q must be true or false", e.env, v)
+			}
+			*e.to = b
+			c.fromEnv(e.key, e.env)
+		}
+	}
 	return nil
 }
 
@@ -2399,6 +2423,17 @@ func (c *Config) Warnings() []string {
 		w = append(w, "HTTPS is off (server.tls.mode: off) and server.listen accepts connections from other machines, so passwords, sessions, "+
 			"the ingest token and events cross the network unencrypted unless a reverse proxy in front adds HTTPS. Turn it on with server.tls.mode: auto, "+
 			"or list the proxy's address under server.trusted_proxies.")
+	}
+	if (c.Server.ProxyProtocol || c.Syslog.ProxyProtocol) && len(c.Server.TrustedProxyList()) == 0 {
+		w = append(w, "PROXY protocol is on (server.proxy_protocol or syslog.proxy_protocol) but server.trusted_proxies is empty, so no PROXY header is accepted. "+
+			"List your load balancer's address under server.trusted_proxies.")
+	}
+	for _, p := range c.Server.TrustedProxyList() {
+		if p.Bits() == 0 {
+			w = append(w, "server.trusted_proxies includes "+p.String()+", which trusts every address: anyone can then pick the address they are counted and logged under "+
+				"(with X-Forwarded-For, Forwarded or a PROXY header). List only your proxies and load balancers.")
+			break
+		}
 	}
 	if l := c.layers; l != nil && c.file != nil && l.file["detections.scheduler"] {
 		// Both names set in signalith.yaml, or the old one there and the

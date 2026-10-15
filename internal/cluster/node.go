@@ -61,6 +61,11 @@ type Settings struct {
 	// and the shared settings it could not use, for its heartbeat; nil has
 	// none. It must not call the node.
 	Pending func() (restart, refused []string)
+	// Traffic counts what this server received from agents and syslog,
+	// for its heartbeat, so the Health page can total the servers and
+	// tell when one gets no agent traffic; nil has none. It must not call
+	// the node.
+	Traffic func() Traffic
 	// TLS says which certificate authority this server's HTTPS
 	// certificate comes from, for its heartbeat; nil has none. It must not
 	// call the node.
@@ -843,6 +848,9 @@ func (n *Node) heartbeatDoc(state string) Heartbeat {
 			restart = &r
 		}
 	}
+	n.mu.Lock()
+	trafficFn := n.settings.Traffic
+	n.mu.Unlock()
 	var restartNeeded, refused []string
 	if pendingFn != nil {
 		restartNeeded, refused = pendingFn()
@@ -889,6 +897,10 @@ func (n *Node) heartbeatDoc(state string) Heartbeat {
 		hb.KeyIDs = sh.KeyIDs
 	}
 	hb.Restart, hb.RestartNeeded, hb.SettingsRefused = restart, restartNeeded, refused
+	if trafficFn != nil {
+		t := trafficFn()
+		hb.Traffic = &t
+	}
 	hb.Upgrade = n.upgradeStatusLocked(busy)
 	if f := n.settings.TLS; f != nil {
 		hb.TLS = f()

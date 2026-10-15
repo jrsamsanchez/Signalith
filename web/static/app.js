@@ -2688,7 +2688,9 @@ async function agentSetupLoad() {
   if (osq) q.set('platform', $('osquery-platform').value);
   const server = agentServerValue();
   agentServerSent = server;
-  if (server) q.set('server', server);
+  agentDestLoad();
+  if (agentDest.to) q.set('to', agentDest.to);
+  else if (server) q.set('server', server);
   try {
     const a = await api('api/agents/config?' + q);
     if (seq !== agentSetupSeq) return;
@@ -2697,13 +2699,14 @@ async function agentSetupLoad() {
     sensorFieldError('');
     awsFieldError('');
     try {
-      if (server && server !== agentServerGuess) localStorage.setItem(agentServerKey, server);
+      if (agentDest.to) { /* one server's own address: not remembered */ }
+      else if (server && server !== agentServerGuess) localStorage.setItem(agentServerKey, server);
       else localStorage.removeItem(agentServerKey);
     } catch (_) { /* storage may be blocked */ }
     agentSetupRender(a);
   } catch (e) {
     if (seq !== agentSetupSeq) return;
-    if (e.field === 'server') agentServerError(e.message);
+    if (e.field === 'server' || e.field === 'to') agentServerError(e.message);
     else if (sensor && ['tools', 'zeek_dir', 'eve_path'].includes(e.field)) sensorFieldError(e.field, e.message);
     else if (aws && ['aws_bucket', 'aws_queue'].includes(e.field)) awsFieldError(e.field, e.message);
     else agentSetupError(e);
@@ -2805,6 +2808,105 @@ function agentServerWarn(a) {
       ' (find it with ', el('code', {}, 'ipconfig'), ' on Windows or ', el('code', {}, 'ip addr'),
       ' on Linux), and allow port ' + port + ' through the firewall.')));
 }
+
+// ---------- add data: where agents send ----------
+// With several servers, Add data asks where agents send: the shared
+// address (a load balancer or DNS name in front of every server, the
+// public address) or one server's own, and says which servers the shared
+// address reaches (api/agents/destinations). With one server nothing shows.
+const agentDest = { loaded: false, to: '', typed: '', choices: [], warning: '' };
+
+async function agentDestLoad() {
+  if (agentDest.loaded) return;
+  agentDest.loaded = true;
+  try {
+    const d = await api('api/agents/destinations');
+    agentDest.choices = d.choices || [];
+    agentDest.warning = d.warning || '';
+  } catch (_) {
+    agentDest.choices = [];
+  }
+  agentDestRender();
+}
+
+function agentDestPick(to) {
+  if (to === agentDest.to) return;
+  const c = agentDest.choices.find((x) => x.id === to && x.kind !== 'shared');
+  if (to && !c) return;
+  if (!agentDest.to) agentDest.typed = agentServerEl.value;
+  agentDest.to = to;
+  agentServerEl.readOnly = !!to;
+  agentServerEl.value = to ? c.url : agentDest.typed || agentServerGuess;
+  agentServerError('');
+  agentDestRender();
+  const b = document.querySelector(`#agent-dest [data-to="${CSS.escape(to)}"]`);
+  if (b) b.focus();
+  loadAgentConfig();
+}
+
+function agentDestRender() {
+  let box = $('agent-dest');
+  const servers = agentDest.choices.filter((c) => c.kind !== 'shared');
+  if (servers.length < 2) {
+    if (box) box.remove();
+    return;
+  }
+  if (!box) {
+    box = el('div', { id: 'agent-dest', class: 'agent-dest' });
+    $('agent-server-warn').after(box);
+  }
+  const shared = agentDest.choices.find((c) => c.kind === 'shared') || {};
+  const choice = (to, label, title) => el('button', { type: 'button', role: 'radio', 'data-to': to, title,
+    'aria-checked': String(agentDest.to === to), tabindex: agentDest.to === to ? '0' : '-1' }, label);
+  const seg = el('div', { class: 'seg agent-dest__seg', role: 'radiogroup', 'aria-labelledby': 'agent-dest-label' },
+    choice('', 'Shared address', shared.url || ''),
+    ...servers.map((s) => choice(s.id, s.name + (s.kind === 'self' ? ' (this server)' : '') + ' only', s.url)));
+  seg.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-to]');
+    if (b) agentDestPick(b.dataset.to);
+  });
+  seg.addEventListener('keydown', (e) => {
+    const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+    if (!step) return;
+    e.preventDefault();
+    const all = [...seg.querySelectorAll('[data-to]')];
+    const i = all.findIndex((b) => b.dataset.to === agentDest.to);
+    agentDestPick(all[(i + step + all.length) % all.length].dataset.to);
+  });
+  box.replaceChildren(
+    el('div', { class: 'agent-addr__row' }, el('span', { class: 'label', id: 'agent-dest-label' }, 'Where do agents send?'), seg),
+    agentDestNote(shared, servers));
+}
+
+// agentDestNote says what the choice means: for the shared address, which
+// servers its name reaches; for one server, that its agents wait while
+// it is down.
+function agentDestNote(shared, servers) {
+  if (agentDest.to) {
+    const s = servers.find((x) => x.id === agentDest.to) || {};
+    return el('p', { class: 'hint' }, icon('info'), el('span', {},
+      `These agents send only to ${s.name}. While it is down they keep their events and wait; the shared address lets them carry on with another server.`));
+  }
+  let host = shared.url || '';
+  try { host = new URL(shared.url).hostname; } catch (_) { /* keep the address */ }
+  if (shared.problem || agentDest.warning) {
+    const text = shared.problem || agentDest.warning;
+    const cut = text.indexOf('. ');
+    return el('div', { class: 'alert', 'data-tone': 'warning', role: 'status' }, icon('triangle-alert'),
+      el('div', {}, el('b', {}, cut > 0 ? text.slice(0, cut + 1) : text), cut > 0 ? el('p', {}, text.slice(cut + 2)) : null));
+  }
+  if ((shared.reaches || []).length) {
+    return el('p', { class: 'hint' }, icon('circle-check'), el('span', {}, `${host} reaches ${agentDestList(shared.reaches)}.`));
+  }
+  if ((shared.resolves || []).length) {
+    const addrs = shared.resolves.map((r) => r.addr).join(', ');
+    return el('p', { class: 'hint' }, icon('circle-check'), el('span', {},
+      `${host} points at ${addrs}, none of the servers’ own addresses: a load balancer that passes agents on to them.`));
+  }
+  return el('p', { class: 'hint' }, icon('info'), el('span', {}, 'Agents send to the public address, which should reach every server.'));
+}
+
+const agentDestList = (list) => list.length < 2 ? list.join('') : list.slice(0, -1).join(', ') + ' and ' + list[list.length - 1];
 
 function agentSetupRender(a) {
   agentSetupData = a;
@@ -3781,7 +3883,7 @@ async function loadHealth(quiet) {
   st.busy = true;
   st.tried = Date.now();
   try {
-    const h = await api('api/health');
+    const h = await api('api/health?scope=cluster');
     st.data = h;
     st.at = Date.now();
     st.failed = false;
@@ -3918,8 +4020,39 @@ function healthPageRender(h) {
     el('div', { class: 'table-foot' }, el('span', { class: 'live', id: 'health-live' })));
   const box = $('health');
   box.removeAttribute('aria-busy');
-  box.replaceChildren(...(alerts.length ? [el('div', { class: 'hp-alerts' }, ...alerts)] : []), kpis, card, healthSyslogCard(sl));
+  box.replaceChildren(...(alerts.length ? [el('div', { class: 'hp-alerts' }, ...alerts)] : []), kpis, card, ...healthClusterCard(h.cluster), healthSyslogCard(sl));
   healthPageFoot();
+}
+
+// healthClusterCard totals what every running server received, with a
+// row per server for admins, when two or more share this OpenSearch (a
+// load balancer spreads agents and devices over them). A server whose
+// version does not report figures says so instead of showing zero.
+function healthClusterCard(c) {
+  if (!c || !c.totals) return [];
+  const t = c.totals;
+  if ((t.servers || 0) + (t.no_figures || 0) < 2) return [];
+  const last = (x) => x && x.last_at ? ago(x.last_at) : 'none yet';
+  const head = el('thead', {}, el('tr', {},
+    el('th', { scope: 'col', 'data-col': 'name' }, 'Server'), el('th', { scope: 'col', class: 'num' }, 'Agent batches'),
+    el('th', { scope: 'col', class: 'num' }, 'Agent events'), el('th', { scope: 'col', class: 'num' }, 'Syslog messages'),
+    el('th', { scope: 'col' }, 'Last agent batch')));
+  const rows = (c.servers || []).map((s) => {
+    const name = el('td', { 'data-col': 'name' }, el('div', { class: 'cell-title' }, s.name + (s.self ? ' (this server)' : '')),
+      el('div', { class: 'muted' }, s.state));
+    if (!s.figures) return el('tr', {}, name, el('td', { colspan: '4', class: 'muted' }, 'No figures: this server runs an older version.'));
+    return el('tr', {}, name, el('td', { class: 'num' }, healthPageNum(s.ingest.batches)), el('td', { class: 'num' }, healthPageNum(s.ingest.events)),
+      el('td', { class: 'num' }, healthPageNum(s.syslog.messages)), el('td', { class: 'muted' }, last(s.ingest)));
+  });
+  const total = el('tr', { class: 'hp-total' }, el('th', { scope: 'row', 'data-col': 'name' }, 'All servers'),
+    el('td', { class: 'num' }, healthPageNum(t.ingest.batches)), el('td', { class: 'num' }, healthPageNum(t.ingest.events)),
+    el('td', { class: 'num' }, healthPageNum(t.syslog.messages)), el('td', { class: 'muted' }, last(t.ingest)));
+  const n = t.servers || 0;
+  const sub = `${n} running ${n === 1 ? 'server' : 'servers'}, each since it last started` +
+    (t.no_figures ? `; ${t.no_figures} more on an older version ${t.no_figures === 1 ? 'is' : 'are'} not counted.` : '.');
+  return [el('div', { class: 'card hp-cluster' },
+    el('div', { class: 'card__head' }, el('div', {}, el('h3', { class: 'card__title' }, 'All servers'), el('p', { class: 'card__sub' }, sub))),
+    el('div', { class: 'table-wrap' }, el('table', { class: 'table hp-cluster__table' }, head, el('tbody', {}, ...rows, total))))];
 }
 
 // healthSensorRow is the network sensors' row: how many send, went
@@ -4035,6 +4168,8 @@ function healthSyslogRejected(sl) {
     rb.too_large && [rb.too_large, 'over 64 KB, the most a message may be', ['.']],
     rb.bad_framing && [rb.bad_framing, `from ${tcp(rb.bad_framing)} that did not send syslog`, ['.']],
     conns && [conns, `${tcp(conns)} over the connection limit`, ['.']],
+    rb.proxy_untrusted && [rb.proxy_untrusted, `${tcp(rb.proxy_untrusted)} with a PROXY header from an untrusted peer`,
+      ['. If it is your load balancer, add its address to Trusted reverse proxies on the Settings page, under HTTPS.']],
   ].filter(Boolean);
   const one = why.length === 1;
   const line = ([n, what, more]) => [one ? what.charAt(0).toUpperCase() + what.slice(1) : `${healthPageNum(n)} ${what}`, ...more];
