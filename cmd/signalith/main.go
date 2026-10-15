@@ -1425,6 +1425,14 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	srv.KnownBrowsers = r.browsers
 	if parts != nil {
 		srv.SessionStore, srv.KnownBrowsers, srv.SharedUsers = parts.sessions, parts.browsers, parts.api(c)
+		if rt := r.shared; rt != nil {
+			srv.SharedUsers.APITokens = func() string {
+				if rt.APITokens() {
+					return ""
+				}
+				return "API tokens need every server on a version that supports them: upgrade the others first."
+			}
+		}
 	}
 	in.jobs.Go(func() { srv.RunContentUpdates(ctx) })
 	pbRunner := &playbooks.Runner{
