@@ -31,6 +31,15 @@ var zeekMapped = map[string]bool{
 	"notice": true, "capture_loss": true, "stats": true,
 }
 
+// zeekAlsoGeneric are the log types mapped onto a data model that also
+// keep every key as zeek_<key>, as a log without a mapping does (see
+// zeekGeneric): Sigma's Zeek rules for them (Kerberos, RDP, SMB) name
+// Zeek's own keys, which ZeekGenericField finds.
+var zeekAlsoGeneric = map[string]bool{
+	"ssh": true, "rdp": true, "kerberos": true, "ntlm": true, "smb_files": true, "smb_mapping": true,
+	"known_hosts": true, "known_services": true, "software": true, "dhcp": true,
+}
+
 // isZeekTag reports whether a Fluent Bit tag is a Zeek one: "zeek" or
 // "zeek.*".
 func isZeekTag(tag string) bool {
@@ -65,7 +74,7 @@ func zeekLogType(tag string, r map[string]any) string {
 			t = t[i+1:]
 		}
 		fromTag = cleanLogType(t)
-		if zeekMapped[fromTag] || strings.HasSuffix(tag, ".log") {
+		if zeekMapped[fromTag] || zeekAlsoGeneric[fromTag] || strings.HasSuffix(tag, ".log") {
 			return fromTag
 		}
 	}
@@ -227,6 +236,18 @@ func ParseZeek(lt string, r map[string]any, raw string) Event {
 		zeekStats(r, f)
 	default:
 		zeekGeneric(lt, r, f)
+		switch lt {
+		case "ssh", "rdp", "kerberos", "ntlm":
+			model = "Authentication"
+			zeekAuth(lt, r, f)
+		case "smb_files":
+			model = "Filesystem"
+			zeekSMBFiles(r, f)
+		case "smb_mapping":
+			zeekSMBMapping(r, f)
+		case "known_hosts", "known_services", "software", "dhcp":
+			zeekInventory(lt, r, f)
+		}
 	}
 	if model == "Intrusion_Detection" {
 		setLocalHost(f)

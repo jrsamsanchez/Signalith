@@ -1,0 +1,1 @@
+{"ts":1791720630.0,"uids":["CdhcpAbCdEfGhIjKl"],"client_addr":"192.168.10.21","server_addr":"192.168.10.1","mac":"00:50:56:aa:bb:01","host_name":"ws-0042","client_fqdn":"ws-0042.corp.example","domain":"corp.example","requested_addr":"192.168.10.21","assigned_addr":"192.168.10.21","lease_time":86400.0,"msg_types":["REQUEST","ACK"],"duration":0.012}
