@@ -42,6 +42,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/retention"
 	"github.com/jrsamsanchez/signalith/internal/sample"
 	"github.com/jrsamsanchez/signalith/internal/search"
+	"github.com/jrsamsanchez/signalith/internal/sensortune"
 	"github.com/jrsamsanchez/signalith/internal/shared"
 	"github.com/jrsamsanchez/signalith/internal/syslog"
 	"github.com/jrsamsanchez/signalith/internal/tlsauto"
@@ -92,6 +93,9 @@ type Server struct {
 	// Endpoints manages the hosts that run osquery (the Endpoints page and
 	// osquery's remote API); nil disables them.
 	Endpoints *endpoint.Store
+	// SensorTuning keeps the Suricata rule tuning network sensors fetch
+	// (Settings > Network sensors); nil without OpenSearch.
+	SensorTuning *sensortune.Store
 	// Vulns backs the Vulnerabilities page (network scans with Nmap); nil
 	// disables it.
 	Vulns *Vulns
@@ -329,6 +333,7 @@ func (s *Server) Handler() http.Handler {
 	s.routeClusterOSIdentity(api)
 	s.routeClusterInstall(mux, api)
 	s.routeSensor(mux, api)
+	s.routeSensors(api)
 	s.routeTokens(api)
 	s.routeAPITokens(api)
 	s.routeAgents(api)

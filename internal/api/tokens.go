@@ -64,10 +64,11 @@ func LegacyTokens(c *config.Config) []agenttokens.Legacy {
 }
 
 // EnrollToken checks an osquery enroll secret: an active agent token, or
-// an accepted shared one, gives its ID.
+// an accepted shared one, gives its ID. A sensor token is refused: it is
+// for a network sensor only.
 func (s *Server) EnrollToken(secret string) (tokenID string, ok bool) {
 	id, res := s.tokens().Check(strings.TrimSpace(secret))
-	if res != agenttokens.Valid {
+	if res != agenttokens.Valid || id.Purpose == agenttokens.PurposeSensor {
 		return "", false
 	}
 	return id.ID, true
