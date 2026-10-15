@@ -61,7 +61,12 @@ func TestClusterAddServer(t *testing.T) {
 	a := addJoinServer(h, o, "siem-a", true)
 	a.start()
 
-	// The token, with the lines the dialog shows.
+	// The token, with the lines the dialog shows, once siem-a has founded
+	// the cluster (joins are answered only then).
+	waitUntil(t, 60*time.Second, "siem-a is a member of its cluster", func() bool {
+		st, ok := a.clusterStatus()
+		return ok && st.Shared.Mode == "member"
+	})
 	var out string
 	var code int
 	waitUntil(t, 60*time.Second, "siem-a makes a join token", func() bool {
