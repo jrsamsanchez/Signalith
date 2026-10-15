@@ -1,0 +1,7 @@
+{"rule": "f1483f5e-ee29-11eb-9d23-acde48001122", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"Image":"C:\\Windows\\System32\\rundll32.exe","ProcessId":"4242","QueryName":"updates.example.com","QueryResults":"::ffff:192.0.2.30;","QueryStatus":"0","User":"CORP\\tester"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"Image":"C:\\Windows\\System32\\rundll32.exe","ProcessId":"4242","QueryName":"updates.example.com","QueryResults":"::ffff:192.0.2.30;","QueryStatus":"0","User":"CORP\\tester"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"Image":"C:\\Windows\\System32\\rundll32.exe","ProcessId":"4242","QueryName":"updates.example.com","QueryResults":"::ffff:192.0.2.30;","QueryStatus":"0","User":"CORP\\tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"Image":"C:\\Windows\\System32\\rundll32.exf","ProcessId":"4242","QueryName":"updates.example.com","QueryResults":"::ffff:192.0.2.30;","QueryStatus":"0","User":"CORP\\tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"Image":"D:\\apps\\launcher\\launcher.exe","ProcessId":"4242","QueryName":"updates.example.com","QueryResults":"::ffff:192.0.2.30;","QueryStatus":"0","User":"CORP\\tester"}}
+]}

@@ -97,7 +97,7 @@ func main() {
 		Name:   "splunk",
 		Title:  "Splunk Security Content",
 		Format: "splunk",
-		Description: "Windows detections for process, file and registry events from Splunk's Threat Research Team (security_content), converted to Signalith detections. " +
+		Description: "Windows detections for process, file and registry events, and network detections over connections, DNS lookups and web requests, from Splunk's Threat Research Team (security_content), converted to Signalith detections. " +
 			"TTP rules raise findings; anomaly rules only add risk, as in Splunk's risk-based alerting. Each rule shipped here agrees with Splunk's reading of its search on its test events, checked in CI.",
 		Source:     "https://github.com/splunk/security_content",
 		Version:    commit,
@@ -150,6 +150,10 @@ func main() {
 	usedIDs := map[string]bool{}
 	usedMacros := map[string]bool{}
 	rules, _ := filepath.Glob(filepath.Join(*splunkDir, "detections", "endpoint", "*.yml"))
+	// Network detections: tstats over the network data models, which a
+	// network sensor fills, and Sysmon's network events.
+	network, _ := filepath.Glob(filepath.Join(*splunkDir, "detections", "network", "*.yml"))
+	rules = append(rules, network...)
 	sort.Strings(rules)
 	for _, f := range rules {
 		rel, _ := filepath.Rel(*splunkDir, f)
@@ -171,11 +175,21 @@ func main() {
 			skip("type "+meta.Type+" (not TTP or Anomaly)", rel)
 			continue
 		}
+		opt := splcheck.ParseOptions{Network: detect.SplunkNetworkRule(rel)}
 		if !slices.ContainsFunc(meta.DataSource, func(s string) bool { return slices.Contains(windowsSources, s) }) {
-			skip("no Windows Sysmon or Security log data source", rel)
-			continue
+			// A network rule reads its data model from any source, a
+			// network sensor's among them.
+			r, err := splcheck.ParseWith(src, macros, opt)
+			if opt.Network && err != nil {
+				skip("network detection does not convert exactly: "+short(err), rel)
+				continue
+			}
+			if !opt.Network || !splcheck.IsSensorNode(r.Node) {
+				skip("no Windows Sysmon or Security log data source", rel)
+				continue
+			}
 		}
-		rule, err := splcheck.Parse(src, macros)
+		rule, err := splcheck.ParseWith(src, macros, opt)
 		if err != nil {
 			skip("does not convert exactly: "+short(err), rel)
 			continue
@@ -206,7 +220,11 @@ func main() {
 		}
 		tf := &sigmacheck.TestFile{Rule: rule.ID, Cases: splcheck.Cases(rule)}
 		if !slices.ContainsFunc(tf.Cases, func(c sigmacheck.Case) bool { return c.Expect }) {
-			skip("no test events: no Windows event as Signalith stores it matches the rule", rel)
+			if opt.Network && splcheck.IsSensorNode(rule.Node) {
+				skip("no test events: no network sensor event as Signalith stores it matches the rule", rel)
+			} else {
+				skip("no test events: no Windows event as Signalith stores it matches the rule", rel)
+			}
 			continue
 		}
 		for _, c := range recorded[rule.ID] {
@@ -318,7 +336,7 @@ func writeReport(p *detect.Pack, skipped map[string][]string) {
 	for _, v := range skipped {
 		total += len(v)
 	}
-	fmt.Fprintf(&b, "%d rules shipped. %d endpoint detections were left out:\n\n| Rules | Reason |\n| ---: | --- |\n", len(p.Rules), total)
+	fmt.Fprintf(&b, "%d rules shipped. %d endpoint and network detections were left out:\n\n| Rules | Reason |\n| ---: | --- |\n", len(p.Rules), total)
 	reasons := make([]string, 0, len(skipped))
 	for r := range skipped {
 		reasons = append(reasons, r)

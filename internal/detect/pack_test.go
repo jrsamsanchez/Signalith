@@ -4,6 +4,7 @@ import (
 	"io/fs"
 	"os"
 	"path"
+	"slices"
 	"strings"
 	"testing"
 
@@ -83,7 +84,7 @@ func TestPackRulesFireOnTheirTests(t *testing.T) {
 			var ruleID string
 			var verify func(tf *sigmacheck.TestFile) []error
 			if p.Format == "splunk" {
-				rule, err := splcheck.Parse(src, p.macros)
+				rule, err := splcheck.ParseWith(src, p.macros, splcheck.ParseOptions{Network: SplunkNetworkRule(r.Path)})
 				if err != nil {
 					t.Errorf("%s: %v", r.ID, err)
 					continue
@@ -193,8 +194,16 @@ func TestPackDetections(t *testing.T) {
 }
 
 // networkPackRule reports whether a pack rule is a generic network one
-// (Sigma's dns, proxy or firewall category), limited to its data model.
+// (Sigma's dns, proxy or firewall category, or a Splunk network
+// detection over a network data model), limited to its data model.
 func networkPackRule(d *Detection) bool {
+	if d.Origin != nil && d.Origin.Pack == "splunk" && slices.Contains(d.Tags, "network") {
+		for _, m := range []string{"Network_Traffic", "Network_Resolution", "Web"} {
+			if strings.HasPrefix(d.Query, "datamodel="+m+" ") {
+				return true
+			}
+		}
+	}
 	models := map[string]string{"dns": "Network_Resolution", "proxy": "Web", "firewall": "Network_Traffic"}
 	for _, t := range d.Tags {
 		if m, ok := models[t]; ok && strings.HasPrefix(d.Query, "datamodel="+m+" ") {
