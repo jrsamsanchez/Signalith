@@ -966,6 +966,14 @@ sensor_packages() {
   # never start.
   if [ "$suricata" = yes ]; then mask_vendor suricata.service; fi
   mask_vendor fluent-bit.service
+  # Packages that make their own account (Suricata's does) leave it behind
+  # when removed: one they make on this run is recorded, so --uninstall
+  # removes it too.
+  had_accounts=''
+  for a in zeek suricata; do
+    if getent passwd "$a" >/dev/null 2>&1; then had_accounts="$had_accounts $a"; fi
+    if getent group "$a" >/dev/null 2>&1; then had_accounts="$had_accounts group:$a"; fi
+  done
   if [ "$zeek" = yes ]; then pkg_install "$ZEEK_PACKAGE"; fi
   if [ "$suricata" = yes ]; then
     if [ "$os_id" = debian ]; then
@@ -977,6 +985,14 @@ sensor_packages() {
     fi
   fi
   pkg_install fluent-bit
+  for a in zeek suricata; do
+    case " $had_accounts " in *" group:$a "*) ;; *)
+      if getent group "$a" >/dev/null 2>&1 && ! manifest_has "group $a"; then manifest_add "group $a"; fi ;;
+    esac
+    case " $had_accounts " in *" $a "*) ;; *)
+      if getent passwd "$a" >/dev/null 2>&1 && ! manifest_has "account $a"; then manifest_add "account $a"; fi ;;
+    esac
+  done
   # Run again, the programs that were already here get their publishers'
   # newest packages (Zeek within its long-term support line).
   if [ "$zeek" = yes ]; then pkg_upgrade zeek "$ZEEK_PACKAGE"; fi
