@@ -19,6 +19,8 @@ chmod 0755 /usr/local/sbin/systemctl
 : >/tmp/systemctl.log
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
+# same reports whether two files are the same (minimal images have no cmp).
+same() { [ "$(sha256sum <"$1")" = "$(sha256sum <"$2")" ]; }
 
 # A program that is not the one the line names is refused, and nothing
 # is installed.
@@ -38,13 +40,13 @@ echo "$out" | grep -q "not a Signalith join token" || fail "bad token: $out"
 # config, and the service turned on.
 sum=$(sha256sum "$program" | awk '{print $1}')
 sh "$script" --binary "$program" --sha256 "$sum" || fail "install failed"
-cmp -s "$program" /usr/local/bin/signalith || fail "the program in /usr/local/bin differs"
+same "$program" /usr/local/bin/signalith || fail "the program in /usr/local/bin differs"
 id signalith >/dev/null || fail "no signalith account"
 [ "$(stat -c '%U:%G %a' /etc/signalith)" = "root:signalith 750" ] || fail "/etc/signalith is $(stat -c '%U:%G %a' /etc/signalith)"
 [ "$(stat -c '%U:%G %a' /var/lib/signalith)" = "signalith:signalith 750" ] || fail "/var/lib/signalith is $(stat -c '%U:%G %a' /var/lib/signalith)"
 [ "$(stat -c '%U:%G %a' /etc/signalith/signalith.yaml)" = "root:signalith 640" ] || fail "signalith.yaml is $(stat -c '%U:%G %a' /etc/signalith/signalith.yaml)"
 [ "$(stat -c '%U %a' /etc/signalith/initial-admin-password)" = "root 600" ] || fail "the first password file is $(stat -c '%U %a' /etc/signalith/initial-admin-password)"
-cmp -s deploy/systemd/signalith.service /etc/systemd/system/signalith.service || fail "the unit differs from deploy/systemd/signalith.service"
+same deploy/systemd/signalith.service /etc/systemd/system/signalith.service || fail "the unit differs from deploy/systemd/signalith.service"
 grep -qx "enable --now signalith" /tmp/systemctl.log || fail "the service was not turned on: $(cat /tmp/systemctl.log)"
 /usr/local/bin/signalith validate -c /etc/signalith/signalith.yaml >/dev/null || fail "the config does not validate"
 
