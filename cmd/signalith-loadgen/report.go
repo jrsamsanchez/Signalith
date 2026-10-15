@@ -35,6 +35,7 @@ type Report struct {
 	Phases   []PhaseReport     `json:"phases,omitempty"`
 	Faults   []FaultResult     `json:"faults,omitempty"`
 	Verify   *Verdict          `json:"verify,omitempty"`
+	Checks   []CheckResult     `json:"checks,omitempty"`
 	Criteria []CriterionResult `json:"criteria,omitempty"`
 	Notes    []string          `json:"notes,omitempty"`
 	Pass     bool              `json:"pass"`
@@ -147,6 +148,16 @@ func (r *Report) WriteText(w io.Writer) {
 		}
 		fmt.Fprintln(w)
 	}
+	for _, c := range r.Checks {
+		status := "passed"
+		if !c.Pass {
+			status = "FAILED"
+		}
+		fmt.Fprintf(w, "\nCheck %s: %s\n", c.Name, status)
+		if c.Output != "" && !c.Pass {
+			fmt.Fprintf(w, "  %s\n", strings.ReplaceAll(c.Output, "\n", "\n  "))
+		}
+	}
 	if v := r.Verify; v != nil {
 		fmt.Fprintf(w, "\nVerify: %d events acknowledged, %d copies stored, %d lost, %d duplicated, %d stored without an answer\n",
 			v.Acked, v.Stored, v.Lost, v.Duplicated, v.Unacked)
@@ -190,4 +201,17 @@ func (r *Report) WriteJSON(path string) error {
 		return err
 	}
 	return os.WriteFile(path, append(b, '\n'), 0o644)
+}
+
+// readReport loads a report saved with -json.
+func readReport(path string) (*Report, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var r Report
+	if err := json.Unmarshal(b, &r); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	return &r, nil
 }

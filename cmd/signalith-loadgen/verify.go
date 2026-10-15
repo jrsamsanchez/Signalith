@@ -9,9 +9,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -19,7 +21,10 @@ import (
 // verify, and the operation counters, for the request rates. It never
 // writes.
 type osReader struct {
-	url    string
+	// urls are the nodes; cur is the one in use, and a node that does
+	// not answer moves the reader on to the next.
+	urls   []string
+	cur    atomic.Int64
 	prefix string
 	client *http.Client
 	user   string
@@ -45,8 +50,13 @@ func newOSReader(o OpenSearch) (*osReader, error) {
 		}
 		tc.Certificates = []tls.Certificate{pair}
 	}
-	r := &osReader{url: strings.TrimRight(o.URL, "/"), prefix: o.Prefix,
-		client: &http.Client{Timeout: time.Minute, Transport: newTransport(tc, nil)}}
+	r := &osReader{prefix: o.Prefix,
+		client: &http.Client{Transport: newTransport(tc, nil)}}
+	for _, u := range append([]string{o.URL}, o.URLs...) {
+		if u = strings.TrimRight(u, "/"); u != "" && !slices.Contains(r.urls, u) {
+			r.urls = append(r.urls, u)
+		}
+	}
 	if r.prefix == "" {
 		r.prefix = "signalith"
 	}
@@ -58,20 +68,45 @@ func newOSReader(o OpenSearch) (*osReader, error) {
 	return r, nil
 }
 
+// do sends one read request, to the node in use or, when that one does
+// not answer, to the next.
 func (r *osReader) do(ctx context.Context, method, path string, in, out any) error {
-	var body io.Reader
+	var payload []byte
 	if in != nil {
 		b, err := json.Marshal(in)
 		if err != nil {
 			return err
 		}
-		body = bytes.NewReader(b)
+		payload = b
 	}
-	req, err := http.NewRequestWithContext(ctx, method, r.url+path, body)
+	var err error
+	start := r.cur.Load()
+	for i := range int64(len(r.urls)) {
+		n := (start + i) % int64(len(r.urls))
+		err = r.doAt(ctx, r.urls[n], method, path, payload, out)
+		var ae *apiError
+		if err == nil || ctx.Err() != nil || (errors.As(err, &ae) && ae.Status != http.StatusServiceUnavailable) {
+			if err == nil && n != start {
+				r.cur.Store(n)
+			}
+			return err
+		}
+	}
+	return err
+}
+
+func (r *osReader) doAt(ctx context.Context, base, method, path string, payload []byte, out any) error {
+	var body io.Reader
+	if payload != nil {
+		body = bytes.NewReader(payload)
+	}
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, method, base+path, body)
 	if err != nil {
 		return err
 	}
-	if in != nil {
+	if payload != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
 	if r.user != "" {

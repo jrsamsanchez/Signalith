@@ -249,18 +249,24 @@ func shorten(s *Scenario, d time.Duration) {
 }
 
 func (c *itCluster) run(s *Scenario) *Report {
+	return c.runWith(s, runOptions{}, s.Name)
+}
+
+// runWith runs s with opts and saves its report as name.json.
+func (c *itCluster) runWith(s *Scenario, opts runOptions, name string) *Report {
 	t := c.t
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
 	defer cancel()
-	rep, err := runScenario(ctx, s, runOptions{Log: testWriter{t}})
+	opts.Log = testWriter{t}
+	rep, err := runScenario(ctx, s, opts)
 	must(t, err)
 	var b strings.Builder
 	rep.WriteText(&b)
 	t.Log(b.String())
 	if dir := os.Getenv("LOADGEN_REPORT_DIR"); dir != "" {
 		must(t, os.MkdirAll(dir, 0o755))
-		must(t, rep.WriteJSON(filepath.Join(dir, s.Name+".json")))
+		must(t, rep.WriteJSON(filepath.Join(dir, name+".json")))
 	}
 	return rep
 }
@@ -329,4 +335,35 @@ func TestLoadgenBrowsers(t *testing.T) {
 func TestLoadgenBrute(t *testing.T) {
 	c := newITCluster(t, "a", "b")
 	requirePass(t, c.run(c.scenario("s6-brute.yaml")))
+}
+
+// TestLoadgenSizing measures what docs/performance.md's sizing table
+// shows: loadtest/sizing-small.yaml against one server, then two (the
+// second compared with the first), with each server's CPU and memory
+// read from /proc. It takes about a quarter of an hour, so it runs only
+// with LOADGEN_SIZING=1 (the nightly job's sizing step). The table is
+// logged and, with LOADGEN_REPORT_DIR, saved as sizing.md.
+func TestLoadgenSizing(t *testing.T) {
+	if os.Getenv("LOADGEN_SIZING") == "" {
+		t.Skip("set LOADGEN_SIZING=1 to measure the sizing table")
+	}
+	var reports []*Report
+	for _, names := range [][]string{{"a"}, {"a", "b"}} {
+		c := newITCluster(t, names...)
+		opts := runOptions{PIDs: map[string]int{}}
+		for _, sv := range c.servers {
+			opts.PIDs[sv.name] = sv.cmd.Process.Pid
+		}
+		if len(reports) > 0 {
+			opts.Baseline = reports[0]
+		}
+		rep := c.runWith(c.scenario("sizing-small.yaml"), opts, fmt.Sprintf("sizing-small-%d", len(names)))
+		requirePass(t, rep)
+		reports = append(reports, rep)
+	}
+	table := sizingTable(reports)
+	t.Log("\n" + table)
+	if dir := os.Getenv("LOADGEN_REPORT_DIR"); dir != "" {
+		must(t, os.WriteFile(filepath.Join(dir, "sizing.md"), []byte(table), 0o644))
+	}
 }
