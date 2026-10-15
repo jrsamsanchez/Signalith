@@ -483,6 +483,10 @@ func exportCAKey(out io.Writer, o bootstrapOptions, chown bool) error {
 	return nil
 }
 
+// crlRequiredFile, next to the revocation list, tells OpenSearch's
+// entrypoint not to start without the list.
+const crlRequiredFile = "crl-required"
+
 // bootstrapCRL makes sure the revocation list OpenSearch checks client
 // certificates against is there, signed by the CA and in force: an empty
 // one when it is missing or is not (after -new-ca, say), since OpenSearch
@@ -514,15 +518,24 @@ func bootstrapCRL(out io.Writer, o bootstrapOptions, chown bool) error {
 		}
 		fmt.Fprintln(out, "Made OpenSearch's revocation list, which names no certificate yet.")
 	}
-	for _, f := range []string{p, o.CRLDir} {
+	// From now on OpenSearch does not start without the list
+	// (docker-compose.yml): one that started without it would check no
+	// certificate until it restarts.
+	req := filepath.Join(o.CRLDir, crlRequiredFile)
+	if err := writeFile(req, []byte("OpenSearch starts only with crl.pem here, which Signalith keeps.\n"), 0o644); err != nil {
+		return err
+	}
+	for _, f := range []string{p, req, o.CRLDir} {
 		if chown {
 			if err := os.Chown(f, o.SigUID, o.SigUID); err != nil {
 				return err
 			}
 		}
 	}
-	if err := os.Chmod(p, 0o644); err != nil {
-		return err
+	for _, f := range []string{p, req} {
+		if err := os.Chmod(f, 0o644); err != nil {
+			return err
+		}
 	}
 	return os.Chmod(o.CRLDir, 0o755)
 }

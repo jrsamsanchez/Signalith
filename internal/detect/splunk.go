@@ -61,6 +61,10 @@ func SplunkFilter(r *splcheck.Rule) (query.Expr, error) {
 		// Every Linux audit record, of any type.
 		return and([]query.Expr{&query.Compare{Field: "sourcetype", Op: "=", Value: ingest.AuditdSourcetype}, e}), nil
 	}
+	if r.Node == "Web" {
+		// Only web server logs fill the Web data model.
+		return e, nil
+	}
 	sourcetype := windowsSourcetypes
 	if r.Linux {
 		sourcetype = ingest.SysmonLinuxSourcetype
@@ -300,7 +304,7 @@ func SplunkDetection(p *Pack, r PackRule, src []byte) (*Detection, error) {
 		Severity:    splunkSeverity(rule),
 		MITRE:       mitre,
 		Throttle:    Throttle{Window: "24h", Fields: splunkThrottle(rule.Node, dm)},
-		Risk:        &Risk{Score: score, Objects: []RiskObject{{Field: "user", Type: "user"}, {Field: "host", Type: "system"}}, Only: !strings.EqualFold(rule.Type, "TTP")},
+		Risk:        &Risk{Score: score, Objects: riskObjects(dm), Only: !strings.EqualFold(rule.Type, "TTP")},
 		Tags:        []string{"splunk", p.Name, strings.ToLower(rule.Type), strings.ToLower(rule.Node)},
 	}
 	if fp := strings.TrimSpace(rule.FalsePositives); fp != "" {
@@ -320,6 +324,15 @@ func SplunkDetection(p *Pack, r PackRule, src []byte) (*Detection, error) {
 		return nil, err
 	}
 	return d, nil
+}
+
+// riskObjects are what a pack rule's risk is about: the account and the
+// host, or for a web request the client and the web server.
+func riskObjects(datamodel string) []RiskObject {
+	if strings.EqualFold(datamodel, ingest.WebModel) {
+		return []RiskObject{{Field: "src", Type: "system"}, {Field: "host", Type: "system"}}
+	}
+	return []RiskObject{{Field: "user", Type: "user"}, {Field: "host", Type: "system"}}
 }
 
 // splunkThreshold makes a detection count as its rule does: stats over

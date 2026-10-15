@@ -1,0 +1,4 @@
+{"rule": "583aa0a2-30b1-4d62-8bf3-ab73689efe6c", "cases": [
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_referrer":"${@java"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{}}
+]}

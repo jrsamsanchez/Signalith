@@ -306,6 +306,9 @@ func packThrottle(category, datamodel string) []string {
 		return []string{"host", "process_path", "registry_path"}
 	case "network_resolution":
 		return []string{"host", "process_path", "query"}
+	case "web":
+		// A web request: the server, the client and the path asked for.
+		return []string{"host", "src", "uri_path"}
 	case "image_load":
 		return []string{"host", "process_path", "loaded_file_path"}
 	case "script":
@@ -374,7 +377,7 @@ func PackDetection(p *Pack, r PackRule, src []byte) (*Detection, error) {
 	if score == 0 {
 		score = 25
 	}
-	d.Risk = &Risk{Score: score, Objects: []RiskObject{{Field: "user", Type: "user"}, {Field: "host", Type: "system"}}}
+	d.Risk = &Risk{Score: score, Objects: riskObjects(q.Datamodel)}
 	if l := strings.ToLower(meta.Level); l == "low" || l == "informational" {
 		d.Risk.Only = true
 	}
