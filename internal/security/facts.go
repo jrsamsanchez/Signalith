@@ -56,6 +56,9 @@ type Facts struct {
 	Files      FileFacts
 	// ConfidentialVM is "AMD SEV-SNP" or "Intel TDX" when found.
 	ConfidentialVM string
+	// CRL is the revocation list OpenSearch checks client certificates
+	// against, nil when opensearch.crl_file is not set.
+	CRL *CRLFacts
 	// Feeds are the enabled threat intel feeds.
 	Feeds []Feed
 
@@ -266,6 +269,20 @@ type ArchiveFacts struct {
 }
 
 // OpenSearchFacts is about OpenSearch, as the probes found it.
+// CRLFacts are what the revocation list OpenSearch checks client
+// certificates against (opensearch.crl_file) says.
+type CRLFacts struct {
+	File string
+	// Missing is true when there is no such file; Err says why it cannot
+	// be used otherwise.
+	Missing bool
+	Err     string
+	// Revoked is how many certificates it names, and NextUpdate when it
+	// expires.
+	Revoked    int
+	NextUpdate time.Time
+}
+
 type OpenSearchFacts struct {
 	// Anonymous is open, closed or unknown: whether a request without
 	// sign-in could read events. AnonymousErr says why unknown.

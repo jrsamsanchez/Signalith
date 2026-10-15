@@ -25,6 +25,7 @@ const serverPanels = [];
   // [pulse state, label] for each server state from api/cluster.
   const STATE = {
     ready: ['', 'Running'],
+    draining: ['idle', 'Draining'],
     starting: ['idle', 'Starting'],
     stopping: ['idle', 'Stopping'],
     stopped: ['idle', 'Stopped'],

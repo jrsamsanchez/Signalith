@@ -1,0 +1,4 @@
+{"rule": "424273ea-7cf8-43a6-b712-375f925e481f", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-TaskScheduler/Operational","event_id":"129","data":{"Path":"\\Desktop\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-TaskScheduler/Operational","event_id":"129","data":{}}
+]}

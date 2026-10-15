@@ -3,6 +3,8 @@ package security
 import (
 	"bufio"
 	"context"
+	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"io/fs"
 	"os"
@@ -15,6 +17,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/archivecrypt"
 	"github.com/jrsamsanchez/signalith/internal/config"
 	"github.com/jrsamsanchez/signalith/internal/intel"
+	"github.com/jrsamsanchez/signalith/internal/ospki"
 	"github.com/jrsamsanchez/signalith/internal/secrets"
 	"github.com/jrsamsanchez/signalith/internal/users"
 	"golang.org/x/crypto/bcrypt"
@@ -117,11 +120,68 @@ func HostCollectors(h Host, archiving bool) []Collector {
 				p, m, cvm := probeProcess(h.PID, h.PID == "self", h.Systemd)
 				return func(f *Facts) { f.Process, f.Memory, f.ConfidentialVM = p, m, cvm }
 			}},
+		{Name: "revocation list", Checks: []string{"accounts.opensearch_crl"}, Timeout: OSTimeout, Run: func(context.Context) func(*Facts) {
+			crl, denied := crlFacts(h)
+			return func(f *Facts) {
+				f.CRL = crl
+				if denied {
+					f.deny("accounts.opensearch_crl")
+				}
+			}
+		}},
 		{Name: "built-in admin", Checks: []string{"accounts.builtin_password"}, Timeout: OSTimeout, Run: func(context.Context) func(*Facts) {
 			a := adminFacts(h)
 			return func(f *Facts) { f.Admin = a }
 		}},
 	}
+}
+
+// crlFacts reads the revocation list OpenSearch checks client
+// certificates against, and checks it with OpenSearch's CA.
+func crlFacts(h Host) (*CRLFacts, bool) {
+	path := h.Config.OpenSearchCRLFile()
+	if path == "" {
+		return nil, false
+	}
+	out := &CRLFacts{File: path}
+	b, err := os.ReadFile(path)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		out.Missing = true
+		return out, false
+	case isDenied(err):
+		return out, true
+	case err != nil:
+		out.Err = err.Error()
+		return out, false
+	}
+	caFile, _, _ := h.Config.OpenSearchTLSFiles()
+	cas, _ := os.ReadFile(caFile)
+	var first error
+	for rest := cas; ; {
+		var block *pem.Block
+		block, rest = pem.Decode(rest)
+		if block == nil {
+			break
+		}
+		ca, err := x509.ParseCertificate(block.Bytes)
+		if block.Type != "CERTIFICATE" || err != nil {
+			continue
+		}
+		l, err := ospki.ParseCRL(b, ca, time.Now())
+		if err == nil {
+			out.Revoked, out.NextUpdate = len(l.RevokedCertificateEntries), l.NextUpdate
+			return out, false
+		}
+		if first == nil {
+			first = err
+		}
+	}
+	if first == nil {
+		first = errors.New("opensearch.ca_file holds no certificate authority to check it against")
+	}
+	out.Err = first.Error()
+	return out, false
 }
 
 // keyFacts reads where the master key comes from, and who may read it.

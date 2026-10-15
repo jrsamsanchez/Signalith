@@ -42,13 +42,12 @@ type Library struct {
 	// each last, as it says.
 	backend Backend
 	meta    map[string]Stored
+	// Hold, when set, is taken around each change saved in Dir: release
+	// is called once it is saved, and an error refuses the change (while
+	// the detections move into a cluster's shared settings).
+	Hold func() (release func(), err error)
 	// wmu lets one change run at a time.
 	wmu sync.Mutex
-	// Hold, when set, is taken around each change saved to Dir (not to a
-	// backend): release is called once it is saved, and an error refuses
-	// the change, as while the folder moves into the shared settings of
-	// a cluster.
-	Hold func() (release func(), err error)
 }
 
 // State is what an admin chose for a built-in or pack detection without

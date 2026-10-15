@@ -13,13 +13,16 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/netip"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
 	"sync"
+	"time"
 )
 
 // Priorities, lowest first. Priority scales risk and raises urgency.
@@ -247,6 +250,13 @@ type Store struct {
 	// rewritten within the file system's time resolution (Windows) keeps
 	// its time.
 	sums [4][sha256.Size]byte
+	// backend keeps the user's lists in the shared settings of a cluster
+	// (see shared.go); nil keeps them in Dir only.
+	backend Backend
+	// Hold, when set, is taken around each upload kept in Dir only (no
+	// backend): release is called once it is saved, and an error refuses
+	// it (while the lists move into a cluster's shared settings).
+	Hold func() (release func(), err error)
 }
 
 // lookup indexes one pair of lists. It is never changed once built, so a
@@ -672,10 +682,22 @@ func replaceFile(path string, data []byte) error {
 		err = os.Chmod(name, 0o640)
 	}
 	if err == nil {
-		err = os.Rename(name, path)
+		err = renameOver(name, path)
 	}
 	if err != nil {
 		_ = os.Remove(name)
+	}
+	return err
+}
+
+// renameOver renames from over to. On Windows a file another goroutine
+// or program is reading at that moment cannot be replaced (access is
+// denied until it is closed), so it tries again for a short while.
+func renameOver(from, to string) error {
+	err := os.Rename(from, to)
+	for i := 0; err != nil && runtime.GOOS == "windows" && errors.Is(err, fs.ErrPermission) && i < 20; i++ {
+		time.Sleep(25 * time.Millisecond)
+		err = os.Rename(from, to)
 	}
 	return err
 }

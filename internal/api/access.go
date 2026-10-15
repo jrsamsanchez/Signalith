@@ -710,6 +710,13 @@ func (s *Server) runDirectoryRecheck(name string, rev uint64, settingsChanged bo
 func (s *Server) revokeDirectoryUser(ctx context.Context, name, reason string) {
 	u, changed, err := s.userStore().RefuseDirectoryUser(ctx, name, reason)
 	if err != nil {
+		// The record could not be changed, as while the cluster takes
+		// the users over: the user's sessions end all the same.
+		if cur, ok := s.userStore().Get(name); ok && cur.Source == users.SourceDirectory {
+			if ended := s.sessions().EndUser(ctx, cur.Username, ""); ended > 0 {
+				s.Log.Warn("directory user lost access", "audit", true, "user", cur.Username, "reason", reason, "sessions_ended", ended, "by", "directory", "err", err)
+			}
+		}
 		return
 	}
 	ended := s.sessions().EndUser(ctx, u.Username, "")

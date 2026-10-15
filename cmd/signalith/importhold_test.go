@@ -12,6 +12,7 @@ import (
 
 	"github.com/jrsamsanchez/signalith/internal/cluster/ostest"
 	"github.com/jrsamsanchez/signalith/internal/clustercfg"
+	"github.com/jrsamsanchez/signalith/internal/clusterlib"
 	"github.com/jrsamsanchez/signalith/internal/shared"
 )
 
@@ -22,10 +23,10 @@ import (
 // file that is no longer read once the server switches to the shared
 // settings: it must either be refused, saying to try again (and the
 // test then sends it again), or reach the shared settings. kept reports
-// whether the change is there once the server switched. setup, when
-// set, runs before the server can reach OpenSearch, so an importer that
-// runs only when there is something to import has something.
-func saveWhileMoving(t *testing.T, importer, extra string, setup func(*running), save func(*running) (int, map[string]any, error), kept func(*running) bool) {
+// whether the change is there once the server switched. prepare, when
+// set, runs before the server founds the cluster, to give the importer
+// something to move.
+func saveWhileMoving(t *testing.T, importer, extra string, prepare func(*running), save func(*running) (int, map[string]any, error), kept func(*running) bool) {
 	t.Setenv(clusterKeyFileEnv, "")
 	type result struct {
 		code int
@@ -61,8 +62,8 @@ func saveWhileMoving(t *testing.T, importer, extra string, setup func(*running),
 		t.Fatalf("mode %s", m)
 	}
 	rs.signIn()
-	if setup != nil {
-		setup(rs)
+	if prepare != nil {
+		prepare(rs)
 	}
 	cur.Store(rs)
 	fos.SetFault(nil)
@@ -145,40 +146,74 @@ func TestUserSaveWhileUsersMove(t *testing.T) {
 		})
 }
 
-// A detection added while the founder moves its detections folder into
-// the shared library is not lost.
+// libraryShared waits for rs to take its detections, dashboards and
+// lists from the shared settings, which follow the shared settings with
+// a restart of their own.
+func (rs *running) libraryShared() {
+	rs.t.Helper()
+	eventually(rs.t, "the library is shared", func() bool {
+		return rs.r.sharedContent.library.on.Load() && rs.r.sharedContent.library.lists.Load()
+	})
+}
+
+// A detection saved while the founder moves its detections into the
+// shared settings is not lost.
 func TestDetectionSaveWhileDetectionsMove(t *testing.T) {
 	saveWhileMoving(t, shared.ImportDetections, "",
 		func(rs *running) {
-			if code, out, err := rs.call("", "POST", "/api/detections", `{"id":"kept-rule","title":"Kept","query":"user=alice"}`); err != nil || code != http.StatusCreated && code != http.StatusOK {
-				t.Fatalf("detection before the move: %d %v %v", code, out, err)
+			code, out, err := rs.call("", "POST", "/api/detections", `{"id":"first-rule","title":"Saved before","query":"event.action=failure","schedule":"5m","lookback":"5m","severity":"low","enabled":true}`)
+			if err != nil || code != http.StatusCreated {
+				t.Fatalf("saving the first detection: %d %v %v", code, out, err)
 			}
 		},
 		func(rs *running) (int, map[string]any, error) {
-			return rs.call("", "POST", "/api/detections", `{"id":"moving-rule","title":"Mine","query":"user=bob","mitre":["T1078"]}`)
+			return rs.call("", "POST", "/api/detections", `{"id":"moved-rule","title":"Saved while moving","query":"event.action=failure","schedule":"5m","lookback":"5m","severity":"low","enabled":true}`)
 		},
 		func(rs *running) bool {
-			eventually(rs.t, "the library is shared", rs.r.sharedContent.library.on.Load)
-			code, _, _ := rs.call("", "GET", "/api/detections/moving-rule", "")
+			rs.libraryShared()
+			code, _, _ := rs.call("", "GET", "/api/detections/moved-rule", "")
 			return code == http.StatusOK
 		})
 }
 
-// A dashboard added while the founder moves its dashboards folder into
-// the shared library is not lost.
+// A dashboard saved while the founder moves its dashboards into the
+// shared settings is not lost.
 func TestDashboardSaveWhileDashboardsMove(t *testing.T) {
 	saveWhileMoving(t, shared.ImportDashboards, "",
 		func(rs *running) {
-			if code, out, err := rs.call("", "POST", "/api/dashboards", `{"id":"kept-board","title":"Kept"}`); err != nil || code != http.StatusCreated && code != http.StatusOK {
-				t.Fatalf("dashboard before the move: %d %v %v", code, out, err)
+			code, out, err := rs.call("", "POST", "/api/dashboards", `{"id":"first-board","title":"Saved before","panels":[{"title":"Events","query":"* | stats count"}]}`)
+			if err != nil || code != http.StatusCreated {
+				t.Fatalf("saving the first dashboard: %d %v %v", code, out, err)
 			}
 		},
 		func(rs *running) (int, map[string]any, error) {
-			return rs.call("", "POST", "/api/dashboards", `{"id":"moving-board","title":"Mine"}`)
+			return rs.call("", "POST", "/api/dashboards", `{"id":"moved-board","title":"Saved while moving","panels":[{"title":"Events","query":"* | stats count"}]}`)
 		},
 		func(rs *running) bool {
-			eventually(rs.t, "the library is shared", rs.r.sharedContent.library.on.Load)
-			code, _, _ := rs.call("", "GET", "/api/dashboards/moving-board", "")
+			rs.libraryShared()
+			code, _, _ := rs.call("", "GET", "/api/dashboards/moved-board", "")
 			return code == http.StatusOK
+		})
+}
+
+// An asset list uploaded while the founder moves its lists into the
+// shared settings is not lost.
+func TestListSaveWhileListsMove(t *testing.T) {
+	saveWhileMoving(t, shared.ImportLookups, "",
+		func(rs *running) {
+			code, out, err := rs.call("", "PUT", "/api/lookups/identities", "identity,priority\nalice,high\n")
+			if err != nil || code != http.StatusOK {
+				t.Fatalf("uploading the identities: %d %v %v", code, out, err)
+			}
+		},
+		func(rs *running) (int, map[string]any, error) {
+			return rs.call("", "PUT", "/api/lookups/assets", "host,priority\nmoved1,high\n")
+		},
+		func(rs *running) bool {
+			rs.libraryShared()
+			// In the shared settings, not only in this server's copy.
+			_, out, _ := rs.call("", "GET", "/api/lookups/assets", "")
+			etag, _ := out["etag"].(string)
+			return out["count"] == float64(1) && etag != "" && etag != clusterlib.NoList
 		})
 }

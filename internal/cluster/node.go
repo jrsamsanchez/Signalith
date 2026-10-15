@@ -8,7 +8,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"path/filepath"
 	"runtime"
 	"slices"
 	"sort"
@@ -66,6 +65,9 @@ type Settings struct {
 	// certificate comes from, for its heartbeat; nil has none. It must not
 	// call the node.
 	TLS func() *TLSStatus
+	// OSIdentity says who this server signs in to OpenSearch as, for its
+	// heartbeat; nil has none. It must not call the node.
+	OSIdentity func() *OSIdentityStatus
 }
 
 // SharedStatus is how a server uses the shared configuration in
@@ -87,6 +89,8 @@ type SharedStatus struct {
 	// SettingsRev is how far this server has applied the shared settings
 	// and its nodecfg; nil before settings are shared.
 	SettingsRev *SettingsRev
+	// KeyIDs are the ids of the cluster keys this server accepts.
+	KeyIDs []string
 }
 
 // Node is this server in the cluster. It lives as long as the process:
@@ -166,6 +170,9 @@ type Node struct {
 	// paused says why this server's components are not running, so it
 	// must not hold the jobs; Use clears it.
 	paused string
+	// drained says why an admin drained this server, "" when it is not:
+	// it wants no traffic and takes no jobs until Resume.
+	drained string
 	// security is this server's last security check, for its heartbeat.
 	security SecuritySummary
 
@@ -359,6 +366,61 @@ func (n *Node) releaseAsync(reason string) {
 	}()
 }
 
+// Drain drains this server, for why: /readyz answers 503 at once, so
+// load balancers stop sending it traffic, the background jobs are given
+// up (gracefully, as for any release) and it takes none until Resume. It
+// goes on answering whoever still reaches it. Draining a drained server
+// changes nothing.
+func (n *Node) Drain(why string) {
+	if why == "" {
+		why = "an admin drained it"
+	}
+	n.mu.Lock()
+	n.drained = why
+	n.mu.Unlock()
+	n.releaseAsync("this server was drained")
+	n.poke()
+}
+
+// Resume undoes Drain: the server wants traffic again and may take the
+// background jobs.
+func (n *Node) Resume() {
+	n.mu.Lock()
+	was := n.drained != ""
+	n.drained = ""
+	n.mu.Unlock()
+	if was {
+		n.poke()
+	}
+}
+
+// Drained reports whether this server is drained.
+func (n *Node) Drained() bool {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return n.drained != ""
+}
+
+// MoveJobs gives the background jobs up, gracefully, for the server
+// prefer (a node id) to take them: the other servers wait for it a few
+// seconds first. It returns at once; a server that does not run them
+// does nothing.
+func (n *Node) MoveJobs(prefer string) {
+	n.mu.Lock()
+	if n.releasing || !n.lease.Holding() {
+		n.mu.Unlock()
+		return
+	}
+	n.releasing = true
+	n.mu.Unlock()
+	go func() {
+		n.lease.ReleaseTo("an admin moved the background jobs", prefer)
+		n.mu.Lock()
+		n.releasing = false
+		n.mu.Unlock()
+	}()
+}
+
 // SetSecurity keeps the summary of this server's last security check,
 // which its next heartbeat carries.
 func (n *Node) SetSecurity(s SecuritySummary) {
@@ -501,6 +563,8 @@ func (n *Node) tick(ctx context.Context) time.Duration {
 			state = StateStopping
 		case n.paused != "":
 			state = StateDown
+		case n.drained != "":
+			state = StateDraining
 		}
 		n.mu.Unlock()
 		if conflict == "" {
@@ -726,11 +790,10 @@ func (n *Node) identityConflict(other *Heartbeat) error {
 // newIdentityHowTo says how to give this server a new identity.
 func (n *Node) newIdentityHowTo() string {
 	if n.opts.Deployment == "docker" {
-		return "To give this server a new identity, stop it (docker compose stop signalith), delete node.id from its data volume " +
-			"(docker run --rm -v <volume>:/d busybox rm /d/node.id, where docker volume ls shows the volume, such as docker_signalith-data), " +
-			"then start it again (docker compose up -d)."
+		return "To give this server a new identity, stop it (docker compose stop signalith), run " +
+			"docker compose run --rm signalith signalith cluster new-identity, then start it again (docker compose up -d)."
 	}
-	return fmt.Sprintf("To give this server a new identity, stop it, delete %s and start it again.", filepath.Join(n.local.Dir, nodeFile))
+	return "To give this server a new identity, stop it, run signalith cluster new-identity and start it again."
 }
 
 // heartbeatDoc is this server's heartbeat as it is now.
@@ -794,10 +857,14 @@ func (n *Node) heartbeatDoc(state string) Heartbeat {
 		hb.NeedsUpgrade, hb.Tamper, hb.SettingsDrift = sh.NeedsUpgrade, sh.Tamper, sh.SettingsDrift
 		hb.LevelMin, hb.LevelMax = sh.LevelMin, sh.LevelMax
 		hb.SettingsRev = sh.SettingsRev
+		hb.KeyIDs = sh.KeyIDs
 	}
 	hb.Restart, hb.RestartNeeded, hb.SettingsRefused = restart, restartNeeded, refused
 	if f := n.settings.TLS; f != nil {
 		hb.TLS = f()
+	}
+	if f := n.settings.OSIdentity; f != nil {
+		hb.OSIdentity = f()
 	}
 	return hb
 }
@@ -1030,6 +1097,8 @@ func (n *Node) eligibleLocked() (bool, string) {
 		return false, "another process uses its identity"
 	case n.paused != "":
 		return false, n.paused
+	case n.drained != "":
+		return false, "it is drained"
 	case !n.settings.Eligible:
 		return false, "detections.scheduler is off on this server"
 	case shared != "":
@@ -1437,6 +1506,8 @@ const (
 	NotReadyStopping   = "stopping"
 	// NotReadyDown is a server whose parts could not start (see Pause).
 	NotReadyDown = "down"
+	// NotReadyDraining is a server an admin drained (see Drain).
+	NotReadyDraining = "draining"
 )
 
 // Ready reports whether this server should get traffic from a load
@@ -1455,6 +1526,8 @@ func (n *Node) readyLocked() (bool, string) {
 		return false, NotReadyIdentity
 	case n.paused != "":
 		return false, NotReadyDown
+	case n.drained != "":
+		return false, NotReadyDraining
 	case !n.hb.checked && n.lastErr != "":
 		return false, NotReadyOpenSearch
 	case !n.hb.checked:
@@ -1549,7 +1622,7 @@ func (n *Node) Status() Status {
 	self.State = StateReady
 	if !ready {
 		self.State = map[string]string{NotReadyStopping: StateStopping, NotReadyIdentity: StateConflict, NotReadyOpenSearch: StateUnreachable,
-			NotReadyDown: StateDown}[reason]
+			NotReadyDown: StateDown, NotReadyDraining: StateDraining}[reason]
 		if self.State == "" {
 			self.State = StateStarting
 		}
@@ -1657,7 +1730,7 @@ func (n *Node) warningsLocked(st Status, view LeaseView, notWhy string) []Warnin
 			where += " at " + n.copySeen.NodeURL
 		}
 		w = append(w, Warning{Level: "amber", Text: fmt.Sprintf("A copy of this server's state folder was started (%s) while this server runs. "+
-			"This server goes on and the copy stops by itself. Before you start the copy again, give it its own identity: delete node.id in its state folder.", where)})
+			"This server goes on and the copy stops by itself. Before you start the copy again, give it its own identity: run signalith cluster new-identity on it while it is stopped.", where)})
 	}
 	if n.writesRefused {
 		text, banner := fullDiskWarning(st.Jobs)
@@ -1730,6 +1803,10 @@ func (n *Node) localWarningsLocked(st Status) []Warning {
 			continue
 		}
 		names[s.Name]++
+		if s.Detail != nil && s.Detail.OSIdentity != nil && s.Detail.OSIdentity.CRL != nil && s.Detail.OSIdentity.CRL.Problem != "" {
+			w = append(w, Warning{Level: "red", Text: s.Name + ": " + s.Detail.OSIdentity.CRL.Problem,
+				Banner: "OpenSearch's revocation list needs attention: while it is missing or expired, OpenSearch refuses every certificate sign-in. The Servers page says what to do."})
+		}
 		if s.Detail != nil && s.Detail.ClockOffsetMS != nil {
 			off := time.Duration(*s.Detail.ClockOffsetMS) * time.Millisecond
 			if off.Abs() > 2*time.Second {

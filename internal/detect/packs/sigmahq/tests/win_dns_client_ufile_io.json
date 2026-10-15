@@ -1,0 +1,4 @@
+{"rule": "090ffaad-c01a-4879-850c-6d57da98452d", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-DNS-Client/Operational","event_id":"3008","data":{"QueryName":"ufile.io"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-DNS-Client/Operational","event_id":"3008","data":{}}
+]}

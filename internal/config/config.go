@@ -503,6 +503,12 @@ type OpenSearch struct {
 	// presents to OpenSearch, for certificate sign-in.
 	CertFile string `yaml:"cert_file,omitempty"`
 	KeyFile  string `yaml:"key_file,omitempty"`
+	// CRLFile is the revocation list OpenSearch checks client
+	// certificates against (plugins.security.ssl.http.crl.file_path),
+	// which Signalith keeps when the cluster keeps OpenSearch's
+	// certificate authority (internal/clusterpki), so a removed server's
+	// certificate stops working at once.
+	CRLFile string `yaml:"crl_file,omitempty"`
 	// TLSSkipVerify turns off OpenSearch certificate checks, so anyone on
 	// the network path could read and change events. For a lab only; use
 	// CAFile instead.
@@ -1801,6 +1807,10 @@ func (c *Config) applyEnv() error {
 		c.OpenSearch.Password = v[0]
 		c.fromEnv("opensearch.password", from)
 	}
+	if v := strings.TrimSpace(os.Getenv("SIGNALITH_OPENSEARCH_CRL_FILE")); v != "" {
+		c.OpenSearch.CRLFile = v
+		c.fromEnv("opensearch.crl_file", "SIGNALITH_OPENSEARCH_CRL_FILE")
+	}
 	if v := strings.TrimSpace(os.Getenv("SIGNALITH_OPENSEARCH_PROXY")); v != "" {
 		c.OpenSearch.Proxy = v
 		c.fromEnv("opensearch.proxy", "SIGNALITH_OPENSEARCH_PROXY")
@@ -2275,11 +2285,26 @@ func IsPublicIngestToken(t string) bool { return slices.Contains(publicIngestTok
 // OpenSearch with.
 func (c *Config) OpenSearchConnection() store.Config {
 	ca, cert, key := c.OpenSearchTLSFiles()
+	mcert, mkey := c.ManagedOpenSearchFiles()
 	return store.Config{
 		URL: c.OpenSearch.URL, Username: c.OpenSearch.Username, Password: secrets.New("opensearch.password", c.OpenSearch.Password),
-		CAFile: ca, CertFile: cert, KeyFile: key,
+		CAFile: ca, CertFile: cert, KeyFile: key, ManagedCertFile: mcert, ManagedKeyFile: mkey,
 		TLSSkipVerify: c.OpenSearch.TLSSkipVerify, Proxy: c.OpenSearch.Proxy,
 	}
+}
+
+// ManagedOpenSearchDir is the folder in the state folder that holds the
+// OpenSearch client certificate the cluster issued this server
+// (internal/clusterpki), as ManagedOpenSearchFiles names them.
+const ManagedOpenSearchDir = "opensearch"
+
+// ManagedOpenSearchFiles returns the OpenSearch client certificate and
+// key the cluster issued this server. Signalith presents them instead of
+// opensearch.cert_file and key_file whenever they are there and valid
+// (store.Config.ManagedCertFile).
+func (c *Config) ManagedOpenSearchFiles() (cert, key string) {
+	dir := filepath.Join(c.StateDir(), ManagedOpenSearchDir)
+	return filepath.Join(dir, "client.pem"), filepath.Join(dir, "client-key.pem")
 }
 
 // OpenSearchProblems lists what is wrong with the OpenSearch connection
@@ -2294,6 +2319,12 @@ func (c *Config) OpenSearchProblems() []string {
 // with relative paths made relative to the folder this config file is in.
 func (c *Config) OpenSearchTLSFiles() (ca, cert, key string) {
 	return c.resolve(c.OpenSearch.CAFile), c.resolve(c.OpenSearch.CertFile), c.resolve(c.OpenSearch.KeyFile)
+}
+
+// OpenSearchCRLFile returns opensearch.crl_file, relative to the folder
+// this config file is in, "" when it is not set.
+func (c *Config) OpenSearchCRLFile() string {
+	return c.resolve(c.OpenSearch.CRLFile)
 }
 
 // ValidNodeName reports whether name can be a server's name: 1 to 63

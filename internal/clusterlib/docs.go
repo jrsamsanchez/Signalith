@@ -12,6 +12,7 @@ package clusterlib
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"slices"
 	"sync"
 	"time"
@@ -65,8 +66,24 @@ type DashboardBody struct {
 	shared.Extra `json:"-"`
 }
 
+// idPattern is what a detection or dashboard ID looks like, as the
+// detect and dashboards packages check it. An item name is also a file
+// name in the folders, so it is checked even when the item holds no YAML.
+var idPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{2,63}$`)
+
+// checkName checks that an item name is a valid ID.
+func checkName(name string) error {
+	if !idPattern.MatchString(name) {
+		return fmt.Errorf("its name %q is not a valid id", name)
+	}
+	return nil
+}
+
 // decode returns the custom detection and the state of a body.
 func (b *DetectionBody) decode(id string) (*detect.Detection, *detect.State, error) {
+	if err := checkName(id); err != nil {
+		return nil, nil, err
+	}
 	var d *detect.Detection
 	if b.YAML != "" {
 		var err error
@@ -123,6 +140,7 @@ type Docs struct {
 	hub        *shared.Hub
 	detections *shared.Collection[DetectionBody]
 	dashboards *shared.Collection[DashboardBody]
+	lookups    *shared.Collection[LookupHead]
 	subs       map[string][]func()
 }
 
@@ -130,6 +148,7 @@ type Docs struct {
 const (
 	changeDetections = "detections"
 	changeDashboards = "dashboards"
+	changeLookups    = "lookups"
 )
 
 // NewDocs returns the holder; the runtime makes the collections.
@@ -143,17 +162,28 @@ func (d *Docs) Track(h *shared.Hub) {
 	// reported as a problem with the shared settings.
 	dets := shared.NewCollection[DetectionBody](h, DetectionKind, DetectionWatch, 1)
 	dets.ValidateItem = func(name string, b *DetectionBody) error {
+		if err := checkName(name); err != nil {
+			return err
+		}
 		if b.YAML == "" && b.State == nil {
 			return errors.New("it holds neither a detection nor a state")
 		}
 		return namesID(name, b.YAML)
 	}
 	boards := shared.NewCollection[DashboardBody](h, DashboardKind, DashboardWatch, 1)
-	boards.ValidateItem = func(name string, b *DashboardBody) error { return namesID(name, b.YAML) }
+	boards.ValidateItem = func(name string, b *DashboardBody) error {
+		if err := checkName(name); err != nil {
+			return err
+		}
+		return namesID(name, b.YAML)
+	}
+	heads := shared.NewCollection[LookupHead](h, LookupKind, LookupWatch, 1)
+	heads.ValidateItem = func(name string, b *LookupHead) error { return b.check(name) }
 	dets.OnChange(func() { d.fire(changeDetections) })
 	boards.OnChange(func() { d.fire(changeDashboards) })
+	heads.OnChange(func() { d.fire(changeLookups) })
 	d.mu.Lock()
-	d.hub, d.detections, d.dashboards = h, dets, boards
+	d.hub, d.detections, d.dashboards, d.lookups = h, dets, boards, heads
 	d.mu.Unlock()
 }
 
@@ -187,6 +217,10 @@ func (d *Docs) OnDetections(fn func()) { d.on(changeDetections, fn) }
 // changed, here or on another server.
 func (d *Docs) OnDashboards(fn func()) { d.on(changeDashboards, fn) }
 
+// OnLookups adds a function called after the shared asset or identity
+// list changed, here or on another server.
+func (d *Docs) OnLookups(fn func()) { d.on(changeLookups, fn) }
+
 // Hub returns the hub the collections are on.
 func (d *Docs) Hub() *shared.Hub {
 	d.mu.Lock()
@@ -206,6 +240,13 @@ func (d *Docs) Dashboards() *shared.Collection[DashboardBody] {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	return d.dashboards
+}
+
+// Lookups returns the collection of the shared lists' heads.
+func (d *Docs) Lookups() *shared.Collection[LookupHead] {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.lookups
 }
 
 // stamp is a From of source now, on node.

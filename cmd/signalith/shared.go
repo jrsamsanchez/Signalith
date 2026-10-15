@@ -11,6 +11,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/clusterauth"
 	"github.com/jrsamsanchez/signalith/internal/clustercfg"
 	"github.com/jrsamsanchez/signalith/internal/clusterlib"
+	"github.com/jrsamsanchez/signalith/internal/clusterpki"
 	"github.com/jrsamsanchez/signalith/internal/config"
 	"github.com/jrsamsanchez/signalith/internal/shared"
 	"github.com/jrsamsanchez/signalith/internal/store"
@@ -70,12 +71,15 @@ type sharedDocs struct {
 	auth *clusterauth.Docs
 	// tls holds the cluster's certificate authority (see sharedtls.go).
 	tls *sharedTLS
+	// osca holds OpenSearch's certificate authority, which issues each
+	// server its own OpenSearch certificate (see sharedosid.go).
+	osca *clusterpki.OSCA
 }
 
 // newSharedDocs returns the documents of a process, with auth as the
 // users' documents.
 func newSharedDocs(auth *clusterauth.Docs) sharedDocs {
-	d := sharedDocs{docs: clustercfg.NewDocs(), auth: auth, tls: newSharedTLS(), lib: clusterlib.NewDocs()}
+	d := sharedDocs{docs: clustercfg.NewDocs(), auth: auth, tls: newSharedTLS(), lib: clusterlib.NewDocs(), osca: clusterpki.New()}
 	// The users and directory importers and the auth settings of
 	// signalith.yaml reach the users' documents.
 	d.docs.UseAuth(auth)
@@ -97,6 +101,7 @@ func (d sharedDocs) trackers() []sharedTracker {
 		d.auth,
 		d.tls.tls,
 		d.lib,
+		d.osca,
 		// Append a new shared collection here.
 	}
 }
@@ -130,8 +135,27 @@ func sharedImporters(d sharedDocs, f clustercfg.Files) []shared.Importer {
 		// The founder's certificate authority, as the cluster's.
 		[]shared.Importer{d.tls.importer(f)},
 		clusterlib.Importers(d.lib, libraryFiles(f)),
+		clusterlib.LookupImporters(d.lib, libraryFiles(f)),
 		// Append a new shared feature's importers here.
 	)
+}
+
+// sharedResealers lists what seals values with the cluster key, or signs
+// with it outside the shared documents, so a key rotation seals and signs
+// them again with the new key (see shared.Resealer). A new shared feature
+// that seals with the cluster key appends its resealer here.
+func sharedResealers(d sharedDocs, client func() (*store.Client, string)) []shared.Resealer {
+	return []shared.Resealer{
+		// The passwords and keys of the shared settings and of the feeds.
+		clustercfg.Resealer(d.docs),
+		// The directory's service account password, and the sessions.
+		clusterauth.Resealer(d.auth, client),
+		// The cluster certificate authority's key.
+		d.tls.tls.Resealer(),
+		// OpenSearch's certificate authority key.
+		d.osca.Resealer(),
+		// Append a new shared feature's resealer here.
+	}
 }
 
 // peersOf lists the servers as the node sees them.
@@ -143,6 +167,7 @@ func peersOf(st cluster.Status) []shared.Peer {
 		if s.Detail != nil {
 			p.Eligible, p.MaxRev = s.Detail.LeaderEligible, s.Detail.MaxRev
 			p.LevelMax, p.Users = s.Detail.LevelMax, s.Detail.FilesFingerprint.Users
+			p.KeyIDs, p.ClusterKID = s.Detail.KeyIDs, s.Detail.ClusterKID
 		}
 		if s.SeenAgo != nil {
 			p.SeenAgo = *s.SeenAgo
@@ -167,7 +192,7 @@ func sharedStatus(rt *shared.Runtime, ct *sharedContent) cluster.SharedStatus {
 	}
 	return cluster.SharedStatus{Mode: string(st.Mode), ClusterKID: st.ClusterKID, ConfigSeq: max(st.ConfigSeq, 0), MaxRev: st.MaxRev,
 		NeedsUpgrade: st.NeedsUpgrade, Tamper: st.Tamper, LevelMin: st.LevelMin, LevelMax: st.LevelMax, NotEligible: st.NotEligible,
-		SettingsDrift: ct.settingsDrift(), SettingsRev: ct.settingsRev()}
+		SettingsDrift: ct.settingsDrift(), SettingsRev: ct.settingsRev(), KeyIDs: st.KeyIDs}
 }
 
 // useShared points the runtime at this start's OpenSearch client, with

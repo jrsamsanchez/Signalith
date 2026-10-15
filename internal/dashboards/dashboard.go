@@ -284,10 +284,9 @@ func literalQueries(n *yaml.Node) {
 // cluster, and Dir is not read or written.
 type Store struct {
 	Dir string
-	// Hold, when set, is taken around each change saved to Dir (not to a
-	// backend): release is called once it is saved, and an error refuses
-	// the change, as while the folder moves into the shared settings of
-	// a cluster.
+	// Hold, when set, is taken around each change saved in Dir: release
+	// is called once it is saved, and an error refuses the change (while
+	// the dashboards move into a cluster's shared settings).
 	Hold    func() (release func(), err error)
 	mu      sync.Mutex
 	backend Backend
