@@ -1106,9 +1106,11 @@ func (r *runner) recover(ctx context.Context) bool {
 		}
 		r.cur, r.good = in, c
 		r.web.certs.Store(in.certs)
-		r.front.resume(in.handler, in.plain)
 		r.log.Info("Signalith started again", "audit", true)
+		// The result is in place before the requests held back go through,
+		// as after a restart (done).
 		r.finish(&api.RestartResult{At: time.Now().UTC(), By: "Signalith", OK: true, Keys: []string{}}, nil)
+		r.front.resume(in.handler, in.plain)
 		return true
 	}
 	// The saved settings, unless they move the web page: that is checked
