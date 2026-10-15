@@ -185,17 +185,17 @@ refuses to start), and the one that was running goes on and shows an alert. A
 server that finds another one using its identity later shows **Identity in use**,
 runs no jobs, and tells load balancers to send it nothing.
 
-To give a server a new identity, stop it, delete `node.id` from its state folder
-and start it again. In Docker the state folder is the data volume, and the image
-has no shell, so, from the folder you cloned Signalith into:
+To give a server a new identity, stop it and run `signalith cluster new-identity` on
+it (see [docs/cluster-cli.md](cluster-cli.md#new-identity)). It moves `node.id` aside,
+deletes the node key and the copy of the cluster key, and the server makes a new
+identity when it starts. Give it the cluster key again to add it to the cluster. In
+Docker, from the folder you cloned Signalith into:
 
 ```
 docker compose -f deploy/docker/docker-compose.yml stop signalith
-docker run --rm -v docker_signalith-data:/d busybox rm /d/node.id
+docker compose -f deploy/docker/docker-compose.yml run --rm signalith signalith cluster new-identity
 docker compose -f deploy/docker/docker-compose.yml up -d
 ```
-
-`docker volume ls` shows the volume's name (here `docker_signalith-data`).
 
 **The state folder.** Signalith keeps the files it makes for itself in one folder:
 its master key (`keys`), its HTTPS certificate and certificate authority (`tls`),
@@ -298,6 +298,60 @@ Until servers can be added from the Servers page:
    index template, and the setting of the server that started last is used.
 
 When it starts, it appears on the Servers page of every server.
+
+## Draining and removing a server
+
+Each server's side panel on the Servers page (click its name) has a **Maintenance**
+part:
+
+- **Drain** prepares a server for maintenance. It tells load balancers it doesn't want
+  traffic (`/readyz` answers 503 with `draining`), hands the background jobs to another
+  server and doesn't take them back. It shows as **Draining**, and stays drained across
+  restarts until you click **Resume**. Stop it once it shows Draining.
+- **Run the background jobs here** moves the background jobs to that server. The server
+  that runs them now finishes the work in progress and lets go, and the other servers
+  wait a few seconds so the one you chose takes them. It needs a server that is running
+  normally and allowed to run the jobs.
+- **Remove from the cluster** takes a server out for good: off the list of servers and
+  out of the keyring, so it gets no new cluster key. Drain it or stop it first; a
+  server that just went offline can be removed after 10 minutes. A server cannot
+  remove itself from its own page: use another server's page, or run
+  `signalith cluster leave` on it while it is stopped.
+
+Removing a server rotates the cluster key unless you untick **Rotate the cluster key
+(recommended)**. The removed server keeps its copy of the old key, and only a rotation
+makes that copy useless. A removed server that starts again with its old copy shows
+that it was removed and runs no background jobs. To bring it back, give it the cluster
+key again with `signalith cluster import-key`.
+
+**Rotating the cluster key.** The **Cluster key** card under the list of servers shows
+the key in use and the servers removed, with **Rotate cluster key**. Rotate it after
+removing a server, or when a copy of the key may have leaked (an exported key file, a
+backup of a state folder). The server that runs the background jobs does it in steps:
+
+1. It makes a new key and gives every server in the keyring a copy, sealed so only
+   that server can open it.
+2. Once every running server has its copy, every server starts signing with the new key.
+3. The passwords and tokens kept in the shared settings, the certificate authority's
+   key and the sign-in sessions are sealed and signed again with the new key.
+4. The old key is retired. Nobody is signed out: browsers signed in before keep their
+   sessions.
+
+A second rotation within 7 days of the last one signs out the browsers that signed in
+before the first, and a server offline through both needs the key again.
+
+A server offline for more than 10 minutes isn't waited for. When it comes back within
+7 days, it picks up its copy by itself; later than that, give it the key again with
+`export-key` and `import-key`. If a step fails, for example because a server doesn't
+pick up the key within 10 minutes, the rotation stops where it is, both keys keep
+working, and **Finish the rotation** (or `signalith cluster rotate-key`) goes on from
+there. The key file of an old key stays in each server's state folder, so archives
+sealed with it still open. Rotating needs every server on a version that supports it.
+
+The same from the command line: `signalith cluster rotate-key`, `signalith cluster
+remove <server>` and `signalith cluster leave` (see
+[docs/cluster-cli.md](cluster-cli.md#rotate-key)). Admins can use the API too: see the
+cluster routes in [docs/users.md](users.md#roles-of-every-route).
 
 ## Shared settings and the cluster key
 
@@ -757,6 +811,7 @@ The reasons `/readyz` gives:
 | `degraded` | It is part of the cluster but cannot use the shared settings in OpenSearch now (see [Shared settings and the cluster key](#shared-settings-and-the-cluster-key)) |
 | `gone` | The shared settings in OpenSearch are gone: their index was deleted or replaced |
 | `key_missing` | The shared settings are signed with a cluster key this server does not have |
+| `draining` | An admin drained it for maintenance (see [Draining and removing a server](#draining-and-removing-a-server)); **Resume** on the Servers page undoes it |
 | `stopping` | It is shutting down and handing its jobs over. This takes up to a minute while jobs finish: the systemd unit allows 100 seconds, the compose file 90, and the Windows service waits 90 |
 
 Do not use `/readyz` to restart a server: a server that waits for OpenSearch is

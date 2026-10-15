@@ -42,13 +42,17 @@ type KeyringBody struct {
 	Active  string                   `json:"active"`
 	Keys    []KeyInfo                `json:"keys"`
 	Members map[string]KeyringMember `json:"members"`
-	// Next is a key rotation in progress, which a later version writes.
-	Next  json.RawMessage `json:"next"`
-	Extra `json:"-"`
+	// Next is a key rotation in progress (a RotationNext), null when none
+	// is: raw, so a version before rotations keeps it as it was.
+	Next json.RawMessage `json:"next"`
+	// CatchUp keeps the last rotation's copies of the new key for 7 days,
+	// for a member that was offline during it.
+	CatchUp *CatchUp `json:"catch_up,omitempty"`
+	Extra   `json:"-"`
 }
 
-// KIDs lists the ids of the keys the keyring names, the active one and
-// the one a rotation moves to.
+// KIDs lists the ids of the keys the keyring names: the active one and,
+// during a rotation, the one it moves to.
 func (k *KeyringBody) KIDs() []string {
 	var out []string
 	for _, ki := range k.Keys {

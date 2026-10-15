@@ -512,6 +512,8 @@ func (r *runner) run(ctx context.Context, c *config.Config) error {
 		// The restart and check requests that name this server; it runs
 		// them only while it is a member.
 		go r.shared.RunServerRequests(ctx, r.serverHandlers())
+		// A drain kept in this server's nodecfg holds across restarts.
+		go r.followDrain(ctx)
 	}
 	logListening(r.log, c, ln.Addr().String())
 	var retry <-chan time.Time

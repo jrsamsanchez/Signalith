@@ -253,7 +253,7 @@ func TestForeignAdvancingHeartbeatRefusesStart(t *testing.T) {
 	}
 	select {
 	case err := <-b.Fatal():
-		if !strings.Contains(err.Error(), "is using this server's identity") || !strings.Contains(err.Error(), nodeFile) {
+		if !strings.Contains(err.Error(), "is using this server's identity") || !strings.Contains(err.Error(), "signalith cluster new-identity") {
 			t.Errorf("message: %v", err)
 		}
 	case <-time.After(5 * time.Second):
@@ -1263,4 +1263,41 @@ func TestSettingsStateInHeartbeat(t *testing.T) {
 			hb.SettingsRev != nil && *hb.SettingsRev == SettingsRev{Settings: 7, NodeCfg: 12} &&
 			hb.Restart != nil && hb.Restart.Busy && hb.Restart.Last != nil && hb.Restart.Last.RolledBack && hb.Restart.Last.At.Equal(at)
 	})
+}
+
+// A drained server is not ready, gives up the background jobs and does
+// not take them back; resumed, it is ready again.
+func TestDrainAndResume(t *testing.T) {
+	fos := ostest.New(t)
+	c := store.New(store.Config{URL: fos.URL})
+	a := testNode(t, t.TempDir(), c, true)
+	waitReady(t, a, 5*time.Second)
+	b := testNode(t, t.TempDir(), c, true)
+	waitReady(t, b, 5*time.Second)
+	deadline := time.Now().Add(5 * time.Second)
+	for !a.RunsJobs() {
+		if time.Now().After(deadline) {
+			t.Fatal("a never ran the jobs")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	a.Drain("")
+	if !a.Drained() {
+		t.Fatal("not drained")
+	}
+	if ok, why := a.Ready(); ok || why != NotReadyDraining {
+		t.Fatalf("ready %v (%s) while drained", ok, why)
+	}
+	deadline = time.Now().Add(10 * time.Second)
+	for a.RunsJobs() || !b.RunsJobs() || heartbeatOf(t, fos, a.ID()).State != StateDraining {
+		if time.Now().After(deadline) {
+			t.Fatalf("a runs jobs %v, b %v, a's state %q", a.RunsJobs(), b.RunsJobs(), heartbeatOf(t, fos, a.ID()).State)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	a.Resume()
+	waitReady(t, a, 5*time.Second)
+	if a.Drained() || !b.RunsJobs() {
+		t.Error("resuming moved the jobs back")
+	}
 }

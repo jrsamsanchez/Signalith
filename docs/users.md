@@ -864,7 +864,11 @@ agents that send events, shown on the [Endpoints page](endpoints.md)), `GET /api
 `POST /api/cluster/tls/choose` (the cluster's one certificate authority; see
 [servers.md](servers.md#one-certificate-authority)), `GET /api/cluster/opensearch-identity`
 (who each server signs in to OpenSearch as; see
-[servers.md](servers.md#each-servers-own-opensearch-certificate)), `GET /api/requests/{id}`
+[servers.md](servers.md#each-servers-own-opensearch-certificate)), `GET /api/cluster/lifecycle`,
+`POST /api/cluster/servers/{id}/drain`, `POST /api/cluster/servers/{id}/resume`,
+`DELETE /api/cluster/servers/{id}`, `POST /api/cluster/jobs/move`, `POST /api/cluster/rotate-key`
+(draining and removing servers, and rotating the cluster key; see
+[servers.md](servers.md#draining-and-removing-a-server)), `GET /api/requests/{id}`
 (work asked of the server that runs the background jobs, such as a feed download or a retention
 run; see [servers.md](servers.md#shared-feeds-and-retention-policies)), every
 `/api/notify` route (the Notifications page; see [notifications.md](notifications.md)), every

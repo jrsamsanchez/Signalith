@@ -45,6 +45,10 @@ const clusterUsage = `usage:
   signalith cluster tls            [-c file] [-json]          the cluster's certificate authority and each server's
   signalith cluster tls choose     [-c file] [-yes] <server|fingerprint>   keep that certificate authority for the whole cluster
   signalith cluster upgrade-check  [-c file] [-json]          whether it is safe to upgrade the next server
+  signalith cluster rotate-key     [-c file] [-yes]           give the cluster a new key; copies of the old one open nothing new
+  signalith cluster remove         [-c file] [-yes] [-no-rotate] <server>   take a drained or stopped server out of the cluster
+  signalith cluster leave          [-c file] [-yes] [-no-rotate]   take this stopped server out of the cluster
+  signalith cluster new-identity   [-c file] [-yes]           make this stopped server a new one (a cloned computer or copied folder)
   signalith cluster opensearch-ca  [-c file] [-json]          OpenSearch's certificate authority, which gives each server its own certificate
   signalith cluster opensearch-ca import [-c file] [-cert file] <root-ca-key.pem>   hand OpenSearch's certificate authority to the cluster
 
@@ -99,10 +103,12 @@ func runCluster(args []string, in *os.File, out, errOut io.Writer) error {
 	settingsOnly := flags.Bool("settings", false, "export the settings the servers share, as a file signalith cluster apply takes")
 	server := flags.String("server", "", "with -settings, only this server's own settings (a name or node id)")
 	file := flags.String("f", "", "the file of settings to apply")
+	noRotate := flags.Bool("no-rotate", false, "with remove or leave, do not rotate the cluster key")
 	caCert := flags.String("cert", "", "with opensearch-ca import, the certificate authority's certificate (default root-ca.pem next to the key)")
 	pos := parseInterleaved(flags, args)
 	switch sub {
-	case "status", "found", "export", "import", "export-key", "import-key", "reset-key", "accept-restore", "apply", "tls", "upgrade-check", "opensearch-ca":
+	case "status", "found", "export", "import", "export-key", "import-key", "reset-key", "accept-restore", "apply", "tls", "upgrade-check", "opensearch-ca",
+		"rotate-key", "remove", "leave", "new-identity":
 	default:
 		return fmt.Errorf("unknown cluster command %q\n\n%s", sub, clusterUsage)
 	}
@@ -115,6 +121,10 @@ func runCluster(args []string, in *os.File, out, errOut io.Writer) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 	x := &clusterCLI{c: c, log: log, in: in, out: out, errOut: errOut, by: cliUser()}
+	if sub == "new-identity" {
+		// The server is stopped, and OpenSearch is not needed.
+		return newIdentity(c.StateDir(), out, errOut, func(q string) error { return x.confirm(q, *yes) })
+	}
 	if x.self, err = cluster.ReadIdentity(c.StateDir()); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return fmt.Errorf("this server has no identity yet (no node.id in %s): start it once with signalith serve, or check SIGNALITH_STATE_DIR", c.StateDir())
@@ -159,6 +169,15 @@ func runCluster(args []string, in *os.File, out, errOut io.Writer) error {
 		return x.tlsCommand(ctx, pos, *asJSON, *yes)
 	case "upgrade-check":
 		return upgradeExit(x.upgradeCheck(ctx, *asJSON))
+	case "rotate-key":
+		return x.rotateKey(ctx, *yes)
+	case "remove":
+		if len(pos) != 1 {
+			return errors.New("usage: signalith cluster remove [-yes] [-no-rotate] <server name or node id>")
+		}
+		return x.removeCLI(ctx, pos[0], *noRotate, *yes)
+	case "leave":
+		return x.leave(ctx, *noRotate, *yes)
 	case "opensearch-ca":
 		return x.osCACommand(ctx, pos, *caCert, *asJSON)
 	}
@@ -599,6 +618,12 @@ func (x *clusterCLI) importKey(ctx context.Context, file string) error {
 	x.audit("imported a cluster key", "cluster_key", k.ID())
 	rt := x.runtime(true, "")
 	m, _ := rt.Mode()
+	if m == shared.ModeMember && rt.RemovedSelf() {
+		// Given the key again on purpose: it may add itself back.
+		if err := rt.ForgetRemoved(ctx, x.self.NodeID); err != nil {
+			fmt.Fprintf(x.errOut, "warning: this server was removed from the cluster before, and that could not be undone: %v\n", err)
+		}
+	}
 	switch {
 	case rt.Status().ClusterKID == k.ID() && (m == shared.ModeMember || m == shared.ModeImporting):
 		fmt.Fprintf(x.out, "Kept cluster key %s in this server's state folder. The shared settings check out with it; a running server joins within seconds.\n", k.ID())

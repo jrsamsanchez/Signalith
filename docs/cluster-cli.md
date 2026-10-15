@@ -12,8 +12,9 @@ signalith`), on a server whose `signalith.yaml` names the OpenSearch the servers
 share. Every command takes `-c <file>` for another configuration file. Each change is
 written to the log as an audit record, with who ran it.
 
-`found` and `reset-key` change the cluster without a running server's help; the
-others may run while Signalith runs on the same computer.
+`found` and `reset-key` change the cluster without a running server's help, and
+`leave` and `new-identity` need Signalith stopped on the same computer; the others
+may run while it runs.
 
 | Command | What it does |
 | --- | --- |
@@ -27,6 +28,10 @@ others may run while Signalith runs on the same computer.
 | [`reset-key`](#reset-key) | Makes a new cluster key when every copy of it is lost |
 | [`accept-restore`](#accept-restore) | Accepts the shared settings after an OpenSearch snapshot was restored |
 | [`tls`](#tls) | The cluster's certificate authority and each server's; `tls choose` keeps one for the whole cluster |
+| [`rotate-key`](#rotate-key) | Gives the cluster a new key, so copies of the old one open nothing new |
+| [`remove`](#remove-and-leave) | Takes a drained or stopped server out of the cluster |
+| [`leave`](#remove-and-leave) | Takes this stopped server out of the cluster |
+| [`new-identity`](#new-identity) | Makes this stopped server a new one, for a cloned computer or a copied state folder |
 
 `signalith passwd`, which is not a `cluster` command, changes the built-in admin's
 password for every server of a cluster that shares its users; see
@@ -214,6 +219,58 @@ changed outside Signalith. After you restore an OpenSearch snapshot on purpose, 
 this on a member of the cluster: every server accepts the shared settings now in
 OpenSearch within seconds.
 
+## rotate-key
+
+```
+signalith cluster rotate-key [-c file] [-yes]
+```
+
+Asks the server that runs the background jobs to rotate the cluster key, as
+**Rotate cluster key** on the Servers page does, and prints each step until it is
+done (Ctrl-C stops waiting, not the rotation). See
+[Draining and removing a server](servers.md#draining-and-removing-a-server) for the
+steps, and what happens to servers that are offline. A rotation that stopped part
+way goes on from where it stopped when you run it again. It needs every server on a
+version that supports it.
+
+## remove and leave
+
+```
+signalith cluster remove [-c file] [-yes] [-no-rotate] <server name or node id>
+signalith cluster leave  [-c file] [-yes] [-no-rotate]
+```
+
+`remove` takes another server out of the cluster: out of the keyring and off the list
+of servers. The server must be drained (on the Servers page), stopped, or offline for
+10 minutes. `leave` does it for this server: stop Signalith first. It also deletes this
+server's copy of the cluster key and of the shared settings, and keeps its HTTPS
+certificate. Uninstall the server afterwards, or run `new-identity` on it before you
+add it again.
+
+Both then rotate the cluster key, so the removed server's copy opens nothing new;
+`-no-rotate` skips that, and `rotate-key` does it later. A removed server that starts
+again with its old copy runs no background jobs and says it was removed; `import-key`
+brings it back on purpose.
+
+## new-identity
+
+```
+signalith cluster new-identity [-c file] [-yes]
+```
+
+For a computer cloned from another server, or a state folder copied from one: two
+servers with one identity refuse to run side by side. Stop Signalith, then run this on
+the copy. It moves `node.id` aside (to `node.id.replaced-<time>`), deletes the node key
+and the copy of the cluster key, and the server makes a new identity when it starts.
+Give it the cluster key again with `export-key` and `import-key`. It needs no
+OpenSearch. In Docker:
+
+```
+docker compose -f deploy/docker/docker-compose.yml stop signalith
+docker compose -f deploy/docker/docker-compose.yml run --rm signalith signalith cluster new-identity
+docker compose -f deploy/docker/docker-compose.yml up -d
+```
+
 ## The built-in admin's password
 
 ```
@@ -255,6 +312,9 @@ in a cluster, `-local` writes `admin-password-hash` and needs a restart, as
 | The built-in admin's password is lost or must change on every server | `signalith passwd` on any server |
 | You want a password for one server that works while OpenSearch is down | `signalith passwd -local` on that server |
 | Servers set up separately each have their own certificate authority | `tls`, then `tls choose` the one to keep |
+| A server is retired for good | Drain it and remove it on the Servers page, or `remove`; on the server itself, stop it and `leave` |
+| A copy of the cluster key may have leaked | `rotate-key` |
+| A server was cloned from another, or its state folder copied | Stop the copy, `new-identity`, then `import-key` |
 
 ## tls
 

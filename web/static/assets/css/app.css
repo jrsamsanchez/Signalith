@@ -2939,6 +2939,8 @@ body:has(.page.active .inspector:not([hidden], .hidden)) #toast { bottom: 88px; 
 .sv-panel__list li > span:first-child { color: var(--text); font-weight: 500; }
 .sv-panel__key, .sv-panel__was { color: var(--text-3); font-size: var(--fs-sm); overflow-wrap: anywhere; }
 .sv-panel__was .mono { color: var(--text-2); font-size: var(--fs-xs); }
+/* maintenance actions in a server's side panel and the cluster key card */
+.sv-life__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 /* ==== end page:servers ==== */
 
 /* ==== page:users (styles for this page only) ==== */

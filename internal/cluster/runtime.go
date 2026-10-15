@@ -100,10 +100,13 @@ const (
 	// FeatureIndexedAt: the heartbeat says when the server last stored an
 	// event (IndexedAt), so one without it has stored none.
 	FeatureIndexedAt = "indexed_at"
+	// FeatureDrain: the server runs drain, resume and the other requests
+	// of adding and removing servers, so the Servers page offers them.
+	FeatureDrain = "drain"
 )
 
 // features are this version's, as its heartbeats list them.
-var features = []string{FeatureSampleData, FeatureIndexedAt}
+var features = []string{FeatureSampleData, FeatureIndexedAt, FeatureDrain}
 
 // Server states in heartbeats.
 const (
@@ -130,6 +133,10 @@ const (
 	// page, while OpenSearch answers but turns it away (OSInfo.Problem
 	// says how).
 	StateRefused = "refused"
+	// StateDraining is a server an admin drained: it tells load
+	// balancers it wants no traffic (/readyz answers 503), gave the
+	// background jobs up and takes none until it is resumed.
+	StateDraining = "draining"
 )
 
 // Heartbeat is a server's document in the runtime index, node:<node_id>,
@@ -221,6 +228,10 @@ type Heartbeat struct {
 	// TLS is the certificate authority the server's HTTPS certificate
 	// comes from, nil from versions before it was reported.
 	TLS *TLSStatus `json:"tls_ca,omitempty"`
+	// KeyIDs are the ids of the cluster keys the server has and accepts,
+	// so a key rotation knows who picked the new key up; nil from
+	// versions before rotations.
+	KeyIDs []string `json:"key_ids,omitempty"`
 	// OSIdentity is who the server signs in to OpenSearch as, nil from
 	// versions before it was reported.
 	OSIdentity *OSIdentityStatus `json:"os_identity,omitempty"`
