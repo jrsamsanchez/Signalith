@@ -10,8 +10,10 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/jrsamsanchez/signalith/internal/auth"
 	"github.com/jrsamsanchez/signalith/internal/cluster/ostest"
 	"github.com/jrsamsanchez/signalith/internal/config"
+	"github.com/jrsamsanchez/signalith/internal/users"
 )
 
 // signInAs signs in on the sign-in page with user and pass, keeps the
@@ -180,5 +182,24 @@ func TestSwitchKeepsSessions(t *testing.T) {
 	if l := rs.logs.String(); !strings.Contains(l, `msg="kept the sign-in sessions made before the users were shared"`) ||
 		!strings.Contains(l, "audit=true kept=1 ended=0") {
 		t.Errorf("the session was not logged as kept:\n%s", l)
+	}
+}
+
+// A sign-in the old components finish after the switch to shared users
+// moved the sessions (the restart stops waiting for requests after a
+// while) is carried on its own: its browser stays signed in.
+func TestSwitchKeepsALateSignIn(t *testing.T) {
+	t.Setenv(clusterKeyFileEnv, "")
+	rs := startRunnerWith(t, runOptions{scheduler: true, server: plainHTTP})
+	eventually(t, "the users are shared", func() bool {
+		return rs.r.sharedContent.users.on.Load() && rs.r.sharedContent.users.cur.Load() != nil
+	})
+	token := rs.r.sessions.Start(auth.NewSession{User: "admin", Method: users.SourceBuiltin})
+	if rs.r.sessions.Len() != 0 {
+		t.Error("the late session was kept in memory")
+	}
+	rs.cookie = "signalith_session=" + token
+	if code, out, err := rs.call("", "GET", "/api/me", ""); err != nil || code != http.StatusOK || out["username"] != "admin" {
+		t.Fatalf("the late session: %d %v %v\n%s", code, out, err, rs.logs.String())
 	}
 }

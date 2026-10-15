@@ -1224,6 +1224,8 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		n := people.Count()
 		log.Info("users loaded from the shared settings", "local", n[users.SourceLocal], "directory", n[users.SourceDirectory])
 	} else {
+		// The sessions are kept here again.
+		r.sessions.Forward(nil)
 		// Lockouts other servers reported while the users were shared no
 		// longer count.
 		r.limiter.External(nil)
