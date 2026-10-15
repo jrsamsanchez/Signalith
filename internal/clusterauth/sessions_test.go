@@ -172,6 +172,32 @@ func TestStaleSessionsWhileDegraded(t *testing.T) {
 	}
 }
 
+// auth.session_max_age ends every shared session that long after
+// sign-in, remembered or kept in use, on every server that has it.
+func TestSharedSessionsMaxAge(t *testing.T) {
+	_, a, b, clk := pair(t)
+	a.addUser("jlee", users.Viewer)
+	b.cycle()
+	if a.sessions.MaxAge() != DefaultMaxAge || DefaultMaxAge != 24*time.Hour {
+		t.Fatalf("default max age %v", a.sessions.MaxAge())
+	}
+	for _, s := range []*server{a, b} {
+		s.sessions.SetMaxAge(3 * time.Hour)
+	}
+	keep := a.signIn("jlee", true)
+	used := a.signIn("jlee", false)
+	for range 5 {
+		clk.Advance(30 * time.Minute)
+		if !a.valid(used) || !b.valid(keep) {
+			t.Fatal("a session ended before the maximum age")
+		}
+	}
+	clk.Advance(30 * time.Minute)
+	if a.valid(used) || b.valid(keep) || a.valid(keep) {
+		t.Error("a session outlived the maximum age")
+	}
+}
+
 // Idle sessions end unless remembered; a peek does not count as use; the
 // stored last_seen is written at most once a minute.
 func TestIdleAndLastSeen(t *testing.T) {
@@ -206,9 +232,9 @@ func TestIdleAndLastSeen(t *testing.T) {
 	if !a.valid(keep) {
 		t.Error("a remembered session ended for being idle")
 	}
-	clk.Advance(MaxAge)
+	clk.Advance(DefaultMaxAge)
 	if a.valid(keep) {
-		t.Error("a remembered session outlived MaxAge")
+		t.Error("a remembered session outlived the maximum age")
 	}
 }
 

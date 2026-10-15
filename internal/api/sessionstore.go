@@ -28,6 +28,9 @@ type SessionStore interface {
 	Users(ctx context.Context) []string
 	// SetIdle changes how long a session lasts without a request.
 	SetIdle(d time.Duration)
+	// SetMaxAge changes how long any session lasts after sign-in,
+	// remembered or not.
+	SetMaxAge(d time.Duration)
 	// MaxAge is how long any session lasts after sign-in.
 	MaxAge() time.Duration
 }
@@ -63,4 +66,6 @@ func (m memorySessions) Users(context.Context) []string { return m.s.Users() }
 
 func (m memorySessions) SetIdle(d time.Duration) { m.s.SetIdle(d) }
 
-func (m memorySessions) MaxAge() time.Duration { return m.s.MaxAge }
+func (m memorySessions) SetMaxAge(d time.Duration) { m.s.SetMaxAge(d) }
+
+func (m memorySessions) MaxAge() time.Duration { return m.s.MaxAgeNow() }

@@ -135,9 +135,9 @@ func TestPasswdUsesTheServiceEnvironment(t *testing.T) {
 		if env[name] == "" {
 			name = "SIGNALITH_ADMIN_PASSWORD"
 		}
-		t.Setenv("SIGNALITH_NEW_PASSWORD", "new admin password")
+		t.Setenv("SIGNALITH_NEW_PASSWORD", "new break-glass password")
 		out, err := capture(t, func() error { return cmdPasswd([]string{"-c", path}) })
-		if err != nil || !strings.Contains(out, hashFile) || !strings.Contains(out, "the signalith service is given "+name) || strings.Contains(out, "new admin password") {
+		if err != nil || !strings.Contains(out, hashFile) || !strings.Contains(out, "the signalith service is given "+name) || strings.Contains(out, "new break-glass password") {
 			t.Errorf("%s: passwd: %v\n%s", name, err, out)
 		}
 		if after, _ := os.ReadFile(path); string(after) != string(before) {
@@ -151,7 +151,7 @@ func TestPasswdUsesTheServiceEnvironment(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !c.CheckPassword("admin", "new admin password") || c.CheckPassword("admin", "password from the service") {
+		if !c.CheckPassword("admin", "new break-glass password") || c.CheckPassword("admin", "password from the service") {
 			t.Errorf("%s: the new password does not work, or the service's still does", name)
 		}
 		t.Setenv(name, "")
@@ -200,7 +200,7 @@ func TestFallbackStateDirIsNotedOnlyWhenWritten(t *testing.T) {
 	if _, err := os.Stat(fallback); !os.IsNotExist(err) {
 		t.Fatalf("reading the config made the fallback folder: %v", err)
 	}
-	t.Setenv("SIGNALITH_NEW_PASSWORD", "new admin password")
+	t.Setenv("SIGNALITH_NEW_PASSWORD", "new break-glass password")
 	if out, err := capture(t, func() error { return cmdPasswd([]string{"-c", path}) }); err != nil {
 		t.Fatalf("passwd: %v\n%s", err, out)
 	}
