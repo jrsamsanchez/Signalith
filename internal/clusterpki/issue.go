@@ -5,6 +5,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -132,13 +133,25 @@ func (o *OSCA) Issue(ctx context.Context, name, nodeID string, csrPEM []byte, no
 					next.Previous = append(next.Previous, e)
 				}
 			}
-			if len(next.Previous) > MaxPrevious {
-				next.Previous = next.Previous[len(next.Previous)-MaxPrevious:]
+			// None that is still valid is forgotten, or a revocation would
+			// miss it. Past the cap, which only renewals that keep failing
+			// to install reach, the oldest (the one in use) and the newest
+			// are kept, and those between are revoked now: none of them
+			// was put to use.
+			if over := len(next.Previous) - MaxPrevious; over > 0 {
+				for _, e := range next.Previous[1 : 1+over] {
+					b.Revoked = append(b.Revoked, Revoked{Serial: e.Serial, Name: key, NodeID: nodeID, NotAfter: e.NotAfter, RevokedAt: now.UTC()})
+				}
+				next.Previous = slices.Delete(next.Previous, 1, 1+over)
+				list, err := pruneRevoked(b.Revoked, now)
+				if err != nil {
+					return err
+				}
+				b.Revoked = list
 			}
 		}
 		b.Issued[key] = next
-		pruneIssued(b.Issued)
-		return nil
+		return pruneIssued(b.Issued, now)
 	})
 	if err != nil {
 		return nil, time.Time{}, err

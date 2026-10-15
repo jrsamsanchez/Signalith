@@ -227,6 +227,10 @@ type RuntimeFacts struct {
 	LegacyProxies []string
 	// ClusterServer names this server among several, for the CA check.
 	ClusterServer string
+	// CRLProblem is what this server found wrong with OpenSearch's
+	// revocation list (cluster.CRLStatus), such as revoked certificates
+	// it does not name yet, which the file alone does not show.
+	CRLProblem string
 }
 
 // KeyFacts is about the master key.

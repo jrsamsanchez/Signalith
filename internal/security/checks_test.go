@@ -1346,6 +1346,10 @@ func TestOpenSearchCRL(t *testing.T) {
 		{name: "expired", set: func(f *Facts) { f.CRL = &CRLFacts{File: "/crl/crl.pem", Err: "it expired on 2026-01-01"} }, state: Risk,
 			line: "OpenSearch's revocation list /crl/crl.pem cannot be used: it expired on 2026-01-01. While OpenSearch checks it, it refuses every certificate sign-in, Signalith's included."},
 		{name: "expires soon", set: func(f *Facts) { f.CRL = &CRLFacts{File: "/crl/crl.pem", NextUpdate: f.Now.Add(10 * 24 * time.Hour)} }, state: Attention},
+		{name: "behind", set: func(f *Facts) {
+			f.CRL = &CRLFacts{File: "/crl/crl.pem", NextUpdate: later(f)}
+			f.Runtime = &RuntimeFacts{CRLProblem: "OpenSearch's revocation list /crl/crl.pem does not name 1 revoked certificate yet, so it still opens OpenSearch."}
+		}, state: Risk, line: "OpenSearch's revocation list /crl/crl.pem does not name 1 revoked certificate yet, so it still opens OpenSearch."},
 	})
 }
 

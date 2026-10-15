@@ -268,6 +268,9 @@ func checkOpenSearchCRL(f *Facts) *Check {
 	case !l.NextUpdate.IsZero() && l.NextUpdate.Sub(f.Now) < 30*24*time.Hour:
 		return &Check{State: Attention, Line: "OpenSearch's revocation list expires on " + l.NextUpdate.Format(time.DateOnly) + ", with OpenSearch's certificate authority." + refuses,
 			Fix: &Fix{Steps: []string{"Make OpenSearch's certificates again from a new certificate authority before then: bootstrap-docker -new-ca on the Docker quick start."}, Docs: doc(docOSCerts)}}
+	case f.Runtime != nil && f.Runtime.CRLProblem != "":
+		// The file reads well, but the server knows it is behind.
+		return &Check{State: Risk, Line: f.Runtime.CRLProblem, Fix: fix}
 	}
 	line := "OpenSearch checks client certificates against a revocation list Signalith keeps, so a removed server's certificate stops working at once."
 	if l.Revoked > 0 {

@@ -356,8 +356,16 @@ func (s *Server) runtimeFacts(now time.Time, inContainer bool) *security.Runtime
 		rt.SyslogNATed = plain > 0 && natted == plain
 	}
 	rt.LegacyProxies = s.legacyProxies.since(since)
-	if s.Cluster != nil && len(s.Cluster.Status().Servers) > 1 {
-		rt.ClusterServer = s.serverName()
+	if s.Cluster != nil {
+		servers := s.Cluster.Status().Servers
+		if len(servers) > 1 {
+			rt.ClusterServer = s.serverName()
+		}
+		for _, sv := range servers {
+			if sv.Self && sv.Detail != nil && sv.Detail.OSIdentity != nil && sv.Detail.OSIdentity.CRL != nil {
+				rt.CRLProblem = sv.Detail.OSIdentity.CRL.Problem
+			}
+		}
 	}
 	return rt
 }

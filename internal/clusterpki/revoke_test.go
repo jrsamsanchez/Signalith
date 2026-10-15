@@ -7,12 +7,14 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/cluster"
 	"github.com/jrsamsanchez/signalith/internal/ospki"
+	"github.com/jrsamsanchez/signalith/internal/shared"
 )
 
 func TestRevokeNode(t *testing.T) {
@@ -257,4 +259,160 @@ func mustCRL(t *testing.T, ca *ospki.Pair) []byte {
 		t.Fatal(err)
 	}
 	return b
+}
+
+// Renewals that fail to install pile up valid certificates: none is
+// forgotten, so a revocation still names the first.
+func TestRevokeNodeAfterManyRenewals(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	o := e.server("a", true)
+	ca := newCA(t)
+	if err := o.Import(ctx, "admin", "a", ca.CertPEM(), ca.KeyPEM()); err != nil {
+		t.Fatal(err)
+	}
+	_, req := csr(t, "x")
+	now := time.Now()
+	var issued []string
+	for range 1 + 12 {
+		cert, _, err := o.Issue(ctx, "siem-a", "n1", req, now)
+		if err != nil {
+			t.Fatalf("renewal %d: %v", len(issued), err)
+		}
+		issued = append(issued, parse(t, cert).SerialNumber.Text(16))
+	}
+	// Past the cap, the first (in use) and the newest are kept, and those
+	// between are revoked at once.
+	b, _ := o.Get()
+	cur := b.Issued["siem-a"]
+	if len(cur.Previous) != MaxPrevious || cur.Previous[0].Serial != issued[0] || cur.Serial != issued[len(issued)-1] {
+		t.Fatalf("kept %+v", cur)
+	}
+	if early := b.RevokedSerials(now); len(early) != len(issued)-1-MaxPrevious {
+		t.Fatalf("revoked at once %v", early)
+	}
+	revoked, err := o.RevokeNode(ctx, "admin", "n1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(revoked) != 1+MaxPrevious {
+		t.Errorf("revoked %d now", len(revoked))
+	}
+	b, _ = o.Get()
+	got := b.RevokedSerials(now)
+	slices.Sort(issued)
+	if !slices.Equal(got, issued) {
+		t.Fatalf("revoked %v, issued %v", got, issued)
+	}
+}
+
+// Past the caps, valid revocations and issued certificates are kept, and
+// what would need one dropped is refused.
+func TestPruneKeepsValid(t *testing.T) {
+	now := time.Now()
+	var list []Revoked
+	for i := range MaxRevoked {
+		list = append(list, Revoked{Serial: strconv.Itoa(i), NotAfter: now.Add(time.Hour)})
+	}
+	list = append(list, Revoked{Serial: "old", NotAfter: now.Add(-time.Hour)})
+	got, err := pruneRevoked(list, now)
+	if err != nil || len(got) != MaxRevoked || slices.ContainsFunc(got, func(r Revoked) bool { return r.Serial == "old" }) {
+		t.Fatalf("expired one: %d %v", len(got), err)
+	}
+	if _, err := pruneRevoked(append(got, Revoked{Serial: "new", NotAfter: now.Add(time.Minute)}), now); err == nil {
+		t.Error("a valid revocation was dropped")
+	}
+
+	m := map[string]Issued{}
+	for i := range MaxIssued {
+		m[strconv.Itoa(i)] = Issued{NotAfter: now.Add(time.Hour)}
+	}
+	m["old"] = Issued{NotAfter: now.Add(-time.Hour)}
+	if err := pruneIssued(m, now); err != nil || len(m) != MaxIssued || hasIssued(m, "old") {
+		t.Fatalf("expired one: %d %v", len(m), err)
+	}
+	m["new"] = Issued{NotAfter: now.Add(time.Minute)}
+	if err := pruneIssued(m, now); err == nil || len(m) != MaxIssued+1 {
+		t.Errorf("a valid certificate was dropped: %d %v", len(m), err)
+	}
+}
+
+func hasIssued(m map[string]Issued, k string) bool {
+	_, ok := m[k]
+	return ok
+}
+
+// A server that cannot write the list still says it is behind.
+func TestIdentityCRLBehind(t *testing.T) {
+	e := newEnv(t)
+	ie := newIdentityEnv(t)
+	ctx := context.Background()
+	o := e.server("siem-c", true)
+	if err := o.Import(ctx, "admin", "siem-c", ie.ca.CertPEM(), ie.ca.KeyPEM()); err != nil {
+		t.Fatal(err)
+	}
+	_, req := csr(t, "x")
+	if _, _, err := o.Issue(ctx, "siem-b", "n2", req, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := o.RevokeNode(ctx, "admin", "n2"); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(ie.dir, ospki.CRLFile)
+	if err := os.WriteFile(file, mustCRL(t, ie.ca), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// The key is sealed under a key this server lacks, so it cannot
+	// write the list.
+	other, err := shared.NewClusterKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := o.Doc().Mutate(ctx, "test", func(b *Body) error {
+		sealed, err := other.SecretsKey().Seal(keyField(b.CASHA256), string(ie.ca.KeyPEM()))
+		b.CAKey = sealed
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if o.Opens() == nil {
+		t.Fatal("the key still opens")
+	}
+	if st := crlIdentity(t, o, ie, file).sync(ctx); st.CRL == nil || !strings.Contains(st.CRL.Problem, "does not name 1 revoked certificate") {
+		t.Fatalf("status %+v", st.CRL)
+	}
+}
+
+// A list that names more than this server's view is kept: a server
+// behind never takes a revocation off.
+func TestIdentityCRLNotShrunk(t *testing.T) {
+	e := newEnv(t)
+	ie := newIdentityEnv(t)
+	ctx := context.Background()
+	o := e.server("siem-a", true)
+	if err := o.Import(ctx, "admin", "siem-a", ie.ca.CertPEM(), ie.ca.KeyPEM()); err != nil {
+		t.Fatal(err)
+	}
+	_, req := csr(t, "x")
+	cert, _, err := o.Issue(ctx, "siem-b", "n2", req, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := o.RevokeNode(ctx, "admin", "n2"); err != nil {
+		t.Fatal(err)
+	}
+	more, err := ospki.MakeCRL(ie.ca, []*big.Int{parse(t, cert).SerialNumber, big.NewInt(0xbeef)}, big.NewInt(time.Now().Unix()), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(ie.dir, ospki.CRLFile)
+	if err := os.WriteFile(file, more, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if st := crlIdentity(t, o, ie, file).sync(ctx); st.CRL == nil || st.CRL.Problem != "" || st.CRL.Revoked != 2 {
+		t.Fatalf("status %+v", st.CRL)
+	}
+	if b, _ := os.ReadFile(file); string(b) != string(more) {
+		t.Error("the longer list was rewritten")
+	}
 }
