@@ -399,8 +399,10 @@ func (r *runner) phase(ctx context.Context, p Phase) {
 	pctx, cancel := context.WithTimeout(ctx, p.For.D())
 	defer cancel()
 	opsStart, opsErr := int64(0), error(nil)
+	var byIndexStart map[string]int64
 	if r.os != nil {
 		opsStart, opsErr = r.os.opsTotal(ctx)
+		byIndexStart, _ = r.os.opsByIndex(ctx)
 	}
 	start := time.Now()
 	var wg sync.WaitGroup
@@ -459,6 +461,13 @@ func (r *runner) phase(ctx context.Context, p Phase) {
 			r.opsPerSecond[p.Name] = ops
 			r.m.Set(p.Name, "os_ops_per_second", ops)
 			r.m.Set(p.Name, "os_ops_per_server_per_second", ops/float64(max(len(r.servers), 1)))
+		}
+		if byIndexStart != nil && secs > 0 {
+			if end, err := r.os.opsByIndex(context.Background()); err == nil {
+				for name, n := range busiestIndices(byIndexStart, end, 5) {
+					r.m.Set(p.Name, "os_ops_per_second_"+name, float64(n)/secs)
+				}
+			}
 		}
 	} else if opsErr != nil {
 		r.report.Notes = append(r.report.Notes, "OpenSearch operation counts: "+opsErr.Error())

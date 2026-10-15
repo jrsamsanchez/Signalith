@@ -266,3 +266,12 @@ func TestSizingTable(t *testing.T) {
 		t.Errorf("drain listed:\n%s", got)
 	}
 }
+
+func TestBusiestIndices(t *testing.T) {
+	before := map[string]int64{"a": 10, "b": 5, "c": 100}
+	after := map[string]int64{"a": 40, "b": 25, "c": 100, "d": 20, "e": 1}
+	got := busiestIndices(before, after, 3)
+	if len(got) != 3 || got["a"] != 30 || got["b"] != 20 || got["d"] != 20 {
+		t.Errorf("%v", got)
+	}
+}

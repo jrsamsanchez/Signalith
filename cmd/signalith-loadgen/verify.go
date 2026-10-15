@@ -229,6 +229,64 @@ func (r *osReader) opsTotal(ctx context.Context) (int64, error) {
 	return n, nil
 }
 
+// opsByIndex is opsTotal for each index, hidden ones included, so a
+// report can say which indices an idle cost goes to.
+func (r *osReader) opsByIndex(ctx context.Context) (map[string]int64, error) {
+	type ops struct {
+		Indexing struct {
+			IndexTotal  int64 `json:"index_total"`
+			DeleteTotal int64 `json:"delete_total"`
+		} `json:"indexing"`
+		Search struct {
+			QueryTotal int64 `json:"query_total"`
+		} `json:"search"`
+		Get struct {
+			Total int64 `json:"total"`
+		} `json:"get"`
+	}
+	var resp struct {
+		Indices map[string]struct {
+			Total ops `json:"total"`
+		} `json:"indices"`
+	}
+	if err := r.do(ctx, http.MethodGet, "/_stats/indexing,search,get?level=indices&expand_wildcards=all", nil, &resp); err != nil {
+		return nil, err
+	}
+	out := make(map[string]int64, len(resp.Indices))
+	for name, ix := range resp.Indices {
+		t := ix.Total
+		out[name] = t.Indexing.IndexTotal + t.Indexing.DeleteTotal + t.Search.QueryTotal + t.Get.Total
+	}
+	return out, nil
+}
+
+// busiestIndices is the n indices with the most operations between two
+// opsByIndex readings, with their counts. A dated index's date is kept,
+// so each day's events index shows on its own.
+func busiestIndices(before, after map[string]int64, n int) map[string]int64 {
+	type ix struct {
+		name string
+		ops  int64
+	}
+	var all []ix
+	for name, v := range after {
+		if d := v - before[name]; d > 0 {
+			all = append(all, ix{name, d})
+		}
+	}
+	sort.Slice(all, func(i, j int) bool {
+		if all[i].ops != all[j].ops {
+			return all[i].ops > all[j].ops
+		}
+		return all[i].name < all[j].name
+	})
+	out := map[string]int64{}
+	for _, x := range all[:min(n, len(all))] {
+		out[x.name] = x.ops
+	}
+	return out
+}
+
 // Verdict is what verify found.
 type Verdict struct {
 	// Acked is how many events the agents were told were stored.
