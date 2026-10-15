@@ -1,0 +1,4 @@
+{"rule": "83c17918-746e-4bd9-920b-8e098bf88c23", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"activitylogs","data":{"operationName":"MICROSOFT.NETWORK/FIREWALLPOLICIES/CERTIFICATES/ACTION"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"activitylogs","data":{}}
+]}

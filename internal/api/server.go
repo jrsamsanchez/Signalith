@@ -236,6 +236,7 @@ type Server struct {
 	legacyProxies addrSeen
 	secOnce       sync.Once
 	sec           *SecurityChecker
+	comp          complianceState
 	caMu          sync.Mutex // one change of certificate authority at a time
 	// badTuning is the hash of the stored rule tuning last refused to
 	// sensors (refusedTuning), so it is logged once.
@@ -329,6 +330,7 @@ func (s *Server) Handler() http.Handler {
 	s.routeSample(api)
 	s.routeEndpoints(api)
 	s.routeVulns(api)
+	s.routeCompliance(api)
 	s.routeSettings(api)
 	s.routeCluster(api)
 	s.routeClusterTLS(api)

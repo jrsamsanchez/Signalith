@@ -336,6 +336,7 @@ Supported sources in Phase 1:
 | Wazuh alerts from a Wazuh manager ([docs/wazuh.md](docs/wazuh.md)) | Authentication, Filesystem, Registry, Configuration_Check, Endpoint, Change or Alerts |
 | Apache and Nginx access logs (Linux agent; see [Detections](docs/detections.md#web-server-access-logs)) | Web |
 | AWS CloudTrail sign-ins and API calls, through the OpenTelemetry Collector ([docs/aws-cloudtrail.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/aws-cloudtrail.md)) | Authentication, Change or Other |
+| Microsoft Entra ID sign-ins, audit log and risk detections, and the Azure activity log, through an Event Hub and the OpenTelemetry Collector ([docs/azure.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/azure.md)) | Authentication, Change or Alerts |
 | Zeek and Suricata on a network sensor, or Suricata EVE over syslog from pfSense and OPNsense ([docs/network-sensor.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/network-sensor.md)) | Network_Traffic, Network_Resolution, Web, Certificates, File_Transfers, Intrusion_Detection, Authentication, Filesystem or Other |
 | Anything else | Other (searchable by text and fields) |
 
@@ -833,8 +834,8 @@ changes and more, plus two risk incident rules); 19 are on by default.
 - **Import Sigma rule** converts a [Sigma](https://github.com/SigmaHQ/sigma) rule to a
   Signalith query and lists anything it had to approximate. Imported rules start
   disabled so you can test them first.
-- **Content packs** add community rules, off until you turn them on: 2,330 tested
-  [SigmaHQ](https://github.com/SigmaHQ/sigma) Windows, Linux, web server, network and AWS CloudTrail rules and 1,062
+- **Content packs** add community rules, off until you turn them on: 2,438 tested
+  [SigmaHQ](https://github.com/SigmaHQ/sigma) Windows, Linux, web server, network, AWS CloudTrail and Azure rules and 1,062
   Windows, Linux, web, network and AWS CloudTrail detections
   from Splunk's open source
   [security_content](https://github.com/splunk/security_content) (Apache 2.0). With
@@ -962,6 +963,17 @@ for CVE lookups. Results go to the Vulnerabilities data model and three built-in
 detections, and the hosts join the asset list. The Docker image includes Nmap; on
 Windows and Linux installs, install Nmap from your package manager or nmap.org. See
 [docs/vulnerabilities.md](docs/vulnerabilities.md).
+
+## Compliance
+
+The **Compliance** page maps Signalith's data, detections, configuration checks and
+settings to NIST SP 800-53, CIS Controls v8, PCI DSS 4.0, ISO/IEC 27001, the HIPAA
+Security Rule and SOC 2. Each control shows evidence, partial or gap, what Signalith
+found, and what to fix; a coverage score per framework sums it up. Admins can note a
+control as handled outside Signalith or not applicable. Each framework exports as CSV
+or as a report to print or save as PDF for an auditor. The mapping is Signalith's own,
+using only control numbers for frameworks whose text is copyrighted. See
+[docs/compliance.md](docs/compliance.md).
 
 ## Threat intel
 

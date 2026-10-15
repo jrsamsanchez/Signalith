@@ -1,0 +1,4 @@
+{"rule": "039a7469-0296-4450-84c0-f6966b16dc6d", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"properties.message":"Request Approved/Denied"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{}}
+]}

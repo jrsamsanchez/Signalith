@@ -314,6 +314,15 @@ var knownFields = func() map[string]string {
 	for _, k := range cloudTrailMapped {
 		m[k] = kw
 	}
+	// Azure records (azure.go): the record's own fields, and the
+	// resources an Entra ID audit record changed, as JSON text.
+	for _, k := range azureMapped {
+		m[k] = kw
+	}
+	m["properties.targetResources"] = "wildcard"
+	// Whether a user or an app made an Entra ID change, as Splunk's add-on
+	// names it.
+	m["src_user_type"] = kw
 	add := func(fs []datamodel.Field) {
 		for _, f := range fs {
 			if strings.HasPrefix(f.Name, "_") {

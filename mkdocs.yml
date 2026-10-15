@@ -124,6 +124,7 @@ nav:
       - Wazuh alerts: wazuh.md
       - Network sensor (Zeek, Suricata): network-sensor.md
       - AWS CloudTrail: aws-cloudtrail.md
+      - Entra ID and Azure: azure.md
       - Antivirus: antivirus.md
       - Vulnerability scanning: vulnerabilities.md
       - Sample data: sample-data.md
@@ -137,6 +138,7 @@ nav:
       - Response actions: response-actions.md
       - Notifications: notifications.md
       - Playbooks: playbooks.md
+      - Compliance: compliance.md
   - Administration:
       - Server settings: settings.md
       - Users and sign-in: users.md

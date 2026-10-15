@@ -20,7 +20,9 @@ jobs:
         with:
           go-version-file: go.mod
       - run: go vet ./...
-      - run: go test ./...
+      # cmd/signalith's server tests take close to go test's default 10
+      # minutes on Windows runners, as the race job's do.
+      - run: go test -timeout 20m ./...
       - run: go build -o dist/ ./cmd/signalith
       # install.ps1 needs an elevated Windows with OpenSearch to run, so CI
       # checks the parts it can, with Windows PowerShell and PowerShell 7.

@@ -1,0 +1,4 @@
+{"rule": "46530378-f9db-4af9-a9e5-889c177d3881", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"activitylogs","data":{"properties.message":"Update device"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"activitylogs","data":{}}
+]}

@@ -1,0 +1,4 @@
+{"rule": "352a54e1-74ba-4929-9d47-8193d67aba1e", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"ActivityDisplayName":"Set federation settings on domain"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{}}
+]}

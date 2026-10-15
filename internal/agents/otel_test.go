@@ -166,3 +166,33 @@ func TestOTelCloudTrail(t *testing.T) {
 		}
 	}
 }
+
+func TestOTelAzure(t *testing.T) {
+	a, err := Generate(Options{OS: "azure", ServerURL: "https://siem:8080", Token: "t", CA: "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := otelConfig(t, a)
+	r := "receivers"
+	if dig(m, r, "azure_event_hub/signalith", "connection") != "${env:SIGNALITH_EVENT_HUB}" ||
+		dig(m, r, "azure_event_hub/signalith", "format") != "raw" ||
+		dig(m, r, "azure_event_hub/signalith", "storage") != "file_storage/signalith" {
+		t.Errorf("config:\n%s", a.Config)
+	}
+	// Only the event hub: no host logs, and no OTLP listener.
+	if recv, _ := dig(m, "service", "pipelines", "logs/signalith", "receivers").([]any); len(recv) != 1 || recv[0] != "azure_event_hub/signalith" {
+		t.Errorf("pipeline receivers = %v", recv)
+	}
+	steps := strings.Join(a.Steps, "\n")
+	if !strings.Contains(steps, "Diagnostic settings") || !strings.Contains(steps, "0.145 or later") ||
+		!strings.Contains(steps, "SIGNALITH_EVENT_HUB=Endpoint=sb://") || strings.Contains(steps, "usermod") {
+		t.Errorf("steps = %s", steps)
+	}
+	a, err = Generate(Options{OS: "azure", CollectorOS: "windows", ServerURL: "https://siem:8080", Token: "t"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(a.Steps, "\n"), "'SIGNALITH_EVENT_HUB=...'") || strings.Contains(a.Config, "windowseventlog") {
+		t.Errorf("windows:\n%s\n%q", a.Config, a.Steps)
+	}
+}

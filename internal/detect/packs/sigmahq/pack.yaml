@@ -245,6 +245,438 @@ rules:
     rule_id: f43f5d2f-3f2a-4cc8-b1af-81fde7dbaf0e
     file: aws_susp_saml_activity.yml
     path: rules/cloud/aws/cloudtrail/aws_susp_saml_activity.yml
+  - id: sigma-azure-aad-secops-ca-policy-removedby-bad-actor
+    rule_id: 26e7c5e2-6545-481e-b7e6-050143459635
+    file: azure_aad_secops_ca_policy_removedby_bad_actor.yml
+    path: rules/cloud/azure/audit_logs/azure_aad_secops_ca_policy_removedby_bad_actor.yml
+  - id: sigma-azure-aad-secops-ca-policy-updatedby-bad-actor
+    rule_id: 50a3c7aa-ec29-44a4-92c1-fce229eef6fc
+    file: azure_aad_secops_ca_policy_updatedby_bad_actor.yml
+    path: rules/cloud/azure/audit_logs/azure_aad_secops_ca_policy_updatedby_bad_actor.yml
+  - id: sigma-azure-aad-secops-new-ca-policy-addedby-bad-actor
+    rule_id: 0922467f-db53-4348-b7bf-dee8d0d348c6
+    file: azure_aad_secops_new_ca_policy_addedby_bad_actor.yml
+    path: rules/cloud/azure/audit_logs/azure_aad_secops_new_ca_policy_addedby_bad_actor.yml
+  - id: sigma-azure-account-lockout
+    rule_id: 2b7d6fc0-71ac-4cf7-8ed1-b5788ee5257a
+    file: azure_account_lockout.yml
+    path: rules/cloud/azure/signin_logs/azure_account_lockout.yml
+  - id: sigma-azure-ad-account-created-deleted
+    rule_id: 6f583da0-3a90-4566-a4ed-83c09fe18bbf
+    file: azure_ad_account_created_deleted.yml
+    path: rules/cloud/azure/audit_logs/azure_ad_account_created_deleted.yml
+  - id: sigma-azure-ad-azurehound-discovery
+    rule_id: 35b781cc-1a08-4a5a-80af-42fd7c315c6b
+    file: azure_ad_azurehound_discovery.yml
+    path: rules/cloud/azure/signin_logs/azure_ad_azurehound_discovery.yml
+  - id: sigma-azure-ad-bitlocker-key-retrieval
+    rule_id: a0413867-daf3-43dd-9245-734b3a787942
+    file: azure_ad_bitlocker_key_retrieval.yml
+    path: rules/cloud/azure/audit_logs/azure_ad_bitlocker_key_retrieval.yml
+  - id: sigma-azure-ad-certificate-based-authencation-enabled
+    rule_id: c2496b41-16a9-4016-a776-b23f8910dc58
+    file: azure_ad_certificate_based_authencation_enabled.yml
+    path: rules/cloud/azure/audit_logs/azure_ad_certificate_based_authencation_enabled.yml
+  - id: sigma-azure-ad-device-registration-or-join-without-mfa
+    rule_id: 5afa454e-030c-4ab4-9253-a90aa7fcc581
+    file: azure_ad_device_registration_or_join_without_mfa.yml
+    path: rules/cloud/azure/signin_logs/azure_ad_device_registration_or_join_without_mfa.yml
+  - id: sigma-azure-ad-device-registration-policy-changes
+    rule_id: 9494bff8-959f-4440-bbce-fb87a208d517
+    file: azure_ad_device_registration_policy_changes.yml
+    path: rules/cloud/azure/audit_logs/azure_ad_device_registration_policy_changes.yml
+  - id: sigma-azure-ad-new-root-ca-added
+    rule_id: 4bb80281-3756-4ec8-a88e-523c5a6fda9e
+    file: azure_ad_new_root_ca_added.yml
+    path: rules/cloud/azure/audit_logs/azure_ad_new_root_ca_added.yml
+  - id: sigma-azure-ad-only-single-factor-auth-required
+    rule_id: 28eea407-28d7-4e42-b0be-575d5ba60b2c
+    file: azure_ad_only_single_factor_auth_required.yml
+    path: rules/cloud/azure/signin_logs/azure_ad_only_single_factor_auth_required.yml
+  - id: sigma-azure-ad-risky-sign-ins-with-singlefactorauth-from-unknown
+    rule_id: 572b12d4-9062-11ed-a1eb-0242ac120002
+    file: azure_ad_risky_sign_ins_with_singlefactorauth_from_unknown_devices.yml
+    path: rules/cloud/azure/signin_logs/azure_ad_risky_sign_ins_with_singlefactorauth_from_unknown_devices.yml
+  - id: sigma-azure-ad-sign-ins-from-noncompliant-devices
+    rule_id: 4f77e1d7-3982-4ee0-8489-abf2d6b75284
+    file: azure_ad_sign_ins_from_noncompliant_devices.yml
+    path: rules/cloud/azure/signin_logs/azure_ad_sign_ins_from_noncompliant_devices.yml
+  - id: sigma-azure-ad-sign-ins-from-unknown-devices
+    rule_id: 4d136857-6a1a-432a-82fc-5dd497ee5e7c
+    file: azure_ad_sign_ins_from_unknown_devices.yml
+    path: rules/cloud/azure/signin_logs/azure_ad_sign_ins_from_unknown_devices.yml
+  - id: sigma-azure-ad-suspicious-signin-bypassing-mfa
+    rule_id: 53bb4f7f-48a8-4475-ac30-5a82ddfdf6fc
+    file: azure_ad_suspicious_signin_bypassing_mfa.yml
+    path: rules/cloud/azure/signin_logs/azure_ad_suspicious_signin_bypassing_mfa.yml
+  - id: sigma-azure-ad-user-added-to-admin-role
+    rule_id: ebbeb024-5b1d-4e16-9c0c-917f86c708a7
+    file: azure_ad_user_added_to_admin_role.yml
+    path: rules/cloud/azure/audit_logs/azure_ad_user_added_to_admin_role.yml
+  - id: sigma-azure-ad-users-added-to-device-admin-roles
+    rule_id: 11c767ae-500b-423b-bae3-b234450736ed
+    file: azure_ad_users_added_to_device_admin_roles.yml
+    path: rules/cloud/azure/audit_logs/azure_ad_users_added_to_device_admin_roles.yml
+  - id: sigma-azure-app-appid-uri-changes
+    rule_id: 1b45b0d1-773f-4f23-aedc-814b759563b1
+    file: azure_app_appid_uri_changes.yml
+    path: rules/cloud/azure/audit_logs/azure_app_appid_uri_changes.yml
+  - id: sigma-azure-app-credential-added
+    rule_id: cbb67ecc-fb70-4467-9350-c910bdf7c628
+    file: azure_app_credential_added.yml
+    path: rules/cloud/azure/audit_logs/azure_app_credential_added.yml
+  - id: sigma-azure-app-delegated-permissions-all-users
+    rule_id: a6355fbe-f36f-45d8-8efc-ab42465cbc52
+    file: azure_app_delegated_permissions_all_users.yml
+    path: rules/cloud/azure/audit_logs/azure_app_delegated_permissions_all_users.yml
+  - id: sigma-azure-app-owner-added
+    rule_id: 74298991-9fc4-460e-a92e-511aa60baec1
+    file: azure_app_owner_added.yml
+    path: rules/cloud/azure/audit_logs/azure_app_owner_added.yml
+  - id: sigma-azure-app-permissions-msft
+    rule_id: c1d147ae-a951-48e5-8b41-dcd0170c7213
+    file: azure_app_permissions_msft.yml
+    path: rules/cloud/azure/audit_logs/azure_app_permissions_msft.yml
+  - id: sigma-azure-app-privileged-permissions
+    rule_id: 5aecf3d5-f8a0-48e7-99be-3a759df7358f
+    file: azure_app_privileged_permissions.yml
+    path: rules/cloud/azure/audit_logs/azure_app_privileged_permissions.yml
+  - id: sigma-azure-app-uri-modifications
+    rule_id: 0055ad1f-be85-4798-83cf-a6da17c993b3
+    file: azure_app_uri_modifications.yml
+    path: rules/cloud/azure/audit_logs/azure_app_uri_modifications.yml
+  - id: sigma-azure-application-deleted
+    rule_id: 410d2a41-1e6d-452f-85e5-abdd8257a823
+    file: azure_application_deleted.yml
+    path: rules/cloud/azure/audit_logs/azure_application_deleted.yml
+  - id: sigma-azure-application-gateway-modified-or-deleted
+    rule_id: ad87d14e-7599-4633-ba81-aeb60cfe8cd6
+    file: azure_application_gateway_modified_or_deleted.yml
+    path: rules/cloud/azure/activity_logs/azure_application_gateway_modified_or_deleted.yml
+  - id: sigma-azure-application-security-group-modified-or-deleted
+    rule_id: 835747f1-9329-40b5-9cc3-97d465754ce6
+    file: azure_application_security_group_modified_or_deleted.yml
+    path: rules/cloud/azure/activity_logs/azure_application_security_group_modified_or_deleted.yml
+  - id: sigma-azure-blocked-account-attempt
+    rule_id: 4afac85c-224a-4dd7-b1af-8da40e1c60bd
+    file: azure_blocked_account_attempt.yml
+    path: rules/cloud/azure/signin_logs/azure_blocked_account_attempt.yml
+  - id: sigma-azure-change-to-authentication-method
+    rule_id: 4d78a000-ab52-4564-88a5-7ab5242b20c7
+    file: azure_change_to_authentication_method.yml
+    path: rules/cloud/azure/audit_logs/azure_change_to_authentication_method.yml
+  - id: sigma-azure-conditional-access-failure
+    rule_id: b4a6d707-9430-4f5f-af68-0337f52d5c42
+    file: azure_conditional_access_failure.yml
+    path: rules/cloud/azure/signin_logs/azure_conditional_access_failure.yml
+  - id: sigma-azure-container-registry-created-or-deleted
+    rule_id: 93e0ef48-37c8-49ed-a02c-038aab23628e
+    file: azure_container_registry_created_or_deleted.yml
+    path: rules/cloud/azure/activity_logs/azure_container_registry_created_or_deleted.yml
+  - id: sigma-azure-device-no-longer-managed-or-compliant
+    rule_id: 542b9912-c01f-4e3f-89a8-014c48cdca7d
+    file: azure_device_no_longer_managed_or_compliant.yml
+    path: rules/cloud/azure/audit_logs/azure_device_no_longer_managed_or_compliant.yml
+  - id: sigma-azure-device-or-configuration-modified-or-deleted
+    rule_id: 46530378-f9db-4af9-a9e5-889c177d3881
+    file: azure_device_or_configuration_modified_or_deleted.yml
+    path: rules/cloud/azure/activity_logs/azure_device_or_configuration_modified_or_deleted.yml
+  - id: sigma-azure-dns-zone-modified-or-deleted
+    rule_id: af6925b0-8826-47f1-9324-337507a0babd
+    file: azure_dns_zone_modified_or_deleted.yml
+    path: rules/cloud/azure/activity_logs/azure_dns_zone_modified_or_deleted.yml
+  - id: sigma-azure-federation-modified
+    rule_id: 352a54e1-74ba-4929-9d47-8193d67aba1e
+    file: azure_federation_modified.yml
+    path: rules/cloud/azure/audit_logs/azure_federation_modified.yml
+  - id: sigma-azure-firewall-modified-or-deleted
+    rule_id: 512cf937-ea9b-4332-939c-4c2c94baadcd
+    file: azure_firewall_modified_or_deleted.yml
+    path: rules/cloud/azure/activity_logs/azure_firewall_modified_or_deleted.yml
+  - id: sigma-azure-firewall-rule-collection-modified-or-deleted
+    rule_id: 025c9fe7-db72-49f9-af0d-31341dd7dd57
+    file: azure_firewall_rule_collection_modified_or_deleted.yml
+    path: rules/cloud/azure/activity_logs/azure_firewall_rule_collection_modified_or_deleted.yml
+  - id: sigma-azure-group-user-addition-ca-modification
+    rule_id: 91c95675-1f27-46d0-bead-d1ae96b97cd3
+    file: azure_group_user_addition_ca_modification.yml
+    path: rules/cloud/azure/audit_logs/azure_group_user_addition_ca_modification.yml
+  - id: sigma-azure-group-user-removal-ca-modification
+    rule_id: 665e2d43-70dc-4ccc-9d27-026c9dd7ed9c
+    file: azure_group_user_removal_ca_modification.yml
+    path: rules/cloud/azure/audit_logs/azure_group_user_removal_ca_modification.yml
+  - id: sigma-azure-guest-invite-failure
+    rule_id: 0b4b72e3-4c53-4d5b-b198-2c58cfef39a9
+    file: azure_guest_invite_failure.yml
+    path: rules/cloud/azure/audit_logs/azure_guest_invite_failure.yml
+  - id: sigma-azure-identity-protection-anomalous-token
+    rule_id: 6555754e-5e7f-4a67-ad1c-4041c413a007
+    file: azure_identity_protection_anomalous_token.yml
+    path: rules/cloud/azure/identity_protection/azure_identity_protection_anomalous_token.yml
+  - id: sigma-azure-identity-protection-anomalous-user
+    rule_id: 258b6593-215d-4a26-a141-c8e31c1299a6
+    file: azure_identity_protection_anomalous_user.yml
+    path: rules/cloud/azure/identity_protection/azure_identity_protection_anomalous_user.yml
+  - id: sigma-azure-identity-protection-anonymous-ip-activity
+    rule_id: be4d9c86-d702-4030-b52e-c7859110e5e8
+    file: azure_identity_protection_anonymous_ip_activity.yml
+    path: rules/cloud/azure/identity_protection/azure_identity_protection_anonymous_ip_activity.yml
+  - id: sigma-azure-identity-protection-anonymous-ip-address
+    rule_id: 53acd925-2003-440d-a1f3-71a5253fe237
+    file: azure_identity_protection_anonymous_ip_address.yml
+    path: rules/cloud/azure/identity_protection/azure_identity_protection_anonymous_ip_address.yml
+  - id: sigma-azure-identity-protection-atypical-travel
+    rule_id: 1a41023f-1e70-4026-921a-4d9341a9038e
+    file: azure_identity_protection_atypical_travel.yml
+    path: rules/cloud/azure/identity_protection/azure_identity_protection_atypical_travel.yml
+  - id: sigma-azure-identity-protection-impossible-travel
+    rule_id: b2572bf9-e20a-4594-b528-40bde666525a
+    file: azure_identity_protection_impossible_travel.yml
+    path: rules/cloud/azure/identity_protection/azure_identity_protection_impossible_travel.yml
+  - id: sigma-azure-identity-protection-inbox-forwarding-rule
+    rule_id: 27e4f1d6-ae72-4ea0-8a67-77a73a289c3d
+    file: azure_identity_protection_inbox_forwarding_rule.yml
+    path: rules/cloud/azure/identity_protection/azure_identity_protection_inbox_forwarding_rule.yml
+  - id: sigma-azure-identity-protection-inbox-manipulation
+    rule_id: ceb55fd0-726e-4656-bf4e-b585b7f7d572
+    file: azure_identity_protection_inbox_manipulation.yml
+    path: rules/cloud/azure/identity_protection/azure_identity_protection_inbox_manipulation.yml
+  - id: sigma-azure-identity-protection-leaked-credentials
+    rule_id: 19128e5e-4743-48dc-bd97-52e5775af817
+    file: azure_identity_protection_leaked_credentials.yml
+    path: rules/cloud/azure/identity_protection/azure_identity_protection_leaked_credentials.yml
+  - id: sigma-azure-identity-protection-malicious-ip-address
+    rule_id: a3f55ebd-0c01-4ed6-adc0-8fb76d8cd3cd
+    file: azure_identity_protection_malicious_ip_address.yml
+    path: rules/cloud/azure/identity_protection/azure_identity_protection_malicious_ip_address.yml
+  - id: sigma-azure-identity-protection-malicious-ip-address-suspicious
+    rule_id: 36440e1c-5c22-467a-889b-593e66498472
+    file: azure_identity_protection_malicious_ip_address_suspicious.yml
+    path: rules/cloud/azure/identity_protection/azure_identity_protection_malicious_ip_address_suspicious.yml
+  - id: sigma-azure-identity-protection-malware-linked-ip
+    rule_id: 821b4dc3-1295-41e7-b157-39ab212dd6bd
+    file: azure_identity_protection_malware_linked_ip.yml
+    path: rules/cloud/azure/identity_protection/azure_identity_protection_malware_linked_ip.yml
+  - id: sigma-azure-identity-protection-new-coutry-region
+    rule_id: adf9f4d2-559e-4f5c-95be-c28dff0b1476
+    file: azure_identity_protection_new_coutry_region.yml
+    path: rules/cloud/azure/identity_protection/azure_identity_protection_new_coutry_region.yml
+  - id: sigma-azure-identity-protection-password-spray
+    rule_id: 28ecba0a-c743-4690-ad29-9a8f6f25a6f9
+    file: azure_identity_protection_password_spray.yml
+    path: rules/cloud/azure/identity_protection/azure_identity_protection_password_spray.yml
+  - id: sigma-azure-identity-protection-prt-access
+    rule_id: a84fc3b1-c9ce-4125-8e74-bdcdb24021f1
+    file: azure_identity_protection_prt_access.yml
+    path: rules/cloud/azure/identity_protection/azure_identity_protection_prt_access.yml
+  - id: sigma-azure-identity-protection-suspicious-browser
+    rule_id: 944f6adb-7a99-4c69-80c1-b712579e93e6
+    file: azure_identity_protection_suspicious_browser.yml
+    path: rules/cloud/azure/identity_protection/azure_identity_protection_suspicious_browser.yml
+  - id: sigma-azure-identity-protection-threat-intel
+    rule_id: a2cb56ff-4f46-437a-a0fa-ffa4d1303cba
+    file: azure_identity_protection_threat_intel.yml
+    path: rules/cloud/azure/identity_protection/azure_identity_protection_threat_intel.yml
+  - id: sigma-azure-identity-protection-token-issuer-anomaly
+    rule_id: e3393cba-31f0-4207-831e-aef90ab17a8c
+    file: azure_identity_protection_token_issuer_anomaly.yml
+    path: rules/cloud/azure/identity_protection/azure_identity_protection_token_issuer_anomaly.yml
+  - id: sigma-azure-identity-protection-unfamilar-sign-in
+    rule_id: 128faeef-79dd-44ca-b43c-a9e236a60f49
+    file: azure_identity_protection_unfamilar_sign_in.yml
+    path: rules/cloud/azure/identity_protection/azure_identity_protection_unfamilar_sign_in.yml
+  - id: sigma-azure-keyvault-key-modified-or-deleted
+    rule_id: 80eeab92-0979-4152-942d-96749e11df40
+    file: azure_keyvault_key_modified_or_deleted.yml
+    path: rules/cloud/azure/activity_logs/azure_keyvault_key_modified_or_deleted.yml
+  - id: sigma-azure-keyvault-modified-or-deleted
+    rule_id: 459a2970-bb84-4e6a-a32e-ff0fbd99448d
+    file: azure_keyvault_modified_or_deleted.yml
+    path: rules/cloud/azure/activity_logs/azure_keyvault_modified_or_deleted.yml
+  - id: sigma-azure-keyvault-secrets-modified-or-deleted
+    rule_id: b831353c-1971-477b-abb6-2828edc3bca1
+    file: azure_keyvault_secrets_modified_or_deleted.yml
+    path: rules/cloud/azure/activity_logs/azure_keyvault_secrets_modified_or_deleted.yml
+  - id: sigma-azure-kubernetes-admission-controller
+    rule_id: a61a3c56-4ce2-4351-a079-88ae4cbd2b58
+    file: azure_kubernetes_admission_controller.yml
+    path: rules/cloud/azure/activity_logs/azure_kubernetes_admission_controller.yml
+  - id: sigma-azure-kubernetes-cluster-created-or-deleted
+    rule_id: 9541f321-7cba-4b43-80fc-fbd1fb922808
+    file: azure_kubernetes_cluster_created_or_deleted.yml
+    path: rules/cloud/azure/activity_logs/azure_kubernetes_cluster_created_or_deleted.yml
+  - id: sigma-azure-kubernetes-cronjob
+    rule_id: 1c71e254-6655-42c1-b2d6-5e4718d7fc0a
+    file: azure_kubernetes_cronjob.yml
+    path: rules/cloud/azure/activity_logs/azure_kubernetes_cronjob.yml
+  - id: sigma-azure-kubernetes-events-deleted
+    rule_id: 225d8b09-e714-479c-a0e4-55e6f29adf35
+    file: azure_kubernetes_events_deleted.yml
+    path: rules/cloud/azure/activity_logs/azure_kubernetes_events_deleted.yml
+  - id: sigma-azure-kubernetes-network-policy-change
+    rule_id: 08d6ac24-c927-4469-b3b7-2e422d6e3c43
+    file: azure_kubernetes_network_policy_change.yml
+    path: rules/cloud/azure/activity_logs/azure_kubernetes_network_policy_change.yml
+  - id: sigma-azure-kubernetes-pods-deleted
+    rule_id: b02f9591-12c3-4965-986a-88028629b2e1
+    file: azure_kubernetes_pods_deleted.yml
+    path: rules/cloud/azure/activity_logs/azure_kubernetes_pods_deleted.yml
+  - id: sigma-azure-kubernetes-role-access
+    rule_id: 818fee0c-e0ec-4e45-824e-83e4817b0887
+    file: azure_kubernetes_role_access.yml
+    path: rules/cloud/azure/activity_logs/azure_kubernetes_role_access.yml
+  - id: sigma-azure-kubernetes-rolebinding-modified-or-deleted
+    rule_id: 25cb259b-bbdc-4b87-98b7-90d7c72f8743
+    file: azure_kubernetes_rolebinding_modified_or_deleted.yml
+    path: rules/cloud/azure/activity_logs/azure_kubernetes_rolebinding_modified_or_deleted.yml
+  - id: sigma-azure-kubernetes-secret-or-config-object-access
+    rule_id: 7ee0b4aa-d8d4-4088-b661-20efdf41a04c
+    file: azure_kubernetes_secret_or_config_object_access.yml
+    path: rules/cloud/azure/activity_logs/azure_kubernetes_secret_or_config_object_access.yml
+  - id: sigma-azure-kubernetes-service-account-modified-or-deleted
+    rule_id: 12d027c3-b48c-4d9d-8bb6-a732200034b2
+    file: azure_kubernetes_service_account_modified_or_deleted.yml
+    path: rules/cloud/azure/activity_logs/azure_kubernetes_service_account_modified_or_deleted.yml
+  - id: sigma-azure-login-to-disabled-account
+    rule_id: 908655e0-25cf-4ae1-b775-1c8ce9cf43d8
+    file: azure_login_to_disabled_account.yml
+    path: rules/cloud/azure/signin_logs/azure_login_to_disabled_account.yml
+  - id: sigma-azure-mfa-denies
+    rule_id: e40f4962-b02b-4192-9bfe-245f7ece1f99
+    file: azure_mfa_denies.yml
+    path: rules/cloud/azure/signin_logs/azure_mfa_denies.yml
+  - id: sigma-azure-mfa-disabled
+    rule_id: 7ea78478-a4f9-42a6-9dcd-f861816122bf
+    file: azure_mfa_disabled.yml
+    path: rules/cloud/azure/audit_logs/azure_mfa_disabled.yml
+  - id: sigma-azure-mfa-interrupted
+    rule_id: 5496ff55-42ec-4369-81cb-00f417029e25
+    file: azure_mfa_interrupted.yml
+    path: rules/cloud/azure/signin_logs/azure_mfa_interrupted.yml
+  - id: sigma-azure-network-firewall-policy-modified-or-deleted
+    rule_id: 83c17918-746e-4bd9-920b-8e098bf88c23
+    file: azure_network_firewall_policy_modified_or_deleted.yml
+    path: rules/cloud/azure/activity_logs/azure_network_firewall_policy_modified_or_deleted.yml
+  - id: sigma-azure-network-firewall-rule-modified-or-deleted
+    rule_id: 2a7d64cf-81fa-4daf-ab1b-ab80b789c067
+    file: azure_network_firewall_rule_modified_or_deleted.yml
+    path: rules/cloud/azure/activity_logs/azure_network_firewall_rule_modified_or_deleted.yml
+  - id: sigma-azure-network-p2s-vpn-modified-or-deleted
+    rule_id: d9557b75-267b-4b43-922f-a775e2d1f792
+    file: azure_network_p2s_vpn_modified_or_deleted.yml
+    path: rules/cloud/azure/activity_logs/azure_network_p2s_vpn_modified_or_deleted.yml
+  - id: sigma-azure-network-security-modified-or-deleted
+    rule_id: d22b4df4-5a67-4859-a578-8c9a0b5af9df
+    file: azure_network_security_modified_or_deleted.yml
+    path: rules/cloud/azure/activity_logs/azure_network_security_modified_or_deleted.yml
+  - id: sigma-azure-network-virtual-device-modified-or-deleted
+    rule_id: 15ef3fac-f0f0-4dc4-ada0-660aa72980b3
+    file: azure_network_virtual_device_modified_or_deleted.yml
+    path: rules/cloud/azure/activity_logs/azure_network_virtual_device_modified_or_deleted.yml
+  - id: sigma-azure-new-cloudshell-created
+    rule_id: 72af37e2-ec32-47dc-992b-bc288a2708cb
+    file: azure_new_cloudshell_created.yml
+    path: rules/cloud/azure/activity_logs/azure_new_cloudshell_created.yml
+  - id: sigma-azure-owner-removed-from-application-or-service-principal
+    rule_id: 636e30d5-3736-42ea-96b1-e6e2f8429fd6
+    file: azure_owner_removed_from_application_or_service_principal.yml
+    path: rules/cloud/azure/audit_logs/azure_owner_removed_from_application_or_service_principal.yml
+  - id: sigma-azure-pim-account-stale
+    rule_id: e402c26a-267a-45bd-9615-bd9ceda6da85
+    file: azure_pim_account_stale.yml
+    path: rules/cloud/azure/privileged_identity_management/azure_pim_account_stale.yml
+  - id: sigma-azure-pim-activation-approve-deny
+    rule_id: 039a7469-0296-4450-84c0-f6966b16dc6d
+    file: azure_pim_activation_approve_deny.yml
+    path: rules/cloud/azure/audit_logs/azure_pim_activation_approve_deny.yml
+  - id: sigma-azure-pim-alerts-disabled
+    rule_id: aeaef14c-e5bf-4690-a9c8-835caad458bd
+    file: azure_pim_alerts_disabled.yml
+    path: rules/cloud/azure/audit_logs/azure_pim_alerts_disabled.yml
+  - id: sigma-azure-pim-change-settings
+    rule_id: db6c06c4-bf3b-421c-aa88-15672b88c743
+    file: azure_pim_change_settings.yml
+    path: rules/cloud/azure/audit_logs/azure_pim_change_settings.yml
+  - id: sigma-azure-pim-invalid-license
+    rule_id: 58af08eb-f9e1-43c8-9805-3ad9b0482bd8
+    file: azure_pim_invalid_license.yml
+    path: rules/cloud/azure/privileged_identity_management/azure_pim_invalid_license.yml
+  - id: sigma-azure-pim-role-assigned-outside-of-pim
+    rule_id: b1bc08d1-8224-4758-a0e6-fbcfc98c73bb
+    file: azure_pim_role_assigned_outside_of_pim.yml
+    path: rules/cloud/azure/privileged_identity_management/azure_pim_role_assigned_outside_of_pim.yml
+  - id: sigma-azure-pim-role-frequent-activation
+    rule_id: 645fd80d-6c07-435b-9e06-7bc1b5656cba
+    file: azure_pim_role_frequent_activation.yml
+    path: rules/cloud/azure/privileged_identity_management/azure_pim_role_frequent_activation.yml
+  - id: sigma-azure-pim-role-no-mfa-required
+    rule_id: 94a66f46-5b64-46ce-80b2-75dcbe627cc0
+    file: azure_pim_role_no_mfa_required.yml
+    path: rules/cloud/azure/privileged_identity_management/azure_pim_role_no_mfa_required.yml
+  - id: sigma-azure-pim-role-not-used
+    rule_id: 8c6ec464-4ae4-43ac-936a-291da66ed13d
+    file: azure_pim_role_not_used.yml
+    path: rules/cloud/azure/privileged_identity_management/azure_pim_role_not_used.yml
+  - id: sigma-azure-pim-too-many-global-admins
+    rule_id: 7bbc309f-e2b1-4eb1-8369-131a367d67d3
+    file: azure_pim_too_many_global_admins.yml
+    path: rules/cloud/azure/privileged_identity_management/azure_pim_too_many_global_admins.yml
+  - id: sigma-azure-priviledged-role-assignment-add
+    rule_id: 49a268a4-72f4-4e38-8a7b-885be690c5b5
+    file: azure_priviledged_role_assignment_add.yml
+    path: rules/cloud/azure/audit_logs/azure_priviledged_role_assignment_add.yml
+  - id: sigma-azure-priviledged-role-assignment-bulk-change
+    rule_id: 102e11e3-2db5-4c9e-bc26-357d42585d21
+    file: azure_priviledged_role_assignment_bulk_change.yml
+    path: rules/cloud/azure/audit_logs/azure_priviledged_role_assignment_bulk_change.yml
+  - id: sigma-azure-privileged-account-creation
+    rule_id: f7b5b004-dece-46e4-a4a5-f6fd0e1c6947
+    file: azure_privileged_account_creation.yml
+    path: rules/cloud/azure/audit_logs/azure_privileged_account_creation.yml
+  - id: sigma-azure-service-principal-created
+    rule_id: 0ddcff6d-d262-40b0-804b-80eb592de8e3
+    file: azure_service_principal_created.yml
+    path: rules/cloud/azure/audit_logs/azure_service_principal_created.yml
+  - id: sigma-azure-service-principal-removed
+    rule_id: 448fd1ea-2116-4c62-9cde-a92d120e0f08
+    file: azure_service_principal_removed.yml
+    path: rules/cloud/azure/audit_logs/azure_service_principal_removed.yml
+  - id: sigma-azure-subscription-permissions-elevation-via-activitylogs
+    rule_id: 09438caa-07b1-4870-8405-1dbafe3dad95
+    file: azure_subscription_permissions_elevation_via_activitylogs.yml
+    path: rules/cloud/azure/activity_logs/azure_subscription_permissions_elevation_via_activitylogs.yml
+  - id: sigma-azure-subscription-permissions-elevation-via-auditlogs
+    rule_id: ca9bf243-465e-494a-9e54-bf9fc239057d
+    file: azure_subscription_permissions_elevation_via_auditlogs.yml
+    path: rules/cloud/azure/audit_logs/azure_subscription_permissions_elevation_via_auditlogs.yml
+  - id: sigma-azure-suppression-rule-created
+    rule_id: 92cc3e5d-eb57-419d-8c16-5c63f325a401
+    file: azure_suppression_rule_created.yml
+    path: rules/cloud/azure/activity_logs/azure_suppression_rule_created.yml
+  - id: sigma-azure-tap-added
+    rule_id: fa84aaf5-8142-43cd-9ec2-78cfebf878ce
+    file: azure_tap_added.yml
+    path: rules/cloud/azure/audit_logs/azure_tap_added.yml
+  - id: sigma-azure-unusual-authentication-interruption
+    rule_id: 8366030e-7216-476b-9927-271d79f13cf3
+    file: azure_unusual_authentication_interruption.yml
+    path: rules/cloud/azure/signin_logs/azure_unusual_authentication_interruption.yml
+  - id: sigma-azure-update-risk-and-mfa-registration-policy
+    rule_id: d4c7758e-9417-4f2e-9109-6125d66dabef
+    file: azure_update_risk_and_mfa_registration_policy.yml
+    path: rules/cloud/azure/audit_logs/azure_update_risk_and_mfa_registration_policy.yml
+  - id: sigma-azure-user-login-blocked-by-conditional-access
+    rule_id: 9a60e676-26ac-44c3-814b-0c2a8b977adf
+    file: azure_user_login_blocked_by_conditional_access.yml
+    path: rules/cloud/azure/signin_logs/azure_user_login_blocked_by_conditional_access.yml
+  - id: sigma-azure-virtual-network-modified-or-deleted
+    rule_id: bcfcc962-0e4a-4fd9-84bb-a833e672df3f
+    file: azure_virtual_network_modified_or_deleted.yml
+    path: rules/cloud/azure/activity_logs/azure_virtual_network_modified_or_deleted.yml
+  - id: sigma-azure-vpn-connection-modified-or-deleted
+    rule_id: 61171ffc-d79c-4ae5-8e10-9323dba19cd3
+    file: azure_vpn_connection_modified_or_deleted.yml
+    path: rules/cloud/azure/activity_logs/azure_vpn_connection_modified_or_deleted.yml
   - id: sigma-create-stream-hash-ads-executable
     rule_id: b69888d4-380c-45ce-9cf9-d9ce46e67821
     file: create_stream_hash_ads_executable.yml

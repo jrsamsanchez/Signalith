@@ -1,0 +1,4 @@
+{"rule": "835747f1-9329-40b5-9cc3-97d465754ce6", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"activitylogs","data":{"operationName":"MICROSOFT.NETWORK/APPLICATIONSECURITYGROUPS/WRITE"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"activitylogs","data":{}}
+]}

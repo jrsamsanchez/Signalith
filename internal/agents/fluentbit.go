@@ -34,7 +34,7 @@ const TokenPlaceholder = "@@AGENT_TOKEN@@"
 
 // Options select what an agent collects.
 type Options struct {
-	OS        string // "linux", "windows", "otel" (an OpenTelemetry Collector), "aws" (a Collector reading AWS CloudTrail) or "osquery"
+	OS        string // "linux", "windows", "otel" (an OpenTelemetry Collector), "aws" (a Collector reading AWS CloudTrail), "azure" (a Collector reading Entra ID's and Azure's event hub) or "osquery"
 	ServerURL string // Signalith public URL
 	Token     string // agent token (TokenPlaceholder for the Add data page)
 	// LinuxSource is "file" (tail /var/log/auth.log and /var/log/secure),
@@ -404,7 +404,7 @@ func IsLoopback(u *url.URL) bool {
 // Generate returns a Fluent Bit config and install steps.
 func Generate(o Options) (*Agent, error) {
 	switch o.OS {
-	case "otel", "aws":
+	case "otel", "aws", "azure":
 		return generateOTel(o)
 	case "osquery":
 		return generateOsquery(o)
