@@ -39,6 +39,10 @@ type Runtime struct {
 
 	// stepMu lets one evaluation or watch cycle run at a time.
 	stepMu sync.Mutex
+	// polled says the step running came from the Poll timer rather than
+	// a Kick, so its watch cycle may stop at an unchanged mark (Hub.Poll).
+	// Guarded by stepMu.
+	polled bool
 	// running counts the loop and the cache writer, for Wait.
 	running sync.WaitGroup
 
@@ -621,13 +625,16 @@ func (rt *Runtime) Start(ctx context.Context) {
 	}
 	rt.log.Info("shared settings watcher started")
 	rt.running.Go(func() {
+		polled := false
 		for {
-			rt.step(ctx)
+			rt.step(ctx, polled)
 			select {
 			case <-ctx.Done():
 				return
 			case <-rt.wake:
+				polled = false
 			case <-rt.clock.After(rt.opts.Timing.Poll):
+				polled = true
 			}
 		}
 	})
@@ -637,9 +644,11 @@ func (rt *Runtime) Start(ctx context.Context) {
 // writer of cache.enc to end; the writer saves what changed last first.
 func (rt *Runtime) Wait() { rt.running.Wait() }
 
-func (rt *Runtime) step(ctx context.Context) {
+func (rt *Runtime) step(ctx context.Context, polled bool) {
 	rt.stepMu.Lock()
 	defer rt.stepMu.Unlock()
+	rt.polled = polled
+	defer func() { rt.polled = false }()
 	rt.stepLocked(ctx, true)
 }
 
@@ -1113,7 +1122,11 @@ func (rt *Runtime) cycle(ctx context.Context) {
 	h := rt.hub
 	rt.mu.Unlock()
 	cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	err := h.Cycle(cctx)
+	read := h.Cycle
+	if rt.polled {
+		read = h.Poll
+	}
+	err := read(cctx)
 	cancel()
 	if err != nil {
 		if ctx.Err() != nil {

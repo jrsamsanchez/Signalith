@@ -16,9 +16,8 @@ criteria:
   - {name: unexpected_signouts, max: 0}
   - {name: search_p95_ms, max: 3000}
   - {name: page_p95_ms, max: 2000}
-  # Recorded: notes on one case are written one at a time (see Known
-  # limits in docs/performance.md), so with everyone in the same case
-  # they queue.
-  - {name: write_p95_ms}
+  # Comments on the same findings and notes in the same case, from
+  # everyone at once.
+  - {name: write_p95_ms, max: 2000}
   # Notes and comments are added, never edited, so none should be refused.
   - {name: write_conflicts, max: 0}
