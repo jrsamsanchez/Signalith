@@ -375,9 +375,18 @@ var Registry = []Setting{
 		Confirm: "Event data from findings, such as user names, host names and IP addresses, will be sent to the AI model when an analyst investigates a finding. " +
 			"With a cloud provider, it leaves your network.", ConfirmWhen: "on"},
 	{Key: "assistant.mask_fields", Scope: ScopeCluster, Section: "assistant", Label: "Fields never sent", Type: TypeList,
-		Help: "Fields whose values are replaced with [masked] wherever they appear, such as user or src. Add _raw to leave out the original event text. Wildcards * work. " +
+		Help: "Fields whose values are replaced with stand-ins such as masked-user-1 wherever they appear, such as user or src. The same value always gets the same stand-in, " +
+			"and the real values are put back into the model's searches and its write-up. Add _raw to leave out the original event text. Wildcards * work. " +
 			"Passwords, tokens, keys and cookies are always masked.",
 		Placeholder: "user, _raw", EmptyMeans: "only passwords, tokens, keys and cookies"},
+	{Key: "assistant.request_timeout", Scope: ScopeCluster, Section: "assistant", Label: "Answer time limit", Type: TypeDuration,
+		Help: "How long one answer from the model may take, for Test and each turn of Investigate with AI. Ask waits at most 90 seconds, then keeps its own query. " +
+			"A local model on a CPU without a GPU can take 5 to 15 minutes for one investigation turn, so give it 15m or more. From 30s to 1h.",
+		Placeholder: "15m", EmptyMeans: "3m"},
+	{Key: "assistant.investigate_timeout", Scope: ScopeCluster, Section: "assistant", Label: "Investigation time limit", Type: TypeDuration,
+		Help: "How long one Investigate with AI may take in all, every model turn and search included. " +
+			"The model may take up to 4 turns, so with a slow local model allow about 3 times the answer time limit, such as 45m. From 30s to 2h.",
+		Placeholder: "45m", EmptyMeans: "6m"},
 
 	{Key: "intel.allow_loopback_feeds", Scope: ScopeCluster, Section: "intel", Label: "Allow feeds from this computer", Type: TypeBool, Restart: true,
 		Help:    "Lets feeds download from 127.0.0.1 or ::1, for a feed server on this computer.",

@@ -635,6 +635,8 @@ are counted for each person's own address, not the proxy's. See
 | `assistant.url`, `assistant.model`, `assistant.api_key` | per provider | Endpoint, model name and key; `anthropic` defaults to `claude-sonnet-5-5` |
 | `assistant.investigate` | `false` | Lets analysts use **Investigate with AI** on a finding, which sends the finding's events to the model. See [docs/investigate.md](docs/investigate.md) |
 | `assistant.mask_fields` | none | Fields whose values are replaced with stand-ins before Investigate with AI sends anything; `_raw` leaves out the event text. Passwords, tokens, keys and cookies are always masked |
+| `assistant.request_timeout` | `3m` | How long one answer from the model may take (Test and each Investigate with AI turn), from 30s to 1h. A local model on a CPU without a GPU may need `15m` or more |
+| `assistant.investigate_timeout` | `6m` | How long one Investigate with AI may take in all, from 30s to 2h. With a slow local model, allow about 3 times the answer limit, such as `45m` |
 
 Secrets can come from the environment instead: `SIGNALITH_OPENSEARCH_PASSWORD`,
 `SIGNALITH_ADMIN_PASSWORD`, `SIGNALITH_INGEST_TOKEN`, `SIGNALITH_LDAP_BIND_PASSWORD` (for
