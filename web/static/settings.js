@@ -90,6 +90,11 @@
       path: 'api/settings/test/assistant', button: 'Test', icon: 'sparkles', busy: 'Asking the model…',
       lead: 'Asks the model one sample question with the settings above, saved or not.',
     },
+    m365: {
+      keys: ['m365.cloud', 'm365.tenant_id', 'm365.client_id', 'm365.client_secret'],
+      path: 'api/settings/test/m365', button: 'Test', icon: 'cloud', busy: 'Signing in to Microsoft…',
+      lead: 'Signs in to Microsoft with the settings above, saved or not, and checks the app can read the audit log.',
+    },
   };
 
   // ---------- small helpers ----------
@@ -1432,6 +1437,9 @@
         const field = r.problem === 'auth' && !current('opensearch.username') ? 'opensearch.username' : key;
         kids.push(dxAlert('danger', title, el('span', {}, ...withCode(r.message)), settingLink(field)));
       }
+    } else if (id === 'm365') {
+      if (r.ok) kids.push(dxAlert('success', 'Signed in to Microsoft 365', r.message));
+      else kids.push(dxAlert('danger', 'Couldn’t read the audit log', r.message, settingLink(r.field || '')));
     } else if (r.ok) {
       const took = r.took_ms < 1000 ? 'in under a second' : `in ${(r.took_ms / 1000).toFixed(1)} seconds`;
       kids.push(dxAlert('success', 'The model answered ' + took, null, el('div', { class: 'st-test__qa' },

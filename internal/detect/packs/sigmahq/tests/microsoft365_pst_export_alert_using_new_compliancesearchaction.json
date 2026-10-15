@@ -1,0 +1,5 @@
+{"rule": "6897cd82-6664-11ed-9022-0242ac120002", "cases": [
+  {"expect":true,"source":"synthesized","channel":"o365","event_id":"audit","data":{"Payload":"New-ComplianceSearchActionpstExport","eventSource":"SecurityComplianceCenter"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"audit","data":{"eventSource":"SecurityComplianceCenter"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"audit","data":{"Payload":"New-ComplianceSearchActionpstExport"}}
+]}

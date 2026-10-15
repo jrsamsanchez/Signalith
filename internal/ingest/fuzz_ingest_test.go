@@ -639,3 +639,32 @@ func FuzzAzureRecords(f *testing.F) {
 		}
 	})
 }
+
+func FuzzO365Records(f *testing.F) {
+	f.Add(`[` + o365LoginFailed + `, ` + o365InboxRule + `, ` + o365Alert + `]`)
+	f.Add(`[{"Id": 1, "CreationTime": [], "Operation": {}, "Workload": null, "ClientIP": "[::1", "Parameters": "x", "ExtendedProperties": [1, {"Name": 2}]}]`)
+	f.Add(`[{"RecordType": "x", "Operation": "New-", "ResultStatus": 1, "Item": {"A": {"B": {"C": {"D": {"E": {"F": 1}}}}}}}]`)
+	f.Fuzz(func(t *testing.T, msg string) {
+		recs, err := O365Records([]byte(msg))
+		if err != nil {
+			return
+		}
+		for _, r := range recs {
+			ev := Normalize(O365Tag, r, now)
+			if ev.Model == "" {
+				t.Fatalf("no model, fields %v", ev.Fields)
+			}
+			if _, err := json.Marshal(ev.Document()); err != nil {
+				t.Fatal(err)
+			}
+			if len(ev.Fields) > maxFieldsPerEvent {
+				t.Fatalf("%d fields", len(ev.Fields))
+			}
+			for k := range ev.Fields {
+				if !KnownField(k) && !validFieldName(k) {
+					t.Fatalf("field name %q", k)
+				}
+			}
+		}
+	})
+}

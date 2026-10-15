@@ -1,0 +1,6 @@
+{"rule": "ee111937-1fe7-40f0-962a-0eb44d57d174", "cases": [
+  {"expect":true,"source":"synthesized","channel":"o365","event_id":"audit","data":{"eventName":"Suspicious OAuth app file download activities","eventSource":"SecurityComplianceCenter","status":"success"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"audit","data":{"eventSource":"SecurityComplianceCenter","status":"success"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"audit","data":{"eventName":"Suspicious OAuth app file download activities","status":"success"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"audit","data":{"eventName":"Suspicious OAuth app file download activities","eventSource":"SecurityComplianceCenter"}}
+]}

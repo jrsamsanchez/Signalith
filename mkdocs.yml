@@ -125,6 +125,7 @@ nav:
       - Network sensor (Zeek, Suricata): network-sensor.md
       - AWS CloudTrail: aws-cloudtrail.md
       - Entra ID and Azure: azure.md
+      - Microsoft 365: microsoft-365.md
       - Antivirus: antivirus.md
       - Vulnerability scanning: vulnerabilities.md
       - Sample data: sample-data.md
