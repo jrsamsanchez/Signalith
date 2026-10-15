@@ -862,7 +862,9 @@ agents that send events, shown on the [Endpoints page](endpoints.md)), `GET /api
 `GET /api/cluster` (the Servers page; see [servers.md](servers.md)), `POST /api/cluster/restart`
 (restart servers one at a time to apply the shared settings), `GET /api/cluster/tls`,
 `POST /api/cluster/tls/choose` (the cluster's one certificate authority; see
-[servers.md](servers.md#one-certificate-authority)), `GET /api/cluster/lifecycle`,
+[servers.md](servers.md#one-certificate-authority)), `GET /api/cluster/opensearch-identity`
+(who each server signs in to OpenSearch as; see
+[servers.md](servers.md#each-servers-own-opensearch-certificate)), `GET /api/cluster/lifecycle`,
 `POST /api/cluster/servers/{id}/drain`, `POST /api/cluster/servers/{id}/resume`,
 `DELETE /api/cluster/servers/{id}`, `POST /api/cluster/jobs/move`, `POST /api/cluster/rotate-key`
 (draining and removing servers, and rotating the cluster key; see

@@ -122,7 +122,7 @@ func (c Case) SigmaView() (map[string]string, bool) {
 			}
 		}
 		return out, true
-	case c.Channel == SecurityChannel && slices.Contains(SecurityEvents, c.EventID):
+	case c.Channel == SecurityChannel && (slices.Contains(SecurityEvents, c.EventID) || ingest.IsNamedSecurityEvents(c.EventID)):
 		// Security log rules (service: security) name the event's own
 		// data.
 		out := map[string]string{"EventID": c.EventID}
@@ -192,8 +192,11 @@ var sysmonEvents = map[string]string{
 	"wmi":                   "5858",
 	// Sysmon's own events (service: sysmon): a configuration change,
 	// or a file block.
-	"sysmon_event":                         "16",
-	"sysmon_file_block":                    "27",
+	"sysmon_event":      "16",
+	"sysmon_file_block": "27",
+	// Security events no data model holds, read by name; each rule
+	// names its events.
+	"security_named":                       "4611",
 	"terminalservices_localsessionmanager": "21",
 	"shell_core":                           "28115",
 	"smbclient_security":                   "31017",
@@ -250,6 +253,7 @@ func init() {
 		Bases[ingest.NamedChannelCategory(service)] = map[string]string{}
 	}
 	Bases["sysmon_event"] = map[string]string{}
+	Bases["security_named"] = map[string]string{}
 	Bases["sysmon_file_block"] = Bases["file_event"]
 	// A task disabled has the data of a task deleted.
 	Bases[SecurityCategory("4701")] = Bases[SecurityCategory("4699")]

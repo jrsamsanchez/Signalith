@@ -43,7 +43,8 @@ func (rs *running) settingsShared() {
 	// The shared library follows the shared settings, with a restart of
 	// its own: wait for it, so the server is settled before the test goes on.
 	eventually(rs.t, rs.r.node.Name()+" takes its detections from the shared settings", func() bool {
-		return rs.r.sharedContent.library.on.Load() == rs.r.shared.SharedLibrary() && rs.r.shared.SharedLibrary()
+		return rs.r.sharedContent.library.on.Load() == rs.r.shared.SharedLibrary() && rs.r.shared.SharedLibrary() &&
+			rs.r.sharedContent.library.lists.Load() == rs.r.shared.SharedLookups() && rs.r.shared.SharedLookups()
 	})
 	eventually(rs.t, "signed in to "+rs.r.node.Name(), func() bool {
 		if rs.signedIn("") {

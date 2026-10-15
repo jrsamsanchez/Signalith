@@ -250,6 +250,24 @@ func TestWindowsFirewallAndBitsEvents(t *testing.T) {
 		"datamodel": "Other", "signature_id": "854", "appx_path": "https://example.org/app.msix",
 		"signature": "An app package file was downloaded",
 	})
+	// A Security event no data model holds (a filtering platform filter
+	// changed, 5447), by name, from Fluent Bit and the OpenTelemetry
+	// Collector alike.
+	ins = []string{"4242", "S-1-5-18", "NT AUTHORITY\\SYSTEM", "{p}", "Windows Defender", "1", "{f}", "Custom Outbound Filter"}
+	rec = map[string]any{"Channel": "Security", "Computer": "WS1", "EventID": "5447", "StringInserts": ins}
+	b, _ = json.Marshal(rec)
+	expect(t, Normalize("win.events", decode(t, string(b)), now).Document(), map[string]any{
+		"datamodel": "Other", "signature_id": "5447", "security_filter_name": "Custom Outbound Filter",
+		"security_process_id": "4242", "signature": "A Windows Filtering Platform filter was changed",
+	})
+	ev = otlpWindows(map[string]any{"channel": "Security", "computer": "WS1", "event_id": map[string]any{"id": "4611"},
+		"event_data": map[string]any{"SubjectUserName": "alice", "SubjectDomainName": "CORP", "LogonProcessName": "User32LogonProcesss"}})
+	if ev.Fields["security_logon_process_name"] != "User32LogonProcesss" || ev.Fields["user"] != "alice" || ev.Fields["user_domain"] != "CORP" {
+		t.Errorf("otlp 4611 = %v", ev.Fields)
+	}
+	if IsNamedChannel("Security") || !IsNamedSecurityEvents("4611", "5447") || IsNamedSecurityEvents("4624") || IsNamedSecurityEvents() {
+		t.Error("Security events read by name")
+	}
 	// A Remote Desktop logon, its channel named in another case.
 	rec = map[string]any{"Channel": "Microsoft-Windows-TerminalServices-LocalSessionManager/operational", "Computer": "WS1",
 		"EventID": "21", "StringInserts": []string{`CORP\alice`, "2", "203.0.113.7"}}

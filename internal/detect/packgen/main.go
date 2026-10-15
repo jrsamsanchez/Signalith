@@ -231,6 +231,9 @@ func main() {
 			if cat == "security" {
 				ids := rule.EventIDs()
 				rcat = sigmacheck.SecurityCategory(ids...)
+				if ingest.IsNamedSecurityEvents(ids...) {
+					rcat = "security_named"
+				}
 				if _, ok := sigmacheck.SysmonEventID(rcat); !ok || len(ids) == 0 {
 					skip("not about one Security event Signalith reads", rel)
 					continue

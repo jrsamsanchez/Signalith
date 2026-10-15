@@ -557,6 +557,18 @@ func parseWindowsSecurity(eventID string, in []string, ev *Event) {
 		f["logon_id"] = at(in, 3)
 		f["src_host"] = at(in, 4)
 	default:
+		if _, ok := namedChannelEvent(SecurityChannel, eventID); ok {
+			// An event no data model holds, read by name.
+			parseNamedChannel(SecurityChannel, eventID, "", in, ev)
+			d := map[string]string{}
+			for _, n := range securitySubject {
+				d[n], _ = ev.Fields[snakeField("security", n)].(string)
+			}
+			if d["SubjectUserName"] != "" {
+				subject(d, ev.Fields)
+			}
+			return
+		}
 		parseWindowsSecurityNamed(eventID, securityNamed(eventID, in), ev)
 	}
 }

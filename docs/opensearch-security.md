@@ -102,9 +102,12 @@ docker compose -f deploy/docker/docker-compose.yml run --rm setup bootstrap-dock
 ```
 
 This puts `opensearch-ca.pem` and `opensearch-ca-key.pem` in the `import` folder of
-Signalith's state volume, readable only by Signalith. Signalith takes them in once, when it
-adds a server, and then deletes the key file. Start Signalith at least once before
-running it. If the files are already waiting there, it leaves them as they are.
+Signalith's state volume, readable only by Signalith. Within a minute Signalith keeps the
+CA in the cluster's shared settings, its key encrypted with the cluster key, deletes the
+key file, and switches itself to a certificate of its own (see
+[Each server's own OpenSearch certificate](servers.md#each-servers-own-opensearch-certificate)).
+Start Signalith at least once before running it. If the files are already waiting there,
+it leaves them as they are.
 
 ### Loading changed security settings
 
@@ -131,7 +134,8 @@ This makes a new CA, keeps its key, and makes every certificate again under it. 
 step never does this by itself, even when the CA is about to expire (after 10 years): it
 stops with a message pointing here instead. Everything the old CA issued stops working:
 the certificates Signalith made for other servers, and Signalith's own copy of the CA. Run
-`-export-ca-key` again before adding servers.
+`-export-ca-key` again: Signalith then keeps the new CA in place of the old one, and each
+server gets a new certificate of its own.
 
 ### If OpenSearch's security settings aren't loaded
 

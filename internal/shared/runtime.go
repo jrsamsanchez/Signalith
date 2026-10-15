@@ -275,6 +275,17 @@ func (e *PausedError) Error() string {
 	return "changes to the shared settings are paused on this server right now (" + e.Why + "); try again in a moment"
 }
 
+// MovingError is a change of this server's own files refused while what
+// they hold moves into the shared settings: the files were read for the
+// move, and the restart that switches this server to the shared settings
+// has not come yet, so a change saved in them would be lost. What names
+// it, such as "users".
+type MovingError struct{ What string }
+
+func (e *MovingError) Error() string {
+	return "this server is moving its " + e.What + " into the cluster; try again in a moment"
+}
+
 // Legacy reports whether a server in mode m uses its own files.
 func (m Mode) Legacy() bool {
 	return m == ModeLegacyA || m == ModeLegacyB || m == ModeLegacyC || m == ModeStarting

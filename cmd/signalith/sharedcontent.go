@@ -69,6 +69,10 @@ type sharedContent struct {
 	// settings.yaml (runner.importOwn), and by a save there on the
 	// Settings page (settingsStore.HoldFile).
 	ownMu sync.Mutex
+	// holds hold this server's files of the feeds, the retention
+	// policies, the users and the directory sign-in settings while they
+	// move into the shared settings (importhold.go).
+	holds importHolds
 	// library links the shared detections and dashboards (see
 	// sharedlibrary.go).
 	library *sharedLibrary

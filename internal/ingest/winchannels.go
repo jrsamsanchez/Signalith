@@ -9,6 +9,9 @@ import (
 // settings being changed.
 const FirewallChannel = "Microsoft-Windows-Windows Firewall With Advanced Security/Firewall"
 
+// SecurityChannel is the Windows Security log.
+const SecurityChannel = "Security"
+
 // AppxChannel is where Windows logs app packages (MSIX and AppX) being
 // installed, and blocked.
 const AppxChannel = "Microsoft-Windows-AppXDeploymentServer/Operational"
@@ -64,6 +67,10 @@ var appxDeploymentFailed = []string{"DeploymentOperation", "PackageFullName", "P
 	"IsInRelatedSet", "IsPackageUsingBDC", "MainPackageFamilyName", "CallingProcess", "IsInPlaceUpdate", "ErrorFileInfo",
 	"DetailedMessageInfo", "RollbackErrorFileInfo", "RollbackDetailedMessageInfo", "IsOptional", "PackageFlags", "PackageFlags2",
 	"HasWin32alacarte", "HasFullTrust", "ExternalLocation", "PackageSourceUri", "PackageDisplayName"}
+
+// securitySubject is the account that acted, the first data of most
+// Security events.
+var securitySubject = []string{"SubjectUserSid", "SubjectUserName", "SubjectDomainName", "SubjectLogonId"}
 
 // mitigationImage is the data of an image load a code integrity
 // mitigation blocked or audited (Security-Mitigations 11 and 12).
@@ -127,6 +134,48 @@ var namedChannels = map[string]namedChannel{
 		"11": {"A process was blocked from loading an image not signed by Microsoft (audit)", mitigationImage},
 		"12": {"A process was blocked from loading an image not signed by Microsoft", mitigationImage},
 	}},
+	// Security log events no data model holds, read by name for the
+	// rules about them: logon processes registered, time changed,
+	// Kerberos replays, privileged services called and objects
+	// operated on, DPAPI backups, user rights and SID history changed,
+	// RDP denied, certificate templates changed, credentials read,
+	// filtering platform filters and providers added, and devices
+	// plugged in or blocked.
+	strings.ToLower(SecurityChannel): {"security", map[string]systemEvent{
+		"4611": {"A trusted logon process was registered", append(securitySubject, "LogonProcessName")},
+		"4616": {"The system time was changed", append(securitySubject, "PreviousTime", "NewTime", "ProcessId", "ProcessName")},
+		"4649": {"A replay attack was detected", append(securitySubject, "TargetUserName", "TargetDomainName", "RequestType",
+			"LogonProcessName", "AuthenticationPackage", "WorkstationName", "TransmittedServices", "ProcessId", "ProcessName")},
+		"4673": {"A privileged service was called", append(securitySubject, "ObjectServer", "Service", "PrivilegeList", "ProcessId", "ProcessName")},
+		"4674": {"An operation was attempted on a privileged object", append(securitySubject, "ObjectServer", "ObjectType", "ObjectName",
+			"HandleId", "AccessMask", "PrivilegeList", "ProcessId", "ProcessName")},
+		"4692": {"Backup of data protection master key was attempted", append(securitySubject, "MasterKeyId", "RecoveryServer",
+			"RecoveryKeyId", "FailureReason")},
+		"4704": {"A user right was assigned", append(securitySubject, "TargetSid", "PrivilegeList")},
+		"4765": {"SID History was added to an account", []string{"SourceUserName", "SourceSid", "TargetUserName", "TargetDomainName",
+			"TargetSid", "SubjectUserSid", "SubjectUserName", "SubjectDomainName", "SubjectLogonId", "PrivilegeList", "SidList"}},
+		"4766": {"An attempt to add SID History to an account failed", []string{"SourceUserName", "TargetUserName", "TargetDomainName",
+			"TargetSid", "SubjectUserName", "SubjectDomainName", "SubjectLogonId", "PrivilegeList"}},
+		"4825": {"A user was denied access to Remote Desktop", []string{"AccountName", "AccountDomain", "LogonID", "ClientAddress"}},
+		"4898": {"Certificate Services loaded a template", []string{"TemplateInternalName", "TemplateVersion", "TemplateSchemaVersion",
+			"TemplateOID", "TemplateDSObjectFQDN", "DCDNSName", "TemplateContent", "SecurityDescriptor"}},
+		"4899": {"A Certificate Services template was updated", []string{"TemplateInternalName", "TemplateVersion",
+			"TemplateSchemaVersion", "TemplateOID", "TemplateDSObjectFQDN", "DCDNSName", "NewTemplateContent", "OldTemplateContent"}},
+		"5379": {"Credential Manager credentials were read", append(securitySubject, "TargetName", "Type", "CountOfCredentialsReturned",
+			"ReadOperation", "ReturnCode", "ProcessCreationTime", "ClientProcessId")},
+		"5441": {"A Windows Filtering Platform filter was present at startup", []string{"ProviderKey", "ProviderName", "FilterKey",
+			"FilterName", "FilterType", "FilterId", "LayerKey", "LayerName", "LayerId", "Weight", "Conditions", "Action", "CalloutKey",
+			"CalloutName"}},
+		"5447": {"A Windows Filtering Platform filter was changed", []string{"ProcessId", "UserSid", "UserName", "ProviderKey",
+			"ProviderName", "ChangeType", "FilterKey", "FilterName", "FilterType", "FilterId", "LayerKey", "LayerName", "LayerId",
+			"Weight", "Conditions", "Action", "CalloutKey", "CalloutName"}},
+		"5449": {"A Windows Filtering Platform provider context was changed", []string{"ProcessId", "UserSid", "UserName",
+			"ProviderKey", "ProviderName", "ChangeType", "ProviderContextKey", "ProviderContextName", "ProviderContextType"}},
+		"6416": {"A new external device was recognized", append(securitySubject, "DeviceId", "DeviceDescription", "ClassId",
+			"ClassName", "VendorIds", "CompatibleIds", "LocationInformation")},
+		"6423": {"The installation of a device was blocked by policy", append(securitySubject, "DeviceId", "DeviceDescription",
+			"ClassId", "ClassName", "HardwareIds", "CompatibleIds", "LocationInformation")},
+	}},
 	strings.ToLower(BitsChannel): {"bits", map[string]systemEvent{
 		"3": {"A BITS job was created", []string{"jobTitle", "jobId", "jobOwner", "processPath", "processId", "ClientProcessStartKey"}},
 		"16403": {"A BITS transfer started", []string{"User", "jobTitle", "jobId", "jobOwner", "fileCount", "RemoteName", "LocalName",
@@ -145,6 +194,17 @@ var NamedChannelServices = map[string]string{
 	"shell-core":                           ShellCoreChannel,
 	"smbclient-security":                   SmbClientSecurityChannel,
 	"security-mitigations":                 MitigationsChannel,
+}
+
+// IsNamedSecurityEvents reports whether the parser reads each of these
+// Security events by name (ChannelDataField with SecurityChannel).
+func IsNamedSecurityEvents(eventIDs ...string) bool {
+	for _, id := range eventIDs {
+		if _, ok := namedChannelEvent(SecurityChannel, id); !ok {
+			return false
+		}
+	}
+	return len(eventIDs) > 0
 }
 
 // NamedChannelCategory is the category of the Sigma rules of a log
@@ -171,10 +231,11 @@ func namedChannelEvent(channel, eventID string) (systemEvent, bool) {
 }
 
 // IsNamedChannel reports whether the parser reads a channel's events by
-// name (ChannelDataField).
+// name (ChannelDataField). The Security log is not one: the parser reads
+// only some of its events by name (IsNamedSecurityEvents).
 func IsNamedChannel(channel string) bool {
 	_, ok := namedChannelFor(channel)
-	return ok
+	return ok && !strings.EqualFold(channel, SecurityChannel)
 }
 
 // ChannelDataField is the stored field of a data value of a channel's

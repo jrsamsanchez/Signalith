@@ -255,8 +255,8 @@ Content packs are rule sets from other open source projects, shipped unchanged
 inside Signalith and converted when it starts. Every pack detection is **off** until
 an admin turns it on.
 
-**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,194 rules from
-[SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 2,040 Windows rules
+**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,210 rules from
+[SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 2,056 Windows rules
 for these Sysmon, Security, PowerShell, System, Application, Code Integrity, Windows Firewall, BITS, AppX deployment, WMI activity, Remote Desktop session, shell, SMB client, exploit protection and Defender log sources, and 154 Linux rules (see
 [Linux endpoints](#linux-endpoints-sysmon-for-linux) and
 [the Linux audit log](#linux-audit-log-auditd)):
@@ -316,6 +316,7 @@ logs each event only with its audit policy setting on:
 | 5140 (network share accessed, once per session) | Filesystem | Audit File Share |
 | 5136 (directory object changed), 4662 (operation on a directory object) | Change | Audit Directory Service Changes, Audit Directory Service Access (domain controllers) |
 | 5156, 5157 (connection allowed or blocked) | Network_Traffic | Audit Filtering Platform Connection |
+| 4611 (logon process registered), 4616 (time changed), 4649 (Kerberos replay), 4673, 4674 (privileged service called, privileged object operation), 4692 (DPAPI master key backup), 4704 (user right assigned), 4765, 4766 (SID History added or refused), 4825 (Remote Desktop denied), 4898, 4899 (certificate template loaded or changed), 5379 (Credential Manager credentials read), 5441, 5447, 5449 (filtering platform filters and provider contexts), 6416, 6423 (device recognized or blocked) | Other, by name: each value is `security_` and its name in snake case (`FilterName` is `security_filter_name`), and the account that acted is `user` | Audit Security System Extension, Audit System Integrity, Audit Sensitive Privilege Use, Audit Other Policy Change Events, Audit Authorization Policy Change, Audit User Account Management, Audit Other Logon/Logoff Events, Audit Certification Services, Audit Filtering Platform Policy Change, Audit PNP Activity |
 
 Handle requests, object accesses and registry value changes are logged only for
 objects whose auditing (SACL) asks for them. Directory object
@@ -830,7 +831,7 @@ Imported rules start disabled with a 5 minute schedule and 10 minute lookback.
 | `GET /api/cases/summary` | Open cases, and open cases you own |
 | `GET /api/risk?since=24h&type=` | Risk objects by total score, with context |
 | `GET /api/risk/object?object=&type=&since=7d` | Risk events for one object |
-| `GET`, `PUT /api/lookups/assets`, `/api/lookups/identities` | List or replace a list (CSV body of up to 16 MB and 1,000,000 rows; 400 lists every bad line) |
+| `GET`, `PUT /api/lookups/assets`, `/api/lookups/identities` | List or replace a list (CSV body of up to 16 MB and 1,000,000 rows; 400 lists every bad line). On several servers the list is shared, and `PUT` honours `If-Match` (see [Servers](servers.md#shared-detections-dashboards-and-asset-lists)) |
 | `GET /api/lookups/assets.csv`, `/api/lookups/identities.csv` | Download the current CSV |
 | `GET /api/lookups/context?field=&value=` | Context for one value |
 

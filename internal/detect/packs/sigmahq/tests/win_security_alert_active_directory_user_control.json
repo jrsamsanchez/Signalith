@@ -1,0 +1,4 @@
+{"rule": "311b6ce2-7890-4383-a8c2-663a9f6b43cd", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4704","data":{"PrivilegeList":"SeEnableDelegationPrivilege"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4704","data":{}}
+]}

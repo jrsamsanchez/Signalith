@@ -11,6 +11,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/clusterauth"
 	"github.com/jrsamsanchez/signalith/internal/clustercfg"
 	"github.com/jrsamsanchez/signalith/internal/clusterlib"
+	"github.com/jrsamsanchez/signalith/internal/clusterpki"
 	"github.com/jrsamsanchez/signalith/internal/config"
 	"github.com/jrsamsanchez/signalith/internal/shared"
 	"github.com/jrsamsanchez/signalith/internal/store"
@@ -46,7 +47,7 @@ func openShared(c *config.Config, node *cluster.Node, log *slog.Logger) (*shared
 		LeaseEpoch: node.Lease().Epoch,
 		Peers:      func() []shared.Peer { return peersOf(node.Status()) },
 		Content:    ct.track,
-		Importers:  sharedImporters(ct.sharedDocs, ct.files()),
+		Importers:  ct.holdImporters(sharedImporters(ct.sharedDocs, ct.files())),
 		Log:        log,
 	})
 	ct.rt.Store(rt)
@@ -70,12 +71,15 @@ type sharedDocs struct {
 	auth *clusterauth.Docs
 	// tls holds the cluster's certificate authority (see sharedtls.go).
 	tls *sharedTLS
+	// osca holds OpenSearch's certificate authority, which issues each
+	// server its own OpenSearch certificate (see sharedosid.go).
+	osca *clusterpki.OSCA
 }
 
 // newSharedDocs returns the documents of a process, with auth as the
 // users' documents.
 func newSharedDocs(auth *clusterauth.Docs) sharedDocs {
-	d := sharedDocs{docs: clustercfg.NewDocs(), auth: auth, tls: newSharedTLS(), lib: clusterlib.NewDocs()}
+	d := sharedDocs{docs: clustercfg.NewDocs(), auth: auth, tls: newSharedTLS(), lib: clusterlib.NewDocs(), osca: clusterpki.New()}
 	// The users and directory importers and the auth settings of
 	// signalith.yaml reach the users' documents.
 	d.docs.UseAuth(auth)
@@ -97,6 +101,7 @@ func (d sharedDocs) trackers() []sharedTracker {
 		d.auth,
 		d.tls.tls,
 		d.lib,
+		d.osca,
 		// Append a new shared collection here.
 	}
 }
@@ -130,6 +135,7 @@ func sharedImporters(d sharedDocs, f clustercfg.Files) []shared.Importer {
 		// The founder's certificate authority, as the cluster's.
 		[]shared.Importer{d.tls.importer(f)},
 		clusterlib.Importers(d.lib, libraryFiles(f)),
+		clusterlib.LookupImporters(d.lib, libraryFiles(f)),
 		// Append a new shared feature's importers here.
 	)
 }
@@ -146,6 +152,8 @@ func sharedResealers(d sharedDocs, client func() (*store.Client, string)) []shar
 		clusterauth.Resealer(d.auth, client),
 		// The cluster certificate authority's key.
 		d.tls.tls.Resealer(),
+		// OpenSearch's certificate authority key.
+		d.osca.Resealer(),
 		// Append a new shared feature's resealer here.
 	}
 }

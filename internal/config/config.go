@@ -2275,11 +2275,26 @@ func IsPublicIngestToken(t string) bool { return slices.Contains(publicIngestTok
 // OpenSearch with.
 func (c *Config) OpenSearchConnection() store.Config {
 	ca, cert, key := c.OpenSearchTLSFiles()
+	mcert, mkey := c.ManagedOpenSearchFiles()
 	return store.Config{
 		URL: c.OpenSearch.URL, Username: c.OpenSearch.Username, Password: secrets.New("opensearch.password", c.OpenSearch.Password),
-		CAFile: ca, CertFile: cert, KeyFile: key,
+		CAFile: ca, CertFile: cert, KeyFile: key, ManagedCertFile: mcert, ManagedKeyFile: mkey,
 		TLSSkipVerify: c.OpenSearch.TLSSkipVerify, Proxy: c.OpenSearch.Proxy,
 	}
+}
+
+// ManagedOpenSearchDir is the folder in the state folder that holds the
+// OpenSearch client certificate the cluster issued this server
+// (internal/clusterpki), as ManagedOpenSearchFiles names them.
+const ManagedOpenSearchDir = "opensearch"
+
+// ManagedOpenSearchFiles returns the OpenSearch client certificate and
+// key the cluster issued this server. Signalith presents them instead of
+// opensearch.cert_file and key_file whenever they are there and valid
+// (store.Config.ManagedCertFile).
+func (c *Config) ManagedOpenSearchFiles() (cert, key string) {
+	dir := filepath.Join(c.StateDir(), ManagedOpenSearchDir)
+	return filepath.Join(dir, "client.pem"), filepath.Join(dir, "client-key.pem")
 }
 
 // OpenSearchProblems lists what is wrong with the OpenSearch connection

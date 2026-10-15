@@ -4,7 +4,8 @@ package integration
 
 // Detections and dashboards shared by the servers of a cluster
 // (multi-server design, PR 7), with real `signalith serve` processes: a
-// detection or dashboard saved on one server is used by the other; two
+// detection, dashboard or asset list saved on one server is used by the
+// other; two
 // edits of one detection from pages that read the same version give one
 // 412 naming who changed it; a file dropped into one server's folder is
 // shared, and every server's folder gets the shared copy.
@@ -14,6 +15,8 @@ package integration
 
 import (
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -98,5 +101,71 @@ func TestClusterLibrarySharedEdits(t *testing.T) {
 	waitUntil(t, 60*time.Second, "siem-a has the detection from siem-b's folder", func() bool {
 		var d detectionETag
 		return a.call(http.MethodGet, "/api/detections/from-git", nil, &d) == http.StatusOK && d.Title == "From git"
+	})
+}
+
+// lookupList is the answer of GET /api/lookups/{kind}.
+type lookupList struct {
+	Shared bool   `json:"shared"`
+	ETag   string `json:"etag"`
+	Count  int    `json:"count"`
+	Items  []struct {
+		Host []string `json:"host"`
+	} `json:"items"`
+}
+
+// putList uploads csv as the list kind.
+func (s *testServer) putList(kind, csv, etag string) (int, []byte) {
+	req, _ := http.NewRequest(http.MethodPut, fmt.Sprintf("https://127.0.0.1:%d/api/lookups/%s", s.port, kind), strings.NewReader(csv))
+	req.SetBasicAuth("admin", clusterPassword)
+	req.Header.Set("Content-Type", "text/csv")
+	if etag != "" {
+		req.Header.Set("If-Match", `"`+etag+`"`)
+	}
+	resp, err := s.api.Do(req)
+	if err != nil {
+		return 0, nil
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, b
+}
+
+func TestClusterLibrarySharedLists(t *testing.T) {
+	t.Parallel()
+	h := newClusterHarness(t)
+	a := h.startLeader("siem-a", serverOptions{})
+	b := h.start("siem-b", serverOptions{})
+	var la, lb lookupList
+	waitUntil(t, 120*time.Second, "both servers share the asset list", func() bool {
+		return a.call(http.MethodGet, "/api/lookups/assets", nil, &la) == http.StatusOK && la.Shared &&
+			b.call(http.MethodGet, "/api/lookups/assets", nil, &lb) == http.StatusOK && lb.Shared
+	})
+
+	// An asset list uploaded on B is used on A, and A's folder gets it.
+	if code, body := b.putList("assets", "host,priority\nweb1,high\ndb1,critical\n", lb.ETag); code != http.StatusOK {
+		t.Fatalf("uploading on siem-b: %d %s", code, body)
+	}
+	waitUntil(t, 60*time.Second, "siem-a uses the list uploaded on siem-b", func() bool {
+		var l lookupList
+		return a.call(http.MethodGet, "/api/lookups/assets", nil, &l) == http.StatusOK && l.Count == 2
+	})
+	waitUntil(t, 60*time.Second, "siem-a's lookups folder holds the shared list", func() bool {
+		d, err := os.ReadFile(filepath.Join(a.dir, "lookups", "assets.csv"))
+		return err == nil && strings.Contains(string(d), "db1")
+	})
+	// A page that read the list before B's upload is told it changed.
+	code, body := a.putList("assets", "host\nother\n", la.ETag)
+	if code != http.StatusPreconditionFailed || !strings.Contains(string(body), "siem-b") {
+		t.Fatalf("an upload over a changed list: %d %s", code, body)
+	}
+
+	// A new export copied into A's folder is shared.
+	if err := os.WriteFile(filepath.Join(a.dir, "lookups", "assets.csv"), []byte("host\nweb1\ndb1\nmail1\n"), 0o666); err != nil {
+		t.Fatal(err)
+	}
+	waitUntil(t, 60*time.Second, "siem-b uses the list from siem-a's folder", func() bool {
+		var l lookupList
+		return b.call(http.MethodGet, "/api/lookups/assets", nil, &l) == http.StatusOK && l.Count == 3
 	})
 }

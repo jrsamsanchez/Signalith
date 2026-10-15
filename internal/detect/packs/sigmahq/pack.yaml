@@ -8169,6 +8169,14 @@ rules:
     rule_id: ab6bffca-beff-4baa-af11-6733f296d57a
     file: win_security_ad_user_enumeration.yml
     path: rules/windows/builtin/security/win_security_ad_user_enumeration.yml
+  - id: sigma-win-security-adcs-certificate-template-configuratio-bfbd32
+    rule_id: bfbd3291-de87-4b7c-88a2-d6a5deb28668
+    file: win_security_adcs_certificate_template_configuration_vulnerability_eku.yml
+    path: rules/windows/builtin/security/win_security_adcs_certificate_template_configuration_vulnerability_eku.yml
+  - id: sigma-win-security-adcs-certificate-template-configuration-vulne
+    rule_id: 5ee3a654-372f-11ec-8d3d-0242ac130003
+    file: win_security_adcs_certificate_template_configuration_vulnerability.yml
+    path: rules/windows/builtin/security/win_security_adcs_certificate_template_configuration_vulnerability.yml
   - id: sigma-win-security-admin-rdp-login
     rule_id: 0f63e1ef-1eb9-4226-9d54-8927ca08520a
     file: win_security_admin_rdp_login.yml
@@ -8177,6 +8185,10 @@ rules:
     rule_id: 098d7118-55bc-4912-a836-dc6483a8d150
     file: win_security_admin_share_access.yml
     path: rules/windows/builtin/security/win_security_admin_share_access.yml
+  - id: sigma-win-security-alert-active-directory-user-control
+    rule_id: 311b6ce2-7890-4383-a8c2-663a9f6b43cd
+    file: win_security_alert_active_directory_user_control.yml
+    path: rules/windows/builtin/security/win_security_alert_active_directory_user_control.yml
   - id: sigma-win-security-alert-enable-weak-encryption
     rule_id: f6de9536-0441-4b3f-a646-f4e00f300ffd
     file: win_security_alert_enable_weak_encryption.yml
@@ -8201,6 +8213,10 @@ rules:
     rule_id: c39f0c81-7348-4965-ab27-2fde35a1b641
     file: win_security_dcom_iertutil_dll_hijack.yml
     path: rules/windows/builtin/security/win_security_dcom_iertutil_dll_hijack.yml
+  - id: sigma-win-security-device-installation-blocked
+    rule_id: c9eb55c3-b468-40ab-9089-db2862e42137
+    file: win_security_device_installation_blocked.yml
+    path: rules/windows/builtin/security/win_security_device_installation_blocked.yml
   - id: sigma-win-security-diagtrack-eop-default-login-username
     rule_id: 2111118f-7e46-4fc8-974a-59fd8ec95196
     file: win_security_diagtrack_eop_default_login_username.yml
@@ -8221,10 +8237,26 @@ rules:
     rule_id: 4ac1f50b-3bd0-4968-902d-868b4647937e
     file: win_security_dpapi_domain_backupkey_extraction.yml
     path: rules/windows/builtin/security/win_security_dpapi_domain_backupkey_extraction.yml
+  - id: sigma-win-security-dpapi-domain-masterkey-backup-attempt
+    rule_id: 39a94fd1-8c9a-4ff6-bf22-c058762f8014
+    file: win_security_dpapi_domain_masterkey_backup_attempt.yml
+    path: rules/windows/builtin/security/win_security_dpapi_domain_masterkey_backup_attempt.yml
+  - id: sigma-win-security-external-device
+    rule_id: f69a87ea-955e-4fb4-adb2-bb9fd6685632
+    file: win_security_external_device.yml
+    path: rules/windows/builtin/security/win_security_external_device.yml
   - id: sigma-win-security-hidden-user-creation
     rule_id: 7b449a5e-1db5-4dd0-a2dc-4e3a67282538
     file: win_security_hidden_user_creation.yml
     path: rules/windows/builtin/security/win_security_hidden_user_creation.yml
+  - id: sigma-win-security-hktl-edr-silencer
+    rule_id: 98054878-5eab-434c-85d4-72d4e5a3361b
+    file: win_security_hktl_edr_silencer.yml
+    path: rules/windows/builtin/security/win_security_hktl_edr_silencer.yml
+  - id: sigma-win-security-hktl-nofilter
+    rule_id: 7b14c76a-c602-4ae6-9717-eff868153fc0
+    file: win_security_hktl_nofilter.yml
+    path: rules/windows/builtin/security/win_security_hktl_nofilter.yml
   - id: sigma-win-security-hybridconnectionmgr-svc-installation
     rule_id: 0ee4d8a5-4e67-4faf-acfa-62a78457d1f2
     file: win_security_hybridconnectionmgr_svc_installation.yml
@@ -8333,6 +8365,10 @@ rules:
     rule_id: 35bc7e28-ee6b-492f-ab04-da58fcf6402e
     file: win_security_net_share_obj_susp_desktop_ini.yml
     path: rules/windows/builtin/security/win_security_net_share_obj_susp_desktop_ini.yml
+  - id: sigma-win-security-not-allowed-rdp-access
+    rule_id: 8e5c03fa-b7f0-11ea-b242-07e0576828d9
+    file: win_security_not_allowed_rdp_access.yml
+    path: rules/windows/builtin/security/win_security_not_allowed_rdp_access.yml
   - id: sigma-win-security-overpass-the-hash
     rule_id: 192a0330-c20b-4356-90b6-7b7049ae0b87
     file: win_security_overpass_the_hash.yml
@@ -8365,6 +8401,10 @@ rules:
     rule_id: 51e33403-2a37-4d66-a574-1fda1782cc31
     file: win_security_rdp_localhost_login.yml
     path: rules/windows/builtin/security/account_management/win_security_rdp_localhost_login.yml
+  - id: sigma-win-security-register-new-logon-process-by-rubeus
+    rule_id: 12e6d621-194f-4f59-90cc-1959e21e69f7
+    file: win_security_register_new_logon_process_by_rubeus.yml
+    path: rules/windows/builtin/security/win_security_register_new_logon_process_by_rubeus.yml
   - id: sigma-win-security-registry-permissions-weakness-check
     rule_id: 11d00fff-5dc3-428c-8184-801f292faec0
     file: win_security_registry_permissions_weakness_check.yml
@@ -8373,6 +8413,10 @@ rules:
     rule_id: 13acf386-b8c6-4fe0-9a6e-c4756b974698
     file: win_security_remote_powershell_session.yml
     path: rules/windows/builtin/security/win_security_remote_powershell_session.yml
+  - id: sigma-win-security-replay-attack-detected
+    rule_id: 5a44727c-3b85-4713-8c44-4401d5499629
+    file: win_security_replay_attack_detected.yml
+    path: rules/windows/builtin/security/win_security_replay_attack_detected.yml
   - id: sigma-win-security-sam-registry-hive-handle-request
     rule_id: f8748f2c-89dc-4d95-afb0-5a2dfdbad332
     file: win_security_sam_registry_hive_handle_request.yml
@@ -8381,6 +8425,10 @@ rules:
     rule_id: 13addce7-47b2-4ca0-a98f-1de964d1d669
     file: win_security_scm_database_handle_failure.yml
     path: rules/windows/builtin/security/win_security_scm_database_handle_failure.yml
+  - id: sigma-win-security-scm-database-privileged-operation
+    rule_id: dae8171c-5ec6-4396-b210-8466585b53e9
+    file: win_security_scm_database_privileged_operation.yml
+    path: rules/windows/builtin/security/win_security_scm_database_privileged_operation.yml
   - id: sigma-win-security-security-enabled-global-group-deleted
     rule_id: b237c54b-0f15-4612-a819-44b735e0de27
     file: win_security_security_enabled_global_group_deleted.yml
@@ -8449,6 +8497,18 @@ rules:
     rule_id: 968eef52-9cff-4454-8992-1e74b9cbad6c
     file: win_security_susp_net_recon_activity.yml
     path: rules/windows/builtin/security/win_security_susp_net_recon_activity.yml
+  - id: sigma-win-security-susp-opened-encrypted-zip
+    rule_id: 00ba9da1-b510-4f6b-b258-8d338836180f
+    file: win_security_susp_opened_encrypted_zip.yml
+    path: rules/windows/builtin/security/win_security_susp_opened_encrypted_zip.yml
+  - id: sigma-win-security-susp-opened-encrypted-zip-filename
+    rule_id: 54f0434b-726f-48a1-b2aa-067df14516e4
+    file: win_security_susp_opened_encrypted_zip_filename.yml
+    path: rules/windows/builtin/security/win_security_susp_opened_encrypted_zip_filename.yml
+  - id: sigma-win-security-susp-opened-encrypted-zip-outlook
+    rule_id: 571498c8-908e-40b4-910b-d2369159a3da
+    file: win_security_susp_opened_encrypted_zip_outlook.yml
+    path: rules/windows/builtin/security/win_security_susp_opened_encrypted_zip_outlook.yml
   - id: sigma-win-security-susp-outbound-kerberos-connection
     rule_id: eca91c7c-9214-47b9-b4c5-cb1d7e4f2350
     file: win_security_susp_outbound_kerberos_connection.yml
@@ -8485,6 +8545,10 @@ rules:
     rule_id: 614cf376-6651-47c4-9dcc-6b9527f749f4
     file: win_security_susp_scheduled_task_update.yml
     path: rules/windows/builtin/security/win_security_susp_scheduled_task_update.yml
+  - id: sigma-win-security-susp-time-modification
+    rule_id: faa031b5-21ed-4e02-8881-2591f98d82ed
+    file: win_security_susp_time_modification.yml
+    path: rules/windows/builtin/security/win_security_susp_time_modification.yml
   - id: sigma-win-security-susp-wmi-login
     rule_id: 5af54681-df95-4c26-854f-2565e13cfab0
     file: win_security_susp_wmi_login.yml

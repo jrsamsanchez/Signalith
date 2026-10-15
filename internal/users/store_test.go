@@ -166,3 +166,46 @@ func TestPasswordsAndRoles(t *testing.T) {
 		t.Errorf("role infos %s", b)
 	}
 }
+
+// Hold is taken around the changes made on the Users page and to
+// passwords, and an error from it refuses them; sign-ins are not held.
+func TestHoldRefusesChanges(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "users.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if _, err := s.Create(ctx, newUser("ann", Admin)); err != nil {
+		t.Fatal(err)
+	}
+	refused := errors.New("moving")
+	held := 0
+	s.Hold = func() (func(), error) {
+		held++
+		return nil, refused
+	}
+	role := Viewer
+	for what, err := range map[string]error{
+		"create":   func() error { _, err := s.Create(ctx, newUser("bob", Viewer)); return err }(),
+		"update":   func() error { _, err := s.Update(ctx, "ann", Change{Role: &role}); return err }(),
+		"password": func() error { _, err := s.SetPassword(ctx, "ann", "another-pass-1", false); return err }(),
+		"delete":   func() error { _, err := s.Delete(ctx, "ann"); return err }(),
+	} {
+		if !errors.Is(err, refused) {
+			t.Errorf("%s: %v", what, err)
+		}
+	}
+	s.RecordSignIn(ctx, "ann")
+	if u, _ := s.Get("ann"); held != 4 || u.LastSignIn == nil || u.Role != Admin {
+		t.Errorf("held %d times; ann %+v", held, u)
+	}
+
+	d, err := OpenDirectory(filepath.Join(t.TempDir(), "directory.json"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.Hold = s.Hold
+	if err := d.Save(ctx, Preset(TypeActiveDirectory)); !errors.Is(err, refused) {
+		t.Errorf("directory: %v", err)
+	}
+}
