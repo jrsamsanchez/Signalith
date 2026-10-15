@@ -157,8 +157,8 @@ Write your own the same way, for example
 
 ## Exceptions
 
-An exception tunes a detection without editing its query, like a suppression in
-Splunk Enterprise Security: results that match it raise no finding and add no risk,
+An exception tunes a detection without editing its query, so that
+results that match it raise no finding and add no risk,
 and every other result still alerts. Use one for a vulnerability scanner that trips
 a brute force rule, an admin script that looks like an attack, or a maintenance
 window.
@@ -239,7 +239,7 @@ To see everything a scan found on a host, search
 
 Network data from a [network sensor](network-sensor.md) (Zeek, Suricata) lights up
 these built-in detections. Those marked *risk only* add risk to the host and raise no
-finding by themselves, like Splunk's anomaly detections: they are signals that are
+finding by themselves: they are signals that are
 common on their own and matter when they add up (see [Risk](#risk)).
 
 | ID | Severity | Fires when | Default |
@@ -734,7 +734,7 @@ when the field is present, `OR` binds tighter than `AND` (`a b OR c` is
 `a AND (b OR c)`), and `\\` is one backslash, quoted or not, as in Splunk's search
 syntax. Sysmon's user (`NT AUTHORITY\SYSTEM`) compares as the name alone
 (`SYSTEM`), the way Splunk's Sysmon add-on reads it. TTP rules raise findings and add risk; anomaly rules only
-add risk, as in Splunk ES risk-based alerting. Severity follows the rule's risk score
+add risk, as their authors intend. Severity follows the rule's risk score
 (TTP: 80 and up critical, 64 high, 30 medium; anomalies low). Each is tagged
 `splunk`, the pack name, `ttp` or `anomaly`, and the node, and keeps the rule's
 known false positives as triage guidance.
@@ -931,7 +931,7 @@ Licence: the rules are © Splunk Inc. under the
 [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0) (the licence text
 is in the pack folder and the attribution in `NOTICE`). Findings credit the rule's
 authors and link to the rule at the pinned commit. Signalith is not affiliated with
-or endorsed by Splunk.
+or endorsed by Splunk; see [Trademarks](index.md#trademarks).
 
 To refresh the pack from a newer commit:
 

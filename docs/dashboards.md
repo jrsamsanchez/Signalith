@@ -7,8 +7,7 @@ while the browser tab is hidden).
 
 ## Security posture
 
-The built-in dashboard, like the Splunk ES Security Posture and executive summary
-dashboards. Every key number is compared with the previous period of the same
+The built-in summary dashboard for analysts and managers. Every key number is compared with the previous period of the same
 length, so "Last 24 hours" compares today with the 24 hours before.
 
 | Panel | What it shows |
