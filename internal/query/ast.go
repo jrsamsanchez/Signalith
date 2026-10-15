@@ -329,6 +329,14 @@ func aggList(aggs []Agg) string {
 
 // topLevel renders an expression without its outermost parentheses.
 func topLevel(e Expr, andSep string) string {
+	// Without its parentheses, a term such as earliest=0 would read back
+	// as the query's own earliest=, not as a search of that field.
+	if hasReserved(e) {
+		if _, ok := e.(*Compare); ok {
+			return "(" + e.String() + ")"
+		}
+		return e.String()
+	}
 	switch e := e.(type) {
 	case *And:
 		return joinExprs(e.Children, andSep)
@@ -336,4 +344,32 @@ func topLevel(e Expr, andSep string) string {
 		return joinExprs(e.Children, " OR ")
 	}
 	return e.String()
+}
+
+// hasReserved reports whether e, printed without parentheses at the top of
+// a query, would start a term that the parser takes as datamodel=, index=,
+// earliest= or latest=.
+func hasReserved(e Expr) bool {
+	var kids []Expr
+	switch e := e.(type) {
+	case *Compare:
+		if e.Op != "=" {
+			return false
+		}
+		switch strings.ToLower(e.Field) {
+		case "datamodel", "index", "earliest", "latest":
+			return true
+		}
+		return false
+	case *And:
+		kids = e.Children
+	case *Or:
+		kids = e.Children
+	}
+	for _, k := range kids {
+		if c, ok := k.(*Compare); ok && hasReserved(c) {
+			return true
+		}
+	}
+	return false
 }
