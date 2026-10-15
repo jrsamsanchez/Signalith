@@ -59,7 +59,7 @@ func (e *testEnv) server(name string, change func(*RuntimeOptions)) *testServer 
 // step runs one step of the runtime's loop.
 func (s *testServer) step() {
 	s.t.Helper()
-	s.rt.step(context.Background())
+	s.rt.step(context.Background(), false)
 }
 
 func (s *testServer) mode() Mode {
@@ -587,7 +587,7 @@ func TestCacheAtStartAndDegraded(t *testing.T) {
 		t.Error("a degraded server is ready")
 	}
 	again.Use(e.c, testPrefix, a.master)
-	again.step(context.Background())
+	again.step(context.Background(), false)
 	if m, _ := again.Mode(); m != ModeMember {
 		t.Fatalf("mode = %s, want member once OpenSearch answers", m)
 	}
