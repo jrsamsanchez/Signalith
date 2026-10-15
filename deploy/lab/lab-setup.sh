@@ -383,6 +383,9 @@ for i in $(seq 1 90); do
 done
 if ! docker compose -p greenbone-community-edition exec -T -u gvmd gvmd gvmd --get-users </dev/null | grep -qx signalith; then
   docker compose -p greenbone-community-edition exec -T -u gvmd gvmd gvmd --create-user=signalith --password="$PW" </dev/null >/dev/null
+else
+  # Run again: the user is there, with a password this run doesn't know.
+  docker compose -p greenbone-community-edition exec -T -u gvmd gvmd gvmd --user=signalith --new-password="$PW" </dev/null >/dev/null
 fi
 # Signalith's account may use the socket, now and when gvmd makes it again.
 setfacl -m u:signalith:rwx /srv/gvmd-socket
