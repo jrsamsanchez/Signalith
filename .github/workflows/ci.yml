@@ -404,5 +404,7 @@ jobs:
           sudo mkdir -p /tmp/sct && sudo suricata -T -v -l /tmp/sct -c /etc/suricata/signalith-sensor-test.yaml \
             -S /var/lib/signalith-sensor/suricata/rules/suricata.rules 2>&1 | tail -n 40 || true
           sudo ls -la /var/lib/signalith-sensor/suricata/rules /etc/suricata || true
+          sudo grep -c 'sid:9900001' /var/lib/signalith-sensor/suricata/rules/suricata.rules || true
+          sudo tail -n 20 /var/log/suricata/signalith/eve.json | cut -c1-300 || true
           sudo dmesg | tail -n 20 || true
           $COMPOSE logs --no-color signalith | tail -n 200

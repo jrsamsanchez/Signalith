@@ -57,8 +57,11 @@ done
 sleep 14
 kill "$web" || true
 sudo chmod 644 traffic.pcap
+# Packets taken on lo carry checksums the kernel never filled in; a real
+# capture port sees them filled in, so the copy replayed has them too.
+tcprewrite --fixcsum -i traffic.pcap -o replay.pcap
 for i in 1 2 3 4 5; do
-  sudo tcpreplay -q -i cap1 traffic.pcap
+  sudo tcpreplay -q -i cap1 replay.pcap
   sleep 5
 done
 
