@@ -506,7 +506,8 @@ slideOver.addEventListener('change', syncInspectInert);
 const JUMP_WORDS = {
   dashboards: 'home overview posture charts', findings: 'alerts incidents queue triage', cases: 'cases investigations',
   risk: 'risk scores', vulns: 'vulnerabilities cve scan scanner nmap ports open services patch exposure kev exploited', search: 'query events logs hunt', intel: 'threat intel ioc indicators feeds',
-  detections: 'rules sigma alerts', coverage: 'mitre attack matrix techniques tactics', assets: 'hosts users identities cmdb priority',
+  detections: 'rules sigma alerts', coverage: 'mitre attack matrix techniques tactics',
+  compliance: 'compliance audit auditor evidence report controls framework nist 800-53 cis pci dss iso 27001 hipaa soc 2 soc2', assets: 'hosts users identities cmdb priority',
   data: 'ingest agents fluent bit sources onboarding syslog firewall switch router cisco wazuh ossec alerts sample demo test data try example zeek suricata ids ips network sensor span mirror pfsense opnsense security onion', retention: 'retention rotation archive restore delete storage disk guard policies',
   health: 'status opensearch ingest', help: 'help syntax language commands',
   servers: 'cluster nodes servers background jobs leader failover standby readyz',

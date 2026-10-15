@@ -137,6 +137,7 @@ nav:
       - Response actions: response-actions.md
       - Notifications: notifications.md
       - Playbooks: playbooks.md
+      - Compliance: compliance.md
   - Administration:
       - Server settings: settings.md
       - Users and sign-in: users.md

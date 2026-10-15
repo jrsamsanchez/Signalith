@@ -963,6 +963,17 @@ detections, and the hosts join the asset list. The Docker image includes Nmap; o
 Windows and Linux installs, install Nmap from your package manager or nmap.org. See
 [docs/vulnerabilities.md](docs/vulnerabilities.md).
 
+## Compliance
+
+The **Compliance** page maps Signalith's data, detections, configuration checks and
+settings to NIST SP 800-53, CIS Controls v8, PCI DSS 4.0, ISO/IEC 27001, the HIPAA
+Security Rule and SOC 2. Each control shows evidence, partial or gap, what Signalith
+found, and what to fix; a coverage score per framework sums it up. Admins can note a
+control as handled outside Signalith or not applicable. Each framework exports as CSV
+or as a report to print or save as PDF for an auditor. The mapping is Signalith's own,
+using only control numbers for frameworks whose text is copyrighted. See
+[docs/compliance.md](docs/compliance.md).
+
 ## Threat intel
 
 Like the ES threat intelligence framework, Signalith matches events against

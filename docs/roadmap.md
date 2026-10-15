@@ -85,13 +85,11 @@ The first four phases are complete, and work on hardening for 1.0 has started.
 - [Users and roles](users.md), with Active Directory and LDAP sign-in.
 - [Data retention](retention.md) policies with archives you can restore, and a disk guard.
 - A [security check](security.md) of how each server is set up.
+- [Compliance](compliance.md) coverage for NIST SP 800-53, CIS Controls v8, PCI DSS 4.0,
+  ISO/IEC 27001, HIPAA and SOC 2, with evidence reports for auditors.
 - Fuzz tests for every parser that reads data from the network, run in CI and nightly.
 
 ## Being built now <span class="sg-pill sg-pill--now">In progress</span> { #now data-toc-label="Being built now" }
-
-**Compliance content and evidence export**
-:   Detections and reports mapped to PCI DSS 4.0, NIST SP 800-53, CIS Controls v8, HIPAA,
-    ISO/IEC 27001 and SOC 2, and evidence an auditor can take away.
 
 **Network sensors in Settings**
 :   One page listing every network sensor with its health, where an admin can turn off a

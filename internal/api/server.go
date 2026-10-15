@@ -232,6 +232,7 @@ type Server struct {
 	legacyProxies addrSeen
 	secOnce       sync.Once
 	sec           *SecurityChecker
+	comp          complianceState
 	caMu          sync.Mutex // one change of certificate authority at a time
 	blockedLog    logOnce    // blocked osquery hosts that tried to enroll
 	tokensOnce    sync.Once
@@ -321,6 +322,7 @@ func (s *Server) Handler() http.Handler {
 	s.routeSample(api)
 	s.routeEndpoints(api)
 	s.routeVulns(api)
+	s.routeCompliance(api)
 	s.routeSettings(api)
 	s.routeCluster(api)
 	s.routeClusterTLS(api)
