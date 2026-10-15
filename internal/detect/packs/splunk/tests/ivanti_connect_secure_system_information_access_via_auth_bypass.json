@@ -1,0 +1,9 @@
+{"rule": "d51c13dd-a232-4c83-a2bb-72ab36233c5d", "cases": [
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","status":"200","url":"x /api/v1/totp/user-backup-code/../../system/system-information x"}},
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","status":"200","url":"x /api/v1/totp/user-backup-code/../../system/system-information y"}},
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","status":"200","url":"x /api/v1/totp/user-backup-code/../../system/system-information x"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","status":"200"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GEU","status":"200","url":"x /api/v1/totp/user-backup-code/../../system/system-information x"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","status":"201","url":"x /api/v1/totp/user-backup-code/../../system/system-information x"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","url":"x /api/v1/totp/user-backup-code/../../system/system-information x"}}
+]}

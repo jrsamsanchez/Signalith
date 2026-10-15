@@ -73,8 +73,9 @@ func (b *Browsers) user(ctx context.Context, s *Session) {
 	}()
 	tick := time.NewTicker(b.think())
 	defer tick.Stop()
+	pg := &openPage{}
 	for {
-		b.visit(ctx, s)
+		b.visit(ctx, s, pg)
 		select {
 		case <-ctx.Done():
 			return
@@ -84,41 +85,45 @@ func (b *Browsers) user(ctx context.Context, s *Session) {
 }
 
 // visit is one round of page loads.
-func (b *Browsers) visit(ctx context.Context, s *Session) {
+func (b *Browsers) visit(ctx context.Context, s *Session, pg *openPage) {
 	var list struct {
 		Findings []struct {
 			ID string `json:"id"`
 		} `json:"findings"`
 	}
-	if !b.call(ctx, s, "page", http.MethodGet, "/api/findings?limit=50&status=new,in_progress", nil, &list) {
+	if !b.call(ctx, s, pg, "page", http.MethodGet, "/api/findings?limit=50&status=new,in_progress", nil, &list) {
 		return
 	}
-	b.call(ctx, s, "page", http.MethodGet, "/api/health", nil, nil)
+	b.call(ctx, s, pg, "page", http.MethodGet, "/api/health", nil, nil)
 	q := b.load.Search
 	if q == "" {
 		q = "loadgen_run=" + b.run + " | stats count by host"
 	}
-	b.call(ctx, s, "search", http.MethodPost, "/api/search", map[string]string{"query": q, "earliest": "-15m"}, nil)
+	b.call(ctx, s, pg, "search", http.MethodPost, "/api/search", map[string]string{"query": q, "earliest": "-15m"}, nil)
 	if !b.load.Triage {
 		return
 	}
 	// Everyone triages the same few findings, the worst case for writes.
 	for _, f := range list.Findings[:min(3, len(list.Findings))] {
-		b.call(ctx, s, "write", http.MethodPatch, "/api/findings/"+url.PathEscape(f.ID),
+		b.call(ctx, s, pg, "write", http.MethodPatch, "/api/findings/"+url.PathEscape(f.ID),
 			map[string]string{"comment": fmt.Sprintf("loadgen %s: looked at by %s", b.run, s.User)}, nil)
 	}
 	if b.caseID != "" {
-		b.call(ctx, s, "write", http.MethodPost, "/api/cases/"+url.PathEscape(b.caseID)+"/entries",
+		b.call(ctx, s, pg, "write", http.MethodPost, "/api/cases/"+url.PathEscape(b.caseID)+"/entries",
 			map[string]string{"kind": "note", "text": fmt.Sprintf("loadgen %s: note from %s", b.run, s.User)}, nil)
 	}
 }
 
 // call makes one request and records it; false means stop this round.
-func (b *Browsers) call(ctx context.Context, s *Session, kind, method, path string, in, out any) bool {
+func (b *Browsers) call(ctx context.Context, s *Session, pg *openPage, kind, method, path string, in, out any) bool {
 	start := time.Now()
 	err := s.Do(ctx, method, path, in, out)
 	if ctx.Err() != nil {
 		return false
+	}
+	if pg.answered(s.Version(), time.Now()) {
+		b.m.Add("page_reloads", 1)
+		b.m.Set("", "page_reloads_per_user", float64(pg.reloads))
 	}
 	b.m.Observe(kind, time.Since(start))
 	b.m.Add("user_requests", 1)
@@ -138,4 +143,44 @@ func (b *Browsers) call(ctx context.Context, s *Session, kind, method, path stri
 		b.m.Add("user_status_"+strconv.Itoa(st), 1)
 		return st != 0
 	}
+}
+
+// openPage is a user's open page as app.js's apiVersion sees it: the
+// version it was loaded from, and its reloads when a server of another
+// version answers.
+type openPage struct {
+	version string
+	// noted is true once this page load saw another version: the page
+	// reloads or warns once, then no more.
+	noted      bool
+	lastReload time.Time
+	reloads    int
+}
+
+// versionReloadGap is how soon after a reload a second mismatch only
+// warns, as in app.js.
+const versionReloadGap = 2 * time.Minute
+
+// answered notes the version of an answer at now and says whether the
+// page reloads: once when a server of another version answers, unless it
+// reloaded for that less than versionReloadGap ago, when it warns
+// instead (both versions answer while an upgrade is under way).
+func (p *openPage) answered(v string, now time.Time) bool {
+	switch {
+	case v == "":
+		return false
+	case p.version == "":
+		p.version = v
+		return false
+	case v == p.version || p.noted:
+		return false
+	}
+	if !p.lastReload.IsZero() && now.Sub(p.lastReload) <= versionReloadGap {
+		p.noted = true
+		return false
+	}
+	// The reloaded page comes from the server that answered.
+	p.version, p.lastReload, p.noted = v, now, false
+	p.reloads++
+	return true
 }

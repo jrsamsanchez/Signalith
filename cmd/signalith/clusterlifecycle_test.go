@@ -15,6 +15,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/clustercfg"
 	"github.com/jrsamsanchez/signalith/internal/clusterpki"
 	"github.com/jrsamsanchez/signalith/internal/ospki"
+	"github.com/jrsamsanchez/signalith/internal/secrets"
 	"github.com/jrsamsanchez/signalith/internal/shared"
 	"github.com/jrsamsanchez/signalith/internal/store"
 )
@@ -127,5 +128,52 @@ func TestRemoveRevokesOpenSearchCertificates(t *testing.T) {
 	}
 	if b, _ := osca.Get(); len(b.RevokedSerials(time.Now())) != 1 {
 		t.Errorf("revoked %v", b.Revoked)
+	}
+}
+
+// A step after the removal that fails does not stop the others: the
+// server is out of the cluster, so removeServer goes on and returns the
+// failure as a warning for the caller to show after auditing the removal
+// and rotating the key.
+func TestRemoveServerGoesOnAfterAFailedStep(t *testing.T) {
+	ctx := context.Background()
+	fake := ostest.New(t)
+	cl := store.New(store.Config{URL: fake.URL})
+	dir := t.TempDir()
+	rt := shared.NewRuntime(shared.RuntimeOptions{StateDir: dir, Self: shared.Self{NodeID: "n_a", Name: "siem-a"}})
+	rt.Use(cl, "s", secrets.NewKeyring(dir))
+	if err := rt.Found(ctx, "test"); err != nil {
+		t.Fatal(err)
+	}
+	hb := cluster.Heartbeat{Kind: "node", NodeID: "n_gone", Name: "siem-gone", State: cluster.StateStopped, HeartbeatAt: time.Now().UTC()}
+	if _, err := cl.Create(ctx, cluster.RuntimeIndex("s"), cluster.NodeDocID("n_gone"), hb, true); err != nil {
+		t.Fatal(err)
+	}
+	var ran []string
+	hooks := []removeHook{
+		func(context.Context, string, string) error {
+			ran = append(ran, "revoke")
+			return errors.New("its OpenSearch certificates could not be revoked: no route")
+		},
+		func(context.Context, string, string) error { ran = append(ran, "next"); return nil },
+	}
+	rec, warnings, err := removeServer(ctx, rt, hooks, "n_gone", "siem-gone", "admin", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec.NodeID != "n_gone" || len(ran) != 2 {
+		t.Errorf("removed %+v, hooks ran %v", rec, ran)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "siem-gone was removed, but its OpenSearch certificates could not be revoked") {
+		t.Errorf("warnings %q", warnings)
+	}
+	if _, _, found, _ := cl.Get(ctx, cluster.RuntimeIndex("s"), cluster.NodeDocID("n_gone")); found {
+		t.Error("the heartbeat was kept")
+	}
+	if rm := rt.Removed(); len(rm) != 1 || rm[0].NodeID != "n_gone" {
+		t.Errorf("removed list %+v", rm)
+	}
+	if err := removeWarnings(warnings); err == nil || !strings.Contains(err.Error(), "could not be revoked") {
+		t.Errorf("the command's error: %v", err)
 	}
 }

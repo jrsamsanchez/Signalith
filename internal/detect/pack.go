@@ -306,6 +306,9 @@ func packThrottle(category, datamodel string) []string {
 		return []string{"host", "process_path", "registry_path"}
 	case "network_resolution":
 		return []string{"host", "process_path", "query"}
+	case "web":
+		// A web request: the server, the client and the path asked for.
+		return []string{"host", "src", "uri_path"}
 	case "image_load":
 		return []string{"host", "process_path", "loaded_file_path"}
 	case "script":
@@ -374,9 +377,24 @@ func PackDetection(p *Pack, r PackRule, src []byte) (*Detection, error) {
 	if score == 0 {
 		score = 25
 	}
-	d.Risk = &Risk{Score: score, Objects: []RiskObject{{Field: "user", Type: "user"}, {Field: "host", Type: "system"}}}
+	d.Risk = &Risk{Score: score, Objects: riskObjects(q.Datamodel)}
 	if l := strings.ToLower(meta.Level); l == "low" || l == "informational" {
 		d.Risk.Only = true
+	}
+	if ncat := sigmaNetworkCategory(map[string]any{
+		"product": meta.Logsource.Product, "category": meta.Logsource.Category, "service": meta.Logsource.Service,
+	}); ncat != "" {
+		// A network rule: about the address that sent the traffic, not
+		// the sensor ($host$) that saw it.
+		d.Title = strings.TrimSpace(meta.Title) + " from $src$"
+		d.Throttle.Fields = packNetworkThrottle(ncat, q.Datamodel)
+		d.Risk.Objects = []RiskObject{{Field: "src", Type: "system"}, {Field: "user", Type: "user"}}
+		if ncat == zeekCategoryPrefix+"x509" {
+			// A certificate has no client or account: it is about the
+			// sensor that saw it.
+			d.Title = strings.TrimSpace(meta.Title) + " seen by $host$"
+			d.Risk.Objects = []RiskObject{{Field: "host", Type: "system"}}
+		}
 	}
 	tags := []string{"sigma", p.Name}
 	if meta.Logsource.Product != "" {

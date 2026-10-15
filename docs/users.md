@@ -683,7 +683,7 @@ When a server cannot reach OpenSearch, or OpenSearch refuses writes because its 
 full:
 
 - Sessions it has already checked keep working for 5 minutes after it last confirmed
-  them with OpenSearch.
+  them with OpenSearch, even one signed out on another server meanwhile.
 - Only admins can sign in, with a session or with HTTP Basic credentials: the
   built-in admin (with the password this server last read, or the one
   `signalith passwd -local` set), and local admins when this server's copy of the users
@@ -802,7 +802,12 @@ token itself; it counts against the sign-in limits per token and per address, it
 matched and the token was left unused, such as another version; `500` when the token was used but
 the join could not be finished, so the new server needs a new token), and `GET /api/cluster/join/install.sh`,
 `GET /api/cluster/join/install.ps1` and `GET /api/cluster/join/binary` (the install scripts and this server's
-program, which a new server downloads before it can sign in; see [multi-server.md](multi-server.md)). Requests from a browser that change something must come from the Signalith
+program, which a new server downloads before it can sign in; see [multi-server.md](multi-server.md)),
+`GET /api/sensor/install.sh` (the network sensor's install script, also public), and the two
+routes that script calls with the sensor's own agent token, `GET /api/sensor/config` (the
+sensor's Fluent Bit configuration) and `GET /api/sensor/seen` (whether the sensor's data
+arrives); both take only a token made for a sensor (see
+[network-sensor.md](network-sensor.md#building-a-new-sensor)). Requests from a browser that change something must come from the Signalith
 page itself.
 
 Every answer carries the server's version in `X-Signalith-Version`. Answers to
@@ -850,7 +855,9 @@ agents that send events, shown on the [Endpoints page](endpoints.md)), `GET /api
 ([Investigate with AI](investigate.md), once an admin turns it on).
 
 **Admin:** `GET /api/agents/config`, `GET /api/agents/destinations` (where agents can send,
-with a DNS check; see [load-balancers.md](load-balancers.md)), `POST /api/agent-tokens`,
+with a DNS check; see [load-balancers.md](load-balancers.md)),
+`GET /api/sensor/install` (the line that sets up a
+[network sensor](network-sensor.md#building-a-new-sensor)), `POST /api/agent-tokens`,
 `PATCH /api/agent-tokens/{id}`, `POST /api/agent-tokens/{id}/revoke`,
 `POST /api/agent-tokens/legacy/{id}/refuse`, `POST /api/agent-tokens/legacy/{id}/accept`
 (see [agent-tokens.md](agent-tokens.md#commands)), `GET /api/api-tokens`, `POST /api/api-tokens`,
@@ -872,7 +879,7 @@ server, which can only read), `POST /api/tls/names`, `GET /api/security`,
 `POST /api/endpoints/queries`, `GET /api/endpoints/queries/{id}` (the [Endpoints page](endpoints.md)),
 `GET /api/vulns/setup`, `GET /api/vulns/scanners`, `PUT /api/vulns/settings`, `POST /api/vulns/networks/{id}/scan`,
 `POST /api/vulns/scans/{id}/stop` (setting up and running [vulnerability scans](vulnerabilities.md)),
-`GET /api/cluster` (the Servers page; see [servers.md](servers.md)), `POST /api/cluster/restart`
+`GET /api/cluster` (the Servers page; see [servers.md](servers.md)), `GET /api/cluster/opensearch` (its OpenSearch card; see [opensearch-failover.md](opensearch-failover.md)), `POST /api/cluster/restart`
 (restart servers one at a time to apply the shared settings), `GET /api/cluster/tls`,
 `POST /api/cluster/tls/choose` (the cluster's one certificate authority; see
 [servers.md](servers.md#one-certificate-authority)), `GET /api/cluster/join/tokens`,

@@ -441,6 +441,8 @@ func TestBootstrapCRL(t *testing.T) {
 		t.Fatalf("%v %v", l, err)
 	}
 	checkModes(t, file, 65532, 0o644)
+	// OpenSearch's entrypoint no longer starts without it.
+	checkModes(t, filepath.Join(o.CRLDir, crlRequiredFile), 65532, 0o644)
 
 	// One naming a certificate, as Signalith writes it, is kept.
 	named, err := ospki.MakeCRL(ca, []*big.Int{big.NewInt(42)}, big.NewInt(2), time.Now())

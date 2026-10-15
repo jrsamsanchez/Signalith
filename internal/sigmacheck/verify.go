@@ -30,6 +30,9 @@ const (
 	// AuditdChannel is Linux audit records, whose event ID is the record
 	// type (EXECVE) and whose data are its fields by auditd's names.
 	AuditdChannel = ingest.AuditdChannel
+	// WebChannel is web server access log lines, whose data are the
+	// request's Web data model fields (url, http_method, status).
+	WebChannel = ingest.WebChannel
 )
 
 // TestFile holds a shipped rule's test events.
@@ -63,6 +66,22 @@ var security4688 = map[string]string{
 // the event's channel has no Sigma view here.
 func (c Case) SigmaView() (map[string]string, bool) {
 	switch {
+	case strings.HasPrefix(c.Channel, ZeekChannelPrefix):
+		// A network event: Zeek's keys, or Sigma's taxonomy.
+		return maps.Clone(c.Data), true
+	case c.Channel == WebChannel:
+		// The request's fields by their W3C names; the path is the
+		// target's part before the query.
+		out := map[string]string{}
+		for w3c, f := range ingest.WebFields {
+			if v := c.Data[f]; v != "" {
+				out[w3c] = v
+			}
+		}
+		if u := c.Data["url"]; u != "" {
+			out["cs-uri-stem"], _, _ = strings.Cut(u, "?")
+		}
+		return out, true
 	case c.Channel == AuditdChannel:
 		// A recorded line's fields, or the fields a line is built from.
 		fields := c.Data
@@ -135,13 +154,20 @@ func (c Case) SigmaView() (map[string]string, bool) {
 }
 
 // Record is a case's event as the agent sends it, with its Fluent Bit tag:
-// a journal record for Sysmon for Linux, else a Windows event record.
+// a journal record for Sysmon for Linux, an audit or access log line, else
+// a Windows event record.
 func (c Case) Record(host string, t time.Time) (string, map[string]any) {
+	if strings.HasPrefix(c.Channel, ZeekChannelPrefix) {
+		return c.zeekRecord(host, t)
+	}
 	if strings.EqualFold(c.Channel, LinuxSysmonChannel) {
 		return "linux.journal", ingest.LinuxSysmonRecord(c.EventID, host, t, c.Data)
 	}
 	if c.Channel == AuditdChannel {
 		return "linux.audit", ingest.AuditdRecordFor(ingest.AuditdLine(c.EventID, t, c.Data), host)
+	}
+	if c.Channel == WebChannel {
+		return ingest.WebTag, ingest.WebRecord(ingest.AccessLine(t, c.Data), "/var/log/nginx/access.log", host, t)
 	}
 	return "win.events", ingest.WinEventRecord(c.Channel, c.EventID, host, t, c.Data)
 }
@@ -264,6 +290,9 @@ func init() {
 	for service := range ingest.NamedChannelServices {
 		Bases[ingest.NamedChannelCategory(service)] = map[string]string{}
 	}
+	// A web request's fields are the rule's own.
+	Bases["webserver"] = map[string]string{}
+	sysmonEvents["webserver"] = "access"
 	Bases["sysmon_event"] = map[string]string{}
 	Bases["security_named"] = map[string]string{}
 	Bases["sysmon_file_block"] = Bases["file_event"]
@@ -293,6 +322,8 @@ func Channel(category string) string {
 		return CodeIntegrityChannel
 	case "windefend":
 		return DefenderChannel
+	case "webserver":
+		return WebChannel
 	}
 	for service, channel := range ingest.NamedChannelServices {
 		if category == ingest.NamedChannelCategory(service) {
@@ -760,6 +791,10 @@ func CasesOn(channel, category string, syn *Synthesis, fields []string) []Case {
 	}
 	var out []Case
 	add := func(expect bool, ev map[string]string) {
+		if channel == WebChannel {
+			out = append(out, Case{Expect: expect, Source: "synthesized", Channel: channel, EventID: id, Data: webData(ev)})
+			return
+		}
 		eid := id
 		if _, ok := ev["EventID"]; !ok && !expect && slices.Contains(fields, "EventID") {
 			// A near miss without the event ID: every event has one.
@@ -797,6 +832,21 @@ func CasesOn(channel, category string, syn *Synthesis, fields []string) []Case {
 	}
 	for _, ev := range syn.Negative {
 		add(false, ev)
+	}
+	return out
+}
+
+// webData is a synthesized web request's fields (W3C names) as Web data
+// model fields. A path alone (cs-uri-stem) is the target.
+func webData(ev map[string]string) map[string]string {
+	out := map[string]string{}
+	for k, v := range ev {
+		if f, ok := ingest.WebFields[strings.ToLower(k)]; ok && f != "uri_path" {
+			out[f] = v
+		}
+	}
+	if p, ok := ev["cs-uri-stem"]; ok && out["url"] == "" {
+		out["url"] = p
 	}
 	return out
 }

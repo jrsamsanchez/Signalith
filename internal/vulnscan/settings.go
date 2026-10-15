@@ -50,7 +50,10 @@ type Target struct {
 	Ports string `json:"ports"`
 	// Gentle scans slowly and with fewer probes, for networks with fragile
 	// devices such as printers and building or industrial controllers.
-	Gentle   bool     `json:"gentle"`
+	Gentle bool `json:"gentle"`
+	// OpenVAS also scans the network with OpenVAS after Nmap, on a scanner
+	// where it is set up: deeper, but much slower.
+	OpenVAS  bool     `json:"openvas,omitempty"`
 	Schedule Schedule `json:"schedule"`
 	Enabled  bool     `json:"enabled"`
 	// Scanner is the node ID of the server that scans this network, one
@@ -187,6 +190,11 @@ func (t *Target) Validate() error {
 	}
 	if t.Schedule.Weekday < 0 || t.Schedule.Weekday > 6 {
 		return inputErrorf("%s: the day must be from 0 (Sunday) to 6 (Saturday)", t.Name)
+	}
+	// OpenVAS probes thousands of ports with many tests per host, which
+	// is what gentle mode exists to spare fragile devices.
+	if t.Gentle && t.OpenVAS {
+		return inputErrorf("%s: OpenVAS cannot scan a network in gentle mode: it sends far more traffic than fragile devices may take. Turn one of them off", t.Name)
 	}
 	t.Scanner = strings.TrimSpace(t.Scanner)
 	if t.Scanner != "" && !scannerRE.MatchString(t.Scanner) {

@@ -1,14 +1,18 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -616,4 +620,125 @@ func anyStrings(v any) []string {
 		}
 	}
 	return out
+}
+
+// Every OpenSearch node of the three-node overlay checks client
+// certificates against the revocation list, as the quick start's single
+// node does: a node that skipped it would still let a revoked server in.
+func TestComposeEveryOpenSearchNodeChecksTheCRL(t *testing.T) {
+	type node struct {
+		Image      string   `yaml:"image"`
+		Entrypoint []string `yaml:"entrypoint"`
+		Volumes    []string `yaml:"volumes"`
+	}
+	read := func(name string) map[string]node {
+		raw, err := os.ReadFile(filepath.Join(dockerDir, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var f struct {
+			Services map[string]node `yaml:"services"`
+		}
+		if err := yaml.Unmarshal(raw, &f); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		return f.Services
+	}
+	base := read("docker-compose.yml")
+	overlay := read("docker-compose.opensearch3.yml")
+	const mount = "opensearch-crl:/usr/share/opensearch/config/crl:ro"
+	want := base["opensearch"].Entrypoint
+	if !slices.Contains(base["opensearch"].Volumes, mount) || !strings.Contains(strings.Join(want, " "), "plugins.security.ssl.http.crl.validate=true") {
+		t.Fatalf("docker-compose.yml opensearch does not check the revocation list: %v %v", want, base["opensearch"].Volumes)
+	}
+	nodes := 0
+	for name, o := range overlay {
+		b := base[name]
+		image := cmp.Or(o.Image, b.Image)
+		if !strings.HasPrefix(image, "opensearchproject/opensearch:") {
+			continue
+		}
+		nodes++
+		e := o.Entrypoint
+		if e == nil {
+			e = b.Entrypoint
+		}
+		if !slices.Equal(e, want) {
+			t.Errorf("%s does not start with the revocation list check: %v", name, e)
+		}
+		if !slices.Contains(o.Volumes, mount) && !slices.Contains(b.Volumes, mount) {
+			t.Errorf("%s does not mount the revocation list (%s)", name, mount)
+		}
+	}
+	if nodes != 3 {
+		t.Errorf("docker-compose.opensearch3.yml has %d OpenSearch nodes, want 3", nodes)
+	}
+}
+
+// The OpenSearch entrypoint checks certificates against the revocation
+// list when there is one, and once setup has made one, does not start
+// without it.
+func TestComposeOpenSearchEntrypointNeedsTheCRL(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("runs the entrypoint with sh")
+	}
+	var ep struct {
+		Services map[string]struct {
+			Entrypoint []string `yaml:"entrypoint"`
+		} `yaml:"services"`
+	}
+	raw, err := os.ReadFile(filepath.Join(dockerDir, "docker-compose.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := yaml.Unmarshal(raw, &ep); err != nil {
+		t.Fatal(err)
+	}
+	args := ep.Services["opensearch"].Entrypoint
+	if len(args) != 4 || args[0] != "sh" || args[1] != "-c" {
+		t.Fatalf("entrypoint %q", args)
+	}
+	// Compose turns $$ into $.
+	script := strings.ReplaceAll(args[2], "$$", "$")
+	run := func(t *testing.T, files map[string]string) (string, error) {
+		t.Helper()
+		dir := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(dir, "config", "crl"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		for name, body := range files {
+			if err := os.WriteFile(filepath.Join(dir, "config", "crl", name), []byte(body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		// awk, not sh, which drops variables with dots in their names.
+		stub := "#!/usr/bin/awk -f\nBEGIN { print \"started \" ARGV[1] \" validate=\" ENVIRON[\"plugins.security.ssl.http.crl.validate\"]; exit }\n"
+		if err := os.WriteFile(filepath.Join(dir, "opensearch-docker-entrypoint.sh"), []byte(stub), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		cmd := exec.Command("sh", "-c", script, args[3], "opensearch")
+		cmd.Dir = dir
+		out, err := cmd.CombinedOutput()
+		return string(out), err
+	}
+	t.Run("with the list", func(t *testing.T) {
+		out, err := run(t, map[string]string{"crl.pem": "list", "crl-required": "x"})
+		if err != nil || !strings.Contains(out, "started opensearch validate=true") {
+			t.Errorf("%v: %s", err, out)
+		}
+	})
+	t.Run("before setup made one", func(t *testing.T) {
+		out, err := run(t, nil)
+		if err != nil || !strings.Contains(out, "started opensearch validate=\n") {
+			t.Errorf("%v: %q", err, out)
+		}
+	})
+	for _, files := range []map[string]string{{"crl-required": "x"}, {"crl-required": "x", "crl.pem": ""}} {
+		t.Run(fmt.Sprintf("list gone %v", files), func(t *testing.T) {
+			out, err := run(t, files)
+			if err == nil || strings.Contains(out, "started") || !strings.Contains(out, "does not start without its revocation list") {
+				t.Errorf("%v: %s", err, out)
+			}
+		})
+	}
 }

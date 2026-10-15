@@ -304,6 +304,9 @@ osquery's management server and the hosts appear on the **Endpoints** page (see
 [docs/endpoints.md](docs/endpoints.md)).
 If you run Wazuh, pick **Wazuh** to send the alerts your Wazuh manager raises, through
 Fluent Bit on the manager or its own syslog output (see [docs/wazuh.md](docs/wazuh.md)).
+If you run Zeek or Suricata on a network sensor, pick **Network sensor** to send
+their connections, DNS lookups, web requests, certificates, files and IDS alerts (see
+[docs/network-sensor.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/network-sensor.md)).
 
 Agents on other machines must send to an address they can reach, such as
 `https://192.168.1.20:8080`, not `localhost`. Enter it under **Agents send to** on that page
@@ -329,6 +332,7 @@ Supported sources in Phase 1:
 | OpenTelemetry Collector or SDK logs over OTLP/HTTP ([docs/opentelemetry.md](docs/opentelemetry.md)) | the same models for Windows, Linux and syslog records; Other for app logs |
 | osquery ([docs/endpoints.md](docs/endpoints.md)): file changes, software, accounts, ports, services, startup items, configuration checks | Filesystem, Inventory, Configuration_Check |
 | Wazuh alerts from a Wazuh manager ([docs/wazuh.md](docs/wazuh.md)) | Authentication, Filesystem, Registry, Configuration_Check, Endpoint, Change or Alerts |
+| Zeek and Suricata on a network sensor, or Suricata EVE over syslog from pfSense and OPNsense ([docs/network-sensor.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/network-sensor.md)) | Network_Traffic, Network_Resolution, Web, Certificates, File_Transfers, Intrusion_Detection or Other |
 | Anything else | Other (searchable by text and fields) |
 
 Antivirus: see [docs/antivirus.md](docs/antivirus.md).
@@ -582,6 +586,7 @@ are counted for each person's own address, not the proxy's. See
 | `server.node_url` | from `listen` and this computer's name | The address other Signalith servers that share this OpenSearch reach this one at, shown in the list of servers. Set in signalith.yaml or `SIGNALITH_NODE_URL`, or, once the servers share their settings, on the Settings page (**Address for other servers**); in Docker set it, since a container cannot know it |
 | `server.shared_addresses` | none | IPs or CIDRs that many clients reach Signalith through: a reverse proxy, load balancer or NAT on another machine, or Docker Desktop's port forwarding, where every client seems to come from one address. These are not held to one client's share of connections, requests and ingest memory, only to the totals, and wrong passwords from them count per account, never pausing sign-ins from the whole address. The log names the address when one reaches its share |
 | `opensearch.url` | `http://127.0.0.1:9200` | Event store, `http(s)://host:port` (no query string). A `user:password@` in it is moved to `username` and `password` when loaded and never shown; `signalith secrets encrypt` moves it there in the file, encrypted |
+| `opensearch.urls` | none | Other nodes of the same OpenSearch cluster (same scheme, no password in them; or `SIGNALITH_OPENSEARCH_URLS`, comma-separated). Requests are spread over every address and one that is down is skipped for 30 seconds; see [OpenSearch with several nodes](https://github.com/jrsamsanchez/Signalith/blob/main/docs/opensearch-failover.md) |
 | `opensearch.username`, `opensearch.password` | none | OpenSearch credentials. Sent only over https, or plain http to this machine, unless `allow_insecure_http` is on |
 | `opensearch.ca_file` | none | PEM file with the CA that signed OpenSearch's certificate (for a private CA); system CAs are trusted too. Relative to the config file |
 | `opensearch.cert_file`, `opensearch.key_file` | none | Client certificate and key for certificate sign-in to OpenSearch; reloaded when they change |
@@ -641,7 +646,7 @@ are counted for each person's own address, not the proxy's. See
 Secrets can come from the environment instead: `SIGNALITH_OPENSEARCH_PASSWORD`,
 `SIGNALITH_ADMIN_PASSWORD`, `SIGNALITH_INGEST_TOKEN`, `SIGNALITH_LDAP_BIND_PASSWORD` (for
 `auth.ldap` in this file only; directory sign-in set up on the Users page keeps its own) (also
-`SIGNALITH_OPENSEARCH_URL`, `SIGNALITH_OPENSEARCH_USERNAME`, `SIGNALITH_OPENSEARCH_PROXY`, `SIGNALITH_OPENSEARCH_CRL_FILE`, `SIGNALITH_LISTEN`,
+`SIGNALITH_OPENSEARCH_URL`, `SIGNALITH_OPENSEARCH_URLS`, `SIGNALITH_OPENSEARCH_USERNAME`, `SIGNALITH_OPENSEARCH_PROXY`, `SIGNALITH_OPENSEARCH_CRL_FILE`, `SIGNALITH_LISTEN`,
 `SIGNALITH_PUBLIC_URL`, `SIGNALITH_DETECTIONS_DIR`, `SIGNALITH_LOOKUPS_DIR`, `SIGNALITH_DASHBOARDS_DIR`,
 `SIGNALITH_USERS_FILE`, `SIGNALITH_INTEL_FEEDS_FILE`, `SIGNALITH_NOTIFY_FILE`, `SIGNALITH_PLAYBOOKS_FILE`, `SIGNALITH_ARCHIVE_DIR`, `SIGNALITH_ASSISTANT_API_KEY`, and
 `SIGNALITH_SYSLOG_UDP` and `SIGNALITH_SYSLOG_TCP`, where `off` turns the listener off, `SIGNALITH_NODE_NAME`,
@@ -824,11 +829,11 @@ changes and more, plus two risk incident rules); 19 are on by default.
 - **Import Sigma rule** converts a [Sigma](https://github.com/SigmaHQ/sigma) rule to a
   Signalith query and lists anything it had to approximate. Imported rules start
   disabled so you can test them first.
-- **Content packs** add community rules, off until you turn them on: 2,234 tested
-  [SigmaHQ](https://github.com/SigmaHQ/sigma) Windows and Linux rules and 988 Windows and Linux detections
+- **Content packs** add community rules, off until you turn them on: 2,292 tested
+  [SigmaHQ](https://github.com/SigmaHQ/sigma) Windows, Linux, web server and network rules and 1,028 Windows, Linux, web and network detections
   from Splunk's open source
   [security_content](https://github.com/splunk/security_content) (Apache 2.0). With
-  both packs on, detections cover 156 ATT&CK techniques. Newer tested rules arrive as
+  both packs on, detections cover 160 ATT&CK techniques. Newer tested rules arrive as
   signed content updates, without a new Signalith release (from the internet or as an
   upload). See [docs/detections.md](docs/detections.md#content-packs).
 - **ATT&CK coverage** shows the Enterprise matrix with techniques covered by enabled
@@ -1057,6 +1062,9 @@ to 30 days) and, if you like, auto-refresh. It shows:
   last run, which enabled ones matched nothing in 30 days, and which hosts stopped
   sending (quiet for `dashboards.stale_after`).
 
+Built-in **Malware**, **Network** and **Vulnerabilities** dashboards show antivirus
+events, what a network sensor saw, and vulnerability scans.
+
 **Custom dashboards** are panels of queries shown as a single value (optionally with
 the change from the previous period), a table, bars, or a line or area chart. Build
 one with **New dashboard**, then **Add panel**: ask a question in plain English and
@@ -1203,9 +1211,9 @@ syslog devices ─UDP/TCP/TLS▶ query compiler,
 | `cmd/signalith` | CLI and server entry point, Windows service |
 | `internal/query` | Query language lexer, parser, canonical printer, builder model |
 | `internal/search` | Compiles queries to OpenSearch DSL and runs remaining commands in memory |
-| `internal/ingest` | Fluent Bit and OTLP record parsing for Windows and Linux, index template |
+| `internal/ingest` | Fluent Bit and OTLP record parsing for Windows, Linux, Wazuh, Zeek and Suricata, index template |
 | `internal/syslog` | Syslog receiver (UDP, TCP, TLS), RFC 5424, RFC 3164 and CEF parsing |
-| `internal/datamodel` | Authentication, Endpoint, Network_Traffic, Change, Malware, Filesystem, Registry, Network_Resolution, Image_Load, Script, Inventory, Configuration_Check, Alerts, Risk, Other |
+| `internal/datamodel` | Authentication, Endpoint, Network_Traffic, Change, Malware, Filesystem, Registry, Network_Resolution, Intrusion_Detection, Web, Certificates, File_Transfers, Image_Load, Script, Inventory, Configuration_Check, Alerts, Risk, Other |
 | `internal/agents` | Fluent Bit and OpenTelemetry Collector configuration generator |
 | `internal/detect` | Detection format, built-in content, scheduler, Sigma converter, ATT&CK catalog |
 | `internal/findings` | Findings model and its OpenSearch store |

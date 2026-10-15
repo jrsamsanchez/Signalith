@@ -115,6 +115,11 @@ var Nodes = map[string][]string{
 	// Network_Traffic.All_Traffic, as Sysmon's network connections (3)
 	// fill it.
 	"All_Traffic": {"app", "dest_ip", "dest_port", "src_ip", "src_port", "transport"},
+	// Web, as web servers' access logs fill it.
+	"Web": {
+		"url", "url_length", "uri_path", "uri_query", "http_method", "status", "http_user_agent",
+		"http_user_agent_length", "http_referrer", "src", "dest", "user", "bytes_out", "dest_port",
+	},
 }
 
 // NodeRenames are the node fields Signalith stores under another name:
@@ -134,7 +139,7 @@ func nodeField(node, f string) string {
 
 // The stages after the where clause that only reshape the results.
 var (
-	tstatsRe    = regexp.MustCompile(`(?is)^\|\s*tstats\s+(.*?)\s*\bfrom\s+datamodel=(Endpoint|Network_Traffic)\.(\w+)\s+where\s+(.*?)\s+by\s+([^|]*)$`)
+	tstatsRe    = regexp.MustCompile(`(?is)^\|\s*tstats\s+(.*?)\s*\bfrom\s+datamodel=(Endpoint|Network_Traffic|Web)(?:\.(\w+))?\s+where\s+(.*?)\s+by\s+([^|]*)$`)
 	harmlessRe  = regexp.MustCompile("^`(drop_dm_object_name|security_content_ctime)\\([^`]*\\)`$")
 	filterRe    = regexp.MustCompile("^`[\\w-]+_filter`$")
 	summariesRe = regexp.MustCompile("`security_content_summariesonly`")
@@ -149,6 +154,11 @@ var (
 // rename fields, format times and apply the rule's own (empty) filter
 // macro is understood; anything else is an error that says what.
 func Parse(src []byte, macros map[string]*Macro) (*Rule, error) {
+	return ParseWith(src, macros, ParseOptions{})
+}
+
+// ParseWith is Parse with options.
+func ParseWith(src []byte, macros map[string]*Macro, opt ParseOptions) (*Rule, error) {
 	var r Rule
 	if err := yaml.Unmarshal(src, &r); err != nil {
 		return nil, err
@@ -173,12 +183,26 @@ func Parse(src []byte, macros map[string]*Macro) (*Rule, error) {
 	}
 	first := summariesRe.ReplaceAllString("| "+stages[0], "")
 	m := tstatsRe.FindStringSubmatch(first)
+	if opt.Network {
+		if _, nm, ok := sensorNode(first); ok {
+			m = nm
+		} else if m == nil {
+			return nil, errors.New("search is not a tstats search of Network_Traffic, Network_Resolution or Web")
+		}
+	}
 	if m == nil {
-		return nil, errors.New("search is not a tstats search of Endpoint.Processes, Filesystem or Registry")
+		return nil, errors.New("search is not a tstats search of Endpoint.Processes, Filesystem, Registry or Web")
 	}
 	r.Node = m[3]
+	if r.Node == "" && strings.EqualFold(m[2], "Web") {
+		// datamodel=Web is its one node, Web.
+		r.Node = "Web"
+	}
 	fields, ok := Nodes[r.Node]
-	if !ok || (m[2] == "Network_Traffic") != (r.Node == "All_Traffic") {
+	if !opt.Network && IsSensorNode(r.Node) {
+		ok = false
+	}
+	if !ok || !IsSensorNode(r.Node) && ((m[2] == "Network_Traffic") != (r.Node == "All_Traffic") || strings.EqualFold(m[2], "Web") != (r.Node == "Web")) {
 		return nil, fmt.Errorf("data model node %s.%s is not supported", m[2], r.Node)
 	}
 	var present []Expr

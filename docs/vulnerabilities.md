@@ -44,6 +44,7 @@ can be against the law, and the page asks you to confirm before it adds a networ
 | Nmap can run a test scan | Makes sure Nmap works under the account Signalith runs as | Yes |
 | Outbound HTTPS to `services.nvd.nist.gov` | Looks software versions up in the NVD to name the CVEs | No: without it, scans still list hosts, ports and software |
 | An NVD API key | Makes the first lookups about ten times faster | No |
+| OpenVAS on the scanning server | Deeper tests for the networks that turn it on ([below](#deeper-scans-with-openvas-optional)) | No |
 
 Install Nmap:
 
@@ -120,6 +121,46 @@ which also finds Windows hosts that do not answer ping. Only TCP is scanned.
 
 The addresses, ports and options come only from the checked settings above: nothing you
 type reaches Nmap's command line as an option.
+
+## Deeper scans with OpenVAS (optional)
+
+Nmap reads the software versions on open ports, and Signalith matches them to CVEs.
+[OpenVAS](https://www.openvas.org) (Greenbone Community Edition, open source) goes
+further: it tests each host for thousands of known weaknesses by probing them, such as
+missing patches, default passwords, anonymous FTP and weak TLS settings. It is much
+slower and sends far more traffic, so a network uses it only when you turn on **Also scan
+with OpenVAS** for it.
+
+A network with OpenVAS on is scanned with Nmap first, then with OpenVAS's *Full and fast*
+configuration, on the server that scans the network. Its findings join Nmap's: on the open
+port they concern, or on the host itself. A CVE both found is listed once. Results OpenVAS
+is unsure of (quality of detection under 70%) and plain information are left out. If
+OpenVAS is not set up on that server, or fails, the scan keeps Nmap's results and says why.
+
+To set it up on a scanning server:
+
+1. Install Greenbone Community Edition where that server can reach it
+   (<https://greenbone.github.io/docs/latest/>; the Docker containers are the quickest).
+   Let it finish downloading its feeds before the first scan.
+2. Make a gvmd user for Signalith: `gvmd --create-user=signalith --password='a long password'`.
+3. Give Signalith gvmd's address and that user, on that server only:
+
+    | Setting in `signalith.yaml` (under `vulns:`) | Environment variable | What |
+    | --- | --- | --- |
+    | `openvas_address` | `SIGNALITH_OPENVAS_ADDRESS` | gvmd's Unix socket, such as `/run/gvmd/gvmd.sock`, or `host:9390` for its TLS port |
+    | `openvas_username` | `SIGNALITH_OPENVAS_USERNAME` | The gvmd user |
+    | `openvas_password` | `SIGNALITH_OPENVAS_PASSWORD` (or `_FILE`) | Its password; `signalith secrets set vulns.openvas_password` keeps it encrypted |
+    | `openvas_ca_file` | `SIGNALITH_OPENVAS_CA_FILE` | For a TLS port, the certificate authority of gvmd's certificate; empty uses the system's |
+
+    In Docker, also mount the volume that holds gvmd's socket into the Signalith container.
+
+4. Restart Signalith. **Settings > Scanners** shows whether OpenVAS answered.
+5. Edit a network on the Vulnerabilities page and turn on **Also scan with OpenVAS**.
+
+Signalith makes a target and a task in OpenVAS for each scan and removes both when the
+scan ends; stopping the scan in Signalith stops it in OpenVAS too. OpenVAS findings are
+written as events like the others, with `vuln_source=openvas`, `openvas_oid`, `solution`
+and, when the test names one, `cve`.
 
 ## Results in Search, detections and assets
 

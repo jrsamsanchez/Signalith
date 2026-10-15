@@ -1,0 +1,4 @@
+{"rule": "c64c5175-5189-431b-a55e-6d9882158251", "cases": [
+  {"expect":true,"source":"synthesized","channel":"zeek:dns","event_id":"dns","data":{"dst_ip":"192.0.2.53","dst_port":"53","query":"api.telegram.org","src_ip":"192.0.2.10","src_port":"53124"}},
+  {"expect":false,"source":"synthesized","channel":"zeek:dns","event_id":"dns","data":{"dst_ip":"192.0.2.53","dst_port":"53","src_ip":"192.0.2.10","src_port":"53124"}}
+]}

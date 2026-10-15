@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
@@ -63,6 +64,9 @@ type fakeLifecycle struct {
 	members  []string
 	asked    []string // typ target
 	removed  []string
+	// warnings are what Remove returns as steps that failed after the
+	// removal.
+	warnings []string
 }
 
 func (f *fakeLifecycle) Off() string { return f.off }
@@ -81,11 +85,11 @@ func (f *fakeLifecycle) Submit(_ context.Context, typ, target string, _ any, _ s
 	f.asked = append(f.asked, typ+" "+target)
 	return &shared.Request{ID: "rq_1"}, nil
 }
-func (f *fakeLifecycle) Remove(_ context.Context, nodeID, name, _ string, _ bool) (shared.RemovedServer, error) {
+func (f *fakeLifecycle) Remove(_ context.Context, nodeID, name, _ string, _ bool) (shared.RemovedServer, []string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.removed = append(f.removed, nodeID)
-	return shared.RemovedServer{NodeID: nodeID, Name: name}, nil
+	return shared.RemovedServer{NodeID: nodeID, Name: name}, f.warnings, nil
 }
 
 func (f *fakeLifecycle) take() (asked, removed []string) {
@@ -205,5 +209,34 @@ func TestClusterServersOff(t *testing.T) {
 	}
 	if code, _ := do(t, ts, "POST", "/api/cluster/rotate-key", "", true); code != http.StatusServiceUnavailable {
 		t.Errorf("rotate: %d", code)
+	}
+}
+
+// A step after the removal that failed (such as revoking the server's
+// OpenSearch certificates) does not undo it: the key is still rotated,
+// the removal audited, and the failure shown.
+func TestClusterServersRemoveWithWarnings(t *testing.T) {
+	cl := &lifecycleCluster{cState: cluster.StateStopped, cAgo: time.Minute}
+	lf := &fakeLifecycle{rotation: true, members: []string{"siem-a", "siem-b", "siem-c"},
+		warnings: []string{"siem-c was removed, but its OpenSearch certificates could not be revoked: no route"}}
+	var logs syncBuffer
+	ts, _ := newTestServerWith(t, func(s *Server) {
+		s.Cluster = cl
+		s.ClusterServers = lf
+		s.Log = slog.New(slog.NewTextHandler(&logs, nil))
+	})
+	code, out := do(t, ts, "DELETE", "/api/cluster/servers/n_c", "", true)
+	if code != 200 || out["request_id"] != "rq_1" {
+		t.Fatalf("remove: %d %v", code, out)
+	}
+	if w, _ := out["warnings"].([]any); len(w) != 1 || !strings.Contains(w[0].(string), "could not be revoked") {
+		t.Errorf("warnings %v", out["warnings"])
+	}
+	asked, removed := lf.take()
+	if len(removed) != 1 || len(asked) != 1 || asked[0] != clustercfg.RequestRotateKey+" "+shared.TargetLeader {
+		t.Errorf("removed %v, asked %v", removed, asked)
+	}
+	if l := logs.String(); !strings.Contains(l, "cluster.remove: server removed from the cluster") || !strings.Contains(l, "request=rq_1") {
+		t.Errorf("not audited: %s", l)
 	}
 }

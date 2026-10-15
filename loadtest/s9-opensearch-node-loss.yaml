@@ -28,7 +28,8 @@ faults:
   - {at: 2m, kind: cmd, for: 4m, cmd: "ssh os-2.lab sudo systemctl stop opensearch", undo: "ssh os-2.lab sudo systemctl start opensearch"}
 criteria:
   - {name: opensearch_red_samples, max: 0}
-  - {name: opensearch_unreachable_samples, max: 0}
+  # A few samples may miss while the other nodes choose a new manager.
+  - {name: opensearch_unreachable_samples, max: 5}
   - {name: ingest_error_rate, phase: one_node_down, max: 0.01}
   - {name: ingest_p99_ms, phase: one_node_down, max: 2000}
   - {name: search_p95_ms, phase: one_node_down, max: 3000}

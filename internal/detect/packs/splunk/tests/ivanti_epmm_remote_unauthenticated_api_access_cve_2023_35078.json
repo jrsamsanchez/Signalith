@@ -1,0 +1,7 @@
+{"rule": "66b9c9ba-7fb2-4e80-a3a2-496e5e078167", "cases": [
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","status":"200","url":"x /mifs/aad/api/v2/authorized/users? x"}},
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","status":"200","url":"x /mifs/aad/api/v2/authorized/users? y"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"status":"200"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","status":"201","url":"x /mifs/aad/api/v2/authorized/users? x"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","url":"x /mifs/aad/api/v2/authorized/users? x"}}
+]}

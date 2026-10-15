@@ -499,9 +499,13 @@ type OpenSearch struct {
 	// URL is http(s)://host:port. A user name and password written into it
 	// are moved to Username and Password when the file is loaded, so they
 	// are never shown or logged with the URL.
-	URL      string `yaml:"url"`
-	Username string `yaml:"username,omitempty"`
-	Password string `yaml:"password,omitempty"`
+	URL string `yaml:"url"`
+	// URLs are more addresses of the same OpenSearch cluster, such as its
+	// other nodes, with the same scheme and no user name or password.
+	// Requests are spread over URL and these, skipping one that is down.
+	URLs     []string `yaml:"urls,omitempty"`
+	Username string   `yaml:"username,omitempty"`
+	Password string   `yaml:"password,omitempty"`
 	// CAFile is a PEM file with the certificate authority that signed
 	// OpenSearch's certificate, for an https url with a private CA (the
 	// usual case). The system's trusted authorities are trusted too.
@@ -615,6 +619,36 @@ func (o *OpenSearch) problems(resolve func(string) string) []string {
 	if o.Proxy != "" {
 		if pu, err := url.Parse(o.Proxy); err != nil || !slices.Contains([]string{"http", "https", "socks5"}, pu.Scheme) || pu.Host == "" {
 			p = append(p, fmt.Sprintf("opensearch.proxy %q must be http://host:port, https://host:port or socks5://host:port", redact.URL(o.Proxy)))
+		}
+	}
+	p = append(p, o.urlsProblems(u)...)
+	return p
+}
+
+// urlsProblems lists what is wrong with opensearch.urls, given the parsed
+// opensearch.url: each must be an address like it, with the same scheme
+// and no user name, password or query, and the plain-http password rule
+// applies to each.
+func (o *OpenSearch) urlsProblems(first *url.URL) []string {
+	var p []string
+	for i, raw := range o.URLs {
+		if _, _, _, ok := redact.Strip(raw); ok {
+			p = append(p, fmt.Sprintf("opensearch.urls[%d] %s must not have a user name or password in it; set them in opensearch.username and opensearch.password", i, redact.URL(raw)))
+			continue
+		}
+		u, err := url.Parse(strings.TrimSpace(raw))
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			p = append(p, fmt.Sprintf("opensearch.urls[%d] %q must be http(s)://host:port", i, redact.URL(raw)))
+			continue
+		}
+		if u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
+			p = append(p, fmt.Sprintf("opensearch.urls[%d] %s://%s must not have a query string (?...) or fragment (#...)", i, u.Scheme, u.Host))
+		}
+		if u.Scheme != first.Scheme {
+			p = append(p, fmt.Sprintf("opensearch.urls[%d] %s://%s must use %s, as opensearch.url does: they are nodes of one OpenSearch cluster", i, u.Scheme, u.Host, first.Scheme))
+		} else if u.Scheme == "http" && (o.Username != "" || o.Password != "") && !isLoopback(u.Hostname()) && !o.AllowInsecureHTTP {
+			p = append(p, fmt.Sprintf("opensearch.urls[%d] is plain http to %s, so the OpenSearch username and password would cross the network unencrypted. "+
+				"Use https://, or, to accept the risk, set opensearch.allow_insecure_http: true", i, u.Host))
 		}
 	}
 	return p
@@ -1131,6 +1165,14 @@ type Vulns struct {
 	NVDURL string `yaml:"nvd_url,omitempty"`
 	// NVDAPIKey is a free NVD API key, which allows faster lookups.
 	NVDAPIKey string `yaml:"nvd_api_key,omitempty"`
+	// OpenVAS, optional, runs deeper scans on this server for the networks
+	// that ask for them: OpenVASAddress is gvmd's Unix socket (such as
+	// /run/gvmd/gvmd.sock) or host:port of its TLS port, with a gvmd user
+	// and password. OpenVASCAFile verifies a TLS port's certificate.
+	OpenVASAddress  string `yaml:"openvas_address,omitempty"`
+	OpenVASUsername string `yaml:"openvas_username,omitempty"`
+	OpenVASPassword string `yaml:"openvas_password,omitempty"`
+	OpenVASCAFile   string `yaml:"openvas_ca_file,omitempty"`
 }
 
 // Intel configures threat intel feeds. Nothing is downloaded until a
@@ -1856,6 +1898,18 @@ func (c *Config) applyAdminHashFile() error {
 	return nil
 }
 
+// envList splits a comma-separated list from an environment variable,
+// leaving out empty entries.
+func envList(v string) []string {
+	var out []string
+	for _, e := range strings.Split(v, ",") {
+		if e = strings.TrimSpace(e); e != "" {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
 // applyEnv lets secrets come from the environment instead of the file,
 // either in the variable itself or in a file it names (the variable's name
 // with _FILE added).
@@ -1863,6 +1917,10 @@ func (c *Config) applyEnv() error {
 	if v := os.Getenv("SIGNALITH_OPENSEARCH_URL"); v != "" {
 		c.OpenSearch.URL = v
 		c.fromEnv("opensearch.url", "SIGNALITH_OPENSEARCH_URL")
+	}
+	if v := strings.TrimSpace(os.Getenv("SIGNALITH_OPENSEARCH_URLS")); v != "" {
+		c.OpenSearch.URLs = envList(v)
+		c.fromEnv("opensearch.urls", "SIGNALITH_OPENSEARCH_URLS")
 	}
 	if v := os.Getenv("SIGNALITH_OPENSEARCH_USERNAME"); v != "" {
 		c.OpenSearch.Username = v
@@ -1986,6 +2044,25 @@ func (c *Config) applyEnv() error {
 	} else if len(v) > 0 {
 		c.Vulns.NVDAPIKey = strings.TrimSpace(v[0])
 		c.fromEnv("vulns.nvd_api_key", from)
+	}
+	for _, e := range []struct {
+		env, key string
+		p        *string
+	}{
+		{"SIGNALITH_OPENVAS_ADDRESS", "vulns.openvas_address", &c.Vulns.OpenVASAddress},
+		{"SIGNALITH_OPENVAS_USERNAME", "vulns.openvas_username", &c.Vulns.OpenVASUsername},
+		{"SIGNALITH_OPENVAS_CA_FILE", "vulns.openvas_ca_file", &c.Vulns.OpenVASCAFile},
+	} {
+		if v := strings.TrimSpace(os.Getenv(e.env)); v != "" {
+			*e.p = v
+			c.fromEnv(e.key, e.env)
+		}
+	}
+	if v, from, err := envSecret("SIGNALITH_OPENVAS_PASSWORD"); err != nil {
+		return err
+	} else if len(v) > 0 {
+		c.Vulns.OpenVASPassword = v[0]
+		c.fromEnv("vulns.openvas_password", from)
 	}
 	if v, from, err := envSecret("SIGNALITH_INGEST_TOKEN"); err != nil {
 		return err
@@ -2316,6 +2393,10 @@ func (c *Config) Warnings() []string {
 	if u, err := url.Parse(c.Vulns.NVDURL); err == nil && u.Scheme == "http" && c.Vulns.NVDAPIKey != "" && !isLoopback(u.Hostname()) {
 		w = append(w, "vulns.nvd_url is plain http to "+u.Host+", so the NVD API key crosses the network unencrypted. Use https://.")
 	}
+	if c.Vulns.OpenVASAddress != "" && (c.Vulns.OpenVASUsername == "" || c.Vulns.OpenVASPassword == "") {
+		w = append(w, "vulns.openvas_address is set without a user name and password (vulns.openvas_username and vulns.openvas_password, "+
+			"or SIGNALITH_OPENVAS_USERNAME and SIGNALITH_OPENVAS_PASSWORD), so OpenVAS cannot be used.")
+	}
 	if c.PublicAdminPassword() {
 		w = append(w, "The built-in admin's password is "+publicAdminPassword+", the example in an older docker-compose.yml, which anyone can look up. "+
 			"Remove SIGNALITH_ADMIN_PASSWORD (the Docker quick start now makes a password; from the Signalith folder: "+
@@ -2402,7 +2483,7 @@ func (c *Config) OpenSearchConnection() store.Config {
 	ca, cert, key := c.OpenSearchTLSFiles()
 	mcert, mkey := c.ManagedOpenSearchFiles()
 	return store.Config{
-		URL: c.OpenSearch.URL, Username: c.OpenSearch.Username, Password: secrets.New("opensearch.password", c.OpenSearch.Password),
+		URL: c.OpenSearch.URL, URLs: strings.Join(c.OpenSearch.URLs, ","), Username: c.OpenSearch.Username, Password: secrets.New("opensearch.password", c.OpenSearch.Password),
 		CAFile: ca, CertFile: cert, KeyFile: key, ManagedCertFile: mcert, ManagedKeyFile: mkey,
 		TLSSkipVerify: c.OpenSearch.TLSSkipVerify, Proxy: c.OpenSearch.Proxy,
 	}

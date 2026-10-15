@@ -72,6 +72,11 @@ func generateOTel(o Options) (*Agent, error) {
 				"    storage: file_storage/signalith\n")
 			receivers = append(receivers, "filelog/auth")
 		}
+		// Web servers' access logs (Apache, Nginx); a host without one has
+		// no such files.
+		b.WriteString("  filelog/web:\n    include: [" + strings.Join(WebAccessLogs, ", ") + "]\n" +
+			"    include_file_path: true\n    storage: file_storage/signalith\n")
+		receivers = append(receivers, "filelog/web")
 	case "windows":
 		a.ConfigPath = OTelWindowsConfig
 		fmt.Fprintf(&b, "    directory: %s\n", yamlPath(otelWindowsState))

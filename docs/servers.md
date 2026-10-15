@@ -77,6 +77,16 @@ it from the Signalith folder with
 | **OpenSearch not ready** | OpenSearch is starting, or its nodes can't find each other | Wait a few minutes. If it lasts, OpenSearch's log says why |
 | **OpenSearch answers with an error** | Any other error, such as a closed `<prefix>_runtime` index. The alert quotes it | OpenSearch's log may say more |
 
+## OpenSearch with several nodes
+
+With one OpenSearch node, losing it stops every server. Run three nodes, give each
+server their addresses (**More addresses** on the Settings page, `opensearch.urls`), and
+keep Replicas at `auto`: Signalith then spreads its requests over the nodes and skips one
+that is down. The Servers page has an OpenSearch card that shows the nodes, their disks,
+indices without a copy on another node, and which of this server's addresses are being
+skipped. [OpenSearch with several nodes](opensearch-failover.md) explains the setup,
+per-node certificates and snapshots.
+
 ## The background jobs
 
 These run on one server only:
@@ -587,6 +597,8 @@ change. It is signed with OpenSearch's CA and valid until the CA expires.
 
 - **Docker:** set up already. The `setup` service makes an empty list in the
   `opensearch-crl` volume, OpenSearch checks it once it is there, and Signalith keeps it.
+  From then on OpenSearch does not start without the list: if it is deleted, OpenSearch
+  waits, restarting, until Signalith or `docker compose ... up -d` writes it again.
   OpenSearch warns at start that the list can be read by others: it holds no secret, and
   Signalith writes it while OpenSearch reads it.
 - **Without Docker:** on each OpenSearch node, put the list where OpenSearch can read it
@@ -612,6 +624,20 @@ when it can, and says so loudly when it can't: a red banner on every page, the
 [OpenSearch's revocation list](security.md#opensearchs-revocation-list) check on the
 Security page. In Docker, `docker compose -f deploy/docker/docker-compose.yml up -d`
 makes it again too.
+
+**A revocation ends the access of a server that follows the cluster, not of its disk.**
+A removed server's state folder still holds the cluster key and its copy of the shared
+settings (`cluster/cache.enc`), and together they open OpenSearch's CA key: whoever has
+that disk can still sign new certificates OpenSearch trusts. For a server that was
+compromised or stolen, also make a new OpenSearch CA. In Docker, run
+`bootstrap-docker -new-ca`, then `bootstrap-docker -export-ca-key` again, so the cluster
+keeps the new CA in place of the old (see
+[Replacing the CA](opensearch-security.md#replacing-the-ca)); without Docker, make
+OpenSearch's certificates again under a new CA. A revocation does not touch the shared
+`CN=signalith` certificate or a user name and password either: whoever holds those keeps
+OpenSearch access until `roles_mapping.yml` no longer gives them the `signalith_server`
+role (see [Each server's own OpenSearch certificate](#each-servers-own-opensearch-certificate)),
+or the password is changed.
 
 ## Shared feeds and retention policies
 
@@ -761,8 +787,8 @@ the old list or the new one, never a mix.
 
 ## Field names when several servers receive events
 
-Each day's events go to one index per data model, and OpenSearch allows at most 2,000
-fields in one index. Signalith's own fields always fit; the names senders choose (JSON
+Each day's events go to one index per data model, and Signalith lets one index hold at
+most 2,200 fields. Signalith's own fields always fit; the names senders choose (JSON
 keys, syslog structured data, CEF extensions) share what is left (see
 [Ingest limits](sending-data.md#ingest-limits)). With several servers:
 
@@ -771,7 +797,7 @@ keys, syslog structured data, CEF extensions) share what is left (see
   at least 100 for each. Each server's heartbeat says when it last stored an event, so
   the shares follow servers as they start and stop.
 - Before adding new names to an index, a server also looks at how many fields the index
-  really has (checked at most every 30 seconds) and adds none once it has 1,600.
+  really has (checked at most every 30 seconds) and adds none once it has 1,800.
 
 Fields over the limit are not lost: their values stay in the event's raw message
 (`_raw`), and the event says how many were left out in `dropped_fields`. Fields

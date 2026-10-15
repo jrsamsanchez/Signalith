@@ -28,8 +28,8 @@ prints a report and, with `-json`, saves it.
   as how fast another server takes over the background jobs) are skipped, not failed.
   One server is the baseline the other results are compared with.
 
-A nightly GitHub job runs the short scenarios (S1, S2, S3, S4 and S6 at CI size) on two
-servers sharing the Docker quick start's OpenSearch and keeps each report. A second job
+A nightly GitHub job runs the short scenarios (S1, S2, S3, S4, S6, S7 and S9 at CI size) on two
+servers sharing the Docker quick start's OpenSearch (three nodes of it for S9) and keeps each report. A second job
 in it measures the sizing table below.
 
 ## Scenarios
@@ -42,9 +42,9 @@ in it measures the sizing table below.
 | S4 | The server that runs the background jobs is stalled, then killed (in the lab also cut off from OpenSearch, its clock moved and OpenSearch's disk filled) | Another server takes over within 45 s; never two at once; nothing lost |
 | S5 | A large configuration: thousands of users, detections and indicators | Pages within 2 s and searches within 3 s for 95% of requests, agents answered within 2 s, as without it; how long each part took to make is recorded |
 | S6 | Wrong passwords against many accounts from many addresses, spread over every server | Each account gets only a few real password checks in total, whichever server is asked, and the guessing is refused |
-| S7 | A rolling upgrade under load | Skipped until rolling upgrades are supported |
+| S7 | Every server upgraded in turn under load, as [Rolling upgrade](servers.md#rolling-upgrade-one-server-at-a-time) says: wait for the upgrade check, drain, install, resume | Every server reaches the new version; the jobs move once, to an upgraded server, and never run on two at once; nothing lost; nobody signed out; each open page reloads at most once |
 | S8 | A Windows server joined to a Linux one (lab) | It takes at least half its even share of agents' events, runs the background jobs after a takeover within 45 s, and writes to the archive share as its computer account |
-| S9 | One of three OpenSearch nodes stopped under load (lab) | Signalith's own indices never lose their last copy (yellow, not red); fewer than 1% of batches refused and none lost; nobody signed out. Skipped on versions without `opensearch.urls` |
+| S9 | One of three OpenSearch nodes stopped under load, as in [OpenSearch failover](opensearch-failover.md) | Signalith's own indices never lose their last copy (yellow, not red); fewer than 1% of batches refused and none lost; nobody signed out. Skipped on versions without `opensearch.urls` |
 
 ## Sizing
 

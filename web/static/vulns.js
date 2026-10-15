@@ -437,7 +437,7 @@
           ...fact('Network', h.target_name),
           ...fact('First seen', new Date(h.first_seen).toLocaleString()),
           ...fact('Last scanned', new Date(h.last_seen).toLocaleString()),
-          ...fact('CVEs', total ? cveCounts(h.counts) : 'None found')),
+          ...fact('Findings', total ? cveCounts(h.counts) : 'None found')),
         el('div', { class: 'vs-host__links' },
           el('a', { href: '#search', onclick: (ev) => { ev.preventDefault(); dlg.close(); openSearch('datamodel=Vulnerabilities dest_ip=' + h.address, '-30d'); } }, icon('search'), 'Scan history in Search')),
         h.services.length ? el('div', { class: 'vs-services' }, ...h.services.map(serviceBlock)) : el('p', { class: 'vs-muted' }, 'The host answered, but none of the scanned ports was open.')),
@@ -451,19 +451,39 @@
   }
 
   function serviceBlock(s) {
-    const what = [s.product, s.version].filter(Boolean).join(' ') || s.name || 'Unknown service';
+    const what = s.port ? [s.product, s.version].filter(Boolean).join(' ') || s.name || 'Unknown service' : 'The host itself';
     const vulns = s.vulns || [];
     return el('section', { class: 'vs-svc' },
       el('div', { class: 'vs-svc__head' },
-        el('span', { class: 'vs-port mono' }, s.port + '/' + s.transport),
+        el('span', { class: 'vs-port mono' }, s.port ? s.port + '/' + s.transport : 'Host'),
         el('div', { class: 'vs-svc__what' }, el('b', {}, what),
-          el('span', { class: 'vs-muted' }, [s.name, s.tunnel === 'ssl' ? 'over TLS' : '', s.extra].filter(Boolean).join(' · '))),
-        vulns.length ? el('span', { class: 'badge badge--danger' }, vulns.length + (vulns.length === 1 ? ' CVE' : ' CVEs')) : el('span', { class: 'badge badge--success' }, 'No known CVEs')),
+          el('span', { class: 'vs-muted' }, [s.port ? s.name : '', s.tunnel === 'ssl' ? 'over TLS' : '', s.extra].filter(Boolean).join(' · '))),
+        vulns.length ? el('span', { class: 'badge badge--danger' }, vulns.length + (vulns.length === 1 ? ' finding' : ' findings')) : el('span', { class: 'badge badge--success' }, 'No known CVEs')),
       vulns.length ? el('ul', { class: 'vs-vulns', role: 'list' }, ...vulns.slice(0, 200).map(vulnRow)) : null,
       vulns.length > 200 ? el('p', { class: 'hint' }, 'And ' + (vulns.length - 200) + ' more. Search shows them all.') : null);
   }
 
   function vulnRow(v) {
+    const ov = v.source === 'openvas';
+    const nvd = v.cve ? el('p', {}, el('a', { href: 'https://nvd.nist.gov/vuln/detail/' + encodeURIComponent(v.cve), target: '_blank', rel: 'noopener noreferrer' },
+      'Read about ' + v.cve + ' in the National Vulnerability Database', icon('external-link', 'icon--xs'))) : null;
+    if (ov) {
+      return el('li', { class: 'vs-vuln' },
+        el('details', {},
+          el('summary', {},
+            el('span', { class: 'sev', 'data-sev': SEV.includes(v.severity) ? v.severity : 'low' }, cap(v.severity)),
+            el('span', { class: 'vs-score num', title: 'Severity score from OpenVAS' }, v.cvss ? v.cvss.toFixed(1) : '–'),
+            v.cve ? el('span', { class: 'vs-vuln__id mono' }, v.cve) : null,
+            el('span', { class: 'badge badge--accent', title: 'Found by an OpenVAS test' }, 'OpenVAS'),
+            el('span', { class: 'vs-vuln__desc' }, v.name || v.description || ''),
+            icon('chevron-down', 'icon--sm chev')),
+          el('div', { class: 'vs-vuln__more' },
+            el('p', {}, el('b', {}, v.name || 'OpenVAS finding')),
+            v.description ? el('p', {}, v.description) : null,
+            v.solution ? el('p', {}, el('b', {}, 'How to fix it: '), v.solution) : null,
+            el('p', { class: 'vs-muted' }, ['OpenVAS test ' + v.oid, v.cves && v.cves.length > 1 ? 'Also ' + v.cves.filter((c) => c !== v.cve).join(', ') : ''].filter(Boolean).join(' · ')),
+            nvd)));
+    }
     return el('li', { class: 'vs-vuln' },
       el('details', {},
         el('summary', {},
@@ -508,7 +528,7 @@
       const pct = a.state === 'running' && p.percent > 0 ? Math.round(p.percent) : null;
       status = el('div', { class: 'vs-net__status' },
         el('span', { class: 'pulse', 'data-state': 'warn' }),
-        el('span', {}, a.state === 'running' ? 'Scanning' + (pct !== null ? ', ' + pct + '%' : '…') + (p.hosts_up ? ' · ' + p.hosts_up + ' up so far' : '') + (multi() && a.scanner ? ' on ' + a.scanner : '') :
+        el('span', {}, a.state === 'running' ? (p.task === 'OpenVAS' ? 'OpenVAS scanning' : 'Scanning') + (pct !== null ? ', ' + pct + '%' : '…') + (p.hosts_up ? ' · ' + p.hosts_up + ' up so far' : '') + (multi() && a.scanner ? ' on ' + a.scanner : '') :
           waitingText(n)),
         pct !== null ? el('span', { class: 'vs-progress', role: 'progressbar', 'aria-valuenow': pct, 'aria-valuemin': 0, 'aria-valuemax': 100, 'aria-label': 'Scan progress' }, el('span', { style: 'width:' + pct + '%' })) : null);
     } else if (last) {
@@ -524,12 +544,13 @@
       else actions.push(el('button', { class: 'btn btn--secondary btn--sm', type: 'button', onclick: (ev) => scanNow(n, ev.currentTarget) }, icon('play'), 'Scan now'));
       actions.push(el('button', { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => editNetwork(n) }, icon('pencil'), 'Edit'));
     }
-    const lastProblem = !a && last && (last.error || last.cve_error);
+    const lastProblem = !a && last && (last.error || last.openvas_error || last.cve_error);
     return el('article', { class: 'card vs-net' }, el('div', { class: 'card__body' },
       el('div', { class: 'vs-net__head' },
         el('div', { class: 'vs-net__title' }, el('h3', {}, n.name),
           n.enabled ? null : el('span', { class: 'badge' }, 'Paused'),
-          n.gentle ? el('span', { class: 'badge badge--accent', title: 'Scans slowly with fewer probes' }, 'Gentle') : null),
+          n.gentle ? el('span', { class: 'badge badge--accent', title: 'Scans slowly with fewer probes' }, 'Gentle') : null,
+          n.openvas ? el('span', { class: 'badge badge--accent', title: 'Also scanned with OpenVAS' }, 'OpenVAS') : null),
         el('div', { class: 'vs-net__actions' }, ...actions)),
       el('p', { class: 'vs-net__addrs mono' }, n.networks.join(', ') + (n.exclude && n.exclude.length ? '  (skipping ' + n.exclude.join(', ') + ')' : '')),
       el('dl', { class: 'vs-net__facts' },
@@ -540,7 +561,7 @@
         multi() || n.scanner ? el('dd', { class: 'vs-net__scanner' }, scannerName(n), scannerBadge(serverOf(n))) : null,
         el('dt', {}, 'Found'), el('dd', {}, n.hosts ? el('span', { class: 'vs-found' }, n.hosts + (n.hosts === 1 ? ' host' : ' hosts') + ', ', cveCounts(n.counts)) : '—')),
       status,
-      lastProblem ? el('p', { class: last.error ? 'field-error' : 'hint' }, icon(last.error ? 'circle-alert' : 'info'), last.error || 'CVE lookups: ' + last.cve_error) : null));
+      lastProblem ? el('p', { class: last.error ? 'field-error' : 'hint' }, icon(last.error ? 'circle-alert' : 'info'), last.error || (last.openvas_error ? 'OpenVAS: ' + last.openvas_error : 'CVE lookups: ' + last.cve_error)) : null));
   }
 
   // scannerBadge flags a scanner that cannot scan now; a ready one needs
@@ -634,6 +655,15 @@
     }
     const gentle = el('input', { type: 'checkbox' });
     gentle.checked = t.gentle;
+    const deep = el('input', { type: 'checkbox' });
+    deep.checked = !!t.openvas;
+    // OpenVAS sends far more traffic than a gentle scan allows.
+    const gentleOff = () => {
+      if (gentle.checked) deep.checked = false;
+      deep.disabled = gentle.checked;
+    };
+    gentle.addEventListener('change', gentleOff);
+    gentleOff();
     const enabled = el('input', { type: 'checkbox' });
     enabled.checked = t.enabled;
     const allowed = el('input', { type: 'checkbox', id: 'vs-allowed' });
@@ -661,6 +691,9 @@
           el('p', { class: 'hint' }, 'In the scanning server’s time zone. Pick a quiet hour: scans add some network traffic.')),
         el('label', { class: 'switch vs-switch' }, gentle, el('span', {}, el('b', {}, 'Gentle mode'),
           el('span', { class: 'vs-muted' }, 'Scans slowly, one probe at a time, for networks with fragile devices such as old printers or building controllers. Takes several times longer.'))),
+        el('label', { class: 'switch vs-switch' }, deep, el('span', {}, el('b', {}, 'Also scan with OpenVAS'),
+          el('span', { class: 'vs-muted' }, 'Optional and deeper: after Nmap, OpenVAS tests each host for thousands of known weaknesses, such as missing patches and default passwords. ' +
+            'Much slower, and only on a scanner where OpenVAS is set up (Settings > Scanners says how). Not with Gentle mode.'))),
         isNew ? null : el('label', { class: 'switch vs-switch' }, enabled, el('span', {}, el('b', {}, 'Scan on schedule'), el('span', { class: 'vs-muted' }, 'Off pauses scheduled scans; Scan now still works.'))),
         isNew ? el('label', { class: 'vs-allowed' }, allowed, el('span', {}, 'I own these networks, or have permission to scan them. Scanning networks you do not own can be against the law.')) : null,
         err),
@@ -681,7 +714,7 @@
       if (isNew && !allowed.checked) return fail('Confirm that you may scan these networks.', allowed);
       const next = {
         ...t, name: name.value.trim(), networks: lines(addrs.value), exclude: lines(skip.value),
-        ports: ports.value === 'custom' ? custom.value.replace(/\s+/g, '') : ports.value, gentle: gentle.checked, enabled: isNew ? true : enabled.checked,
+        ports: ports.value === 'custom' ? custom.value.replace(/\s+/g, '') : ports.value, gentle: gentle.checked, openvas: deep.checked, enabled: isNew ? true : enabled.checked,
         schedule: { every: every.value, hour: +hour.value, weekday: +day.value },
       };
       if (scanner) next.scanner = scanner.value;
@@ -756,6 +789,7 @@
         el('td', { 'data-label': 'Network' }, sc.target_name),
         el('td', { 'data-label': 'Result' }, el('span', { class: 'badge' + (STATE_TONE[sc.state] ? ' badge--' + STATE_TONE[sc.state] : '') }, STATE[sc.state] || sc.state),
           sc.error ? el('div', { class: 'vs-scan-err' }, sc.error) : null,
+          sc.openvas_error ? el('div', { class: 'vs-muted vs-scan-err' }, 'OpenVAS: ' + sc.openvas_error) : null,
           sc.cve_error ? el('div', { class: 'vs-muted vs-scan-err' }, 'CVE lookups: ' + sc.cve_error) : null),
         el('td', { 'data-label': 'Started', class: 'vs-muted' }, sc.started_at ? new Date(sc.started_at).toLocaleString() : 'Not yet'),
         el('td', { 'data-label': 'Took', class: 'num' }, duration(sc)),
@@ -810,7 +844,8 @@
         needRow('Nmap 7.80 or later', 'Finds the hosts, open ports and software versions on a network.', 'Yes'),
         needRow('Network reach', 'The server must reach the networks it scans. Firewalls between them hide hosts and ports.', 'Yes'),
         needRow('Outbound HTTPS to services.nvd.nist.gov', 'Looks the software versions up in the National Vulnerability Database to name the CVEs.', 'No: scans still list hosts, ports and software'),
-        needRow('An NVD API key', 'Makes the first CVE lookups about ten times faster. One key serves every server.', 'No')))));
+        needRow('An NVD API key', 'Makes the first CVE lookups about ten times faster. One key serves every server.', 'No'),
+        needRow('OpenVAS (Greenbone Community Edition)', 'Deeper scans for the networks that turn it on: tests each host for thousands of known weaknesses. Set up on the server that scans them.', 'No')))));
     const cards = list.map(scannerCard);
     $('sc-page').replaceChildren(...[intro,
       list.length < 2 ? el('div', { class: 'alert', 'data-tone': 'info' }, icon('info'), el('div', {},

@@ -40,7 +40,7 @@
 
   // The three kinds of dashboard: posture (computed), built-in panel
   // dashboards and custom ones.
-  const BUILTIN_ICON = { posture: 'shield', malware: 'bug', vulnerabilities: 'scan-search' };
+  const BUILTIN_ICON = { posture: 'shield', malware: 'bug', network: 'activity', vulnerabilities: 'scan-search' };
   const kindOf = (id) => {
     if (id === 'posture') return 'posture';
     const meta = dash.list.find((d) => d.id === id);
@@ -968,8 +968,15 @@
   // none of them found anything: what data it needs and where to set it up.
   function renderNoData(slot, d, results) {
     const none = results.length && results.every((pr, i) => d.panels[i] && panelEmpty(d.panels[i], pr));
-    if (!none || (d.id !== 'malware' && d.id !== 'vulnerabilities')) { put(slot); return; }
+    if (!none || (d.id !== 'malware' && d.id !== 'network' && d.id !== 'vulnerabilities')) { put(slot); return; }
     const admin = typeof can === 'function' && can('admin');
+    if (d.id === 'network') {
+      put(slot, el('div', { class: 'card db-nodata' }, emptyState('activity', 'No network sensor events yet',
+        'A network sensor running Zeek or Suricata fills this dashboard: IDS alerts, connections, DNS lookups, web requests, files and certificates seen on your network.',
+        admin ? el('button', { class: 'btn btn--primary btn--sm', type: 'button', onclick: () => openSensorSetup() }, icon('activity'), 'Set up a network sensor') : null,
+        null, admin ? null : 'An admin can set this up on the Add data page.')));
+      return;
+    }
     if (d.id === 'vulnerabilities') {
       put(slot, el('div', { class: 'card db-nodata' }, emptyState('scan-search', 'No vulnerability scans yet',
         'Scans of your networks on the Vulnerabilities page fill this dashboard: hosts, open ports, and known vulnerabilities in the software on them.',

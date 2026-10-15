@@ -2515,6 +2515,25 @@ body:has(.page.active .inspector:not([hidden], .hidden)) #toast { bottom: 88px; 
 #page-data .agent-k { color: var(--text-2); }
 #page-data .agent-c { color: var(--text-3); }
 
+/* network sensor: two tabs, the new-sensor tab's needs, fields and line */
+#page-data .sensor-tabs { margin-top: -8px; }
+#page-data .sensor-tabs.hidden { display: none; }
+#page-data #agent-setup:not([data-sensor-tab="new"]) .sensor-new-only { display: none; }
+#page-data .agent-setup[data-sensor-tab="new"] :is(#agent-steps, #agent-file, #sensor-paths, #sensor-note) { display: none; }
+#page-data .sensor-needs { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px 20px; }
+#page-data .sensor-needs li { display: flex; align-items: flex-start; gap: 10px; min-width: 0; font-size: var(--fs-sm); line-height: 1.45; color: var(--text-2); }
+#page-data .sensor-needs li > .icon { flex: none; margin-top: 2px; color: var(--text-3); }
+#page-data .sensor-needs b { display: block; font-weight: 600; color: var(--text); }
+#page-data #sensor-new-fields { display: grid; gap: var(--sp-2); }
+#page-data #sensor-iface { max-width: 160px; }
+#page-data #sensor-networks { max-width: 420px; flex: 1 1 auto; min-width: 0; }
+#page-data #sensor-new { display: grid; gap: var(--sp-3); min-width: 0; }
+#page-data #sensor-new:empty { display: none; }
+#page-data .sensor-line__text { margin: 0; padding: 10px 12px; font: var(--fs-sm)/20px var(--font-mono); color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-all; box-shadow: inset 0 1px 0 var(--line-subtle); }
+#page-data .sensor-line__text:focus-visible { outline-offset: -2px; }
+#page-data #sensor-new .hint code { font-size: var(--fs-sm); }
+#page-data #sensor-new .hint a .icon { margin-left: 3px; vertical-align: -1px; }
+
 /* syslog: the host field carries the ports devices use as badges */
 #page-data #syslog-host { max-width: 260px; font-family: var(--font-mono); }
 #page-data .sl-ports { display: flex; flex-wrap: wrap; gap: 4px; }
@@ -4480,6 +4499,8 @@ dialog.modal.rp-dialog[open] { display: flex; flex-direction: column; max-height
 .ep-plat--sm .icon { width: 13px; height: 13px; }
 .ep-name { font-weight: 500; overflow-wrap: anywhere; }
 .ep-sub { font-size: var(--fs-xs); color: var(--text-3); }
+.ep-sensor { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; }
+.ep-sensor__warn { display: inline-flex; align-items: center; gap: 3px; color: var(--warning); }
 .ep-online { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; color: var(--text-2); }
 .ep-table td.ep-c-ver, .ep-table td.ep-c-addr { white-space: nowrap; }
 .ep-table td.ep-c-agent { white-space: nowrap; }
@@ -4880,6 +4901,19 @@ details[open] > summary .inv-exact__chev { transform: rotate(90deg); }
 #page-health .hp-cluster .hp-total th, #page-health .hp-cluster .hp-total td { font-weight: 600; box-shadow: inset 0 1px 0 var(--line-subtle); }
 #page-health .hp-cluster__table { min-width: 560px; }
 #page-health .hp-cluster .table-wrap { overflow-x: auto; }
+/* Servers page: the OpenSearch part of this server's side panel */
+.sv-os { display: grid; gap: 12px; }
+.sv-os__sum { color: var(--text-2); }
+.sv-os__alerts { display: grid; gap: 8px; }
+.sv-os__offer { align-items: center; flex-wrap: wrap; }
+.sv-os__offer > div { flex: 1; min-width: 200px; }
+.sv-os__dim { color: var(--text-3); }
+.sv-os__part { display: grid; gap: 6px; }
+.sv-os__h { font-size: var(--fs-sm); font-weight: 600; }
+.sv-os__list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.sv-os__list li { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.sv-os__url { overflow-wrap: anywhere; font-size: var(--fs-xs); }
+.sv-os details > summary { cursor: pointer; }
 
 /* ==== page:servers-ca (the cluster's certificate authority) ==== */
 #servers-ca:not(:empty) { margin-top: var(--sp-4); }

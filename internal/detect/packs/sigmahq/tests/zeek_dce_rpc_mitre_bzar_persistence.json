@@ -1,0 +1,12 @@
+{"rule": "53389db6-ba46-48e3-a94c-e0f2cefe1583", "cases": [
+  {"expect":true,"source":"synthesized","channel":"zeek:dce_rpc","event_id":"","data":{"endpoint":"spoolss","operation":"RpcAddMonitor"}},
+  {"expect":true,"source":"synthesized","channel":"zeek:dce_rpc","event_id":"","data":{"endpoint":"spoolss","operation":"RpcAddPrintProcessor"}},
+  {"expect":true,"source":"synthesized","channel":"zeek:dce_rpc","event_id":"","data":{"endpoint":"IRemoteWinspool","operation":"RpcAsyncAddMonitor"}},
+  {"expect":true,"source":"synthesized","channel":"zeek:dce_rpc","event_id":"","data":{"endpoint":"IRemoteWinspool","operation":"RpcAsyncAddPrintProcessor"}},
+  {"expect":false,"source":"synthesized","channel":"zeek:dce_rpc","event_id":"","data":{"operation":"RpcAddMonitor"}},
+  {"expect":false,"source":"synthesized","channel":"zeek:dce_rpc","event_id":"","data":{"endpoint":"spoolss"}},
+  {"expect":false,"source":"synthesized","channel":"zeek:dce_rpc","event_id":"","data":{"operation":"RpcAddPrintProcessor"}},
+  {"expect":false,"source":"synthesized","channel":"zeek:dce_rpc","event_id":"","data":{"operation":"RpcAsyncAddMonitor"}},
+  {"expect":false,"source":"synthesized","channel":"zeek:dce_rpc","event_id":"","data":{"endpoint":"IRemoteWinspool"}},
+  {"expect":false,"source":"synthesized","channel":"zeek:dce_rpc","event_id":"","data":{"operation":"RpcAsyncAddPrintProcessor"}}
+]}

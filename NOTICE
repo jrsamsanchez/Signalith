@@ -34,6 +34,14 @@ Version 2.0, whose full text is in internal/detect/packs/splunk/LICENSE.
 Signalith converts them to its own detections when it starts. Signalith is not
 affiliated with or endorsed by Splunk.
 
+Network sensor: the sensor install script (deploy/sensor/install.sh) and its
+Docker Compose file install or pull Zeek (BSD 3-Clause License), Suricata and
+suricata-update (GNU General Public License version 2) and Fluent Bit (Apache
+License 2.0) from their publishers' signed package repositories or images, on
+the sensor, and suricata-update downloads the Emerging Threats Open rules
+(Proofpoint, Inc.; the licence text is the LICENSE file in each ruleset
+download) there. Signalith does not include, link or redistribute any of them.
+
 The endpoint configuration checks in internal/endpoint/checks are based on
 rules from the SCAP Security Guide (ComplianceAsCode project,
 https://github.com/ComplianceAsCode/content). Signalith uses the SSG rule

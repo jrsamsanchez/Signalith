@@ -1,0 +1,9 @@
+{"rule": "fcf4bd3f-a79f-4b7a-83bf-2692d60b859c", "cases": [
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","url":"x ${ x x org.apache.commons.io.IOUtils x x java.lang.Runtime@getRuntime().exec x"}},
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","url":"x %2F%7B x x java.lang.Runtime%40getRuntime%28%29.exec x"}},
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","url":"x ${ x x getEngineByName x x nashorn x x ProcessBuilder x"}},
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","url":"x ${ x x org.apache.commons.io.IOUtils x x java.lang.Runtime@getRuntime().exec y"}},
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","url":"x %2F%7B x x java.lang.Runtime%40getRuntime%28%29.exec y"}},
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","url":"x ${ x x getEngineByName x x nashorn x x ProcessBuilder y"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{}}
+]}

@@ -1,0 +1,11 @@
+# Written by the Signalith sensor install script (deploy/sensor/install.sh).
+[Unit]
+Description=Signalith sensor: update the Suricata rules every day
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=6h
+Persistent=true
+
+[Install]
+WantedBy=timers.target

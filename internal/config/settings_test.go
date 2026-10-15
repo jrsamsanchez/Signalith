@@ -100,7 +100,7 @@ func TestRegistryEnvMatchesTheEnvironment(t *testing.T) {
 	path := writeConfig(t, "")
 	values := map[string]string{
 		"SIGNALITH_OPENSEARCH_URL": "https://os.example:9200", "SIGNALITH_OPENSEARCH_USERNAME": "u",
-		"SIGNALITH_OPENSEARCH_PROXY": "http://proxy.example:3128", "SIGNALITH_OPENSEARCH_CRL_FILE": "/crl/crl.pem",
+		"SIGNALITH_OPENSEARCH_PROXY": "http://proxy.example:3128", "SIGNALITH_OPENSEARCH_CRL_FILE": "/crl/crl.pem", "SIGNALITH_OPENSEARCH_URLS": "https://os2.example:9200",
 		"SIGNALITH_OPENSEARCH_PASSWORD": "p", "SIGNALITH_LISTEN": "0.0.0.0:8081",
 		"SIGNALITH_PUBLIC_URL": "http://siem.example:8081", "SIGNALITH_ASSISTANT_API_KEY": "k",
 		"SIGNALITH_SYSLOG_UDP": "0.0.0.0:5514", "SIGNALITH_SYSLOG_TCP": "0.0.0.0:5514",

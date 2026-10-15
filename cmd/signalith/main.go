@@ -1377,9 +1377,16 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		lcancel()
 	}
 	in.jobs.Go(func() { tokens.Run(ctx) })
+	// OpenVAS, optional, runs the deeper scans of this server's networks
+	// that ask for them.
+	var openvas *vulnscan.OpenVAS
+	if c.Vulns.OpenVASAddress != "" {
+		openvas = &vulnscan.OpenVAS{Address: c.Vulns.OpenVASAddress, Username: c.Vulns.OpenVASUsername,
+			Password: c.Vulns.OpenVASPassword, CAFile: c.Vulns.OpenVASCAFile}
+	}
 	scanner := &vulnscan.Scanner{
-		Store: vstore, NVD: nvd, Events: pipeline, Server: sampleServer, NodeID: sampleNode, Log: log,
-		Checker: &vulnscan.Checker{NVD: nvd, Docker: cluster.InContainer()},
+		Store: vstore, NVD: nvd, Events: pipeline, Server: sampleServer, NodeID: sampleNode, Log: log, OpenVAS: openvas,
+		Checker: &vulnscan.Checker{NVD: nvd, Docker: cluster.InContainer(), OpenVAS: openvas},
 	}
 	if r.node != nil {
 		scanner.Leader, scanner.Paused = r.node.RunsJobs, r.node.WritesRefused

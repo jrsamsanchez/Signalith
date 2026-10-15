@@ -68,6 +68,8 @@ const alts = {
   vulnerabilities: 'The Signalith Vulnerabilities dashboard: hosts with known exploited and critical CVEs, and what to patch first.',
   malware: 'The Signalith Malware dashboard: hosts with malware, what the antivirus did, and the top threats.',
   intel: 'The Signalith threat intel feed catalog with free feeds to add.',
+  network: 'The Signalith Network dashboard: IDS alerts, connections, data sent to the internet and alerts over time from Zeek and Suricata.',
+  servers: 'The Signalith Servers page: three servers sharing one OpenSearch, one running the background jobs and two on standby, and the shared certificate authority.',
 };
 // warm the cache so switching is instant
 addEventListener('load', () => Object.keys(alts).forEach((k) => { const i = new Image(); i.src = `assets/shots/${k}.webp`; }));

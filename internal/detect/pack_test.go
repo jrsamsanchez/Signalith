@@ -4,6 +4,7 @@ import (
 	"io/fs"
 	"os"
 	"path"
+	"slices"
 	"strings"
 	"testing"
 
@@ -83,7 +84,7 @@ func TestPackRulesFireOnTheirTests(t *testing.T) {
 			var ruleID string
 			var verify func(tf *sigmacheck.TestFile) []error
 			if p.Format == "splunk" {
-				rule, err := splcheck.Parse(src, p.macros)
+				rule, err := splcheck.ParseWith(src, p.macros, splcheck.ParseOptions{Network: SplunkNetworkRule(r.Path)})
 				if err != nil {
 					t.Errorf("%s: %v", r.ID, err)
 					continue
@@ -179,10 +180,37 @@ func TestPackDetections(t *testing.T) {
 				t.Errorf("%s: technique %s is not in ATT&CK %s", d.ID, id, ATTACK().Version)
 			}
 		}
-		// Each rule reads only its own system's events.
+		// Each rule reads only its own system's events: a network rule
+		// its Zeek log's, or its data model's (a DNS lookup, a web request
+		// or a connection from any source); a web server rule the Web
+		// data model's.
+		if strings.Contains(d.Query, "sourcetype=zeek:") || networkPackRule(d) {
+			continue
+		}
 		if !strings.Contains(d.Query, "sourcetype=WinEventLog:") && !strings.Contains(d.Query, `sourcetype="WinEventLog:`) &&
-			!strings.Contains(d.Query, "sourcetype=sysmon:linux") && !strings.Contains(d.Query, "sourcetype=linux:audit") {
-			t.Errorf("%s: not limited to Windows, Sysmon for Linux or Linux audit events: %s", d.ID, d.Query)
+			!strings.Contains(d.Query, "sourcetype=sysmon:linux") && !strings.Contains(d.Query, "sourcetype=linux:audit") &&
+			!strings.HasPrefix(d.Query, "datamodel=Web ") {
+			t.Errorf("%s: not limited to Windows, Sysmon for Linux, Linux audit or web server events: %s", d.ID, d.Query)
 		}
 	}
+}
+
+// networkPackRule reports whether a pack rule is a generic network one
+// (Sigma's dns, proxy or firewall category, or a Splunk network
+// detection over a network data model), limited to its data model.
+func networkPackRule(d *Detection) bool {
+	if d.Origin != nil && d.Origin.Pack == "splunk" && slices.Contains(d.Tags, "network") {
+		for _, m := range []string{"Network_Traffic", "Network_Resolution"} {
+			if strings.HasPrefix(d.Query, "datamodel="+m+" ") {
+				return true
+			}
+		}
+	}
+	models := map[string]string{"dns": "Network_Resolution", "proxy": "Web", "firewall": "Network_Traffic"}
+	for _, t := range d.Tags {
+		if m, ok := models[t]; ok && strings.HasPrefix(d.Query, "datamodel="+m+" ") {
+			return true
+		}
+	}
+	return false
 }

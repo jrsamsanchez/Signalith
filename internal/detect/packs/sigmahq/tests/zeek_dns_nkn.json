@@ -1,0 +1,4 @@
+{"rule": "fa7703d6-0ee8-4949-889c-48c84bc15b6f", "cases": [
+  {"expect":true,"source":"synthesized","channel":"zeek:dns","event_id":"","data":{"query":"seed .nkn.org"}},
+  {"expect":false,"source":"synthesized","channel":"zeek:dns","event_id":"","data":{}}
+]}

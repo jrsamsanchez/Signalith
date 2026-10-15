@@ -66,6 +66,7 @@ func (s *Server) routeCluster(api *router) {
 	// to them from the banner on every page (cluster_banners in
 	// api/health).
 	api.admin("GET /api/cluster", s.handleCluster)
+	s.routeClusterOpenSearch(api)
 	s.routeClusterJoin(api)
 }
 
