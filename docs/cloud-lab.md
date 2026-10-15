@@ -51,8 +51,10 @@ minutes, including `testmynids.org`, which Suricata's rules flag.
 ## What you need
 
 - A Hetzner Cloud account, a project in it, and an API token with **Read & Write**
-  (Console > your project > **Security** > **API tokens**). New accounts may be limited in
-  how many servers they can have; Hetzner raises the limit when asked.
+  (Console > your project > **Security** > **API tokens**). New accounts are limited in
+  how many servers and public IP addresses they can have (the full lab needs 10 of each);
+  if `terraform apply` stops with `Primary IP limit exceeded` or a server limit, ask
+  Hetzner to raise it (Console > your name > **Limits**), then run `terraform apply` again.
 - [Terraform](https://developer.hashicorp.com/terraform/install) 1.5 or later. On Windows:
   `winget install Hashicorp.Terraform`, then open PowerShell again.
 - An SSH key. Check with `Test-Path $HOME\.ssh\id_ed25519.pub` (PowerShell) or

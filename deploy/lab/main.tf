@@ -136,7 +136,7 @@ resource "hcloud_server" "linux" {
   }
   public_net {
     ipv4_enabled = true
-    ipv6_enabled = true
+    ipv6_enabled = false
   }
   depends_on = [hcloud_network_subnet.lab]
 }
@@ -159,7 +159,7 @@ resource "hcloud_server" "windows" {
   }
   public_net {
     ipv4_enabled = true
-    ipv6_enabled = true
+    ipv6_enabled = false
   }
   depends_on = [hcloud_network_subnet.lab]
 }
