@@ -1,9 +1,13 @@
 package shared
 
 import (
+	"bytes"
 	"cmp"
 	"context"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -12,7 +16,9 @@ import (
 	"maps"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/store"
@@ -26,6 +32,14 @@ import (
 // from queued to running, so exactly one runs it. Pages follow it with
 // GET /api/requests/{id}. Requests are outside the config index, so they
 // are not part of the configuration token.
+//
+// Requests are not signed documents, so each carries its own MAC, made
+// with the cluster key by the server that made it, over what it asks for:
+// its id, type, servers, arguments, who asked, where and when. Its state
+// and progress are not covered. A server runs only a request whose MAC
+// one of the keys it accepts verifies, made in the last RequestMaxAge,
+// and that it did not run before: anyone who can write to OpenSearch
+// could otherwise ask for a key rotation or a restore in an admin's name.
 
 // Request states.
 const (
@@ -47,6 +61,19 @@ const requestsWatch = "watch:requests"
 
 // FinishedRequestAge is how long a finished request is kept.
 const FinishedRequestAge = 7 * 24 * time.Hour
+
+// RequestMaxAge is how long after it was made a request may start (or be
+// taken over by the next holder of the job lease), and requestSkew how
+// far ahead of this server's clock it may be dated. An older one is
+// refused: a request that ran could otherwise be put back in the queue
+// and run again.
+const (
+	RequestMaxAge = time.Hour
+	requestSkew   = 5 * time.Minute
+)
+
+// requestMAC starts the text a request's MAC covers.
+const requestMAC = "sgl-request-v1"
 
 // Progress is how far a request has come.
 type Progress struct {
@@ -92,8 +119,82 @@ type Request struct {
 	Progress Progress          `json:"progress"`
 	Result   json.RawMessage   `json:"result,omitempty"`
 	Error    string            `json:"error"`
+	// MAC is the request's MAC: "r1:", the id of the cluster key it was
+	// made with, ":" and the HMAC of requestText.
+	MAC string `json:"mac,omitempty"`
 
 	ver store.Version
+}
+
+// requestText is the text a request's MAC covers: the fields that say
+// what it asks for, each ended by a zero byte, the arguments last.
+func requestText(r *Request) ([]byte, error) {
+	fields := []string{requestMAC, r.ID, r.Type, r.Target, strconv.Itoa(len(r.Targets))}
+	fields = append(fields, r.Targets...)
+	fields = append(fields, strconv.FormatBool(r.Sequential), r.RequestedBy, r.RequestedOn, r.Created.UTC().Format(time.RFC3339Nano))
+	var b bytes.Buffer
+	for _, f := range fields {
+		if strings.IndexByte(f, 0) >= 0 {
+			return nil, errors.New("a field holds a zero byte")
+		}
+		b.WriteString(f)
+		b.WriteByte(0)
+	}
+	if len(r.Args) > 0 {
+		// The arguments as read back may have their keys in another order
+		// or other spacing: they are covered as decoded and encoded again.
+		dec := json.NewDecoder(bytes.NewReader(r.Args))
+		dec.UseNumber()
+		var v any
+		if err := dec.Decode(&v); err != nil {
+			return nil, err
+		}
+		args, err := json.Marshal(v)
+		if err != nil {
+			return nil, err
+		}
+		b.Write(args)
+	}
+	return b.Bytes(), nil
+}
+
+func requestSum(k *ClusterKey, text []byte) []byte {
+	m := hmac.New(sha256.New, k.macKey)
+	m.Write(text)
+	return m.Sum(nil)
+}
+
+// sign sets the MAC of r with k.
+func (r *Request) sign(k *ClusterKey) error {
+	text, err := requestText(r)
+	if err != nil {
+		return fmt.Errorf("cannot sign the request: %w", err)
+	}
+	r.MAC = "r1:" + k.ID() + ":" + base64.RawURLEncoding.EncodeToString(requestSum(k, text))
+	return nil
+}
+
+// verify checks that r was signed with one of keys, and made lately
+// enough (before now) to run.
+func (r *Request) verify(keys *KeySet, now time.Time) error {
+	rest, ok := strings.CutPrefix(r.MAC, "r1:")
+	if !ok {
+		return ErrNoMAC
+	}
+	kid, sum, ok := strings.Cut(rest, ":")
+	k := keys.Get(kid)
+	if !ok || k == nil {
+		return errors.New("it is signed with a cluster key this server does not accept")
+	}
+	got, err := base64.RawURLEncoding.DecodeString(sum)
+	text, terr := requestText(r)
+	if err != nil || terr != nil || !hmac.Equal(got, requestSum(k, text)) {
+		return ErrBadMAC
+	}
+	if now.Sub(r.Created) > RequestMaxAge || r.Created.Sub(now) > requestSkew {
+		return errors.New("it was made too long ago to run; ask again")
+	}
+	return nil
 }
 
 // Over reports whether the request is done or failed.
@@ -184,6 +285,13 @@ func (r *Requests) submit(ctx context.Context, req *Request, args any, by string
 	}
 	req.Kind, req.ID, req.Args, req.State = "request", newRequestID(), raw, RequestQueued
 	req.RequestedBy, req.RequestedOn, req.Created = by, r.h.opts.NodeName, r.h.clock.Now().UTC()
+	k := r.h.Keys().Active()
+	if k == nil {
+		return nil, errors.New("this server has no cluster key, so it cannot make a request")
+	}
+	if err := req.sign(k); err != nil {
+		return nil, err
+	}
 	c, _ := r.h.target()
 	ver, err := c.Create(ctx, r.index(), requestDocID(req.ID), req, true)
 	if err != nil {
@@ -366,6 +474,12 @@ type Runner struct {
 	// go on without it. Nil means never.
 	Offline func(nodeID string) bool
 	Log     *slog.Logger
+
+	// ran holds the ids of the requests (or parts of one for several) this
+	// process ran to their end, with when they were made, so one put back
+	// in the queue is not run again.
+	mu  sync.Mutex
+	ran map[string]time.Time
 }
 
 // RunOnce claims and runs the requests waiting for this server, one
@@ -397,6 +511,10 @@ func (rn *Runner) RunOnce(ctx context.Context) (int, error) {
 		if !ok {
 			continue
 		}
+		if err := rn.check(req); err != nil {
+			rn.refuse(ctx, req, err)
+			continue
+		}
 		claimed, err := rn.claim(ctx, req, epoch)
 		if err != nil || !claimed {
 			continue
@@ -405,6 +523,59 @@ func (rn *Runner) RunOnce(ctx context.Context) (int, error) {
 		rn.run(ctx, req, h, epoch)
 	}
 	return ran, nil
+}
+
+// check reports why this server must not run req: it is not signed with
+// a cluster key this server accepts, it is too old, or this process ran
+// it already.
+func (rn *Runner) check(req *Request) error {
+	now := rn.Requests.h.clock.Now()
+	if err := req.verify(rn.Requests.h.Keys(), now); err != nil {
+		return err
+	}
+	rn.mu.Lock()
+	defer rn.mu.Unlock()
+	for id, created := range rn.ran {
+		if now.Sub(created) > RequestMaxAge+requestSkew {
+			delete(rn.ran, id)
+		}
+	}
+	if _, ok := rn.ran[req.ID]; ok {
+		return errors.New("this server ran it already")
+	}
+	return nil
+}
+
+// ranOnce records that this process ran req to its end.
+func (rn *Runner) ranOnce(req *Request) {
+	rn.mu.Lock()
+	defer rn.mu.Unlock()
+	if rn.ran == nil {
+		rn.ran = map[string]time.Time{}
+	}
+	rn.ran[req.ID] = req.Created
+}
+
+// refuse fails req, which this server was to run, for the reason err:
+// it may be forged, or a request that ran put back in the queue.
+func (rn *Runner) refuse(ctx context.Context, req *Request, err error) {
+	log := rn.Log
+	if log == nil {
+		log = rn.Requests.h.log
+	}
+	log.Warn("refused to run a request: it may have been forged or replayed by someone who can write to OpenSearch", "audit", true,
+		"request", req.ID, "type", req.Type, "requested_by_unverified", req.RequestedBy, "err", err)
+	t := rn.Requests.h.clock.Now().UTC()
+	if len(req.Targets) > 0 {
+		if req.Status == nil {
+			req.Status = map[string]string{}
+		}
+		req.Status[rn.Requests.NodeID] = RequestFailed
+	}
+	req.State, req.Finished, req.Error = RequestFailed, &t, "refused: "+err.Error()
+	if perr := rn.Requests.put(ctx, req); perr != nil {
+		log.Debug("could not record a refused request", "request", req.ID, "err", perr)
+	}
 }
 
 // mayRun reports whether this server is to run req now, and the lease
@@ -460,7 +631,7 @@ func (rn *Runner) claim(ctx context.Context, req *Request, epoch int64) (bool, e
 		if err != nil || !found {
 			return false, err
 		}
-		if _, ok := rn.mayRun(now); !ok {
+		if _, ok := rn.mayRun(now); !ok || rn.check(now) != nil {
 			return false, nil
 		}
 		*req = *now
@@ -557,6 +728,7 @@ func (rn *Runner) run(ctx context.Context, req *Request, h Handler, epoch int64)
 	wctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
 	if len(req.Targets) > 0 {
+		rn.ranOnce(req)
 		rn.finishListed(wctx, req, err)
 		return
 	}
@@ -573,6 +745,9 @@ func (rn *Runner) run(ctx context.Context, req *Request, h Handler, epoch int64)
 		req.State, req.ClaimedBy, req.Started, req.Interrupted = RequestQueued, "", nil, true
 	default:
 		req.State, req.Finished, req.Error = RequestFailed, &t, err.Error()
+	}
+	if req.Over() {
+		rn.ranOnce(req)
 	}
 	if werr := rn.Requests.put(wctx, req); werr != nil && rn.Log != nil {
 		rn.Log.Warn("could not record the end of a request", "request", req.ID, "type", req.Type, "state", req.State, "err", werr)

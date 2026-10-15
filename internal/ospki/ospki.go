@@ -8,8 +8,9 @@
 //
 // The keys are RSA, which the OpenSearch documentation uses throughout,
 // and are written in PKCS#8, the only form OpenSearch reads. The CA's key
-// is not kept: once the certificates are made nobody can issue more, and
-// a new set replaces the old one when needed.
+// is kept apart from the certificates (root-ca-key.pem, never in a folder
+// OpenSearch or Signalith reads), so certificates can be renewed, and more
+// nodes and servers added, under the same CA: see ca.go.
 package ospki
 
 import (
@@ -17,15 +18,12 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
-	"crypto/x509/pkix"
 	"embed"
 	"encoding/pem"
 	"errors"
 	"fmt"
 	"io/fs"
 	"math/big"
-	"net"
-	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -118,87 +116,22 @@ func New(o Options) (*Set, error) {
 	if o.Now.IsZero() {
 		o.Now = time.Now()
 	}
-	if _, err := netip.ParseAddr(o.Node); err == nil || !validDNSName(o.Node) {
-		return nil, fmt.Errorf("node name %q must be a host name, such as opensearch or search1.example.com", o.Node)
+	// Bad names fail before the slow part, making keys.
+	if _, _, err := nodeNames(o.Node, o.Names); err != nil {
+		return nil, err
 	}
-	names := append([]string{o.Node, "localhost", "127.0.0.1"}, o.Names...)
-	var dns []string
-	var ips []net.IP
-	seen := map[string]bool{}
-	for _, n := range names {
-		n = strings.TrimSpace(n)
-		if n == "" || seen[strings.ToLower(n)] {
-			continue
-		}
-		seen[strings.ToLower(n)] = true
-		if a, err := netip.ParseAddr(strings.Trim(n, "[]")); err == nil {
-			ips = append(ips, a.Unmap().AsSlice())
-			continue
-		}
-		if !validDNSName(n) {
-			return nil, fmt.Errorf("%q is not a host name or IP address", n)
-		}
-		dns = append(dns, strings.ToLower(n))
-	}
-
-	caKey, err := rsa.GenerateKey(rand.Reader, KeyBits)
+	ca, err := NewCA(o.Now)
 	if err != nil {
 		return nil, err
 	}
-	caTmpl := &x509.Certificate{
-		SerialNumber:          serial(),
-		Subject:               pkix.Name{CommonName: "Signalith OpenSearch CA", Organization: []string{Org}},
-		NotBefore:             o.Now.Add(-time.Hour),
-		NotAfter:              o.Now.Add(Validity),
-		IsCA:                  true,
-		BasicConstraintsValid: true,
-		MaxPathLenZero:        true,
-		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
-	}
-	der, err := x509.CreateCertificate(rand.Reader, caTmpl, caTmpl, &caKey.PublicKey, caKey)
-	if err != nil {
+	s := &Set{CA: ca}
+	if s.Node, err = IssueNode(ca, o.Node, o.Names, o.Now); err != nil {
 		return nil, err
 	}
-	caCert, err := x509.ParseCertificate(der)
-	if err != nil {
+	if s.Admin, err = IssueClient(ca, AdminName, o.Now, Validity); err != nil {
 		return nil, err
 	}
-	s := &Set{CA: &Pair{Cert: caCert, Key: caKey}}
-	issue := func(cn string, usage []x509.ExtKeyUsage, dns []string, ips []net.IP) (*Pair, error) {
-		key, err := rsa.GenerateKey(rand.Reader, KeyBits)
-		if err != nil {
-			return nil, err
-		}
-		tmpl := &x509.Certificate{
-			SerialNumber:          serial(),
-			Subject:               pkix.Name{CommonName: cn, Organization: []string{Org}},
-			NotBefore:             caCert.NotBefore,
-			NotAfter:              caCert.NotAfter,
-			BasicConstraintsValid: true,
-			KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
-			ExtKeyUsage:           usage,
-			DNSNames:              dns,
-			IPAddresses:           ips,
-		}
-		der, err := x509.CreateCertificate(rand.Reader, tmpl, caCert, &key.PublicKey, caKey)
-		if err != nil {
-			return nil, err
-		}
-		c, err := x509.ParseCertificate(der)
-		if err != nil {
-			return nil, err
-		}
-		return &Pair{Cert: c, Key: key}, nil
-	}
-	// Nodes connect to each other as both server and client.
-	if s.Node, err = issue(o.Node, []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth}, dns, ips); err != nil {
-		return nil, err
-	}
-	client := []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}
-	if s.Admin, err = issue(AdminName, client, nil, nil); err != nil {
-		return nil, err
-	}
-	if s.Client, err = issue(ClientName, client, nil, nil); err != nil {
+	if s.Client, err = IssueClient(ca, ClientName, o.Now, Validity); err != nil {
 		return nil, err
 	}
 	return s, nil
@@ -229,90 +162,143 @@ func (s *Set) SignalithFiles() map[string][]byte {
 // Check reads a set back from OpenSearch's folder and Signalith's and
 // says what is wrong with it, if anything: a file missing or unreadable, a
 // certificate not from the CA, not matching its key or with another name,
-// or one that expires within margin of now.
+// or one that expires within margin of now. The error is a *CheckError,
+// which tells a problem with the CA from one with a certificate it issued.
 func Check(opensearchDir, signalithDir, node string, now time.Time, margin time.Duration) error {
 	if node == "" {
 		node = NodeName
 	}
 	caPEM, err := readFile(opensearchDir, RootCAFile)
 	if err != nil {
-		return err
+		return &CheckError{CA: true, File: RootCAFile, Err: err}
 	}
-	ca, err := parseCert(caPEM)
+	ca, err := ParseCA(caPEM, now, margin)
 	if err != nil {
-		return fmt.Errorf("%s: %w", RootCAFile, err)
-	}
-	if !ca.IsCA {
-		return fmt.Errorf("%s is not a CA certificate", RootCAFile)
-	}
-	if !now.Add(margin).Before(ca.NotAfter) {
-		return fmt.Errorf("%s expires on %s", RootCAFile, ca.NotAfter.Format(time.DateOnly))
+		return &CheckError{CA: true, File: RootCAFile, Err: err}
 	}
 	if b, err := readFile(signalithDir, ClientCAFile); err != nil {
-		return err
+		return &CheckError{File: ClientCAFile, Err: err}
 	} else if !bytes.Equal(bytes.TrimSpace(b), bytes.TrimSpace(caPEM)) {
-		return fmt.Errorf("%s is not the same CA as %s", ClientCAFile, RootCAFile)
+		return &CheckError{File: ClientCAFile, Err: fmt.Errorf("%s is not the same CA as %s", ClientCAFile, RootCAFile)}
 	}
 	for _, f := range []struct{ dir, cert, key, cn string }{
 		{opensearchDir, NodeCertFile, NodeKeyFile, node},
 		{opensearchDir, AdminCertFile, AdminKeyFile, AdminName},
 		{signalithDir, ClientCertFile, ClientKeyFile, ClientName},
 	} {
-		if err := checkPair(f.dir, f.cert, f.key, f.cn, ca, now, margin); err != nil {
+		if err := CheckPair(f.dir, f.cert, f.key, f.cn, ca, now, margin); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func checkPair(dir, certName, keyName, cn string, ca *x509.Certificate, now time.Time, margin time.Duration) error {
+// CheckError is what Check and CheckPair find wrong. CA is true when the
+// problem is the CA certificate itself (missing, not a CA, expiring),
+// which no renewal under that CA can fix; otherwise File names the file
+// to make again.
+type CheckError struct {
+	CA   bool
+	File string
+	Err  error
+}
+
+func (e *CheckError) Error() string { return e.Err.Error() }
+func (e *CheckError) Unwrap() error { return e.Err }
+
+// ParseCA parses a CA certificate in PEM and checks that it is a CA that
+// lasts beyond margin from now.
+func ParseCA(b []byte, now time.Time, margin time.Duration) (*x509.Certificate, error) {
+	ca, err := parseCert(b)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", RootCAFile, err)
+	}
+	if !ca.IsCA {
+		return nil, fmt.Errorf("%s is not a CA certificate", RootCAFile)
+	}
+	if !now.Add(margin).Before(ca.NotAfter) {
+		return nil, fmt.Errorf("%s expires on %s", RootCAFile, ca.NotAfter.Format(time.DateOnly))
+	}
+	return ca, nil
+}
+
+// CheckPair checks one certificate in dir and its key: issued by ca, for
+// the common name cn, matching its key and lasting beyond margin from now.
+// The error is a *CheckError naming the certificate or key file.
+func CheckPair(dir, certName, keyName, cn string, ca *x509.Certificate, now time.Time, margin time.Duration) error {
+	file, err := checkPair(dir, certName, keyName, cn, ca, now, margin)
+	if err != nil {
+		return &CheckError{File: file, Err: err}
+	}
+	return nil
+}
+
+func checkPair(dir, certName, keyName, cn string, ca *x509.Certificate, now time.Time, margin time.Duration) (string, error) {
 	certPEM, err := readFile(dir, certName)
 	if err != nil {
-		return err
+		return certName, err
 	}
 	c, err := parseCert(certPEM)
 	if err != nil {
-		return fmt.Errorf("%s: %w", certName, err)
+		return certName, fmt.Errorf("%s: %w", certName, err)
 	}
 	if err := c.CheckSignatureFrom(ca); err != nil {
-		return fmt.Errorf("%s was not issued by %s", certName, RootCAFile)
+		return certName, fmt.Errorf("%s was not issued by %s", certName, RootCAFile)
 	}
 	if c.Subject.CommonName != cn || len(c.Subject.Organization) != 1 || c.Subject.Organization[0] != Org {
-		return fmt.Errorf("%s is for %s, not %s", certName, c.Subject, DN(cn))
+		return certName, fmt.Errorf("%s is for %s, not %s", certName, c.Subject, DN(cn))
 	}
 	if !now.Add(margin).Before(c.NotAfter) {
-		return fmt.Errorf("%s expires on %s", certName, c.NotAfter.Format(time.DateOnly))
+		return certName, fmt.Errorf("%s expires on %s", certName, c.NotAfter.Format(time.DateOnly))
 	}
 	keyPEM, err := readFile(dir, keyName)
 	if err != nil {
-		return err
+		return keyName, err
 	}
-	block, _ := pem.Decode(keyPEM)
-	if block == nil || block.Type != "PRIVATE KEY" {
-		return fmt.Errorf("%s holds no PKCS#8 key (BEGIN PRIVATE KEY)", keyName)
-	}
-	k, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+	rk, err := parseKey(keyPEM)
 	if err != nil {
-		return fmt.Errorf("%s: %w", keyName, err)
+		return keyName, fmt.Errorf("%s: %w", keyName, err)
 	}
-	rk, ok := k.(*rsa.PrivateKey)
-	if !ok || !rk.PublicKey.Equal(c.PublicKey) {
-		return fmt.Errorf("%s is not the key of %s", keyName, certName)
+	if !rk.PublicKey.Equal(c.PublicKey) {
+		return keyName, fmt.Errorf("%s is not the key of %s", keyName, certName)
 	}
-	return nil
+	return "", nil
 }
 
 // readFile reads one of the set's files, with an error that names it.
 func readFile(dir, name string) ([]byte, error) {
 	b, err := os.ReadFile(filepath.Join(dir, name))
 	if errors.Is(err, fs.ErrNotExist) {
-		return nil, fmt.Errorf("%s is missing", name)
+		return nil, missingError(name)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("cannot read %s: %w", name, err)
 	}
 	return b, nil
 }
+
+// parseKey reads an RSA key in PKCS#8 PEM.
+func parseKey(b []byte) (*rsa.PrivateKey, error) {
+	block, _ := pem.Decode(b)
+	if block == nil || block.Type != "PRIVATE KEY" {
+		return nil, errors.New("no PKCS#8 key (BEGIN PRIVATE KEY) in it")
+	}
+	k, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+	if err != nil {
+		return nil, err
+	}
+	rk, ok := k.(*rsa.PrivateKey)
+	if !ok {
+		return nil, errors.New("not an RSA key")
+	}
+	return rk, nil
+}
+
+// missingError says a file is missing; it is an fs.ErrNotExist.
+type missingError string
+
+func (e missingError) Error() string { return string(e) + " is missing" }
+func (e missingError) Unwrap() error { return fs.ErrNotExist }
 
 func parseCert(b []byte) (*x509.Certificate, error) {
 	block, _ := pem.Decode(b)
@@ -378,7 +364,11 @@ func SecurityFiles() map[string][]byte {
 // Settings returns the opensearch.yml settings that turn on TLS and
 // certificate sign-in with this package's files in the certs folder next
 // to opensearch.yml, for the node with common name node.
-func Settings(node string) string {
+func Settings(node string) string { return SettingsFor(node, nil) }
+
+// SettingsFor is Settings for a node of a cluster: nodes_dn lists the
+// node and every peer, the common names of the other nodes' certificates.
+func SettingsFor(node string, peers []string) string {
 	if node == "" {
 		node = NodeName
 	}
@@ -400,7 +390,7 @@ plugins.security.ssl.http.clientauth_mode: OPTIONAL
 plugins.security.ssl.http.enabled_protocols: ["TLSv1.3", "TLSv1.2"]
 # The admin certificate may change the security settings (securityadmin.sh).
 plugins.security.authcz.admin_dn: ["` + DN(AdminName) + `"]
-plugins.security.nodes_dn: ["` + DN(node) + `"]
+plugins.security.nodes_dn: ["` + strings.Join(NodesDN(append([]string{node}, peers...)...), `", "`) + `"]
 # On first start, load the security settings from the opensearch-security
 # folder (config.yml, roles.yml and the others). Existing indices stay.
 plugins.security.allow_default_init_securityindex: true

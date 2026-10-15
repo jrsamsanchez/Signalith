@@ -1,0 +1,5 @@
+{"rule": "bae2865c-5565-470d-b505-9496c87d0c30", "cases": [
+  {"expect":true,"source":"synthesized","channel":"zeek:smb_files","event_id":"","data":{"name":"spoolss","path":"IPC$"}},
+  {"expect":false,"source":"synthesized","channel":"zeek:smb_files","event_id":"","data":{"path":"IPC$"}},
+  {"expect":false,"source":"synthesized","channel":"zeek:smb_files","event_id":"","data":{"name":"spoolss"}}
+]}

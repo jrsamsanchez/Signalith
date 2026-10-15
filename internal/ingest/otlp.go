@@ -1,8 +1,11 @@
 package ingest
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
+	"maps"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -131,6 +134,9 @@ func otlpEvent(l *otlpLog, now time.Time) Event {
 			bodyText = str(l.attrs, "message")
 		}
 		ev.Fields["message"] = bodyText
+	case bodyText != "" && isWebAccessFile(l.attrs):
+		// The Collector's filelog receiver on a web server's access log.
+		ev = parseWebRecord(map[string]any{"log": bodyText, "file": cmp.Or(str(l.attrs, "log.file.path"), str(l.attrs, "log.file.name")), "hostname": host})
 	case bodyText != "" && syslogLine.MatchString(bodyText):
 		ev = parseSyslogLine(bodyText, otlpFileSourcetype(l.attrs), now)
 	default:
@@ -201,6 +207,16 @@ func otlpFileSourcetype(attrs map[string]any) string {
 		return "linux:auth"
 	}
 	return "syslog"
+}
+
+// isWebAccessFile reports whether a filelog record is from a web server's
+// access log (access.log, other_vhosts_access.log, access_log).
+func isWebAccessFile(attrs map[string]any) bool {
+	name := str(attrs, "log.file.name")
+	if name == "" {
+		name = baseName(str(attrs, "log.file.path"))
+	}
+	return strings.Contains(strings.ToLower(name), "access")
 }
 
 // otlpSemconv maps OpenTelemetry semantic-convention attribute names onto
@@ -370,6 +386,12 @@ func otlpWindows(b map[string]any) Event {
 			for _, name := range schema {
 				ordered = append(ordered, values[name])
 			}
+		} else if channel == ApplicationChannel || strings.EqualFold(channel, CodeIntegrityChannel) {
+			// An Application or Code Integrity event's data is searched
+			// as a whole, so its values go in by name.
+			for _, k := range slices.Sorted(maps.Keys(values)) {
+				ordered = append(ordered, values[k])
+			}
 		}
 	}
 	rec := map[string]any{
@@ -403,8 +425,11 @@ func otlpWindows(b map[string]any) Event {
 func windowsSchemaFor(channel, provider, eventID string) ([]string, bool) {
 	switch {
 	case channel == "Security":
-		s, ok := windowsSchema[eventID]
-		return s, ok
+		if s, ok := windowsSchema[eventID]; ok {
+			return s, true
+		}
+		e, ok := namedChannelEvent(channel, eventID)
+		return e.data, ok
 	case channel == SystemChannel && eventID == "7045" && (provider == "" || strings.EqualFold(provider, ServiceControlManager)):
 		return serviceInstallSchema, true
 	case channel == SystemChannel:
@@ -412,6 +437,9 @@ func windowsSchemaFor(channel, provider, eventID string) ([]string, bool) {
 		return e.data, ok
 	case strings.EqualFold(channel, PowerShellChannel) && eventID == "4104":
 		return scriptBlockSchema, true
+	case IsNamedChannel(channel):
+		e, ok := namedChannelEvent(channel, eventID)
+		return e.data, ok
 	}
 	return nil, false
 }

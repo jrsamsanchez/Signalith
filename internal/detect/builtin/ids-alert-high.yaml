@@ -1,0 +1,21 @@
+id: ids-alert-high
+title: $signature$ ($src$ to $dest$)
+name: High-severity network IDS alert
+description: Suricata or another network IDS raised a high or critical alert, such as an Emerging Threats rule for malware, an exploit or command and control traffic.
+query: |
+  datamodel=Intrusion_Detection severity IN (high, critical)
+  | stats count, min(_time) as first_seen, min(dest_port) as dest_port by signature, signature_id, src, dest, action, vendor_product
+schedule: 5m
+lookback: 10m
+severity: high
+throttle:
+  fields: [signature_id, src, dest]
+  window: 1h
+risk:
+  score: 50
+  objects:
+    - {field: src, type: system}
+    - {field: dest, type: system}
+enabled: true
+tags: [network, intrusion-detection, pci-dss:10.4.1, pci-dss:11.5.1, nist-800-53:SI-4, cis-v8:13.3]
+guidance: Open the events with the same community_id to see the connection, DNS lookup, web request and files of this flow. ET rules in the INFO and POLICY categories are mostly medium or low and do not raise this; if one rule is noisy here, add an exception on its signature_id (Don't alert on this again).

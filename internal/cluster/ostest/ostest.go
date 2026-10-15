@@ -22,6 +22,8 @@
 //     only deletes change anything);
 //   - POST /_bulk with create, index and delete actions;
 //   - GET /<pattern>/_count (every document, whatever the query);
+//   - GET /_cat/indices/<pattern> (the names, as format=json lists them;
+//     an exact name that is not there is not found, as in OpenSearch);
 //   - GET /_nodes/_local/settings (path.home and path.data, see Paths);
 //   - GET /_plugins/_security/authinfo, once Secure turns sign-in on
 //     (before that, as without the security plugin, it is not found).
@@ -35,6 +37,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -81,6 +84,7 @@ type Server struct {
 	primaryTerm int64
 	blocked     bool
 	fault       func(method, path string) *Fault
+	refreshWait time.Duration
 	requests    []string
 	autoID      int
 	// uuids counts the indices made, for their uuids.
@@ -190,6 +194,15 @@ func (s *Server) Block(on bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.blocked = on
+}
+
+// SetRefreshWait makes every request with refresh=wait_for answer only d
+// after it is done, as OpenSearch answers one at its next refresh (up to a
+// second later, by default); 0, the default, answers at once.
+func (s *Server) SetRefreshWait(d time.Duration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.refreshWait = d
 }
 
 // SetFault sets a function that may answer a request with a Fault; nil
@@ -429,7 +442,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	p := r.URL.Path
 	s.mu.Lock()
 	s.requests = append(s.requests, r.Method+" "+r.URL.RequestURI())
-	fault, sec := s.fault, s.security
+	fault, sec, wait := s.fault, s.security, s.refreshWait
 	s.mu.Unlock()
 	if sec != nil {
 		if u, pw, ok := r.BasicAuth(); !ok || u != sec.User || pw != sec.Password {
@@ -457,6 +470,15 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 			writeError(w, f.Status, f.Type, "injected by the test")
 			return
 		}
+	}
+	if wait > 0 && r.URL.Query().Get("refresh") == "wait_for" {
+		rec := httptest.NewRecorder()
+		s.handle(rec, r, p, body)
+		time.Sleep(wait)
+		maps.Copy(w.Header(), rec.Header())
+		w.WriteHeader(rec.Code)
+		_, _ = w.Write(rec.Body.Bytes())
+		return
 	}
 	s.handle(w, r, p, body)
 }
@@ -555,6 +577,20 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request, p string, body [
 			return
 		}
 		writeJSON(w, 200, map[string]any{parts[0]: map[string]any{"settings": map[string]any{"index": flat}}})
+	case strings.HasPrefix(p, "/_cat/indices/"):
+		// The index names that match, as format=json lists them.
+		pattern := strings.TrimPrefix(p, "/_cat/indices/")
+		s.mu.Lock()
+		out := []any{}
+		for _, ix := range s.match(pattern) {
+			out = append(out, map[string]any{"index": ix.name})
+		}
+		s.mu.Unlock()
+		if len(out) == 0 && !strings.ContainsAny(pattern, "*,") {
+			writeError(w, 404, "index_not_found_exception", "no such index ["+pattern+"]")
+			return
+		}
+		writeJSON(w, 200, out)
 	case strings.HasPrefix(p, "/_cat/"):
 		writeJSON(w, 200, []any{})
 	case p == "/_plugins/_security/authinfo":

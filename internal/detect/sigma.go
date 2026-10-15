@@ -192,6 +192,7 @@ var sigmaEventFields = func() map[string]map[string]string {
 		"file_event": file, "file_delete": file,
 		"registry_add": registry, "registry_delete": registry, "registry_set": registry, "registry_event": registry,
 		"dns_query":            with(map[string]string{"queryname": "query", "queryresults": "answer"}),
+		"webserver":            ingest.WebFields,
 		"pipe_created":         with(map[string]string{"pipename": "pipe_name", "eventtype": "pipe_event_type"}),
 		"raw_access_thread":    with(map[string]string{"device": "device"}),
 		"create_stream_hash":   with(map[string]string{"targetfilename": "file_path", "hash": "file_hashes", "contents": "file_contents"}),
@@ -467,11 +468,38 @@ func ConvertSigmaWith(src []byte, opt SigmaOptions) (*SigmaResult, error) {
 			// Microsoft Defender Antivirus's own log, each rule naming
 			// the events it is about.
 			category = "windefend"
+		case "application":
+			// The Application log, each rule naming its provider and
+			// events, and searching their data (Data).
+			category = "application"
+		case "codeintegrity-operational":
+			// Code Integrity's log, each rule naming its events.
+			category = "code_integrity"
+		case "sysmon":
+			// Sysmon's own events, by event ID: its file blocks (27, 28,
+			// 29) are file events, the rest (a configuration change)
+			// Other.
+			category = "sysmon_event"
+			if ids := sigmaEventIDs(r.Detection); len(ids) > 0 && !slices.ContainsFunc(ids, func(id string) bool {
+				return id != "27" && id != "28" && id != "29"
+			}) {
+				category = "sysmon_file_block"
+			}
+		default:
+			// A log the parser reads by name (Windows Firewall, BITS, AppX
+			// deployment, WMI), each rule naming its events and their
+			// data.
+			if _, ok := ingest.NamedChannelServices[strings.ToLower(service)]; ok {
+				category = ingest.NamedChannelCategory(service)
+			}
 		case "security":
 			// A Security log rule's fields are its event's own, so it
 			// converts for one event, or events with the same data.
 			category = "security"
-			if ids := modernEventIDs(sigmaEventIDs(r.Detection)); len(ids) > 0 {
+			if ids := modernEventIDs(sigmaEventIDs(r.Detection)); ingest.IsNamedSecurityEvents(ids...) {
+				// Events no data model holds, read by name.
+				category = "security_named"
+			} else if len(ids) > 0 {
 				if _, ok := sigmaWindowsEvents["security_"+strings.Join(ids, "_")]; ok {
 					category = "security_" + strings.Join(ids, "_")
 				}
@@ -484,6 +512,10 @@ func ConvertSigmaWith(src []byte, opt SigmaOptions) (*SigmaResult, error) {
 			// auditd names it.
 			category = "auditd"
 		}
+	}
+	if category == "" {
+		// Zeek's own logs (product: zeek, service: dns, ...).
+		category = sigmaNetworkCategory(r.Logsource)
 	}
 	c := &sigmaConv{strict: opt.Strict, category: strings.ToLower(category)}
 	dm := c.datamodel(r.Logsource)
@@ -618,11 +650,28 @@ const windowsSourcetypes = "WinEventLog:*"
 // macOS rule away from Windows events, since data models such as Endpoint
 // hold events from every system and several kinds of event.
 func productScope(ls map[string]any, category string) query.Expr {
+	if scope := sigmaNetworkScope(category); scope != nil {
+		return scope
+	}
 	p, _ := ls["product"].(string)
 	switch strings.ToLower(p) {
 	case "windows":
-		if category == "system_event" {
+		switch category {
+		case "system_event":
 			return &query.Compare{Field: "sourcetype", Op: "=", Value: "WinEventLog:" + ingest.SystemChannel}
+		case "application":
+			return &query.Compare{Field: "sourcetype", Op: "=", Value: "WinEventLog:" + ingest.ApplicationChannel}
+		case "code_integrity":
+			return &query.Compare{Field: "sourcetype", Op: "=", Value: "WinEventLog:" + ingest.CodeIntegrityChannel}
+		}
+		if ch, ok := sigmaNamedChannels[category]; ok {
+			return &query.Compare{Field: "sourcetype", Op: "=", Value: "WinEventLog:" + ch}
+		}
+		if category == "security_named" {
+			return &query.Compare{Field: "sourcetype", Op: "=", Value: "WinEventLog:" + ingest.SecurityChannel}
+		}
+		if category == "sysmon_event" || category == "sysmon_file_block" {
+			return &query.Compare{Field: "sourcetype", Op: "=", Value: "WinEventLog:Microsoft-Windows-Sysmon/Operational"}
 		}
 		st := &query.Compare{Field: "sourcetype", Op: "=", Value: windowsSourcetypes}
 		if ids := sigmaWindowsEvents[category]; len(ids) > 0 {
@@ -640,6 +689,9 @@ func productScope(ls map[string]any, category string) query.Expr {
 
 func (c *sigmaConv) datamodel(ls map[string]any) string {
 	get := func(k string) string { s, _ := ls[k].(string); return strings.ToLower(s) }
+	if m, ok := sigmaNetworkModel(c.category); ok {
+		return m
+	}
 	switch c.category {
 	case "process_creation":
 		return "Endpoint"
@@ -655,6 +707,8 @@ func (c *sigmaConv) datamodel(ls map[string]any) string {
 		return "Registry"
 	case "dns_query":
 		return "Network_Resolution"
+	case "webserver":
+		return ingest.WebModel
 	case "image_load", "driver_load":
 		return "Image_Load"
 	case "process_access", "create_remote_thread", "pipe_created", "raw_access_thread":
@@ -663,12 +717,17 @@ func (c *sigmaConv) datamodel(ls map[string]any) string {
 		return "Script"
 	case "system":
 		return "Change"
-	case "system_event":
+	case "system_event", "application", "code_integrity", "sysmon_event", "security_named":
 		return "Other"
+	case "sysmon_file_block":
+		return "Filesystem"
 	case "auditd":
 		return "Other"
 	case "windefend":
 		return "Malware"
+	}
+	if _, ok := sigmaNamedChannels[c.category]; ok {
+		return "Other"
 	}
 	if id, ok := strings.CutPrefix(c.category, "security_"); ok {
 		return sigmaSecurityModels[id]
@@ -685,6 +744,30 @@ func (c *sigmaConv) field(name string) string {
 	}
 	if c.category == "system_event" {
 		return c.systemField(name)
+	}
+	if c.category == "application" || c.category == "code_integrity" {
+		return c.eventDataField(name)
+	}
+	if ch, ok := sigmaNamedChannels[c.category]; ok {
+		return c.channelField(ch, name)
+	}
+	if c.category == "security_named" {
+		return c.channelField(ingest.SecurityChannel, name)
+	}
+	if f, ok := c.networkField(name); ok {
+		if f != "" {
+			return f
+		}
+		if _, isZeek := zeekLog(c.category); isZeek {
+			c.approx("field %s has no Signalith mapping in %s and is searched as-is", name, c.category)
+			return name
+		}
+		// A generic network category: fall through to the general names.
+	}
+	if c.category == "sysmon_file_block" {
+		if f, ok := sigmaEventFields["file_event"][strings.ToLower(name)]; ok {
+			return f
+		}
 	}
 	if m, ok := sigmaEventFields[c.category]; ok {
 		if f := m[strings.ToLower(name)]; f != "" {
@@ -714,6 +797,53 @@ func (c *sigmaConv) systemField(name string) string {
 	f, ok := ingest.SystemDataField(name)
 	if !ok {
 		c.approx("field %s is not data Signalith reads from System log events", name)
+		return name
+	}
+	return f
+}
+
+// eventDataField is the stored field of an Application or Code Integrity
+// log event's field: its provider, ID and host, or its data values
+// (Data).
+func (c *sigmaConv) eventDataField(name string) string {
+	switch strings.ToLower(name) {
+	case "provider_name":
+		return "provider"
+	case "eventid":
+		return "signature_id"
+	case "computer", "computername":
+		return "host"
+	case "data":
+		return "event_data"
+	}
+	c.approx("field %s is not data Signalith reads by name from these log events", name)
+	return name
+}
+
+// sigmaNamedChannels are the Windows logs whose events the parser reads by
+// name (ingest.ChannelDataField), by the category of their rules.
+var sigmaNamedChannels = func() map[string]string {
+	out := map[string]string{}
+	for service, channel := range ingest.NamedChannelServices {
+		out[ingest.NamedChannelCategory(service)] = channel
+	}
+	return out
+}()
+
+// channelField is the stored field of such a log's event's field: its
+// provider, ID and host, or its data (see ingest.ChannelDataField).
+func (c *sigmaConv) channelField(channel, name string) string {
+	switch strings.ToLower(name) {
+	case "provider_name":
+		return "provider"
+	case "eventid":
+		return "signature_id"
+	case "computer", "computername":
+		return "host"
+	}
+	f, ok := ingest.ChannelDataField(channel, name)
+	if !ok {
+		c.approx("field %s is not data Signalith reads from %s events", name, channel)
 		return name
 	}
 	return f
@@ -910,6 +1040,9 @@ func or(kids []query.Expr) query.Expr {
 // ---- selections ----
 
 func (c *sigmaConv) selection(name string, v any) (query.Expr, error) {
+	if c.category == "webserver" {
+		return c.webSelection(name, v)
+	}
 	switch s := v.(type) {
 	case map[string]any:
 		return c.fieldMap(s)
@@ -938,6 +1071,49 @@ func (c *sigmaConv) selection(name string, v any) (query.Expr, error) {
 		return &query.Text{Value: "*" + s + "*"}, nil
 	}
 	return nil, fmt.Errorf("selection %s has an unsupported shape", name)
+}
+
+// webSelection is a web server log rule's selection, whose keywords are
+// searched in the parts of a request the client chose: its target, user
+// agent and referrer (sigmacheck.WebKeywordFields).
+func (c *sigmaConv) webSelection(name string, v any) (query.Expr, error) {
+	var maps []any
+	var keywords []any
+	switch s := v.(type) {
+	case string:
+		keywords = append(keywords, s)
+	case []any:
+		for _, item := range s {
+			if _, ok := item.(map[string]any); ok {
+				maps = append(maps, item)
+			} else {
+				keywords = append(keywords, item)
+			}
+		}
+	default:
+		maps = append(maps, v)
+	}
+	var kids []query.Expr
+	for _, m := range maps {
+		e, err := c.fieldMap(m.(map[string]any))
+		if err != nil {
+			return nil, err
+		}
+		kids = append(kids, e)
+	}
+	if len(keywords) > 0 {
+		for _, f := range []string{"cs-uri-query", "cs-user-agent", "cs-referer"} {
+			e, err := c.fieldCond(f+"|contains", keywords)
+			if err != nil {
+				return nil, err
+			}
+			kids = append(kids, e)
+		}
+	}
+	if len(kids) == 0 {
+		return nil, fmt.Errorf("selection %s is empty", name)
+	}
+	return or(kids), nil
 }
 
 func (c *sigmaConv) fieldMap(m map[string]any) (query.Expr, error) {
@@ -971,6 +1147,11 @@ func (c *sigmaConv) fieldCond(key string, v any) (query.Expr, error) {
 	parts := strings.Split(key, "|")
 	sigField, mods := parts[0], parts[1:]
 	field := c.field(sigField)
+	if query.FormatValue(field) != field {
+		// A field searched as-is must be one word of the query language,
+		// or the query would say something else (a space, a quote, AND).
+		return nil, fmt.Errorf("field name %q cannot be searched", sigField)
+	}
 	var values []any
 	switch vv := v.(type) {
 	case []any:

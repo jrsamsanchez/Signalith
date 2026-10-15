@@ -1,0 +1,4 @@
+{"rule": "286b47ed-f6fe-40b3-b3a8-35129acd43bc", "cases": [
+  {"expect":true,"source":"synthesized","channel":"zeek:smb_files","event_id":"","data":{"name":".nsf"}},
+  {"expect":false,"source":"synthesized","channel":"zeek:smb_files","event_id":"","data":{}}
+]}

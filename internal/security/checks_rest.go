@@ -347,11 +347,31 @@ func checkArchives(f *Facts) *Check {
 			Fix: &Fix{Steps: []string{"Make the archive folder readable only by Signalith's account."},
 				Commands: ownOnly(f, cmds("sudo chmod -R go-rwx "+sh(a.Dir), icaclsDir(a.Dir, "M"), docker)), Docs: doc(docRetArchives)}}
 	}
+	if a.Plain == 0 && !a.More {
+		// Every file is encrypted with Signalith's keys, so the disk under
+		// them doesn't matter.
+		return &Check{State: Good, Line: what + " in " + a.Dir + " are encrypted, readable only by Signalith.", Details: details}
+	}
+	plain := what + " are kept as plain files"
+	switch {
+	case a.Plain < a.Count && !a.More:
+		plain = itoa(a.Plain) + " of the " + what + " are kept as plain files"
+	}
+	why := " Archive encryption is turned off (retention.encrypt_archives: false)."
+	if a.Encrypting {
+		why = " They were written before Signalith encrypted archives; new archives are encrypted."
+		if a.More {
+			why = " Archives written before Signalith encrypted archives are plain; new archives are encrypted."
+		}
+	}
 	moveFix := &Fix{Steps: []string{"Keep the archive folder on an encrypted disk: point retention.archive_dir at one."},
 		Page: &PageLink{ID: "retention", Label: "Open Data retention"}, Docs: doc(docRetArchives)}
+	if !a.Encrypting {
+		moveFix.Steps = append(moveFix.Steps, "Or remove retention.encrypt_archives: false from signalith.yaml, so new archives are encrypted.")
+	}
 	switch diskState(a.Disk) {
 	case Attention:
-		return &Check{State: Attention, Line: what + " are kept as plain files in " + a.Dir + ", on a disk that isn't encrypted. Signalith doesn't encrypt archives itself.",
+		return &Check{State: Attention, Line: plain + " in " + a.Dir + ", on a disk that isn't encrypted." + why,
 			Details: details, Fix: moveFix}
 	case Unknown:
 		under := "disk"
@@ -359,7 +379,7 @@ func checkArchives(f *Facts) *Check {
 			under = "share"
 		}
 		fix := diskCheckFix(a.Disk, docEncDisk)
-		return &Check{State: Unknown, Line: what + " are kept as plain files in " + a.Dir + ". Signalith can't see whether the " + under + " under them is encrypted.",
+		return &Check{State: Unknown, Line: plain + " in " + a.Dir + ". Signalith can't see whether the " + under + " under them is encrypted." + why,
 			Details: details, Fix: fix}
 	}
 	if a.Disk.Kind == DiskMemory {

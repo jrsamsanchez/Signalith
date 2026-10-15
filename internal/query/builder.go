@@ -67,9 +67,14 @@ func Build(s Spec) *Query {
 		}
 		q.Commands = append(q.Commands, tc)
 	}
-	if s.Sort != "" {
-		k := SortKey{Field: strings.TrimLeft(s.Sort, "+-"), Desc: strings.HasPrefix(s.Sort, "-")}
-		q.Commands = append(q.Commands, &Sort{Keys: []SortKey{k}})
+	// One leading sign is the order; a second is part of the field name.
+	if k := (SortKey{Field: s.Sort}); s.Sort != "" {
+		if s.Sort[0] == '-' || s.Sort[0] == '+' {
+			k = SortKey{Field: s.Sort[1:], Desc: s.Sort[0] == '-'}
+		}
+		if k.Field != "" {
+			q.Commands = append(q.Commands, &Sort{Keys: []SortKey{k}})
+		}
 	}
 	if s.Limit > 0 {
 		q.Commands = append(q.Commands, &Head{N: s.Limit})
@@ -146,6 +151,8 @@ func FromQuery(q *Query) (s Spec, ok bool) {
 			s.Sort = c.Keys[0].Field
 			if c.Keys[0].Desc {
 				s.Sort = "-" + s.Sort
+			} else if strings.HasPrefix(s.Sort, "-") || strings.HasPrefix(s.Sort, "+") {
+				s.Sort = "+" + s.Sort
 			}
 			cmds = cmds[1:]
 		}

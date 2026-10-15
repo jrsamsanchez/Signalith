@@ -1,0 +1,5 @@
+{"rule": "2975af79-28c4-4d2f-a951-9095f229df29", "cases": [
+  {"expect":true,"source":"synthesized","channel":"zeek:dns","event_id":"dns","data":{"dst_ip":"192.0.2.53","dst_port":"53","query":"post.1","src_ip":"192.0.2.10","src_port":"53124"}},
+  {"expect":true,"source":"synthesized","channel":"zeek:dns","event_id":"dns","data":{"dst_ip":"192.0.2.53","dst_port":"53","query":".stage.123456.","src_ip":"192.0.2.10","src_port":"53124"}},
+  {"expect":false,"source":"synthesized","channel":"zeek:dns","event_id":"dns","data":{"dst_ip":"192.0.2.53","dst_port":"53","src_ip":"192.0.2.10","src_port":"53124"}}
+]}

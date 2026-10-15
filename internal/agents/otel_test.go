@@ -47,11 +47,14 @@ func TestOTelLinux(t *testing.T) {
 	if got := dig(m, exp, "otlphttp/signalith", "tls", "ca_file"); got != OTelLinuxCAPath || a.CAPath != OTelLinuxCAPath || a.CAStep == 0 {
 		t.Errorf("ca_file = %v, CAPath %q, CAStep %d", got, a.CAPath, a.CAStep)
 	}
+	if dig(m, "receivers", "filelog/web", "include_file_path") != true || len(dig(m, "receivers", "filelog/web", "include").([]any)) != len(WebAccessLogs) {
+		t.Errorf("web receiver = %v", dig(m, "receivers", "filelog/web"))
+	}
 	if dig(m, "receivers", "filelog/auth") == nil || dig(m, "receivers", "otlp") == nil {
 		t.Errorf("receivers = %v", m["receivers"])
 	}
 	recv, _ := dig(m, "service", "pipelines", "logs/signalith", "receivers").([]any)
-	if len(recv) != 2 || recv[0] != "filelog/auth" {
+	if len(recv) != 3 || recv[0] != "filelog/auth" || recv[1] != "filelog/web" {
 		t.Errorf("pipeline receivers = %v", recv)
 	}
 	if a.ConfigPath != OTelLinuxConfig || a.ConfigStep == 0 || !strings.Contains(a.Steps[a.ConfigStep-1], "config.yaml") {
@@ -78,6 +81,18 @@ func TestOTelWindows(t *testing.T) {
 	m := otelConfig(t, a)
 	if dig(m, "receivers", "windowseventlog/security", "channel") != "Security" ||
 		dig(m, "receivers", "windowseventlog/system", "channel") != "System" ||
+		dig(m, "receivers", "windowseventlog/application", "channel") != "Application" ||
+		dig(m, "receivers", "windowseventlog/codeintegrity", "channel") != "Microsoft-Windows-CodeIntegrity/Operational" ||
+		dig(m, "receivers", "windowseventlog/firewall", "channel") != "Microsoft-Windows-Windows Firewall With Advanced Security/Firewall" ||
+		dig(m, "receivers", "windowseventlog/bits", "channel") != "Microsoft-Windows-Bits-Client/Operational" ||
+		dig(m, "receivers", "windowseventlog/appx", "channel") != "Microsoft-Windows-AppXDeploymentServer/Operational" ||
+		dig(m, "receivers", "windowseventlog/wmi", "channel") != "Microsoft-Windows-WMI-Activity/Operational" ||
+		dig(m, "receivers", "windowseventlog/rdp", "channel") != "Microsoft-Windows-TerminalServices-LocalSessionManager/Operational" ||
+		dig(m, "receivers", "windowseventlog/mitigations", "channel") != "Microsoft-Windows-Security-Mitigations/KernelMode" ||
+		dig(m, "receivers", "windowseventlog/dnsclient", "channel") != "Microsoft-Windows-DNS-Client/Operational" ||
+		dig(m, "receivers", "windowseventlog/taskscheduler", "channel") != "Microsoft-Windows-TaskScheduler/Operational" ||
+		dig(m, "receivers", "windowseventlog/certificates", "channel") != "Microsoft-Windows-CertificateServicesClient-Lifecycle-System/Operational" ||
+		dig(m, "receivers", "windowseventlog/openssh") != nil ||
 		dig(m, "receivers", "windowseventlog/sysmon", "channel") != "Microsoft-Windows-Sysmon/Operational" ||
 		dig(m, "receivers", "windowseventlog/powershell", "channel") != "Microsoft-Windows-PowerShell/Operational" {
 		t.Errorf("receivers = %v", m["receivers"])

@@ -1,0 +1,9 @@
+{"rule": "b84e8f39-4e7b-4d4f-9e7c-fcd29a227845", "cases": [
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"POST","status":"200","url":"x /AHT/AhtApiService.asmx/AuthUser"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"POST","status":"200","url":"x /AHT/AhtApiService.asmx/AuthUses"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"POST","status":"200"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"POST","status":"201","url":"x /AHT/AhtApiService.asmx/AuthUser"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"POST","url":"x /AHT/AhtApiService.asmx/AuthUser"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"POSU","status":"200","url":"x /AHT/AhtApiService.asmx/AuthUser"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","status":"200","url":"x /AHT/AhtApiService.asmx/AuthUser"}}
+]}

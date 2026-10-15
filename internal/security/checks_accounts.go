@@ -249,6 +249,36 @@ func oldTokenRefused(c *config.Config) string {
 }
 
 // checkOpenSearchRole: accounts.opensearch_role.
+// checkOpenSearchCRL: accounts.opensearch_crl.
+func checkOpenSearchCRL(f *Facts) *Check {
+	l := f.CRL
+	if l == nil {
+		return nil
+	}
+	fix := &Fix{Steps: []string{
+		"On the Docker quick start, run docker compose -f deploy/docker/docker-compose.yml up -d, which makes it again.",
+		"Otherwise, when the cluster keeps OpenSearch's certificate authority, Signalith writes it again within a minute; to copy it to OpenSearch's nodes yourself, run signalith cluster opensearch-ca crl -o crl.pem on a server.",
+	}, Setting: "opensearch.crl_file", LockedBy: f.SettingEnv["opensearch.crl_file"], Docs: doc(docServersCRL)}
+	const refuses = " While OpenSearch checks it, it refuses every certificate sign-in, Signalith's included."
+	switch {
+	case l.Missing:
+		return &Check{State: Risk, Line: "OpenSearch's revocation list " + l.File + " is missing." + refuses, Fix: fix}
+	case l.Err != "":
+		return &Check{State: Risk, Line: "OpenSearch's revocation list " + l.File + " cannot be used: " + l.Err + "." + refuses, Fix: fix}
+	case !l.NextUpdate.IsZero() && l.NextUpdate.Sub(f.Now) < 30*24*time.Hour:
+		return &Check{State: Attention, Line: "OpenSearch's revocation list expires on " + l.NextUpdate.Format(time.DateOnly) + ", with OpenSearch's certificate authority." + refuses,
+			Fix: &Fix{Steps: []string{"Make OpenSearch's certificates again from a new certificate authority before then: bootstrap-docker -new-ca on the Docker quick start."}, Docs: doc(docOSCerts)}}
+	case f.Runtime != nil && f.Runtime.CRLProblem != "":
+		// The file reads well, but the server knows it is behind.
+		return &Check{State: Risk, Line: f.Runtime.CRLProblem, Fix: fix}
+	}
+	line := "OpenSearch checks client certificates against a revocation list Signalith keeps, so a removed server's certificate stops working at once."
+	if l.Revoked > 0 {
+		line += " It names " + itoa(l.Revoked) + plural(l.Revoked, " certificate.", " certificates.")
+	}
+	return &Check{State: Good, Line: line}
+}
+
 func checkOpenSearchRole(f *Facts) *Check {
 	o := f.OpenSearch
 	if o.Anonymous == "open" || o.AuthNoPlugin || !o.AuthProbed && !o.DemoAdmin {

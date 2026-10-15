@@ -1,0 +1,6 @@
+{"rule": "b85e5894-9b19-4d86-8c87-a2f3b81f0521", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Bits-Client/Operational","event_id":"16403","data":{"LocalName":".dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Bits-Client/Operational","event_id":"16403","data":{"LocalName":"\\AppData\\ .dll","RemoteName":".com"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Bits-Client/Operational","event_id":"16403","data":{}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-Bits-Client/Operational","event_id":"16403","data":{"ClientProcessStartKey":"5629499534214729","LocalName":"C:\\Users\\frack113\\AppData\\Local\\Temp\\7zip.exe","RemoteName":"https://www.7-zip.org/a/7z2301-x64.exe","User":"SigmaCatchVm\\frack113","fileCount":"1","jobId":"{3b8f3a0a-1f4b-433a-9b1e-26be7265a46c}","jobOwner":"SigmaCatchVm\\frack113","jobTitle":"myDownloadJob","processId":"5948"}}
+]}

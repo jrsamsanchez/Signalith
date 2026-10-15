@@ -157,6 +157,9 @@ func lex(s string, macros map[string]*Macro, depth int) ([]token, error) {
 		case c == '=':
 			out = append(out, token{'o', "="})
 			i++
+		case c == '!':
+			// Not a word either: the loop below would never move on.
+			return nil, errors.New(`"!" without "=" is not supported`)
 		case c == '<' || c == '>':
 			return nil, errors.New("comparisons with < or > are not supported")
 		default:
@@ -347,7 +350,7 @@ func (p *parser) field(name string) (string, error) {
 		}
 		return "", fmt.Errorf("field %s has no Signalith mapping", name)
 	}
-	f, ok := strings.CutPrefix(name, p.node+".")
+	f, ok := strings.CutPrefix(name, nodePrefix(p.node)+".")
 	if !ok {
 		return "", fmt.Errorf("field %s is not a field of %s", name, p.node)
 	}

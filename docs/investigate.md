@@ -54,6 +54,8 @@ assistant:
   model: qwen3:14b
   investigate: true
   mask_fields: [user, src_user, _raw]
+  request_timeout: 3m       # one answer from the model (default 3m)
+  investigate_timeout: 6m   # the whole investigation (default 6m)
 ```
 
 Only analysts and admins can investigate. Viewers do not see the button.
@@ -81,6 +83,12 @@ as `Investigate with AI failed`.
 
 - An investigation takes from a few seconds to a few minutes, depending on the model. Up to
   3 run at once on each server.
+- **Time limits.** One answer from the model may take 3 minutes and a whole investigation
+  6 minutes. A local model on a CPU without a GPU is much slower: a 4B model on 4 cores took
+  5 to 10 minutes for one turn in our tests. Raise **Answer time limit** (for example to
+  `15m`) and **Investigation time limit** (for example to `45m`) in **Settings → AI
+  assistant**, or `request_timeout` and `investigate_timeout` in `signalith.yaml`. When a
+  limit runs out, the dialog says which one.
 - The model can be wrong. Treat the verdict as a lead: the evidence lists the searches it
   came from, so you can check each one.
 - The write-up stays in your browser until you save it to a case. Opening the finding again

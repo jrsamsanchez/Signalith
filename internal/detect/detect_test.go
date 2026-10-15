@@ -23,8 +23,8 @@ func TestBuiltinsCompile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(ds) != 35 {
-		t.Fatalf("%d built-in detections, want 35", len(ds))
+	if len(ds) != 48 {
+		t.Fatalf("%d built-in detections, want 48", len(ds))
 	}
 	eng := &search.Engine{Intel: intel.NewStore(intel.NewMemory())}
 	for _, d := range ds {
@@ -36,9 +36,13 @@ func TestBuiltinsCompile(t *testing.T) {
 		if _, err := eng.Compile(q); err != nil {
 			t.Errorf("%s: compile: %v", d.ID, err)
 		}
-		// Risk incidents, intel matches and exposures a vulnerability scan
-		// found (such as an open Telnet port) need not name a technique.
-		if len(d.MITRE) == 0 && !slices.Contains(d.Tags, "risk-incident") && !slices.Contains(d.Tags, "threat-intel") && !slices.Contains(d.Tags, "vulnerability") {
+		// Risk incidents, intel matches, exposures a vulnerability scan
+		// found (such as an open Telnet port), IDS alerts (each rule
+		// names its own technique, in the event's mitre field) and the
+		// health of a data source (a sensor dropping packets) need not
+		// name a technique.
+		if len(d.MITRE) == 0 && !slices.Contains(d.Tags, "risk-incident") && !slices.Contains(d.Tags, "threat-intel") && !slices.Contains(d.Tags, "vulnerability") &&
+			!slices.Contains(d.Tags, "intrusion-detection") && !slices.Contains(d.Tags, "health") {
 			t.Errorf("%s has no ATT&CK mapping", d.ID)
 		}
 		// A transforming query only returns the columns it names, so
@@ -415,23 +419,45 @@ func TestConvertSigmaUnsupported(t *testing.T) {
 	}
 }
 
+// A Sigma field searched as-is must be one word of the query language:
+// FuzzConvertSigma found "a b" stored as the term a and the field b.
+func TestConvertSigmaFieldNameNotAWord(t *testing.T) {
+	for _, field := range []string{"a b", `a"b`, "a=b", "AND", "a(b)"} {
+		rule := "title: x\ndetection:\n  sel:\n    '" + field + "': 1\n  condition: sel\n"
+		if res, err := ConvertSigma([]byte(rule)); err == nil {
+			t.Errorf("field %q converted to %s", field, res.Detection.Query)
+		}
+	}
+	if _, err := ConvertSigma([]byte("title: x\ndetection:\n  sel:\n    My_Field-1.x: 1\n  condition: sel\n")); err != nil {
+		t.Errorf("a one-word field: %v", err)
+	}
+}
+
 func TestCoverage(t *testing.T) {
 	ds := []*Detection{
 		{ID: "a", MITRE: []string{"T1110.003"}, Enabled: true},
 		{ID: "b", MITRE: []string{"T1110"}, Enabled: false},
 		{ID: "c", MITRE: []string{"T1490"}, Enabled: false},
 		{ID: "d", MITRE: []string{"T9999"}, Enabled: true},
+		{ID: "e", MITRE: []string{"T9998"}, Enabled: false},
+		// Retired in ATT&CK 19: T1574.002 DLL Side-Loading is T1574.001
+		// DLL.
+		{ID: "f", MITRE: []string{"T1574.002"}, Enabled: true},
 	}
 	cov := ComputeCoverage(ds)
-	if cov.Summary.Enabled != 1 || cov.Summary.Available != 1 || cov.Summary.Techniques < 150 {
+	if cov.Summary.Enabled != 2 || cov.Summary.Available != 1 || cov.Summary.Techniques < 150 {
 		t.Errorf("summary = %+v", cov.Summary)
 	}
-	if cov.Unknown["T9999"] != "d" {
+	// A detection that is off is not worth a warning.
+	if cov.Unknown["T9999"] != "d" || len(cov.Unknown) != 1 {
 		t.Errorf("unknown = %v", cov.Unknown)
 	}
 	var found bool
 	for _, tac := range cov.Tactics {
 		for _, te := range tac.Techniques {
+			if te.ID == "T1574" && (len(te.Enabled) != 1 || te.Subs[0] != "T1574.001") {
+				t.Errorf("T1574 = %+v", te)
+			}
 			if te.ID == "T1110" {
 				found = true
 				if tac.Short != "credential-access" || len(te.Enabled) != 1 || len(te.Disabled) != 1 || te.Subs[0] != "T1110.003" {
@@ -843,5 +869,30 @@ detection:
 	if err != nil || !strings.Contains(r.Detection.Query, "src_user_sid=S-1-0-0") || !strings.Contains(r.Detection.Query, "key_length=0") ||
 		!strings.Contains(r.Detection.Query, "impersonation_level=") {
 		t.Errorf("4624 = %v %+v", err, r)
+	}
+}
+
+// A web server log rule searches the Web data model by the W3C field
+// names, and its keywords in what the client chose: the request's target,
+// user agent and referrer.
+func TestConvertSigmaWebserver(t *testing.T) {
+	res, err := ConvertSigmaWith([]byte(`title: Web shell
+logsource:
+    category: webserver
+detection:
+    selection:
+        cs-method: GET
+        sc-status: 200
+    keywords:
+        - '=whoami'
+    condition: selection and keywords
+level: high
+`), SigmaOptions{Strict: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `datamodel=Web (http_method=GET AND status=200) (url="*=whoami*" OR http_user_agent="*=whoami*" OR http_referrer="*=whoami*")`
+	if res.Detection.Query != want || len(res.Warnings) > 0 {
+		t.Errorf("query = %s, warnings %v", res.Detection.Query, res.Warnings)
 	}
 }

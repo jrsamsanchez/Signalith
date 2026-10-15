@@ -267,7 +267,7 @@ func TestIndexTemplate(t *testing.T) {
 // template and exempt from the budget.
 func TestParsersEmitKnownFields(t *testing.T) {
 	fset := token.NewFileSet()
-	for _, file := range []string{"windows.go", "linux.go", "ingest.go", "defender.go", "clamav.go", "malware.go"} {
+	for _, file := range []string{"windows.go", "linux.go", "ingest.go", "defender.go", "clamav.go", "malware.go", "zeek.go", "suricata.go", "netsensor.go", "sensorstatus.go"} {
 		f, err := parser.ParseFile(fset, file, nil, 0)
 		if err != nil {
 			t.Fatal(err)
@@ -338,5 +338,33 @@ func TestPutIndexTemplateWithoutWildcard(t *testing.T) {
 	}
 	if strings.Join(got, ",") != "wildcard,keyword" {
 		t.Errorf("tried %v", got)
+	}
+}
+
+// Every field the network sensor parsers emit is known, so sensor data
+// never uses a day's field budget, except the zeek_* fields of Zeek logs
+// without a mapping of their own.
+func TestSensorFieldsAreKnown(t *testing.T) {
+	if knownFields["duration"] != "double" || knownFields["capture_loss_percent"] != "double" || knownFields["drop_percent"] != "double" {
+		t.Error("duration, capture_loss_percent and drop_percent must be doubles")
+	}
+	var evs []Event
+	for _, log := range []string{"conn", "dns", "http", "ssl", "x509", "files", "notice", "capture_loss", "stats"} {
+		for _, line := range sensorLines(t, "zeek", log+".json") {
+			evs = append(evs, Normalize("zeek."+log, map[string]any{"log": line, "hostname": "nsm-01"}, now))
+		}
+	}
+	for _, line := range sensorLines(t, "suricata", "eve.json") {
+		evs = append(evs, Normalize("suricata.eve", map[string]any{"log": line, "hostname": "nsm-01"}, now))
+	}
+	for _, line := range sensorLines(t, "sensor", "status.json") {
+		evs = append(evs, Normalize(SensorStatusTag, map[string]any{"log": line, "hostname": "nsm-01"}, now))
+	}
+	for _, ev := range evs {
+		for k := range ev.Document() {
+			if !KnownField(k) {
+				t.Errorf("%v: field %q is not in knownFields", ev.Fields["sourcetype"], k)
+			}
+		}
 	}
 }

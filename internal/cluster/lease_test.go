@@ -312,12 +312,17 @@ func TestReleaseGivesUpAfterTheWait(t *testing.T) {
 	a.l.SetJobs([]Job{p.job("stuck", false)})
 	s.run(time.Second)
 	eventually(t, "the job", func() bool { _, r := p.state(); return r == 1 })
+	timers := s.clock.Waiting()
 	released := make(chan struct{})
 	go func() {
 		a.l.Release("the server is stopping")
 		close(released)
 	}()
-	eventually(t, "the release to start", func() bool { return a.l.View().State == "releasing" })
+	// The release says so before it starts its ReleaseWait timer: moving
+	// the clock in between would leave that timer a minute in the future.
+	eventually(t, "the release to wait", func() bool {
+		return a.l.View().State == "releasing" && s.clock.Waiting() > timers
+	})
 	s.run(61 * time.Second)
 	select {
 	case <-released:
@@ -710,5 +715,41 @@ func TestFrozenLeaseDoesNotMoveWhenWritesReturn(t *testing.T) {
 		if d := s.lease(); d.Holder != "n_a" || d.Epoch != 1 || b.l.Holding() || !a.l.Holding() {
 			t.Fatalf("after %v: lease %+v", off, d)
 		}
+	}
+}
+
+// Moving the jobs to a named server: the lease is released naming it, and
+// it takes the lease while the others wait PreferWait for it.
+func TestReleaseToHandsTheLeaseToTheNamedServer(t *testing.T) {
+	s := newSim(t)
+	a, b, c := s.add("n_a", nil), s.add("n_b", nil), s.add("n_c", nil)
+	s.run(time.Second)
+	if !a.l.Holding() {
+		t.Fatalf("a does not hold the lease: %+v", s.lease())
+	}
+	a.l.ReleaseTo("an admin moved the background jobs", "n_c")
+	if d := s.lease(); d.Holder != "" || d.Prefer != "n_c" || d.ReleasedBy != "n_a" {
+		t.Fatalf("released lease = %+v", d)
+	}
+	s.run(3 * time.Second)
+	if !c.l.Holding() || b.l.Holding() || a.l.Holding() {
+		t.Fatalf("lease %+v: the named server did not take it", s.lease())
+	}
+}
+
+// The named server never takes it: the others do once PreferWait passed.
+func TestReleaseToAnAbsentServerFallsBack(t *testing.T) {
+	s := newSim(t)
+	a, b := s.add("n_a", nil), s.add("n_b", nil)
+	s.run(time.Second)
+	a.l.ReleaseTo("an admin moved the background jobs", "n_gone")
+	a.paused = true
+	s.run(DefaultTiming.PreferWait / 2)
+	if b.l.Holding() {
+		t.Fatal("b took the lease before the named server had its turn")
+	}
+	s.run(DefaultTiming.PreferWait + 3*time.Second)
+	if !b.l.Holding() {
+		t.Fatalf("nobody took the lease: %+v", s.lease())
 	}
 }

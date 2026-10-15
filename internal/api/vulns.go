@@ -3,10 +3,13 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/jrsamsanchez/signalith/internal/cluster"
 	"github.com/jrsamsanchez/signalith/internal/store"
 	"github.com/jrsamsanchez/signalith/internal/vulnscan"
 )
@@ -41,6 +44,7 @@ func (s *Server) routeVulns(api *router) {
 	// The setup check names programs and paths on the server; choosing
 	// what to scan, and scanning, are for admins.
 	api.admin("GET /api/vulns/setup", s.handleVulnSetup)
+	api.admin("GET /api/vulns/scanners", s.handleVulnScanners)
 	api.admin("PUT /api/vulns/settings", s.handleSaveVulnSettings)
 	api.admin("POST /api/vulns/networks/{id}/scan", s.handleVulnScanNow)
 	api.admin("POST /api/vulns/scans/{id}/stop", s.handleVulnStop)
@@ -167,10 +171,170 @@ func (s *Server) handleVulns(w http.ResponseWriter, r *http.Request) {
 		"settings": set, "version": v.String(), "targets": targets, "hosts": rows, "totals": total, "scans": recent,
 		"scans_here": s.scansHere(),
 	}
-	if reports, err := s.Vulns.Store.Reports(ctx); err == nil && len(reports) > 0 {
-		out["scanner"] = reports[0]
+	reports, err := s.Vulns.Store.Reports(ctx)
+	if err != nil {
+		reports = nil
+	}
+	servers := s.vulnServers(set, reports, false)
+	out["servers"] = servers
+	// Whether scans can run, without the checks: they name programs,
+	// paths and OpenVAS's address, which are for admins (GET
+	// /api/vulns/setup).
+	if rep := jobsReport(servers, reports); rep != nil {
+		out["scanner"] = map[string]any{"server": rep.Server, "ready": rep.Ready}
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// vulnServer is a server as a scanner: whether it is ready to scan and
+// the networks it scans.
+type vulnServer struct {
+	// ID is its node ID, which a network names as its scanner; "" for
+	// this server when it is on its own.
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Self     bool   `json:"self"`
+	State    string `json:"state"`
+	Online   bool   `json:"online"`
+	RunsJobs bool   `json:"runs_jobs"`
+	// Ready is nil until the server has checked itself.
+	Ready     *bool         `json:"ready,omitempty"`
+	CheckedAt time.Time     `json:"checked_at,omitzero"`
+	Networks  []vulnNetwork `json:"networks"`
+	// Report is its latest check of itself, for the Scanners page.
+	Report *vulnscan.Report `json:"report,omitempty"`
+}
+
+type vulnNetwork struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Enabled bool   `json:"enabled"`
+}
+
+// stateRemoved is a server a network names as its scanner that is no
+// longer among the servers.
+const stateRemoved = "removed"
+
+// vulnServers lists the servers that can scan: every server that shares
+// this OpenSearch, and any server a network still names that has since
+// been removed. full adds each one's latest check of itself.
+func (s *Server) vulnServers(set vulnscan.Settings, reports []*vulnscan.Report, full bool) []vulnServer {
+	byNode := map[string]*vulnscan.Report{}
+	byName := map[string]*vulnscan.Report{}
+	for _, r := range reports { // newest first
+		if r.NodeID != "" && byNode[r.NodeID] == nil {
+			byNode[r.NodeID] = r
+		}
+		if byName[r.Server] == nil {
+			byName[r.Server] = r
+		}
+	}
+	var out []vulnServer
+	if s.Cluster == nil {
+		sv := vulnServer{Name: "This server", Self: true, State: cluster.StateReady, Online: true, RunsJobs: true}
+		if len(reports) > 0 {
+			sv.Name = reports[0].Server
+		}
+		out = append(out, sv)
+	} else {
+		for _, st := range s.Cluster.Status().Servers {
+			sv := vulnServer{ID: st.NodeID, Name: st.Name, Self: st.Self, State: st.State, RunsJobs: st.Jobs == "runs"}
+			switch st.State {
+			case cluster.StateReady, cluster.StateStarting, cluster.StateDraining:
+				sv.Online = true
+			}
+			out = append(out, sv)
+		}
+	}
+	known := map[string]bool{}
+	for _, sv := range out {
+		known[sv.ID] = true
+	}
+	for _, t := range set.Targets {
+		if t.Scanner != "" && !known[t.Scanner] {
+			known[t.Scanner] = true
+			sv := vulnServer{ID: t.Scanner, Name: "A removed server", State: stateRemoved}
+			if r := byNode[t.Scanner]; r != nil {
+				sv.Name = r.Server
+			}
+			out = append(out, sv)
+		}
+	}
+	for i := range out {
+		sv := &out[i]
+		sv.Networks = []vulnNetwork{}
+		for _, t := range set.Targets {
+			if t.Scanner == sv.ID || (t.Scanner == "" && sv.RunsJobs && sv.State != stateRemoved) {
+				sv.Networks = append(sv.Networks, vulnNetwork{ID: t.ID, Name: t.Name, Enabled: t.Enabled})
+			}
+		}
+		r := byNode[sv.ID]
+		if r == nil && s.Cluster == nil && len(reports) > 0 {
+			r = reports[0]
+		}
+		if r == nil && sv.State != stateRemoved {
+			// From a version before per-zone scanners.
+			if old := byName[sv.Name]; old != nil && old.NodeID == "" {
+				r = old
+			}
+		}
+		if r != nil {
+			ready := r.Ready
+			sv.Ready, sv.CheckedAt = &ready, r.At
+			if full {
+				sv.Report = r
+			}
+		}
+	}
+	return out
+}
+
+// jobsReport is the latest check of the server that runs the background
+// jobs, which scans the networks that name no scanner.
+func jobsReport(servers []vulnServer, reports []*vulnscan.Report) *vulnscan.Report {
+	for _, sv := range servers {
+		if !sv.RunsJobs {
+			continue
+		}
+		for _, r := range reports {
+			if (sv.ID != "" && r.NodeID == sv.ID) || (r.NodeID == "" && r.Server == sv.Name) {
+				return r
+			}
+		}
+	}
+	if len(reports) > 0 && len(servers) <= 1 {
+		return reports[0]
+	}
+	return nil
+}
+
+// handleVulnScanners lists every server as a scanner, with its checks:
+// the Settings > Scanners page. fresh=1 checks this server again first.
+func (s *Server) handleVulnScanners(w http.ResponseWriter, r *http.Request) {
+	if s.vulnsMissing(w) {
+		return
+	}
+	ctx := r.Context()
+	if r.URL.Query().Get("fresh") == "1" && s.Vulns.Scanner != nil {
+		cctx, cancel := context.WithTimeout(ctx, 45*time.Second)
+		rep := s.Vulns.Scanner.CheckNow(cctx)
+		cancel()
+		s.Vulns.mu.Lock()
+		s.Vulns.report = rep
+		s.Vulns.mu.Unlock()
+	}
+	set, _, err := s.Vulns.Store.Settings(ctx)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err)
+		return
+	}
+	reports, err := s.Vulns.Store.Reports(ctx)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"servers": s.vulnServers(set, reports, true),
+		"offline_after_seconds": int(vulnscan.OfflineAfter / time.Second)})
 }
 
 func (s *Server) handleVulnHost(w http.ResponseWriter, r *http.Request) {
@@ -223,8 +387,12 @@ func (s *Server) handleVulnSetup(w http.ResponseWriter, r *http.Request) {
 	if s.Cluster != nil {
 		out["scanner_server"] = s.Cluster.JobHolder()
 	}
-	if len(reports) > 0 {
-		out["report"] = reports[0]
+	set, err := s.Vulns.Store.CachedSettings(r.Context())
+	if err != nil {
+		set = vulnscan.DefaultSettings()
+	}
+	if rep := jobsReport(s.vulnServers(set, reports, false), reports); rep != nil {
+		out["report"] = rep
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -241,7 +409,7 @@ func (s *Server) handleSaveVulnSettings(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	_, cur, err := s.Vulns.Store.Settings(r.Context())
+	saved, cur, err := s.Vulns.Store.Settings(r.Context())
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err)
 		return
@@ -249,6 +417,10 @@ func (s *Server) handleSaveVulnSettings(w http.ResponseWriter, r *http.Request) 
 	conflict := errors.New("someone else changed the scan settings since you opened them; reload to see their changes")
 	if req.Version != cur.String() {
 		writeError(w, http.StatusConflict, conflict)
+		return
+	}
+	if err := s.checkScanners(req.Settings, saved); err != nil {
+		writeError(w, http.StatusBadRequest, err)
 		return
 	}
 	set, err := s.Vulns.Store.SaveSettings(r.Context(), req.Settings, cur, userOf(r))
@@ -272,6 +444,49 @@ func (s *Server) handleSaveVulnSettings(w http.ResponseWriter, r *http.Request) 
 	s.handleVulns(w, r)
 }
 
+// checkScanners makes sure every network's scanner is one of the
+// servers. A network may keep a scanner that has since been removed, so
+// that its other settings can still be changed.
+func (s *Server) checkScanners(next, saved vulnscan.Settings) error {
+	known := map[string]bool{}
+	if s.Cluster != nil {
+		for _, st := range s.Cluster.Status().Servers {
+			known[st.NodeID] = true
+		}
+	}
+	before := map[string]string{}
+	for _, t := range saved.Targets {
+		before[t.ID] = t.Scanner
+	}
+	for _, t := range next.Targets {
+		sc := strings.TrimSpace(t.Scanner)
+		if sc == "" || known[sc] || before[t.ID] == sc {
+			continue
+		}
+		return fmt.Errorf("%s: the server picked to scan it is not one of this Signalith's servers; reload the page and pick another", t.Name)
+	}
+	return nil
+}
+
+// scannerOffline says why the server that scans t cannot start a scan
+// now, or "".
+func (s *Server) scannerOffline(t vulnscan.Target) string {
+	if t.Scanner == "" || s.Cluster == nil {
+		return ""
+	}
+	for _, st := range s.Cluster.Status().Servers {
+		if st.NodeID != t.Scanner {
+			continue
+		}
+		switch st.State {
+		case cluster.StateReady, cluster.StateStarting, cluster.StateDraining:
+			return ""
+		}
+		return st.Name + ", the server that scans this network, is " + st.State + ". Start Signalith there, or edit the network and pick another scanner."
+	}
+	return "The server that scanned this network was removed. Edit the network and pick another scanner."
+}
+
 func (s *Server) handleVulnScanNow(w http.ResponseWriter, r *http.Request) {
 	if s.vulnsMissing(w) {
 		return
@@ -289,6 +504,10 @@ func (s *Server) handleVulnScanNow(w http.ResponseWriter, r *http.Request) {
 	}
 	if target == nil {
 		writeError(w, http.StatusNotFound, errors.New("no such network; it may have been removed"))
+		return
+	}
+	if why := s.scannerOffline(*target); why != "" {
+		writeError(w, http.StatusConflict, errors.New(why))
 		return
 	}
 	scans, err := s.Vulns.Store.Scans(r.Context())

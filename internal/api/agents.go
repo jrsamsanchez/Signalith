@@ -29,6 +29,9 @@ const (
 	needsPlain = "plain"
 	// needsRevoked: its agent token was revoked.
 	needsRevoked = "revoked"
+	// needsRetiredCA: it trusts only a certificate authority a server
+	// retired when it took the cluster's (agentinv.FlagRetired).
+	needsRetiredCA = agentinv.ReasonRetiredCA
 	// needsOld: it was set up before agents said their computer's name.
 	// Only information: it still works.
 	needsOld = "old"
@@ -39,7 +42,7 @@ type agentView struct {
 	agentinv.Agent
 	Silent bool `json:"silent"`
 	// NeedsConfig lists why it needs a new configuration (needsCA,
-	// needsPlain, needsRevoked), and Notes what is worth knowing but
+	// needsRetiredCA, needsPlain, needsRevoked), and Notes what is worth knowing but
 	// needs nothing done now (needsOld).
 	NeedsConfig []string `json:"needs_config"`
 	Notes       []string `json:"notes"`
@@ -55,7 +58,7 @@ func (s *Server) agents() *agentinv.Inventory { return s.Agents }
 // its resourcedetection processor puts its computer's name on every
 // event, so a batch with one host name is named by it. A Collector that
 // forwards other computers' events is told apart by address and token.
-func (s *Server) noteAgent(r *http.Request, intake, tag string, who agenttokens.Identity, events int, hosts []string) {
+func (s *Server) noteAgent(r *http.Request, intake, tag string, who agenttokens.Identity, events int, hosts []string, sensor *ingest.SensorStatus) {
 	name := r.Header.Get(agentinv.AgentHeader)
 	if name == "" && intake == ingest.IntakeOTLP {
 		if len(hosts) != 1 && events == 0 {
@@ -75,6 +78,7 @@ func (s *Server) noteAgent(r *http.Request, intake, tag string, who agenttokens.
 		TokenID: who.ID, TokenName: who.Name,
 		Config: r.Header.Get(agentinv.ConfigHeader),
 		Events: events,
+		Sensor: sensor,
 	})
 }
 
@@ -131,7 +135,7 @@ func (s *Server) handleAgents(w http.ResponseWriter, r *http.Request) {
 // (current and next pins) and the agent tokens.
 func (s *Server) agentFlags(a agentinv.Agent, current, next string, now time.Time) agentView {
 	v := agentView{Agent: a, NeedsConfig: []string{}, Notes: []string{}}
-	v.Silent = now.Sub(a.LastSeen) > agentinv.SilentAfter
+	v.Silent = agentinv.Silent(a, now)
 	// Each entry of a.CA is one configuration's pins: it is fine when it
 	// trusts the current certificate authority or the one prepared to
 	// replace it (a configuration made while a switch was prepared
@@ -144,7 +148,12 @@ func (s *Server) agentFlags(a agentinv.Agent, current, next string, now time.Tim
 			}
 		}
 	}
-	if wrongCA {
+	switch {
+	case a.NeedsConfig && a.Reason == agentinv.ReasonRetiredCA:
+		// The same failure, with its cause: the cluster took one
+		// certificate authority.
+		v.NeedsConfig = append(v.NeedsConfig, needsRetiredCA)
+	case wrongCA:
 		v.NeedsConfig = append(v.NeedsConfig, needsCA)
 	}
 	// Plain HTTP from the server's own computer never crosses the

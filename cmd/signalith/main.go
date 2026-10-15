@@ -87,10 +87,12 @@ Usage:
   signalith secrets   status|encrypt|set|rotate-master [-c file] ...  the master key and stored passwords
   signalith content   status|install|remove [-c file] ...  content pack updates (newer tested rules)
   signalith security  [-c file] [-json]   print the security report (exit 2 when something is at risk)
-  signalith cluster   status|found|export|import|export-key|import-key|reset-key|accept-restore [-c file] ...  the settings the servers share in OpenSearch
+  signalith cluster   status|found|export|import|export-key|import-key|reset-key|accept-restore|token|approve [-c file] ...  the settings the servers share in OpenSearch
+  signalith join      '<token>' [-c file] [--name] [--listen] [--node-url] [--copy-syslog] [--no-start] [--merge] [--yes]   add this server to a cluster
+  signalith opensearch-check <url> [--ca file] [--cert file --key file] [--user u]   check OpenSearch is ready for several servers
   signalith service   install|uninstall|start|stop     manage the Windows service
-  signalith opensearch-certs -out DIR [-node name] [-san name]   certificates to secure your own OpenSearch
-  signalith bootstrap-docker -opensearch-dir DIR -signalith-dir DIR   prepare the Docker quick start (its setup service runs this)
+  signalith opensearch-certs [-ca-dir DIR] -node NAME [-san ...] [-peer ...] -out DIR   certificates to secure your own OpenSearch
+  signalith bootstrap-docker [-opensearch-name NAME] [-nodes N] [-export-ca-key] [-apply-security] [-new-ca]   prepare the Docker quick start (its setup service runs this)
   signalith version
 
 The config file defaults to %s
@@ -163,6 +165,12 @@ func main() {
 		err = cmdSecurity(args)
 	case "cluster":
 		err = cmdCluster(args)
+	case "join":
+		os.Exit(runJoinCommand(args))
+	case "opensearch-check":
+		err = cmdOpenSearchCheck(args)
+	case "tcp-forward":
+		err = cmdTCPForward(args)
 	case "version", "-v", "--version":
 		fmt.Println("signalith", version)
 	case "help", "-h", "--help":
@@ -772,8 +780,7 @@ func cmdQuery(args []string) error {
 }
 
 func newAssistant(c *config.Config) *assistant.Client {
-	a := c.Assistant
-	return assistant.New(a.Provider, a.URL, a.Model, a.APIKey)
+	return c.AssistantClient()
 }
 
 // cmdAsk prints the query for a plain-English question, with how each
@@ -912,6 +919,11 @@ func serve(ctx context.Context, path string, log *slog.Logger) error {
 	// GOTRACEBACK set in the environment, and on Linux hardenProcess
 	// keeps even GOTRACEBACK=crash from writing a core file.
 	debug.SetTraceback("single")
+	// A new server started with SIGNALITH_JOIN (Docker) joins its cluster
+	// first, which writes the settings and keys loaded next.
+	if err := joinFromEnv(path, log); err != nil {
+		return err
+	}
 	c, err := loadConfig(path, log)
 	if err != nil {
 		return err
@@ -924,6 +936,10 @@ func serve(ctx context.Context, path string, log *slog.Logger) error {
 	}
 	defer node.Close()
 	defer node.Stop()
+	// The audit spool belongs to the process too, and hears every audit
+	// line logged from here on (see sharedaudit.go).
+	audits, log := openAudit(c, node, log)
+	go audits.sink.Run(ctx)
 	// The first start of the Docker quick start with this version decides
 	// whether it was upgraded from one whose agents send the example
 	// ingest token (see config.Config.OldToken).
@@ -939,6 +955,7 @@ func serve(ctx context.Context, path string, log *slog.Logger) error {
 	}
 	r := newRunner(path, log)
 	r.node = node
+	r.audit = audits
 	// The shared configuration belongs to the process too; each start of
 	// the components points it at their OpenSearch client.
 	r.shared, r.sharedContent = openShared(c, node, log)
@@ -1066,9 +1083,13 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		}
 	}
 	ret := newRetention(c, cl, log)
+	archiveCrypto(ret.Archive, c, r.clusterKey)
 	if sharedOn {
 		r.sharedContent.sharedRetention(ret)
+	} else {
+		r.sharedContent.holdRetention(ret)
 	}
+	r.useAudit(ctx, in, c, cl, ret)
 	maxAge := c.MaxEventAge(retentionKeepDays(ret))
 	pipeline := &ingest.Pipeline{Store: cl, Prefix: c.OpenSearch.IndexPrefix, MaxEventAge: maxAge, Log: log}
 	// Each day's new field names are shared out among the servers that
@@ -1138,6 +1159,8 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	feeds := newFeeds(c, indicators, log)
 	if sharedOn {
 		r.sharedContent.sharedFeeds(ctx, feeds, indicators, cl, c.OpenSearch.IndexPrefix, &in.jobs)
+	} else {
+		r.sharedContent.holdFeeds(feeds)
 	}
 	if err := feeds.Load(); err != nil {
 		if sharedOn {
@@ -1168,6 +1191,17 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			log.Error("dashboard file has errors; fix it to show the dashboard", "file", p.File, "err", p.Error)
 		}
 	}
+	if r.sharedContent != nil {
+		// Saved in this server's folders until the shared library is in
+		// use: held while they move into it (importhold.go).
+		lib.Hold = r.sharedContent.holdFile(shared.ImportDetections)
+		boards.Hold = r.sharedContent.holdFile(shared.ImportDashboards)
+		lists.Hold = r.sharedContent.holdFile(shared.ImportLookups)
+		if err := r.sharedContent.library.start(ctx, r.shared, sharedOn && r.shared.SharedLibrary(), c, lib, boards, &in.jobs); err != nil {
+			return nil, err
+		}
+		r.sharedContent.library.startLists(ctx, r.shared, sharedOn && r.shared.SharedLookups(), c, lists, &in.jobs)
+	}
 	// The users, the directory sign-in settings and the sessions: shared
 	// by the servers of the cluster once every one reads them there, else
 	// this server's own.
@@ -1190,6 +1224,8 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		n := people.Count()
 		log.Info("users loaded from the shared settings", "local", n[users.SourceLocal], "directory", n[users.SourceDirectory])
 	} else {
+		// The sessions are kept here again.
+		r.sessions.Forward(nil)
 		// Lockouts other servers reported while the users were shared no
 		// longer count.
 		r.limiter.External(nil)
@@ -1221,7 +1257,9 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	estore := endpoint.NewStore(cl, c.OpenSearch.IndexPrefix)
 	in.jobs.Go(func() { estore.Run(ctx, 30*time.Second) })
 	// Network scans for vulnerabilities, set up on the Vulnerabilities
-	// page. The server that runs the background jobs runs them.
+	// page. Every server runs the scans of the networks that name it as
+	// their scanner; the server that runs the background jobs runs the
+	// rest.
 	vstore := vulnscan.NewStore(cl, c.OpenSearch.IndexPrefix)
 	nvd := vulnscan.NewNVD(c.NVDURL(), c.Vulns.NVDAPIKey)
 	in.jobs.Go(func() { feedFoundAssets(ctx, estore, vstore, lists, log) })
@@ -1338,9 +1376,19 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		lcancel()
 	}
 	in.jobs.Go(func() { tokens.Run(ctx) })
+	// OpenVAS, optional, runs the deeper scans of this server's networks
+	// that ask for them.
+	var openvas *vulnscan.OpenVAS
+	if c.Vulns.OpenVASAddress != "" {
+		openvas = &vulnscan.OpenVAS{Address: c.Vulns.OpenVASAddress, Username: c.Vulns.OpenVASUsername,
+			Password: c.Vulns.OpenVASPassword, CAFile: c.Vulns.OpenVASCAFile}
+	}
 	scanner := &vulnscan.Scanner{
-		Store: vstore, NVD: nvd, Events: pipeline, Server: sampleServer, Log: log,
-		Checker: &vulnscan.Checker{NVD: nvd, Docker: cluster.InContainer()},
+		Store: vstore, NVD: nvd, Events: pipeline, Server: sampleServer, NodeID: sampleNode, Log: log, OpenVAS: openvas,
+		Checker: &vulnscan.Checker{NVD: nvd, Docker: cluster.InContainer(), OpenVAS: openvas},
+	}
+	if r.node != nil {
+		scanner.Leader, scanner.Paused = r.node.RunsJobs, r.node.WritesRefused
 	}
 	// The agents that send events, for the Endpoints page: counted here,
 	// written once a minute to the runtime index next to the agent
@@ -1354,6 +1402,11 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			return agentinv.Pin(certs.Fingerprint())
 		},
 		Leader: func() bool { return r.node != nil && r.node.RunsJobs() }}
+	// The cluster's one certificate authority, once it has one.
+	tlsStatus := r.sharedTLS(ctx, in, c, certs, agentsInv)
+	// This server's own OpenSearch certificate, once the cluster keeps
+	// OpenSearch's certificate authority.
+	osIdentity := r.osIdentity(ctx, in, c)
 	r.agents.Store(agentsInv)
 	in.jobs.Go(func() { agentsInv.Run(ctx) })
 	srv := &api.Server{
@@ -1396,8 +1449,18 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		Version:    version,
 	}
 	srv.KnownBrowsers = r.browsers
+	srv.Join = r.sharedJoin(c, certs)
+	wireFeatures(srv, r.shared)
 	if parts != nil {
 		srv.SessionStore, srv.KnownBrowsers, srv.SharedUsers = parts.sessions, parts.browsers, parts.api(c)
+		if rt := r.shared; rt != nil {
+			srv.SharedUsers.APITokens = func() string {
+				if rt.APITokens() {
+					return ""
+				}
+				return "API tokens need every server on a version that supports them: upgrade the others first."
+			}
+		}
 	}
 	in.jobs.Go(func() { srv.RunContentUpdates(ctx) })
 	pbRunner := &playbooks.Runner{
@@ -1466,6 +1529,16 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			return false
 		}
 	}
+	// Vulnerability scans run on every server, not as a background job:
+	// each runs those of the networks it scans (see vulnscan.Scanner).
+	// Networks can be added on the page at any time, so the scanner runs
+	// even with none yet.
+	in.jobs.Go(func() {
+		if !ready(ctx) || !vulnsOK {
+			return
+		}
+		scanner.Run(ctx)
+	})
 	// The background jobs run only while this server holds the job lease:
 	// of the servers that share one OpenSearch, one runs them.
 	in.jobsList = []cluster.Job{
@@ -1518,15 +1591,6 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			log.Info("playbooks will run for new findings that match them", "file", c.PlaybooksFile())
 			pbRunner.Run(ctx)
 		}},
-		{Name: "vulnerability scans", Run: func(ctx context.Context) {
-			if !ready(ctx) || !vulnsOK {
-				return
-			}
-			// Networks can be added on the page at any time, so the
-			// scanner runs even with none yet.
-			log.Info("vulnerability scans will run on their schedules")
-			scanner.Run(ctx)
-		}},
 		// Retention keeps running while OpenSearch refuses writes (its
 		// disk is full): its disk guard is what frees space.
 		{Name: "retention", Emergency: true, Run: func(ctx context.Context) {
@@ -1535,7 +1599,9 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		}},
 	}
 	if r.shared != nil {
-		in.jobsList = append(in.jobsList, requestsJob(r.shared, contentHandlers(feeds, ret)))
+		in.jobsList = append(in.jobsList, requestsJob(r.shared, contentHandlers(feeds, ret, r.auditHandlers(ret), r.lifecycleLeaderHandlers())))
+		in.jobsList = append(in.jobsList, r.auditJobs(c, cl, ret)...)
+		in.jobsList = append(in.jobsList, r.joinJobs()...)
 	}
 	if parts != nil {
 		// Signed-in directory users are checked again by this one server
@@ -1548,6 +1614,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		in.jobs.Go(func() { r.sharedContent.apply(ctx, r.shared, c) })
 	}
 	in.retention = ret
+	srv.Audit = r.auditAPI(c, cl)
 	if hook := jobStarting; hook != nil {
 		in.jobsList = watchJobs(in.jobsList, c, hook)
 	}
@@ -1569,15 +1636,22 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		// lost the lease cannot write over a newer one's, and slots are
 		// worked out on OpenSearch's clock, which every server shares.
 		sched.Epoch, sched.NodeID, sched.ClusterNow = r.node.Lease().Epoch, r.node.ID(), r.node.ClusterNow
-		scanner.Allowed = r.node.RunsJobs
 		srv.Cluster = r.node
 		srv.NodeURLChanged = func(c *config.Config) { r.node.SetNodeURL(nodeURL(c)) }
+		wireUpgrade(srv, r.node, r.shared, cl, c.OpenSearch.IndexPrefix)
 		if r.shared != nil {
 			srv.Cluster = sharedCluster{Node: r.node, rt: r.shared}
 			srv.Shared = sharedAPI{rt: r.shared, on: sharedOn}
+			srv.ClusterTLS = r.clusterTLSAPI()
+			srv.ClusterServers = r.clusterServersAPI()
+			srv.ClusterOSIdentity = r.clusterOSIdentityAPI()
 			srv.ConfigToken = configToken{rt: r.shared}
+			// A start that keeps the settings in settings.yaml has the
+			// store too, so a save there holds off the move of this
+			// server's own settings into the shared settings, and goes
+			// there once they moved (settingsStore.HoldFile).
+			srv.Settings = settingsStore{r: r, files: !settingsOn}
 			if settingsOn {
-				srv.Settings = settingsStore{r: r}
 				// The shared settings and this server's own are followed
 				// while this start runs: what applies at once is applied,
 				// and the rest waits for a restart. The settings set aside
@@ -1588,6 +1662,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		}
 		in.node = r.node
 	}
+	srv.Install = clusterInstall()
 	tokenSrv.Store(srv)
 	in.srv, in.handler = srv, srv.Handler()
 	r.srv.Store(srv)
@@ -1613,7 +1688,10 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 				fp.Users = usersFingerprint(people, dir)
 				return sharedFingerprints(fp, r.shared, sharedOn)
 			},
-			Indexed: pipeline.LastIndexed,
+			Indexed:    pipeline.LastIndexed,
+			TLS:        tlsStatus,
+			OSIdentity: osIdentity,
+			Busy:       jobsBusy(ret, r.shared),
 		}
 		if rt := r.shared; rt != nil {
 			settings.Shared = func() cluster.SharedStatus { return sharedStatus(rt, r.sharedContent) }
@@ -1839,7 +1917,7 @@ func openNode(c *config.Config, log *slog.Logger) (*cluster.Node, *slog.Logger, 
 		log.Warn(w)
 	}
 	log.Info("this server's identity", "node_id", local.Identity.NodeID, "state_dir", local.Dir)
-	node := cluster.New(cluster.Options{Local: local, Version: version, Deployment: deployment(), Log: log})
+	node := cluster.New(cluster.Options{Local: local, Version: version, Deployment: deployment(), Log: log, Timing: nodeTiming()})
 	return node, log, nil
 }
 
@@ -1869,6 +1947,7 @@ func (r *runner) openUsers(c *config.Config) (*users.Store, *users.Directory, er
 		if err != nil {
 			return nil, nil, err
 		}
+		people.Hold = r.sharedContent.holdFile(shared.ImportUsers)
 		r.people = people
 	}
 	if r.people.BuiltinAdmin != c.Auth.AdminUser {
@@ -1882,6 +1961,7 @@ func (r *runner) openUsers(c *config.Config) (*users.Store, *users.Directory, er
 	if err != nil {
 		return nil, nil, err
 	}
+	dir.Hold = r.sharedContent.holdFile(shared.ImportDirectory)
 	return r.people, dir, nil
 }
 

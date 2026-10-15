@@ -42,8 +42,10 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/retention"
 	"github.com/jrsamsanchez/signalith/internal/sample"
 	"github.com/jrsamsanchez/signalith/internal/search"
+	"github.com/jrsamsanchez/signalith/internal/shared"
 	"github.com/jrsamsanchez/signalith/internal/syslog"
 	"github.com/jrsamsanchez/signalith/internal/tlsauto"
+	"github.com/jrsamsanchez/signalith/internal/upgradecheck"
 	"github.com/jrsamsanchez/signalith/internal/users"
 )
 
@@ -85,6 +87,8 @@ type Server struct {
 	// Retention enforces data retention policies; nil disables the Data
 	// retention page.
 	Retention *retention.Manager
+	// Audit backs the Audit page; nil leaves it empty.
+	Audit *Audit
 	// Endpoints manages the hosts that run osquery (the Endpoints page and
 	// osquery's remote API); nil disables them.
 	Endpoints *endpoint.Store
@@ -179,11 +183,35 @@ type Server struct {
 	// how old an event's own time may be in the pipeline and syslog. nil
 	// leaves the age the server started with.
 	EventAge EventAge
+	// ClusterTLS is the cluster's one certificate authority; nil on a
+	// server that is not a member of a cluster.
+	ClusterTLS ClusterTLS
+	// Join adds servers to the cluster: join tokens, the public join and
+	// approvals (clusterjoin.go); nil on a server without shared settings.
+	Join ClusterJoin
+	// ClusterServers drains and removes servers and rotates the cluster
+	// key; nil on a server that is not a member of a cluster.
+	ClusterServers ClusterServers
+	// ClusterOSIdentity is OpenSearch's certificate authority the cluster
+	// keeps; nil on a server that is not a member of a cluster.
+	ClusterOSIdentity ClusterOSIdentity
+	// Features says which features that come with a cluster level are on
+	// (GET /api/cluster/features), and ClusterLevel the cluster's level;
+	// nil on a server without shared settings.
+	Features     func() []shared.FeatureState
+	ClusterLevel func() int
+	// Upgrade judges whether the next server may be upgraded, for the
+	// Servers page's checklist (GET /api/cluster/upgrade); nil on a
+	// server without a cluster.
+	Upgrade func(ctx context.Context) (upgradecheck.Verdict, error)
+	// Install hands new servers the install scripts and this server's
+	// program; nil turns that off.
+	Install *ClusterInstall
 
 	authOnce     sync.Once
-	creds        credCache  // recently checked Basic credentials
-	routes       []route    // every API route and its role, from Handler
-	caseMu       sync.Mutex // serializes case changes
+	creds        credCache // recently checked Basic credentials
+	routes       []route   // every API route and its role, from Handler
+	caseLocks    caseLocks // one lock per case being changed
 	checksMu     sync.Mutex
 	dirChecks    map[string]dirCheck // when each directory user was last checked
 	dirSlotsOnce sync.Once
@@ -191,6 +219,7 @@ type Server struct {
 	background   sync.WaitGroup // directory checks still running
 	settingsMu   sync.Mutex     // serializes saves on the Settings page
 	testMu       sync.Mutex     // one connection test at a time
+	aiModels     modelCache     // model lists read from the AI model's service
 	sampleJob    sampleJob      // the one running sample-data load or remove
 	pageCache    pages          // index.html and login.html, rendered
 	// live holds Config with the settings saved on the Settings page that
@@ -207,7 +236,8 @@ type Server struct {
 	caMu          sync.Mutex // one change of certificate authority at a time
 	blockedLog    logOnce    // blocked osquery hosts that tried to enroll
 	tokensOnce    sync.Once
-	tokenRate     tokenRate // agent token creation
+	tokenRate     tokenRate         // agent token creation
+	sensorCache   sensorHealthCache // the Health page's network sensor counts
 }
 
 // EventAge is what keeps the age of events the server accepts in step
@@ -286,6 +316,7 @@ func (s *Server) Handler() http.Handler {
 	s.routePlaybooks(api)
 	s.routeUsers(api)
 	s.routeRetention(api)
+	s.routeAudit(api)
 	s.routeRequests(api)
 	s.routeSample(api)
 	s.routeEndpoints(api)
@@ -293,7 +324,15 @@ func (s *Server) Handler() http.Handler {
 	s.routeCompliance(api)
 	s.routeSettings(api)
 	s.routeCluster(api)
+	s.routeClusterTLS(api)
+	s.routeClusterServers(api)
+	s.routeClusterFeatures(api)
+	s.routeClusterUpgrade(api)
+	s.routeClusterOSIdentity(api)
+	s.routeClusterInstall(mux, api)
+	s.routeSensor(mux, api)
 	s.routeTokens(api)
+	s.routeAPITokens(api)
 	s.routeAgents(api)
 	if s.UI != nil {
 		api.add(route{Pattern: "GET /", Role: users.Viewer}, revalidate(s.indexPage(staticFiles(s.UI, true))))
@@ -425,7 +464,14 @@ func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 	res, err = s.Pipeline.IngestBody(withOrigin(r, ingest.IntakeAgent, who), tag, body)
 	if res != nil {
 		s.tokens().Note(who.ID, from.String(), res.Indexed+res.Duplicates)
-		s.noteAgent(r, ingest.IntakeAgent, tag, who, res.Indexed+res.Duplicates, nil)
+		// Only a token made for a sensor speaks for a sensor's health:
+		// any other agent token could otherwise keep a stopped sensor
+		// looking healthy, or add sensors that are not there.
+		sensor := res.Sensor
+		if who.Legacy || who.Purpose != agenttokens.PurposeSensor {
+			sensor = nil
+		}
+		s.noteAgent(r, ingest.IntakeAgent, tag, who, res.Indexed+res.Duplicates, nil, sensor)
 	}
 	if err != nil {
 		var bad *ingest.BodyError
@@ -925,29 +971,22 @@ func (s *Server) handleAgentConfig(w http.ResponseWriter, r *http.Request) {
 		CollectorOS: v.Get("collector"),
 		Platform:    v.Get("platform"),
 		Version:     s.Version,
+		// A network sensor: both tools unless the page says otherwise.
+		Zeek:              v.Get("zeek") != "false",
+		Suricata:          v.Get("suricata") != "false",
+		ZeekDir:           strings.TrimSpace(v.Get("zeek_dir")),
+		EVEPath:           strings.TrimSpace(v.Get("eve_path")),
+		SuricataProtocols: v.Get("suricata_protocols") == "true",
 	}
-	if certs != nil {
-		// While a new certificate authority is prepared, agents get both,
-		// so they keep sending after the switch.
-		opts.CA = string(certs.AgentCAPEM())
-		opts.CAUnknown = opts.CA == "" && !certs.PublicCA()
-		opts.OwnCA = certs.LocalCA()
-		if leaf := certs.Leaf(); leaf != nil {
-			opts.CertNames = leaf.DNSNames
-		}
-		// The pins name the CAs the agent gets: the current one, and the
-		// next one too while a switch is prepared, so the Endpoints page
-		// still counts the agent as fine after the switch.
-		if opts.CA != "" {
-			opts.CAPin = agentinv.Pin(certs.Fingerprint())
-			if next := certs.Next(); next != nil && certs.LocalCA() {
-				opts.NextCAPin = agentinv.Pin(next.Fingerprint)
-			}
-		}
-	}
+	agentTLS(&opts, certs)
 	a, err := agents.Generate(opts)
 	if errors.Is(err, agents.ErrNoNameToCheck) {
 		fieldError(err)
+		return
+	}
+	var fe *agents.FieldError
+	if errors.As(err, &fe) {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": fe.Error(), "field": fe.Field})
 		return
 	}
 	if err != nil {
@@ -962,6 +1001,31 @@ func (s *Server) handleAgentConfig(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// agentTLS fills in how an agent checks the server's certificate, made
+// by certs (nil when Signalith does not serve HTTPS itself).
+func agentTLS(opts *agents.Options, certs *tlsauto.Manager) {
+	if certs == nil {
+		return
+	}
+	// While a new certificate authority is prepared, agents get both,
+	// so they keep sending after the switch.
+	opts.CA = string(certs.AgentCAPEM())
+	opts.CAUnknown = opts.CA == "" && !certs.PublicCA()
+	opts.OwnCA = certs.LocalCA()
+	if leaf := certs.Leaf(); leaf != nil {
+		opts.CertNames = leaf.DNSNames
+	}
+	// The pins name the CAs the agent gets: the current one, and the
+	// next one too while a switch is prepared, so the Endpoints page
+	// still counts the agent as fine after the switch.
+	if opts.CA != "" {
+		opts.CAPin = agentinv.Pin(certs.Fingerprint())
+		if next := certs.Next(); next != nil && certs.LocalCA() {
+			opts.NextCAPin = agentinv.Pin(next.Fingerprint)
+		}
+	}
 }
 
 // agentConfig is the answer to GET api/agents/config. AddName is the
@@ -1014,6 +1078,9 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		if b := s.Cluster.Banners(); len(b) > 0 {
 			out["cluster_banners"] = b
 		}
+	}
+	if sensors := s.sensorHealth(ctx); sensors != nil {
+		out["sensors"] = sensors
 	}
 	// Everyone signed in sees whether things work. Where they run (file
 	// paths, addresses, the OpenSearch URL and its errors) and the setup
@@ -1138,6 +1205,10 @@ func (s *Server) tlsInfo() map[string]any {
 	if s.TLS.CAPEM() != nil {
 		t["ca_sha256"] = s.TLS.Fingerprint()
 		t["own_ca"] = s.TLS.LocalCA()
+		if s.clusterCAOwner() != "" {
+			// The cluster's: every server's certificate comes from it.
+			t["cluster_ca"] = true
+		}
 	}
 	if ca := s.TLS.CAInfo(); ca != nil {
 		t["ca_scope"] = ca.Scope

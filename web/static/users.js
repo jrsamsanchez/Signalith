@@ -367,6 +367,14 @@
   }
   $('u-find').addEventListener('input', () => { if (U.data) renderUsers(); });
 
+  // The Audit page, with the records about users: who added, changed or
+  // removed them, and sign-ins.
+  {
+    const btn = el('button', { class: 'btn btn--ghost', type: 'button', id: 'u-audit' }, icon('scroll-text'), 'Audit');
+    btn.addEventListener('click', () => window.openAudit && window.openAudit({ q: 'user' }));
+    $('u-add').before(btn);
+  }
+
   // ---------- adding a user ----------
   $('u-add').addEventListener('click', openAddUser);
 

@@ -70,6 +70,11 @@ func (s *Server) handleGetLookup(w http.ResponseWriter, r *http.Request) {
 		resp["items"] = list[:min(len(list), 1000)]
 		resp["sample"] = len(oi)
 	}
+	// Shared by the servers of a cluster: the version to send back in
+	// If-Match with an upload.
+	if s.Assets.Shared() {
+		resp["shared"], resp["etag"] = true, s.Assets.ETag(kind)
+	}
 	writeJSON(w, http.StatusOK, resp)
 }
 
@@ -90,23 +95,24 @@ func (s *Server) handlePutLookup(w http.ResponseWriter, r *http.Request) {
 		uploadFailed(w, err)
 		return
 	}
-	var n int
-	if kind == "assets" {
-		n, err = s.Assets.SetAssets(data)
-	} else {
-		n, err = s.Assets.SetIdentities(data)
-	}
+	n, err := s.Assets.SetIf(r.Context(), userOf(r), kind, data, ifMatch(r))
 	var pe *assets.ParseError
 	if errors.As(err, &pe) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "the file has problems; nothing was saved", "lines": pe.Lines})
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err)
+		if !sharedError(w, err) {
+			writeError(w, http.StatusBadRequest, err)
+		}
 		return
 	}
 	s.Log.Info("lookup list replaced", "list", kind, "entries", n, "by", userOf(r))
-	writeJSON(w, http.StatusOK, map[string]any{"count": n})
+	resp := map[string]any{"count": n}
+	if s.Assets.Shared() {
+		resp["etag"] = s.Assets.ETag(kind)
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) handleLookupContext(w http.ResponseWriter, r *http.Request) {

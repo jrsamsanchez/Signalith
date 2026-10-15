@@ -8,7 +8,11 @@ import (
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/cluster"
+	"github.com/jrsamsanchez/signalith/internal/clusterauth"
 	"github.com/jrsamsanchez/signalith/internal/clustercfg"
+	"github.com/jrsamsanchez/signalith/internal/clusterjoin"
+	"github.com/jrsamsanchez/signalith/internal/clusterlib"
+	"github.com/jrsamsanchez/signalith/internal/clusterpki"
 	"github.com/jrsamsanchez/signalith/internal/config"
 	"github.com/jrsamsanchez/signalith/internal/shared"
 	"github.com/jrsamsanchez/signalith/internal/store"
@@ -44,12 +48,129 @@ func openShared(c *config.Config, node *cluster.Node, log *slog.Logger) (*shared
 		LeaseEpoch: node.Lease().Epoch,
 		Peers:      func() []shared.Peer { return peersOf(node.Status()) },
 		Content:    ct.track,
-		Importers:  clustercfg.Importers(ct.docs, ct.files()),
+		Importers:  ct.holdImporters(sharedImporters(ct.sharedDocs, ct.files())),
 		Log:        log,
+		JoinInfo:   joinInfo(c),
+		Secured:    func() error { return clusterjoin.ViewOf(c).Secured() },
+		Version:    version,
+		Migrations: sharedMigrations(),
 	})
+	// Join tokens are made and used by a member only.
+	ct.join.Writable = rt.Writable
 	ct.rt.Store(rt)
 	ct.users.follow(rt)
 	return rt, ct
+}
+
+// sharedDocs are the documents of the shared settings a process keeps a
+// copy of: those of the content (the feeds, the retention policies and
+// the settings) and those of the users. The server's (newSharedContent)
+// and those of a founding from the command line (clusterCLI.runtime) are
+// both made by newSharedDocs, so both track and import the same. A new
+// shared feature adds its documents here and in newSharedDocs, then one
+// entry to trackers and one to sharedImporters.
+type sharedDocs struct {
+	docs *clustercfg.Docs
+	// lib holds the detections and dashboards (see sharedlibrary.go).
+	lib *clusterlib.Docs
+	// auth holds the users, the directory sign-in settings and the
+	// sessions; on the server, the same documents as sharedUsers.docs.
+	auth *clusterauth.Docs
+	// tls holds the cluster's certificate authority (see sharedtls.go).
+	tls *sharedTLS
+	// join holds the join tokens (see sharedjoin.go).
+	join *clusterjoin.Tokens
+	// reports holds the migration reports of servers that joined with
+	// signalith join --merge.
+	reports *clustercfg.Reports
+	// osca holds OpenSearch's certificate authority, which issues each
+	// server its own OpenSearch certificate (see sharedosid.go).
+	osca *clusterpki.OSCA
+}
+
+// newSharedDocs returns the documents of a process, with auth as the
+// users' documents.
+func newSharedDocs(auth *clusterauth.Docs) sharedDocs {
+	d := sharedDocs{docs: clustercfg.NewDocs(), auth: auth, tls: newSharedTLS(), join: clusterjoin.New(nil), reports: clustercfg.NewReports(),
+		lib: clusterlib.NewDocs(), osca: clusterpki.New()}
+	// The users and directory importers and the auth settings of
+	// signalith.yaml reach the users' documents.
+	d.docs.UseAuth(auth)
+	return d
+}
+
+// sharedTracker is a collection of shared documents: it tracks them on
+// the runtime's hub, and forgets the components of a start that ended.
+type sharedTracker interface {
+	Track(h *shared.Hub)
+	Reset()
+}
+
+// trackers lists the collections of shared documents, in the order they
+// are tracked. A new shared collection appends its entry here.
+func (d sharedDocs) trackers() []sharedTracker {
+	return []sharedTracker{
+		d.docs,
+		d.auth,
+		d.tls.tls,
+		d.join,
+		d.reports,
+		d.lib,
+		d.osca,
+		// Append a new shared collection here.
+	}
+}
+
+// track makes the shared documents on h.
+func (d sharedDocs) track(h *shared.Hub) {
+	for _, t := range d.trackers() {
+		t.Track(h)
+	}
+}
+
+// reset tells the components of the start that ended no more changes.
+func (d sharedDocs) reset() {
+	for _, t := range d.trackers() {
+		t.Reset()
+	}
+}
+
+// sharedImporters lists the importers of the shared settings, which move
+// this server's files into them when it founds the cluster (or once the
+// cluster's level brings a feature in), from the server and from the
+// command line alike. A new shared feature appends its importers here,
+// from its own package.
+func sharedImporters(d sharedDocs, f clustercfg.Files) []shared.Importer {
+	return slices.Concat(
+		// The feeds, their status, the retention policies, the users, the
+		// directory sign-in settings and the settings of the Settings page.
+		clustercfg.Importers(d.docs, f),
+		// The retention history and the archive manifests (sharedaudit.go).
+		auditImporters(f),
+		// The founder's certificate authority, as the cluster's.
+		[]shared.Importer{d.tls.importer(f)},
+		clusterlib.Importers(d.lib, libraryFiles(f)),
+		clusterlib.LookupImporters(d.lib, libraryFiles(f)),
+		// Append a new shared feature's importers here.
+	)
+}
+
+// sharedResealers lists what seals values with the cluster key, or signs
+// with it outside the shared documents, so a key rotation seals and signs
+// them again with the new key (see shared.Resealer). A new shared feature
+// that seals with the cluster key appends its resealer here.
+func sharedResealers(d sharedDocs, client func() (*store.Client, string)) []shared.Resealer {
+	return []shared.Resealer{
+		// The passwords and keys of the shared settings and of the feeds.
+		clustercfg.Resealer(d.docs),
+		// The directory's service account password, and the sessions.
+		clusterauth.Resealer(d.auth, client),
+		// The cluster certificate authority's key.
+		d.tls.tls.Resealer(),
+		// OpenSearch's certificate authority key.
+		d.osca.Resealer(),
+		// Append a new shared feature's resealer here.
+	}
 }
 
 // peersOf lists the servers as the node sees them.
@@ -57,10 +178,11 @@ func peersOf(st cluster.Status) []shared.Peer {
 	out := make([]shared.Peer, 0, len(st.Servers))
 	for _, s := range st.Servers {
 		p := shared.Peer{NodeID: s.NodeID, Name: s.Name, Leader: s.Jobs == "runs",
-			Live: s.State != cluster.StateOffline && s.State != cluster.StateStopped}
+			Live: s.State != cluster.StateOffline && s.State != cluster.StateStopped, Version: s.Version, OfflineSince: s.OfflineSince}
 		if s.Detail != nil {
 			p.Eligible, p.MaxRev = s.Detail.LeaderEligible, s.Detail.MaxRev
 			p.LevelMax, p.Users = s.Detail.LevelMax, s.Detail.FilesFingerprint.Users
+			p.KeyIDs, p.ClusterKID = s.Detail.KeyIDs, s.Detail.ClusterKID
 		}
 		if s.SeenAgo != nil {
 			p.SeenAgo = *s.SeenAgo
@@ -85,7 +207,7 @@ func sharedStatus(rt *shared.Runtime, ct *sharedContent) cluster.SharedStatus {
 	}
 	return cluster.SharedStatus{Mode: string(st.Mode), ClusterKID: st.ClusterKID, ConfigSeq: max(st.ConfigSeq, 0), MaxRev: st.MaxRev,
 		NeedsUpgrade: st.NeedsUpgrade, Tamper: st.Tamper, LevelMin: st.LevelMin, LevelMax: st.LevelMax, NotEligible: st.NotEligible,
-		SettingsDrift: ct.settingsDrift(), SettingsRev: ct.settingsRev()}
+		SettingsDrift: ct.settingsDrift(), SettingsRev: ct.settingsRev(), KeyIDs: st.KeyIDs}
 }
 
 // useShared points the runtime at this start's OpenSearch client, with

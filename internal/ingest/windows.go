@@ -5,7 +5,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"unicode"
 )
 
 // Fluent Bit's winevtlog input emits records with these keys: Channel,
@@ -85,6 +84,8 @@ func parseWindowsWith(r map[string]any, named map[string]string) Event {
 			f["provider"] = p
 		}
 		parseWindowsSecurity(eventID, in, &ev)
+	case channel == ApplicationChannel || strings.EqualFold(channel, CodeIntegrityChannel):
+		parseWindowsEventData(str(r, "ProviderName"), in, &ev)
 	case channel == SystemChannel:
 		parseWindowsSystem(eventID, str(r, "ProviderName"), in, &ev)
 		if b := str(r, "Binary"); b != "" && ev.Model == "Other" {
@@ -104,6 +105,8 @@ func parseWindowsWith(r map[string]any, named map[string]string) Event {
 			f["provider"] = p
 		}
 		parseSysmon(eventID, kv, &ev)
+	case IsNamedChannel(channel):
+		parseNamedChannel(channel, eventID, str(r, "ProviderName"), in, &ev)
 	case strings.EqualFold(channel, DefenderChannel):
 		parseDefender(eventID, str(r, "Message"), in, &ev)
 	case strings.EqualFold(channel, PowerShellChannel) && eventID == "4104":
@@ -554,6 +557,18 @@ func parseWindowsSecurity(eventID string, in []string, ev *Event) {
 		f["logon_id"] = at(in, 3)
 		f["src_host"] = at(in, 4)
 	default:
+		if _, ok := namedChannelEvent(SecurityChannel, eventID); ok {
+			// An event no data model holds, read by name.
+			parseNamedChannel(SecurityChannel, eventID, "", in, ev)
+			d := map[string]string{}
+			for _, n := range securitySubject {
+				d[n], _ = ev.Fields[snakeField("security", n)].(string)
+			}
+			if d["SubjectUserName"] != "" {
+				subject(d, ev.Fields)
+			}
+			return
+		}
 		parseWindowsSecurityNamed(eventID, securityNamed(eventID, in), ev)
 	}
 }
@@ -836,17 +851,7 @@ func SystemDataField(name string) (string, bool) {
 }
 
 // systemField is system_ and a data value's name in snake case.
-func systemField(name string) string {
-	var b strings.Builder
-	b.WriteString("system_")
-	for i, r := range name {
-		if unicode.IsUpper(r) && i > 0 && !unicode.IsUpper(rune(name[i-1])) {
-			b.WriteByte('_')
-		}
-		b.WriteRune(unicode.ToLower(r))
-	}
-	return b.String()
-}
+func systemField(name string) string { return snakeField("system", name) }
 
 // systemDataFields are the fields SystemDataField names.
 var systemDataFields = func() map[string]bool {
@@ -877,6 +882,34 @@ func parseSystemEvent(eventID, provider string, in []string, ev *Event) {
 		// The account that cleared the log.
 		f["user"] = at(in, 0)
 		f["user_domain"] = at(in, 1)
+	}
+}
+
+// ApplicationChannel is the Windows Application log, where programs and
+// services (SQL Server, Windows Installer, backup tools) log.
+const ApplicationChannel = "Application"
+
+// CodeIntegrityChannel is where Windows Code Integrity logs drivers and
+// images that are unsigned, revoked or blocked by policy.
+const CodeIntegrityChannel = "Microsoft-Windows-CodeIntegrity/Operational"
+
+// parseWindowsEventData reads an Application or Code Integrity log event:
+// its provider, and its data values one per line as event_data, which
+// rules search for words inside (each provider's events have their own
+// data). The event stays in Other, found by its provider and ID.
+func parseWindowsEventData(provider string, in []string, ev *Event) {
+	f := ev.Fields
+	if provider != "" {
+		f["provider"] = provider
+	}
+	var data []string
+	for _, v := range in {
+		if v = strings.TrimSpace(v); v != "" {
+			data = append(data, v)
+		}
+	}
+	if len(data) > 0 {
+		f["event_data"] = strings.Join(data, "\n")
 	}
 }
 
@@ -940,6 +973,14 @@ func taskElement(task, tag string) string {
 		return ""
 	}
 	return strings.TrimSpace(html.UnescapeString(v))
+}
+
+// sysmonFileBlocks are the action and signature of Sysmon's file block
+// events.
+var sysmonFileBlocks = map[string][2]string{
+	"27": {"blocked", "Executable file creation blocked"},
+	"28": {"blocked", "File shredding blocked"},
+	"29": {"created", "Executable file detected"},
 }
 
 func parseSysmon(eventID string, kv map[string]string, ev *Event) {
@@ -1050,6 +1091,22 @@ func parseSysmon(eventID string, kv map[string]string, ev *Event) {
 		if h := sysmonHash(kv["Hashes"], "SHA256"); h != "" {
 			f["file_hash"] = h
 		}
+	case "27", "28", "29":
+		// An executable file's creation blocked (FileBlockExecutable,
+		// 27), a file's deletion by a shredding tool blocked
+		// (FileBlockShredding, 28) and an executable file created
+		// (FileExecutableDetected, 29).
+		ev.Model = "Filesystem"
+		f["action"], f["signature"] = sysmonFileBlocks[eventID][0], sysmonFileBlocks[eventID][1]
+		f["file_path"] = kv["TargetFilename"]
+		f["file_name"] = baseName(kv["TargetFilename"])
+		sysmonProcess(kv, f)
+		if h := sysmonHash(kv["Hashes"], "SHA256"); h != "" {
+			f["file_hash"] = h
+		}
+	case "16":
+		ev.Model = "Other"
+		f["signature"] = "Sysmon configuration changed"
 	case "15":
 		// An alternate data stream written (FileCreateStreamHash), such as
 		// the Zone.Identifier a browser adds to a download: the stream's
@@ -1211,23 +1268,36 @@ var multiLine = map[string]bool{"CommandLine": true, "ParentCommandLine": true, 
 func keyValues(msg string) map[string]string {
 	out := map[string]string{}
 	cont := "" // the multi-line key being continued
+	// The continued value is built here, not by adding to the string
+	// line by line, which takes time quadratic in its length.
+	var b strings.Builder
+	end := func() {
+		if cont != "" {
+			out[cont] = b.String()
+			cont = ""
+		}
+	}
 	for _, raw := range strings.Split(msg, "\n") {
 		line := strings.TrimSpace(raw)
 		k, v, ok := strings.Cut(line, ":")
 		isKey := ok && k != "" && !strings.ContainsAny(k, " \t") && (v == "" || v[0] == ' ' || v[0] == '\t')
 		if !isKey {
 			if cont != "" {
-				out[cont] += "\n" + strings.TrimRight(raw, "\r")
+				b.WriteString("\n")
+				b.WriteString(strings.TrimRight(raw, "\r"))
 			}
 			continue
 		}
-		cont = ""
+		end()
 		if _, exists := out[k]; !exists {
 			out[k] = strings.TrimSpace(v)
 			if multiLine[k] {
 				cont = k
+				b.Reset()
+				b.WriteString(out[k])
 			}
 		}
 	}
+	end()
 	return out
 }

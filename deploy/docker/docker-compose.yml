@@ -41,6 +41,11 @@ services:
   # Runs before the others on every "up", then stops. It makes the
   # certificates OpenSearch and Signalith use with each other, the first
   # admin password and the agents' ingest token, and keeps them after that.
+  # The CA those certificates come from keeps its key in a volume of its
+  # own, opensearch-ca, which no other service mounts. Run by hand, it also
+  # hands that CA to Signalith or reloads OpenSearch's security settings
+  # (docs/opensearch-security.md), for example:
+  #   docker compose -f deploy/docker/docker-compose.yml run --rm setup bootstrap-docker -export-ca-key
   setup:
     image: ghcr.io/jrsamsanchez/signalith:${SIGNALITH_VERSION:-main}
     pull_policy: always
@@ -56,10 +61,23 @@ services:
     security_opt:
       - no-new-privileges:true
     network_mode: none
-    command: ["bootstrap-docker", "-opensearch-dir", "/opensearch-certs", "-signalith-dir", "/signalith-secrets"]
+    command: ["bootstrap-docker", "-opensearch-dir", "/opensearch-certs", "-signalith-dir", "/signalith-secrets", "-ca-dir", "/opensearch-ca", "-state-dir", "/signalith-data", "-loaded-dir", "/opensearch-security-loaded"]
+    # The same folders for runs by hand, which replace the command above.
+    environment:
+      - SIGNALITH_SETUP_OPENSEARCH_DIR=/opensearch-certs
+      - SIGNALITH_SETUP_SIGNALITH_DIR=/signalith-secrets
+      - SIGNALITH_SETUP_CA_DIR=/opensearch-ca
+      - SIGNALITH_SETUP_STATE_DIR=/signalith-data
+      - SIGNALITH_SETUP_LOADED_DIR=/opensearch-security-loaded
+      - SIGNALITH_SETUP_CRL_DIR=/opensearch-crl
     volumes:
       - opensearch-certs:/opensearch-certs
       - signalith-secrets:/signalith-secrets
+      - opensearch-ca:/opensearch-ca
+      # Written only by -export-ca-key and -apply-security.
+      - signalith-data:/signalith-data
+      - opensearch-security-loaded:/opensearch-security-loaded
+      - opensearch-crl:/opensearch-crl
     restart: "no"
 
   opensearch:
@@ -76,6 +94,13 @@ services:
       # it, and it would be one more program listening (port 9600).
       - DISABLE_PERFORMANCE_ANALYZER_AGENT_CLI=true
       - OPENSEARCH_JAVA_OPTS=-Xms1g -Xmx1g
+    # Checks client certificates against the revocation list Signalith
+    # keeps (docs/servers.md, Ending a server's OpenSearch access at once),
+    # once setup has made it: OpenSearch refuses every certificate while
+    # the list it checks is missing. After that (crl-required), it does not
+    # start without the list, which would leave it checking nothing.
+    entrypoint: ["sh", "-c", "if [ -s config/crl/crl.pem ]; then exec env plugins.security.ssl.http.crl.validate=true plugins.security.ssl.http.crl.file_path=/usr/share/opensearch/config/crl/crl.pem plugins.security.ssl.http.crl.disable_ocsp=true plugins.security.ssl.http.crl.disable_crldp=true plugins.security.ssl.http.crl.prefer_crlfile_over_ocsp=true ./opensearch-docker-entrypoint.sh \"$$@\"; fi; if [ -e config/crl/crl-required ]; then echo \"OpenSearch does not start without its revocation list, config/crl/crl.pem. Signalith writes it again within a minute, and so does: docker compose -f deploy/docker/docker-compose.yml up -d\" >&2; exit 1; fi; exec ./opensearch-docker-entrypoint.sh \"$$@\"", "sh"]
+    command: ["opensearch"]
     ulimits:
       memlock: { soft: -1, hard: -1 }
       nofile: { soft: 65536, hard: 65536 }
@@ -84,6 +109,7 @@ services:
     volumes:
       - opensearch-data:/usr/share/opensearch/data
       - opensearch-certs:/usr/share/opensearch/config/certs:ro
+      - opensearch-crl:/usr/share/opensearch/config/crl:ro
       - ./opensearch/opensearch.yml:/usr/share/opensearch/config/opensearch.yml:ro
       - ./opensearch/security/config.yml:/usr/share/opensearch/config/opensearch-security/config.yml:ro
       - ./opensearch/security/internal_users.yml:/usr/share/opensearch/config/opensearch-security/internal_users.yml:ro
@@ -171,7 +197,8 @@ services:
     # A fixed name, which goes into Signalith's own HTTPS certificate and the
     # name of its certificate authority ("Signalith Local CA (signalith)").
     # Without it the name would be the container's random ID, new each time.
-    hostname: signalith
+    # SIGNALITH_NODE_NAME in a .env file next to this file changes it.
+    hostname: ${SIGNALITH_NODE_NAME:-signalith}
     # After a reboot this can start before OpenSearch is ready; it waits for it.
     restart: unless-stopped
     depends_on:
@@ -186,6 +213,11 @@ services:
     # A stop gives the background jobs up to a minute to finish before
     # another server takes them over.
     stop_grace_period: 90s
+    # host.docker.internal is the computer running Docker, for an AI model
+    # server there such as Ollama (Docker Desktop has it already; Linux
+    # needs this line).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       # Web UI, API and agents, over HTTPS (http:// is sent to https://).
       # Open on every network this computer is on. To take them from one
@@ -211,6 +243,9 @@ services:
       # This server's name on the Servers page. When several servers share
       # one OpenSearch, give each its own.
       - SIGNALITH_NODE_NAME=signalith-1
+      # The revocation list OpenSearch checks client certificates against,
+      # which this server keeps once the cluster keeps OpenSearch's CA.
+      - SIGNALITH_OPENSEARCH_CRL_FILE=/run/opensearch-crl/crl.pem
       # Set to https://<this computer's IP>:8080 so agents on other machines can reach it.
       # When several servers share one OpenSearch and their settings, the public
       # address is one for all of them: a change here applies to every server
@@ -221,6 +256,7 @@ services:
       - ./signalith.yaml:/etc/signalith/signalith.yaml:ro
       - signalith-data:/var/lib/signalith
       - signalith-secrets:/run/signalith-secrets:ro
+      - opensearch-crl:/run/opensearch-crl
       # Days archived before retention deletes them go to /var/lib/signalith/archive.
       # To keep them on another disk, mount a folder there (writable by uid 65532):
       # - /mnt/archive/signalith:/var/lib/signalith/archive
@@ -240,11 +276,41 @@ services:
       driver: json-file
       options: { max-size: "10m", max-file: "5" }
 
+  # Opens OpenSearch's port to the other Signalith servers of a cluster
+  # (Servers > Add a server > Prepare OpenSearch). Off unless the cluster
+  # profile is on: put COMPOSE_PROFILES=cluster in a .env file next to this
+  # file, so every "up" keeps it. It passes connections on as they are:
+  # TLS and the client certificate still run between each server and
+  # OpenSearch. Only open the port to the other servers in the firewall.
+  opensearch-port:
+    profiles: ["cluster"]
+    image: ghcr.io/jrsamsanchez/signalith:${SIGNALITH_VERSION:-main}
+    pull_policy: always
+    command: ["tcp-forward", "-listen", "0.0.0.0:9200", "-to", "opensearch:9200"]
+    restart: unless-stopped
+    depends_on:
+      opensearch: { condition: service_started }
+    ports:
+      # To take it from one network only, put this computer's address in
+      # front, e.g. SIGNALITH_OPENSEARCH_PORT=192.168.1.20:9200 in .env.
+      - "${SIGNALITH_OPENSEARCH_PORT:-9200}:9200"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+
 volumes:
   # Events, findings and investigations. Kept from earlier versions.
   opensearch-data:
   # OpenSearch's certificates, made by the setup service.
   opensearch-certs:
+  # The OpenSearch CA's certificate and key, which the setup service makes
+  # new certificates with; only setup mounts it. Guard it like a password.
+  opensearch-ca:
   # A fingerprint of the security settings files opensearch-security loaded
   # last, so it loads them again only when they change.
   opensearch-security-loaded:
@@ -255,3 +321,6 @@ volumes:
   signalith-data:
   # Signalith's OpenSearch certificate, first admin password and ingest token.
   signalith-secrets:
+  # The revocation list OpenSearch checks client certificates against:
+  # made by setup, kept by Signalith, read by OpenSearch.
+  opensearch-crl:

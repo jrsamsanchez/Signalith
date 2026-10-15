@@ -197,7 +197,11 @@ func TestCacheWriterWritesAfterChanges(t *testing.T) {
 		}
 		return d.Floors["retention"]
 	}
-	waitFor(t, func() bool { return e.clock.Waiting() > 0 })
+	// The writer waits for CacheEvery after the write. Each pass of its
+	// loop also leaves a CacheRefresh timer on the fake clock, which never
+	// fires here, so the CacheEvery wait is the second timer: advancing
+	// the clock before the writer set it would leave it waiting for good.
+	waitFor(t, func() bool { return e.clock.Waiting() == 2 })
 	if _, err := da.Mutate(ctx, "sam", func(v *testBody) error { v.Name = "second"; return nil }); err != nil {
 		t.Fatal(err)
 	}
@@ -208,7 +212,8 @@ func TestCacheWriterWritesAfterChanges(t *testing.T) {
 	e.clock.Advance(DefaultTiming.CacheEvery)
 	waitFor(t, func() bool { return floor() == 2 })
 	// One left at the end is written as the writer stops.
-	waitFor(t, func() bool { return e.clock.Waiting() > 0 })
+	// Two CacheRefresh timers and the next CacheEvery wait.
+	waitFor(t, func() bool { return e.clock.Waiting() == 3 })
 	if _, err := da.Mutate(ctx, "sam", func(v *testBody) error { v.Name = "third"; return nil }); err != nil {
 		t.Fatal(err)
 	}
@@ -228,4 +233,37 @@ func waitFor(t *testing.T, ok func() bool) {
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
+}
+
+// A cache the shared settings do not change is written again every
+// CacheRefresh while the hub reads OpenSearch, so it never gets too old
+// to use.
+func TestCacheWriterRefreshes(t *testing.T) {
+	e := newEnv(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	a, _ := e.hub("siem-a")
+	da := NewDoc[testBody](a, "retention", "retention", 1)
+	if _, err := da.Mutate(ctx, "sam", func(v *testBody) error { v.Name = "first"; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	cycle(t, a)
+	state := t.TempDir()
+	c := Cache{Path: CachePath(state), Master: secrets.NewKeyring(state), Prefix: testPrefix}
+	w := NewCacheWriter(a, c)
+	done := make(chan struct{})
+	go func() {
+		w.Run(ctx)
+		close(done)
+	}()
+	w.Changed()
+	usable := func() bool { _, err := c.Read(e.clock.Now()); return err == nil }
+	waitFor(t, usable)
+	for range (CacheMaxAge + 10*24*time.Hour) / time.Hour {
+		cycle(t, a)
+		e.clock.Advance(time.Hour)
+		time.Sleep(time.Millisecond)
+	}
+	waitFor(t, usable)
+	cancel()
+	<-done
 }

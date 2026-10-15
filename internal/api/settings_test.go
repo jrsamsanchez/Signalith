@@ -125,7 +125,7 @@ func TestSettingsRoutesAreAdminOnly(t *testing.T) {
 	ts, _, _ := newSettingsServer(t, "", nil)
 	for _, rt := range []struct{ method, path string }{
 		{"GET", "/api/settings"}, {"PUT", "/api/settings"}, {"POST", "/api/settings/test/opensearch"},
-		{"POST", "/api/settings/test/assistant"}, {"POST", "/api/settings/restart"}, {"POST", "/api/settings/restart/confirm"},
+		{"POST", "/api/settings/test/assistant"}, {"POST", "/api/settings/assistant/models"}, {"POST", "/api/settings/restart"}, {"POST", "/api/settings/restart/confirm"},
 		{"GET", "/api/settings/export"},
 	} {
 		if code, out := doAs(t, ts, "andy", "role-password", rt.method, rt.path, "{}"); code != 403 || out["code"] != "forbidden" {
@@ -413,6 +413,61 @@ func TestTestAssistant(t *testing.T) {
 	body = strings.Replace(body, "good-key", "bad-key", 1)
 	if code, out := test(body); code != 200 || out["ok"] != false || !strings.Contains(out["message"].(string), "refused the API key") {
 		t.Errorf("bad key %d %v", code, out)
+	}
+}
+
+func TestTestAssistantUnknownModel(t *testing.T) {
+	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(404)
+		w.Write([]byte(`{"type":"error","error":{"type":"not_found_error","message":"model: claude-nope"}}`))
+	}))
+	defer model.Close()
+	ts, _, _ := newSettingsServer(t, "", nil)
+	body := `{"values":{"assistant.provider":"anthropic","assistant.url":"` + model.URL + `","assistant.model":"claude-nope","assistant.api_key":"k"}}`
+	code, out, _ := call(t, ts, "POST", "/api/settings/test/assistant", body, "admin", "s3cret-pass", nil)
+	if code != 200 || out["ok"] != false || out["field"] != "assistant.model" || !strings.Contains(out["message"].(string), "Unknown model") {
+		t.Errorf("unknown model %d %v", code, out)
+	}
+}
+
+func TestAssistantModels(t *testing.T) {
+	calls := 0
+	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if r.URL.Path != "/v1/models" || r.Header.Get("x-api-key") != "good-key" {
+			w.WriteHeader(401)
+			w.Write([]byte(`{"error":{"message":"invalid x-api-key"}}`))
+			return
+		}
+		w.Write([]byte(`{"data":[{"id":"claude-opus-5-5","display_name":"Claude Opus 5.5"}]}`))
+	}))
+	defer model.Close()
+	ts, _, _ := newSettingsServer(t, "", nil)
+	list := func(body string) map[string]any {
+		t.Helper()
+		code, out, _ := call(t, ts, "POST", "/api/settings/assistant/models", body, "admin", "s3cret-pass", nil)
+		if code != 200 {
+			t.Fatalf("%d %v", code, out)
+		}
+		return out
+	}
+	// No key: the models Signalith knows of.
+	out := list(`{"values":{"assistant.provider":"anthropic"}}`)
+	if out["live"] != false || len(out["models"].([]any)) == 0 || out["message"] == "" {
+		t.Errorf("no key %v", out)
+	}
+	body := `{"values":{"assistant.provider":"anthropic","assistant.url":"` + model.URL + `","assistant.api_key":"good-key"}}`
+	out = list(body)
+	if out["live"] != true || len(out["models"].([]any)) != 1 || strings.Contains(mustJSON(out), "good-key") {
+		t.Errorf("live %v", out)
+	}
+	list(body)
+	if calls != 1 {
+		t.Errorf("the list was read %d times, want once", calls)
+	}
+	out = list(strings.Replace(body, "good-key", "bad-key", 1))
+	if out["live"] != false || !strings.Contains(out["message"].(string), "refused the API key") {
+		t.Errorf("bad key %v", out)
 	}
 }
 

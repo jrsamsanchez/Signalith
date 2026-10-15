@@ -57,9 +57,25 @@ func SplunkFilter(r *splcheck.Rule) (query.Expr, error) {
 	if err != nil {
 		return nil, err
 	}
+	if r.Node == splcheck.SensorDNSNode {
+		// The lookups that name the address that asked, as a sensor's
+		// do: the rules count by src. A host's own lookups (Sysmon 22)
+		// name only the host, which the endpoint rules cover.
+		return and([]query.Expr{&query.Compare{Field: "src", Op: "=", Value: "*"}, e}), nil
+	}
+	if splcheck.IsSensorNode(r.Node) {
+		// Every connection, from a network sensor, a firewall or a
+		// host, as Splunk's tstats over the data model.
+		return e, nil
+	}
 	if r.Node == splcheck.AuditdNode {
 		// Every Linux audit record, of any type.
 		return and([]query.Expr{&query.Compare{Field: "sourcetype", Op: "=", Value: ingest.AuditdSourcetype}, e}), nil
+	}
+	if r.Node == "Web" {
+		// Every web request: a web server's access log, or a network
+		// sensor's.
+		return e, nil
 	}
 	sourcetype := windowsSourcetypes
 	if r.Linux {
@@ -270,7 +286,7 @@ func splunkThrottle(node, dm string) []string {
 // risk, as in Splunk's risk-based alerting. A finding is made once a day
 // per host, program and what it acted on.
 func SplunkDetection(p *Pack, r PackRule, src []byte) (*Detection, error) {
-	rule, err := splcheck.Parse(src, p.macros)
+	rule, err := splcheck.ParseWith(src, p.macros, splcheck.ParseOptions{Network: SplunkNetworkRule(r.Path)})
 	if err != nil {
 		return nil, err
 	}
@@ -300,11 +316,19 @@ func SplunkDetection(p *Pack, r PackRule, src []byte) (*Detection, error) {
 		Severity:    splunkSeverity(rule),
 		MITRE:       mitre,
 		Throttle:    Throttle{Window: "24h", Fields: splunkThrottle(rule.Node, dm)},
-		Risk:        &Risk{Score: score, Objects: []RiskObject{{Field: "user", Type: "user"}, {Field: "host", Type: "system"}}, Only: !strings.EqualFold(rule.Type, "TTP")},
+		Risk:        &Risk{Score: score, Objects: riskObjects(dm), Only: !strings.EqualFold(rule.Type, "TTP")},
 		Tags:        []string{"splunk", p.Name, strings.ToLower(rule.Type), strings.ToLower(rule.Node)},
 	}
 	if fp := strings.TrimSpace(rule.FalsePositives); fp != "" {
 		d.Guidance = "Known false positives: " + fp
+	}
+	if splcheck.IsSensorNode(rule.Node) {
+		// About the address that sent the traffic, not the sensor that
+		// saw it.
+		d.Title = strings.TrimSpace(rule.Name) + " from $src$"
+		d.Throttle.Fields = packNetworkThrottle("", dm)
+		d.Risk.Objects = []RiskObject{{Field: "src", Type: "system"}, {Field: "user", Type: "user"}}
+		d.Tags = append(d.Tags, "network")
 	}
 	if rule.Threshold != nil {
 		splunkThreshold(d, q, rule)
@@ -320,6 +344,15 @@ func SplunkDetection(p *Pack, r PackRule, src []byte) (*Detection, error) {
 		return nil, err
 	}
 	return d, nil
+}
+
+// riskObjects are what a pack rule's risk is about: the account and the
+// host, or for a web request the client and the web server.
+func riskObjects(datamodel string) []RiskObject {
+	if strings.EqualFold(datamodel, ingest.WebModel) {
+		return []RiskObject{{Field: "src", Type: "system"}, {Field: "host", Type: "system"}}
+	}
+	return []RiskObject{{Field: "user", Type: "user"}, {Field: "host", Type: "system"}}
 }
 
 // splunkThreshold makes a detection count as its rule does: stats over
@@ -386,3 +419,8 @@ func formatDuration(d time.Duration) string {
 	}
 	return fmt.Sprintf("%ds", d/time.Second)
 }
+
+// SplunkNetworkRule reports whether a security_content rule is one of its
+// network detections (detections/network), which read the network data
+// models from any source (splcheck.ParseOptions).
+func SplunkNetworkRule(path string) bool { return strings.HasPrefix(path, "detections/network/") }

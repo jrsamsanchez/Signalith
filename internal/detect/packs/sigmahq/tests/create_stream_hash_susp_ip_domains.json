@@ -1,5 +1,0 @@
-{"rule": "025bd229-fd1f-4fdb-97ab-20006e1a5368", "cases": [
-  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"15","data":{"Contents":"https://0.0.0.0","TargetFilename":".exe:Zone"}},
-  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"15","data":{"TargetFilename":".exe:Zone"}},
-  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"15","data":{"Contents":"https://0.0.0.0"}}
-]}

@@ -65,7 +65,9 @@ signed with it, and the public key is published with each release as
 https://signalith.io/apt and https://signalith.io/rpm, which the **Website** workflow
 rebuilds from the five newest releases after every **Release** run
 (`deploy/repos/build.sh`; packages from before the key existed are signed there). Until
-the secret is set, the website has no repositories.
+the secret is set, the website has no repositories. The **Package repositories** workflow then
+installs the latest release from them on four Linux distributions, after every website
+publish and weekly, so a broken publish or an expiring key shows up there.
 
 To make the key (with Docker, on any computer), in an empty folder:
 
@@ -108,8 +110,9 @@ the secret, and remove the old key in a later release.
 The **Release** workflow signs the `.msi` and `signalith-windows-amd64.exe` with
 Authenticode through [SignPath Foundation](https://signpath.org), which signs
 open-source projects for free; the [code signing policy](code-signing.md) is the page it
-asks projects to publish. Until SignPath is set up, the Windows files are released
-unsigned and SmartScreen warns before running the installer.
+asks projects to publish. SignPath declined Signalith's first application (October 2026),
+so the Windows files are released unsigned for now and SmartScreen warns before running
+the installer. The steps below stay for a later application.
 
 To set it up:
 

@@ -11,6 +11,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -37,6 +39,12 @@ func (rs *running) settingsShared() {
 	eventually(rs.t, rs.r.node.Name()+" takes its settings from the shared settings", func() bool {
 		srv := rs.r.srv.Load()
 		return rs.r.sharedContent.settingsOn.Load() && srv != nil && srv.Running().SharedSettings()
+	})
+	// The shared library follows the shared settings, with a restart of
+	// its own: wait for it, so the server is settled before the test goes on.
+	eventually(rs.t, rs.r.node.Name()+" takes its detections from the shared settings", func() bool {
+		return rs.r.sharedContent.library.on.Load() == rs.r.shared.SharedLibrary() && rs.r.shared.SharedLibrary() &&
+			rs.r.sharedContent.library.lists.Load() == rs.r.shared.SharedLookups() && rs.r.shared.SharedLookups()
 	})
 	eventually(rs.t, "signed in to "+rs.r.node.Name(), func() bool {
 		if rs.signedIn("") {
@@ -724,6 +732,12 @@ func TestSettingsResetOnMember(t *testing.T) {
 		t.Fatalf("save: %d %v", code, out)
 	}
 	path := filepath.Join(rs.dir, "signalith.yaml")
+	// The command treats the server as a member once its copy of the
+	// shared settings is written, which happens in the background.
+	eventually(t, "the server writes its copy of the shared settings", func() bool {
+		_, err := os.Stat(shared.CachePath(config.StateDirFor(path)))
+		return err == nil
+	})
 	out, err := capture(t, func() error { return cmdSettings([]string{"reset", "-c", path, "search.max_events"}) })
 	if err != nil || !strings.Contains(out, "Reset search.max_events for every server of the cluster") {
 		t.Fatalf("reset of a shared setting: %v\n%s", err, out)
@@ -771,5 +785,155 @@ func TestFileChangeAppliesAtRestart(t *testing.T) {
 	}
 	if !strings.Contains(a.logs.String(), "syslog.allow applied from signalith.yaml on siem-a") {
 		t.Errorf("not audited:\n%s", a.logs.String())
+	}
+}
+
+// A save on the Settings page made while this server's own settings move
+// out of settings.yaml into the shared settings, at the restart that
+// switches it to them, is kept. The start running then still keeps them
+// in settings.yaml: the save waits for the move and goes to the shared
+// settings, rather than to a settings.yaml that is no longer read.
+func TestSaveWhileOwnSettingsMove(t *testing.T) {
+	type result struct {
+		code int
+		out  map[string]any
+		err  error
+	}
+	saved := make(chan result, 1)
+	var once sync.Once
+	var cur atomic.Pointer[running]
+	importOwnHook = func(r *runner) {
+		rs := cur.Load()
+		if rs == nil || rs.r != r || !r.ownMoved() || r.sharedContent.settingsOn.Load() {
+			return
+		}
+		once.Do(func() {
+			// Sent while the move holds settings.yaml, to the start that
+			// still keeps the settings there.
+			go func() {
+				code, out, err := rs.call("", "PUT", "/api/settings", `{"values":{"detections.scheduler":false}}`)
+				if err == nil && code == http.StatusUnauthorized {
+					rs.signInAs("admin", "s3cret-pass")
+					code, out, err = rs.call("", "PUT", "/api/settings", `{"values":{"detections.scheduler":false}}`)
+				}
+				saved <- result{code, out, err}
+			}()
+			// Without the hold the save lands in settings.yaml now, after
+			// the move; with it, it waits for this to return.
+			time.Sleep(300 * time.Millisecond)
+		})
+	}
+	t.Cleanup(func() { importOwnHook = nil })
+	rs := startRunnerWith(t, runOptions{scheduler: true, server: plainHTTP})
+	cur.Store(rs)
+	var res result
+	select {
+	case res = <-saved:
+	case <-time.After(30 * time.Second):
+		t.Fatalf("no save was made while the settings moved\n%s", rs.logs.String())
+	}
+	if res.err != nil || res.code != http.StatusOK {
+		t.Fatalf("save while the settings moved: %d %v %v", res.code, res.out, res.err)
+	}
+	rs.settingsShared()
+	c, err := rs.r.loadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Detections.Scheduler {
+		nc, _ := rs.r.shared.NodeCfg().Get()
+		t.Errorf("the save made while the settings moved was lost: nodecfg %+v\n%s", nc, rs.logs.String())
+	}
+	if _, res := rs.restart(); !res.OK {
+		t.Fatalf("restart %+v\n%s", res, rs.logs.String())
+	}
+	eventually(t, "the jobs are given up", func() bool { return !rs.r.node.RunsJobs() })
+}
+
+// The certificate authority's scope, saved by the Security page when it
+// prepares a new one (server.tls.ca_scope), while this server's own
+// settings move into the shared settings, is kept like a save on the
+// Settings page: it waits for the move and goes to the shared settings.
+func TestCAScopeSaveWhileOwnSettingsMove(t *testing.T) {
+	type result struct {
+		code int
+		out  map[string]any
+		err  error
+	}
+	saved := make(chan result, 1)
+	var once sync.Once
+	var cur atomic.Pointer[running]
+	waiting := make(chan struct{}, 1)
+	// Once the cluster's level allows it, the start in use takes the
+	// cluster's certificate authority at its next look (tlsPoll), and a
+	// prepare is refused from then on; here only the start that follows
+	// the move takes it, and only once the prepare is done (below).
+	oldPoll := tlsPoll
+	tlsPoll = time.Hour
+	t.Cleanup(func() { tlsPoll = oldPoll })
+	importOwnHook = func(r *runner) {
+		if !r.ownMoved() || r.sharedContent.settingsOn.Load() {
+			return
+		}
+		// The founding can move the settings before startRunnerWith has
+		// returned (signed in): that move is the one to save during.
+		rs := cur.Load()
+		for deadline := time.Now().Add(30 * time.Second); rs == nil && time.Now().Before(deadline); rs = cur.Load() {
+			time.Sleep(10 * time.Millisecond)
+		}
+		if rs == nil || rs.r != r {
+			return
+		}
+		once.Do(func() {
+			// The start that follows takes the cluster's certificate
+			// authority (sharedTLS.sync) on the same Manager: it is kept
+			// from that until the prepare is done.
+			tls := &r.sharedContent.tls.mu
+			tls.Lock()
+			go func() {
+				defer tls.Unlock()
+				code, out, err := rs.call("", "POST", "/api/security/ca", `{"action":"prepare","scope":"strict"}`)
+				if err == nil && code == http.StatusUnauthorized {
+					rs.signInAs("admin", "s3cret-pass")
+					code, out, err = rs.call("", "POST", "/api/security/ca", `{"action":"prepare","scope":"strict"}`)
+				}
+				saved <- result{code, out, err}
+			}()
+			// Without the hold the scope lands in settings.yaml now,
+			// after the move; with it, it waits for this to return. This
+			// returns once the save waits, however long the request takes
+			// to arrive.
+			select {
+			case <-waiting:
+			case <-time.After(30 * time.Second):
+			}
+		})
+	}
+	holdFileHook = func() {
+		select {
+		case waiting <- struct{}{}:
+		default:
+		}
+	}
+	t.Cleanup(func() { importOwnHook, holdFileHook = nil, nil })
+	rs := startRunnerWith(t, runOptions{scheduler: true, server: "  tls:\n    mode: auto\n"})
+	cur.Store(rs)
+	var res result
+	select {
+	case res = <-saved:
+	case <-time.After(30 * time.Second):
+		t.Fatalf("no save was made while the settings moved\n%s", rs.logs.String())
+	}
+	if res.err != nil || res.code != http.StatusOK {
+		t.Fatalf("prepare while the settings moved: %d %v %v", res.code, res.out, res.err)
+	}
+	rs.settingsShared()
+	c, err := rs.r.loadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Server.CAScope() != "strict" {
+		nc, _ := rs.r.shared.NodeCfg().Get()
+		t.Errorf("the scope saved while the settings moved was lost: %q, nodecfg %+v\n%s", c.Server.CAScope(), nc, rs.logs.String())
 	}
 }

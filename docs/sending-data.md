@@ -46,9 +46,13 @@ or detection covers every source of the same kind.
 | PowerShell script block logging: 4104 (Microsoft-Windows-PowerShell/Operational; see [Detections](detections.md#powershell-script-blocks)) | Script |
 | Linux sshd, sudo, su (auth.log, secure, or journald) | Authentication |
 | Linux audit log (auditd: audit.log, or its syslog plugin) | Other, sourcetype `linux:audit` |
+| Apache and Nginx access logs (/var/log/nginx, /var/log/apache2, /var/log/httpd; see [Detections](detections.md#web-server-access-logs)) | Web |
 | Linux useradd, userdel, usermod, gpasswd | Change |
 | Syslog from any device (see below), including CEF | Authentication, Change, Network_Traffic or Other |
 | OpenTelemetry Collector or SDK logs over OTLP/HTTP ([OpenTelemetry](opentelemetry.md)) | the same models for Windows, Linux and syslog records; Other for app logs |
+| Zeek on a network sensor: conn, dns, http, ssl and x509, files, notice ([Network sensor](network-sensor.md)) | Network_Traffic, Network_Resolution, Web, Certificates, File_Transfers, Intrusion_Detection; other Zeek logs in Other |
+| Suricata EVE from a network sensor, or over syslog from pfSense and OPNsense: alert, flow, dns, http, tls, fileinfo ([Network sensor](network-sensor.md)) | Intrusion_Detection, Network_Traffic, Network_Resolution, Web, Certificates, File_Transfers; other event types in Other |
+| Status of a sensor built with the sensor install script, every 5 minutes ([Network sensor](network-sensor.md#status)) | Other, sourcetype `sensor:status` |
 | Anything else | Other (searchable by text and fields) |
 
 sshd prints the user name a client sends, and on a failed key sign-in the key ID of the
@@ -85,7 +89,7 @@ limited so they cannot fill OpenSearch's mapping: at most 200 fields per event, 
 up to 128 letters, digits and `_ - @ : /` in at most 5 dot-separated parts, and at most
 1,000 new names per daily index each time Signalith starts. With several servers, those
 1,000 are shared among the servers that stored events in the last 10 minutes (at least
-100 each), and no server adds new names to a day whose index already has 1,600 fields
+100 each), and no server adds new names to a day whose index already has 1,800 fields
 (see [Servers](servers.md#field-names-when-several-servers-receive-events)). Fields Signalith itself
 produces are always kept, so an event is never lost to extra fields. Fields left out are
 counted in the event's `dropped_fields` (search `dropped_fields>0`), their values stay in

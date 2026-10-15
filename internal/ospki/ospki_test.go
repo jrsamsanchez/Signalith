@@ -223,7 +223,7 @@ func TestSecurityFiles(t *testing.T) {
 	if dig(docs["config.yml"], "config", "dynamic", "http", "anonymous_auth_enabled") != false {
 		t.Error("anonymous access is not off")
 	}
-	if users := dig(docs["roles_mapping.yml"], "signalith_server", "users").([]any); len(users) != 1 || users[0] != ClientName {
+	if users := dig(docs["roles_mapping.yml"], "signalith_server", "users").([]any); len(users) != 2 || users[0] != ClientName || users[1] != ServerClientPrefix+"*" {
 		t.Errorf("role mapping: %v", users)
 	}
 	role := docs["roles.yml"]["signalith_server"].(map[string]any)

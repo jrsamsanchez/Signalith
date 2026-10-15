@@ -122,6 +122,7 @@ nav:
       - OpenTelemetry: opentelemetry.md
       - Endpoints (osquery): endpoints.md
       - Wazuh alerts: wazuh.md
+      - Network sensor (Zeek, Suricata): network-sensor.md
       - Antivirus: antivirus.md
       - Vulnerability scanning: vulnerabilities.md
       - Sample data: sample-data.md
@@ -141,8 +142,12 @@ nav:
       - Users and sign-in: users.md
       - Agent tokens: agent-tokens.md
       - Servers: servers.md
+      - Adding servers: multi-server.md
       - signalith cluster: cluster-cli.md
+      - OpenSearch with several nodes: opensearch-failover.md
+      - Performance and sizing: performance.md
       - Data retention: retention.md
+      - Audit: audit.md
   - Security:
       - Security checks: security.md
       - HTTPS: https.md

@@ -307,16 +307,16 @@ func (s *Server) complianceData(ctx context.Context, snap *compliance.Snapshot) 
 		if m == "" {
 			continue
 		}
-		d := compliance.DataSeen{Count: int64(number(row["count"]))}
-		if ms := number(row["last_seen"]); ms > 0 {
+		d := compliance.DataSeen{Count: int64(cellNumber(row["count"]))}
+		if ms := cellNumber(row["last_seen"]); ms > 0 {
 			d.Last = time.UnixMilli(int64(ms)).UTC()
 		}
 		snap.Data[m] = d
 	}
 }
 
-// number reads a numeric search result cell; anything else is 0.
-func number(v any) float64 {
+// cellNumber reads a numeric search result cell; anything else is 0.
+func cellNumber(v any) float64 {
 	if f, ok := toFloat(v); ok {
 		return f
 	}

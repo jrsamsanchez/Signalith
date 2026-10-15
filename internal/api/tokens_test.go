@@ -333,3 +333,15 @@ func TestRevokedTokenOverPlainHTTP(t *testing.T) {
 		t.Errorf("revoked over plain: %d", code)
 	}
 }
+
+// Add data's Network sensor card makes its token with purpose sensor.
+func TestAgentTokenForASensor(t *testing.T) {
+	ts, _, _, _, _ := newTokenServer(t)
+	code, out, raw := call(t, ts, "POST", "/api/agent-tokens", `{"name":"Network sensor nsm-01","purpose":"sensor"}`, "admin", adminPass, nil)
+	if code != http.StatusCreated {
+		t.Fatalf("create: %d %s", code, raw)
+	}
+	if tok := out["token"].(map[string]any); tok["purpose"] != "sensor" || out["secret"] == nil {
+		t.Errorf("token: %v", out)
+	}
+}
