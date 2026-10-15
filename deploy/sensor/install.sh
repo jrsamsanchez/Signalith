@@ -1326,6 +1326,20 @@ sensor_suricata_config() {
   dir=/etc/suricata
   [ "$layout" = packages ] || dir=/etc/signalith-sensor/docker/suricata
   suricata_yaml | put "$dir/signalith-sensor.yaml" 0644 root:root suricata
+  if [ "$layout" = packages ]; then
+    # suricata-update tests the rules as root in a folder only root can
+    # write; with run-as the test would drop to the suricata user first.
+    put "$dir/signalith-sensor-test.yaml" 0644 root:root suricata <<'EOF'
+%YAML 1.1
+---
+# Written by the Signalith sensor install script: the sensor's settings
+# for suricata-update's test of new rules, which runs as root.
+include: signalith-sensor.yaml
+run-as:
+  user: root
+  group: root
+EOF
+  fi
   for f in disable.conf threshold.config; do
     if [ ! -f "$R$dir/$f" ]; then
       printf '# Your tuning (see docs/network-sensor.md, "Keeping rules up to date").\n' |
@@ -2028,7 +2042,7 @@ if [ "$layout" = docker ]; then
   fi
 else
   data=/var/lib/signalith-sensor/suricata
-  set -- --etopen --data-dir "$data" --suricata-conf /etc/suricata/signalith-sensor.yaml \
+  set -- --etopen --data-dir "$data" --suricata-conf /etc/suricata/signalith-sensor-test.yaml \
     --disable-conf /etc/suricata/disable.conf --no-reload --fail
   if [ -s /etc/signalith-sensor/local.rules ]; then
     set -- "$@" --local /etc/signalith-sensor/local.rules

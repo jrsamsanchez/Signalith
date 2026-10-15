@@ -44,7 +44,7 @@ if [ "$layout" = docker ]; then
   fi
 else
   data=/var/lib/signalith-sensor/suricata
-  set -- --etopen --data-dir "$data" --suricata-conf /etc/suricata/signalith-sensor.yaml \
+  set -- --etopen --data-dir "$data" --suricata-conf /etc/suricata/signalith-sensor-test.yaml \
     --disable-conf /etc/suricata/disable.conf --no-reload --fail
   if [ -s /etc/signalith-sensor/local.rules ]; then
     set -- "$@" --local /etc/signalith-sensor/local.rules

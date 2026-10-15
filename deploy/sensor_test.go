@@ -419,6 +419,10 @@ func TestSensorScriptDryRun(t *testing.T) {
 			t.Errorf("signalith-sensor.yaml has no %q:\n%s", want, yaml)
 		}
 	}
+	// suricata-update tests new rules as root: its settings keep root.
+	if got := readFile(t, filepath.Join(root, "etc/suricata/signalith-sensor-test.yaml")); !strings.Contains(got, "include: signalith-sensor.yaml\nrun-as:\n  user: root\n") {
+		t.Errorf("signalith-sensor-test.yaml:\n%s", got)
+	}
 	if strings.Contains(yaml, "- flow") || strings.Contains(yaml, "- dns") {
 		t.Errorf("with Zeek, Suricata logs no protocols:\n%s", yaml)
 	}
