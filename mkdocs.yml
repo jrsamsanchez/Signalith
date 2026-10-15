@@ -142,6 +142,7 @@ nav:
       - Servers: servers.md
       - Adding servers: multi-server.md
       - signalith cluster: cluster-cli.md
+      - OpenSearch with several nodes: opensearch-failover.md
       - Performance and sizing: performance.md
       - Data retention: retention.md
       - Audit: audit.md

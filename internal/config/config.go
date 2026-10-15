@@ -493,9 +493,13 @@ type OpenSearch struct {
 	// URL is http(s)://host:port. A user name and password written into it
 	// are moved to Username and Password when the file is loaded, so they
 	// are never shown or logged with the URL.
-	URL      string `yaml:"url"`
-	Username string `yaml:"username,omitempty"`
-	Password string `yaml:"password,omitempty"`
+	URL string `yaml:"url"`
+	// URLs are more addresses of the same OpenSearch cluster, such as its
+	// other nodes, with the same scheme and no user name or password.
+	// Requests are spread over URL and these, skipping one that is down.
+	URLs     []string `yaml:"urls,omitempty"`
+	Username string   `yaml:"username,omitempty"`
+	Password string   `yaml:"password,omitempty"`
 	// CAFile is a PEM file with the certificate authority that signed
 	// OpenSearch's certificate, for an https url with a private CA (the
 	// usual case). The system's trusted authorities are trusted too.
@@ -609,6 +613,36 @@ func (o *OpenSearch) problems(resolve func(string) string) []string {
 	if o.Proxy != "" {
 		if pu, err := url.Parse(o.Proxy); err != nil || !slices.Contains([]string{"http", "https", "socks5"}, pu.Scheme) || pu.Host == "" {
 			p = append(p, fmt.Sprintf("opensearch.proxy %q must be http://host:port, https://host:port or socks5://host:port", redact.URL(o.Proxy)))
+		}
+	}
+	p = append(p, o.urlsProblems(u)...)
+	return p
+}
+
+// urlsProblems lists what is wrong with opensearch.urls, given the parsed
+// opensearch.url: each must be an address like it, with the same scheme
+// and no user name, password or query, and the plain-http password rule
+// applies to each.
+func (o *OpenSearch) urlsProblems(first *url.URL) []string {
+	var p []string
+	for i, raw := range o.URLs {
+		if _, _, _, ok := redact.Strip(raw); ok {
+			p = append(p, fmt.Sprintf("opensearch.urls[%d] %s must not have a user name or password in it; set them in opensearch.username and opensearch.password", i, redact.URL(raw)))
+			continue
+		}
+		u, err := url.Parse(strings.TrimSpace(raw))
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			p = append(p, fmt.Sprintf("opensearch.urls[%d] %q must be http(s)://host:port", i, redact.URL(raw)))
+			continue
+		}
+		if u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
+			p = append(p, fmt.Sprintf("opensearch.urls[%d] %s://%s must not have a query string (?...) or fragment (#...)", i, u.Scheme, u.Host))
+		}
+		if u.Scheme != first.Scheme {
+			p = append(p, fmt.Sprintf("opensearch.urls[%d] %s://%s must use %s, as opensearch.url does: they are nodes of one OpenSearch cluster", i, u.Scheme, u.Host, first.Scheme))
+		} else if u.Scheme == "http" && (o.Username != "" || o.Password != "") && !isLoopback(u.Hostname()) && !o.AllowInsecureHTTP {
+			p = append(p, fmt.Sprintf("opensearch.urls[%d] is plain http to %s, so the OpenSearch username and password would cross the network unencrypted. "+
+				"Use https://, or, to accept the risk, set opensearch.allow_insecure_http: true", i, u.Host))
 		}
 	}
 	return p
@@ -1845,6 +1879,18 @@ func (c *Config) applyAdminHashFile() error {
 	return nil
 }
 
+// envList splits a comma-separated list from an environment variable,
+// leaving out empty entries.
+func envList(v string) []string {
+	var out []string
+	for _, e := range strings.Split(v, ",") {
+		if e = strings.TrimSpace(e); e != "" {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
 // applyEnv lets secrets come from the environment instead of the file,
 // either in the variable itself or in a file it names (the variable's name
 // with _FILE added).
@@ -1852,6 +1898,10 @@ func (c *Config) applyEnv() error {
 	if v := os.Getenv("SIGNALITH_OPENSEARCH_URL"); v != "" {
 		c.OpenSearch.URL = v
 		c.fromEnv("opensearch.url", "SIGNALITH_OPENSEARCH_URL")
+	}
+	if v := strings.TrimSpace(os.Getenv("SIGNALITH_OPENSEARCH_URLS")); v != "" {
+		c.OpenSearch.URLs = envList(v)
+		c.fromEnv("opensearch.urls", "SIGNALITH_OPENSEARCH_URLS")
 	}
 	if v := os.Getenv("SIGNALITH_OPENSEARCH_USERNAME"); v != "" {
 		c.OpenSearch.Username = v
@@ -2367,7 +2417,7 @@ func (c *Config) OpenSearchConnection() store.Config {
 	ca, cert, key := c.OpenSearchTLSFiles()
 	mcert, mkey := c.ManagedOpenSearchFiles()
 	return store.Config{
-		URL: c.OpenSearch.URL, Username: c.OpenSearch.Username, Password: secrets.New("opensearch.password", c.OpenSearch.Password),
+		URL: c.OpenSearch.URL, URLs: strings.Join(c.OpenSearch.URLs, ","), Username: c.OpenSearch.Username, Password: secrets.New("opensearch.password", c.OpenSearch.Password),
 		CAFile: ca, CertFile: cert, KeyFile: key, ManagedCertFile: mcert, ManagedKeyFile: mkey,
 		TLSSkipVerify: c.OpenSearch.TLSSkipVerify, Proxy: c.OpenSearch.Proxy,
 	}

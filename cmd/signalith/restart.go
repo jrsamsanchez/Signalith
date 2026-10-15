@@ -704,7 +704,8 @@ func usable(c *config.Config, keys []string) []string {
 
 // openSearchKeys are the settings of the OpenSearch connection.
 var openSearchKeys = []string{"opensearch.url", "opensearch.username", "opensearch.password", "opensearch.ca_file",
-	"opensearch.cert_file", "opensearch.key_file", "opensearch.proxy", "opensearch.allow_insecure_http", "opensearch.tls_skip_verify"}
+	"opensearch.cert_file", "opensearch.key_file", "opensearch.proxy", "opensearch.allow_insecure_http", "opensearch.tls_skip_verify",
+	"opensearch.urls"}
 
 // checkPageOpenSearch checks, at startup, an OpenSearch connection set on
 // the Settings page that no restart has checked: one saved with no
