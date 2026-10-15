@@ -240,6 +240,28 @@ func describeCommand(c query.Command) string {
 			s += fmt.Sprintf(", keeping up to %d matches", c.MaxMatch)
 		}
 		return s + "."
+	case *query.Transaction:
+		s := "Group the events"
+		if len(c.Fields) > 0 {
+			s += " by " + strings.Join(c.Fields, " and ")
+		}
+		s += " into transactions, oldest event first"
+		var limits []string
+		if c.MaxSpan > 0 {
+			limits = append(limits, fmt.Sprintf("at most %d seconds long", c.MaxSpan))
+		}
+		if c.MaxPause > 0 {
+			limits = append(limits, fmt.Sprintf("with at most %d seconds between events", c.MaxPause))
+		}
+		limits = append(limits, fmt.Sprintf("of at most %d events", c.MaxEvents))
+		s += ", each " + strings.Join(limits, ", ")
+		if c.StartsWith != nil {
+			s += "; an event where " + describeExpr(c.StartsWith) + " starts one"
+		}
+		if c.EndsWith != nil {
+			s += "; an event where " + describeExpr(c.EndsWith) + " ends one, and one that never ends is dropped"
+		}
+		return s + ". Each gets duration (seconds) and eventcount."
 	case *query.Dedup:
 		s := "Keep only the first row"
 		if c.N > 1 {

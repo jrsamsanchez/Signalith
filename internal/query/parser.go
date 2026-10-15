@@ -6,7 +6,7 @@ import (
 )
 
 // Commands lists every pipe command, for autocomplete and error messages.
-var Commands = []string{"stats", "eventstats", "timechart", "top", "rare", "where", "eval", "rex", "dedup", "fillnull", "sort", "head", "table", "rename", "lookup", "inputlookup", "enrich", "intel", "threatmatch"}
+var Commands = []string{"stats", "eventstats", "timechart", "top", "rare", "where", "eval", "rex", "dedup", "fillnull", "sort", "head", "table", "rename", "lookup", "inputlookup", "transaction", "enrich", "intel", "threatmatch"}
 
 // AggFuncs lists the aggregation functions stats, eventstats and timechart
 // accept. perc95 stands for every percentile from perc1 to perc99.
@@ -474,6 +474,8 @@ func (p *parser) parseCommand() (Command, error) {
 		return p.parseLookup(t)
 	case "inputlookup":
 		return p.parseInputLookup()
+	case "transaction":
+		return p.parseTransaction()
 	case "enrich":
 		fields, err := p.fieldList(false)
 		if err != nil {

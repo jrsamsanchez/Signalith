@@ -338,6 +338,7 @@ func QueryReference() string {
   eval name=<expression>[, name2=<expression>]   operators + - * / % . (concatenate) = != < <= > >= AND OR NOT XOR LIKE; field names with other characters in single quotes ('dc(user)'); strings in double quotes. Functions: ` + evalFuncList() + `
   rex [field=f] [max_match=N] "<RE2 regex with named groups (?<name>...)>"   extracts fields (default field _raw)
   dedup [N] f1, f2 [keepempty=true] [consecutive=true]   keeps the first N rows (default 1) per value; events come newest first
+  transaction f1, f2 [maxspan=10m] [maxpause=1m] [maxevents=N] [startswith="text"|(search)] [endswith="text"|(search)]   groups events sharing the fields into one row each, with duration (seconds) and eventcount
   fillnull [value=X] [fields]   sets missing values (default 0)
   sort [-]field, ...    ("-" is descending)
   head N

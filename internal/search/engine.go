@@ -416,7 +416,7 @@ func needsAllEvents(cmds []query.Command) bool {
 		switch c.(type) {
 		case *query.Head:
 			return false
-		case *query.Sort, *query.Where, *query.Stats, *query.Top, *query.Dedup, *query.EventStats:
+		case *query.Sort, *query.Where, *query.Stats, *query.Top, *query.Dedup, *query.EventStats, *query.Transaction:
 			return true
 		}
 	}

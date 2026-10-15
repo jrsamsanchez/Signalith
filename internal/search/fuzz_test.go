@@ -27,6 +27,8 @@ var compileSeeds = []string{
 	`a=1 | where b=2 | where NOT c=3 | head 7 | table a`,
 	`* | stats median(bytes), perc95(bytes), stdev(bytes), values(user), list(user), latest(_time) by src`,
 	`* earliest=-1d | timechart span=1h perc99(bytes) by dest`,
+	`* | transaction src maxspan=5m startswith=(dest_port=443) endswith="findstr" | where eventcount > 1`,
+	`| inputlookup max=5 owners | stats count by team`,
 }
 
 // FuzzCompile checks that every query Parse accepts compiles to an

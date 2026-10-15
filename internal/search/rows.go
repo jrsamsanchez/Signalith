@@ -85,6 +85,8 @@ func applyCommand(ctx context.Context, res *Result, c query.Command) error {
 		if res.Kind == "events" {
 			res.Kind = "table"
 		}
+	case *query.Transaction:
+		return transaction(ctx, res, c)
 	case *query.Rename:
 		for _, p := range c.Pairs {
 			for i, col := range res.Columns {

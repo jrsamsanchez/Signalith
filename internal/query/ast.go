@@ -324,6 +324,8 @@ func CommandString(c Command) string {
 		return lookupString(c)
 	case *InputLookup:
 		return inputLookupString(c)
+	case *Transaction:
+		return transactionString(c)
 	case *Enrich:
 		if len(c.Fields) == 0 {
 			return "enrich"

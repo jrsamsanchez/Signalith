@@ -35,6 +35,7 @@ var fuzzSeeds = []string{
 	`* | eval a=`, `* | rex "(?<x"`, `* | dedup`, `* | where NOT`, `* | eval 'x|y'=1 | head 2`,
 	`* | where substr("abc", 1, "NaN") = "" OR replace(s, "", s) != s`,
 	`* | lookup owners host AS dest, "output" OUTPUTNEW owner AS "as", team | lookup t a`,
+	`* | transaction host, "a b" maxspan=5m maxpause=1h maxevents=3 startswith="x y" endswith=(NOT a=1 OR b IN (2, 3))`,
 	`| inputlookup max=20 owners | where isnull(owner) | lookup owners user OUTPUT team`,
 }
 
