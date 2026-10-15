@@ -2478,7 +2478,7 @@ rules=$(get RULES_COUNT "$state")
 result=failed
 if [ "$fetched" = 0 ] && cached; then
   try_tuning offline
-  fetched=done
+  fetched=yes
 fi
 if [ "$fetched" = 0 ]; then
   try_tuning ''
