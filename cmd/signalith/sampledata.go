@@ -163,6 +163,7 @@ func buildSampleLoader(ctx context.Context, c *config.Config, log *slog.Logger) 
 		Docs:     cl,
 		Server:   host,
 		Command:  true,
+		URLQuery: c.URLQueryMode,
 		Log:      log,
 	}, nil
 }

@@ -179,6 +179,7 @@ var cefFields = map[string]cefField{
 	"request": {name: "url"}, "requestUrl": {name: "url"},
 	"requestMethod":            {name: "http_method"},
 	"requestClientApplication": {name: "http_user_agent"},
+	"requestContext":           {name: "http_referrer"},
 	"fname":                    {name: "file_name"}, "fileName": {name: "file_name"},
 	"filePath": {name: "file_path"},
 	"fileHash": {name: "file_hash"},

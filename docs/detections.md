@@ -498,6 +498,11 @@ with Splunk's Web field names:
 The sourcetype is `nginx:access` or `apache:access`. A line that is not a request
 (an error Apache wrote to the wrong file) stays in Other.
 
+Query strings can carry tokens and passwords. **Settings > General > Query strings in web
+addresses** (`ingest.url_query`) can hide their values or remove them as events are stored,
+in the fields and the raw line alike; rules that look at query values then see less (see
+[Query strings in web addresses](network-sensor.md#query-strings-in-web-addresses)).
+
 The 13 SigmaHQ `webserver` rules name the W3C fields: `cs-method` is
 `http_method`, `cs-uri-query` (which the rules use for the whole target) and `c-uri` are
 `url`, `cs-uri-stem` is `uri_path`, `sc-status` is `status`, `cs-user-agent` is
@@ -519,7 +524,7 @@ The SigmaHQ pack also holds rules for network data, which a
 | Sigma log source | Events | Data model | Shipped |
 | --- | --- | --- | ---: |
 | `product: zeek`, `service: dns`, `http`, `x509` | Zeek's dns.log, http.log and x509.log, by Zeek's own field names (`query`, `qtype_name`, `certificate.serial`; `uri`, the path and query the client asked for, is `uri_path`) | Network_Resolution, Web, Certificates | 5 |
-| `product: zeek`, `service: smb_files`, `dce_rpc`, `kerberos`, `rdp` | Zeek logs without a mapping of their own, whose fields are kept as `zeek_<name>` (`name` is `zeek_name`); the connection is `src`, `src_port`, `dest`, `dest_port` | Other | 11 |
+| `product: zeek`, `service: smb_files`, `dce_rpc`, `kerberos`, `rdp` | Zeek logs whose own fields are kept as `zeek_<name>` (`name` is `zeek_name`), as for every Zeek log without a full mapping; the connection is `src`, `src_port`, `dest`, `dest_port` | Authentication (`kerberos`, `rdp`), Filesystem (`smb_files`), Other (`dce_rpc`) | 11 |
 | `category: dns` (`rules/network/dns`) | A DNS lookup that names who asked (`src`): Zeek's dns.log (`record_type` is `query_type`). A host's own lookups (Sysmon 22) are searched by the `dns_query` rules | Network_Resolution | 7 |
 | `category: proxy` (`rules/web/proxy_generic`) | A web request a client made: Zeek's http.log, not a web server's access log (`c-uri` is the whole address, `url`; `cs-host`, the site asked for, is `url_domain`; `c-useragent` is `http_user_agent`) | Web | 22 |
 | `category: firewall` (`rules/network/firewall`) | Any connection (`dst_port` is `dest_port`) | Network_Traffic | 0 |

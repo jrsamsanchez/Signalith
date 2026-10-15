@@ -108,6 +108,9 @@ type Pipeline struct {
 	// liveMaxAge, when set (SetMaxEventAge), replaces MaxEventAge: the
 	// retention policies it follows can change while the pipeline runs.
 	liveMaxAge atomic.Int64
+	// urlQuery is ingest.url_query (SetURLQuery): 0 keeps the query
+	// strings of web addresses, 1 hides their values, 2 drops them.
+	urlQuery atomic.Int32
 
 	stats   Stats
 	names   fieldBudget
@@ -329,12 +332,14 @@ func (p *Pipeline) write(ctx context.Context, events []Event, ids []string) (*Re
 	// whose mapping is near OpenSearch's limit, asked once per index.
 	budget := namesBudget(p.servers())
 	full := map[string]bool{}
+	urlQuery := p.URLQuery()
 	for i := range events {
 		ev := &events[i]
 		if ev.Fields == nil {
 			ev.Fields = map[string]any{}
 		}
 		nReserved := p.dropReserved(ev.Fields, &reserved)
+		ApplyURLQuery(ev.Fields, urlQuery)
 		// After the drop, so only Signalith sets these. The sample data
 		// carries its own marker instead.
 		if p.SampleMark == "" {
