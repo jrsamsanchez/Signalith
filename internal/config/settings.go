@@ -162,12 +162,36 @@ func (s *Setting) Noun() string {
 }
 
 // SentTo returns where a secret setting is sent with c, as
-// scheme://host:port, or "" when it is not sent anywhere.
+// scheme://host:port, or "" when it is not sent anywhere. A secret sent to
+// several addresses (the OpenSearch password, with opensearch.urls) has
+// them all, separated by commas.
 func (s *Setting) SentTo(c *Config) string {
 	if s.sentTo == nil {
 		return ""
 	}
-	return Origin(s.sentTo(c))
+	var out []string
+	for _, a := range strings.Split(s.sentTo(c), ",") {
+		if o := Origin(a); o != "" && !slices.Contains(out, o) {
+			out = append(out, o)
+		}
+	}
+	return strings.Join(out, ",")
+}
+
+// checkOpenSearchURLs checks opensearch.urls from the page: each an
+// http(s) address without a user name or password. Validate checks the
+// rest (the same scheme as opensearch.url).
+func checkOpenSearchURLs(v any) error {
+	for _, raw := range v.([]string) {
+		if hasSecret(raw) {
+			return fmt.Errorf("“%s” has a user name or password in it: put them in the Username and Password fields", redact.URL(raw))
+		}
+		u, err := url.Parse(strings.TrimSpace(raw))
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			return fmt.Errorf("“%s” isn't an address like https://opensearch-2.example.com:9200", redact.URL(raw))
+		}
+	}
+	return nil
 }
 
 func intp(n int) *int { return &n }
@@ -262,11 +286,17 @@ var Registry = []Setting{
 		Help:        "Where OpenSearch answers.",
 		Placeholder: "https://opensearch.example.com:9200", Env: "SIGNALITH_OPENSEARCH_URL", check: noSecretIn("put the username and password in their own fields below"),
 		Confirm: "Signalith will store and search events in the OpenSearch at the new address. Events stored in the current one stay there and do not show in searches."},
+	{Key: "opensearch.urls", Scope: ScopeBootstrap, Section: "opensearch", Label: "More addresses", Type: TypeList, Restart: true,
+		Help:        "Other nodes of the same OpenSearch cluster. Signalith spreads requests over all addresses and skips one that is down.",
+		Placeholder: "https://opensearch-2.example.com:9200", EmptyMeans: "only the address above", Env: "SIGNALITH_OPENSEARCH_URLS",
+		check: checkOpenSearchURLs},
 	{Key: "opensearch.username", Scope: ScopeBootstrap, Section: "opensearch", Label: "Username", Type: TypeText, Restart: true,
 		Help: "Leave empty if OpenSearch does not ask for a password.", Env: "SIGNALITH_OPENSEARCH_USERNAME"},
 	{Key: "opensearch.password", Scope: ScopeBootstrap, Section: "opensearch", Label: "Password", Type: TypeSecret, Restart: true,
 		Help: "Only sent to the address it was entered for.", Env: "SIGNALITH_OPENSEARCH_PASSWORD",
-		SentWith: []string{"opensearch.url"}, sentTo: func(c *Config) string { return c.OpenSearch.URL }},
+		SentWith: []string{"opensearch.url", "opensearch.urls"}, sentTo: func(c *Config) string {
+			return strings.Join(append([]string{c.OpenSearch.URL}, c.OpenSearch.URLs...), ",")
+		}},
 	{Key: "opensearch.ca_file", Scope: ScopeBootstrap, File: true, Section: "opensearch", Label: "CA certificate file", Type: TypeText, Restart: true,
 		Help:        "Full path of the PEM certificate of the authority that signed OpenSearch's certificate, for an https address with a private authority.",
 		Placeholder: "/etc/signalith/opensearch-ca.pem", EmptyMeans: "only authorities this computer trusts"},

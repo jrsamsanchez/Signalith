@@ -4872,6 +4872,20 @@ details[open] > summary .inv-exact__chev { transform: rotate(90deg); }
   .inv-dialog .modal__foot .spacer { display: none; }
 }
 
+/* Servers page: the OpenSearch part of this server's side panel */
+.sv-os { display: grid; gap: 12px; }
+.sv-os__sum { color: var(--text-2); }
+.sv-os__alerts { display: grid; gap: 8px; }
+.sv-os__offer { align-items: center; flex-wrap: wrap; }
+.sv-os__offer > div { flex: 1; min-width: 200px; }
+.sv-os__dim { color: var(--text-3); }
+.sv-os__part { display: grid; gap: 6px; }
+.sv-os__h { font-size: var(--fs-sm); font-weight: 600; }
+.sv-os__list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.sv-os__list li { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.sv-os__url { overflow-wrap: anywhere; font-size: var(--fs-xs); }
+.sv-os details > summary { cursor: pointer; }
+
 /* ==== page:servers-ca (the cluster's certificate authority) ==== */
 #servers-ca:not(:empty) { margin-top: var(--sp-4); }
 #page-servers .ca-head { display: flex; align-items: flex-start; gap: 12px; min-width: 0; }
