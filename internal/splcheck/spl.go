@@ -255,7 +255,7 @@ func ParseWith(src []byte, macros map[string]*Macro, opt ParseOptions) (*Rule, e
 // the node, and each node's fields map to the Signalith fields they are
 // stored as. The code stays in the clause as signature_id.
 var (
-	rawRe = regexp.MustCompile("(?s)^`(powershell|sysmon|wineventlog_security|wineventlog_system|linux_auditd|cloudtrail)`\\s+(.*)$")
+	rawRe = regexp.MustCompile("(?s)^`(powershell|sysmon|wineventlog_security|wineventlog_system|linux_auditd|cloudtrail|azure_monitor_aad|azure_monitor_activity)`\\s+(.*)$")
 	// rawNodes are the nodes of each source by event code.
 	rawNodes = map[string]map[string]string{
 		"powershell": {"4104": "PowerShell"},
@@ -280,6 +280,9 @@ var (
 		"linux_auditd": {},
 		// CloudTrail records: one node (CloudTrailNode).
 		"cloudtrail": {},
+		// Entra ID and Azure records: one node (AzureNode).
+		"azure_monitor_aad":      {},
+		"azure_monitor_activity": {},
 	}
 	// RawFields are the event fields a raw search may name on each node,
 	// with the Signalith field each is stored as.
@@ -453,6 +456,10 @@ var (
 	statsRe     = regexp.MustCompile(`(?is)^stats\s`)
 	tableRe     = regexp.MustCompile(`(?is)^table\s`)
 	renameRe    = regexp.MustCompile(`(?is)^rename\s`)
+	// fillnull with a value, and iplocation after stats, which only adds
+	// columns, on an Azure search.
+	fillnullValueRe = regexp.MustCompile(`(?i)^fillnull(?:\s+value\s*=\s*\S+)?$`)
+	iplocationRe    = regexp.MustCompile(`(?i)^iplocation\s+\w+$`)
 )
 
 // AuditdNode is the node of Linux audit records (the linux_auditd
@@ -491,7 +498,9 @@ func resolveRaw(e Expr, node string) error {
 	case *Not:
 		return resolveRaw(x.Kid, node)
 	case *Cmp:
-		if name, ok := strings.CutPrefix(x.Field, rawFieldPrefix); ok && node == CloudTrailNode {
+		if name, ok := strings.CutPrefix(x.Field, rawFieldPrefix); ok && node == AzureNode {
+			return resolveAzure(x, nil)
+		} else if ok && node == CloudTrailNode {
 			f, ok := cloudTrailField(name)
 			if !ok {
 				return fmt.Errorf("field %s is not a field of %s events", name, node)
@@ -528,6 +537,11 @@ const xmlkvSuffix = "+xmlkv"
 // its by fields; Signalith keeps them, so it finds those too.)
 func parseRaw(r *Rule, source, terms string, later []string, macros map[string]*Macro) (*Rule, error) {
 	filled, counted, xml, renamed := false, false, false, false
+	_, azure := azureSources[source]
+	// An Azure search's renames, and its search stages after them, read
+	// by the names before (azureUnrename).
+	var renames []rename
+	var azureSearches []Expr
 	var searches []string
 	// A count with limits: the bucket span, the stats stage and the where.
 	var span time.Duration
@@ -535,9 +549,20 @@ func parseRaw(r *Rule, source, terms string, later []string, macros map[string]*
 	var limits []Limit
 	var regexes []Expr
 	bits := newBitStages()
+	rawField := func(f string) (string, error) {
+		if azure {
+			// Resolved now, by the names before the renames so far.
+			name, ok := azureField(azureUnrename(f, renames))
+			if !ok {
+				return "", fmt.Errorf("field %s is not a field of %s events", f, AzureNode)
+			}
+			return name, nil
+		}
+		return rawFieldPrefix + f, nil
+	}
 	for _, s := range later {
 		if !counted && !renamed {
-			e, ok, err := bits.stage(s, func(f string) (string, error) { return rawFieldPrefix + f, nil })
+			e, ok, err := bits.stage(s, rawField)
 			if err != nil {
 				return nil, err
 			}
@@ -547,7 +572,7 @@ func parseRaw(r *Rule, source, terms string, later []string, macros map[string]*
 				}
 				continue
 			}
-			e, ok, err = regexStage(s, func(f string) (string, error) { return rawFieldPrefix + f, nil })
+			e, ok, err = regexStage(s, rawField)
 			if err != nil {
 				return nil, err
 			}
@@ -558,6 +583,25 @@ func parseRaw(r *Rule, source, terms string, later []string, macros map[string]*
 		}
 		switch {
 		case harmlessRe.MatchString(s) || filterRe.MatchString(s):
+		case azure && renameRe.MatchString(s) && !counted:
+			// Before stats, a later stage may read the new names.
+			rs, err := parseRename(s)
+			if err != nil {
+				return nil, err
+			}
+			renames = append(renames, rs...)
+		case azure && searchRe.MatchString(s) && !counted:
+			e, err := ParseWhere(searchRe.FindStringSubmatch(s)[1], rawSource(source), macros)
+			if err != nil {
+				return nil, err
+			}
+			if err := resolveAzure(e, renames); err != nil {
+				return nil, err
+			}
+			azureSearches = append(azureSearches, e)
+		case azure && fillnullValueRe.MatchString(s) && !counted && !filled:
+			filled = true
+		case azure && iplocationRe.MatchString(s) && counted:
 		case xmlkvRe.MatchString(s) && !counted && !filled && !xml && !renamed && len(searches) == 0:
 			xml = true
 		case searchRe.MatchString(s) && xml && !counted && !filled:
@@ -620,6 +664,9 @@ func parseRaw(r *Rule, source, terms string, later []string, macros map[string]*
 	case "cloudtrail":
 		r.Node = CloudTrailNode
 	}
+	if azure {
+		r.Node = AzureNode
+	}
 	for _, k := range top {
 		if c, ok := k.(*Cmp); ok && c.Field == eventCode {
 			if code != nil || c.Neg {
@@ -628,7 +675,7 @@ func parseRaw(r *Rule, source, terms string, later []string, macros map[string]*
 			code = c
 		}
 	}
-	if r.Node == AuditdNode || r.Node == CloudTrailNode {
+	if r.Node == AuditdNode || r.Node == CloudTrailNode || r.Node == AzureNode {
 		if countField(where, eventCode) != 0 {
 			return nil, fmt.Errorf("a %s search names no event code", source)
 		}
@@ -642,7 +689,15 @@ func parseRaw(r *Rule, source, terms string, later []string, macros map[string]*
 		}
 		r.Node = n
 	}
-	if limits != nil {
+	if limits != nil && azure {
+		// Entra ID's records have what these counts group by, so
+		// fillnull adds no groups.
+		t, err := azureThreshold(stats, span, limits, renames)
+		if err != nil {
+			return nil, err
+		}
+		r.Threshold = t
+	} else if limits != nil {
 		if filled {
 			return nil, fmt.Errorf("a count after fillnull is not supported")
 		}
@@ -668,7 +723,8 @@ func parseRaw(r *Rule, source, terms string, later []string, macros map[string]*
 		top = append(top, e)
 	}
 	top = append(top, regexes...)
-	if len(top) < 2 && r.Node != AuditdNode && r.Node != CloudTrailNode {
+	top = append(top, azureSearches...)
+	if len(top) < 2 && r.Node != AuditdNode && r.Node != CloudTrailNode && r.Node != AzureNode {
 		return nil, fmt.Errorf("a %s search must name a field besides its event code", source)
 	}
 	where = &And{Kids: top}
@@ -685,6 +741,10 @@ func parseRaw(r *Rule, source, terms string, later []string, macros map[string]*
 	}
 	if err := fieldsOf(where, r.Node, xml); err != nil {
 		return nil, err
+	}
+	if azure {
+		// The records of the macro's sourcetype.
+		where = &And{Kids: []Expr{&Cmp{Field: "sourcetype", Values: []string{azureSources[source]}}, where}}
 	}
 	unescapeXML(where)
 	r.Where = where
@@ -728,7 +788,7 @@ func fieldsOf(e Expr, node string, xml bool) error {
 	case *Not:
 		return fieldsOf(x.Kid, node, xml)
 	case *Cmp:
-		if x.Field == eventCode || node == AuditdNode && strings.HasPrefix(x.Field, "auditd_") || node == CloudTrailNode {
+		if x.Field == eventCode || node == AuditdNode && strings.HasPrefix(x.Field, "auditd_") || node == CloudTrailNode || node == AzureNode {
 			return nil
 		}
 		for _, f := range RawFields[node] {

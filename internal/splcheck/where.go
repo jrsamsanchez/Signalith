@@ -340,6 +340,10 @@ func (p *parser) field(name string) (string, error) {
 				return f, nil
 			}
 		}
+		if _, ok := azureSources[source]; ok {
+			// Resolved once the renames before are known (resolveAzure).
+			return rawFieldPrefix + name, nil
+		}
 		if source == "cloudtrail" {
 			if _, ok := cloudTrailField(name); ok {
 				return rawFieldPrefix + name, nil

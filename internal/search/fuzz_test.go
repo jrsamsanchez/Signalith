@@ -25,6 +25,8 @@ var compileSeeds = []string{
 	`* | where count > 1 | threatmatch | intel src`,
 	`* | stats count by a | where count > 1`,
 	`a=1 | where b=2 | where NOT c=3 | head 7 | table a`,
+	`* | stats median(bytes), perc95(bytes), stdev(bytes), values(user), list(user), latest(_time) by src`,
+	`* earliest=-1d | timechart span=1h perc99(bytes) by dest`,
 }
 
 // FuzzCompile checks that every query Parse accepts compiles to an

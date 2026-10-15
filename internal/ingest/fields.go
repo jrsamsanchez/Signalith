@@ -323,6 +323,19 @@ var knownFields = func() map[string]string {
 	// Whether a user or an app made an Entra ID change, as Splunk's add-on
 	// names it.
 	m["src_user_type"] = kw
+	// Microsoft 365 audit records (o365.go): the record's own fields, and
+	// its record type by name.
+	for _, k := range o365Mapped {
+		m[k] = kw
+	}
+	// The fields the shipped cloud rules read (rulefields.go).
+	for _, k := range cloudRuleFields {
+		m[k] = kw
+	}
+	// And the lists of objects they read inside, as JSON text.
+	for _, k := range cloudTrailLists {
+		m[k] = "wildcard"
+	}
 	add := func(fs []datamodel.Field) {
 		for _, f := range fs {
 			if strings.HasPrefix(f.Name, "_") {
@@ -352,6 +365,31 @@ var knownFields = func() map[string]string {
 // (see the sample package). Its value is the load's ID.
 const SampleField = datamodel.SampleField
 
+// knownObjects are the objects the known fields' dotted names make
+// (properties, properties.status), which no value may take the name of.
+var knownObjects = func() map[string]bool {
+	m := map[string]bool{}
+	for k := range knownFields {
+		for i := range len(k) {
+			if k[i] == '.' {
+				m[k[:i]] = true
+			}
+		}
+	}
+	return m
+}()
+
+// knownPrefix reports whether a dotted name's parts start with a known
+// field, which would become an object.
+func knownPrefix(parts []string) bool {
+	for i := 1; i < len(parts); i++ {
+		if KnownField(strings.Join(parts[:i], ".")) {
+			return true
+		}
+	}
+	return false
+}
+
 // KnownField reports whether Signalith's own parsers produce a field name,
 // so the index template maps it and events always keep it.
 func KnownField(name string) bool {
@@ -362,15 +400,25 @@ func KnownField(name string) bool {
 // validFieldName reports whether a sender-chosen name can become a field:
 // at most maxFieldNameLen bytes of letters, digits and _ - @ : /, parts
 // separated by single dots, at most maxFieldDepth parts, and not starting
-// with _ (OpenSearch reserves those names) or another symbol.
+// with _ (OpenSearch reserves those names) or another symbol. A part may
+// end in {}, as Splunk names the values in a list (targetResources{}.type).
 func validFieldName(name string) bool {
 	if name == "" || len(name) > maxFieldNameLen || !utf8.ValidString(name) {
 		return false
 	}
 	depth := 1
 	partStart := true
-	for _, r := range name {
+	for i, r := range name {
 		switch {
+		case r == '{':
+			// {} after a part's name, then the part's end or another {}.
+			if partStart || !strings.HasPrefix(name[i:], "{}") || i+2 < len(name) && name[i+2] != '.' && name[i+2] != '{' {
+				return false
+			}
+		case r == '}':
+			if i == 0 || name[i-1] != '{' {
+				return false
+			}
 		case r == '.':
 			if partStart {
 				return false // leading dot or two in a row
@@ -484,8 +532,12 @@ func (b *fieldBudget) limitTo(index, day, oldest string, f map[string]any, budge
 			continue
 		}
 		parts := strings.Split(k, ".")
-		if KnownField(parts[0]) && len(parts) > 1 {
+		if knownPrefix(parts) {
 			drop(k) // "user.name" would turn the known field user into an object
+			continue
+		}
+		if knownObjects[k] {
+			drop(k) // a value "properties.status" where properties.status.errorCode is mapped
 			continue
 		}
 		added, clash := 1, false

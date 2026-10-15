@@ -2,7 +2,9 @@ package compliance
 
 import (
 	"bytes"
+	"context"
 	"encoding/csv"
+	"fmt"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -189,7 +191,10 @@ func TestPartialStates(t *testing.T) {
 	s.Checks[0].Fail, s.Checks[0].Pass = 1, 1
 	for i := range s.Checks {
 		if slices.ContainsFunc(s.Checks[i].Refs, func(r string) bool { return refMatches("CM-6", r) }) {
-			s.Checks[i].Fail = 1
+			s.Checks[i].Fail = 30
+			for n := range 30 {
+				s.Checks[i].Failing = append(s.Checks[i].Failing, HostRef{ID: fmt.Sprint(n), Hostname: fmt.Sprintf("web-%02d", 29-n)})
+			}
 			break
 		}
 	}
@@ -204,6 +209,16 @@ func TestPartialStates(t *testing.T) {
 	cm6 := control(t, rep, "nist-800-53", "CM-6")
 	if cm6.Status != Partial || cm6.Checks == nil || cm6.Checks.Fail == 0 || len(cm6.Checks.Failing) == 0 {
 		t.Errorf("CM-6 = %s %+v", cm6.Status, cm6.Checks)
+	}
+	// The hosts are named, in order, up to MaxHosts.
+	var named CheckRef
+	for _, x := range cm6.Checks.Failing {
+		if x.Hosts == 30 {
+			named = x
+		}
+	}
+	if len(named.Failing) != MaxHosts || named.Failing[0].Hostname != "web-00" || !strings.HasSuffix(HostList(named), "web-24 and 5 more") {
+		t.Errorf("failing hosts = %+v %q", named.Failing, HostList(named))
 	}
 	if si3 := control(t, rep, "nist-800-53", "SI-3"); si3.Status != Partial || si3.Evidence[0].Status != Missing || si3.Evidence[1].Status != Partial {
 		t.Errorf("SI-3 = %s %+v", si3.Status, si3.Evidence)
@@ -261,19 +276,19 @@ func TestTaggedDetections(t *testing.T) {
 func TestNotes(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "compliance.json")
 	n := NewNotes(path)
-	if _, err := n.Set("pci-dss", "10.6.1", External, "  ", "ann", now); err == nil {
+	if _, err := n.Set(context.Background(), "pci-dss", "10.6.1", External, "  ", "ann", now); err == nil {
 		t.Error("an empty note was accepted")
 	}
-	if _, err := n.Set("pci-dss", "99.9", External, "x", "ann", now); err == nil {
+	if _, err := n.Set(context.Background(), "pci-dss", "99.9", External, "x", "ann", now); err == nil {
 		t.Error("an unknown control was accepted")
 	}
-	if _, err := n.Set("pci-dss", "10.6.1", "maybe", "x", "ann", now); err == nil {
+	if _, err := n.Set(context.Background(), "pci-dss", "10.6.1", "maybe", "x", "ann", now); err == nil {
 		t.Error("an unknown status was accepted")
 	}
-	if _, err := n.Set("pci-dss", "10.6.1", External, "Chrony on every host, checked by the platform team.", "ann", now); err != nil {
+	if _, err := n.Set(context.Background(), "pci-dss", "10.6.1", External, "Chrony on every host, checked by the platform team.", "ann", now); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := n.Set("pci-dss", "11.3.1", NotApplicable, "No cardholder network.", "ann", now); err != nil {
+	if _, err := n.Set(context.Background(), "pci-dss", "11.3.1", NotApplicable, "No cardholder network.", "ann", now); err != nil {
 		t.Fatal(err)
 	}
 	// Read back from the file.
@@ -290,7 +305,7 @@ func TestNotes(t *testing.T) {
 	if c.Status != External || c.Computed != Met || c.Attestation == nil || c.Attestation.By != "ann" {
 		t.Errorf("10.6.1 = %+v", c)
 	}
-	if _, err := n.Set("pci-dss", "11.3.1", "", "", "ann", now); err != nil {
+	if _, err := n.Set(context.Background(), "pci-dss", "11.3.1", "", "", "ann", now); err != nil {
 		t.Fatal(err)
 	}
 	if len(NewNotes(path).All()) != 1 {
@@ -315,6 +330,12 @@ func TestScore(t *testing.T) {
 func TestExports(t *testing.T) {
 	s := full()
 	s.Checks[0].Fail = 1
+	for i := range s.Checks {
+		if slices.ContainsFunc(s.Checks[i].Refs, func(r string) bool { return refMatches("CM-6", r) }) {
+			s.Checks[i].Fail, s.Checks[i].Failing = 1, []HostRef{{ID: "n1", Hostname: "db-07"}}
+			break
+		}
+	}
 	rep := Evaluate(s, map[string]Attestation{Key("pci-dss", "10.6.1"): {Status: External, Note: "=HYPERLINK(\"x\")", By: "ann", At: now}})
 	f, _ := rep.Find("pci-dss")
 	var b bytes.Buffer
@@ -350,5 +371,16 @@ func TestExports(t *testing.T) {
 	}
 	if strings.Contains(h, "<script") {
 		t.Error("the report must not carry scripts")
+	}
+
+	// The hosts a check fails on are named in both exports.
+	nist, _ := rep.Find("nist-800-53")
+	b.Reset()
+	if err := WriteCSV(&b, rep, nist, "siem-1"); err != nil || !strings.Contains(b.String(), "1 host: db-07") {
+		t.Errorf("CSV does not name the failing host: %v", err)
+	}
+	b.Reset()
+	if err := WriteHTML(&b, rep, nist, "siem-1", "0.2.0"); err != nil || !strings.Contains(b.String(), "1 host: db-07") {
+		t.Errorf("report does not name the failing host: %v", err)
 	}
 }

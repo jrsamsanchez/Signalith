@@ -217,3 +217,32 @@ func TestListSaveWhileListsMove(t *testing.T) {
 			return out["count"] == float64(1) && etag != "" && etag != clusterlib.NoList
 		})
 }
+
+// A detection saved while the founder records that it has no detections
+// of its own to move is not lost either: the importer holds the folder
+// from reading it until the import is recorded.
+func TestDetectionSaveWhenNoDetectionsMove(t *testing.T) {
+	saveWhileMoving(t, shared.ImportDetections, "", nil,
+		func(rs *running) (int, map[string]any, error) {
+			return rs.call("", "POST", "/api/detections", `{"id":"moved-rule","title":"Saved while moving","query":"event.action=failure","schedule":"5m","lookback":"5m","severity":"low","enabled":true}`)
+		},
+		func(rs *running) bool {
+			rs.libraryShared()
+			code, _, _ := rs.call("", "GET", "/api/detections/moved-rule", "")
+			return code == http.StatusOK
+		})
+}
+
+// The same for an asset list when the founder has none.
+func TestListSaveWhenNoListsMove(t *testing.T) {
+	saveWhileMoving(t, shared.ImportLookups, "", nil,
+		func(rs *running) (int, map[string]any, error) {
+			return rs.call("", "PUT", "/api/lookups/assets", "host,priority\nmoved1,high\n")
+		},
+		func(rs *running) bool {
+			rs.libraryShared()
+			_, out, _ := rs.call("", "GET", "/api/lookups/assets", "")
+			etag, _ := out["etag"].(string)
+			return out["count"] == float64(1) && etag != "" && etag != clusterlib.NoList
+		})
+}

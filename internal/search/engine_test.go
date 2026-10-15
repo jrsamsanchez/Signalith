@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -356,5 +357,20 @@ func TestAllTimeIsNotTheDefault(t *testing.T) {
 		if got := strings.Contains(asJSON(p.Body["query"]), `"@timestamp"`); got != want {
 			t.Errorf("earliest %q: time range %v, want %v: %s", earliest, got, want, asJSON(p.Body["query"]))
 		}
+	}
+}
+
+type panicStore struct{}
+
+func (panicStore) Search(context.Context, string, map[string]any) (map[string]any, error) {
+	panic("a bug in a command")
+}
+
+// A panic while a search runs fails that search only: the detection
+// scheduler calls Execute outside any HTTP handler.
+func TestExecuteRecoversPanic(t *testing.T) {
+	res, err := (&Engine{Store: panicStore{}}).Run(context.Background(), `*`)
+	if !errors.Is(err, ErrInternal) || res != nil {
+		t.Fatalf("Run = %v, %v", res, err)
 	}
 }

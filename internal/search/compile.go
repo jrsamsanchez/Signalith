@@ -119,6 +119,7 @@ var WildcardFields = map[string]bool{
 	"service_principal_names": true, "cert_attributes": true, "system_message": true, "event_data": true, "security_template_content": true, "security_new_template_content": true, "security_old_template_content": true, "security_conditions": true,
 	"auditd_execve_command": true, "auditd_proctitle": true, "auditd_data": true,
 	"request_parameters": true, "response_elements": true, "properties.targetResources": true,
+	"requestParameters.containerDefinitions": true,
 }
 
 func equalsQuery(field, value string) map[string]any {

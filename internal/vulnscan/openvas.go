@@ -276,6 +276,55 @@ func (o *OpenVAS) Version(ctx context.Context) (string, error) {
 	return strings.TrimSpace(v.Version), nil
 }
 
+type gmpGetConfigs struct {
+	XMLName  xml.Name `xml:"get_configs"`
+	ConfigID string   `xml:"config_id,attr"`
+}
+
+type gmpConfigs struct {
+	gmpStatus
+	Config struct {
+		NVTCount struct {
+			N string `xml:",chardata"`
+		} `xml:"nvt_count"`
+	} `xml:"config"`
+}
+
+// ErrFeedLoading is returned while a Greenbone install is still loading
+// its feed: it cannot scan until then.
+var ErrFeedLoading = errors.New("OpenVAS has not finished loading its feed of tests yet, so it cannot scan. " +
+	"A new Greenbone install takes up to an hour; Settings > Scanners shows when it is ready")
+
+// feedTests is how many tests the "Full and fast" scan configuration has:
+// 0 while the feed is still loading.
+func (g *gmpConn) feedTests(ctx context.Context) (int, error) {
+	var c gmpConfigs
+	if err := g.do(ctx, gmpGetConfigs{ConfigID: gvmConfigFullAndFast}, &c); err != nil {
+		if c.Status == "404" {
+			return 0, nil
+		}
+		return 0, err
+	}
+	n, _ := strconv.Atoi(strings.TrimSpace(c.Config.NVTCount.N))
+	return n, nil
+}
+
+// Ready signs in and reports the GMP version and how many tests a scan
+// runs, 0 while the feed is still loading: the setup check.
+func (o *OpenVAS) Ready(ctx context.Context) (version string, tests int, err error) {
+	g, err := o.open(ctx)
+	if err != nil {
+		return "", 0, err
+	}
+	defer g.Close()
+	var v gmpVersion
+	if err := g.do(ctx, gmpGetVersion{}, &v); err != nil {
+		return "", 0, err
+	}
+	tests, err = g.feedTests(ctx)
+	return strings.TrimSpace(v.Version), tests, err
+}
+
 // Finding is one weakness OpenVAS found on a host.
 type Finding struct {
 	Address   string
@@ -294,6 +343,11 @@ func (o *OpenVAS) Scan(ctx context.Context, t Target, name string, progress func
 		return nil, err
 	}
 	defer g.Close()
+	if n, err := g.feedTests(ctx); err != nil {
+		return nil, err
+	} else if n == 0 {
+		return nil, ErrFeedLoading
+	}
 	tgt := gmpCreateTarget{Name: name, Comment: "Made by Signalith for one scan; removed when it ends.",
 		Hosts: strings.Join(t.Networks, ","), ExcludeHosts: strings.Join(t.Exclude, ","), AliveTests: "Scan Config Default"}
 	switch t.Ports {

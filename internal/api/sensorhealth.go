@@ -47,7 +47,7 @@ type sensorHealthCache struct {
 func countSensors(agents []agentinv.Agent, now time.Time) *sensorCounts {
 	var c sensorCounts
 	for _, a := range agents {
-		if a.Refusing || (a.Sensor == nil && !sensorTag.MatchString(a.Tag)) {
+		if !isSensor(a) {
 			continue
 		}
 		c.Total++

@@ -23,9 +23,17 @@ var fuzzSeeds = []string{
 	`a=1 | where NOT (x=1 OR y!=2) AND z<3 | sort 10 +dc(user), -max(bytes)`,
 	`* | stats distinct_count(user) as u, mean(bytes) by src | rename "a b" as c, d as "e f"`,
 	`"AND" "*" "" OR=1`,
+	`* | stats median(a), p95(b) as x, perc1(c), stdev(d), var(e), range(f), mode(g), values(h), list(i), first(j), last(k), earliest(l), latest(m) by n | sort -perc1(c)`,
 	`a==b c<=d e>f g!=h`,
 	`(a=1`, `a="x`, `a=1 | bogus`, `a=1 | head 5 6`, `a ! b`,
 	"\xff\xfe(\x00",
+	"* | eval kb=round(bytes/1024, 2), u=lower(user) . \"@\" . domain, x=if(a>1 AND NOT b=\"x\", -5, -(3))\n| where len(process) > 100 OR like(user, \"adm%\")",
+	`* | rex field=process max_match=0 "(?<flag>-\w+)" | dedup 2 user, host keepempty=true consecutive=true | fillnull value=none a, b`,
+	`* | eventstats avg(bytes) as ab by src | rare limit=5 process_name by host`,
+	`* | where 'my field' = other_field | eval 'a b'=case(x=1, "one", x=2, "two"), y=coalesce(a, b, "d") XOR c LIKE "a_%"`,
+	`x | where name=O'Brien | where (a) = 1 | eval n=-x * 2 - -3 % 4, s=substr(cmd, -5, 2), t=strftime(_time, "%Y-%m-%d")`,
+	`* | eval a=`, `* | rex "(?<x"`, `* | dedup`, `* | where NOT`, `* | eval 'x|y'=1 | head 2`,
+	`* | where substr("abc", 1, "NaN") = "" OR replace(s, "", s) != s`,
 }
 
 // FuzzParse checks that Parse never panics, that its errors carry a

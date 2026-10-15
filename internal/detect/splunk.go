@@ -75,6 +75,10 @@ func SplunkFilter(r *splcheck.Rule) (query.Expr, error) {
 	if r.Node == splcheck.CloudTrailNode {
 		return and([]query.Expr{&query.Compare{Field: "sourcetype", Op: "=", Value: ingest.CloudTrailSourcetype}, e}), nil
 	}
+	if r.Node == splcheck.AzureNode {
+		// The where clause names the macro's sourcetype.
+		return e, nil
+	}
 	if r.Node == "Web" {
 		// Every web request: a web server's access log, or a network
 		// sensor's.
@@ -282,6 +286,8 @@ func splunkThrottle(node, dm string) []string {
 		return []string{"host", "auditd_type", "auditd_exe", "process", "auditd_name"}
 	case splcheck.CloudTrailNode:
 		return []string{"vendor_account", "user", "src", "eventName"}
+	case splcheck.AzureNode:
+		return []string{"vendor_account", "user", "src", "operationName"}
 	}
 	return packThrottle("", dm)
 }
@@ -334,9 +340,9 @@ func SplunkDetection(p *Pack, r PackRule, src []byte) (*Detection, error) {
 		d.Throttle.Fields = packNetworkThrottle("", dm)
 		d.Risk.Objects = []RiskObject{{Field: "src", Type: "system"}, {Field: "user", Type: "user"}}
 		d.Tags = append(d.Tags, "network")
-	} else if rule.Node == splcheck.CloudTrailNode {
-		// An AWS call is the account's, from an address; the host is only
-		// the Collector that read it.
+	} else if rule.Node == splcheck.CloudTrailNode || rule.Node == splcheck.AzureNode {
+		// An AWS call, or an Entra ID sign-in or change, is the account's,
+		// from an address; the host is only the Collector that read it.
 		d.Title = strings.TrimSpace(rule.Name) + " for $user$"
 		d.Risk.Objects = []RiskObject{{Field: "user", Type: "user"}, {Field: "src", Type: "system"}}
 	}
@@ -400,8 +406,8 @@ func splunkThreshold(d *Detection, q *query.Query, rule *splcheck.Rule) {
 	}
 	d.Title = strings.TrimSpace(rule.Name)
 	toks := []struct{ field, word string }{{"dest", "on"}, {"host", "on"}, {"src", "from"}, {"user", "for"}}
-	if rule.Node == splcheck.CloudTrailNode {
-		// dest is the AWS service.
+	if rule.Node == splcheck.CloudTrailNode || rule.Node == splcheck.AzureNode {
+		// dest is the AWS service, or the Azure resource.
 		toks = toks[2:]
 	}
 	for _, tok := range toks {
@@ -414,10 +420,10 @@ func splunkThreshold(d *Detection, q *query.Query, rule *splcheck.Rule) {
 	var objects []RiskObject
 	for _, f := range t.By {
 		switch f {
-		case "user":
+		case "user", "src_user":
 			objects = append(objects, RiskObject{Field: f, Type: "user"})
 		case "dest", "host", "src":
-			if f != "src" && rule.Node == splcheck.CloudTrailNode {
+			if f != "src" && (rule.Node == splcheck.CloudTrailNode || rule.Node == splcheck.AzureNode) {
 				continue
 			}
 			objects = append(objects, RiskObject{Field: f, Type: "system"})

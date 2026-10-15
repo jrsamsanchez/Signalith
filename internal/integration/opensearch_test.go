@@ -228,6 +228,45 @@ func TestEndToEnd(t *testing.T) {
 			t.Errorf("no src has both outcomes, got %v", res.Rows)
 		}
 	})
+	t.Run("eval, rex, dedup and eventstats", func(t *testing.T) {
+		res := run(t, eng, `datamodel=Authentication action=failure
+| rex "port (?<port>\d+)"
+| eval port=tonumber(port), high=if(port >= 40106, "yes", "no")
+| where like(user, "ora%")
+| stats count by high`)
+		got := map[any]any{}
+		for _, r := range res.Rows {
+			got[r["high"]] = r["count"]
+		}
+		if got["yes"] != int64(6) || got["no"] != int64(6) {
+			t.Errorf("rows = %v", res.Rows)
+		}
+		res = run(t, eng, `datamodel=Authentication action=failure | dedup src | eventstats count as n | table src, n`)
+		if len(res.Rows) != 2 || res.Rows[0]["n"] != int64(2) {
+			t.Errorf("rows = %v", res.Rows)
+		}
+	})
+	t.Run("percentiles, spread and values", func(t *testing.T) {
+		res := run(t, eng, `datamodel=Authentication src=203.0.113.9 | stats median(src_port) as med, perc95(src_port) as p95, stdev(src_port) as sd, range(src_port) as r, values(user) as users, latest(user) as newest, earliest(user) as oldest`)
+		r := res.Rows[0]
+		med, _ := r["med"].(float64)
+		if m, ok := r["med"].(int64); ok {
+			med = float64(m)
+		}
+		if med < 40105 || med > 40107 || r["r"] != int64(11134) || r["sd"] == nil || r["p95"] == nil {
+			t.Errorf("row = %v", r)
+		}
+		if users, ok := r["users"].([]any); !ok || len(users) != 2 {
+			t.Errorf("users = %#v", r["users"])
+		}
+		if r["newest"] == r["oldest"] || r["oldest"] != "oracle" {
+			t.Errorf("newest = %v, oldest = %v", r["newest"], r["oldest"])
+		}
+		res = run(t, eng, `datamodel=Authentication action=failure | stats latest(user) as newest, list(user) as all by src | sort src`)
+		if len(res.Rows) != 2 || res.Rows[0]["newest"] != "root" {
+			t.Errorf("rows = %v", res.Rows)
+		}
+	})
 	t.Run("plain-English questions run", func(t *testing.T) {
 		ip, err := nlq.Translate("failed logins from 203.0.113.9", nil)
 		if err != nil {

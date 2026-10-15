@@ -263,7 +263,7 @@ func (c *Checker) openVASCheck(ctx context.Context, mine []Target) Check {
 		return ck
 	}
 	vctx, cancel := context.WithTimeout(ctx, 15*time.Second)
-	v, err := c.OpenVAS.Version(vctx)
+	v, tests, err := c.OpenVAS.Ready(vctx)
 	cancel()
 	if err != nil {
 		ck.State, ck.Detail = CheckWarn, err.Error()
@@ -274,8 +274,17 @@ func (c *Checker) openVASCheck(ctx context.Context, mine []Target) Check {
 		}
 		return ck
 	}
+	if tests == 0 {
+		ck.State = CheckWarn
+		ck.Detail = fmt.Sprintf("OpenVAS answered at %s (GMP %s) but is still loading its feed of tests, so it cannot scan yet.", c.OpenVAS.Address, v)
+		ck.Fix = []string{
+			"Wait for Greenbone to finish loading its feed. A new install takes up to an hour; the gvmd log says when it is done.",
+			"Then click Check again.",
+		}
+		return ck
+	}
 	ck.State = CheckOK
-	ck.Detail = fmt.Sprintf("OpenVAS answered at %s (GMP %s).", c.OpenVAS.Address, v)
+	ck.Detail = fmt.Sprintf("OpenVAS answered at %s (GMP %s, %d tests ready).", c.OpenVAS.Address, v, tests)
 	if wanted > 0 {
 		ck.Detail += fmt.Sprintf(" %d %s this server scans %s it.", wanted, plural(wanted, "network", "networks"), plural(wanted, "uses", "use"))
 	}

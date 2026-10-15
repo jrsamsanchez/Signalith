@@ -95,7 +95,7 @@ Signalith adds four fields to every event agents send:
 
 | Field | Holds |
 |---|---|
-| `signalith_intake` | How it came in: `agent` (Fluent Bit, `POST /api/ingest`), `otlp` (OpenTelemetry), `osquery` or `syslog` |
+| `signalith_intake` | How it came in: `agent` (Fluent Bit, `POST /api/ingest`), `otlp` (OpenTelemetry), `osquery`, `syslog`, `scanner` (Signalith's own vulnerability scans) or `signalith` (what Signalith notices itself, such as a [network sensor gone silent](network-sensor.md#settings-network-sensors)) |
 | `signalith_token` | The token's name when the event arrived, such as `Linux web servers` (never the token itself). A shared token shows as `Shared token 3f9c0a` |
 | `signalith_token_id` | The token's 12-character ID, which stays the same when the token is renamed |
 | `signalith_sender` | The address that sent it, without the port. Behind a [trusted proxy](https.md), the real client's address |

@@ -323,7 +323,7 @@ type translator struct {
 	earliest  string
 	latest    string
 
-	mode      string // "", stats, timechart, top
+	mode      string // "", stats, timechart, top, latest
 	agg       query.Agg
 	by        []string
 	pending   []string // nouns that may be a group-by
@@ -396,7 +396,7 @@ func (t *translator) setModel(m string) {
 // the matching rule consumed.
 func (t *translator) step() int {
 	for _, rule := range []func() int{
-		t.ruleQuoted, t.ruleTime, t.ruleThreshold, t.ruleMalware, t.ruleVulns, t.ruleNegation, t.ruleTop, t.ruleAgg, t.ruleGroup,
+		t.ruleQuoted, t.ruleTime, t.ruleThreshold, t.ruleMalware, t.ruleVulns, t.ruleNegation, t.ruleLatest, t.ruleTop, t.ruleAgg, t.ruleGroup,
 		t.ruleShowFields, t.ruleContains, t.rulePreposition, t.ruleNoun, t.ruleWords, t.ruleValue,
 	} {
 		if n := rule(); n > 0 {
@@ -567,6 +567,24 @@ func (t *translator) ruleNegation() int {
 	return 0
 }
 
+// ruleLatest handles "latest login per user", "most recent process on
+// each host": the newest event for each value, which dedup keeps since
+// events come newest first.
+func (t *translator) ruleLatest() int {
+	k := 0
+	switch {
+	case t.low(0) == "latest" || t.low(0) == "newest":
+		k = 1
+	case t.low(0) == "most" && t.low(1) == "recent":
+		k = 2
+	}
+	if k == 0 || t.mode != "" {
+		return 0
+	}
+	t.mode = "latest"
+	return t.note(k, "only the newest event")
+}
+
 func (t *translator) ruleTop() int {
 	w := t.low(0)
 	k := 0
@@ -637,11 +655,17 @@ func (t *translator) ruleAgg() int {
 		return t.distinctAfter(0)
 	}
 	fn := map[string]string{"total": "sum", "sum": "sum", "average": "avg", "avg": "avg", "mean": "avg",
-		"maximum": "max", "max": "max", "minimum": "min", "min": "min", "smallest": "min"}[w]
+		"maximum": "max", "max": "max", "minimum": "min", "min": "min", "smallest": "min", "median": "median"}[w]
+	k := 1
+	// "95th percentile", "standard deviation of"
+	if n, ok := percentileWord(w); ok && (t.low(1) == "percentile" || t.low(1) == "pct") {
+		fn, k = "perc"+strconv.Itoa(n), 2
+	} else if w == "standard" && t.low(1) == "deviation" {
+		fn, k = "stdev", 2
+	}
 	if fn == "" {
 		return 0
 	}
-	k := 1
 	if t.low(k) == "of" {
 		k++
 	}
@@ -649,18 +673,48 @@ func (t *translator) ruleAgg() int {
 	if nk == 0 || !nn.numeric {
 		return 0
 	}
-	t.agg = query.Agg{Func: fn, Field: nn.field, Alias: map[string]string{"sum": "total", "avg": "avg", "max": "max", "min": "min"}[fn] + "_" + nn.field}
+	prefix := map[string]string{"sum": "total", "avg": "avg", "max": "max", "min": "min", "median": "median", "stdev": "stdev"}[fn]
+	name := map[string]string{"sum": "total", "avg": "average", "max": "maximum", "min": "minimum", "median": "median", "stdev": "standard deviation"}[fn]
+	if prefix == "" { // a percentile
+		prefix = "p" + strings.TrimPrefix(fn, "perc")
+		name = ordinalWord(query.Percentile(fn)) + " percentile"
+	}
+	t.agg = query.Agg{Func: fn, Field: nn.field, Alias: prefix + "_" + nn.field}
 	if t.mode == "" {
 		t.mode = "stats"
 	}
 	t.hintModel(nn)
-	return t.note(k+nk, "%s of %s", map[string]string{"sum": "total", "avg": "average", "max": "maximum", "min": "minimum"}[fn], nn.name)
+	return t.note(k+nk, "%s of %s", name, nn.name)
 }
 
 func (t *translator) countMode() {
 	if t.mode == "" {
 		t.mode = "stats"
 	}
+}
+
+// percentileWord reads "95th" or "99th" as a percentile.
+func percentileWord(w string) (int, bool) {
+	for _, suf := range []string{"th", "st", "nd", "rd"} {
+		if d, ok := strings.CutSuffix(w, suf); ok {
+			n, err := strconv.Atoi(d)
+			return n, err == nil && n >= 1 && n <= 99
+		}
+	}
+	return 0, false
+}
+
+func ordinalWord(n int) string {
+	switch {
+	case n%100 >= 11 && n%100 <= 13:
+	case n%10 == 1:
+		return strconv.Itoa(n) + "st"
+	case n%10 == 2:
+		return strconv.Itoa(n) + "nd"
+	case n%10 == 3:
+		return strconv.Itoa(n) + "rd"
+	}
+	return strconv.Itoa(n) + "th"
 }
 
 // distinctAfter handles "distinct users" starting at offset k.
@@ -736,6 +790,9 @@ func (t *translator) ruleGroup() int {
 	}
 	if t.mode == "" {
 		t.mode = "stats"
+	}
+	if t.mode == "latest" {
+		return t.note(k, "for each %s", strings.Join(names, " and "))
 	}
 	return t.note(k, "one row per %s", strings.Join(names, " and "))
 }
@@ -1317,7 +1374,10 @@ func (t *translator) finish() *query.Query {
 		mode = "stats"
 		t.steps[t.chartStep].Meaning = "not applied: counts cover the whole time range, not each interval"
 	}
-	needEntity := mode == "top" || t.threshold != nil
+	if mode == "latest" && t.threshold != nil {
+		mode = "stats"
+	}
+	needEntity := mode == "top" || mode == "latest" || t.threshold != nil
 	if len(by) == 0 && needEntity {
 		if len(t.pending) > 0 {
 			by = []string{resolve(t.pending[0])}
@@ -1340,8 +1400,8 @@ func (t *translator) finish() *query.Query {
 		if n == 0 {
 			n = 10
 		}
-		if agg.Func == "count" && !t.ascending && t.threshold == nil {
-			q.Commands = append(q.Commands, &query.Top{Fields: by, Limit: n})
+		if agg.Func == "count" && t.threshold == nil {
+			q.Commands = append(q.Commands, &query.Top{Fields: by, Limit: n, Rare: t.ascending})
 			break
 		}
 		q.Commands = append(q.Commands, &query.Stats{Aggs: []query.Agg{agg}, By: by})
@@ -1356,6 +1416,11 @@ func (t *translator) finish() *query.Query {
 		}
 		if len(by) > 0 {
 			q.Commands = append(q.Commands, &query.Sort{Keys: []query.SortKey{{Field: col, Desc: !t.ascending}}})
+		}
+	case "latest":
+		q.Commands = append(q.Commands, &query.Dedup{N: 1, Fields: by})
+		if len(t.fields) > 0 {
+			q.Commands = append(q.Commands, &query.Table{Fields: append([]string{"_time"}, dedupe(mapStrings(t.fields, resolve))...)})
 		}
 	default:
 		if len(t.fields) > 0 {

@@ -1,12 +1,17 @@
 package api
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/jrsamsanchez/signalith/internal/compliance"
+	"github.com/jrsamsanchez/signalith/internal/shared"
 )
 
 func TestComplianceReport(t *testing.T) {
@@ -49,7 +54,7 @@ func TestComplianceReport(t *testing.T) {
 	if a, _ := out["attestation"].(map[string]any); a["by"] != "admin" || a["status"] != "external" {
 		t.Errorf("attestation = %v", out)
 	}
-	if _, err := os.Stat(filepath.Join(state, complianceFile)); err != nil {
+	if _, err := os.Stat(filepath.Join(state, compliance.NotesFile)); err != nil {
 		t.Errorf("notes file: %v", err)
 	}
 	_, out = do(t, ts, "GET", "/api/compliance", "", true)
@@ -104,5 +109,65 @@ func TestComplianceExport(t *testing.T) {
 	}
 	if resp, _ = get("/api/compliance/export?framework=soc2&format=pdf"); resp.StatusCode != 400 {
 		t.Errorf("unknown format = %d", resp.StatusCode)
+	}
+}
+
+// sharedNotes stands for the notes in the shared settings; paused makes
+// writes fail as they do while OpenSearch cannot be reached.
+type sharedNotes struct {
+	*compliance.Notes
+	paused bool
+}
+
+func (n *sharedNotes) Set(ctx context.Context, fw, ctl string, st compliance.Status, note, by string, now time.Time) (*compliance.Attestation, error) {
+	if n.paused {
+		return nil, &shared.PausedError{Why: "OpenSearch cannot be reached"}
+	}
+	return n.Notes.Set(ctx, fw, ctl, st, note, by, now)
+}
+
+func TestComplianceSharedNotes(t *testing.T) {
+	state := t.TempDir()
+	t.Setenv("SIGNALITH_STATE_DIR", state)
+	ts, srv := newRoleServer(t)
+	notes := &sharedNotes{Notes: compliance.NewNotes("")}
+	srv.ComplianceNotes = notes
+
+	// Not a member yet: the notes stay in the state folder.
+	body := `{"framework":"pci-dss","control":"10.6.1","status":"external","note":"Chrony on every host."}`
+	if code, out := do(t, ts, "PUT", "/api/compliance/notes", body, true); code != 200 {
+		t.Fatalf("PUT = %d %v", code, out)
+	}
+	if len(notes.All()) != 0 {
+		t.Error("a server that is not a member wrote to the shared notes")
+	}
+
+	// A member keeps them in the shared settings, and shows those.
+	srv.Shared = &memberShared{}
+	body = `{"framework":"hipaa","control":"164.312(b)","status":"na","note":"No ePHI on these systems."}`
+	if code, out := do(t, ts, "PUT", "/api/compliance/notes", body, true); code != 200 {
+		t.Fatalf("PUT = %d %v", code, out)
+	}
+	if _, ok := notes.All()[compliance.Key("hipaa", "164.312(b)")]; !ok {
+		t.Error("the note did not reach the shared notes")
+	}
+	_, out := do(t, ts, "GET", "/api/compliance", "", true)
+	shown := map[string]bool{}
+	for _, f := range out["frameworks"].([]any) {
+		fm := f.(map[string]any)
+		for _, c := range fm["controls"].([]any) {
+			if cm := c.(map[string]any); cm["attestation"] != nil {
+				shown[fm["id"].(string)+"/"+cm["id"].(string)] = true
+			}
+		}
+	}
+	if !shown["hipaa/164.312(b)"] || shown["pci-dss/10.6.1"] {
+		t.Errorf("notes shown = %v", shown)
+	}
+
+	// Paused shared settings answer 503.
+	notes.paused = true
+	if code, out := do(t, ts, "PUT", "/api/compliance/notes", body, true); code != 503 {
+		t.Errorf("paused PUT = %d %v", code, out)
 	}
 }

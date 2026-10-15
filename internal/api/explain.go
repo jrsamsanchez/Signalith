@@ -2,6 +2,8 @@ package api
 
 import (
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/jrsamsanchez/signalith/internal/query"
@@ -102,6 +104,8 @@ func describeExpr(e query.Expr) string {
 			verb = map[string]string{"=": "matches", "!=": "does not match"}[e.Op]
 		}
 		return fmt.Sprintf("%s %s %s", e.Field, verb, e.Value)
+	case *query.Cond:
+		return e.String() + " holds"
 	}
 	return e.String()
 }
@@ -127,6 +131,30 @@ func describeAggs(aggs []query.Agg) string {
 			s = "the smallest " + a.Field
 		case "max":
 			s = "the largest " + a.Field
+		case "median":
+			s = "the median " + a.Field
+		case "stdev":
+			s = "the standard deviation of " + a.Field
+		case "var":
+			s = "the variance of " + a.Field
+		case "range":
+			s = "the range (largest minus smallest) of " + a.Field
+		case "mode":
+			s = "the most common " + a.Field
+		case "values":
+			s = "the distinct values of " + a.Field
+		case "list":
+			s = "every value of " + a.Field
+		case "first", "latest":
+			s = "the newest " + a.Field
+		case "last", "earliest":
+			s = "the oldest " + a.Field
+		default:
+			if n := query.Percentile(a.Func); n > 0 {
+				s = fmt.Sprintf("the %s percentile of %s", ordinal(n), a.Field)
+			} else {
+				s = a.String()
+			}
 		}
 		if a.Alias != "" {
 			s += fmt.Sprintf(" (as %s)", a.Alias)
@@ -134,6 +162,20 @@ func describeAggs(aggs []query.Agg) string {
 		parts[i] = s
 	}
 	return strings.Join(parts, ", ")
+}
+
+func ordinal(n int) string {
+	suffix := "th"
+	switch {
+	case n%100 >= 11 && n%100 <= 13:
+	case n%10 == 1:
+		suffix = "st"
+	case n%10 == 2:
+		suffix = "nd"
+	case n%10 == 3:
+		suffix = "rd"
+	}
+	return strconv.Itoa(n) + suffix
 }
 
 func describeCommand(c query.Command) string {
@@ -154,7 +196,66 @@ func describeCommand(c query.Command) string {
 			s += ", one line per " + c.By
 		}
 		return s + "."
+	case *query.EventStats:
+		s := "Add " + describeAggs(c.Aggs)
+		if len(c.By) > 0 {
+			s += " for each " + strings.Join(c.By, " and ")
+		}
+		return s + " to every row, keeping the rows."
+	case *query.Eval:
+		parts := make([]string, len(c.Assigns))
+		for i, a := range c.Assigns {
+			parts[i] = a.Field + " to " + a.Expr.String()
+		}
+		return "Set " + strings.Join(parts, ", then ") + "."
+	case *query.Rex:
+		re, err := regexp.Compile(c.Pattern)
+		var names []string
+		if err == nil {
+			for _, n := range re.SubexpNames() {
+				if n != "" {
+					names = append(names, n)
+				}
+			}
+		}
+		s := "Extract " + strings.Join(names, ", ") + " from " + c.Field + " with the regular expression " + c.Pattern
+		switch c.MaxMatch {
+		case 1:
+		case 0:
+			s += ", keeping every match"
+		default:
+			s += fmt.Sprintf(", keeping up to %d matches", c.MaxMatch)
+		}
+		return s + "."
+	case *query.Dedup:
+		s := "Keep only the first row"
+		if c.N > 1 {
+			s = fmt.Sprintf("Keep only the first %d rows", c.N)
+		}
+		s += " for each " + strings.Join(c.Fields, " and ")
+		if c.Consecutive {
+			s += ", dropping only repeats that follow each other"
+		}
+		if c.KeepEmpty {
+			s += "; rows missing one of these fields are kept"
+		} else {
+			s += "; rows missing one of these fields are dropped"
+		}
+		return s + "."
+	case *query.Fillnull:
+		what := "every column"
+		if len(c.Fields) > 0 {
+			what = strings.Join(c.Fields, ", ")
+		}
+		return fmt.Sprintf("Fill missing values in %s with %s.", what, c.Value)
 	case *query.Top:
+		if c.Rare {
+			s := fmt.Sprintf("List the %d least common values of %s with their count and percentage", c.Limit, strings.Join(c.Fields, " and "))
+			if len(c.By) > 0 {
+				s += " for each " + strings.Join(c.By, " and ")
+			}
+			return s + "."
+		}
 		s := fmt.Sprintf("List the %d most common values of %s with their count and percentage", c.Limit, strings.Join(c.Fields, " and "))
 		if len(c.By) > 0 {
 			s += " for each " + strings.Join(c.By, " and ")

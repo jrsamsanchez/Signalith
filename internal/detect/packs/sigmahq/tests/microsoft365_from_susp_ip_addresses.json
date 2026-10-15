@@ -1,0 +1,6 @@
+{"rule": "a3501e8e-af9e-43c6-8cd6-9360bdaae498", "cases": [
+  {"expect":true,"source":"synthesized","channel":"o365","event_id":"audit","data":{"eventName":"Activity from suspicious IP addresses","eventSource":"SecurityComplianceCenter","status":"success"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"audit","data":{"eventSource":"SecurityComplianceCenter","status":"success"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"audit","data":{"eventName":"Activity from suspicious IP addresses","status":"success"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"audit","data":{"eventName":"Activity from suspicious IP addresses","eventSource":"SecurityComplianceCenter"}}
+]}

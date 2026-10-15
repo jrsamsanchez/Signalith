@@ -131,6 +131,16 @@ func applyCommand(ctx context.Context, res *Result, c query.Command) error {
 		}
 		res.Rows, res.Columns = topRows(counted, c)
 		res.Kind = "table"
+	case *query.Eval:
+		return applyEval(ctx, res, c)
+	case *query.Rex:
+		return applyRex(ctx, res, c)
+	case *query.Dedup:
+		return applyDedup(ctx, res, c)
+	case *query.Fillnull:
+		applyFillnull(res, c)
+	case *query.EventStats:
+		return applyEventStats(ctx, res, c)
 	case *query.Timechart:
 		return fmt.Errorf("timechart must come before other commands that change results")
 	default:
@@ -157,7 +167,12 @@ func topRows(rows []Row, top *query.Top) ([]Row, []string) {
 	var out []Row
 	for _, k := range order {
 		g := byGroup[k]
-		sort.SliceStable(g, func(i, j int) bool { return g[i]["count"].(int64) > g[j]["count"].(int64) })
+		sort.SliceStable(g, func(i, j int) bool {
+			if top.Rare {
+				return g[i]["count"].(int64) < g[j]["count"].(int64)
+			}
+			return g[i]["count"].(int64) > g[j]["count"].(int64)
+		})
 		if top.Limit > 0 && len(g) > top.Limit {
 			g = g[:top.Limit]
 		}
@@ -185,14 +200,6 @@ func groupKey(r Row, fields []string) (string, bool) {
 	return b.String(), true
 }
 
-type aggState struct {
-	count    int64
-	sum      float64
-	numeric  int64
-	min, max float64
-	distinct map[string]bool
-}
-
 // goStats aggregates rows in memory, for stats after another transform.
 func goStats(ctx context.Context, rows []Row, st *query.Stats) ([]Row, []string, error) {
 	type group struct {
@@ -216,7 +223,7 @@ func goStats(ctx context.Context, rows []Row, st *query.Stats) ([]Row, []string,
 				g.keys[f] = r[f]
 			}
 			for range st.Aggs {
-				g.states = append(g.states, &aggState{min: math.Inf(1), max: math.Inf(-1), distinct: map[string]bool{}})
+				g.states = append(g.states, newAggState())
 			}
 			groups[k] = g
 			order = append(order, k)
@@ -231,14 +238,7 @@ func goStats(ctx context.Context, rows []Row, st *query.Stats) ([]Row, []string,
 			if !ok || v == nil {
 				continue
 			}
-			s.count++
-			s.distinct[fmt.Sprint(v)] = true
-			if f, ok := asFloat(v); ok {
-				s.numeric++
-				s.sum += f
-				s.min = math.Min(s.min, f)
-				s.max = math.Max(s.max, f)
-			}
+			s.add(a, v, r)
 		}
 	}
 	sort.Strings(order)
@@ -250,29 +250,7 @@ func goStats(ctx context.Context, rows []Row, st *query.Stats) ([]Row, []string,
 			row[f] = v
 		}
 		for i, a := range st.Aggs {
-			s := g.states[i]
-			var v any
-			switch a.Func {
-			case "count":
-				v = s.count
-			case "dc":
-				v = int64(len(s.distinct))
-			case "sum":
-				v = toNumber(s.sum)
-			case "avg":
-				if s.numeric > 0 {
-					v = s.sum / float64(s.numeric)
-				}
-			case "min":
-				if s.numeric > 0 {
-					v = toNumber(s.min)
-				}
-			case "max":
-				if s.numeric > 0 {
-					v = toNumber(s.max)
-				}
-			}
-			row[a.Column()] = v
+			row[a.Column()] = g.states[i].result(a)
 		}
 		out = append(out, row)
 	}
@@ -364,6 +342,8 @@ type matcher struct {
 	ctx  context.Context
 	work int
 	err  error
+
+	ev *evaluator // for conditions written as expressions
 }
 
 func (m *matcher) eval(e query.Expr, r Row) bool {
@@ -384,6 +364,15 @@ func (m *matcher) eval(e query.Expr, r Row) bool {
 		return false
 	case *query.Not:
 		return !m.eval(e.Child, r)
+	case *query.Cond:
+		if m.ev == nil {
+			m.ev = evaluatorFor(m.ctx)
+		}
+		ok := truth(m.ev.safeEval(e.X, r))
+		if m.ev.err != nil && m.err == nil {
+			m.err = m.ev.err
+		}
+		return ok
 	case *query.In:
 		for _, v := range e.Values {
 			if m.equals(r[e.Field], v) {

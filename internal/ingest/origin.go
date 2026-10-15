@@ -9,8 +9,9 @@ import (
 // every event it receives; a sender can never set them (see reserved).
 const (
 	// IntakeField is how the event arrived: agent (an agent's POST to
-	// /api/ingest), otlp, osquery, syslog or scanner (Signalith's own
-	// vulnerability scans).
+	// /api/ingest), otlp, osquery, syslog, scanner (Signalith's own
+	// vulnerability scans) or signalith (what Signalith notices itself,
+	// such as a network sensor gone silent).
 	IntakeField = "signalith_intake"
 	// TokenField is the name of the agent token the event came with, as
 	// it was then (never the token itself). Renaming the token later
@@ -36,6 +37,9 @@ const (
 	IntakeOsquery = "osquery"
 	IntakeSyslog  = "syslog"
 	IntakeScanner = "scanner"
+	// IntakeSignalith is what Signalith writes about itself, such as a
+	// silent network sensor's event.
+	IntakeSignalith = "signalith"
 )
 
 // Origin is where events came from: how they arrived, the agent token
