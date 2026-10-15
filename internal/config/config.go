@@ -1120,6 +1120,14 @@ type Vulns struct {
 	NVDURL string `yaml:"nvd_url,omitempty"`
 	// NVDAPIKey is a free NVD API key, which allows faster lookups.
 	NVDAPIKey string `yaml:"nvd_api_key,omitempty"`
+	// OpenVAS, optional, runs deeper scans on this server for the networks
+	// that ask for them: OpenVASAddress is gvmd's Unix socket (such as
+	// /run/gvmd/gvmd.sock) or host:port of its TLS port, with a gvmd user
+	// and password. OpenVASCAFile verifies a TLS port's certificate.
+	OpenVASAddress  string `yaml:"openvas_address,omitempty"`
+	OpenVASUsername string `yaml:"openvas_username,omitempty"`
+	OpenVASPassword string `yaml:"openvas_password,omitempty"`
+	OpenVASCAFile   string `yaml:"openvas_ca_file,omitempty"`
 }
 
 // Intel configures threat intel feeds. Nothing is downloaded until a
@@ -1976,6 +1984,25 @@ func (c *Config) applyEnv() error {
 		c.Vulns.NVDAPIKey = strings.TrimSpace(v[0])
 		c.fromEnv("vulns.nvd_api_key", from)
 	}
+	for _, e := range []struct {
+		env, key string
+		p        *string
+	}{
+		{"SIGNALITH_OPENVAS_ADDRESS", "vulns.openvas_address", &c.Vulns.OpenVASAddress},
+		{"SIGNALITH_OPENVAS_USERNAME", "vulns.openvas_username", &c.Vulns.OpenVASUsername},
+		{"SIGNALITH_OPENVAS_CA_FILE", "vulns.openvas_ca_file", &c.Vulns.OpenVASCAFile},
+	} {
+		if v := strings.TrimSpace(os.Getenv(e.env)); v != "" {
+			*e.p = v
+			c.fromEnv(e.key, e.env)
+		}
+	}
+	if v, from, err := envSecret("SIGNALITH_OPENVAS_PASSWORD"); err != nil {
+		return err
+	} else if len(v) > 0 {
+		c.Vulns.OpenVASPassword = v[0]
+		c.fromEnv("vulns.openvas_password", from)
+	}
 	if v, from, err := envSecret("SIGNALITH_INGEST_TOKEN"); err != nil {
 		return err
 	} else if len(v) > 0 {
@@ -2291,6 +2318,10 @@ func (c *Config) Warnings() []string {
 	}
 	if u, err := url.Parse(c.Vulns.NVDURL); err == nil && u.Scheme == "http" && c.Vulns.NVDAPIKey != "" && !isLoopback(u.Hostname()) {
 		w = append(w, "vulns.nvd_url is plain http to "+u.Host+", so the NVD API key crosses the network unencrypted. Use https://.")
+	}
+	if c.Vulns.OpenVASAddress != "" && (c.Vulns.OpenVASUsername == "" || c.Vulns.OpenVASPassword == "") {
+		w = append(w, "vulns.openvas_address is set without a user name and password (vulns.openvas_username and vulns.openvas_password, "+
+			"or SIGNALITH_OPENVAS_USERNAME and SIGNALITH_OPENVAS_PASSWORD), so OpenVAS cannot be used.")
 	}
 	if c.PublicAdminPassword() {
 		w = append(w, "The built-in admin's password is "+publicAdminPassword+", the example in an older docker-compose.yml, which anyone can look up. "+

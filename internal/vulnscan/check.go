@@ -44,6 +44,8 @@ type Checker struct {
 	GOOS string
 	// Docker says Signalith runs in its container image.
 	Docker bool
+	// OpenVAS is this server's OpenVAS, when set up.
+	OpenVAS *OpenVAS
 	// Reach finds how this server reaches an address; nil is LocalRoute.
 	Reach func(ctx context.Context, entry string) Route
 }
@@ -171,6 +173,8 @@ func (c *Checker) Run(ctx context.Context, set Settings, mine []Target) (checks 
 	}
 	checks = append(checks, key)
 
+	checks = append(checks, c.openVASCheck(ctx, mine))
+
 	nets := Check{ID: "networks", Title: "Networks to scan",
 		Why: "Signalith scans only the networks you list, on the schedule you pick. Only list networks you own or have permission to scan. " +
 			"Each network is scanned by one server: pick, for each, a server that can reach it, such as one inside a segmented network zone."}
@@ -227,4 +231,53 @@ func plural(n int, one, many string) string {
 		return one
 	}
 	return many
+}
+
+// openVASCheck says whether OpenVAS, optional, is set up and answers.
+func (c *Checker) openVASCheck(ctx context.Context, mine []Target) Check {
+	ck := Check{ID: "openvas", Title: "OpenVAS for deeper scans",
+		Why: "OpenVAS (Greenbone Community Edition) tests each host for thousands of known weaknesses, such as missing patches, default passwords and weak TLS settings, " +
+			"where Nmap only reads software versions. It is much slower and sends far more traffic, so only networks with Also scan with OpenVAS turned on use it, on the server that scans them."}
+	wanted := 0
+	for _, t := range mine {
+		if t.OpenVAS {
+			wanted++
+		}
+	}
+	setup := []string{
+		"Install Greenbone Community Edition on this server, or where this server can reach its gvmd: https://greenbone.github.io/docs/latest/ (the Docker containers are the quickest).",
+		"Make a gvmd user for Signalith, such as: gvmd --create-user=signalith --password='a long password'.",
+		"Give Signalith the address of gvmd and that user: set SIGNALITH_OPENVAS_ADDRESS to gvmd's socket (such as /run/gvmd/gvmd.sock) or host:port of its TLS port (9390), " +
+			"SIGNALITH_OPENVAS_USERNAME and SIGNALITH_OPENVAS_PASSWORD for the Signalith service, or vulns.openvas_address, vulns.openvas_username and vulns.openvas_password in signalith.yaml.",
+		"Restart Signalith, then edit a network on the Vulnerabilities page and turn on Also scan with OpenVAS.",
+	}
+	if c.Docker {
+		setup[2] += " In Docker, also mount the volume that holds gvmd's socket into the Signalith container."
+	}
+	if !c.OpenVAS.Configured() {
+		ck.State, ck.Detail, ck.Fix = CheckInfo, "Not set up. It is optional: Nmap scans work without it.", setup
+		if wanted > 0 {
+			ck.State = CheckWarn
+			ck.Detail = fmt.Sprintf("Not set up, but %d %s this server scans %s for it, so only Nmap runs there.", wanted, plural(wanted, "network", "networks"), plural(wanted, "asks", "ask"))
+		}
+		return ck
+	}
+	vctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	v, err := c.OpenVAS.Version(vctx)
+	cancel()
+	if err != nil {
+		ck.State, ck.Detail = CheckWarn, err.Error()
+		ck.Fix = []string{
+			"Check that gvmd runs and that " + c.OpenVAS.Address + " is its socket or TLS port, readable by the account Signalith runs as.",
+			"Check the user name and password (SIGNALITH_OPENVAS_USERNAME and SIGNALITH_OPENVAS_PASSWORD).",
+			"Then click Check again.",
+		}
+		return ck
+	}
+	ck.State = CheckOK
+	ck.Detail = fmt.Sprintf("OpenVAS answered at %s (GMP %s).", c.OpenVAS.Address, v)
+	if wanted > 0 {
+		ck.Detail += fmt.Sprintf(" %d %s this server scans %s it.", wanted, plural(wanted, "network", "networks"), plural(wanted, "uses", "use"))
+	}
+	return ck
 }

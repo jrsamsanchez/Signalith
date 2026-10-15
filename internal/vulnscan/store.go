@@ -77,6 +77,9 @@ type Scan struct {
 	// CVEError says why CVEs could not be looked up for some or all of
 	// the software found.
 	CVEError string `json:"cve_error,omitempty"`
+	// OpenVASError says why OpenVAS did not scan, for a network that asks
+	// for it; Nmap's results are kept.
+	OpenVASError string `json:"openvas_error,omitempty"`
 	// Stop asks the scanner to stop the scan.
 	Stop   bool   `json:"stop,omitempty"`
 	StopBy string `json:"stop_by,omitempty"`
@@ -147,6 +150,26 @@ type Vuln struct {
 	KEV         bool    `json:"kev,omitempty"`
 	KEVAdded    string  `json:"kev_added,omitempty"`
 	CPE         string  `json:"cpe"`
+	// Source is where it came from: "" for a CVE matched to the software
+	// version Nmap found, or openvas for a weakness OpenVAS tested for.
+	Source string `json:"source,omitempty"`
+	// From OpenVAS: the test's OID and name, every CVE it names (CVE is
+	// the newest of them, or empty), and how to fix it.
+	OID      string   `json:"oid,omitempty"`
+	Name     string   `json:"name,omitempty"`
+	CVEs     []string `json:"cves,omitempty"`
+	Solution string   `json:"solution,omitempty"`
+}
+
+// SourceOpenVAS marks a weakness OpenVAS found.
+const SourceOpenVAS = "openvas"
+
+// Key names the weakness: its CVE, or OpenVAS's test.
+func (v Vuln) Key() string {
+	if v.CVE != "" {
+		return v.CVE
+	}
+	return v.OID
 }
 
 // Report is what a scanner found when it checked itself: whether Nmap is

@@ -50,7 +50,10 @@ type Target struct {
 	Ports string `json:"ports"`
 	// Gentle scans slowly and with fewer probes, for networks with fragile
 	// devices such as printers and building or industrial controllers.
-	Gentle   bool     `json:"gentle"`
+	Gentle bool `json:"gentle"`
+	// OpenVAS also scans the network with OpenVAS after Nmap, on a scanner
+	// where it is set up: deeper, but much slower.
+	OpenVAS  bool     `json:"openvas,omitempty"`
 	Schedule Schedule `json:"schedule"`
 	Enabled  bool     `json:"enabled"`
 	// Scanner is the node ID of the server that scans this network, one
