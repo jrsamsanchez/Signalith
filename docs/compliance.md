@@ -34,7 +34,9 @@ on its own, right now. For example:
   misuse, malware, network intrusions, persistence), with the data they read arriving
   and scheduled detections turned on.
 - **Configuration checks**: the [osquery checks](endpoints.md) whose NIST SP 800-53
-  references match the control, and how many pass and fail across your hosts.
+  references match the control, and how many pass and fail across your hosts. Each
+  failing check names the hosts it fails on (up to 25, then a count); analysts and
+  admins can click a host to open it as on the Endpoints page.
 - **Vulnerability scanning**: a [scan](vulnerabilities.md) finished in the last month
   (in the last three months counts as partial).
 - **Findings reviewed**: no new finding has waited more than 7 days.
@@ -88,7 +90,9 @@ Either one needs a note saying how the control is handled or why it does not app
 note, who wrote it and when appear on the page and in every report, next to what
 Signalith's own evidence would say. Remove the note to go back to the evidence alone.
 
-Notes are kept in `compliance-notes.json` in the server's state folder.
+Notes are kept in `compliance-notes.json` in the server's state folder. With
+[several servers](servers.md#shared-detections-dashboards-and-asset-lists), they are kept
+in the shared settings instead, so every server shows the same notes.
 
 ## Evidence reports
 
@@ -100,7 +104,7 @@ Each framework has two exports:
   not run them as formulas.
 - **Report (PDF)**: a report page that opens in a new tab. Use your browser's
   **Print** command and choose **Save as PDF**. It has the score, a summary and every
-  control grouped as in the framework, with the evidence, failing checks, detections and
+  control grouped as in the framework, with the evidence, failing checks and their hosts, detections and
   notes.
 
 Over the API (any role):
@@ -141,8 +145,8 @@ compliant, and your assessor decides what evidence is enough.
 
 ## Limits
 
-- Compliance reads this server's settings. With [several servers](servers.md), the
-  notes on controls are kept on the server where they were written.
+- Compliance reads this server's settings. With [several servers](servers.md), give
+  every server the same settings (most of them are [shared](settings.md#settings-on-several-servers)).
 - Event counts cover the last 7 days. A source that sends rarely can show as missing.
 - The HIPAA and SOC 2 lists are short on purpose: most of their requirements are about
   policies and people, which no SIEM can show.

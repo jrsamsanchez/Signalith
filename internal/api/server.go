@@ -27,6 +27,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/auth"
 	"github.com/jrsamsanchez/signalith/internal/cases"
 	"github.com/jrsamsanchez/signalith/internal/clientaddr"
+	"github.com/jrsamsanchez/signalith/internal/compliance"
 	"github.com/jrsamsanchez/signalith/internal/config"
 	"github.com/jrsamsanchez/signalith/internal/content"
 	"github.com/jrsamsanchez/signalith/internal/dashboards"
@@ -190,6 +191,10 @@ type Server struct {
 	// ClusterTLS is the cluster's one certificate authority; nil on a
 	// server that is not a member of a cluster.
 	ClusterTLS ClusterTLS
+	// ComplianceNotes keeps the notes on compliance controls in the
+	// shared settings, used while this server takes its content from them;
+	// nil, or until then, they stay in the state folder.
+	ComplianceNotes compliance.NoteStore
 	// Join adds servers to the cluster: join tokens, the public join and
 	// approvals (clusterjoin.go); nil on a server without shared settings.
 	Join ClusterJoin

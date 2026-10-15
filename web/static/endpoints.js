@@ -430,6 +430,14 @@ window.sensorText = (function () {
   }
 
   // ---------- one host ----------
+  // The Compliance page opens a host that fails a check. The dialog moves
+  // out of this page's section, which is hidden while another page shows.
+  window.openEndpointHost = (id) => {
+    const dlg = $('ep-host');
+    if (dlg.parentElement !== document.body) document.body.append(dlg);
+    return openHost(id);
+  };
+
   async function openHost(id) {
     const dlg = $('ep-host');
     dlg.replaceChildren(el('div', { class: 'modal__body' }, skeleton()));

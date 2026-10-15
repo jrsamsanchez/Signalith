@@ -241,13 +241,26 @@
           canOpen ? el('button', { class: 'link-btn', type: 'button', onclick: goTo(e.page) }, `Open ${PAGES[e.page]}`, icon('arrow-right', 'icon--sm')) : null) : null));
   }
 
+  // A failing check, with the hosts it fails on. Analysts can open a host
+  // on the Endpoints page; others see its name.
+  function failingCheck(x) {
+    const open = typeof window.openEndpointHost === 'function' && pageAllowed('endpoints');
+    const hosts = (x.failing || []).map((h) => el('li', {}, open
+      ? el('button', { class: 'cp-host', type: 'button', title: `Open ${h.hostname}`, onclick: () => window.openEndpointHost(h.id) }, h.hostname)
+      : el('span', { class: 'cp-host' }, h.hostname)));
+    const more = x.hosts - (x.failing || []).length;
+    if (more > 0) hosts.push(el('li', { class: 'cp-host cp-host--more' }, `and ${more} more`));
+    return el('li', {},
+      el('div', { class: 'cp-fails__row' }, el('span', {}, x.title), el('span', { class: 'cp-fails__n' }, `${x.platform} · ${x.hosts} ${x.hosts === 1 ? 'host' : 'hosts'}`)),
+      hosts.length ? el('ul', { class: 'cp-hosts', 'aria-label': `Hosts failing ${x.title}` }, ...hosts) : null);
+  }
+
   function controlDetail(f, c) {
     const out = [el('ul', { class: 'cp-evs' }, ...c.evidence.map(evidenceItem))];
     const ch = c.checks;
     if (ch && ch.failing.length) {
       out.push(el('div', { class: 'cp-sub' }, el('h5', { class: 'section-title' }, 'Failing checks', el('span', { class: 'count' }, String(ch.failing.length))),
-        el('ul', { class: 'cp-fails' }, ...ch.failing.slice(0, 8).map((x) => el('li', {},
-          el('span', {}, x.title), el('span', { class: 'cp-fails__n' }, `${x.platform} · ${x.hosts} ${x.hosts === 1 ? 'host' : 'hosts'}`)))),
+        el('ul', { class: 'cp-fails' }, ...ch.failing.slice(0, 8).map(failingCheck)),
         ch.failing.length > 8 ? el('p', { class: 'hint' }, `And ${ch.failing.length - 8} more on the Endpoints page.`) : null));
     }
     if (c.detections.length) {

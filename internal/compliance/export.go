@@ -62,7 +62,7 @@ func WriteCSV(w io.Writer, rep *Report, f *FrameworkReport, server string) error
 		if ch := c.Checks; ch != nil && ch.Checks > 0 {
 			var failing []string
 			for _, x := range ch.Failing {
-				failing = append(failing, fmt.Sprintf("%s (%s, %d %s)", x.Title, x.Platform, x.Hosts, plural(x.Hosts, "host", "hosts")))
+				failing = append(failing, fmt.Sprintf("%s (%s, %d %s: %s)", x.Title, x.Platform, x.Hosts, plural(x.Hosts, "host", "hosts"), HostList(x)))
 			}
 			d := fmt.Sprintf("%d checks: %d pass, %d fail, %d not applicable, %d waiting", ch.Checks, ch.Pass, ch.Fail, ch.NA, ch.Pending)
 			if len(failing) > 0 {
@@ -136,6 +136,7 @@ var reportTemplate = template.Must(template.New("report").Funcs(template.FuncMap
 	"count":  func(n int) string { return count(int64(n)) },
 	"stamp":  func(a *Attestation) string { return a.At.UTC().Format("2006-01-02") },
 	"plural": plural,
+	"hosts":  HostList,
 	"n":      func(m map[Status]int, k string) int { return m[Status(k)] },
 }).Parse(`<!doctype html>
 <html lang="en">
@@ -216,7 +217,7 @@ var reportTemplate = template.Must(template.New("report").Funcs(template.FuncMap
       <b>{{.Title}}</b>
       <ul>
         {{range .Evidence}}<li><span class="ev-st {{.Status}}">{{.Name}}:</span> {{.Detail}}</li>{{end}}
-        {{with .Checks}}{{if gt .Checks 0}}{{if .Failing}}<li><span class="ev-st partial">Failing checks:</span> {{range $i, $c := .Failing}}{{if $i}}; {{end}}{{$c.Title}} ({{$c.Platform}}, {{$c.Hosts}} {{plural $c.Hosts "host" "hosts"}}){{end}}</li>{{end}}{{end}}{{end}}
+        {{with .Checks}}{{if gt .Checks 0}}{{if .Failing}}<li><span class="ev-st partial">Failing checks:</span> {{range $i, $c := .Failing}}{{if $i}}; {{end}}{{$c.Title}} ({{$c.Platform}}, {{$c.Hosts}} {{plural $c.Hosts "host" "hosts"}}: {{hosts $c}}){{end}}</li>{{end}}{{end}}{{end}}
         {{if .Detections}}<li class="small">Detections on: {{range $i, $d := more .Detections 12}}{{if $i}}; {{end}}{{$d.Name}}{{end}}{{if gt (len .Detections) 12}}; and {{sub (len .Detections) 12}} more{{end}}</li>{{end}}
       </ul>
       {{with .Attestation}}<div class="attest"><b>{{label .Status}}</b> ({{.By}}, {{stamp .}}): {{.Note}}</div>{{end}}
@@ -236,3 +237,20 @@ var reportTemplate = template.Must(template.New("report").Funcs(template.FuncMap
 </body>
 </html>
 `))
+
+// HostList names the hosts a check fails on, and counts those past
+// MaxHosts.
+func HostList(c CheckRef) string {
+	names := make([]string, len(c.Failing))
+	for i, h := range c.Failing {
+		names[i] = h.Hostname
+	}
+	out := strings.Join(names, ", ")
+	if more := c.Hosts - len(c.Failing); more > 0 {
+		if out != "" {
+			out += " "
+		}
+		out += fmt.Sprintf("and %d more", more)
+	}
+	return out
+}

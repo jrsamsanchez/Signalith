@@ -53,6 +53,8 @@ func sharedExporters(d sharedDocs, f clustercfg.Files) []shared.Exporter {
 		[]shared.Exporter{tlsExporter(d, f)},
 		// The detections, dashboards and the asset and identity lists.
 		clusterlib.Exporters(d.lib, libraryFiles(f)),
+		// The notes on compliance controls (sharedcompliance.go).
+		[]shared.Exporter{complianceExporter(d.comp, f)},
 		// Append a new shared feature's exporter here.
 	)
 }

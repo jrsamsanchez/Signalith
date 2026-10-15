@@ -5291,7 +5291,15 @@ dialog.modal.sj-dialog[open] { display: flex; flex-direction: column; max-height
 .cp-sub p { margin: 0; color: var(--text-2); }
 .cp-sub h5 { margin: 0; }
 .cp-fails { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
-.cp-fails li { display: flex; justify-content: space-between; gap: 12px; padding: 6px 10px; border-radius: var(--r-sm); background: var(--sunken); }
+.cp-fails > li { display: grid; gap: 6px; padding: 6px 10px; border-radius: var(--r-sm); background: var(--sunken); }
+.cp-fails__row { display: flex; justify-content: space-between; gap: 12px; }
+.cp-hosts { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px; }
+.cp-host { display: inline-flex; align-items: center; min-height: 22px; padding: 2px 8px; border: 0; border-radius: var(--r-full); background: var(--raised); box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--text-2); font: inherit; font-size: var(--fs-xs); font-family: var(--font-mono); overflow-wrap: anywhere; }
+button.cp-host { cursor: pointer; }
+button.cp-host:hover { color: var(--text); box-shadow: inset 0 0 0 1px var(--line-strong); }
+button.cp-host:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent); }
+.cp-host--more { background: none; box-shadow: none; color: var(--text-3); font-family: inherit; }
 .cp-fails__n { flex: none; color: var(--text-3); font-size: var(--fs-sm); }
 .cp-dets { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
 .cp-dets .badge { height: auto; min-height: 22px; padding: 3px 8px; white-space: normal; line-height: 1.3; color: var(--text-2); font-weight: 500; }
