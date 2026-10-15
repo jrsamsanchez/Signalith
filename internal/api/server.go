@@ -198,9 +198,9 @@ type Server struct {
 	Install *ClusterInstall
 
 	authOnce     sync.Once
-	creds        credCache  // recently checked Basic credentials
-	routes       []route    // every API route and its role, from Handler
-	caseMu       sync.Mutex // serializes case changes
+	creds        credCache // recently checked Basic credentials
+	routes       []route   // every API route and its role, from Handler
+	caseLocks    caseLocks // one lock per case being changed
 	checksMu     sync.Mutex
 	dirChecks    map[string]dirCheck // when each directory user was last checked
 	dirSlotsOnce sync.Once

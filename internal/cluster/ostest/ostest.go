@@ -35,6 +35,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -81,6 +82,7 @@ type Server struct {
 	primaryTerm int64
 	blocked     bool
 	fault       func(method, path string) *Fault
+	refreshWait time.Duration
 	requests    []string
 	autoID      int
 	// uuids counts the indices made, for their uuids.
@@ -190,6 +192,15 @@ func (s *Server) Block(on bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.blocked = on
+}
+
+// SetRefreshWait makes every request with refresh=wait_for answer only d
+// after it is done, as OpenSearch answers one at its next refresh (up to a
+// second later, by default); 0, the default, answers at once.
+func (s *Server) SetRefreshWait(d time.Duration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.refreshWait = d
 }
 
 // SetFault sets a function that may answer a request with a Fault; nil
@@ -429,7 +440,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	p := r.URL.Path
 	s.mu.Lock()
 	s.requests = append(s.requests, r.Method+" "+r.URL.RequestURI())
-	fault, sec := s.fault, s.security
+	fault, sec, wait := s.fault, s.security, s.refreshWait
 	s.mu.Unlock()
 	if sec != nil {
 		if u, pw, ok := r.BasicAuth(); !ok || u != sec.User || pw != sec.Password {
@@ -457,6 +468,15 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 			writeError(w, f.Status, f.Type, "injected by the test")
 			return
 		}
+	}
+	if wait > 0 && r.URL.Query().Get("refresh") == "wait_for" {
+		rec := httptest.NewRecorder()
+		s.handle(rec, r, p, body)
+		time.Sleep(wait)
+		maps.Copy(w.Header(), rec.Header())
+		w.WriteHeader(rec.Code)
+		_, _ = w.Write(rec.Body.Bytes())
+		return
 	}
 	s.handle(w, r, p, body)
 }
