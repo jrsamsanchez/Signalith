@@ -398,6 +398,11 @@ jobs:
           sudo journalctl --no-pager -n 200 -u signalith-zeek -u signalith-suricata -u signalith-fluent-bit -u signalith-suricata-update || true
           echo "== Suricata's own test of the sensor settings and rules"
           sudo suricata -T -v -c /etc/suricata/signalith-sensor.yaml 2>&1 | tail -n 40 || true
-          sudo sh -x /usr/lib/signalith-sensor/rules-update.sh 2>&1 | tail -n 40 || true
+          sudo suricata-update --etopen --data-dir /var/lib/signalith-sensor/suricata --suricata-conf /etc/suricata/signalith-sensor.yaml \
+            --disable-conf /etc/suricata/disable.conf --no-reload --fail -v 2>&1 | grep -v 'Loading distribution' | tail -n 60 || true
+          echo "rc=$?"
+          sudo mkdir -p /tmp/sct && sudo suricata -T -v -l /tmp/sct -c /etc/suricata/signalith-sensor.yaml \
+            -S /var/lib/signalith-sensor/suricata/rules/suricata.rules 2>&1 | tail -n 40 || true
+          sudo ls -la /var/lib/signalith-sensor/suricata/rules /etc/suricata || true
           sudo dmesg | tail -n 20 || true
           $COMPOSE logs --no-color signalith | tail -n 200
