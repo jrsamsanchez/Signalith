@@ -93,3 +93,6 @@ func otherLinks(path string) int {
 }
 
 func isBusy(err error) bool { return errors.Is(err, syscall.EBUSY) }
+
+// inUse is for Windows: here a file that is open can be replaced.
+func inUse(error) bool { return false }
