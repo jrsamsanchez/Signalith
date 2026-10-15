@@ -36,6 +36,7 @@ var fuzzSeeds = []string{
 	`* | where substr("abc", 1, "NaN") = "" OR replace(s, "", s) != s`,
 	`* | lookup owners host AS dest, "output" OUTPUTNEW owner AS "as", team | lookup t a`,
 	`* | transaction host, "a b" maxspan=5m maxpause=1h maxevents=3 startswith="x y" endswith=(NOT a=1 OR b IN (2, 3))`,
+	`* | join type=left max=0 user, "a b" [search datamodel=Change "x [y]" | stats count by user | join user [search | inputlookup t]] | head 3`,
 	`| inputlookup max=20 owners | where isnull(owner) | lookup owners user OUTPUT team`,
 }
 

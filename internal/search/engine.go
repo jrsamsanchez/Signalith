@@ -248,6 +248,22 @@ func (e *Engine) IndexPattern(q *query.Query) (string, error) {
 
 // Compile builds the OpenSearch request for a query without running it.
 func (e *Engine) Compile(q *query.Query) (*Plan, error) {
+	p, err := e.compile(q)
+	if err != nil {
+		return nil, err
+	}
+	// A subsearch that does not compile fails the search before it runs.
+	for _, c := range p.post {
+		if j, ok := c.(*query.Join); ok {
+			if _, err := e.Compile(subsearch(j, q)); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return p, nil
+}
+
+func (e *Engine) compile(q *query.Query) (*Plan, error) {
 	o := e.opts()
 	cmds := q.Commands
 	if len(cmds) > 0 {
@@ -507,7 +523,19 @@ func (e *Engine) execute(ctx context.Context, q *query.Query) (*Result, error) {
 		return nil, err
 	}
 	defer release()
+	res, err := e.run(withEvaluator(ctx), q, p)
+	if err != nil {
+		return nil, err
+	}
+	res.TookMS = time.Since(start).Milliseconds()
+	return res, nil
+}
+
+// run gets a compiled query's rows and runs its commands over them. A
+// join's subsearch runs here too, within the search's slot and limits.
+func (e *Engine) run(ctx context.Context, q *query.Query, p *Plan) (*Result, error) {
 	var res *Result
+	var err error
 	if c, ok := p.transform.(*query.InputLookup); ok {
 		res, err = e.inputLookup(c)
 	} else {
@@ -519,7 +547,6 @@ func (e *Engine) execute(ctx context.Context, q *query.Query) (*Result, error) {
 	if p.threat != nil {
 		e.threatAnnotate(res, p.threat, p.Mode == "events")
 	}
-	ctx = withEvaluator(ctx)
 	for _, c := range p.post {
 		if err := ctx.Err(); err != nil {
 			return nil, err
@@ -530,6 +557,8 @@ func (e *Engine) execute(ctx context.Context, q *query.Query) (*Result, error) {
 			err = e.enrich(res, c)
 		case *query.Lookup:
 			err = e.lookup(ctx, res, c)
+		case *query.Join:
+			err = e.join(ctx, res, c, q)
 		case *query.Intel:
 			err = e.intelEnrich(res, c)
 		default:
@@ -539,7 +568,6 @@ func (e *Engine) execute(ctx context.Context, q *query.Query) (*Result, error) {
 			return nil, err
 		}
 	}
-	res.TookMS = time.Since(start).Milliseconds()
 	return res, nil
 }
 

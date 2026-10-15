@@ -240,6 +240,23 @@ func describeCommand(c query.Command) string {
 			s += fmt.Sprintf(", keeping up to %d matches", c.MaxMatch)
 		}
 		return s + "."
+	case *query.Join:
+		s := "Join each row to the rows of a subsearch that share its " + strings.Join(c.Fields, " and ")
+		switch c.Max {
+		case 0:
+			s += fmt.Sprintf(" (every match, up to %d)", query.MaxJoinMatches)
+		case 1:
+			s += " (the first match)"
+		default:
+			s += fmt.Sprintf(" (up to %d matches)", c.Max)
+		}
+		s += ", adding their fields"
+		if c.Left {
+			s += "; rows with no match are kept"
+		} else {
+			s += "; rows with no match are dropped"
+		}
+		return s + ". The subsearch: " + strings.Join(Explain(c.Sub), " ")
 	case *query.Transaction:
 		s := "Group the events"
 		if len(c.Fields) > 0 {

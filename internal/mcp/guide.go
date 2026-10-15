@@ -25,6 +25,7 @@ Commands:
   lookup <table> <col> [OUTPUT cols]  add columns from an uploaded lookup table (admins add them on Settings > Lookups)
   | inputlookup [max=N] <table>  start a search with a lookup table's rows instead of events
   transaction f1, f2 [maxspan=10m] [maxpause=1m] [startswith="text"] [endswith=(search)]  group events into one row each, with duration and eventcount
+  join [type=left] f1 [search <query>]  add the fields of a subsearch's rows that share f1
   enrich [fields]        add asset and identity context (priority, owner, watchlist)
   threatmatch [fields]   keep events whose fields match threat intel; must come right after the search
   intel [fields]         add threat intel context to any result
