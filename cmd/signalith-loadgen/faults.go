@@ -62,6 +62,7 @@ func (r *runner) fault(ctx context.Context, f Fault, start time.Time) FaultResul
 		return res
 	}
 	leader := ""
+	cmd, undo := f.Cmd, f.Undo
 	if f.Target != "" {
 		server, wasLeader, err := r.resolveTarget(ctx, f.Target)
 		if err != nil {
@@ -72,9 +73,14 @@ func (r *runner) fault(ctx context.Context, f Fault, start time.Time) FaultResul
 		if wasLeader {
 			leader = server
 		}
+		if f.WindowsCmd != "" {
+			if v, ok := r.anyView(ctx); ok && v.isWindows(server) {
+				cmd, undo = f.WindowsCmd, f.WindowsUndo
+			}
+		}
 	}
 	r.logf("fault %s on %s", f.Kind, orNone(res.Server))
-	if err := r.faultAction(ctx, f, f.Cmd, res.Server, false, &res); err != nil {
+	if err := r.faultAction(ctx, f, cmd, res.Server, false, &res); err != nil {
 		res.Error = err.Error()
 		return res
 	}
@@ -95,8 +101,8 @@ func (r *runner) fault(ctx context.Context, f Fault, start time.Time) FaultResul
 		case <-ctx.Done():
 		case <-time.After(f.For.D()):
 		}
-		undo, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-		if err := r.faultAction(undo, f, f.Undo, res.Server, true, &res); err != nil && res.Error == "" {
+		uctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		if err := r.faultAction(uctx, f, undo, res.Server, true, &res); err != nil && res.Error == "" {
 			res.Error = "undo: " + err.Error()
 		}
 		cancel()
@@ -168,9 +174,20 @@ func toxiproxyEnabled(ctx context.Context, t Toxiproxy, enabled bool) error {
 	return nil
 }
 
-// resolveTarget turns leader or standby into a server name; any other
-// target is a server name already.
+// resolveTarget turns leader, standby or windows into a server name; any
+// other target is a server name already.
 func (r *runner) resolveTarget(ctx context.Context, target string) (server string, leader bool, err error) {
+	if target == "windows" {
+		v, ok := r.anyView(ctx)
+		if !ok {
+			return "", false, fmt.Errorf("windows: no server answered GET /api/cluster")
+		}
+		w := v.windows()
+		if len(w) == 0 {
+			return "", false, fmt.Errorf("windows: no Windows server is ready")
+		}
+		return w[0], v.Lease.HolderName == w[0], nil
+	}
 	if target != "leader" && target != "standby" {
 		v, ok := r.anyView(ctx)
 		return target, ok && v.Lease.HolderName == target, nil
@@ -238,10 +255,11 @@ func (r *runner) waitTakeover(ctx context.Context, old string) (time.Duration, s
 func (r *runner) sampleLeaders(ctx context.Context) {
 	tick := time.NewTicker(time.Second)
 	defer tick.Stop()
+	last := time.Now()
 	for {
 		var mu sync.Mutex
 		var wg sync.WaitGroup
-		n := 0
+		n, windows := 0, false
 		for _, s := range r.admin {
 			wg.Add(1)
 			go func() {
@@ -252,6 +270,7 @@ func (r *runner) sampleLeaders(ctx context.Context) {
 				if s.Do(c, http.MethodGet, "/api/cluster", nil, &v) == nil && v.Lease.Mine {
 					mu.Lock()
 					n++
+					windows = windows || v.isWindows(v.selfName())
 					mu.Unlock()
 				}
 			}()
@@ -260,8 +279,14 @@ func (r *runner) sampleLeaders(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
+		now := time.Now()
 		r.m.Add("leader_samples", 1)
 		r.m.Set("", "leaders_at_once", float64(n))
+		if windows {
+			// The time since the last sample counts as led by Windows.
+			r.m.Add("windows_led_ms", now.Sub(last).Milliseconds())
+		}
+		last = now
 		select {
 		case <-ctx.Done():
 			return

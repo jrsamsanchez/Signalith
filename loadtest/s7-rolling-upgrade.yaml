@@ -1,5 +1,6 @@
-# S7: a rolling upgrade under load. It needs rolling upgrades, which a
-# later version adds; until then it is skipped.
+# S7: a rolling upgrade under load. A placeholder until rolling upgrades
+# are supported: the load generator cannot yet tell whether servers have
+# them, so the scenario is always skipped.
 name: s7-rolling-upgrade
 description: Upgrade each server in turn while agents and people keep working.
 needs: [rolling_upgrade]

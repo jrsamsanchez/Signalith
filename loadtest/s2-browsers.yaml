@@ -19,5 +19,5 @@ criteria:
   - {name: search_p95_ms, phase: busy, max: 3000}
   - {name: page_p95_ms, phase: busy, max: 1000}
   - {name: write_p95_ms, phase: busy}
-  - {name: write_conflicts}
+  - {name: write_conflicts, max: 0}
   - {name: ingest_error_rate, phase: busy, max: 0.01}

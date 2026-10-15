@@ -15,4 +15,5 @@ criteria:
   # About 10 failures per account in total before strangers are slowed
   # down, plus the few the doubling wait lets through in a minute.
   - {name: brute_checked_per_account, max: 20}
-  - {name: brute_lockouts}
+  # The guessing has to be refused at some point.
+  - {name: brute_lockouts, min: 1}

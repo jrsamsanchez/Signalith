@@ -89,6 +89,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 type common struct {
 	file, targets, cas, admin, token, users, jsonOut, runID string
 	osURL, osCA, osCert, osKey, osUser, prefix              string
+	baseline, pids                                          string
 	keep, quiet                                             bool
 	forDur                                                  time.Duration
 }
@@ -110,6 +111,8 @@ func (c *common) register(fs *flag.FlagSet, withFile bool) {
 	fs.StringVar(&c.osKey, "os-key", "", "OpenSearch client key")
 	fs.StringVar(&c.osUser, "os-user-file", "", "file holding user:password for OpenSearch")
 	fs.StringVar(&c.prefix, "prefix", "", "the servers' opensearch.index_prefix (default signalith)")
+	fs.StringVar(&c.baseline, "baseline", "", "an earlier run's JSON report to compare ingest with (ingest_scaling)")
+	fs.StringVar(&c.pids, "pids", "", "the servers' process IDs on this machine, as name=pid,... (Linux), for CPU and memory")
 	fs.BoolVar(&c.keep, "keep", false, "keep the accounts and the case the run made")
 	fs.BoolVar(&c.quiet, "q", false, "no progress lines")
 	if !withFile {
@@ -252,6 +255,22 @@ func runCommand(ctx context.Context, cmd string, args []string, stdout, stderr i
 	opts := runOptions{RunID: c.runID, Keep: c.keep, Log: stderr}
 	if c.quiet {
 		opts.Log = nil
+	}
+	if c.baseline != "" {
+		b, err := readReport(c.baseline)
+		if err != nil {
+			fmt.Fprintf(stderr, "baseline: %v\n", err)
+			return exitError
+		}
+		opts.Baseline = b
+	}
+	if c.pids != "" {
+		pids, err := parsePIDs(c.pids)
+		if err != nil {
+			fmt.Fprintf(stderr, "-pids: %v\n", err)
+			return exitError
+		}
+		opts.PIDs = pids
 	}
 	rep, err := runScenario(ctx, s, opts)
 	if err != nil {
