@@ -13,6 +13,7 @@
 
   const body = $('at-body');
   const newBtn = $('at-new');
+  newBtn.dataset.feature = 'api_tokens';
   newBtn.addEventListener('click', () => openCreate());
 
   pageHooks.push((name) => {

@@ -42,6 +42,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/retention"
 	"github.com/jrsamsanchez/signalith/internal/sample"
 	"github.com/jrsamsanchez/signalith/internal/search"
+	"github.com/jrsamsanchez/signalith/internal/shared"
 	"github.com/jrsamsanchez/signalith/internal/syslog"
 	"github.com/jrsamsanchez/signalith/internal/tlsauto"
 	"github.com/jrsamsanchez/signalith/internal/users"
@@ -193,6 +194,11 @@ type Server struct {
 	// ClusterOSIdentity is OpenSearch's certificate authority the cluster
 	// keeps; nil on a server that is not a member of a cluster.
 	ClusterOSIdentity ClusterOSIdentity
+	// Features says which features that come with a cluster level are on
+	// (GET /api/cluster/features), and ClusterLevel the cluster's level;
+	// nil on a server without shared settings.
+	Features     func() []shared.FeatureState
+	ClusterLevel func() int
 
 	authOnce     sync.Once
 	creds        credCache  // recently checked Basic credentials
@@ -309,6 +315,7 @@ func (s *Server) Handler() http.Handler {
 	s.routeCluster(api)
 	s.routeClusterTLS(api)
 	s.routeClusterServers(api)
+	s.routeClusterFeatures(api)
 	s.routeClusterOSIdentity(api)
 	s.routeTokens(api)
 	s.routeAPITokens(api)

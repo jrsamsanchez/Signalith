@@ -90,6 +90,7 @@ func TestEveryRouteHasARole(t *testing.T) {
 		"PUT /api/settings":          users.Admin,
 		"POST /api/settings/restart": users.Admin,
 		"GET /api/settings/export":   users.Admin,
+		"GET /api/cluster/features":  users.Viewer,
 	} {
 		if classified[pattern] != want {
 			t.Errorf("%s = %s, want %s", pattern, classified[pattern], want)

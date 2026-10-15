@@ -4898,3 +4898,6 @@ details[open] > summary .inv-exact__chev { transform: rotate(90deg); }
 #page-settings .st-picker { display: grid; gap: 8px; min-width: 0; }
 #page-settings .st-picker .input[hidden] { display: none; }
 #page-settings .st-hint .icon--xs { vertical-align: -1px; }
+
+/* Features that wait for older servers (levels.js). */
+.feature-wait { display: inline-block; margin-left: var(--sp-2); color: var(--text-3); font-size: var(--fs-sm); }

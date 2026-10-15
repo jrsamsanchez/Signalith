@@ -825,7 +825,9 @@ request, so a server that has not yet read that change reads it first (see
 `GET /api/risk`, `GET /api/risk/object`, `GET /api/intel`, `GET /api/intel/feeds`,
 `GET /api/intel/catalog`, `GET /api/intel/indicators`, `GET /api/intel/lookup`, `GET /api/posture`,
 `GET /api/dashboards`, `GET /api/dashboards/{id}`, `GET /api/dashboards/{id}/yaml`,
-`POST /api/dashboards/{id}/run`, `POST /api/panels/run`, and the web UI.
+`POST /api/dashboards/{id}/run`, `POST /api/panels/run`, `GET /api/cluster/features`
+(which features wait until every server runs a newer version; only admins see which servers
+they wait for), and the web UI.
 
 **Analyst:** `POST /api/ask`, `POST /api/findings`, `POST /api/findings/bulk`,
 `PATCH /api/findings/{id}`, `POST /api/cases`, `PATCH /api/cases/{id}`,

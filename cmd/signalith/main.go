@@ -1430,6 +1430,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	}
 	srv.KnownBrowsers = r.browsers
 	srv.Join = r.sharedJoin(c, certs)
+	wireFeatures(srv, r.shared)
 	if parts != nil {
 		srv.SessionStore, srv.KnownBrowsers, srv.SharedUsers = parts.sessions, parts.browsers, parts.api(c)
 		if rt := r.shared; rt != nil {
