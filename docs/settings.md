@@ -425,7 +425,8 @@ badge with its group:
   setups (`ingest.tokens`) are shared too, though they are not on the page.
 - **This server: siem-b**: the server's own settings, such as its listen address,
   HTTPS mode, certificate files, syslog addresses, whether it updates its detection
-  content and **May run background jobs** (`cluster.leader_eligible`, the new name
+  content, what removing a file from its detection and dashboard folders does
+  (`detections.sync`) and **May run background jobs** (`cluster.leader_eligible`, the new name
   of `detections.scheduler`). They can be changed for any server on any server's
   page.
 - **This server's connection and folders**: what the server needs to reach

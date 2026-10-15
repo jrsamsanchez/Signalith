@@ -1175,6 +1175,11 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			log.Error("dashboard file has errors; fix it to show the dashboard", "file", p.File, "err", p.Error)
 		}
 	}
+	if r.sharedContent != nil {
+		if err := r.sharedContent.library.start(ctx, r.shared, sharedOn && r.shared.SharedLibrary(), c, lib, boards, &in.jobs); err != nil {
+			return nil, err
+		}
+	}
 	// The users, the directory sign-in settings and the sessions: shared
 	// by the servers of the cluster once every one reads them there, else
 	// this server's own.

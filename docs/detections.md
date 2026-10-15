@@ -23,6 +23,19 @@ You can edit detections in the UI or drop YAML files into the folder and restart
 `signalith validate` checks every file and reports problems with the field to fix;
 a broken file is skipped at startup and logged, so it never stops the server.
 
+### On several servers
+
+The servers of a cluster share their detections: custom ones, overrides, and the choices
+made for built-in and pack ones. Each server's detections folder is then an inbox: a
+file added or changed there is shared, and a change made on any server is written back
+into every server's folder. Removing a file changes nothing unless
+`detections.sync` is `mirror`. See
+[Shared detections, dashboards and asset lists](servers.md#shared-detections-dashboards-and-asset-lists).
+
+Saving a detection sends the version the page read (`If-Match` with the `etag` from
+`GET /api/detections/{id}`); if someone else saved it meanwhile, the save is refused
+with `412`, naming who changed it, on which server and when.
+
 ## Format
 
 ```yaml

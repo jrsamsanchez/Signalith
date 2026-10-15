@@ -1676,7 +1676,17 @@ async function deleteDetection(d) {
   });
   if (!ok) return;
   try {
-    const res = await api('api/detections/' + encodeURIComponent(d.id), undefined, 'DELETE');
+    const path = 'api/detections/' + encodeURIComponent(d.id);
+    let res;
+    try {
+      res = await api(path, undefined, 'DELETE', libraryIfMatch(d.etag));
+    } catch (e) {
+      if (e.status !== 412) throw e;
+      const choice = await libraryStale(e, 'detection');
+      if (choice === 'reload') { loadDetections(); return; }
+      if (choice !== 'overwrite') return;
+      res = await api(path, undefined, 'DELETE', libraryIfMatch(await latestETag(path)));
+    }
     if (res.deleted) { det.open = null; det.closed = false; }
     det.msg = null;
     dxNotify(revert ? 'Reverted to the built-in version.' : 'Detection deleted.');
@@ -1894,6 +1904,42 @@ function addException(d) {
 }
 
 // ---- detection editor ----
+// libraryIfMatch makes a change apply only to the version of a detection
+// or dashboard the page shows; someone else's change since is a 412.
+const libraryIfMatch = (etag) => (etag ? { 'If-Match': etag } : undefined);
+
+// libraryStale says who changed a detection or dashboard since the page
+// read it, on which server and when (a 412), and asks whether to reload
+// to see their change or overwrite it with this one. It resolves to
+// 'reload', 'overwrite' or '' (cancelled).
+function libraryStale(e, what) {
+  const data = e.data || {};
+  const who = data.changed_by || 'Someone else';
+  const where = data.changed_on ? ' on ' + data.changed_on : '';
+  const when = data.changed_at ? ' ' + ago(data.changed_at) : ' a moment ago';
+  const d = modalDialog('lib-stale');
+  return new Promise((resolve) => {
+    let result = '';
+    const done = (r) => { result = r; d.close(); };
+    const reload = el('button', { type: 'button', class: 'btn btn--primary', onclick: () => done('reload') }, icon('refresh-cw'), 'Reload');
+    const overwrite = el('button', { type: 'button', class: 'btn btn--ghost', onclick: () => done('overwrite') }, 'Overwrite');
+    fill(d, modalHead('lib-stale', 'Changed meanwhile', null, () => d.close()),
+      el('div', { class: 'modal__body' },
+        el('p', {}, `${who} changed this ${what}${where}${when}. Nothing was saved.`),
+        el('p', { class: 'hint' }, 'Reload to see their change, or overwrite it with yours.')),
+      el('div', { class: 'modal__foot' }, el('button', { type: 'button', class: 'btn btn--ghost', onclick: () => d.close() }, 'Cancel'), overwrite, reload));
+    d.onclose = () => resolve(result);
+    d.showModal();
+    reload.focus();
+  });
+}
+
+// latestETag reads the version a detection or dashboard has now, for an
+// overwrite.
+async function latestETag(path) {
+  try { return (await api(path)).etag || ''; } catch { return ''; }
+}
+
 const blankDetection = () => ({
   id: '', title: '', description: '', query: '', schedule: '5m', lookback: '15m', severity: 'medium',
   mitre: [], throttle: { fields: [], window: '1h' }, enabled: true, guidance: '', tags: [], source: 'new',
@@ -1972,7 +2018,17 @@ function editDetection(d, opts = {}) {
     saveBtn.disabled = true;
     try {
       const b = read();
-      const saved = isNew ? await api('api/detections', b) : await api('api/detections/' + encodeURIComponent(b.id), b, 'PUT');
+      const path = 'api/detections/' + encodeURIComponent(b.id);
+      let saved;
+      try {
+        saved = isNew ? await api('api/detections', b) : await api(path, b, 'PUT', libraryIfMatch(d.etag));
+      } catch (e) {
+        if (isNew || e.status !== 412) throw e;
+        const choice = await libraryStale(e, 'detection');
+        if (choice === 'reload') { dlg.close(); await loadDetections(); openDetection(b.id, { focus: false }); return; }
+        if (choice !== 'overwrite') return;
+        saved = await api(path, b, 'PUT', libraryIfMatch(await latestETag(path)));
+      }
       dlg.close();
       det.open = saved.id;
       det.closed = false;

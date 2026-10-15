@@ -591,6 +591,46 @@ While some servers still run an earlier version, each server keeps its own users
 sessions as before, and the Servers page and the Users page name the servers to
 upgrade.
 
+## Shared detections, dashboards and asset lists
+
+Once every server runs this version, the servers also share their custom detections, the
+choices made for built-in and content pack detections (on or off, and their
+[exceptions](detections.md#exceptions)), and their custom dashboards. A detection saved
+on any server runs on the server that runs the background jobs at its next scheduled run,
+and a dashboard saved anywhere is the same everywhere within a couple of seconds.
+
+The server that founds the cluster brings its own: the files in its detections folder
+(and its `state` folder) and its dashboards folder. From then on, each server's folders
+are an **inbox**:
+
+- A file added or changed in a folder, by hand or by a `git pull`, is shared with every
+  server within 15 seconds. A file that is not valid is logged and left out until it is
+  fixed.
+- A change made on any server is written back into every server's folders, so the
+  folders keep showing what runs and can still be backed up or kept in Git.
+- The files a server has when it joins are only its starting point: a stale copy left
+  on one server never undoes a change made on another. To share one of them, change or
+  save it again.
+- Removing a file changes nothing by default; the shared copy is written back. Set
+  **Detection and dashboard folders** (`detections.sync`) to **Mirror** on a server to
+  have a file removed from its folders remove that detection or dashboard from every
+  server.
+
+Each server records what it last saw of its files in `library-seen.json` in its state
+folder. Content pack updates stay per server (`detections.content_updates`), so give
+every server the same content update setting.
+
+**Changes at the same moment.** `GET /api/detections` and `GET /api/dashboards` give
+each item's version (`etag`). A change sent with `If-Match` and that version is refused
+with `412` when someone changed the item meanwhile, naming who did it, on which server
+and when; the Detections and Dashboards pages then offer to reload or overwrite.
+Changes sent without `If-Match`, such as from scripts, apply to the latest version.
+While a server cannot use the shared settings, changes there answer `503`.
+
+While some servers still run an earlier version, each server keeps its own detections
+and dashboards in its folders, as before. Asset and identity lists are still kept by
+each server for now.
+
 ## Field names when several servers receive events
 
 Each day's events go to one index per data model, and OpenSearch allows at most 2,000

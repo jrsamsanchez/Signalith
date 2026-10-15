@@ -66,7 +66,7 @@ func (s *Server) handleAddException(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	d, err := s.Detections.UpdateExceptions(r.PathValue("id"), func(es []detect.Exception) ([]detect.Exception, error) {
+	d, err := s.Detections.UpdateExceptionsIf(r.Context(), userOf(r), r.PathValue("id"), ifMatch(r), func(es []detect.Exception) ([]detect.Exception, error) {
 		return append(es, e), nil
 	})
 	if err != nil {
@@ -82,7 +82,7 @@ func (s *Server) handleDeleteException(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	exID := r.PathValue("exception")
-	d, err := s.Detections.UpdateExceptions(r.PathValue("id"), func(es []detect.Exception) ([]detect.Exception, error) {
+	d, err := s.Detections.UpdateExceptionsIf(r.Context(), userOf(r), r.PathValue("id"), ifMatch(r), func(es []detect.Exception) ([]detect.Exception, error) {
 		i := slices.IndexFunc(es, func(e detect.Exception) bool { return e.ID == exID })
 		if i < 0 {
 			return nil, fmt.Errorf("%w: no exception %s", detect.ErrNotFound, exID)
@@ -149,7 +149,7 @@ func (s *Server) handleSuppressFinding(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	d, err := s.Detections.UpdateExceptions(f.DetectionID, func(es []detect.Exception) ([]detect.Exception, error) {
+	d, err := s.Detections.UpdateExceptionsIf(r.Context(), userOf(r), f.DetectionID, "", func(es []detect.Exception) ([]detect.Exception, error) {
 		return append(es, e), nil
 	})
 	if err != nil {
