@@ -310,3 +310,85 @@ jobs:
   packages:
     needs: test
     uses: ./.github/workflows/packages.yml
+
+  # The network sensor install script (deploy/sensor): shellcheck, the
+  # systemd units, the repository keys it pins against what each publisher
+  # serves, and its dry runs on every system it supports. Not a required
+  # check.
+  sensor-script:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+      - name: Shellcheck the script and its helpers
+        run: shellcheck -s sh deploy/sensor/install.sh deploy/sensor/lib/*.sh .github/scripts/sensor-*.sh
+      - name: Check the systemd units
+        run: |
+          units=$(mktemp -d)
+          cp deploy/sensor/systemd/* "$units/"
+          sed -i 's/@IFACE_UNIT@/sys-subsystem-net-devices-cap0.device/g; s/@IFACE@/cap0/g' "$units"/*
+          # The programs the units start, as stand-ins.
+          for f in /opt/fluent-bit/bin/fluent-bit /opt/zeek/bin/zeekctl /usr/bin/suricata \
+            /usr/lib/signalith-sensor/capture-up.sh /usr/lib/signalith-sensor/status.sh /usr/lib/signalith-sensor/rules-update.sh; do
+            sudo install -D -m 755 /bin/true "$f"
+          done
+          cd "$units"
+          out=$(SYSTEMD_LOG_LEVEL=warning systemd-analyze verify ./*.service ./*.timer 2>&1)
+          echo "$out"
+          test -z "$out"
+      - name: Check the pinned repository keys
+        run: .github/scripts/sensor-keys.sh
+      # The script's own tests, which run it against a fake machine, in
+      # each supported system, with its sh, sed, awk and coreutils.
+      - name: Dry runs on Ubuntu, Debian, Rocky and Alma Linux
+        run: |
+          CGO_ENABLED=0 go test -c -o "$RUNNER_TEMP/deploy.test" ./deploy
+          for image in ubuntu:22.04 ubuntu:24.04 debian:12 rockylinux:9 almalinux:9; do
+            echo "== $image"
+            docker run --rm -v "$PWD:/src:ro" -v "$RUNNER_TEMP/deploy.test:/deploy.test:ro" -w /src/deploy "$image" \
+              /deploy.test -test.v -test.run 'TestSensorScript(Parses|Refuses|DryRun|DryRunOptions|PortChoice)$|TestSensorStatusLine'
+          done
+
+  # A real sensor on this machine: the line the Add data page makes, run
+  # against the Docker quick start, with traffic replayed on a capture
+  # port; then run again, and uninstalled. It installs from the vendors'
+  # repositories, so it needs them up. Not a required check.
+  sensor-install:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      COMPOSE: docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.build.yml
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Start the Docker quick start and sign in
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q tcpdump tcpreplay jq
+          $COMPOSE up -d --build
+          for i in $(seq 1 60); do
+            $COMPOSE cp signalith:/var/lib/signalith/tls/ca.pem "$RUNNER_TEMP/signalith-ca.pem" 2>/dev/null &&
+              curl -sf -o /dev/null --cacert "$RUNNER_TEMP/signalith-ca.pem" https://localhost:8080/api/tls/ca.pem && break
+            sleep 3
+          done
+          password=$($COMPOSE exec -T signalith signalith initial-password)
+          curl -sf -c "$RUNNER_TEMP/cookies" --cacert "$RUNNER_TEMP/signalith-ca.pem" -H 'Content-Type: application/json' \
+            -d "$(jq -n --arg p "$password" '{username: "admin", password: $p}')" https://localhost:8080/api/login > /dev/null
+          for i in $(seq 1 60); do
+            curl -sf -b "$RUNNER_TEMP/cookies" --cacert "$RUNNER_TEMP/signalith-ca.pem" https://localhost:8080/api/health |
+              jq -e '.opensearch.status == "green" or .opensearch.status == "yellow"' > /dev/null && break
+            sleep 3
+          done
+      - name: Install a sensor, send it traffic, run it again, uninstall
+        env:
+          SIGNALITH: https://localhost:8080
+          SIGNALITH_CA: ${{ runner.temp }}/signalith-ca.pem
+          COOKIES: ${{ runner.temp }}/cookies
+        run: .github/scripts/sensor-install-ci.sh
+      - name: Sensor logs
+        if: failure()
+        run: |
+          sudo journalctl --no-pager -n 200 -u signalith-zeek -u signalith-suricata -u signalith-fluent-bit -u signalith-suricata-update || true
+          $COMPOSE logs --no-color signalith | tail -n 200
