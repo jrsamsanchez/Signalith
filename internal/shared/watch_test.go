@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"maps"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 
@@ -112,5 +113,87 @@ func TestBumpWithAndWatchDoc(t *testing.T) {
 	mu.Unlock()
 	if n < 3 {
 		t.Errorf("%d calls", n)
+	}
+}
+
+// Poll reads only the config index's mark while nothing changed, and
+// reads everything once anything did: a document, an item, a delete made
+// outside Signalith, or new keys.
+func TestPollStopsAtAnUnchangedMark(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	a, _ := e.hub("siem-a")
+	b, _ := e.hub("siem-b")
+	da := NewDoc[testBody](a, "feeds", "feeds", 1)
+	db := NewDoc[testBody](b, "feeds", "feeds", 1)
+	ca := NewCollection[testBody](a, "detection", "detections", 1)
+	cb := NewCollection[testBody](b, "detection", "detections", 1)
+	poll := func() []string {
+		t.Helper()
+		e.os.Requests()
+		if err := b.Poll(ctx); err != nil {
+			t.Fatal(err)
+		}
+		return e.os.Requests()
+	}
+	reads := func(reqs []string, what string) int {
+		n := 0
+		for _, r := range reqs {
+			if strings.Contains(r, what) {
+				n++
+			}
+		}
+		return n
+	}
+
+	if _, err := da.Mutate(ctx, "sam", func(v *testBody) error { v.Name = "one"; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if reqs := poll(); reads(reqs, "_mget") == 0 {
+		t.Fatalf("the first poll reads the versions: %v", reqs)
+	}
+	if v, ok := db.Get(); !ok || v.Name != "one" {
+		t.Fatalf("b: %+v %v", v, ok)
+	}
+	confirmed := b.Confirmed()
+	e.clock.Advance(DefaultTiming.Poll)
+	if reqs := poll(); reads(reqs, "_mget") != 0 || reads(reqs, "_search") != 1 {
+		t.Errorf("nothing changed, yet the poll read more than the mark: %v", reqs)
+	}
+	if !b.Confirmed().After(confirmed) {
+		t.Error("an unchanged mark confirms the settings")
+	}
+
+	// A change to a document, then to a collection.
+	if _, err := da.Mutate(ctx, "sam", func(v *testBody) error { v.Name = "two"; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	poll()
+	if v, _ := db.Get(); v.Name != "two" {
+		t.Errorf("b after a change: %+v", v)
+	}
+	if _, err := ca.Create(ctx, "sam", "brute-force", &testBody{Name: "brute-force"}); err != nil {
+		t.Fatal(err)
+	}
+	poll()
+	if got := names(cb.List()); !slices.Equal(got, []string{"brute-force"}) {
+		t.Errorf("b's items: %v", got)
+	}
+	if reqs := poll(); reads(reqs, "_mget") != 0 {
+		t.Errorf("read again after the change was applied: %v", reqs)
+	}
+
+	// A document removed outside Signalith lowers the count.
+	e.os.Delete(testIndex, "feeds")
+	poll()
+	if !slices.Contains(b.Tamper(), "feeds") {
+		t.Errorf("a vanished document is noticed at the next poll: %v", b.Tamper())
+	}
+
+	// New keys make the next poll read every document again.
+	poll()
+	b.SetKeys(NewKeySet(e.key))
+	if reqs := poll(); reads(reqs, "_mget") == 0 {
+		t.Errorf("new keys, yet nothing read: %v", reqs)
 	}
 }
