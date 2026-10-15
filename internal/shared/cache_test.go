@@ -197,7 +197,11 @@ func TestCacheWriterWritesAfterChanges(t *testing.T) {
 		}
 		return d.Floors["retention"]
 	}
-	waitFor(t, func() bool { return e.clock.Waiting() > 0 })
+	// The writer waits for CacheEvery after the write. Each pass of its
+	// loop also leaves a CacheRefresh timer on the fake clock, which never
+	// fires here, so the CacheEvery wait is the second timer: advancing
+	// the clock before the writer set it would leave it waiting for good.
+	waitFor(t, func() bool { return e.clock.Waiting() == 2 })
 	if _, err := da.Mutate(ctx, "sam", func(v *testBody) error { v.Name = "second"; return nil }); err != nil {
 		t.Fatal(err)
 	}
@@ -208,7 +212,8 @@ func TestCacheWriterWritesAfterChanges(t *testing.T) {
 	e.clock.Advance(DefaultTiming.CacheEvery)
 	waitFor(t, func() bool { return floor() == 2 })
 	// One left at the end is written as the writer stops.
-	waitFor(t, func() bool { return e.clock.Waiting() > 0 })
+	// Two CacheRefresh timers and the next CacheEvery wait.
+	waitFor(t, func() bool { return e.clock.Waiting() == 3 })
 	if _, err := da.Mutate(ctx, "sam", func(v *testBody) error { v.Name = "third"; return nil }); err != nil {
 		t.Fatal(err)
 	}
