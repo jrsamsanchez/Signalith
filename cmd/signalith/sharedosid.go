@@ -38,8 +38,8 @@ func (r *runner) osIdentity(ctx context.Context, in *instance, c *config.Config)
 	conn := func() store.Config { return c.OpenSearchConnection() }
 	id := clusterpki.NewIdentity(clusterpki.Options{
 		OSCA: ct.osca, Name: r.node.Name(), NodeID: r.node.ID(), Conn: conn,
-		ImportDir: filepath.Join(c.StateDir(), ospki.ImportDir),
-		Writable:  rt.Writable, Flush: rt.FlushCacheBody, Log: r.log,
+		ImportDir: filepath.Join(c.StateDir(), ospki.ImportDir), CRLFile: c.OpenSearchCRLFile(),
+		Writable: rt.Writable, Flush: rt.FlushCacheBody, Log: r.log,
 	})
 	kick := make(chan struct{}, 1)
 	ct.osca.OnChange(func() {

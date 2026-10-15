@@ -15,6 +15,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/api"
 	"github.com/jrsamsanchez/signalith/internal/cluster"
 	"github.com/jrsamsanchez/signalith/internal/clustercfg"
+	"github.com/jrsamsanchez/signalith/internal/clusterpki"
 	"github.com/jrsamsanchez/signalith/internal/shared"
 	"github.com/jrsamsanchez/signalith/internal/store"
 )
@@ -217,6 +218,7 @@ func (r *runner) handleRotateKey(ctx context.Context, req *shared.Request) error
 type lifecycleAPI struct {
 	rt   *shared.Runtime
 	node *cluster.Node
+	osca *clusterpki.OSCA
 }
 
 // clusterServersAPI returns the API's view, nil on a server that does
@@ -225,7 +227,11 @@ func (r *runner) clusterServersAPI() api.ClusterServers {
 	if r.shared == nil || r.node == nil {
 		return nil
 	}
-	return lifecycleAPI{rt: r.shared, node: r.node}
+	a := lifecycleAPI{rt: r.shared, node: r.node}
+	if r.sharedContent != nil {
+		a.osca = r.sharedContent.osca
+	}
+	return a
 }
 
 func (a lifecycleAPI) Off() string {
@@ -266,13 +272,13 @@ func (a lifecycleAPI) Submit(ctx context.Context, typ, target string, args any, 
 }
 
 func (a lifecycleAPI) Remove(ctx context.Context, nodeID, name, by string, live bool) (shared.RemovedServer, error) {
-	return removeServer(ctx, a.rt, nodeID, name, by, live)
+	return removeServer(ctx, a.rt, a.osca, nodeID, name, by, live)
 }
 
 // removeServer takes the server nodeID out of the keyring, records it as
 // removed and deletes its nodecfg document and, unless it still runs, its
 // heartbeat.
-func removeServer(ctx context.Context, rt *shared.Runtime, nodeID, name, by string, live bool) (shared.RemovedServer, error) {
+func removeServer(ctx context.Context, rt *shared.Runtime, osca *clusterpki.OSCA, nodeID, name, by string, live bool) (shared.RemovedServer, error) {
 	rec, err := rt.RemoveMember(ctx, nodeID, name, by)
 	if err != nil {
 		return rec, err
@@ -290,7 +296,7 @@ func removeServer(ctx context.Context, rt *shared.Runtime, nodeID, name, by stri
 		}
 	}
 	var errs []error
-	for _, h := range removeHooks(rt) {
+	for _, h := range removeHooks(rt, osca) {
 		if err := h(ctx, by, nodeID); err != nil {
 			errs = append(errs, err)
 		}
@@ -309,9 +315,24 @@ type removeHook func(ctx context.Context, by, nodeID string) error
 
 // removeHooks lists the features' removeHooks. Append a feature's hook
 // here.
-func removeHooks(rt *shared.Runtime) []removeHook {
+func removeHooks(rt *shared.Runtime, osca *clusterpki.OSCA) []removeHook {
 	_ = rt
-	return nil
+	var hooks []removeHook
+	if osca != nil {
+		// Its OpenSearch certificates go on the revocation list, so they
+		// stop working at once (internal/clusterpki).
+		hooks = append(hooks, func(ctx context.Context, by, nodeID string) error {
+			_, err := osca.RevokeNode(ctx, by, nodeID)
+			if errors.Is(err, clusterpki.ErrShared) {
+				return nil
+			}
+			if err != nil {
+				return fmt.Errorf("its OpenSearch certificates could not be revoked: %w", err)
+			}
+			return nil
+		})
+	}
+	return hooks
 }
 
 // rtTarget is the OpenSearch client and index prefix rt uses.
@@ -424,7 +445,7 @@ func (x *clusterCLI) removeCLI(ctx context.Context, which string, noRotate, yes 
 	if err := x.confirm(fmt.Sprintf("Remove %s from the cluster?", name), yes); err != nil {
 		return err
 	}
-	rec, err := removeServer(ctx, rt, id, name, x.by, live)
+	rec, err := removeServer(ctx, rt, x.osca, id, name, x.by, live)
 	if err != nil {
 		return err
 	}
@@ -473,7 +494,7 @@ func (x *clusterCLI) leave(ctx context.Context, noRotate, yes bool) error {
 		if err := x.confirm(fmt.Sprintf("Take %s out of the cluster and delete its copy of the cluster key?", x.self.Name), yes); err != nil {
 			return err
 		}
-		rec, err := removeServer(ctx, rt, x.self.NodeID, x.self.Name, x.by, false)
+		rec, err := removeServer(ctx, rt, x.osca, x.self.NodeID, x.self.Name, x.by, false)
 		if err != nil {
 			return err
 		}

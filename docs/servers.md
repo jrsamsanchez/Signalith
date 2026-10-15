@@ -529,7 +529,7 @@ file. Then each server that signs in with a certificate from that CA:
 
 Each server renews its own certificate 30 days before it expires. A server that no
 longer has the cluster key can't renew, so its access to OpenSearch ends when its
-certificate expires. A server that signs in with a user name and password, or with a
+certificate expires, or at once with a revocation list (below). A server that signs in with a user name and password, or with a
 certificate from another CA, is left as it is.
 
 If OpenSearch's security settings predate `signalith-server-*` in `roles_mapping.yml`,
@@ -551,9 +551,50 @@ certificates, but keep the cluster key as safe as OpenSearch's admin certificate
 `signalith cluster opensearch-ca` prints the CA and each server's sign-in (see
 [cluster-cli.md](cluster-cli.md#opensearch-ca)). From a script, as an admin:
 `GET /api/cluster/opensearch-identity` answers what the card shows: `ca` (the
-fingerprint, who handed it over and when; `null` when the cluster keeps none) and
-`servers`, each with its `identity` (`cn` or `user`, `not_after`, `managed`, `shared`
-and `problem`).
+fingerprint, who handed it over and when, and how many certificates are `revoked`;
+`null` when the cluster keeps none) and `servers`, each with its `identity` (`cn` or
+`user`, `not_after`, `managed`, `shared`, `problem` and `crl`).
+
+### Ending a server's OpenSearch access at once
+
+A certificate stays valid until it expires, up to 90 days. To end a server's access
+sooner, Signalith revokes its certificates: removing a server does so, and so does
+`signalith cluster opensearch-ca revoke <server>`. The cluster then issues that server
+no certificate again unless it joins anew.
+
+OpenSearch only hears of it through a revocation list it checks every client certificate
+against, which it reads again on every connection, so a revocation takes effect at once,
+without a restart. Each server with `opensearch.crl_file` (or
+`SIGNALITH_OPENSEARCH_CRL_FILE`) set writes that list whenever the revoked certificates
+change. It is signed with OpenSearch's CA and valid until the CA expires.
+
+- **Docker:** set up already. The `setup` service makes an empty list in the
+  `opensearch-crl` volume, OpenSearch checks it once it is there, and Signalith keeps it.
+  OpenSearch warns at start that the list can be read by others: it holds no secret, and
+  Signalith writes it while OpenSearch reads it.
+- **Without Docker:** on each OpenSearch node, put the list where OpenSearch can read it
+  (`signalith cluster opensearch-ca crl -o crl.pem` writes it) and add to
+  `opensearch.yml`:
+
+  ```yaml
+  plugins.security.ssl.http.crl.validate: true
+  plugins.security.ssl.http.crl.file_path: crl.pem   # relative to OpenSearch's config folder
+  plugins.security.ssl.http.crl.disable_ocsp: true
+  plugins.security.ssl.http.crl.disable_crldp: true
+  plugins.security.ssl.http.crl.prefer_crlfile_over_ocsp: true
+  ```
+
+  Then restart the node. When a Signalith server runs on the same computer, set its
+  `opensearch.crl_file` to that file (Signalith needs to be able to write it) and it
+  keeps it; otherwise copy the list again after each revocation.
+
+**OpenSearch refuses every client certificate, the admin's included, while the list it
+checks is missing, unreadable or expired.** Signalith writes it again within a minute
+when it can, and says so loudly when it can't: a red banner on every page, the
+**OpenSearch sign-in** card on the Servers page, and the
+[OpenSearch's revocation list](security.md#opensearchs-revocation-list) check on the
+Security page. In Docker, `docker compose -f deploy/docker/docker-compose.yml up -d`
+makes it again too.
 
 ## Shared feeds and retention policies
 

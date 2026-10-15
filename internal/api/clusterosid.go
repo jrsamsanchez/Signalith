@@ -37,6 +37,8 @@ type osIdentityCA struct {
 	ImportedBy string    `json:"imported_by"`
 	ImportedOn string    `json:"imported_on,omitempty"`
 	ImportedAt time.Time `json:"imported_at"`
+	// Revoked is how many certificates it revoked that have not expired.
+	Revoked int `json:"revoked"`
 }
 
 type osIdentityServer struct {
@@ -58,7 +60,8 @@ func (s *Server) handleClusterOSIdentity(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if b, ok := s.ClusterOSIdentity.CA(); ok {
-		out.CA = &osIdentityCA{CASHA256: b.CASHA256, ImportedBy: b.ImportedBy, ImportedOn: b.ImportedOn, ImportedAt: b.ImportedAt}
+		out.CA = &osIdentityCA{CASHA256: b.CASHA256, ImportedBy: b.ImportedBy, ImportedOn: b.ImportedOn, ImportedAt: b.ImportedAt,
+			Revoked: len(b.RevokedSerials(time.Now()))}
 	}
 	for _, sv := range s.Cluster.Status().Servers {
 		row := osIdentityServer{NodeID: sv.NodeID, Name: sv.Name, State: sv.State, Self: sv.Self}
