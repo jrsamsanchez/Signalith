@@ -4,9 +4,11 @@ name: Nightly load test
 # with every event checked, idle cost, people on both servers, the leader
 # stalled and killed, and password guessing. A second job measures the
 # sizing table in docs/performance.md (loadtest/sizing-small.yaml on one
-# server, then two), and a third upgrades two servers one at a time under
-# load (S7, loadtest/s7-small.yaml). Nightly only, never on pull requests, so it does not
-# hold up the runners they share.
+# server, then two), a third upgrades two servers one at a time under
+# load (S7, loadtest/s7-small.yaml), and a fourth stops one node of a
+# three-node OpenSearch under load (S9, loadtest/s9-small.yaml). Nightly
+# only, never on pull requests, so it does not hold up the runners they
+# share.
 on:
   schedule:
     - cron: '30 3 * * *'
@@ -152,6 +154,68 @@ jobs:
         if: always()
         with:
           name: rolling-upgrade-reports
+          path: ${{ runner.temp }}/load-reports
+          if-no-files-found: ignore
+      - name: Container logs
+        if: failure()
+        run: $COMPOSE logs --no-color
+
+  opensearch-node-loss:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      COMPOSE: docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.build.yml -f deploy/docker/docker-compose.opensearch3.yml -f ${{ github.workspace }}/ci-opensearch-port.yml
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+      - name: Build
+        run: go build ./cmd/signalith ./cmd/signalith-loadgen
+      - name: Start the Docker quick start's OpenSearch with three nodes
+        run: |
+          cat > ci-opensearch-port.yml <<'YAML'
+          services:
+            opensearch:
+              ports:
+                - "127.0.0.1:9200:9200"
+            opensearch-2:
+              ports:
+                - "127.0.0.1:9201:9200"
+            opensearch-3:
+              ports:
+                - "127.0.0.1:9202:9200"
+          YAML
+          $COMPOSE up -d --build
+          secrets="$RUNNER_TEMP/signalith-secrets"
+          mkdir -p "$secrets"
+          $COMPOSE cp signalith:/run/signalith-secrets/. "$secrets/"
+          $COMPOSE stop signalith
+          # Signalith waits for the first node only; wait for all three to
+          # be in one cluster.
+          for i in $(seq 1 90); do
+            n=$(curl -s --cacert "$secrets/opensearch-ca.pem" --cert "$secrets/opensearch-client.pem" --key "$secrets/opensearch-client-key.pem" \
+              'https://localhost:9200/_cat/nodes?h=name' | wc -l)
+            echo "nodes: $n"
+            [ "$n" -ge 3 ] && exit 0
+            sleep 5
+          done
+          echo "OpenSearch did not reach three nodes"; exit 1
+      # Stops the second node's container for a minute and a half while
+      # two servers take events (loadtest/s9-small.yaml).
+      - name: Losing one OpenSearch node
+        env:
+          SIGNALITH_TEST_OPENSEARCH: https://localhost:9200
+          SIGNALITH_TEST_OPENSEARCH_URLS: https://localhost:9201,https://localhost:9202
+          SIGNALITH_TEST_OPENSEARCH_CA: ${{ runner.temp }}/signalith-secrets/opensearch-ca.pem
+          SIGNALITH_TEST_OPENSEARCH_CERT: ${{ runner.temp }}/signalith-secrets/opensearch-client.pem
+          SIGNALITH_TEST_OPENSEARCH_KEY: ${{ runner.temp }}/signalith-secrets/opensearch-client-key.pem
+          LOADGEN_REPORT_DIR: ${{ runner.temp }}/load-reports
+        run: go test -tags integration -count=1 -v -run '^TestLoadgenOpenSearchNodeLoss$' -timeout 20m ./cmd/signalith-loadgen/
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: opensearch-node-loss-reports
           path: ${{ runner.temp }}/load-reports
           if-no-files-found: ignore
       - name: Container logs

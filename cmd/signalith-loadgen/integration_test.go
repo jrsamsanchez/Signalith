@@ -164,6 +164,13 @@ func (c *itCluster) start(name string) *itServer {
 	must(t, os.MkdirAll(filepath.Join(s.dir, "lookups"), 0o755))
 	cfg := fmt.Sprintf("server:\n  listen: 127.0.0.1:%d\nopensearch:\n  url: %q\n  index_prefix: %s\ncluster:\n  node_name: %s\n",
 		s.port, c.osURL, c.prefix, name)
+	if urls := itNodeURLs(); len(urls) > 0 {
+		quoted := make([]string, len(urls))
+		for i, u := range urls {
+			quoted[i] = strconv.Quote(u)
+		}
+		cfg = strings.Replace(cfg, "opensearch:\n", "opensearch:\n  urls: ["+strings.Join(quoted, ", ")+"]\n", 1)
+	}
 	for _, f := range []struct{ key, env string }{{"ca_file", "SIGNALITH_TEST_OPENSEARCH_CA"}, {"cert_file", "SIGNALITH_TEST_OPENSEARCH_CERT"}, {"key_file", "SIGNALITH_TEST_OPENSEARCH_KEY"}} {
 		if v := os.Getenv(f.env); v != "" {
 			cfg = strings.Replace(cfg, "opensearch:\n", fmt.Sprintf("opensearch:\n  %s: %q\n", f.key, v), 1)
@@ -227,6 +234,12 @@ func (c *itCluster) env(s *itServer) []string {
 		"SIGNALITH_CLUSTER_KEY_FILE=" + c.keyFile, "SIGNALITH_INGEST_TOKEN=" + itToken}
 }
 
+// itNodeURLs are the other nodes of the test OpenSearch, from
+// SIGNALITH_TEST_OPENSEARCH_URLS (comma separated), when it has several.
+func itNodeURLs() []string {
+	return splitComma(os.Getenv("SIGNALITH_TEST_OPENSEARCH_URLS"))
+}
+
 // scenario loads a file from loadtest/ and points it at this cluster.
 func (c *itCluster) scenario(file string) *Scenario {
 	t := c.t
@@ -239,7 +252,7 @@ func (c *itCluster) scenario(file string) *Scenario {
 		s.CAFiles = append(s.CAFiles, filepath.Join(sv.dir, "tls", "ca.pem"))
 	}
 	s.Credentials = Credentials{AdminFile: filepath.Join(c.root, "admin.txt"), TokenFile: filepath.Join(c.root, "token.txt")}
-	s.OpenSearch = OpenSearch{URL: c.osURL, CA: os.Getenv("SIGNALITH_TEST_OPENSEARCH_CA"),
+	s.OpenSearch = OpenSearch{URL: c.osURL, URLs: itNodeURLs(), CA: os.Getenv("SIGNALITH_TEST_OPENSEARCH_CA"),
 		Cert: os.Getenv("SIGNALITH_TEST_OPENSEARCH_CERT"), Key: os.Getenv("SIGNALITH_TEST_OPENSEARCH_KEY"), Prefix: c.prefix}
 	for i := range s.Faults {
 		f := &s.Faults[i]
@@ -440,6 +453,27 @@ func TestLoadgenRollingUpgrade(t *testing.T) {
 		if st.From != "9.9.0" || st.To != "9.9.1" || !st.Drained {
 			t.Errorf("%+v", st)
 		}
+	}
+}
+
+// TestLoadgenOpenSearchNodeLoss is S9 at CI size: two servers that list
+// all three nodes of the test OpenSearch carry on while the second node is
+// stopped (loadtest/s9-small.yaml stops its container). It needs an
+// OpenSearch of three nodes: SIGNALITH_TEST_OPENSEARCH and
+// SIGNALITH_TEST_OPENSEARCH_URLS, as the nightly job's opensearch-node-loss
+// step sets them.
+func TestLoadgenOpenSearchNodeLoss(t *testing.T) {
+	if len(itNodeURLs()) == 0 || os.Getenv("SIGNALITH_TEST_OPENSEARCH") == "" {
+		t.Skip("needs an OpenSearch of several nodes: set SIGNALITH_TEST_OPENSEARCH and SIGNALITH_TEST_OPENSEARCH_URLS")
+	}
+	c := newITCluster(t, "a", "b")
+	rep := c.run(c.scenario("s9-small.yaml"))
+	requirePass(t, rep)
+	if rep.Skipped != "" {
+		t.Fatalf("skipped: %s", rep.Skipped)
+	}
+	if len(rep.Faults) != 1 || rep.Faults[0].Error != "" || rep.Faults[0].Undone == nil {
+		t.Errorf("the node was not stopped and started again: %+v", rep.Faults)
 	}
 }
 

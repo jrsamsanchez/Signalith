@@ -34,6 +34,7 @@ It runs on Linux and Windows. Faults that stop processes (`kill9`, `stop`) need 
 | `s7-small.yaml` | Two servers upgraded one at a time under light load | CI, laptop |
 | `s7-rolling-upgrade.yaml` | Three servers upgraded from the previous release under load | Lab |
 | `s8-windows-member.yaml` | A Windows server joins, takes its share, runs the jobs, archives to SMB | Lab |
+| `s9-small.yaml` | One of three OpenSearch nodes stopped for 90 s under light load | CI, laptop |
 | `s9-opensearch-node-loss.yaml` | One of three OpenSearch nodes stopped under load | Lab |
 | `sizing-small.yaml` | Agents from 1k to 32k events/s; rate stored, answer times, CPU, memory | CI, laptop |
 
@@ -265,7 +266,13 @@ losing a node loses their only copy and the run fails on `opensearch_red_samples
 load generator reads OpenSearch through `opensearch.url` and `opensearch.urls` in the
 scenario, so it also carries on with one node gone. It passes when those indices never
 go red, fewer than 1% of batches are refused (and those are resent), none is lost, and
-people stay signed in.
+people stay signed in. If the stopped node was the cluster manager, the other two
+take a few seconds to choose a new one, so a few health samples may go unanswered.
+
+`s9-small.yaml` does the same at CI size with the Docker quick start and
+`deploy/docker/docker-compose.opensearch3.yml`: it stops the `opensearch-2` container
+for 90 s with `docker stop`. Publish each node's port (9200, 9201 and 9202 here) so
+the load generator reaches them.
 
 ## Nightly job
 
@@ -277,7 +284,11 @@ against one server and then two, reads each server's CPU and memory, and keeps t
 reports and the table it makes (`sizing.md`) as `sizing-reports`; set
 `LOADGEN_SIZING=1` to run it yourself. Its `rolling-upgrade` job runs `s7-small.yaml`:
 two servers built as version 9.9.0 are upgraded to a 9.9.1 build one at a time, by a
-script that stops each and starts the newer build on the same files. To run the same on Linux with Go:
+script that stops each and starts the newer build on the same files. Its
+`opensearch-node-loss` job starts the quick start with
+`docker-compose.opensearch3.yml` (three OpenSearch nodes) and runs `s9-small.yaml`;
+the test takes the other nodes from `SIGNALITH_TEST_OPENSEARCH_URLS` and is skipped
+without it. To run the same on Linux with Go:
 
 ```
 go test -tags integration -run '^TestLoadgen' -v ./cmd/signalith-loadgen/
