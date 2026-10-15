@@ -233,7 +233,8 @@ func (w *CacheWriter) Flush() error {
 // between writes, until ctx ends; then it writes what is left. Without a
 // change it writes the cache again every CacheRefresh, as long as the hub
 // read the shared settings from OpenSearch in that time, so that the
-// cache does not get too old to use.
+// cache does not get too old to use. A write that fails is tried again
+// after CacheEvery.
 func (w *CacheWriter) Run(ctx context.Context) {
 	for {
 		select {
@@ -250,7 +251,10 @@ func (w *CacheWriter) Run(ctx context.Context) {
 				continue
 			}
 		}
-		_ = w.Flush()
+		if w.Flush() != nil {
+			// Not written: try again after CacheEvery, or as it stops.
+			w.Changed()
+		}
 		select {
 		case <-ctx.Done():
 		case <-w.hub.clock.After(w.hub.opts.Timing.CacheEvery):
