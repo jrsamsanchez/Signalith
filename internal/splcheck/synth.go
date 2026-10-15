@@ -310,6 +310,8 @@ func records(node string, ev map[string]string) []sigmacheck.Case {
 	switch node {
 	case AuditdNode:
 		return []sigmacheck.Case{auditdRecord(ev)}
+	case CloudTrailNode:
+		return []sigmacheck.Case{cloudTrailRecord(ev)}
 	case "Web":
 		return []sigmacheck.Case{webRecord(ev)}
 	case "Processes":
@@ -958,6 +960,10 @@ func Reads(r *Rule, c sigmacheck.Case) bool {
 		// Every audit record type.
 		return c.Channel == sigmacheck.AuditdChannel && Eval(r.Where, View(doc))
 	}
+	if r.Node == CloudTrailNode {
+		// Every CloudTrail record, in any data model.
+		return c.Channel == sigmacheck.CloudTrailChannel && Eval(r.Where, View(doc))
+	}
 	return InModel(r.Node, model) && slices.Contains(NodeEvents[r.Node], c.EventID) && Eval(r.Where, View(doc))
 }
 
@@ -1004,6 +1010,10 @@ var NodeEvents = map[string][]string{
 func InModel(node, model string) bool {
 	if node == "ObjectAccess" {
 		return model == "Filesystem" || model == "Registry"
+	}
+	if node == CloudTrailNode {
+		// Sign-ins, changes and reads.
+		return model == "Authentication" || model == "Change" || model == "Other"
 	}
 	return strings.EqualFold(model, NodeModel[node])
 }

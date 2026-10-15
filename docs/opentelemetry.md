@@ -18,6 +18,9 @@ Open **Add data**, pick **OpenTelemetry**, and choose where the Collector runs:
 Either way the Collector also listens on `127.0.0.1:4317` (gRPC) and `127.0.0.1:4318`
 (HTTP) for apps on that host that export OTLP logs, and passes those on too.
 
+To read AWS CloudTrail with a Collector, choose **AWS CloudTrail** instead (see
+[AWS CloudTrail](aws-cloudtrail.md)).
+
 The page gives the steps and a complete `config.yaml` for the
 [Collector Contrib](https://github.com/open-telemetry/opentelemetry-collector-releases/releases)
 distribution (`otelcol-contrib`, 0.100 or later): it already holds this server's

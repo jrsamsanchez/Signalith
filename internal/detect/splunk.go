@@ -72,6 +72,9 @@ func SplunkFilter(r *splcheck.Rule) (query.Expr, error) {
 		// Every Linux audit record, of any type.
 		return and([]query.Expr{&query.Compare{Field: "sourcetype", Op: "=", Value: ingest.AuditdSourcetype}, e}), nil
 	}
+	if r.Node == splcheck.CloudTrailNode {
+		return and([]query.Expr{&query.Compare{Field: "sourcetype", Op: "=", Value: ingest.CloudTrailSourcetype}, e}), nil
+	}
 	if r.Node == "Web" {
 		// Every web request: a web server's access log, or a network
 		// sensor's.
@@ -277,6 +280,8 @@ func splunkThrottle(node, dm string) []string {
 		return []string{"host", "process_path", "pipe_name"}
 	case splcheck.AuditdNode:
 		return []string{"host", "auditd_type", "auditd_exe", "process", "auditd_name"}
+	case splcheck.CloudTrailNode:
+		return []string{"vendor_account", "user", "src", "eventName"}
 	}
 	return packThrottle("", dm)
 }
@@ -329,6 +334,11 @@ func SplunkDetection(p *Pack, r PackRule, src []byte) (*Detection, error) {
 		d.Throttle.Fields = packNetworkThrottle("", dm)
 		d.Risk.Objects = []RiskObject{{Field: "src", Type: "system"}, {Field: "user", Type: "user"}}
 		d.Tags = append(d.Tags, "network")
+	} else if rule.Node == splcheck.CloudTrailNode {
+		// An AWS call is the account's, from an address; the host is only
+		// the Collector that read it.
+		d.Title = strings.TrimSpace(rule.Name) + " for $user$"
+		d.Risk.Objects = []RiskObject{{Field: "user", Type: "user"}, {Field: "src", Type: "system"}}
 	}
 	if rule.Threshold != nil {
 		splunkThreshold(d, q, rule)
@@ -374,6 +384,8 @@ func splunkThreshold(d *Detection, q *query.Query, rule *splcheck.Rule) {
 	for _, a := range t.Aggs {
 		if a.Func == "dc" {
 			aggs = append(aggs, "dc("+a.Field+") as "+a.Name)
+		} else if a.Name != "count" {
+			aggs = append(aggs, "count as "+a.Name)
 		}
 	}
 	var limits []string
@@ -387,7 +399,12 @@ func splunkThreshold(d *Detection, q *query.Query, rule *splcheck.Rule) {
 		d.Query = pq.String()
 	}
 	d.Title = strings.TrimSpace(rule.Name)
-	for _, tok := range []struct{ field, word string }{{"dest", "on"}, {"host", "on"}, {"src", "from"}, {"user", "for"}} {
+	toks := []struct{ field, word string }{{"dest", "on"}, {"host", "on"}, {"src", "from"}, {"user", "for"}}
+	if rule.Node == splcheck.CloudTrailNode {
+		// dest is the AWS service.
+		toks = toks[2:]
+	}
+	for _, tok := range toks {
 		if slices.Contains(t.By, tok.field) {
 			d.Title += " " + tok.word + " $" + tok.field + "$"
 			break
@@ -400,6 +417,9 @@ func splunkThreshold(d *Detection, q *query.Query, rule *splcheck.Rule) {
 		case "user":
 			objects = append(objects, RiskObject{Field: f, Type: "user"})
 		case "dest", "host", "src":
+			if f != "src" && rule.Node == splcheck.CloudTrailNode {
+				continue
+			}
 			objects = append(objects, RiskObject{Field: f, Type: "system"})
 		}
 	}

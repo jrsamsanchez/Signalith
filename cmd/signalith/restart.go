@@ -1343,16 +1343,18 @@ func certKeys(c *config.Config) []string {
 }
 
 // webChanges reports whether the web listener changes: another address,
-// HTTPS turned on or off, or other connection limits. Another certificate
+// HTTPS turned on or off, other connection limits, or PROXY headers read
+// or not. Another certificate
 // is served by the same listener.
 func webChanges(old, next *config.Config) bool {
 	return moved(old, next) || old.Server.MaxConnections != next.Server.MaxConnections ||
-		!slices.Equal(old.Server.SharedAddresses, next.Server.SharedAddresses)
+		!slices.Equal(old.Server.SharedAddresses, next.Server.SharedAddresses) || old.Server.ProxyProtocol != next.Server.ProxyProtocol
 }
 
 // webLimits are the connection limits of the web listener.
 func webLimits(c *config.Config) httpserver.Limits {
-	return httpserver.Limits{Max: c.Server.MaxConnections, Shared: c.Server.SharedList()}
+	return httpserver.Limits{Max: c.Server.MaxConnections, Shared: c.Server.SharedList(),
+		Proxy: proxyFor(c, c.Server.ProxyProtocol, nil)}
 }
 
 // openSearchMoves reports whether the OpenSearch connection changes.
@@ -1530,7 +1532,8 @@ func (r *runner) retiredAt(next *config.Config) *webServer {
 	for _, w := range r.retired {
 		c := w.cfg
 		if c == nil || !w.open() || c.Server.Listen != next.Server.Listen || c.Server.HTTPS() != next.Server.HTTPS() ||
-			c.Server.MaxConnections != next.Server.MaxConnections || !slices.Equal(c.Server.SharedAddresses, next.Server.SharedAddresses) {
+			c.Server.MaxConnections != next.Server.MaxConnections || !slices.Equal(c.Server.SharedAddresses, next.Server.SharedAddresses) ||
+			c.Server.ProxyProtocol != next.Server.ProxyProtocol {
 			continue
 		}
 		if w.keep() {

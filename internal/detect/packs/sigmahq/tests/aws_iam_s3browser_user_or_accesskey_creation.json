@@ -1,0 +1,6 @@
+{"rule": "db014773-d9d9-4792-91e5-133337c0ffee", "cases": [
+  {"expect":true,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"eventName":"CreateUser","eventSource":"iam.amazonaws.com","userAgent":"S3 Browser"}},
+  {"expect":false,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"eventSource":"iam.amazonaws.com","userAgent":"S3 Browser"}},
+  {"expect":false,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"eventName":"CreateUser","userAgent":"S3 Browser"}},
+  {"expect":false,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"eventName":"CreateUser","eventSource":"iam.amazonaws.com"}}
+]}

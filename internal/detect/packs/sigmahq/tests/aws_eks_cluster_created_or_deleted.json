@@ -1,0 +1,5 @@
+{"rule": "33d50d03-20ec-4b74-a74e-1e65a38af1c0", "cases": [
+  {"expect":true,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"eventName":"DeleteCluster","eventSource":"eks.amazonaws.com"}},
+  {"expect":false,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"eventSource":"eks.amazonaws.com"}},
+  {"expect":false,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"eventName":"DeleteCluster"}}
+]}

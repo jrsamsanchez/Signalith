@@ -1109,6 +1109,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			Allow: c.Syslog.AllowList(), Ready: templateReady,
 			MaxAge: maxAge, PublicPort: c.Syslog.PublicPort,
 			Servers: indexingServers,
+			Proxy:   proxyFor(c, c.Syslog.ProxyProtocol, log),
 		}
 		if certs != nil {
 			sc.GetCertificate = certs.GetCertificate
@@ -1448,6 +1449,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		Log:        log,
 		Version:    version,
 	}
+	followProxyTrust(srv)
 	srv.KnownBrowsers = r.browsers
 	srv.Join = r.sharedJoin(c, certs)
 	wireFeatures(srv, r.shared)
@@ -1618,7 +1620,10 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	if hook := jobStarting; hook != nil {
 		in.jobsList = watchJobs(in.jobsList, c, hook)
 	}
-	if !c.LeaderEligible() && sharedOn {
+	if c.Scanner() {
+		log.Info("this server is a scanner (cluster.role), so it never runs detections, threat intel downloads, notifications, playbooks or retention; " +
+			"it scans the networks picked for it on the Vulnerabilities page")
+	} else if !c.LeaderEligible() && sharedOn {
 		log.Warn("detections.scheduler is off, so this server never runs detections, threat intel downloads, notifications, playbooks or retention; " +
 			"another server that shares its OpenSearch does")
 	} else if !c.LeaderEligible() {
@@ -1681,7 +1686,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		// Last, once everything started: the node points at this
 		// OpenSearch, and runs these jobs while it holds the job lease.
 		settings := cluster.Settings{
-			Eligible: c.LeaderEligible(), NodeURL: nodeURL(c), Listen: c.Server.Listen,
+			Eligible: c.LeaderEligible(), Role: c.Cluster.Role, NodeURL: nodeURL(c), Listen: c.Server.Listen,
 			Syslog: cluster.Syslog{UDP: c.Syslog.UDP, TCP: c.Syslog.TCP, TLS: c.Syslog.TLS},
 			Fingerprints: func() cluster.Fingerprints {
 				fp := filesFingerprints(c, ret, feeds, notes, pbooks)
@@ -1693,6 +1698,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			OSIdentity: osIdentity,
 			Busy:       jobsBusy(ret, r.shared),
 		}
+		settings.Traffic = trafficOf(agentsInv, receiver)
 		if rt := r.shared; rt != nil {
 			settings.Shared = func() cluster.SharedStatus { return sharedStatus(rt, r.sharedContent) }
 			settings.Restart = r.restartStatus

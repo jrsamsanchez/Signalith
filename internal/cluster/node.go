@@ -36,9 +36,11 @@ type Settings struct {
 	// Eligible is detections.scheduler: this server may run the
 	// background jobs.
 	Eligible bool
-	NodeURL  string
-	Listen   string
-	Syslog   Syslog
+	// Role is cluster.role: "" for a cluster server, or "scanner".
+	Role    string
+	NodeURL string
+	Listen  string
+	Syslog  Syslog
 	// Fingerprints works out the files fingerprints; nil has none.
 	Fingerprints func() Fingerprints
 	// Indexed returns the last time this server stored an event (zero
@@ -61,6 +63,11 @@ type Settings struct {
 	// and the shared settings it could not use, for its heartbeat; nil has
 	// none. It must not call the node.
 	Pending func() (restart, refused []string)
+	// Traffic counts what this server received from agents and syslog,
+	// for its heartbeat, so the Health page can total the servers and
+	// tell when one gets no agent traffic; nil has none. It must not call
+	// the node.
+	Traffic func() Traffic
 	// TLS says which certificate authority this server's HTTPS
 	// certificate comes from, for its heartbeat; nil has none. It must not
 	// call the node.
@@ -843,6 +850,9 @@ func (n *Node) heartbeatDoc(state string) Heartbeat {
 			restart = &r
 		}
 	}
+	n.mu.Lock()
+	trafficFn := n.settings.Traffic
+	n.mu.Unlock()
 	var restartNeeded, refused []string
 	if pendingFn != nil {
 		restartNeeded, refused = pendingFn()
@@ -852,7 +862,7 @@ func (n *Node) heartbeatDoc(state string) Heartbeat {
 	hb := Heartbeat{Kind: "node", NodeID: n.ID(), Name: n.Name(), BootID: n.local.BootID, PrevBoot: n.local.LastBoot, State: state,
 		Version: n.opts.Version, OS: runtime.GOOS, Arch: runtime.GOARCH, Deployment: n.opts.Deployment,
 		StartedAt: n.started, HeartbeatAt: n.clock.Now().UTC(), NodeURL: n.settings.NodeURL, Listen: n.settings.Listen,
-		Syslog: n.settings.Syslog, LeaderEligible: eligible, NotEligible: why, Leader: view.Mine && view.Valid,
+		Syslog: n.settings.Syslog, Role: n.settings.Role, LeaderEligible: eligible, NotEligible: why, Leader: view.Mine && view.Valid,
 		Frozen: view.State == frozen.String(), FilesFingerprint: n.fp, MachineMoved: n.local.Moved, Problems: []string{},
 		OpenSearch: OSInfo{OK: n.contacted && n.lastErr == "", Endpoint: n.endpoint, LatencyMS: n.osLatency.Milliseconds()},
 		Features:   features}
@@ -889,6 +899,10 @@ func (n *Node) heartbeatDoc(state string) Heartbeat {
 		hb.KeyIDs = sh.KeyIDs
 	}
 	hb.Restart, hb.RestartNeeded, hb.SettingsRefused = restart, restartNeeded, refused
+	if trafficFn != nil {
+		t := trafficFn()
+		hb.Traffic = &t
+	}
 	hb.Upgrade = n.upgradeStatusLocked(busy)
 	if f := n.settings.TLS; f != nil {
 		hb.TLS = f()
@@ -1129,6 +1143,8 @@ func (n *Node) eligibleLocked() (bool, string) {
 		return false, n.paused
 	case n.drained != "":
 		return false, "it is drained"
+	case n.settings.Role == RoleScanner:
+		return false, "it is a scanner"
 	case !n.settings.Eligible:
 		return false, "detections.scheduler is off on this server"
 	case shared != "":

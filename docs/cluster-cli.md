@@ -406,7 +406,7 @@ it can simply be stopped, upgraded and started, and exits 0.
 ## token
 
 ```
-signalith cluster token [-c file] [-platform linux|windows|docker] [-ttl 60m] [-note text] [-node-url url] [-url url] [-json]
+signalith cluster token [-c file] [-platform linux|windows|docker] [-role scanner] [-ttl 60m] [-note text] [-node-url url] [-url url] [-json]
 signalith cluster token [-c file] -revoke <id>
 ```
 
@@ -421,7 +421,9 @@ which the new server checks before it trusts the answer. Its secret is printed t
 once and kept in OpenSearch only encrypted with the cluster key, so a lost token
 cannot be shown again: make a new one. `-platform`, `-note` and `-node-url` (the
 address the other servers will reach the new server at) are shown with the token on
-the Servers page. `-revoke <id>` cancels a token that was not used yet (its id, such
+the Servers page. `-role scanner` adds a scanner, which only scans the networks picked for
+it and never runs the background jobs (see [Cluster servers and scanners](multi-server.md#cluster-servers-and-scanners));
+without it the token adds a cluster server. `-revoke <id>` cancels a token that was not used yet (its id, such
 as `jt_…`, is printed with it), for one pasted in the wrong place.
 
 It needs a member of the cluster, OpenSearch with security turned on, and an HTTPS

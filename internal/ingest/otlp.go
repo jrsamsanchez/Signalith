@@ -116,11 +116,28 @@ func otlpEvent(l *otlpLog, now time.Time) Event {
 	bodyMap, _ := l.body.(map[string]any)
 	bodyText, _ := l.body.(string)
 
+	var trail map[string]any
+	if strings.HasPrefix(bodyText, "{") && strings.Contains(bodyText, `"eventSource"`) {
+		trail = cloudTrailText(bodyText)
+	}
 	var ev Event
 	generic := false
 	switch {
 	case bodyMap != nil && has(bodyMap, "event_id") && has(bodyMap, "channel"):
 		ev = otlpWindows(bodyMap)
+	case isCloudTrailOTLP(l.attrs):
+		// The Collector's aws_s3 receiver on CloudTrail's bucket, with the
+		// aws_logs_encoding extension.
+		var t time.Time
+		if l.time > 0 {
+			t = otlpTime(l.time)
+		}
+		ev = ParseCloudTrail(cloudTrailFromOTLP(l.attrs, l.resource, t))
+	case bodyMap != nil && IsCloudTrailRecord(bodyMap):
+		ev = ParseCloudTrail(bodyMap)
+	case trail != nil:
+		// A CloudTrail record as JSON text, as CloudWatch Logs passes it on.
+		ev = ParseCloudTrail(trail)
 	case bodyMap != nil && has(bodyMap, "MESSAGE"):
 		ev = parseJournal(bodyMap)
 	case has(l.attrs, "appname") && has(l.attrs, "message"):

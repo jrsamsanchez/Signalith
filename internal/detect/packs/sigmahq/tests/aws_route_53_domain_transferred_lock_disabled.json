@@ -1,0 +1,5 @@
+{"rule": "3940b5f1-3f46-44aa-b746-ebe615b879e0", "cases": [
+  {"expect":true,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"eventName":"DisableDomainTransferLock","eventSource":"route53.amazonaws.com"}},
+  {"expect":false,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"eventSource":"route53.amazonaws.com"}},
+  {"expect":false,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"eventName":"DisableDomainTransferLock"}}
+]}

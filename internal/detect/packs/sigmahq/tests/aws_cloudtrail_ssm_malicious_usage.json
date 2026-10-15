@@ -1,0 +1,9 @@
+{"rule": "38e7f511-3f74-41d4-836e-f57dfa18eead", "cases": [
+  {"expect":true,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"eventName":"SendCommand","eventSource":"ssm.amazonaws.com"}},
+  {"expect":true,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"errorCode":"Success","eventName":"SendCommand","eventSource":"ssm.amazonaws.com"}},
+  {"expect":false,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"eventSource":"ssm.amazonaws.com"}},
+  {"expect":false,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"eventName":"SendCommand"}},
+  {"expect":false,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"errorCode":"unrelated-value","eventName":"SendCommand","eventSource":"ssm.amazonaws.com"}},
+  {"expect":false,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"errorCode":"Success","eventSource":"ssm.amazonaws.com"}},
+  {"expect":false,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"errorCode":"Success","eventName":"SendCommand"}}
+]}

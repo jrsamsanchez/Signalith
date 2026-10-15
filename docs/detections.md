@@ -327,13 +327,14 @@ Content packs are rule sets from other open source projects, shipped unchanged
 inside Signalith and converted when it starts. Every pack detection is **off** until
 an admin turns it on.
 
-**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,292 rules from
+**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,330 rules from
 [SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 2,080 Windows rules
 for these Sysmon, Security, PowerShell, System, Application, Code Integrity, Windows Firewall, BITS, AppX deployment, WMI activity, Remote Desktop session, shell, SMB client, exploit protection, DNS client, Task Scheduler, NTLM, LSA, CryptoAPI, device driver, packaged app, certificate, OpenSSH, DNS Server, IIS configuration and Defender log sources, 154 Linux rules (see
 [Linux endpoints](#linux-endpoints-sysmon-for-linux) and
 [the Linux audit log](#linux-audit-log-auditd)), 13 web server rules (see
-[Web server access logs](#web-server-access-logs)) and 45 network rules (see
-[Network rules](#network-rules-zeek-dns-proxy-and-firewall)):
+[Web server access logs](#web-server-access-logs)), 45 network rules (see
+[Network rules](#network-rules-zeek-dns-proxy-and-firewall)) and 38 AWS CloudTrail rules (see
+[AWS CloudTrail](#aws-cloudtrail)):
 
 | Sigma log source | Windows events | Data model |
 | --- | --- | --- |
@@ -349,6 +350,7 @@ for these Sysmon, Security, PowerShell, System, Application, Code Integrity, Win
 | `raw_access_thread` | Sysmon 9 (a drive read directly; `Device` is `device`) | Endpoint |
 | `ps_script` | PowerShell 4104 | Script |
 | `webserver` | Apache and Nginx access log lines (see [Web server access logs](#web-server-access-logs)) | Web |
+| `product: aws`, `service: cloudtrail` | AWS CloudTrail records (see [AWS CloudTrail](#aws-cloudtrail)) | Authentication, Change or Other |
 | `service: system` | System 7045 (service installed) | Change |
 | `service: system` | Other System events, by provider and event ID (see below) | Other |
 | `service: application` | Application events, by provider and event ID (see below) | Other |
@@ -615,10 +617,19 @@ go test ./internal/detect/
 The generator keeps each rule's Signalith ID across runs, rewrites `rules/`,
 `tests/`, `pack.yaml` and `REPORT.md`, and only lists rules whose checks pass.
 
+### AWS CloudTrail
+
+The 38 CloudTrail rules read CloudTrail's own field names (`eventName`, `eventSource`,
+`userIdentity.type`, `requestParameters.*`), which Signalith keeps as CloudTrail writes
+them, and each searches `sourcetype=aws:cloudtrail`. Rules that compare one field with
+another, or that match text inside the call's parameters in a way no test record
+exercises, are left out. The Splunk pack adds 32 CloudTrail detections (see
+[Splunk Security Content](#splunk-security-content)). To send CloudTrail records, see [AWS CloudTrail](aws-cloudtrail.md).
+
 ### Splunk Security Content
 
-**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,028 Windows,
-Linux, web and network detections from Splunk's Threat Research Team
+**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,062 Windows,
+Linux, web, network and AWS CloudTrail detections from Splunk's Threat Research Team
 ([security_content](https://github.com/splunk/security_content)), pinned to one
 commit. They are the production TTP and anomaly rules that search the CIM
 `Endpoint.Processes`, `Endpoint.Filesystem`, `Endpoint.Registry` and `Web` nodes with
@@ -664,6 +675,7 @@ names, so each rule's `where` clause becomes a Signalith filter field for field:
 | `Endpoint.Filesystem` (Sysmon for Linux rules) | Sysmon for Linux 11 and 23 | Filesystem |
 | `` `linux_auditd` `` (raw search) | Linux audit records, each field by auditd's name (see [the Linux audit log](#linux-audit-log-auditd)) | Other |
 | `Web` (`datamodel=Web` or `Web.Web`) | Apache and Nginx access log lines (see [Web server access logs](#web-server-access-logs)), and a network sensor's web requests (Zeek's http.log) | Web |
+| `` `cloudtrail` `` (raw search) | AWS CloudTrail records, by CloudTrail's field names and the CIM fields Splunk's AWS add-on gives them (`errorCode=success` reads a record with no error code; see [AWS CloudTrail](#aws-cloudtrail)) | Authentication, Change or Other |
 | `Network_Traffic` (network detections) | Any connection: Zeek's conn.log, a firewall, Sysmon 3 (`app` is the protocol, Zeek's `service`) | Network_Traffic |
 | `Network_Resolution` (network detections) | A DNS lookup that names who asked (`src`), as Zeek's dns.log does (`record_type` is `query_type`); a host's own lookups (Sysmon 22) name only the host and are left to the endpoint rules | Network_Resolution |
 
