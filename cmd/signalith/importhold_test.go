@@ -22,8 +22,10 @@ import (
 // file that is no longer read once the server switches to the shared
 // settings: it must either be refused, saying to try again (and the
 // test then sends it again), or reach the shared settings. kept reports
-// whether the change is there once the server switched.
-func saveWhileMoving(t *testing.T, importer, extra string, save func(*running) (int, map[string]any, error), kept func(*running) bool) {
+// whether the change is there once the server switched. setup, when
+// set, runs before the server can reach OpenSearch, so an importer that
+// runs only when there is something to import has something.
+func saveWhileMoving(t *testing.T, importer, extra string, setup func(*running), save func(*running) (int, map[string]any, error), kept func(*running) bool) {
 	t.Setenv(clusterKeyFileEnv, "")
 	type result struct {
 		code int
@@ -59,6 +61,9 @@ func saveWhileMoving(t *testing.T, importer, extra string, save func(*running) (
 		t.Fatalf("mode %s", m)
 	}
 	rs.signIn()
+	if setup != nil {
+		setup(rs)
+	}
 	cur.Store(rs)
 	fos.SetFault(nil)
 	var res result
@@ -102,7 +107,7 @@ func TestFeedSaveWhileFeedsMove(t *testing.T) {
 		w.Write([]byte("203.0.113.9\n"))
 	}))
 	defer feed.Close()
-	saveWhileMoving(t, clustercfg.ImportFeeds, "intel:\n  allow_loopback_feeds: true\n",
+	saveWhileMoving(t, clustercfg.ImportFeeds, "intel:\n  allow_loopback_feeds: true\n", nil,
 		func(rs *running) (int, map[string]any, error) {
 			return rs.call("", "POST", "/api/intel/feeds", `{"name":"blocklist","url":"`+feed.URL+`","format":"lines","type":"ip","interval":"24h"}`)
 		},
@@ -115,7 +120,7 @@ func TestFeedSaveWhileFeedsMove(t *testing.T) {
 // A retention policy saved while the founder moves its policies into the
 // shared settings is not lost.
 func TestRetentionSaveWhilePoliciesMove(t *testing.T) {
-	saveWhileMoving(t, clustercfg.ImportRetention, "",
+	saveWhileMoving(t, clustercfg.ImportRetention, "", nil,
 		func(rs *running) (int, map[string]any, error) {
 			return rs.call("", "PUT", "/api/retention/default", `{"keep_days":3}`)
 		},
@@ -130,12 +135,50 @@ func TestRetentionSaveWhilePoliciesMove(t *testing.T) {
 // A user added while the founder moves its users into the shared
 // settings is not lost.
 func TestUserSaveWhileUsersMove(t *testing.T) {
-	saveWhileMoving(t, shared.ImportUsers, "",
+	saveWhileMoving(t, shared.ImportUsers, "", nil,
 		func(rs *running) (int, map[string]any, error) {
 			return rs.call("", "POST", "/api/users", `{"username":"carol","password":"carol-password-1","role":"analyst","must_change_password":false}`)
 		},
 		func(rs *running) bool {
 			_, out, _ := rs.call("", "GET", "/api/users", "")
 			return strings.Contains(fmt.Sprint(out["users"]), "carol")
+		})
+}
+
+// A detection added while the founder moves its detections folder into
+// the shared library is not lost.
+func TestDetectionSaveWhileDetectionsMove(t *testing.T) {
+	saveWhileMoving(t, shared.ImportDetections, "",
+		func(rs *running) {
+			if code, out, err := rs.call("", "POST", "/api/detections", `{"id":"kept-rule","title":"Kept","query":"user=alice"}`); err != nil || code != http.StatusCreated && code != http.StatusOK {
+				t.Fatalf("detection before the move: %d %v %v", code, out, err)
+			}
+		},
+		func(rs *running) (int, map[string]any, error) {
+			return rs.call("", "POST", "/api/detections", `{"id":"moving-rule","title":"Mine","query":"user=bob","mitre":["T1078"]}`)
+		},
+		func(rs *running) bool {
+			eventually(rs.t, "the library is shared", rs.r.sharedContent.library.on.Load)
+			code, _, _ := rs.call("", "GET", "/api/detections/moving-rule", "")
+			return code == http.StatusOK
+		})
+}
+
+// A dashboard added while the founder moves its dashboards folder into
+// the shared library is not lost.
+func TestDashboardSaveWhileDashboardsMove(t *testing.T) {
+	saveWhileMoving(t, shared.ImportDashboards, "",
+		func(rs *running) {
+			if code, out, err := rs.call("", "POST", "/api/dashboards", `{"id":"kept-board","title":"Kept"}`); err != nil || code != http.StatusCreated && code != http.StatusOK {
+				t.Fatalf("dashboard before the move: %d %v %v", code, out, err)
+			}
+		},
+		func(rs *running) (int, map[string]any, error) {
+			return rs.call("", "POST", "/api/dashboards", `{"id":"moving-board","title":"Mine"}`)
+		},
+		func(rs *running) bool {
+			eventually(rs.t, "the library is shared", rs.r.sharedContent.library.on.Load)
+			code, _, _ := rs.call("", "GET", "/api/dashboards/moving-board", "")
+			return code == http.StatusOK
 		})
 }

@@ -283,7 +283,12 @@ func literalQueries(n *yaml.Node) {
 // dashboards are kept there instead, such as in the shared settings of a
 // cluster, and Dir is not read or written.
 type Store struct {
-	Dir     string
+	Dir string
+	// Hold, when set, is taken around each change saved to Dir (not to a
+	// backend): release is called once it is saved, and an error refuses
+	// the change, as while the folder moves into the shared settings of
+	// a cluster.
+	Hold    func() (release func(), err error)
 	mu      sync.Mutex
 	backend Backend
 }
@@ -595,6 +600,13 @@ func (s *Store) DeleteIf(ctx context.Context, by, id, etag string) error {
 func (s *Store) change(ctx context.Context, by, id string, fn func(cur *Stored) (*Dashboard, error)) error {
 	if b := s.backendOf(); b != nil {
 		return b.Change(ctx, by, id, fn)
+	}
+	if s.Hold != nil {
+		release, err := s.Hold()
+		if err != nil {
+			return err
+		}
+		defer release()
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()

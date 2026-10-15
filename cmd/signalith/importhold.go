@@ -5,6 +5,8 @@ import (
 	"sync"
 
 	"github.com/jrsamsanchez/signalith/internal/clustercfg"
+	"github.com/jrsamsanchez/signalith/internal/dashboards"
+	"github.com/jrsamsanchez/signalith/internal/detect"
 	"github.com/jrsamsanchez/signalith/internal/intel"
 	"github.com/jrsamsanchez/signalith/internal/retention"
 	"github.com/jrsamsanchez/signalith/internal/shared"
@@ -16,9 +18,10 @@ import (
 // (followShared). Until that restart, the components of the start
 // running now still save the pages to the files: a save made after the
 // importer read them would go to a file that is no longer read, and be
-// lost. So each importer of a page's file holds that file while it reads
-// and moves it (importHold), and a save there takes the same hold:
-// one made before the move moves with it, and one made after is refused
+// lost. So each importer of a page's file (or of the detections and
+// dashboards folders) holds it while it reads and moves it (importHold),
+// and a save there takes the same hold: one made before the move moves
+// with it, and one made after is refused
 // with a shared.MovingError, which the pages show as "try again in a
 // moment", until the restart, after which the page saves to the shared
 // settings. The settings of the Settings page do the same with ownMu
@@ -34,6 +37,8 @@ var movingWhat = map[string]string{
 	clustercfg.ImportRetention: "retention policies",
 	shared.ImportUsers:         "users",
 	shared.ImportDirectory:     "directory sign-in settings",
+	shared.ImportDetections:    "detections",
+	shared.ImportDashboards:    "dashboards",
 }
 
 // importHold is the hold of one importer's files.
@@ -158,6 +163,20 @@ func (ct *sharedContent) holdRetention(ret *retention.Manager) {
 		return
 	}
 	ret.Store = heldPolicies{PolicyStore: ret.Store, hold: ct.holdFile(clustercfg.ImportRetention)}
+}
+
+// holdLibrary makes the detections and dashboards of a start that keeps
+// them in this server's folders hold them for each change (holdFile).
+func (ct *sharedContent) holdLibrary(lib *detect.Library, boards *dashboards.Store) {
+	if ct == nil {
+		return
+	}
+	if !lib.Shared() {
+		lib.Hold = ct.holdFile(shared.ImportDetections)
+	}
+	if !boards.Shared() {
+		boards.Hold = ct.holdFile(shared.ImportDashboards)
+	}
 }
 
 // heldFeeds is a feed list in this server's file, held for each change.

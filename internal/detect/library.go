@@ -44,6 +44,11 @@ type Library struct {
 	meta    map[string]Stored
 	// wmu lets one change run at a time.
 	wmu sync.Mutex
+	// Hold, when set, is taken around each change saved to Dir (not to a
+	// backend): release is called once it is saved, and an error refuses
+	// the change, as while the folder moves into the shared settings of
+	// a cluster.
+	Hold func() (release func(), err error)
 }
 
 // State is what an admin chose for a built-in or pack detection without
@@ -473,6 +478,13 @@ func (l *Library) apply(ctx context.Context, by string, ids []string, etag strin
 		})
 		l.reload()
 		return err
+	}
+	if l.Hold != nil {
+		release, err := l.Hold()
+		if err != nil {
+			return err
+		}
+		defer release()
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
