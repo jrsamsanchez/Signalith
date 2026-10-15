@@ -25,11 +25,16 @@ var ErrShared = errors.New("the cluster keeps no OpenSearch certificate authorit
 // JoinCredential issues the server joining as name, with node id nodeID,
 // its own certificate from the key of csrPEM, which it made and keeps.
 // Without an osca document it returns ErrShared, and the joining server
-// gets the answering server's credential instead.
+// gets the answering server's credential instead. A server whose
+// certificates were revoked (RevokeNode) may be issued one again once it
+// joins anew.
 func (o *OSCA) JoinCredential(ctx context.Context, name, nodeID string, csrPEM []byte) (Credential, error) {
 	b, ok := o.Get()
 	if !ok {
 		return Credential{}, ErrShared
+	}
+	if err := o.readmit(ctx, nodeID); err != nil {
+		return Credential{}, err
 	}
 	cert, _, err := o.Issue(ctx, name, nodeID, csrPEM, time.Now())
 	if err != nil {

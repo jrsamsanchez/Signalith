@@ -245,6 +245,21 @@ type OSIdentityStatus struct {
 	// Problem says why it could not hand over the certificate authority
 	// or get, or renew, its own certificate, "" when nothing went wrong.
 	Problem string `json:"problem,omitempty"`
+	// CRL is the revocation list OpenSearch checks client certificates
+	// against (opensearch.crl_file), nil when none is set.
+	CRL *CRLStatus `json:"crl,omitempty"`
+}
+
+// CRLStatus is the revocation list a server keeps for OpenSearch.
+type CRLStatus struct {
+	File string `json:"file"`
+	// Revoked is how many certificates it names, and NextUpdate when it
+	// expires.
+	Revoked    int        `json:"revoked"`
+	NextUpdate *time.Time `json:"next_update,omitempty"`
+	// Problem says what is wrong with it: OpenSearch refuses every
+	// certificate sign-in while the list it checks is missing or expired.
+	Problem string `json:"problem,omitempty"`
 }
 
 // TLSStatus is the certificate authority a server's HTTPS certificate

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"math/big"
 	"net"
 	"os"
 	"path/filepath"
@@ -49,8 +50,12 @@ type bootstrapOptions struct {
 	CADir     string
 	StateDir  string // Signalith's state folder, for ExportCAKey
 	LoadedDir string // opensearch-security-loaded, for ApplySecurity
-	OSUID     int
-	SigUID    int
+	// CRLDir holds the revocation list OpenSearch checks client
+	// certificates against (ospki.CRLFile), which Signalith keeps after
+	// this makes the first one; empty makes none.
+	CRLDir string
+	OSUID  int
+	SigUID int
 	// Names are more host names or IP addresses for every node
 	// certificate; Nodes is how many node certificates to keep.
 	Names         []string
@@ -75,6 +80,7 @@ func cmdBootstrapDocker(args []string) error {
 	fs.StringVar(&o.CADir, "ca-dir", os.Getenv("SIGNALITH_SETUP_CA_DIR"), "folder that keeps the OpenSearch CA's certificate and key, which only this command reads")
 	fs.StringVar(&o.StateDir, "state-dir", os.Getenv("SIGNALITH_SETUP_STATE_DIR"), "Signalith's state folder, where -export-ca-key hands the CA over")
 	fs.StringVar(&o.LoadedDir, "loaded-dir", os.Getenv("SIGNALITH_SETUP_LOADED_DIR"), "the folder where OpenSearch's security settings loader notes what it loaded, for -apply-security")
+	fs.StringVar(&o.CRLDir, "crl-dir", os.Getenv("SIGNALITH_SETUP_CRL_DIR"), "folder for the revocation list OpenSearch checks client certificates against, which Signalith keeps up to date")
 	fs.IntVar(&o.OSUID, "opensearch-uid", 1000, "user ID OpenSearch runs as; its files are given to it when this runs as root")
 	fs.IntVar(&o.SigUID, "signalith-uid", 65532, "user ID Signalith runs as; its files are given to it when this runs as root")
 	var names listFlag
@@ -188,6 +194,11 @@ func bootstrapDocker(out io.Writer, o bootstrapOptions) error {
 			}
 		}
 		if err := set(o.CADir, 0, 0o700); err != nil {
+			return err
+		}
+	}
+	if o.CRLDir != "" && o.CADir != "" {
+		if err := bootstrapCRL(out, o, chown); err != nil {
 			return err
 		}
 	}
@@ -461,6 +472,50 @@ func exportCAKey(out io.Writer, o bootstrapOptions, chown bool) error {
 	}
 	fmt.Fprintf(out, "Handed the OpenSearch CA's certificate and key to Signalith, in %s. Signalith takes them in once, when it adds a server, and then deletes the key.\n", dir)
 	return nil
+}
+
+// bootstrapCRL makes sure the revocation list OpenSearch checks client
+// certificates against is there, signed by the CA and in force: an empty
+// one when it is missing or is not (after -new-ca, say), since OpenSearch
+// then refuses every certificate. A good one is kept: Signalith writes
+// the certificates it revokes into it. Signalith rewrites it and
+// OpenSearch reads it, so it belongs to Signalith and anyone may read it;
+// it holds no secret.
+func bootstrapCRL(out io.Writer, o bootstrapOptions, chown bool) error {
+	ca, err := ospki.LoadCA(o.CADir)
+	if err != nil {
+		// A CA made by a version that did not keep its key: no list, and
+		// OpenSearch checks none.
+		if errors.Is(err, ospki.ErrNoCAKey) || errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	if err := os.MkdirAll(o.CRLDir, 0o755); err != nil {
+		return err
+	}
+	p := filepath.Join(o.CRLDir, ospki.CRLFile)
+	if _, err := ospki.ReadCRL(p, ca.Cert, o.Now); err != nil {
+		b, err := ospki.MakeCRL(ca, nil, big.NewInt(o.Now.Unix()), o.Now)
+		if err != nil {
+			return err
+		}
+		if err := writeFile(p, b, 0o644); err != nil {
+			return err
+		}
+		fmt.Fprintln(out, "Made OpenSearch's revocation list, which names no certificate yet.")
+	}
+	for _, f := range []string{p, o.CRLDir} {
+		if chown {
+			if err := os.Chown(f, o.SigUID, o.SigUID); err != nil {
+				return err
+			}
+		}
+	}
+	if err := os.Chmod(p, 0o644); err != nil {
+		return err
+	}
+	return os.Chmod(o.CRLDir, 0o755)
 }
 
 // pemFiles lists the .pem files in dir.

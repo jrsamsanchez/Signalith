@@ -337,6 +337,8 @@ it can simply be stopped, upgraded and started, and exits 0.
 ```
 signalith cluster opensearch-ca        [-c file] [-json]
 signalith cluster opensearch-ca import [-c file] [-cert root-ca.pem] <root-ca-key.pem>
+signalith cluster opensearch-ca revoke [-c file] [-yes] <server>
+signalith cluster opensearch-ca crl    [-c file] [-o file]
 ```
 
 `opensearch-ca` shows OpenSearch's certificate authority, if the cluster keeps one, and
@@ -350,3 +352,13 @@ server gets its own OpenSearch certificate (see
 Give it the CA's key; its certificate is `root-ca.pem` next to it unless `-cert` names
 another file. It refuses a CA that is not the one in `opensearch.ca_file`, and one other
 than the cluster keeps already. In Docker, use `bootstrap-docker -export-ca-key` instead.
+
+`opensearch-ca revoke` ends a server's OpenSearch access at once: every certificate the
+cluster issued it that has not expired goes on the revocation list, and it gets no new
+one unless it joins the cluster again. Name the server by its name or node id; it asks
+first unless `-yes` is given, and refuses this server itself. Removing a server does the
+same. OpenSearch hears of it through the revocation list (see
+[Ending a server's OpenSearch access at once](servers.md#ending-a-servers-opensearch-access-at-once)).
+
+`opensearch-ca crl` prints that revocation list, or writes it to the file `-o` names, to
+copy to OpenSearch nodes that no Signalith server keeps it for.

@@ -47,6 +47,8 @@ const clusterUsage = `usage:
   signalith cluster upgrade-check  [-c file] [-json]          whether it is safe to upgrade the next server
   signalith cluster opensearch-ca  [-c file] [-json]          OpenSearch's certificate authority, which gives each server its own certificate
   signalith cluster opensearch-ca import [-c file] [-cert file] <root-ca-key.pem>   hand OpenSearch's certificate authority to the cluster
+  signalith cluster opensearch-ca revoke [-c file] [-yes] <server>   end a server's OpenSearch access at once
+  signalith cluster opensearch-ca crl    [-c file] [-o file]   the revocation list OpenSearch checks, for its nodes
 
 The servers that share one OpenSearch keep the settings they share in it
 (the <prefix>_config index), signed with the cluster key that each of them
@@ -160,7 +162,7 @@ func runCluster(args []string, in *os.File, out, errOut io.Writer) error {
 	case "upgrade-check":
 		return upgradeExit(x.upgradeCheck(ctx, *asJSON))
 	case "opensearch-ca":
-		return x.osCACommand(ctx, pos, *caCert, *asJSON)
+		return x.osCACommand(ctx, pos, *caCert, *outFile, *asJSON, *yes)
 	}
 	return nil
 }
