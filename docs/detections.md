@@ -493,6 +493,11 @@ with Splunk's Web field names:
 The sourcetype is `nginx:access` or `apache:access`. A line that is not a request
 (an error Apache wrote to the wrong file) stays in Other.
 
+Query strings can carry tokens and passwords. **Settings > General > Query strings in web
+addresses** (`ingest.url_query`) can hide their values or remove them as events are stored,
+in the fields and the raw line alike; rules that look at query values then see less (see
+[Query strings in web addresses](network-sensor.md#query-strings-in-web-addresses)).
+
 The 13 SigmaHQ `webserver` rules name the W3C fields: `cs-method` is
 `http_method`, `cs-uri-query` (which the rules use for the whole target) and `c-uri` are
 `url`, `cs-uri-stem` is `uri_path`, `sc-status` is `status`, `cs-user-agent` is

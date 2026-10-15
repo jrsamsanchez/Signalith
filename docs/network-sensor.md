@@ -637,6 +637,13 @@ Air-gapped networks can load rules from a file: `suricata-update --local /path/t
   (copies of the traffic) or HTTP bodies. Suricata's `payload_printable`, when turned on, is cut to 2 KB.
   They are removed from `_raw` too. Better still, keep them off on the sensor: in
   `suricata.yaml` leave `payload`, `packet` and `http-body` set to `no` (the default).
+- **Query strings in web addresses.** The part of a web address after the `?` can carry
+  tokens, session IDs and even passwords (`/reset?key=...`). **Settings > General > Query
+  strings in web addresses** (`ingest.url_query`) decides what Signalith stores of them as
+  events arrive: **Keep them** (the default), **Hide values** (`redact`: the parameter names
+  stay, each value becomes `REDACTED`, as in `/login?user=REDACTED&token=REDACTED`) or
+  **Remove them** (`drop`: the address stops at the `?`). See
+  [Query strings in web addresses](#query-strings-in-web-addresses).
 - **The capture port has no IP address.** It only listens. A capture port with an address
   would let traffic on the mirrored network reach the sensor itself.
 - **Hostile input.** The traffic a sensor sees can come from attackers, and so can parts of
@@ -661,6 +668,35 @@ Air-gapped networks can load rules from a file: `suricata-update --local /path/t
   operating system updated (`sudo apt upgrade`, or turn on unattended upgrades, which leave
   the publishers' repositories alone); running the line again upgrades Zeek, Suricata and
   Fluent Bit, and the sensor's own files.
+
+### Query strings in web addresses
+
+With **Hide values** or **Remove them**, Signalith changes every event that holds a web
+address before it is stored, whatever sent it: the sensor's web requests (Zeek's `http.log`,
+Suricata's `http` events), Suricata alerts and file downloads that name the address, web
+server access logs (Apache, Nginx) and proxy logs over syslog. It changes:
+
+- `url` and `http_referrer`: the query is hidden or removed (and `url_length` follows);
+- `uri_query`: hidden, or removed;
+- `_raw`, Suricata's `payload_printable` and an unmapped Suricata event's details: the same
+  query string is replaced wherever it appears as the fields hold it, as it is or written as
+  JSON text, so the values are not kept in the raw event either.
+
+In `signalith.yaml`:
+
+```yaml
+ingest:
+  url_query: redact   # keep (the default), redact or drop
+```
+
+A change applies at once, on every server, to events that arrive from then on; events
+already stored keep what they had (delete them with [retention](retention.md) if they must
+go). The trade-off: detections that look at query values, such as the web attack rules of
+the content packs (SQL injection, path traversal, web shells called with `?cmd=`), see only
+`REDACTED` with **Hide values** (parameter names still match) and nothing with **Remove
+them**. A query string the raw event writes differently from the fields (percent-encoded
+where the field is decoded) is left in `_raw`: Zeek, Suricata and the web servers write
+them alike.
 
 ## Licences
 
