@@ -1,0 +1,4 @@
+{"rule": "1b45b0d1-773f-4f23-aedc-814b759563b1", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"properties.message":"Update Application"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{}}
+]}

@@ -327,14 +327,15 @@ Content packs are rule sets from other open source projects, shipped unchanged
 inside Signalith and converted when it starts. Every pack detection is **off** until
 an admin turns it on.
 
-**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,330 rules from
+**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,438 rules from
 [SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 2,080 Windows rules
 for these Sysmon, Security, PowerShell, System, Application, Code Integrity, Windows Firewall, BITS, AppX deployment, WMI activity, Remote Desktop session, shell, SMB client, exploit protection, DNS client, Task Scheduler, NTLM, LSA, CryptoAPI, device driver, packaged app, certificate, OpenSSH, DNS Server, IIS configuration and Defender log sources, 154 Linux rules (see
 [Linux endpoints](#linux-endpoints-sysmon-for-linux) and
 [the Linux audit log](#linux-audit-log-auditd)), 13 web server rules (see
 [Web server access logs](#web-server-access-logs)), 45 network rules (see
-[Network rules](#network-rules-zeek-dns-proxy-and-firewall)) and 38 AWS CloudTrail rules (see
-[AWS CloudTrail](#aws-cloudtrail)):
+[Network rules](#network-rules-zeek-dns-proxy-and-firewall)), 38 AWS CloudTrail rules (see
+[AWS CloudTrail](#aws-cloudtrail)) and 108 Microsoft Entra ID and Azure rules (see
+[Entra ID and Azure](#entra-id-and-azure)):
 
 | Sigma log source | Windows events | Data model |
 | --- | --- | --- |
@@ -351,6 +352,10 @@ for these Sysmon, Security, PowerShell, System, Application, Code Integrity, Win
 | `ps_script` | PowerShell 4104 | Script |
 | `webserver` | Apache and Nginx access log lines (see [Web server access logs](#web-server-access-logs)) | Web |
 | `product: aws`, `service: cloudtrail` | AWS CloudTrail records (see [AWS CloudTrail](#aws-cloudtrail)) | Authentication, Change or Other |
+| `product: azure`, `service: signinlogs` | Entra ID sign-ins (see [Entra ID and Azure](#entra-id-and-azure)) | Authentication |
+| `product: azure`, `service: auditlogs` | Entra ID audit records | Change |
+| `product: azure`, `service: riskdetection`, `pim` | Entra ID Protection risk detections | Alerts |
+| `product: azure`, `service: activitylogs` | Azure activity log records | Change |
 | `service: system` | System 7045 (service installed) | Change |
 | `service: system` | Other System events, by provider and event ID (see below) | Other |
 | `service: application` | Application events, by provider and event ID (see below) | Other |
@@ -630,6 +635,19 @@ them, and each searches `sourcetype=aws:cloudtrail`. Rules that compare one fiel
 another, or that match text inside the call's parameters in a way no test record
 exercises, are left out. The Splunk pack adds 32 CloudTrail detections (see
 [Splunk Security Content](#splunk-security-content)). To send CloudTrail records, see [AWS CloudTrail](aws-cloudtrail.md).
+
+### Entra ID and Azure
+
+SigmaHQ's Azure rules name fields as Microsoft Sentinel does (`ResultType`,
+`AuthenticationRequirement`, `DeviceDetail.trusttype`), while Signalith keeps each record's
+own names (`resultType`, `properties.authenticationRequirement`,
+`properties.deviceDetail.trustType`). The converter maps one to the other, by the rule's
+service, and a sign-in's `Status` reads `signin_status` (`Success`, or `Failure` with why).
+Older rules that name an audit record's operation `properties.message` read
+`operationName`. Rules that name a field no record has, or that search free text, are left
+out. Sign-in and audit rules search `sourcetype=azure:monitor:aad`, and activity log rules
+`sourcetype=azure:monitor:activity`. To send Entra ID and Azure logs, see
+[Entra ID and Azure](azure.md).
 
 ### Splunk Security Content
 

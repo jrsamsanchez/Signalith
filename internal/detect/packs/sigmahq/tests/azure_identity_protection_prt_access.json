@@ -1,0 +1,4 @@
+{"rule": "a84fc3b1-c9ce-4125-8e74-bdcdb24021f1", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"riskdetection","data":{"riskEventType":"attemptedPrtAccess"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"riskdetection","data":{}}
+]}

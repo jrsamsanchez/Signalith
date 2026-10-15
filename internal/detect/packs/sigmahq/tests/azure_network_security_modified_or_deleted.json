@@ -1,0 +1,4 @@
+{"rule": "d22b4df4-5a67-4859-a578-8c9a0b5af9df", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"activitylogs","data":{"operationName":"MICROSOFT.NETWORK/NETWORKSECURITYGROUPS/SECURITYRULES/DELETE"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"activitylogs","data":{}}
+]}

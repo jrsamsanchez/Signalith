@@ -1,0 +1,4 @@
+{"rule": "93e0ef48-37c8-49ed-a02c-038aab23628e", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"activitylogs","data":{"operationName":"MICROSOFT.CONTAINERREGISTRY/REGISTRIES/DELETE"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"activitylogs","data":{}}
+]}

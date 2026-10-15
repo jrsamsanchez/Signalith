@@ -1,0 +1,4 @@
+{"rule": "102e11e3-2db5-4c9e-bc26-357d42585d21", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"properties.message":"Remove eligible member (permanent)"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{}}
+]}

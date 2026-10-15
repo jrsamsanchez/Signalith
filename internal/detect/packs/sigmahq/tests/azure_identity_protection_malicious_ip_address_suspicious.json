@@ -1,0 +1,4 @@
+{"rule": "36440e1c-5c22-467a-889b-593e66498472", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"riskdetection","data":{"riskEventType":"suspiciousIPAddress"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"riskdetection","data":{}}
+]}
