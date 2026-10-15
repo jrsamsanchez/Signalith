@@ -1,0 +1,3 @@
+{"rule": "00bb5bd5-1379-4fcf-a965-a5b6f7478064", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Windows Firewall With Advanced Security/Firewall","event_id":"2003","data":{}}
+]}

@@ -87,7 +87,9 @@ Usage:
   signalith secrets   status|encrypt|set|rotate-master [-c file] ...  the master key and stored passwords
   signalith content   status|install|remove [-c file] ...  content pack updates (newer tested rules)
   signalith security  [-c file] [-json]   print the security report (exit 2 when something is at risk)
-  signalith cluster   status|found|export|import|export-key|import-key|reset-key|accept-restore [-c file] ...  the settings the servers share in OpenSearch
+  signalith cluster   status|found|export|import|export-key|import-key|reset-key|accept-restore|token|approve [-c file] ...  the settings the servers share in OpenSearch
+  signalith join      '<token>' [-c file] [--name] [--listen] [--node-url] [--copy-syslog] [--no-start] [--merge] [--yes]   add this server to a cluster
+  signalith opensearch-check <url> [--ca file] [--cert file --key file] [--user u]   check OpenSearch is ready for several servers
   signalith service   install|uninstall|start|stop     manage the Windows service
   signalith opensearch-certs [-ca-dir DIR] -node NAME [-san ...] [-peer ...] -out DIR   certificates to secure your own OpenSearch
   signalith bootstrap-docker [-opensearch-name NAME] [-nodes N] [-export-ca-key] [-apply-security] [-new-ca]   prepare the Docker quick start (its setup service runs this)
@@ -163,6 +165,12 @@ func main() {
 		err = cmdSecurity(args)
 	case "cluster":
 		err = cmdCluster(args)
+	case "join":
+		os.Exit(runJoinCommand(args))
+	case "opensearch-check":
+		err = cmdOpenSearchCheck(args)
+	case "tcp-forward":
+		err = cmdTCPForward(args)
 	case "version", "-v", "--version":
 		fmt.Println("signalith", version)
 	case "help", "-h", "--help":
@@ -772,8 +780,7 @@ func cmdQuery(args []string) error {
 }
 
 func newAssistant(c *config.Config) *assistant.Client {
-	a := c.Assistant
-	return assistant.New(a.Provider, a.URL, a.Model, a.APIKey)
+	return c.AssistantClient()
 }
 
 // cmdAsk prints the query for a plain-English question, with how each
@@ -912,6 +919,11 @@ func serve(ctx context.Context, path string, log *slog.Logger) error {
 	// GOTRACEBACK set in the environment, and on Linux hardenProcess
 	// keeps even GOTRACEBACK=crash from writing a core file.
 	debug.SetTraceback("single")
+	// A new server started with SIGNALITH_JOIN (Docker) joins its cluster
+	// first, which writes the settings and keys loaded next.
+	if err := joinFromEnv(path, log); err != nil {
+		return err
+	}
 	c, err := loadConfig(path, log)
 	if err != nil {
 		return err
@@ -1071,8 +1083,11 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		}
 	}
 	ret := newRetention(c, cl, log)
+	archiveCrypto(ret.Archive, c, r.clusterKey)
 	if sharedOn {
 		r.sharedContent.sharedRetention(ret)
+	} else {
+		r.sharedContent.holdRetention(ret)
 	}
 	r.useAudit(ctx, in, c, cl, ret)
 	maxAge := c.MaxEventAge(retentionKeepDays(ret))
@@ -1145,6 +1160,8 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	feeds := newFeeds(c, indicators, log)
 	if sharedOn {
 		r.sharedContent.sharedFeeds(ctx, feeds, indicators, cl, c.OpenSearch.IndexPrefix, &in.jobs)
+	} else {
+		r.sharedContent.holdFeeds(feeds)
 	}
 	if err := feeds.Load(); err != nil {
 		if sharedOn {
@@ -1174,6 +1191,17 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		for _, p := range problems {
 			log.Error("dashboard file has errors; fix it to show the dashboard", "file", p.File, "err", p.Error)
 		}
+	}
+	if r.sharedContent != nil {
+		// Saved in this server's folders until the shared library is in
+		// use: held while they move into it (importhold.go).
+		lib.Hold = r.sharedContent.holdFile(shared.ImportDetections)
+		boards.Hold = r.sharedContent.holdFile(shared.ImportDashboards)
+		lists.Hold = r.sharedContent.holdFile(shared.ImportLookups)
+		if err := r.sharedContent.library.start(ctx, r.shared, sharedOn && r.shared.SharedLibrary(), c, lib, boards, &in.jobs); err != nil {
+			return nil, err
+		}
+		r.sharedContent.library.startLists(ctx, r.shared, sharedOn && r.shared.SharedLookups(), c, lists, &in.jobs)
 	}
 	// The users, the directory sign-in settings and the sessions: shared
 	// by the servers of the cluster once every one reads them there, else
@@ -1361,6 +1389,11 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			return agentinv.Pin(certs.Fingerprint())
 		},
 		Leader: func() bool { return r.node != nil && r.node.RunsJobs() }}
+	// The cluster's one certificate authority, once it has one.
+	tlsStatus := r.sharedTLS(ctx, in, c, certs, agentsInv)
+	// This server's own OpenSearch certificate, once the cluster keeps
+	// OpenSearch's certificate authority.
+	osIdentity := r.osIdentity(ctx, in, c)
 	r.agents.Store(agentsInv)
 	in.jobs.Go(func() { agentsInv.Run(ctx) })
 	srv := &api.Server{
@@ -1404,8 +1437,17 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	}
 	followProxyTrust(srv)
 	srv.KnownBrowsers = r.browsers
+	srv.Join = r.sharedJoin(c, certs)
 	if parts != nil {
 		srv.SessionStore, srv.KnownBrowsers, srv.SharedUsers = parts.sessions, parts.browsers, parts.api(c)
+		if rt := r.shared; rt != nil {
+			srv.SharedUsers.APITokens = func() string {
+				if rt.APITokens() {
+					return ""
+				}
+				return "API tokens need every server on a version that supports them: upgrade the others first."
+			}
+		}
 	}
 	in.jobs.Go(func() { srv.RunContentUpdates(ctx) })
 	pbRunner := &playbooks.Runner{
@@ -1543,8 +1585,9 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		}},
 	}
 	if r.shared != nil {
-		in.jobsList = append(in.jobsList, requestsJob(r.shared, contentHandlers(feeds, ret, r.auditHandlers(ret))))
+		in.jobsList = append(in.jobsList, requestsJob(r.shared, contentHandlers(feeds, ret, r.auditHandlers(ret), r.lifecycleLeaderHandlers())))
 		in.jobsList = append(in.jobsList, r.auditJobs(c, cl, ret)...)
+		in.jobsList = append(in.jobsList, r.joinJobs()...)
 	}
 	if parts != nil {
 		// Signed-in directory users are checked again by this one server
@@ -1585,9 +1628,16 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		if r.shared != nil {
 			srv.Cluster = sharedCluster{Node: r.node, rt: r.shared}
 			srv.Shared = sharedAPI{rt: r.shared, on: sharedOn}
+			srv.ClusterTLS = r.clusterTLSAPI()
+			srv.ClusterServers = r.clusterServersAPI()
+			srv.ClusterOSIdentity = r.clusterOSIdentityAPI()
 			srv.ConfigToken = configToken{rt: r.shared}
+			// A start that keeps the settings in settings.yaml has the
+			// store too, so a save there holds off the move of this
+			// server's own settings into the shared settings, and goes
+			// there once they moved (settingsStore.HoldFile).
+			srv.Settings = settingsStore{r: r, files: !settingsOn}
 			if settingsOn {
-				srv.Settings = settingsStore{r: r}
 				// The shared settings and this server's own are followed
 				// while this start runs: what applies at once is applied,
 				// and the rest waits for a restart. The settings set aside
@@ -1598,6 +1648,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		}
 		in.node = r.node
 	}
+	srv.Install = clusterInstall()
 	tokenSrv.Store(srv)
 	in.srv, in.handler = srv, srv.Handler()
 	r.srv.Store(srv)
@@ -1623,7 +1674,9 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 				fp.Users = usersFingerprint(people, dir)
 				return sharedFingerprints(fp, r.shared, sharedOn)
 			},
-			Indexed: pipeline.LastIndexed,
+			Indexed:    pipeline.LastIndexed,
+			TLS:        tlsStatus,
+			OSIdentity: osIdentity,
 		}
 		settings.Traffic = trafficOf(agentsInv, receiver)
 		if rt := r.shared; rt != nil {
@@ -1880,6 +1933,7 @@ func (r *runner) openUsers(c *config.Config) (*users.Store, *users.Directory, er
 		if err != nil {
 			return nil, nil, err
 		}
+		people.Hold = r.sharedContent.holdFile(shared.ImportUsers)
 		r.people = people
 	}
 	if r.people.BuiltinAdmin != c.Auth.AdminUser {
@@ -1893,6 +1947,7 @@ func (r *runner) openUsers(c *config.Config) (*users.Store, *users.Directory, er
 	if err != nil {
 		return nil, nil, err
 	}
+	dir.Hold = r.sharedContent.holdFile(shared.ImportDirectory)
 	return r.people, dir, nil
 }
 

@@ -33,6 +33,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/jrsamsanchez/signalith/internal/detect"
+	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/search"
 	"github.com/jrsamsanchez/signalith/internal/sigmacheck"
@@ -67,6 +68,30 @@ var categories = map[string]string{
 	// Nor this: Code Integrity log rules (service:
 	// codeintegrity-operational).
 	"code_integrity": "rules/windows/builtin/code_integrity",
+	// Nor these: rules about the logs the parser reads by name
+	// (service: firewall-as, bits-client, appxdeployment-server, wmi).
+	"firewall_as":           "rules/windows/builtin/firewall_as",
+	"bits_client":           "rules/windows/builtin/bits_client",
+	"appxdeployment_server": "rules/windows/builtin/appxdeployment_server",
+	"wmi":                   "rules/windows/builtin/wmi",
+	// Nor this: Sysmon's own events (service: sysmon), by event ID.
+	"sysmon_service":                       "rules/windows/sysmon",
+	"terminalservices_localsessionmanager": "rules/windows/builtin/terminalservices",
+	"shell_core":                           "rules/windows/builtin/shell_core",
+	"smbclient_security":                   "rules/windows/builtin/smbclient/security",
+	"security_mitigations":                 "rules/windows/builtin/security_mitigations",
+	"dns_client":                           "rules/windows/builtin/dns_client",
+	"taskscheduler":                        "rules/windows/builtin/taskscheduler",
+	"ntlm":                                 "rules/windows/builtin/ntlm",
+	"lsa_server":                           "rules/windows/builtin/lsa_server",
+	"capi2":                                "rules/windows/builtin/capi2",
+	"driver_framework":                     "rules/windows/builtin/driverframeworks",
+	"appmodel_runtime":                     "rules/windows/builtin/appmodel_runtime",
+	"appxpackaging_om":                     "rules/windows/builtin/appxpackaging_om",
+	"certificateservicesclient_lifecycle_system": "rules/windows/builtin/certificate_services_client_lifecycle_system",
+	"openssh":           "rules/windows/builtin/openssh",
+	"dns_server":        "rules/windows/builtin/dns_server",
+	"iis_configuration": "rules/windows/builtin/iis-configuration",
 	// Nor this: Microsoft Defender Antivirus log rules (service:
 	// windefend).
 	"windefend": "rules/windows/builtin/windefend",
@@ -194,6 +219,14 @@ func main() {
 			if cat == "code_integrity" {
 				want["category"], want["service"] = "", "codeintegrity-operational"
 			}
+			if cat == "sysmon_service" {
+				want["category"], want["service"] = "", "sysmon"
+			}
+			for service := range ingest.NamedChannelServices {
+				if cat == ingest.NamedChannelCategory(service) {
+					want["category"], want["service"] = "", service
+				}
+			}
 			if rule.Logsource["product"] != want["product"] || rule.Logsource["category"] != want["category"] || rule.Logsource["service"] != want["service"] {
 				skip("log source is not plain "+product+" "+cat, rel)
 				continue
@@ -203,9 +236,16 @@ func main() {
 				rcat = sigmacheck.SystemCategory(rule.EventIDs()...)
 				rbases = sigmacheck.Bases[rcat]
 			}
+			if cat == "sysmon_service" {
+				rcat = sigmacheck.SysmonServiceCategory(rule.EventIDs()...)
+				rbases = sigmacheck.Bases[rcat]
+			}
 			if cat == "security" {
 				ids := rule.EventIDs()
 				rcat = sigmacheck.SecurityCategory(ids...)
+				if ingest.IsNamedSecurityEvents(ids...) {
+					rcat = "security_named"
+				}
 				if _, ok := sigmacheck.SysmonEventID(rcat); !ok || len(ids) == 0 {
 					skip("not about one Security event Signalith reads", rel)
 					continue
@@ -400,7 +440,9 @@ func regression(root, rel string, rule *sigmacheck.Rule, cat string) []sigmachec
 					c.Data[k] = string(b)
 				}
 			}
-			ok := (strings.EqualFold(c.Channel, sigmacheck.Channel(cat)) && slices.Contains(sysmonIDs, id)) ||
+			// A log read by name: any of its events the rule matches.
+			named := ingest.IsNamedChannel(c.Channel) && strings.EqualFold(c.Channel, sigmacheck.Channel(cat))
+			ok := named || (strings.EqualFold(c.Channel, sigmacheck.Channel(cat)) && slices.Contains(sysmonIDs, id)) ||
 				(cat == "process_creation" && c.Channel == sigmacheck.SecurityChannel && id == "4688")
 			if !ok {
 				continue

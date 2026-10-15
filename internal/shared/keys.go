@@ -175,6 +175,9 @@ func (k *ClusterKey) sub(info string) []byte {
 type KeySet struct {
 	active *ClusterKey
 	byID   map[string]*ClusterKey
+	// cookie holds keys retired by the last rotation whose session
+	// cookies still pass the cookie check (see WithCookieKeys).
+	cookie map[string]*ClusterKey
 }
 
 // NewKeySet returns a set whose active key is active. others are only
@@ -205,6 +208,32 @@ func (s *KeySet) Get(kid string) *ClusterKey {
 		return nil
 	}
 	return s.byID[kid]
+}
+
+// WithCookieKeys returns the set with old, keys a rotation retired, kept
+// for the session cookie check only: a cookie they made still passes it,
+// but nothing they sign verifies, so a cookie needs a session document
+// signed with a key of the set to work.
+func (s *KeySet) WithCookieKeys(old ...*ClusterKey) *KeySet {
+	out := &KeySet{active: s.active, byID: s.byID, cookie: map[string]*ClusterKey{}}
+	for _, k := range old {
+		if k != nil && s.byID[k.ID()] == nil {
+			out.cookie[k.ID()] = k
+		}
+	}
+	return out
+}
+
+// CookieKey returns the key with id kid for the session cookie check: a
+// key of the set, or one kept by WithCookieKeys; nil when there is none.
+func (s *KeySet) CookieKey(kid string) *ClusterKey {
+	if s == nil {
+		return nil
+	}
+	if k := s.byID[kid]; k != nil {
+		return k
+	}
+	return s.cookie[kid]
 }
 
 // IDs lists the ids of the keys, sorted.

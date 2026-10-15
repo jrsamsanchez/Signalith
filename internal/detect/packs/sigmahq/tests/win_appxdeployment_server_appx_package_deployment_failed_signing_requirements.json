@@ -1,0 +1,4 @@
+{"rule": "898d5fc9-fbc3-43de-93ad-38e97237c344", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-AppXDeploymentServer/Operational","event_id":"401","data":{"ErrorCode":"0x80073cff"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-AppXDeploymentServer/Operational","event_id":"401","data":{}}
+]}

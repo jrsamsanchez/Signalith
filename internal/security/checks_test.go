@@ -399,6 +399,52 @@ func TestCAScope(t *testing.T) {
 				t.Errorf("%q", c.Details)
 			}
 		}},
+		// The certificate authority all servers share can't be changed
+		// yet: no step says to make a new one, and no button leads there.
+		{name: "cluster's, unconstrained", set: func(f *Facts) {
+			f.Runtime.ClusterServer, f.TLS.ClusterCA, f.TLS.CA.Scope = "siem-1", true, "unconstrained"
+		}, state: Attention, fix: func(t *testing.T, c *Check) {
+			noChange(t, c.Fix)
+			if len(c.Details) != 1 || !strings.Contains(c.Details[0], "All the cluster's servers share") {
+				t.Errorf("%q", c.Details)
+			}
+		}},
+		{name: "cluster's, mismatch", set: func(f *Facts) { f.TLS.ClusterCA, f.TLS.ScopeSetup = true, "strict" }, state: Attention,
+			line: "You chose a strict certificate authority, but the one all servers share is standard.",
+			fix:  func(t *testing.T, c *Check) { noChange(t, c.Fix) }},
+		{name: "cluster's, standard", set: func(f *Facts) { f.TLS.ClusterCA = true }, state: Good, fix: func(t *testing.T, c *Check) {
+			noChange(t, c.Tip)
+			if strings.Contains(strings.Join(c.Tip.Steps, " "), "from this server") {
+				t.Errorf("tip %q", c.Tip.Steps)
+			}
+		}},
+	})
+}
+
+// noChange checks a fix offers no change of the cluster's certificate
+// authority: no button, and no step to make a new one.
+func noChange(t *testing.T, f *Fix) {
+	t.Helper()
+	if f == nil {
+		t.Fatal("no fix")
+	}
+	text := strings.Join(f.Steps, " ")
+	if f.Action != "" || strings.Contains(text, "Make a new") || strings.Contains(text, "switch to") {
+		t.Errorf("fix %+v", f)
+	}
+}
+
+func TestClusterCACertificate(t *testing.T) {
+	runCases(t, "transit.certificate", []checkCase{
+		{name: "outside", set: func(f *Facts) { f.TLS.ClusterCA, f.TLS.Outside = true, []string{"siem.example.com"} }, state: Attention,
+			fix: func(t *testing.T, c *Check) { noChange(t, c.Fix) }},
+		{name: "expiring", set: func(f *Facts) { f.TLS.ClusterCA, f.TLS.CA.NotAfter = true, now.AddDate(0, 3, 0) }, state: Attention,
+			fix: func(t *testing.T, c *Check) {
+				noChange(t, c.Fix)
+				if !strings.Contains(c.Line, "all servers share expires") {
+					t.Errorf("line %q", c.Line)
+				}
+			}},
 	})
 }
 
@@ -779,7 +825,7 @@ func TestDisk(t *testing.T) {
 
 func TestArchives(t *testing.T) {
 	arch := func(f *Facts) {
-		f.Archive = &ArchiveFacts{Dir: "/var/lib/signalith/archive", Count: 120, Bytes: 3 << 30, Disk: Disk{Kind: DiskEncrypted}, Perm: &Perm{}}
+		f.Archive = &ArchiveFacts{Dir: "/var/lib/signalith/archive", Count: 120, Bytes: 3 << 30, Disk: Disk{Kind: DiskEncrypted}, Perm: &Perm{}, Encrypting: true, Plain: 120}
 	}
 	runCases(t, "rest.archives", []checkCase{
 		{name: "none", state: ""},
@@ -802,9 +848,20 @@ func TestArchives(t *testing.T) {
 			}
 		}},
 		{name: "plain disk", set: func(f *Facts) { arch(f); f.Archive.Disk.Kind = DiskPlain }, state: Attention,
-			line: "120 archived days (3 GB) are kept as plain files in /var/lib/signalith/archive, on a disk that isn't encrypted. Signalith doesn't encrypt archives itself."},
+			line: "120 archived days (3 GB) are kept as plain files in /var/lib/signalith/archive, on a disk that isn't encrypted. They were written before Signalith encrypted archives; new archives are encrypted."},
+		{name: "encrypted", set: func(f *Facts) { arch(f); f.Archive.Disk.Kind = DiskPlain; f.Archive.Plain = 0 }, state: Good,
+			line: "120 archived days (3 GB) in /var/lib/signalith/archive are encrypted, readable only by Signalith."},
+		{name: "some plain", set: func(f *Facts) { arch(f); f.Archive.Disk.Kind = DiskPlain; f.Archive.Plain = 20 }, state: Attention,
+			line: "20 of the 120 archived days (3 GB) are kept as plain files in /var/lib/signalith/archive, on a disk that isn't encrypted. They were written before Signalith encrypted archives; new archives are encrypted."},
+		{name: "encryption off", set: func(f *Facts) { arch(f); f.Archive.Disk.Kind = DiskPlain; f.Archive.Encrypting = false }, state: Attention,
+			line: "120 archived days (3 GB) are kept as plain files in /var/lib/signalith/archive, on a disk that isn't encrypted. Archive encryption is turned off (retention.encrypt_archives: false).",
+			fix: func(t *testing.T, c *Check) {
+				if len(c.Fix.Steps) != 2 {
+					t.Errorf("%q", c.Fix.Steps)
+				}
+			}},
 		{name: "share", set: func(f *Facts) { arch(f); f.Archive.Disk = Disk{Kind: DiskNetwork, Source: "nas:/a"} }, state: Unknown,
-			line: "120 archived days (3 GB) are kept as plain files in /var/lib/signalith/archive. Signalith can't see whether the share under them is encrypted."},
+			line: "120 archived days (3 GB) are kept as plain files in /var/lib/signalith/archive. Signalith can't see whether the share under them is encrypted. They were written before Signalith encrypted archives; new archives are encrypted."},
 		{name: "many", set: func(f *Facts) { arch(f); f.Archive.Count, f.Archive.More = archiveMaxFiles, true }, state: Good,
 			fix: func(t *testing.T, c *Check) {
 				if !strings.HasPrefix(c.Line, "100,000+ archived days") {
@@ -1268,6 +1325,31 @@ func TestOpenSearchRole(t *testing.T) {
 					t.Errorf("%+v", c.Fix)
 				}
 			}},
+	})
+}
+
+func TestOpenSearchCRL(t *testing.T) {
+	later := func(f *Facts) time.Time { return f.Now.Add(5 * 365 * 24 * time.Hour) }
+	runCases(t, "accounts.opensearch_crl", []checkCase{
+		{name: "not set", state: ""},
+		{name: "good", set: func(f *Facts) { f.CRL = &CRLFacts{File: "/crl/crl.pem", NextUpdate: later(f)} }, state: Good,
+			line: "OpenSearch checks client certificates against a revocation list Signalith keeps, so a removed server's certificate stops working at once."},
+		{name: "names some", set: func(f *Facts) { f.CRL = &CRLFacts{File: "/crl/crl.pem", Revoked: 2, NextUpdate: later(f)} }, state: Good,
+			line: "OpenSearch checks client certificates against a revocation list Signalith keeps, so a removed server's certificate stops working at once. It names 2 certificates."},
+		{name: "missing", set: func(f *Facts) { f.CRL = &CRLFacts{File: "/crl/crl.pem", Missing: true} }, state: Risk,
+			line: "OpenSearch's revocation list /crl/crl.pem is missing. While OpenSearch checks it, it refuses every certificate sign-in, Signalith's included.",
+			fix: func(t *testing.T, c *Check) {
+				if c.Fix.Setting != "opensearch.crl_file" || c.Fix.Docs.Anchor != "ending-a-servers-opensearch-access-at-once" || !strings.Contains(c.Fix.Steps[0], "up -d") {
+					t.Errorf("%+v", c.Fix)
+				}
+			}},
+		{name: "expired", set: func(f *Facts) { f.CRL = &CRLFacts{File: "/crl/crl.pem", Err: "it expired on 2026-01-01"} }, state: Risk,
+			line: "OpenSearch's revocation list /crl/crl.pem cannot be used: it expired on 2026-01-01. While OpenSearch checks it, it refuses every certificate sign-in, Signalith's included."},
+		{name: "expires soon", set: func(f *Facts) { f.CRL = &CRLFacts{File: "/crl/crl.pem", NextUpdate: f.Now.Add(10 * 24 * time.Hour)} }, state: Attention},
+		{name: "behind", set: func(f *Facts) {
+			f.CRL = &CRLFacts{File: "/crl/crl.pem", NextUpdate: later(f)}
+			f.Runtime = &RuntimeFacts{CRLProblem: "OpenSearch's revocation list /crl/crl.pem does not name 1 revoked certificate yet, so it still opens OpenSearch."}
+		}, state: Risk, line: "OpenSearch's revocation list /crl/crl.pem does not name 1 revoked certificate yet, so it still opens OpenSearch."},
 	})
 }
 

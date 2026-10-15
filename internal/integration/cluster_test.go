@@ -37,6 +37,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -295,20 +296,50 @@ func (s *testServer) env() []string {
 	return env
 }
 
-// httpsClient is a client that trusts the server's own certificate
-// authority, which it made in its state folder.
+// httpsClient is a client that trusts the certificate authority in the
+// server's state folder, read again at each connection: once the servers
+// share the cluster's certificate authority (one certificate authority,
+// servers.md), tls/ca.pem holds that one instead of the server's own.
 func (s *testServer) httpsClient() *http.Client {
 	t := s.h.t
 	t.Helper()
+	if _, err := s.caPool(); err != nil {
+		t.Fatalf("%s: %v", s.name, err)
+	}
+	conf := &tls.Config{
+		// The chain and the name are checked in VerifyConnection, against
+		// the certificate authority in use now.
+		InsecureSkipVerify: true, //nolint:gosec // verified below
+		VerifyConnection: func(cs tls.ConnectionState) error {
+			pool, err := s.caPool()
+			if err != nil {
+				return err
+			}
+			if len(cs.PeerCertificates) == 0 {
+				return fmt.Errorf("%s sent no certificate", s.name)
+			}
+			inter := x509.NewCertPool()
+			for _, c := range cs.PeerCertificates[1:] {
+				inter.AddCert(c)
+			}
+			_, err = cs.PeerCertificates[0].Verify(x509.VerifyOptions{Roots: pool, Intermediates: inter, DNSName: "127.0.0.1"})
+			return err
+		},
+	}
+	return &http.Client{Timeout: 5 * time.Second, Transport: &http.Transport{TLSClientConfig: conf}}
+}
+
+// caPool is the certificate authority in the server's tls/ca.pem.
+func (s *testServer) caPool() (*x509.CertPool, error) {
 	pem, err := os.ReadFile(filepath.Join(s.dir, "tls", "ca.pem"))
 	if err != nil {
-		t.Fatalf("%s has no certificate authority in its state folder: %v", s.name, err)
+		return nil, fmt.Errorf("no certificate authority in its state folder: %w", err)
 	}
 	pool := x509.NewCertPool()
 	if !pool.AppendCertsFromPEM(pem) {
-		t.Fatalf("%s: no certificate in tls/ca.pem", s.name)
+		return nil, errors.New("no certificate in tls/ca.pem")
 	}
-	return &http.Client{Timeout: 5 * time.Second, Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool}}}
+	return pool, nil
 }
 
 func (s *testServer) logPath() string { return filepath.Join(s.dir, "signalith.log") }

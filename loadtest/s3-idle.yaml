@@ -1,0 +1,25 @@
+# S3: what servers that share an OpenSearch cost it while nothing
+# happens, and that made-up session cookies cost it nothing more.
+name: s3-idle
+description: Idle coordination cost, then a flood of random session cookies.
+targets: [https://localhost:8441, https://localhost:8442]
+ca_files: [loadtest/compose/out/siem-a-ca.pem, loadtest/compose/out/siem-b-ca.pem]
+credentials:
+  admin_file: loadtest/compose/out/admin.txt
+opensearch:
+  url: https://localhost:9200
+  ca: loadtest/compose/out/opensearch-ca.pem
+  cert: loadtest/compose/out/opensearch-client.pem
+  key: loadtest/compose/out/opensearch-client-key.pem
+phases:
+  - {name: settle, for: 30s}
+  - {name: idle, for: 2m}
+  - {name: cookies, for: 1m, cookie_flood: {rate: 200}}
+criteria:
+  # OpenSearch operations (documents written, searches, gets) per second,
+  # divided by the servers. The design aims at under 2 requests a second
+  # per idle server; one request can be several operations (a heartbeat
+  # read is a get per server), so the limit here is looser.
+  - {name: os_ops_per_server_per_second, phase: idle, max: 10}
+  - {name: os_ops_per_random_cookie, phase: cookies, baseline: idle, max: 0.01}
+  - {name: leaders_at_once, max: 1}

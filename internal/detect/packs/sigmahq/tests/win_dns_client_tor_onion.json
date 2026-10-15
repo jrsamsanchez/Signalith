@@ -1,0 +1,4 @@
+{"rule": "8384bd26-bde6-4da9-8e5d-4174a7a47ca2", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-DNS-Client/Operational","event_id":"3008","data":{"QueryName":".torlink.co"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-DNS-Client/Operational","event_id":"3008","data":{}}
+]}

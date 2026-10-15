@@ -8,3 +8,11 @@ internal/detect/packs/** -text
 deploy/docker/opensearch/*.sh text eol=lf
 deploy/docker/opensearch/*.yml text eol=lf
 deploy/docker/opensearch/security/*.yml text eol=lf
+
+# Go reads a fuzz corpus file's first line as its version, which a Windows
+# line ending (CRLF) would break.
+**/testdata/fuzz/** text eol=lf
+
+# The install script the servers hand out runs on Linux, and its SHA-256 is
+# checked by the line pasted there: the same bytes on every system.
+deploy/linux/*.sh text eol=lf

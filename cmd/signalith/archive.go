@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -21,11 +22,15 @@ import (
 const archiveUsage = `Usage:
   signalith archive list    [-c file] [-dir folder]
   signalith archive verify  [-c file] [-dir folder] <file or id>...
+  signalith archive decrypt [-c file] [-dir folder] <file or id>...
   signalith archive restore [-c file] [-dir folder] [-keep-days N] [-confirm] [-offline [-force]] <file or id>...
 
 An archived day is a <index>.ndjson.gz file with a <index>.json manifest
 beside it. Name it by its file path or, for files in the archive folder,
-by its ID (the file name without .ndjson.gz). The archive folder is
+by its ID (the file name without .ndjson.gz). Archives are encrypted
+with this server's master key and, on servers that share their settings,
+the cluster key; decrypt writes them to standard output as plain gzip,
+for other tools: signalith archive decrypt <id> | zcat | head. The archive folder is
 retention.archive_dir, SIGNALITH_ARCHIVE_DIR, or an "archive" folder next
 to lookups.dir; -dir overrides it. Installs that set SIGNALITH_ARCHIVE_DIR
 for the service (the systemd unit sets /var/lib/signalith/archive) need
@@ -66,12 +71,16 @@ func cmdArchive(args []string) error {
 	case "list":
 		return archiveList(folder)
 	case "verify":
-		return archiveEach(folder, fs.Args(), func(a *retention.Archive, m retention.Manifest) error {
+		return archiveEach(c, folder, fs.Args(), func(a *retention.Archive, m retention.Manifest) error {
 			if err := a.Verify(m); err != nil {
 				return err
 			}
 			fmt.Printf("%s: OK, %d events, sha256 %s\n", m.File, m.Docs, m.SHA256)
 			return nil
+		})
+	case "decrypt":
+		return archiveEach(c, folder, fs.Args(), func(a *retention.Archive, m retention.Manifest) error {
+			return archiveDecrypt(a, m, os.Stdout)
 		})
 	case "restore":
 		if *keep < 1 || *keep > retention.MaxRestoreDays {
@@ -116,7 +125,7 @@ func cmdArchive(args []string) error {
 			}
 		}
 		until := time.Now().UTC().AddDate(0, 0, *keep).Format(time.DateOnly)
-		return archiveEach(folder, fs.Args(), func(a *retention.Archive, m retention.Manifest) error {
+		return archiveEach(c, folder, fs.Args(), func(a *retention.Archive, m retention.Manifest) error {
 			if cat, _, ok := retention.ParseIndex(c.OpenSearch.IndexPrefix, m.Index); !ok || cat != m.Category {
 				return fmt.Errorf("it was archived from %s, which is not a %s-* daily index", m.Index, c.OpenSearch.IndexPrefix)
 			}
@@ -176,8 +185,29 @@ func archiveList(folder string) error {
 	return nil
 }
 
+// archiveDecrypt writes the archive m as plain gzip to w. A plain archive
+// is copied as it is.
+func archiveDecrypt(a *retention.Archive, m retention.Manifest, w io.Writer) error {
+	f, err := os.Open(filepath.Join(a.Dir, m.File))
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	var r io.Reader = f
+	if m.Encryption != "" {
+		if a.Unseal == nil {
+			return fmt.Errorf("the archive is encrypted (%s) and this server cannot decrypt it", m.Encryption)
+		}
+		if r, err = a.Unseal(f); err != nil {
+			return err
+		}
+	}
+	_, err = io.Copy(w, r)
+	return err
+}
+
 // archiveEach runs fn for each named archive, reporting every failure.
-func archiveEach(folder string, names []string, fn func(*retention.Archive, retention.Manifest) error) error {
+func archiveEach(c *config.Config, folder string, names []string, fn func(*retention.Archive, retention.Manifest) error) error {
 	if len(names) == 0 {
 		return errors.New("name at least one archive file or ID; list them with: signalith archive list")
 	}
@@ -188,6 +218,7 @@ func archiveEach(folder string, names []string, fn func(*retention.Archive, rete
 			a.Dir = filepath.Dir(name)
 			id = strings.TrimSuffix(strings.TrimSuffix(filepath.Base(name), ".ndjson.gz"), ".json")
 		}
+		archiveCrypto(a, c, nil)
 		m, err := a.Get(id)
 		if err == nil {
 			err = fn(a, m)

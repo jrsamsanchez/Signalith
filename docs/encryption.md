@@ -89,7 +89,10 @@ Not encrypted, because they need not be:
 - **Environment variables** (`SIGNALITH_OPENSEARCH_PASSWORD` and the others) are used
   as they are and never written to a file, even when Signalith saves a file.
 - A value written as `${ENV_VAR}` (in a feed in `signalith.yaml`) holds no secret.
-- **Events**, in OpenSearch and in archives, are protected by disk encryption (below).
+- **Events** in OpenSearch are protected by disk encryption (below). Archived days
+  are encrypted with a key of their own, kept in the file encrypted with the master
+  key (and the cluster key on servers that share their settings); see
+  [Archives](retention.md#encryption).
 
 How: each value is encrypted with AES-256-GCM, under a key derived from the master
 key for that setting alone. A value copied to another setting, or changed, does not
@@ -413,7 +416,8 @@ Backups of files from before the rotation now need a backup of that key to be re
 `-prune` keeps the previous key, and says why, while a value still needs it (such
 as a file restored from a backup; `signalith secrets encrypt` encrypts it with the
 new key), while a value cannot be decrypted at all (it might need that key), or
-while the previous key cannot be read. A key in `SIGNALITH_MASTER_KEY` cannot be
+while the previous key cannot be read, or while an archived day was encrypted with
+it alone (keep the key as long as you keep such archives). A key in `SIGNALITH_MASTER_KEY` cannot be
 rotated by Signalith: change the variable yourself, or move the key to a file.
 
 ### Commands

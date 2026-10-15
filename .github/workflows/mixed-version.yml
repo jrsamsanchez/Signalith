@@ -1,0 +1,110 @@
+name: Mixed versions
+# The previous release and this commit on two servers sharing one
+# OpenSearch, as during a rolling upgrade: they are upgraded one at a time,
+# and each version's pages are checked against the other version's API.
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['site/**', 'docs/**', '**/*.md']
+  pull_request:
+    paths-ignore: ['site/**', 'docs/**', '**/*.md']
+  workflow_dispatch:
+    inputs:
+      previous:
+        description: The release (tag or ref) to run next to this commit; empty for the one before it
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mixed-version-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mixed-version:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # The Docker quick start's secured OpenSearch, from the published
+      # image (only its setup step runs), published on this machine.
+      COMPOSE: docker compose -f deploy/docker/docker-compose.yml -f ${{ github.workspace }}/ci-opensearch-port.yml
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+      - name: Find the previous release
+        id: prev
+        env:
+          PREVIOUS: ${{ inputs.previous }}
+        run: |
+          prev="$PREVIOUS"
+          if [ -z "$prev" ]; then
+            # HEAD^ so that a release's own commit is compared with the
+            # release before it.
+            prev=$(git describe --tags --abbrev=0 --match 'v[0-9]*.[0-9]*.[0-9]*' --exclude '*-*' HEAD^ 2>/dev/null || true)
+          fi
+          if [ -z "$prev" ]; then
+            echo "::notice::No earlier release to run next to this commit."
+            exit 0
+          fi
+          echo "ref=$prev" >> "$GITHUB_OUTPUT"
+          echo "version=${prev#v}" >> "$GITHUB_OUTPUT"
+          echo "Previous release: $prev"
+      - name: Build both versions
+        if: steps.prev.outputs.ref != ''
+        env:
+          PREV: ${{ steps.prev.outputs.ref }}
+          PREV_VERSION: ${{ steps.prev.outputs.version }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin"
+          git worktree add "$RUNNER_TEMP/prev" "$PREV"
+          # An old release may not know the clustertest tag; that is harmless.
+          (cd "$RUNNER_TEMP/prev" && GOTOOLCHAIN=auto go build -tags clustertest \
+            -ldflags "-X main.version=$PREV_VERSION" -o "$RUNNER_TEMP/bin/signalith-prev" ./cmd/signalith)
+          next="$PREV_VERSION-next+${GITHUB_SHA::7}"
+          go build -tags clustertest -ldflags "-X main.version=$next" -o "$RUNNER_TEMP/bin/signalith-next" ./cmd/signalith
+          echo "SIGNALITH_TEST_NEXT_VERSION=$next" >> "$GITHUB_ENV"
+      - name: Start the Docker quick start's OpenSearch
+        if: steps.prev.outputs.ref != ''
+        run: |
+          cat > ci-opensearch-port.yml <<'EOF'
+          services:
+            opensearch:
+              ports:
+                - "127.0.0.1:9200:9200"
+          EOF
+          $COMPOSE up -d opensearch-security
+          # The step that loads OpenSearch's security settings runs once.
+          for i in $(seq 1 100); do
+            state=$(docker inspect -f '{{.State.Status}} {{.State.ExitCode}}' "$($COMPOSE ps -aq opensearch-security)")
+            case "$state" in exited*) break ;; esac
+            sleep 3
+          done
+          echo "opensearch-security: $state"
+          test "$state" = "exited 0"
+          secrets="$RUNNER_TEMP/signalith-secrets"
+          mkdir -p "$secrets"
+          $COMPOSE cp setup:/signalith-secrets/. "$secrets/"
+          curl -sf -o /dev/null --cacert "$secrets/opensearch-ca.pem" --cert "$secrets/opensearch-client.pem" \
+            --key "$secrets/opensearch-client-key.pem" https://localhost:9200/_cluster/health
+      - name: The previous release next to this commit
+        if: steps.prev.outputs.ref != ''
+        env:
+          SIGNALITH_TEST_UPGRADE: '1'
+          SIGNALITH_TEST_PREV_BIN: ${{ runner.temp }}/bin/signalith-prev
+          SIGNALITH_TEST_PREV_VERSION: ${{ steps.prev.outputs.version }}
+          SIGNALITH_TEST_NEXT_BIN: ${{ runner.temp }}/bin/signalith-next
+          SIGNALITH_TEST_OPENSEARCH: https://localhost:9200
+          SIGNALITH_TEST_OPENSEARCH_CA: ${{ runner.temp }}/signalith-secrets/opensearch-ca.pem
+          SIGNALITH_TEST_OPENSEARCH_CERT: ${{ runner.temp }}/signalith-secrets/opensearch-client.pem
+          SIGNALITH_TEST_OPENSEARCH_KEY: ${{ runner.temp }}/signalith-secrets/opensearch-client-key.pem
+        run: |
+          go test -tags integration -count=1 -v -run '^TestUpgrade' -timeout 20m ./internal/integration/
+      - name: Container logs
+        if: failure()
+        run: $COMPOSE logs --no-color

@@ -95,6 +95,7 @@
         <button class="btn btn--primary btn--block auth__submit" type="submit" id="login-submit"><span id="login-submit-label">Sign in</span><svg class="icon" aria-hidden="true"><use href="#i-arrow-right"/></svg></button>
         <p class="auth__help auth__ca" id="ca-help" hidden><a href="api/tls/ca.pem" download="signalith-ca.crt"><svg class="icon icon--sm" aria-hidden="true"><use href="#i-download"/></svg>Download the server certificate</a><span>Trust it once to stop the browser warning. <a href="https://github.com/jrsamsanchez/signalith/blob/main/docs/https.md#trust-the-certificate" target="_blank" rel="noopener">How</a></span></p>
         <p class="auth__help auth__ca" id="ca-next" hidden><a href="api/tls/ca.pem?which=next" download="signalith-ca-new.crt"><svg class="icon icon--sm" aria-hidden="true"><use href="#i-download"/></svg>Download the new server certificate</a><span>A new server certificate is coming. Trust it too, and nothing changes for you when the server switches. <a href="https://github.com/jrsamsanchez/signalith/blob/main/docs/https.md#switching-to-a-new-certificate-authority" target="_blank" rel="noopener">How</a></span></p>
+        <p class="auth__help" id="join-wait" hidden></p>
       </form>
       <form class="auth__form" id="change-form" novalidate hidden>
         <div>

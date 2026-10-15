@@ -36,6 +36,15 @@ import (
 type SettingsStore interface {
 	// Shared reports whether this server's settings are shared now.
 	Shared() bool
+	// HoldFile keeps this server's own settings from moving out of
+	// settings.yaml into the shared settings (clustercfg.ImportOwn) until
+	// release is called, and reports whether they moved already. A save
+	// to settings.yaml holds it, so a save made while they move is never
+	// lost: one made before moves with them, and one made after, while
+	// the components running still take the settings from settings.yaml
+	// (Shared is false until the restart that switches them), goes to the
+	// shared settings, where they are now.
+	HoldFile() (moved bool, release func())
 	// Writable says why the shared settings cannot be changed now (a
 	// *shared.PausedError), or nil when they can.
 	Writable() error

@@ -413,10 +413,19 @@ func Generate(o Options) (*Agent, error) {
 	case "windows":
 		a.ConfigPath = `C:\Program Files\fluent-bit\conf\fluent-bit.conf`
 		// The System and Application logs (services, logs cleared, SQL
-		// Server and installer events), Microsoft Defender and Code
-		// Integrity (unsigned and revoked drivers) are always collected: they are part of every supported Windows version,
-		// need no install and log little.
-		channels := "Security,System,Application,Microsoft-Windows-Windows Defender/Operational,Microsoft-Windows-CodeIntegrity/Operational"
+		// Server and installer events), Microsoft Defender, Code
+		// Integrity (unsigned and revoked drivers), Windows Firewall
+		// (rules and settings changed), BITS (download jobs), app
+		// package installs, WMI activity, Remote Desktop sessions, shell
+		// app shortcuts, SMB client security and exploit protection
+		// blocks are always collected: they are part of every supported Windows
+		// version, need no install and log little. So are the DNS client,
+		// Task Scheduler, NTLM, LSA, CryptoAPI, device driver, packaged
+		// app, app package and certificate logs (some only once turned
+		// on), and the OpenSSH server, DNS Server and IIS configuration
+		// logs of the servers that have them.
+		channels := "Security,System,Application,Microsoft-Windows-Windows Defender/Operational,Microsoft-Windows-CodeIntegrity/Operational,Microsoft-Windows-Windows Firewall With Advanced Security/Firewall,Microsoft-Windows-Bits-Client/Operational,Microsoft-Windows-AppXDeploymentServer/Operational,Microsoft-Windows-WMI-Activity/Operational,Microsoft-Windows-TerminalServices-LocalSessionManager/Operational,Microsoft-Windows-Shell-Core/Operational,Microsoft-Windows-SmbClient/Security,Microsoft-Windows-Security-Mitigations/KernelMode," +
+			"Microsoft-Windows-DNS-Client/Operational,Microsoft-Windows-TaskScheduler/Operational,Microsoft-Windows-NTLM/Operational,Microsoft-Windows-LSA/Operational,Microsoft-Windows-CAPI2/Operational,Microsoft-Windows-DriverFrameworks-UserMode/Operational,Microsoft-Windows-AppModel-Runtime/Admin,Microsoft-Windows-AppxPackaging/Operational,Microsoft-Windows-CertificateServicesClient-Lifecycle-System/Operational,OpenSSH/Operational,DNS Server,Microsoft-IIS-Configuration/Operational"
 		if o.Sysmon {
 			channels += ",Microsoft-Windows-Sysmon/Operational"
 		}
@@ -432,7 +441,8 @@ func Generate(o Options) (*Agent, error) {
 			{"Name", "winevtlog"}, {"Tag", "win.events"},
 			{"Channels", channels},
 			// Without this, a host with no Defender (Server Core with the
-			// feature removed) or no Sysmon stops the input from starting.
+			// feature removed), no Sysmon or no IIS stops the input from
+			// starting.
 			{"Ignore_Missing_Channels", "On"},
 			{"Interval_Sec", "1"},
 			{"String_Inserts", "On"},

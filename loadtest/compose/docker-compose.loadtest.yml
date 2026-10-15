@@ -1,0 +1,143 @@
+# A laptop-size cluster for the load tests: three Signalith servers sharing
+# the Docker quick start's OpenSearch, with toxiproxy between them and
+# OpenSearch (so a test can cut them off) and HAProxy in front of them. It is
+# added to the quick start's own file, which makes OpenSearch and the
+# secrets; from the folder you cloned Signalith into:
+#
+#   docker compose -p loadtest -f deploy/docker/docker-compose.yml -f loadtest/compose/docker-compose.loadtest.yml up -d
+#
+# Then follow "Laptop cluster" in loadtest/README.md to copy out the files
+# the scenarios read. Each server's name is also its container's name, so a
+# fault can stop it with `docker kill --signal ... {server}`. Paths below are
+# from deploy/docker, the folder of the first file, as Compose reads them.
+#
+# Ports on this computer: 8440 HAProxy (all servers), 8441-8443 each server,
+# 6514 syslog over TLS on siem-a, 9200 OpenSearch, 8474 toxiproxy's API.
+# This is for testing only: OpenSearch is published on this computer.
+x-siem: &siem
+  image: ghcr.io/jrsamsanchez/signalith:${SIGNALITH_VERSION:-main}
+  pull_policy: always
+  restart: "no"
+  depends_on:
+    setup: { condition: service_completed_successfully }
+    opensearch-security: { condition: service_completed_successfully }
+    toxiproxy: { condition: service_started }
+    cluster-key: { condition: service_completed_successfully }
+  stop_grace_period: 90s
+  networks: [front]
+  read_only: true
+  tmpfs:
+    - /tmp
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+
+services:
+  # The quick start's own server is not used; the three below replace it.
+  signalith:
+    profiles: [quickstart-server]
+
+  opensearch:
+    ports:
+      - "127.0.0.1:9200:9200"
+    networks:
+      default:
+        aliases: [opensearch-upstream]
+
+  # One cluster key for every server, made once.
+  cluster-key:
+    image: busybox:1.36.1
+    user: "0:0"
+    network_mode: none
+    command: ["sh", "-c", "[ -s /keys/cluster.key ] || head -c 32 /dev/urandom | base64 > /keys/cluster.key; chown 65532:65532 /keys/cluster.key; chmod 0400 /keys/cluster.key"]
+    volumes:
+      - loadtest-keys:/keys
+    restart: "no"
+
+  # Between the servers and OpenSearch. On the servers' network it answers
+  # as "opensearch", so OpenSearch's certificate still matches the name they
+  # use; turning its proxy off cuts them all off from OpenSearch.
+  toxiproxy:
+    image: ghcr.io/shopify/toxiproxy:2.9.0
+    command: ["-host=0.0.0.0", "-config=/toxiproxy.json"]
+    ports:
+      - "127.0.0.1:8474:8474"
+    volumes:
+      - ../../loadtest/compose/toxiproxy.json:/toxiproxy.json:ro
+    networks:
+      default: {}
+      front:
+        aliases: [opensearch]
+
+  siem-a:
+    <<: *siem
+    container_name: siem-a
+    hostname: siem-a
+    environment:
+      - SIGNALITH_ADMIN_PASSWORD_FILE=/run/signalith-secrets/initial-admin-password
+      - SIGNALITH_INGEST_TOKEN_FILE=/run/signalith-secrets/ingest-token
+      - SIGNALITH_CLUSTER_KEY_FILE=/run/loadtest-keys/cluster.key
+      - SIGNALITH_NODE_NAME=siem-a
+    ports:
+      - "127.0.0.1:8441:8080"
+      - "127.0.0.1:6514:6514"
+    volumes:
+      - ./signalith.yaml:/etc/signalith/signalith.yaml:ro
+      - siem-a-data:/var/lib/signalith
+      - signalith-secrets:/run/signalith-secrets:ro
+      - loadtest-keys:/run/loadtest-keys:ro
+
+  siem-b:
+    <<: *siem
+    container_name: siem-b
+    hostname: siem-b
+    environment:
+      - SIGNALITH_ADMIN_PASSWORD_FILE=/run/signalith-secrets/initial-admin-password
+      - SIGNALITH_INGEST_TOKEN_FILE=/run/signalith-secrets/ingest-token
+      - SIGNALITH_CLUSTER_KEY_FILE=/run/loadtest-keys/cluster.key
+      - SIGNALITH_NODE_NAME=siem-b
+    ports:
+      - "127.0.0.1:8442:8080"
+    volumes:
+      - ./signalith.yaml:/etc/signalith/signalith.yaml:ro
+      - siem-b-data:/var/lib/signalith
+      - signalith-secrets:/run/signalith-secrets:ro
+      - loadtest-keys:/run/loadtest-keys:ro
+
+  siem-c:
+    <<: *siem
+    container_name: siem-c
+    hostname: siem-c
+    environment:
+      - SIGNALITH_ADMIN_PASSWORD_FILE=/run/signalith-secrets/initial-admin-password
+      - SIGNALITH_INGEST_TOKEN_FILE=/run/signalith-secrets/ingest-token
+      - SIGNALITH_CLUSTER_KEY_FILE=/run/loadtest-keys/cluster.key
+      - SIGNALITH_NODE_NAME=siem-c
+    ports:
+      - "127.0.0.1:8443:8080"
+    volumes:
+      - ./signalith.yaml:/etc/signalith/signalith.yaml:ro
+      - siem-c-data:/var/lib/signalith
+      - signalith-secrets:/run/signalith-secrets:ro
+      - loadtest-keys:/run/loadtest-keys:ro
+
+  # Passes HTTPS through to the servers (TCP), checking each with /readyz,
+  # which they answer over plain HTTP on the same port.
+  haproxy:
+    image: haproxy:2.9.11
+    ports:
+      - "127.0.0.1:8440:8443"
+    volumes:
+      - ../../loadtest/compose/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    networks: [front]
+    depends_on: [siem-a, siem-b, siem-c]
+
+networks:
+  front: {}
+
+volumes:
+  siem-a-data:
+  siem-b-data:
+  siem-c-data:
+  loadtest-keys:

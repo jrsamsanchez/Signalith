@@ -33,18 +33,20 @@ const (
 )
 
 // Archive writes deleted days to a folder and reads them back. Each line
-// of an archive file is one document, {"_id":...,"_source":{...}}, so the
-// files can also be read with zcat and jq.
+// of an archive file is one document, {"_id":...,"_source":{...}}, so
+// plain files (and encrypted ones, once decrypted) can also be read with
+// zcat and jq.
 type Archive struct {
 	Dir string
 	// Seal, when set, wraps the file as it is written, for example to
-	// encrypt it, and Unseal reverses it when reading; Encryption names
-	// the scheme in manifests. When nil, files are plain gzip.
-	Seal       func(io.Writer) (io.WriteCloser, error)
+	// encrypt it, and returns the ids of the keys it used, which the
+	// manifest records; Unseal reverses it when reading, and Encryption
+	// names the scheme in manifests. When nil, files are plain gzip.
+	// Unseal is used for every file whose manifest names an encryption,
+	// so archives written before Seal was set still read without it.
+	Seal       func(io.Writer) (io.WriteCloser, []string, error)
 	Unseal     func(io.Reader) (io.Reader, error)
 	Encryption string
-	// KID names the key Seal uses, recorded in manifests.
-	KID string
 	// Server names this server in the manifests it writes, when servers
 	// share one archive folder.
 	Server string
@@ -105,7 +107,7 @@ type Manifest struct {
 	SHA256     string    `json:"sha256"`
 	Created    time.Time `json:"created"`
 	Encryption string    `json:"encryption,omitempty"`
-	// KID names the key the file was sealed with.
+	// KID names the keys the file's key is encrypted with, comma-separated.
 	KID string `json:"kid,omitempty"`
 	// State is pending or complete in a ManifestStore; empty in files.
 	State string `json:"state,omitempty"`
@@ -226,9 +228,10 @@ func (a *Archive) Write(ctx context.Context, ex Exporter, src Source, expectDocs
 	sum := sha256.New()
 	counted := &countingWriter{w: io.MultiWriter(tmp, sum)}
 	var sealed io.WriteCloser
+	var kids []string
 	var under io.Writer = counted
 	if a.Seal != nil {
-		if sealed, err = a.Seal(counted); err != nil {
+		if sealed, kids, err = a.Seal(counted); err != nil {
 			return nil, err
 		}
 		under = sealed
@@ -287,7 +290,7 @@ func (a *Archive) Write(ctx context.Context, ex Exporter, src Source, expectDocs
 		SHA256: hex.EncodeToString(sum.Sum(nil)), Created: time.Now().UTC(), Encryption: enc,
 	}
 	if a.Seal != nil {
-		m.KID = a.KID
+		m.KID = strings.Join(kids, ",")
 	}
 	m.Server = a.Server
 	var id string

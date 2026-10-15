@@ -67,13 +67,13 @@ func (f *fakeOS) Mapping(_ context.Context, pattern string) (map[string]string, 
 	return map[string]string{"user": "keyword", "custom_score": "long"}, nil
 }
 
-func newTestServer(t *testing.T) (*httptest.Server, *fakeOS) {
+func newTestServer(t testing.TB) (*httptest.Server, *fakeOS) {
 	t.Helper()
 	return newTestServerWith(t, nil)
 }
 
 // newTestServerWith lets a test change the server before it starts.
-func newTestServerWith(t *testing.T, change func(*Server)) (*httptest.Server, *fakeOS) {
+func newTestServerWith(t testing.TB, change func(*Server)) (*httptest.Server, *fakeOS) {
 	t.Helper()
 	cfg := config.Default()
 	h, _ := config.HashPassword("s3cret-pass")

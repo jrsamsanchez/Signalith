@@ -92,6 +92,8 @@ type Runtime struct {
 	keyFileWarned bool
 	// fingerprint is this server's node key's, once read or made.
 	fingerprint string
+	// approval is a waiting server's request to join (approval.go).
+	approval approvalState
 }
 
 // Mode is how this server uses the shared configuration.
@@ -275,6 +277,17 @@ func (e *PausedError) Error() string {
 	return "changes to the shared settings are paused on this server right now (" + e.Why + "); try again in a moment"
 }
 
+// MovingError is a change of this server's own files refused while what
+// they hold moves into the shared settings: the files were read for the
+// move, and the restart that switches this server to the shared settings
+// has not come yet, so a change saved in them would be lost. What names
+// it, such as "users".
+type MovingError struct{ What string }
+
+func (e *MovingError) Error() string {
+	return "this server is moving its " + e.What + " into the cluster; try again in a moment"
+}
+
 // Legacy reports whether a server in mode m uses its own files.
 func (m Mode) Legacy() bool {
 	return m == ModeLegacyA || m == ModeLegacyB || m == ModeLegacyC || m == ModeStarting
@@ -309,6 +322,11 @@ type Peer struct {
 	// Users is the fingerprint of its users and directory sign-in
 	// settings, "" from versions without one.
 	Users string
+	// KeyIDs are the cluster keys it holds and accepts, and ClusterKID
+	// the one it signs with, from its heartbeat ("" and nil from versions
+	// before key rotations).
+	KeyIDs     []string
+	ClusterKID string
 }
 
 // RuntimeOptions are what a Runtime needs.
@@ -345,6 +363,14 @@ type RuntimeOptions struct {
 	Clock         Clock
 	Timing        Timing
 	Log           *slog.Logger
+	// JoinInfo says what a server waiting for approval tells about itself
+	// in its pending document (version, addresses, node_url); nil gives
+	// only its name, key and platform.
+	JoinInfo func() PendingDoc
+	// Secured checks that OpenSearch is secured as several servers need
+	// (clusterjoin.RequireSecured); a server with KeyFile warns when it
+	// fails. nil checks nothing.
+	Secured func() error
 
 	// levelMax stands in for LevelMax, so tests can run a runtime of an
 	// older version; 0 is LevelMax.
@@ -463,6 +489,10 @@ func (rt *Runtime) keyStore() KeyStore {
 	defer rt.mu.Unlock()
 	return KeyStore{Dir: rt.opts.StateDir, Master: rt.master}
 }
+
+// Target returns the OpenSearch client and the index prefix the runtime
+// uses now.
+func (rt *Runtime) Target() (*store.Client, string) { return rt.target() }
 
 func (rt *Runtime) target() (*store.Client, string) {
 	rt.mu.Lock()
@@ -700,6 +730,9 @@ func (rt *Runtime) readKeys() (localKeys, error) {
 			if w := KeyFileWarning(p); w != "" && !warned {
 				rt.log.Warn(w)
 			}
+			if kw := rt.keyFileUnsecured(); kw != nil && !warned {
+				rt.log.Warn(kw.Text)
+			}
 			out.file = k
 			if out.get(k.ID()) == nil {
 				out.all = append(out.all, k)
@@ -834,7 +867,7 @@ func (rt *Runtime) evaluate(ctx context.Context, mayFound bool) {
 		return
 	}
 	if len(keys.all) == 0 {
-		rt.notMember()
+		rt.notMember(ctx)
 		return
 	}
 	var active *ClusterKey
@@ -855,9 +888,12 @@ func (rt *Runtime) evaluate(ctx context.Context, mayFound bool) {
 			_ = json.Unmarshal([]byte(e.Body), &peek)
 			if id, ok := rt.hasCache(prefix); ok && id != "" && id == peek.ClusterID {
 				rt.setMode(ModeKeyMissing, err.Error())
+				if rt.catchUp(ctx) {
+					rt.Kick()
+				}
 				return
 			}
-			rt.notMember()
+			rt.notMember(ctx)
 			return
 		}
 		rt.log.Error("config.tamper: the cluster document in OpenSearch was changed outside Signalith", "audit", true, "doc", ClusterDocID, "reason", err.Error())
@@ -933,14 +969,16 @@ func (rt *Runtime) noteHolder() {
 
 // notMember is a look that found a cluster this server has no key to:
 // legacy (b). Its node key is made now, so the Servers page can show the
-// fingerprint an admin approves it by.
-func (rt *Runtime) notMember() {
+// fingerprint an admin approves it by, and it asks to join.
+func (rt *Runtime) notMember(ctx context.Context) {
 	rt.setMode(ModeLegacyB, "")
 	if !rt.opts.ReadOnly {
 		if _, err := rt.nodeKey(); err != nil {
 			rt.log.Debug("could not make this server's node key", "err", err)
 		}
 	}
+	// It asks to join, and takes the key once an admin approves it.
+	rt.awaitApproval(ctx)
 }
 
 // nodeKey returns this server's node key, making it the first time, and
@@ -973,6 +1011,16 @@ func (rt *Runtime) setKeys(active *ClusterKey, keys localKeys, listed []string) 
 		}
 	}
 	slices.Sort(ids[1:])
+	// The key the last rotation retired still passes the session cookie
+	// check while its catch-up copies are kept.
+	var retired *ClusterKey
+	if kr, ok := rt.Keyring().Get(); ok {
+		if cu := kr.catchUpLive(rt.clock.Now()); cu != nil && !slices.Contains(ids, cu.From) {
+			if retired = keys.get(cu.From); retired != nil {
+				ids = append(ids, "cookie:"+retired.ID())
+			}
+		}
+	}
 	sig := strings.Join(ids, ",")
 	rt.mu.Lock()
 	h := rt.hub
@@ -980,7 +1028,11 @@ func (rt *Runtime) setKeys(active *ClusterKey, keys localKeys, listed []string) 
 	rt.keysSig = sig
 	rt.mu.Unlock()
 	if !same {
-		h.SetKeys(NewKeySet(active, others...))
+		set := NewKeySet(active, others...)
+		if retired != nil {
+			set = set.WithCookieKeys(retired)
+		}
+		h.SetKeys(set)
 	}
 	return !same
 }
@@ -1081,6 +1133,9 @@ func (rt *Runtime) afterCycle(ctx context.Context) {
 			rt.joined = false
 			rt.mu.Unlock()
 			rt.setMode(ModeKeyMissing, p.Reason)
+			if rt.catchUp(ctx) {
+				rt.Kick()
+			}
 		case p != nil:
 			rt.setMode(ModeDegraded, "the cluster document in OpenSearch cannot be used: "+p.Reason)
 		}
@@ -1098,12 +1153,22 @@ func (rt *Runtime) afterCycle(ctx context.Context) {
 	if kok {
 		rt.useListed(kr.KIDs())
 	}
+	// A key rotation in progress hands this server a copy of the new key.
+	picked := kok && rt.pickUpKey(kr)
 	moved := kok && kr.Active != "" && h.Keys().Active() != nil && kr.Active != h.Keys().Active().ID()
-	if (len(h.KeyMissing()) > 0 || moved) && rt.newKeys() {
+	// A key this server lacks shows as missing when the keyring it read
+	// lists it, and as a change outside Signalith when it does not (the
+	// keyring itself is signed with the new key): either may be a
+	// rotation it missed, which catchUp checks with the old key.
+	// catchUp sets the keys from the keyring it verified, which the one
+	// in memory is behind.
+	if !picked && (len(h.KeyMissing()) > 0 || len(h.Tamper()) > 0) && rt.catchUp(ctx) {
+		rt.Kick()
+	} else if (len(h.KeyMissing()) > 0 || moved || picked || kok && rt.keysBehind(kr)) && rt.newKeys() {
 		// Read everything again with the key found.
 		rt.Kick()
 	}
-	if !rt.opts.ReadOnly {
+	if !rt.opts.ReadOnly && !rt.RemovedSelf() {
 		if _, listed := kr.Members[rt.opts.Self.NodeID]; !kok || !listed {
 			if addedBy == "" {
 				addedBy = AddedByImport
@@ -1124,6 +1189,16 @@ func (rt *Runtime) afterCycle(ctx context.Context) {
 	if km := h.KeyMissing(); len(km) > 0 {
 		rt.setMode(ModeKeyMissing, "some shared settings are signed with a cluster key this server does not have: "+strings.Join(km, ", "))
 		return
+	}
+	// The cluster document and the keyring signed with a key this server
+	// has never heard of: a rotation it was left out of (it was removed)
+	// or missed by more than the catch-up time.
+	for _, id := range []string{ClusterDocID, KeyringDocID} {
+		if p := h.problemOf(id); p != nil && p.unknownKID != "" {
+			rt.setMode(ModeKeyMissing, "the cluster document is signed with cluster key "+p.unknownKID+
+				", which this server does not have: it was removed from the cluster, or missed a rotation of the cluster key")
+			return
+		}
 	}
 	rt.setMode(ModeMember, "")
 	if !rt.opts.ReadOnly {
@@ -1630,8 +1705,12 @@ func (rt *Runtime) Ready() (bool, string) {
 // as far as the shared settings go; "" when it may. It reads only what
 // the runtime holds, so the node may ask while it holds its own lock.
 func (rt *Runtime) NotEligible() string {
+	removed := rt.RemovedSelf()
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
+	if removed && (rt.mode == ModeMember || rt.mode == ModeDegraded) {
+		return "it was removed from the cluster"
+	}
 	switch rt.mode {
 	case ModeLegacyA:
 		return "it waits for OpenSearch to move its settings into it"
@@ -1673,6 +1752,8 @@ type Status struct {
 	// Fingerprint is this server's node key's, "" before it has one.
 	Fingerprint string `json:"fingerprint,omitempty"`
 	NotEligible string `json:"not_eligible,omitempty"`
+	// KeyIDs are the ids of the cluster keys this server accepts.
+	KeyIDs []string `json:"key_ids,omitempty"`
 }
 
 // Status returns the shared configuration as this server uses it.
@@ -1687,6 +1768,7 @@ func (rt *Runtime) Status() Status {
 		if k := h.Keys().Active(); k != nil {
 			st.ClusterKID = k.ID()
 		}
+		st.KeyIDs = h.Keys().IDs()
 		st.ConfigSeq, st.MaxRev = h.Applied(), h.MaxRev()
 		st.NeedsUpgrade, st.Tamper, st.KeyMissing = h.NeedsUpgrade(), h.Tamper(), h.KeyMissing()
 	}
@@ -1732,7 +1814,7 @@ func (rt *Runtime) Warnings() []Warning {
 			fp = " Its fingerprint is " + st.Fingerprint + "."
 		}
 		w = append(w, Warning{Level: "red", Text: "This server is not part of the cluster yet, so it uses its own files and runs no background jobs. " +
-			"Give it the cluster key: export it on a member with signalith cluster export-key and run signalith cluster import-key here, or set SIGNALITH_CLUSTER_KEY_FILE. " +
+			"Approve it on another server after comparing the fingerprint (signalith cluster approve there), or give it the cluster key: export it on a member with signalith cluster export-key and run signalith cluster import-key here, or set SIGNALITH_CLUSTER_KEY_FILE. " +
 			"It joins within seconds of having the key." + fp,
 			Banner: "This server is not part of the cluster yet, so it runs no background jobs."})
 	case ModeLegacyC:
@@ -1754,7 +1836,8 @@ func (rt *Runtime) Warnings() []Warning {
 		w = append(w, Warning{Level: "red", Text: text, Banner: "OpenSearch cannot be reached; changes are paused."})
 	case ModeKeyMissing:
 		w = append(w, Warning{Level: "red", Text: "The shared settings are signed with a cluster key this server does not have: it missed a change of the cluster key. " +
-			"Import the current key (signalith cluster export-key on a member, then signalith cluster import-key here).",
+			"A server that was offline during a key rotation catches up by itself for 7 days afterwards; after that, or for a server that was removed, re-join it: " +
+			"import the current key (signalith cluster export-key on a member, then signalith cluster import-key here).",
 			Banner: "This server missed a change of the cluster key, so it runs no background jobs."})
 	case ModeGone:
 		fix := "Restore them from this server's copy with signalith cluster import -from-cache; the other servers resume by themselves."
@@ -1765,6 +1848,11 @@ func (rt *Runtime) Warnings() []Warning {
 		}
 		w = append(w, Warning{Level: "red", Text: "The shared settings in OpenSearch are gone (their index was deleted or replaced). " + fix,
 			Banner: "The shared settings in OpenSearch are gone."})
+	}
+	if r, ok := rt.removedSelf(); ok && !st.Mode.Legacy() {
+		w = append(w, Warning{Level: "red", Text: fmt.Sprintf("This server was removed from the cluster by %s on %s. It runs no background jobs. "+
+			"Stop it and uninstall it, or give it a new identity (signalith cluster new-identity) and add it again.", cmp.Or(r.By, "an admin"), r.At.Format(time.DateOnly)),
+			Banner: "This server was removed from the cluster."})
 	}
 	if st.Mode == ModeMember {
 		if iw := rt.importWarning(); iw != nil {
@@ -1781,6 +1869,9 @@ func (rt *Runtime) Warnings() []Warning {
 		w = append(w, Warning{Level: "red", Text: fmt.Sprintf("Shared settings were changed in OpenSearch outside Signalith (%s), so this server keeps its last good copy. "+
 			"If a snapshot of OpenSearch was restored on purpose, run signalith cluster accept-restore.", strings.Join(st.Tamper, ", ")),
 			Banner: "Shared settings were changed in OpenSearch outside Signalith."})
+	}
+	if kw := rt.keyFileUnsecured(); kw != nil {
+		w = append(w, *kw)
 	}
 	if len(st.NeedsUpgrade) > 0 {
 		w = append(w, Warning{Level: "amber", Text: fmt.Sprintf("Some shared settings were written by a newer version of Signalith (%s), so this server keeps its last good copy. Upgrade it.",
