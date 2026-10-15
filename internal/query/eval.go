@@ -376,6 +376,11 @@ func parseEvalCommand(src string, base int) (*Eval, error) {
 		if t.kind == etIdent && evalKeywords[strings.ToUpper(t.text)] {
 			return nil, errorf(t.pos, "%s is a keyword; quote it to use it as a field name: '%s'", t.text, t.text)
 		}
+		// Written back, a name is single-quoted, and a quoted name can't
+		// hold a pipe: the pipe would end the command.
+		if strings.Contains(t.text, "|") {
+			return nil, errorf(t.pos, "eval can't create a field whose name contains |")
+		}
 		if eq := p.next(); eq.kind != etOp || eq.text != "=" {
 			return nil, errorf(eq.pos, `expected "=" after %s in eval`, t.text)
 		}
