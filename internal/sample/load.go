@@ -89,8 +89,11 @@ type Loader struct {
 	// NodeID is this server's node ID ("" for the command). A job this
 	// node recorded from another process is known to have stopped.
 	NodeID string
-	Now    func() time.Time
-	Log    *slog.Logger
+	// URLQuery returns ingest.url_query in use (keep when nil), which the
+	// sample's events follow as every other event does.
+	URLQuery func() string
+	Now      func() time.Time
+	Log      *slog.Logger
 
 	// clock and sleep stand in for the monotonic clock and waiting, in
 	// tests.
@@ -243,6 +246,9 @@ func (l *Loader) Load(ctx context.Context, size Size, prog ProgressFn) (res *Sta
 	// It is also the only pipeline that marks events as sample data:
 	// every other one removes the marker from what senders send.
 	pipe := &ingest.Pipeline{Store: l.Bulk, Prefix: l.Prefix, MaxEventAge: MaxEventAge, Now: l.now, Log: l.Log, SampleMark: d.ID}
+	if l.URLQuery != nil {
+		pipe.SetURLQuery(l.URLQuery())
+	}
 	const chunk = 2000
 	total := len(d.Events)
 	var firstErr string

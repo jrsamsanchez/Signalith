@@ -187,7 +187,8 @@ Telnet open (low). Each fires once a week at most for the same host and CVE.
 
 Hosts the scans find are added to the asset list as `category=scanned`, so searches and
 findings show them with asset context, unless your own list or the
-[Endpoints page](endpoints.md) already has them.
+[Endpoints page](endpoints.md) already has them. A [network sensor](network-sensor.md#hosts-in-the-asset-list)
+adds the hosts it sees the same way, as `category=discovered`.
 
 ## Scanning each network zone from inside it
 
