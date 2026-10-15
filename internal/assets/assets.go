@@ -123,7 +123,7 @@ func readCSV(data []byte, known []string, required string) ([]map[string]string,
 		empty := true
 		for i, v := range rec {
 			if i < len(header) {
-				m[header[i]] = strings.TrimSpace(unquoteCell(v))
+				m[header[i]] = strings.TrimSpace(unquoteCell(newlines.Replace(v)))
 				if m[header[i]] != "" {
 					empty = false
 				}
@@ -139,6 +139,11 @@ func readCSV(data []byte, known []string, required string) ([]map[string]string,
 	}
 	return rows, lines, nil
 }
+
+// newlines makes every line break in a cell \n. The CSV reader turns
+// \r\n inside quotes into \n but keeps a lone \r, so a cell holding one
+// would not read back the same from the download.
+var newlines = strings.NewReplacer("\r\n", "\n", "\r", "\n")
 
 func checkPriority(p string) (string, error) {
 	p = strings.ToLower(p)
@@ -742,9 +747,10 @@ func MarshalIdentities(ids []Identity) []byte {
 // formula: a value starting with =, +, -, @, a tab or a carriage return
 // gets a leading single quote, which spreadsheets show as text. Reading a
 // list back (unquoteCell) removes it again, so a downloaded list can be
-// edited and uploaded unchanged.
+// edited and uploaded unchanged. A value that is already quoted, such as
+// '=x, gets one quote more, so reading it back keeps its own.
 func SafeCell(s string) string {
-	if s != "" && strings.ContainsRune("=+-@\t\r", rune(s[0])) {
+	if formulaAfterQuotes(s) {
 		return "'" + s
 	}
 	return s
@@ -752,10 +758,17 @@ func SafeCell(s string) string {
 
 // unquoteCell undoes SafeCell.
 func unquoteCell(s string) string {
-	if len(s) > 1 && s[0] == '\'' && strings.ContainsRune("=+-@\t\r", rune(s[1])) {
+	if strings.HasPrefix(s, "'") && formulaAfterQuotes(s) {
 		return s[1:]
 	}
 	return s
+}
+
+// formulaAfterQuotes reports whether s, past any leading single quotes,
+// starts the way a formula does.
+func formulaAfterQuotes(s string) bool {
+	s = strings.TrimLeft(s, "'")
+	return s != "" && strings.ContainsRune("=+-@\t\r", rune(s[0]))
 }
 
 // UserFields hold usernames; every other entity field is looked up as an asset.
