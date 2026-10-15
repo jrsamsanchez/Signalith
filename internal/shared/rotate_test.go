@@ -2,6 +2,7 @@ package shared
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"slices"
 	"sync/atomic"
@@ -334,4 +335,84 @@ func TestReseal(t *testing.T) {
 	if _, err := Reseal(keys, "other.field", sealed); err == nil {
 		t.Error("resealed a value under another field")
 	}
+}
+
+// R4: a copy of the old key, such as a removed server's, cannot hand the
+// members a key of its own once the rotation retired it: a catch-up offer
+// is opened only with a key the member still accepts, though it keeps the
+// retired one on disk.
+func TestCatchUpRefusesARetiredKey(t *testing.T) {
+	rc := newRotationCluster(t)
+	old := rc.a.key()
+	res, err := rc.rotate(RotateOptions{By: "admin", Reason: "rotate-key"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rc.b.step()
+	if rc.b.key().ID() != res.KID {
+		t.Fatalf("siem-b signs with %s", rc.b.key().ID())
+	}
+
+	// The holder of the old key offers siem-b a key of its own, with a
+	// proof made with the old key, in a keyring that key signs.
+	forged, _ := NewClusterKey()
+	src := rc.e.os.Source(testIndex, KeyringDocID)
+	raw, _ := json.Marshal(src)
+	var env Envelope
+	if err := json.Unmarshal(raw, &env); err != nil {
+		t.Fatal(err)
+	}
+	var kr KeyringBody
+	if err := json.Unmarshal([]byte(env.Body), &kr); err != nil {
+		t.Fatal(err)
+	}
+	cp, err := sealCopy(forged, old, "n_siem-b", kr.Members["n_siem-b"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	kr.CatchUp = &CatchUp{KID: forged.ID(), From: old.ID(), Copies: map[string]KeyCopy{"n_siem-b": cp},
+		Until: rc.e.clock.Now().Add(time.Hour).Format(time.RFC3339Nano)}
+	body, _ := json.Marshal(&kr)
+	rc.e.putSigned(forged, KeyringDocID, env.Kind, env.Format, env.Rev+1, string(body), nil)
+
+	for range 3 {
+		rc.b.step()
+	}
+	if rc.b.key().ID() == forged.ID() || slices.Contains(rc.b.rt.Hub().Keys().IDs(), forged.ID()) {
+		t.Fatal("siem-b took a key offered with the retired one")
+	}
+	keys, _ := rc.b.rt.readKeys()
+	if keys.get(forged.ID()) != nil {
+		t.Fatal("siem-b kept a key offered with the retired one")
+	}
+}
+
+// R5: signing every document again with the new key leaves one no
+// cluster key signed refused: a document planted in OpenSearch does not
+// turn valid with a rotation.
+func TestRotationDoesNotSignForgedDocuments(t *testing.T) {
+	rc := newRotationCluster(t)
+	env := &Envelope{Kind: "user", ID: "user:mallory", Format: 1, Rev: 99, UpdatedAt: "2026-10-12T09:00:00Z",
+		UpdatedBy: By{User: "sam", Node: "siem-z"}, Body: `{"name":"mallory","role":"admin"}`, MAC: "m1:bogus:AAAA"}
+	rc.e.os.Put(testIndex, env.ID, sourceOf(t, env, nil))
+
+	res, err := rc.rotate(RotateOptions{By: "admin", Reason: "rotate-key"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(rc.e.os.Source(testIndex, env.ID))
+	var got Envelope
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.MAC != env.MAC {
+		t.Fatalf("the planted document was signed again: %s", got.MAC)
+	}
+	if err := Verify(NewKeySet(rc.a.key()), env.ID, &got); err == nil {
+		t.Fatal("the planted document verifies under the new key")
+	}
+	if res.Resigned == 0 {
+		t.Error("nothing was signed again")
+	}
+	mustContain(t, "log", rc.a.logs.String(), "user:mallory")
 }
