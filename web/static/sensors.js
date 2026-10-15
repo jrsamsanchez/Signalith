@@ -22,7 +22,7 @@
     },
     {
       key: 'local', label: 'Your own rules', file: 'local.rules',
-      hint: 'One Suricata rule per line, each with its own sid from 1000000 to 1999999.',
+      hint: 'One Suricata rule per line, each with a sid of its own, best from 1000000 to 1999999.',
       example: 'alert tls any any -> any any (msg:"Old TLS to the internet"; tls.version:1.0; sid:1000001; rev:1;)',
     },
   ];

@@ -359,17 +359,21 @@ The script downloads the **Emerging Threats Open** rules with `suricata-update` 
 `signalith-suricata-update.timer`, which updates them once a day (at a random time, so
 sensors don't all ask at once): `suricata-update` checks that Suricata accepts the new rules
 before installing them, then Suricata reloads them without stopping. If the check fails, the
-old rules stay and the sensor's status says the update failed. See
-[Keeping rules up to date](#keeping-rules-up-to-date).
+old rules stay and the sensor's status says the update failed. Every 10 minutes
+`signalith-sensor-tuning.timer` also fetches the rule tuning set on Signalith. See
+[Keeping rules up to date](#keeping-rules-up-to-date) and
+[Rule tuning from Signalith](#rule-tuning-from-signalith).
 
 ### Status
 
 Every 5 minutes the sensor sends a status line (`sourcetype=sensor:status`): the versions,
-whether Zeek and Suricata run, how old the rules are, the capture port's link, the share of
-packets dropped, free disk, and what looks wrong. The **Endpoints** page shows it on the
-sensor's row and in its details (each warning with what to run to fix it), and the **Health**
-page counts the sensors that send, went silent, drop more than 5% of packets or run on rules
-more than 3 days old.
+whether Zeek and Suricata run, how old the rules are, which rule tuning it runs and how its
+last fetch went, the capture port's link, the share of packets dropped, free disk, and what
+looks wrong (`sensor_warnings`, such as `capture_link`, `rules_old` or `tuning_failed`).
+**Settings > Network sensors** turns it into a checklist (see
+[Settings > Network sensors](#settings-network-sensors)); the **Endpoints** page shows it on
+the sensor's row and in its details, and the **Health** page counts the sensors that send,
+went silent, drop more than 5% of packets or run on rules more than 3 days old.
 
 A sensor the script built is **silent** after 15 minutes without anything from it (three
 status lines missed); a sensor you set up yourself, which sends no status line, after an
@@ -558,7 +562,94 @@ Rules in the Emerging Threats INFO and POLICY categories are mostly medium or lo
 raise findings; search `datamodel=Intrusion_Detection` to see them. If one high rule is noisy
 on your network, add an exception on its `signature_id` (from one of its findings,
 **Don't alert on this again**; see [Exceptions](detections.md#exceptions)), or turn the
-rule off on the sensor (see [Keeping rules up to date](#keeping-rules-up-to-date)).
+rule off on every sensor in **Settings > Network sensors > Rule tuning** (see
+[Rule tuning from Signalith](#rule-tuning-from-signalith)).
+
+## Settings > Network sensors
+
+Admins see every sensor on **Settings > Network sensors**: how many there are, how many are
+healthy, need attention or are silent, and a card for each sensor, worst first.
+
+- **Healthy**: it sends, and nothing on its checklist needs fixing.
+- **Needs attention**: it sends, but something on its checklist failed, such as Suricata
+  stopped, the capture port's link down, no packets, old or failed rules, a nearly full disk,
+  rule tuning that failed its test, or a revoked token.
+- **Silent**: nothing arrived for 15 minutes (an hour for a sensor you set up yourself).
+
+Each card lists the sensor's facts (Zeek and Suricata, the capture port, packets dropped,
+free disk, the rules, the rule tuning it runs, how it was installed and its token), then the
+checks that failed, each saying in plain words what to do, with the command to run on the
+sensor and a copy button. The checks that pass fold into a line such as **11 checks pass**.
+A sensor you set up yourself sends no status line, so only whether it sends and its token can
+be checked; install it with the line from **Add data > Network sensor** to see the rest.
+
+The page also holds the [rule tuning](#rule-tuning-from-signalith) every sensor fetches, and
+the **sensor tokens**: which sensor uses each, when it was last used, and **Revoke**. A token
+no sensor has used for 30 days is marked **Not used**: revoke it if the sensor is gone. A
+revoked sensor stops sending, and fetching the tuning, within seconds on every server.
+
+The built-in detection `network-sensor-unhealthy` (on by default, medium) raises a finding
+when a sensor reports Zeek or Suricata stopped, its capture port down or idle, rules or rule
+tuning failing or old, or a full disk, and when it goes silent: one finding per sensor and
+problem a day. A search cannot find what did not arrive, so the server that runs the
+background jobs writes a `sensor:health` event ("Sensor silent") when a sensor with a status
+line stops sending, and again each day it stays silent. Packet loss has its own detection,
+`network-sensor-packet-loss`.
+
+## Rule tuning from Signalith
+
+Rather than editing files on each sensor, set the rule tuning once on **Settings > Network
+sensors > Rule tuning**. Every sensor the script built with Suricata fetches it within 10
+minutes (and with its daily rules update), tests it, and only then uses it. Three boxes, each
+in the format Suricata already uses:
+
+| Box | File | One per line |
+| --- | --- | --- |
+| **Rules to turn off** | `disable.conf` | A rule's SID (`2013504`), `gid:sid` (`1:2013504`), `re:` and a pattern matched against the rule (`re:ET POLICY Dropbox`), `group:` and a rules file name (`group:emerging-games.rules`), or `metadata:` with a key and value. |
+| **Limits and suppressions** | `threshold.config` | `suppress`, `threshold`, `event_filter` or `rate_filter`, such as `suppress gen_id 1, sig_id 2010935, track by_src, ip 10.0.5.20`. |
+| **Your own rules** | `local.rules` | One whole Suricata rule, each with a `sid` of its own, best from 1000000 to 1999999 (the range set aside for local rules), such as `alert tls any any -> any any (msg:"Old TLS"; tls.version:1.0; sid:1000001; rev:1;)`. |
+
+Lines starting with `#` are comments. When you save, Signalith checks every line and points
+at the first that is wrong (the box, the line and why), so nothing that cannot work reaches
+the sensors. It warns, without refusing, when one of your rules has a `sid` outside the local
+range, where it may clash with a published rule. If
+another admin saved in the meantime, the page says so and keeps your changes, so you can load
+theirs and save again.
+
+**How a sensor gets it.** `signalith-sensor-tuning.timer` asks `GET /api/sensor/tuning`
+every 10 minutes, over HTTPS, checking Signalith's certificate, with the sensor's own token:
+only a sensor token can read it. The answer carries a hash; when nothing changed, Signalith
+answers "not modified" and the sensor does nothing. A new tuning is written to
+`/var/lib/signalith-sensor/tuning` (which only root writes), and the rules are rebuilt with
+it: `suricata-update` has Suricata test them first. If the test passes, Suricata reloads them
+without stopping; if it fails, the sensor puts back the files it had, keeps running on them,
+and its card says **The rule tuning failed its test**, with Suricata's reason. Fix the line and
+save: the sensor tries the new tuning within 10 minutes, and does not try a failed tuning
+again until it changes. Nothing in the tuning is ever run as a command: it is only written to
+these files.
+
+The card shows **Fetching the new rule tuning** for up to 20 minutes after a save, then
+**Runs an old rule tuning** if the sensor still has not got it (its last error says why, such
+as Signalith being out of reach).
+
+**Your files on the sensor still count.** What you put by hand in `/etc/suricata/disable.conf`
+and `threshold.config` (with Docker, `/etc/signalith-sensor/docker/suricata/`) and in
+`/etc/signalith-sensor/local.rules` is kept; Signalith's lines are added after yours, in
+`/var/lib/signalith-sensor/tuning/disable.conf` and `threshold.config` and in
+`server.local.rules`. After a hand edit, run
+`sudo systemctl start signalith-suricata-update`.
+
+**Sensors built before rule tuning** don't fetch it: their card says **Can't fetch rule
+tuning**. Run the install line again on them (from **Add data > Network sensor**); it keeps
+their settings and adds the timer.
+
+**Refused in your own rules**: the keywords `lua`, `luajit`, `luaxform`, `dataset`,
+`datarep`, `filestore` and `iprep`. They run scripts or read and write files on the sensor,
+which a line typed on Signalith should never be able to do. Load rules that need them with
+`--local-rules` on the sensor itself.
+
+Limits: 256 KB a box and 8 KB a line; at most 5,000 rules to turn off, 2,000 limits and
+5,000 rules of your own.
 
 ## Keeping rules up to date
 
@@ -568,8 +659,9 @@ script built, `signalith-suricata-update.timer` does it; on your own, add the da
 rules before installing them; if they fail the check, the old rules stay. Run an update now
 with `sudo systemctl start signalith-suricata-update`.
 
-To turn off a rule that is wrong for your network, put its SID in
-`/etc/suricata/disable.conf` (one per line, such as `2014520`; with Docker,
+To turn off a rule on every sensor at once, use
+[Rule tuning from Signalith](#rule-tuning-from-signalith). To turn one off on one sensor, put
+its SID in `/etc/suricata/disable.conf` (one per line, such as `2014520`; with Docker,
 `/etc/signalith-sensor/docker/suricata/disable.conf`) and run the update again.
 `threshold.config` beside it limits how often a rule may alert.
 
@@ -591,6 +683,13 @@ Air-gapped networks can load rules from a file: `suricata-update --local /path/t
   revocable on its own. On a sensor the script built it is in
   `/etc/signalith-sensor/token.env`, which only root can read, and only Fluent Bit's service
   gets it; set up by hand, it is in `/etc/fluent-bit/fluent-bit.conf` (mode 600).
+- **Rule tuning.** Sensors fetch it with their own token, over HTTPS only; an admin's
+  sign-in, another kind of token or no token at all gets nothing. Only admins can read or
+  change it on Signalith, and each save is in the audit log, with who saved it. The sensor
+  checks the answer's hash, writes it to files only root can change, and never runs any of
+  it; Signalith refuses rule keywords that run scripts or touch files (see
+  [Rule tuning from Signalith](#rule-tuning-from-signalith)). It is stored with Signalith's
+  other settings in OpenSearch, protected the same way.
 - **A sensor is not a server.** It is an agent, not a member of Signalith's servers: it holds
   no OpenSearch password, no CA key and no settings, only its token and the CA certificate,
   which is public.
@@ -692,6 +791,16 @@ Offloads are turned off by `signalith-sensor-capture.service`; check it ran with
 
 **A service does not start.** `journalctl -u signalith-zeek -u signalith-suricata -u
 signalith-fluent-bit -n 100` says why. Run the line again: it repairs what differs.
+
+**The card says the rule tuning failed its test.** Suricata refused a line Signalith let
+through: the card shows its reason, such as an unknown keyword. Fix or remove the line in
+**Rule tuning** and save. On the sensor, `sudo journalctl -u signalith-sensor-tuning -n 50`
+shows the whole test.
+
+**The card says "Runs an old rule tuning".** The sensor could not fetch it: check that it
+reaches Signalith (its events arrive, so the address is right) and see
+`sudo journalctl -u signalith-sensor-tuning -n 50`. Start a fetch now with
+`sudo systemctl start signalith-sensor-tuning`.
 
 **No alerts at all.** Check that Suricata has rules: the sensor's row on **Endpoints** shows
 how many and how old; `sudo systemctl start signalith-suricata-update` updates them now, and
