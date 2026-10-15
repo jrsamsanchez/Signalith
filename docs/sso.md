@@ -84,8 +84,11 @@ endpoint, when the ID token has none), at every sign-in:
   Turned off, only people who have signed in before get in.
 
 An email address only counts when the provider says it is verified
-(`email_verified`). Entra ID doesn't send that claim; there, the address is used as
-the tenant's own admins set it.
+(`email_verified`). Entra ID doesn't send that claim: there, add the `xms_edov`
+optional claim (step 4 below), which says the address is in a domain the tenant has
+verified. Without it, Entra email addresses aren't used for roles or allowed domains.
+When the username claim is `email`, as with Google, an address that isn't verified is
+refused.
 
 A role change at the provider applies at the person's next sign-in. To take access
 away at once, disable the user on the **Users** page: their sessions end, and they
@@ -127,7 +130,9 @@ sends something else.
 3. Under **Certificates & secrets > Client secrets**, add a secret and copy its
    **Value** (not its ID).
 4. Under **Token configuration**, choose **Add groups claim**, tick
-   **Security groups**, and for the ID token pick **Group ID**.
+   **Security groups**, and for the ID token pick **Group ID**. If you list email
+   addresses under the roles, or set allowed email domains, also choose
+   **Add optional claim**, **ID**, and tick `email` and `xms_edov`.
 5. In Signalith, choose **Microsoft Entra ID**. The issuer is
    `https://login.microsoftonline.com/<tenant ID>/v2.0` with your tenant ID (not
    `common` or `organizations`).

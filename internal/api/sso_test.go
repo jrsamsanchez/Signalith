@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -393,5 +394,134 @@ func TestSSOTab(t *testing.T) {
 		if code, _ := doAs(t, ts, "ana", "a-long-password-1", r[0], r[1], "{}"); code != 403 {
 			t.Errorf("analyst %s %s = %d", r[0], r[1], code)
 		}
+	}
+}
+
+// An admin can disable an SSO user whatever name and email the provider
+// sends, and those are kept as the Users page would take them.
+func TestSSOUserWithOddNameCanBeDisabled(t *testing.T) {
+	p := oidctest.New(t)
+	long := strings.Repeat("Ö", 150)
+	p.Set(func(p *oidctest.Provider) {
+		p.Claims = map[string]any{"preferred_username": "odd", "name": long, "email": "Odd Person <odd@corp.example.com>",
+			"email_verified": true, "groups": []any{"/soc"}}
+	})
+	ts, s := newSSOServer(t, p, nil)
+	b := browser(t, p)
+	ssoSignIn(t, b, ts, "")
+	if code, _ := me(t, b, ts); code != 200 {
+		t.Fatalf("sign-in: %d", code)
+	}
+	u, _ := s.userStore().Get("odd")
+	if len([]rune(u.Name)) != 100 || u.Email != "" {
+		t.Errorf("kept name %d characters, email %q", len([]rune(u.Name)), u.Email)
+	}
+	if code, body, _ := call(t, ts, "PUT", "/api/users/odd", `{"disabled":true}`, "admin", adminPass, nil); code != 200 {
+		t.Fatalf("disable: %d %v", code, body)
+	}
+	if code, _ := me(t, b, ts); code != 401 {
+		t.Errorf("disabled user's session still works: %d", code)
+	}
+}
+
+// With the email as the username, it must be verified: otherwise anyone
+// at a provider that lets people register could take any address.
+func TestSSOEmailUsernameMustBeVerified(t *testing.T) {
+	p := oidctest.New(t)
+	ts, _ := newSSOServer(t, p, func(o *config.OIDC) {
+		o.UsernameClaim = "email"
+		o.AnalystGroups = append(o.AnalystGroups, "ceo@corp.example.com")
+	})
+	for _, tc := range []struct {
+		verified any
+		want     string
+	}{{false, "username"}, {nil, "username"}, {true, ""}} {
+		p.Set(func(p *oidctest.Provider) {
+			p.Claims = map[string]any{"email": "ceo@corp.example.com"}
+			if tc.verified != nil {
+				p.Claims["email_verified"] = tc.verified
+			}
+		})
+		at, _ := ssoSignIn(t, browser(t, p), ts, "")
+		if got := at.Query().Get("sso_error"); got != tc.want {
+			t.Errorf("email_verified %v: sso_error %q, want %q", tc.verified, got, tc.want)
+		}
+	}
+}
+
+// Entra ID's email counts as verified only with xms_edov.
+func TestSSOEntraEmailNeedsEDOV(t *testing.T) {
+	p := oidctest.New(t)
+	ts, _ := newSSOServer(t, p, func(o *config.OIDC) {
+		o.Provider = "entra"
+		o.AdminGroups = []string{"boss@corp.example.com"}
+		o.AnalystGroups = nil
+	})
+	for _, tc := range []struct {
+		edov any
+		want string
+	}{{nil, "role"}, {false, "role"}, {true, ""}} {
+		p.Set(func(p *oidctest.Provider) {
+			p.Claims = map[string]any{"preferred_username": "boss", "email": "boss@corp.example.com"}
+			if tc.edov != nil {
+				p.Claims["xms_edov"] = tc.edov
+			}
+		})
+		b := browser(t, p)
+		at, _ := ssoSignIn(t, b, ts, "")
+		if got := at.Query().Get("sso_error"); got != tc.want {
+			t.Errorf("xms_edov %v: sso_error %q, want %q", tc.edov, got, tc.want)
+		}
+		if tc.want == "" {
+			if _, who := me(t, b, ts); who["role"] != "admin" {
+				t.Errorf("xms_edov true: role %v", who["role"])
+			}
+		}
+	}
+}
+
+// The path in the sign-in cookie is checked again at the callback, so a
+// cookie set by someone else can't send the browser to another site.
+func TestSSONextCheckedAtCallback(t *testing.T) {
+	p := oidctest.New(t)
+	p.Set(func(p *oidctest.Provider) {
+		p.Claims = map[string]any{"preferred_username": "fay", "groups": []any{"/soc"}}
+	})
+	ts, _ := newSSOServer(t, p, nil)
+	b := browser(t, p)
+	b.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	resp, err := b.Get(ts.URL + "/api/auth/oidc/start")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	auth := resp.Header.Get("Location")
+	base, _ := url.Parse(ts.URL)
+	var ck *http.Cookie
+	for _, c := range b.Jar.Cookies(base) {
+		if c.Name == ssoCookie {
+			ck = c
+		}
+	}
+	if ck == nil {
+		t.Fatal("no sign-in cookie")
+	}
+	raw, _ := base64.RawURLEncoding.DecodeString(ck.Value)
+	var st ssoState
+	if err := json.Unmarshal(raw, &st); err != nil {
+		t.Fatal(err)
+	}
+	st.Next = "//evil.example.com/"
+	raw, _ = json.Marshal(st)
+	b.Jar.SetCookies(base, []*http.Cookie{{Name: ssoCookie, Value: base64.RawURLEncoding.EncodeToString(raw), Path: "/"}})
+	b.CheckRedirect = nil
+	resp, err = b.Get(auth)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(body), `content="0;url=/"`) || strings.Contains(string(body), "evil") {
+		t.Errorf("landing = %s", body)
 	}
 }

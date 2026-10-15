@@ -530,11 +530,18 @@ func (s *Store) UpdateIf(ctx context.Context, name, etag string, ch Change) (Use
 		if cur.Source == SourceSSO && (u.Name != cur.Name || u.Email != cur.Email || u.Role != cur.Role) {
 			return ErrManagedSSO
 		}
-		if err := validName(u.Name); err != nil {
-			return fieldError("name", err)
+		// Only what changes is checked: a name or email the directory or
+		// identity provider set may not pass, and must not stop an admin
+		// from disabling the user.
+		if u.Name != cur.Name {
+			if err := validName(u.Name); err != nil {
+				return fieldError("name", err)
+			}
 		}
-		if err := validEmail(u.Email); err != nil {
-			return fieldError("email", err)
+		if u.Email != cur.Email {
+			if err := validEmail(u.Email); err != nil {
+				return fieldError("email", err)
+			}
 		}
 		if !u.Role.Valid() {
 			return fieldError("role", fmt.Errorf("role %q must be viewer, analyst or admin", u.Role))

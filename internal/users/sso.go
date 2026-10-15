@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"unicode"
 )
 
 // SSOUser is what an identity provider says about someone signing in
@@ -37,6 +38,30 @@ var (
 	ErrSSOOther = errors.New("another Signalith user already has this name")
 )
 
+// cleanSSOName keeps a name from the provider as the Users page would
+// take it: no control characters, at most 100 characters.
+func cleanSSOName(name string) string {
+	name = strings.TrimSpace(strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return ' '
+		}
+		return r
+	}, name))
+	if r := []rune(name); len(r) > 100 {
+		name = strings.TrimSpace(string(r[:100]))
+	}
+	return name
+}
+
+// cleanSSOEmail drops an email address the Users page would not take.
+func cleanSSOEmail(email string) string {
+	email = strings.TrimSpace(email)
+	if validEmail(email) != nil {
+		return ""
+	}
+	return email
+}
+
 // SeeSSOUser records someone who just signed in with single sign-on:
 // added on their first sign-in when create allows it, then kept up to
 // date with the name, email and role the provider gives. Only the same
@@ -51,6 +76,7 @@ func (s *Store) SeeSSOUser(ctx context.Context, d SSOUser, create bool) (User, e
 	if s.reserved(name) {
 		return User{}, ErrSSOOther
 	}
+	d.Name, d.Email = cleanSSOName(d.Name), cleanSSOEmail(d.Email)
 	for try := 1; ; try++ {
 		now := s.now()
 		r, err := s.b.Change(ctx, Actor(ctx), name, "", func(r *Record) error {

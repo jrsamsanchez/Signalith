@@ -277,24 +277,32 @@ type ssoIdentity struct {
 // reason of a refusal.
 func ssoIdentityOf(set config.OIDCSettings, claims oidc.Claims) (ssoIdentity, string, string) {
 	var id ssoIdentity
+	email := strings.TrimSpace(claims.String("email"))
+	verified, said := claims.EmailVerified()
+	if set.Provider == oidc.Entra && !said {
+		// Entra ID sends no email_verified. Its xms_edov optional claim
+		// says whether the email domain is one the tenant has verified;
+		// without it, a user could set any address on their account.
+		verified = claims.String("xms_edov") == "true" || claims["xms_edov"] == true
+		said = true
+	}
+	switch {
+	case email == "":
+	case verified:
+		id.verified = strings.ToLower(email)
+	case said:
+		// Not verified: not used to decide anything, and not kept.
+		email = ""
+	}
+	if strings.EqualFold(set.UsernameClaim, "email") && id.verified == "" {
+		return id, "username", "the username claim is email, and the provider did not say the email address is verified"
+	}
 	name := users.NormalizeUsername(claims.String(set.UsernameClaim))
 	if name == "" {
 		return id, "username", "the ID token has no " + set.UsernameClaim + " claim; change the username claim, or have the provider send it"
 	}
 	if users.ValidUsername(name) != nil {
 		return id, "username", "the " + set.UsernameClaim + " claim " + oidcText(name) + " is not a usable username"
-	}
-	email := strings.TrimSpace(claims.String("email"))
-	verified, said := claims.EmailVerified()
-	switch {
-	case email == "":
-	case verified, !said && set.Provider == oidc.Entra:
-		// Entra ID sends no email_verified; its email addresses are set by
-		// the tenant's own admins, and the issuer is the tenant's own.
-		id.verified = strings.ToLower(email)
-	case said:
-		// Not verified: not used to decide anything, and not kept.
-		email = ""
 	}
 	if !set.DomainAllowed(id.verified) {
 		return id, "domain", "the verified email address " + oidcText(id.verified) + " is not in an allowed domain"
@@ -330,6 +338,9 @@ func (s *Server) finishSSO(w http.ResponseWriter, r *http.Request, set config.OI
 		return
 	}
 	u := id.user
+	// The cookie's path was checked when the sign-in started; check it
+	// again, as a cookie can be set by others on plain HTTP.
+	next = localPath(next)
 	if err := s.degradedRefusal(&principal{Username: u.Username, Source: users.SourceSSO}); err != nil {
 		s.ssoFail(w, r, "busy", u.Username, "OpenSearch cannot be used, and only admins may sign in then")
 		return
