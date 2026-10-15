@@ -789,12 +789,8 @@ func (rt *Runtime) restoreCache() {
 	ks := rt.keyStore()
 	cache := Cache{Path: path, Master: ks.Master, ClusterID: id, Prefix: prefix}
 	d, err := cache.Read(rt.clock.Now())
-	if errors.Is(err, ErrCacheOld) {
-		rt.log.Warn("the copy of the shared settings is older than 30 days, so it was removed", "path", path)
-		_ = cache.Remove()
-		return
-	}
-	if err != nil {
+	old := errors.Is(err, ErrCacheOld)
+	if err != nil && !old {
 		rt.log.Warn("the copy of the shared settings cannot be used", "path", path, "err", err)
 		return
 	}
@@ -806,6 +802,15 @@ func (rt *Runtime) restoreCache() {
 		}
 	}
 	if active == nil {
+		return
+	}
+	if old {
+		// Its documents are not used, but the revisions it applied still
+		// refuse an older copy written back into OpenSearch: revisions
+		// only go up. The file is kept for them until the writer
+		// replaces it.
+		rt.log.Warn("the copy of the shared settings is older than 30 days, so only the revisions it applied are used", "path", path)
+		rt.Hub().KeepFloors(d.Floors)
 		return
 	}
 	rt.mu.Lock()
@@ -919,6 +924,14 @@ func (rt *Runtime) evaluate(ctx context.Context, mayFound bool) {
 				if rt.catchUp(ctx) {
 					rt.Kick()
 				}
+				return
+			}
+			if keys.storedOther() {
+				// A server that keeps the key of a cluster it was a member
+				// of does not take a cluster it cannot verify for one it
+				// is not part of, which would put it back on its own
+				// files: the cluster document may have been replaced.
+				rt.setMode(ModeKeyMissing, err.Error())
 				return
 			}
 			rt.notMember(ctx)

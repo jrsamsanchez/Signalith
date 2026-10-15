@@ -623,6 +623,20 @@ when it can, and says so loudly when it can't: a red banner on every page, the
 Security page. In Docker, `docker compose -f deploy/docker/docker-compose.yml up -d`
 makes it again too.
 
+**A revocation ends the access of a server that follows the cluster, not of its disk.**
+A removed server's state folder still holds the cluster key and its copy of the shared
+settings (`cluster/cache.enc`), and together they open OpenSearch's CA key: whoever has
+that disk can still sign new certificates OpenSearch trusts. For a server that was
+compromised or stolen, also make a new OpenSearch CA. In Docker, run
+`bootstrap-docker -new-ca`, then `bootstrap-docker -export-ca-key` again, so the cluster
+keeps the new CA in place of the old (see
+[Replacing the CA](opensearch-security.md#replacing-the-ca)); without Docker, make
+OpenSearch's certificates again under a new CA. A revocation does not touch the shared
+`CN=signalith` certificate or a user name and password either: whoever holds those keeps
+OpenSearch access until `roles_mapping.yml` no longer gives them the `signalith_server`
+role (see [Each server's own OpenSearch certificate](#each-servers-own-opensearch-certificate)),
+or the password is changed.
+
 ## Shared feeds and retention policies
 
 On the servers of the cluster, the threat intel feeds and the retention policies are
