@@ -34,8 +34,9 @@ type Options struct {
 	ServerURL string // Signalith public URL
 	Token     string // agent token (TokenPlaceholder for the Add data page)
 	// LinuxSource is "file" (tail /var/log/auth.log and /var/log/secure),
-	// "journal" (systemd journal, for distros without rsyslog) or "wazuh"
-	// (tail a Wazuh manager's alerts.json; Fluent Bit only).
+	// "journal" (systemd journal, for distros without rsyslog), "wazuh"
+	// (tail a Wazuh manager's alerts.json; Fluent Bit only) or "sensor"
+	// (tail Zeek's logs and Suricata's eve.json on a network sensor).
 	LinuxSource string
 	// Sysmon adds the Sysmon operational channel on Windows, and Sysmon
 	// for Linux's events (from the systemd journal) on Linux.
@@ -75,6 +76,113 @@ type Options struct {
 	Version   string
 	CAPin     string
 	NextCAPin string
+	// For LinuxSource "sensor": which tools run on the host and where
+	// they write (SensorZeekDir and SensorEVEPath when empty). At least
+	// one of Zeek and Suricata.
+	Zeek, Suricata   bool
+	ZeekDir, EVEPath string
+	// SuricataProtocols also sends Suricata's dns, http, tls and flow
+	// events when Zeek runs too (off: Zeek covers them, and sending both
+	// would count each connection twice).
+	SuricataProtocols bool
+}
+
+// SensorZeekDir and SensorEVEPath are where Zeek's packages and Suricata
+// write by default.
+const (
+	SensorZeekDir = "/opt/zeek/logs/current"
+	SensorEVEPath = "/var/log/suricata/eve.json"
+)
+
+// FieldError is an option that cannot go into a configuration; Field
+// names the query value it came from, so the page can show it there.
+type FieldError struct {
+	Field string
+	Err   error
+}
+
+func (e *FieldError) Error() string { return e.Err.Error() }
+func (e *FieldError) Unwrap() error { return e.Err }
+
+// maxSensorPath is the longest folder or file path written into a sensor
+// configuration.
+const maxSensorPath = 200
+
+// sensorPath checks a folder or file path written into the config:
+// absolute (a Linux path, whatever system Signalith runs on), only
+// letters, digits and . _ / -, no "..", at most maxSensorPath bytes. It is
+// strict because the path is written into a config file as it is.
+func sensorPath(p string) error {
+	switch {
+	case p == "":
+		return errors.New("the path is empty")
+	case len(p) > maxSensorPath:
+		return fmt.Errorf("the path is longer than %d characters", maxSensorPath)
+	case !strings.HasPrefix(p, "/"):
+		return errors.New("use a full path that starts with /, such as " + SensorZeekDir)
+	case strings.Contains(p, ".."):
+		return errors.New("the path must not contain ..")
+	}
+	for _, c := range p {
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '.' || c == '_' || c == '/' || c == '-') {
+			return fmt.Errorf("the path may only contain letters, digits and . _ / - (not %q)", c)
+		}
+	}
+	return nil
+}
+
+// sensorOptions checks the sensor options and fills in the default paths.
+func sensorOptions(o *Options) error {
+	if !o.Zeek && !o.Suricata {
+		return &FieldError{Field: "tools", Err: errors.New("pick Zeek, Suricata or both: the tools that run on the sensor")}
+	}
+	if o.ZeekDir == "" {
+		o.ZeekDir = SensorZeekDir
+	}
+	if o.EVEPath == "" {
+		o.EVEPath = SensorEVEPath
+	}
+	o.ZeekDir = strings.TrimSuffix(o.ZeekDir, "/")
+	if o.Zeek {
+		if err := sensorPath(o.ZeekDir); err != nil {
+			return &FieldError{Field: "zeek_dir", Err: fmt.Errorf("Zeek logs folder: %w", err)}
+		}
+	}
+	if o.Suricata {
+		if err := sensorPath(o.EVEPath); err != nil {
+			return &FieldError{Field: "eve_path", Err: fmt.Errorf("Suricata EVE file: %w", err)}
+		}
+	}
+	return nil
+}
+
+// sensorInput is a tail input for a network sensor's JSON log: each line
+// is sent as it is and Signalith decodes it, so no parsers file is
+// needed. Lines up to 1 MB are read and longer ones skipped.
+func sensorInput(tag, path, db string, extra ...[2]string) string {
+	kv := [][2]string{{"Name", "tail"}, {"Tag", tag}, {"Path", path}}
+	kv = append(kv, extra...)
+	kv = append(kv, [][2]string{
+		{"DB", db},
+		{"Refresh_Interval", "10"},
+		{"Rotate_Wait", "30"},
+		{"Buffer_Chunk_Size", "64k"},
+		{"Buffer_Max_Size", "1M"},
+		{"Skip_Long_Lines", "On"},
+		{"Mem_Buf_Limit", "50MB"},
+		{"storage.type", "filesystem"},
+	}...)
+	return section("INPUT", kv)
+}
+
+// zeekSite is where a Zeek installed above the folder its logs are in
+// keeps local.zeek, and true; or how to find it, and false, when the logs
+// are elsewhere.
+func zeekSite(logDir string) (string, bool) {
+	if base, ok := strings.CutSuffix(logDir, "/logs/current"); ok && base != "" {
+		return base + "/share/zeek/site/local.zeek", true
+	}
+	return "share/zeek/site/local.zeek in Zeek's install folder (such as /opt/zeek)", false
 }
 
 // ConfigHeader is the value of the X-Signalith-Config header for a
@@ -223,6 +331,12 @@ func Generate(o Options) (*Agent, error) {
 	case "osquery":
 		return generateOsquery(o)
 	}
+	sensor := o.OS == "linux" && o.LinuxSource == "sensor"
+	if sensor {
+		if err := sensorOptions(&o); err != nil {
+			return nil, err
+		}
+	}
 	u, err := ParseServerURL(o.ServerURL)
 	if err != nil {
 		return nil, fmt.Errorf("server address %q: %w", o.ServerURL, err)
@@ -265,6 +379,8 @@ func Generate(o Options) (*Agent, error) {
 		a.ConfigPath = "/etc/fluent-bit/fluent-bit.conf"
 		if o.LinuxSource == "wazuh" {
 			b.WriteString("# Signalith agent for a Wazuh manager: sends its alerts. Generated by Signalith.\n")
+		} else if sensor {
+			b.WriteString("# Signalith agent for a network sensor (Zeek, Suricata). Generated by Signalith.\n")
 		} else {
 			b.WriteString("# Signalith agent for Linux, generated by Signalith.\n")
 		}
@@ -273,7 +389,39 @@ func Generate(o Options) (*Agent, error) {
 			{"storage.path", "/var/lib/fluent-bit/signalith-buffer"},
 			{"storage.sync", "normal"},
 		}))
-		if o.LinuxSource == "wazuh" {
+		if sensor {
+			// Zeek writes one JSON object per line in a file per log type;
+			// the tag expands to the file's path (zeek.opt.zeek.logs.
+			// current.conn.log), which tells Signalith the log type. Its
+			// own housekeeping logs say nothing about the network.
+			if o.Zeek {
+				b.WriteString(sensorInput("zeek.*", o.ZeekDir+"/*.log", "/var/lib/fluent-bit/signalith-zeek.db",
+					[2]string{"Exclude_Path", "*loaded_scripts.log,*packet_filter.log,*stderr.log,*stdout.log,*print.log"}))
+			}
+			if o.Suricata {
+				b.WriteString(sensorInput("suricata.eve", o.EVEPath, "/var/lib/fluent-bit/signalith-suricata.db"))
+			}
+			// With Zeek there too, Suricata sends only what Zeek does not
+			// log (alerts, anomalies, files, stats), so each connection is
+			// counted once.
+			if o.Zeek && o.Suricata && !o.SuricataProtocols {
+				b.WriteString(section("FILTER", [][2]string{
+					{"Name", "grep"}, {"Match", "suricata.eve"},
+					{"Exclude", `log "event_type":"(flow|netflow|dns|http|tls)"`},
+				}))
+			}
+			// The lines carry no host name (Suricata's only when its
+			// sensor-name is set), so the sensor's is added.
+			for _, m := range []string{"zeek.*", "suricata.*"} {
+				if m == "zeek.*" && !o.Zeek || m == "suricata.*" && !o.Suricata {
+					continue
+				}
+				b.WriteString(section("FILTER", [][2]string{
+					{"Name", "sysinfo"}, {"Match", m},
+					{"hostname_key", "hostname"},
+				}))
+			}
+		} else if o.LinuxSource == "wazuh" {
 			// The manager writes one JSON alert per line. The line is sent
 			// as it is, under the Wazuh tag, and Signalith decodes it, so
 			// no parsers file is needed. Alerts can be long (full_log), so
@@ -355,7 +503,7 @@ func Generate(o Options) (*Agent, error) {
 				{"Exclude", "log SelfCheck"},
 			}))
 		}
-		if o.LinuxSource != "wazuh" {
+		if o.LinuxSource != "wazuh" && !sensor {
 			// The Linux audit log, whichever source the auth logs come
 			// from: auditd writes it as a file. Its records carry no host
 			// name, so it is added. A host without auditd has no such file.
@@ -378,7 +526,36 @@ func Generate(o Options) (*Agent, error) {
 		if o.LinuxSource == "wazuh" {
 			a.Steps = []string{"On the Wazuh manager (not on each Wazuh agent), install Fluent Bit (3.1 or later) from its signed package repository: " + fluentBitLinuxInstall}
 		}
-		if o.Sysmon && o.LinuxSource != "wazuh" {
+		if sensor {
+			a.Steps = []string{"On the machine that runs Zeek or Suricata, install Fluent Bit (3.1 or later) from its signed package repository: " + fluentBitLinuxInstall}
+			if o.Zeek {
+				if site, ok := zeekSite(o.ZeekDir); ok {
+					a.Steps = append(a.Steps, "Turn on JSON logs in Zeek (without them Zeek writes tab-separated logs, which arrive only as plain text under sourcetype=zeek:unknown). "+
+						"This adds the line @load policy/tuning/json-logs to "+site+" and applies it: "+
+						"echo '@load policy/tuning/json-logs' | sudo tee -a "+site+" && sudo zeekctl deploy")
+				} else {
+					a.Steps = append(a.Steps, "Turn on JSON logs in Zeek (without them Zeek writes tab-separated logs, which arrive only as plain text under sourcetype=zeek:unknown). "+
+						"Add the line @load policy/tuning/json-logs to "+site+", then run sudo zeekctl deploy.")
+				}
+			}
+			var cid []string
+			if o.Zeek {
+				cid = append(cid, "in Zeek, add @load policy/protocols/conn/community-id-logging to local.zeek and run sudo zeekctl deploy")
+			}
+			if o.Suricata {
+				cid = append(cid, "in Suricata, set community-id to true under the eve-log output in /etc/suricata/suricata.yaml and restart Suricata")
+			}
+			a.Steps = append(a.Steps, "Recommended. Turn on Community ID, which lets you jump from an alert to the connection, lookups and files of the same flow; "+strings.Join(cid, ", and ")+".")
+			var dirs []string
+			if o.Zeek {
+				dirs = append(dirs, o.ZeekDir)
+			}
+			if o.Suricata {
+				dirs = append(dirs, o.EVEPath)
+			}
+			a.Steps = append(a.Steps, "Let the agent read the logs. Fluent Bit runs as root by default, so there is nothing to do; if you run it as another user, give that user read access to "+strings.Join(dirs, " and ")+".")
+		}
+		if o.Sysmon && o.LinuxSource != "wazuh" && !sensor {
 			a.Steps = append(a.Steps, "Install Sysmon for Linux (open source, github.com/Sysinternals/SysmonForLinux) and start it with a configuration (sudo sysmon -accepteula -i config.xml), so process, network and file events are recorded")
 		}
 		if useCA {
@@ -395,13 +572,23 @@ func Generate(o Options) (*Agent, error) {
 				"sudo install -m 600 -o root -g root fluent-bit.conf "+a.ConfigPath)
 		}
 		done := "Events appear in Search within a minute; check the Health page if they do not."
+		if sensor {
+			var vp []string
+			if o.Zeek {
+				vp = append(vp, "vendor_product=Zeek")
+			}
+			if o.Suricata {
+				vp = append(vp, "vendor_product=Suricata")
+			}
+			done = "Network events appear in Search within a minute (search " + strings.Join(vp, " or ") + "); only new log lines are sent. The Endpoints page lists the sensor as Network sensor. Check the Health page if nothing arrives."
+		}
 		if o.LinuxSource == "wazuh" {
 			done = "New Wazuh alerts appear in Search within a minute (search sourcetype=wazuh:alerts); alerts raised before Fluent Bit started are not sent. Check the Health page if nothing arrives."
 		}
 		a.Steps = append(a.Steps,
 			"Restart the agent: sudo systemctl enable --now fluent-bit && sudo systemctl restart fluent-bit",
 			done)
-		if o.LinuxSource != "wazuh" {
+		if o.LinuxSource != "wazuh" && !sensor {
 			a.Steps = append(a.Steps, auditdStep)
 		}
 	case "windows":

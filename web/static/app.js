@@ -507,7 +507,7 @@ const JUMP_WORDS = {
   dashboards: 'home overview posture charts', findings: 'alerts incidents queue triage', cases: 'cases investigations',
   risk: 'risk scores', vulns: 'vulnerabilities cve scan scanner nmap ports open services patch exposure kev exploited', search: 'query events logs hunt', intel: 'threat intel ioc indicators feeds',
   detections: 'rules sigma alerts', coverage: 'mitre attack matrix techniques tactics', assets: 'hosts users identities cmdb priority',
-  data: 'ingest agents fluent bit sources onboarding syslog firewall switch router cisco wazuh ossec alerts sample demo test data try example', retention: 'retention rotation archive restore delete storage disk guard policies',
+  data: 'ingest agents fluent bit sources onboarding syslog firewall switch router cisco wazuh ossec alerts sample demo test data try example zeek suricata ids ips network sensor span mirror pfsense opnsense security onion', retention: 'retention rotation archive restore delete storage disk guard policies',
   health: 'status opensearch ingest', help: 'help syntax language commands',
   servers: 'cluster nodes servers background jobs leader failover standby readyz',
   users: 'accounts people roles permissions ldap active directory sign-in passwords',
@@ -1126,7 +1126,7 @@ function updateSuggestions() {
     items = fields.map((f) => ({ text: f.name + (inSearch ? '=' : ''), kind: f.type }));
     if (inSearch) items.push({ text: 'datamodel=', kind: 'source' }, { text: 'earliest=', kind: 'time' });
   } else if (/datamodel=$/i.test(before)) {
-    items = ['Authentication', 'Endpoint', 'Network_Traffic', 'Change', 'Malware', 'Filesystem', 'Registry', 'Network_Resolution', 'Image_Load', 'Script', 'Inventory', 'Configuration_Check', 'Alerts', 'Other'].map((m) => ({ text: m + ' ', kind: 'model' }));
+    items = ['Authentication', 'Endpoint', 'Network_Traffic', 'Change', 'Malware', 'Filesystem', 'Registry', 'Network_Resolution', 'Intrusion_Detection', 'Web', 'Certificates', 'File_Transfers', 'Image_Load', 'Script', 'Inventory', 'Configuration_Check', 'Alerts', 'Other'].map((m) => ({ text: m + ' ', kind: 'model' }));
   }
   const w = word.toLowerCase();
   suggestions = items.filter((i) => i.text.toLowerCase().startsWith(w) && i.text.toLowerCase() !== w).slice(0, 8);
@@ -2346,6 +2346,20 @@ $('osquery-platform').addEventListener('change', loadAgentConfig);
 $('sysmon').addEventListener('change', loadAgentConfig);
 $('sysmon-linux').addEventListener('change', loadAgentConfig);
 $('powershell').addEventListener('change', loadAgentConfig);
+['sensor-zeek', 'sensor-suricata', 'sensor-protocols'].forEach((id) => $(id).addEventListener('change', loadAgentConfig));
+// The paths are asked for as they are typed, like the server address.
+let sensorPathTimer = 0;
+['sensor-zeek-dir', 'sensor-eve-path'].forEach((id) => $(id).addEventListener('input', () => {
+  clearTimeout(sensorPathTimer);
+  sensorPathTimer = setTimeout(loadAgentConfig, 400);
+}));
+$('sensor-syslog').addEventListener('click', (e) => {
+  e.preventDefault();
+  const radio = document.querySelector('input[name=os][value=syslog]');
+  radio.checked = true;
+  radio.focus();
+  loadDataSource();
+});
 $('wazuh-syslog').addEventListener('click', (e) => {
   e.preventDefault();
   const radio = document.querySelector('input[name=os][value=syslog]');
@@ -2371,10 +2385,13 @@ agentServerEl.addEventListener('change', async () => {
 // in storage; changing the name or the source drops it, so the next copy
 // makes a new token. "Use a token I already have" takes a pasted token
 // instead (checked here only).
-const AGENT_TOKEN_DEFAULTS = { linux: 'Linux servers', windows: 'Windows servers', otel: 'OpenTelemetry Collector', osquery: 'osquery hosts' };
+const AGENT_TOKEN_DEFAULTS = { linux: 'Linux servers', windows: 'Windows servers', otel: 'OpenTelemetry Collector', osquery: 'osquery hosts', wazuh: 'Wazuh manager', sensor: 'Network sensors' };
+// AGENT_TOKEN_PURPOSES is the token purpose of a source whose agent is
+// another's: Fluent Bit on the Wazuh manager is a Linux agent.
+const AGENT_TOKEN_PURPOSES = { wazuh: 'linux' };
 const agentTokenNameKey = 'signalith.agentTokenName.';
 const agentTok = {
-  purpose: '', // linux, windows or otel: what the setup on screen is for
+  purpose: '', // linux, windows, otel, osquery, wazuh or sensor: what the setup on screen is for
   secret: '', // the token made on this page for name + purpose
   madeFor: '', // purpose + name the secret was made for
   made: null, // the token record of the secret, for the success line
@@ -2526,7 +2543,7 @@ async function agentTokEnsure() {
   const key = agentTokKey();
   agentTok.creating = (async () => {
     try {
-      const r = await api('api/agent-tokens', { name, purpose: agentTok.purpose });
+      const r = await api('api/agent-tokens', { name, purpose: AGENT_TOKEN_PURPOSES[agentTok.purpose] || agentTok.purpose });
       if (key !== agentTokKey()) return false; // the name changed meanwhile: ask again
       agentTok.secret = r.secret;
       agentTok.made = r.token || { name };
@@ -2614,8 +2631,19 @@ async function agentSetupLoad() {
   const osq = os === 'osquery';
   // Wazuh: Fluent Bit on the Linux machine that runs the Wazuh manager.
   const wazuh = os === 'wazuh';
-  const host = otel ? $('otel-host').value : osq ? '' : os;
-  agentTokPurpose(otel ? 'otel' : osq ? 'osquery' : os);
+  // Network sensor: Fluent Bit on the Linux machine that runs Zeek or
+  // Suricata.
+  const sensor = os === 'sensor';
+  const host = otel ? $('otel-host').value : osq || sensor ? '' : os;
+  agentTokPurpose(otel ? 'otel' : osq ? 'osquery' : sensor ? 'sensor' : os);
+  $('sensor-opts').classList.toggle('hidden', !sensor);
+  $('sensor-paths').classList.toggle('hidden', !sensor);
+  $('sensor-note').classList.toggle('hidden', !sensor);
+  const zeek = $('sensor-zeek').checked;
+  const suricata = $('sensor-suricata').checked;
+  $('sensor-protocols-opt').classList.toggle('hidden', !(zeek && suricata));
+  $('sensor-zeek-row').classList.toggle('hidden', !zeek);
+  $('sensor-eve-row').classList.toggle('hidden', !suricata);
   $('otel-opts').classList.toggle('hidden', !otel);
   $('osquery-opts').classList.toggle('hidden', !osq);
   $('linux-opts').classList.toggle('hidden', host !== 'linux');
@@ -2626,14 +2654,18 @@ async function agentSetupLoad() {
   const osqName = { linux: 'Linux', windows: 'Windows', darwin: 'macOS' }[$('osquery-platform').value];
   $('agent-title').textContent = osq ? 'Manage ' + osqName + ' hosts with osquery' : otel ? 'Set up the OpenTelemetry Collector on ' + (host === 'windows' ? 'Windows' : 'Linux')
     : wazuh ? 'Set up Fluent Bit on the Wazuh manager'
+    : sensor ? 'Send network sensor logs with Fluent Bit'
     : 'Set up Fluent Bit on ' + (os === 'windows' ? 'Windows' : 'Linux');
   $('agent-sub').textContent = wazuh ? 'Do this once, on the Wazuh manager. Your Wazuh agents keep reporting to it as before.'
+    : sensor ? 'Do this on the machine that runs Zeek or Suricata.'
     : 'Do this on each host you want to collect from.';
   const steps = $('agent-steps');
   const seq = ++agentSetupSeq;
   steps.setAttribute('aria-busy', 'true');
   if (!agentSetupConfig) agentSetupSkeleton();
   const q = wazuh ? new URLSearchParams({ os: 'linux', source: 'wazuh' })
+    : sensor ? new URLSearchParams({ os: 'linux', source: 'sensor', zeek, suricata, suricata_protocols: $('sensor-protocols').checked,
+      zeek_dir: $('sensor-zeek-dir').value.trim(), eve_path: $('sensor-eve-path').value.trim() })
     : new URLSearchParams({ os, source: $('linux-source').value, sysmon: (host === 'linux' ? !otel && $('sysmon-linux').checked : $('sysmon').checked), powershell: $('powershell').checked });
   if (otel) q.set('collector', host);
   if (osq) q.set('platform', $('osquery-platform').value);
@@ -2645,6 +2677,7 @@ async function agentSetupLoad() {
     if (seq !== agentSetupSeq) return;
     if (!server && agentServerFirst(a)) return loadAgentConfig();
     agentServerError('');
+    sensorFieldError('');
     try {
       if (server && server !== agentServerGuess) localStorage.setItem(agentServerKey, server);
       else localStorage.removeItem(agentServerKey);
@@ -2653,9 +2686,32 @@ async function agentSetupLoad() {
   } catch (e) {
     if (seq !== agentSetupSeq) return;
     if (e.field === 'server') agentServerError(e.message);
+    else if (sensor && ['tools', 'zeek_dir', 'eve_path'].includes(e.field)) sensorFieldError(e.field, e.message);
     else agentSetupError(e);
   } finally {
     if (seq === agentSetupSeq) steps.removeAttribute('aria-busy');
+  }
+}
+
+// sensorFieldError shows a network sensor option's error under it (field
+// tools, zeek_dir or eve_path), or clears them all when field is empty.
+function sensorFieldError(field, msg) {
+  const slots = { tools: ['sensor-tools-error', null], zeek_dir: ['sensor-zeek-dir-error', 'sensor-zeek-dir'], eve_path: ['sensor-eve-path-error', 'sensor-eve-path'] };
+  for (const [f, [errId, inputId]] of Object.entries(slots)) {
+    const on = f === field && msg;
+    const err = $(errId);
+    err.replaceChildren(...(on ? [icon('circle-alert'), msg.charAt(0).toUpperCase() + msg.slice(1) + (/[.?!]$/.test(msg) ? '' : '.')] : []));
+    err.classList.toggle('hidden', !on);
+    if (inputId) {
+      if (on) $(inputId).setAttribute('aria-invalid', 'true');
+      else $(inputId).removeAttribute('aria-invalid');
+    }
+  }
+  // nothing to show for a config that can't be made
+  if (field) {
+    agentSetupConfig = '';
+    $('agent-steps').replaceChildren();
+    agentFileEl.classList.add('hidden');
   }
 }
 
@@ -2965,7 +3021,8 @@ function loadDataSource() {
 }
 
 // pickDataSource selects a source card on the Add data page: linux,
-// windows, syslog, antivirus or otel. It is false for anything else.
+// windows, syslog, antivirus, otel, osquery, wazuh or sensor. It is false
+// for anything else.
 function pickDataSource(src) {
   const r = document.querySelector(`input[name=os][value="${CSS.escape(String(src))}"]`);
   if (r) r.checked = true;
@@ -2976,6 +3033,13 @@ function pickDataSource(src) {
 // such as the Malware dashboard when it has no events yet.
 function openAntivirusSetup() {
   pickDataSource('antivirus');
+  showPage('data');
+}
+
+// openSensorSetup is the way to the Network sensor option from other
+// pages, such as the Network dashboard when it has no events yet.
+function openSensorSetup() {
+  pickDataSource('sensor');
   showPage('data');
 }
 
