@@ -337,10 +337,11 @@ func matchExpr(e query.Expr, ev ingest.Event) bool {
 	case *query.Text:
 		return strings.Contains(strings.ToLower(fieldStr(ev, "_raw")), strings.ToLower(x.Value))
 	case *query.In:
-		v := fieldStr(ev, x.Field)
-		for _, w := range x.Values {
-			if globFold(w, v) {
-				return true
+		for _, v := range fieldStrs(ev, x.Field) {
+			for _, w := range x.Values {
+				if globFold(w, v) {
+					return true
+				}
 			}
 		}
 		return false
@@ -351,22 +352,55 @@ func matchExpr(e query.Expr, ev ingest.Event) bool {
 }
 
 func matchCompare(c *query.Compare, ev ingest.Event) bool {
-	v := fieldStr(ev, c.Field)
+	vs := fieldStrs(ev, c.Field)
+	// A list field matches when any of its values does, as in OpenSearch.
+	any := func(match func(string) bool) bool {
+		for _, v := range vs {
+			if match(v) {
+				return true
+			}
+		}
+		return false
+	}
 	switch c.Op {
 	case "=":
 		if c.Value == "*" {
-			return v != ""
+			return len(vs) > 0
 		}
-		return globFold(c.Value, v)
+		return any(func(v string) bool { return globFold(c.Value, v) })
 	case "!=":
 		if c.Value == "*" {
-			return v == ""
+			return len(vs) == 0
 		}
-		return !globFold(c.Value, v)
+		return !any(func(v string) bool { return globFold(c.Value, v) })
 	}
 	// Numeric comparisons only appear in post-stats where-clauses, not in a
 	// leading search, so they do not gate whether matching data exists.
 	return true
+}
+
+// fieldStrs returns a field's values: one for a single value, each item
+// of a list, none when it is missing or empty.
+func fieldStrs(ev ingest.Event, field string) []string {
+	if field == "_raw" {
+		field = "message"
+	}
+	switch v := ev.Fields[field].(type) {
+	case nil:
+		return nil
+	case []string:
+		return v
+	case []any:
+		out := make([]string, 0, len(v))
+		for _, x := range v {
+			out = append(out, fmt.Sprint(x))
+		}
+		return out
+	}
+	if s := fieldStr(ev, field); s != "" {
+		return []string{s}
+	}
+	return nil
 }
 
 func fieldStr(ev ingest.Event, field string) string {
@@ -412,13 +446,13 @@ func globFold(pattern, s string) bool {
 	return true
 }
 
-// TestStories: the four intrusion stories, the benign story and the two
-// antivirus stories are present, and the sample investigation has the phishing story's host and
+// TestStories: the four intrusion stories, the benign story, the two
+// antivirus stories, the vulnerability scan and the sensor upkeep are present, and the sample investigation has the phishing story's host and
 // user to gather its findings by.
 func TestStories(t *testing.T) {
 	d := genData(t, SizeSmall)
 	want := []string{"linux-ssh-intrusion", "phishing-to-c2", "ransomware-prep", "domain-persistence", "benign-lookalikes",
-		"malware-outbreak", "antivirus-housekeeping", "vulnerability-scan"}
+		"malware-outbreak", "antivirus-housekeeping", "vulnerability-scan", "sensor-upkeep"}
 	if len(d.Stories) != len(want) {
 		t.Errorf("%d stories, want %d", len(d.Stories), len(want))
 	}

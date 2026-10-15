@@ -91,7 +91,7 @@ the job if not.
   updates over plain HTTP, use the file server and the domain controllers, and look
   up a few names that do not exist, and Suricata raises a few low and medium alerts
   with made-up rules (SIDs 9100001 and up). Zeek's packet loss and Suricata's
-  statistics arrive every hour. In the phishing story the sensor sees the implant
+  statistics arrive every hour, with the sensor's own status line. In the phishing story the sensor sees the implant
   being downloaded and its beacon to the C2 (below). They fill the Network
   dashboard.
 - **An OT flavour:** an engineering workstation, two HMIs and three PLCs, with
@@ -112,9 +112,10 @@ days of light background, about 1,000 events in all.
 
 ## A guided tour of the attacks
 
-Seven stories are woven into the week. Five are intrusions designed so that
-every built-in detection that is on fires; the other two are benign activity
-that trips detections you can close as benign.
+Nine stories are woven into the week. Most are intrusions designed so that
+every built-in detection that is on fires; the others are upkeep that needs
+someone's attention and benign activity that trips detections you can close
+as benign.
 
 Some detections raise a **finding** on the Findings page. Others only add
 **risk** to the users and hosts involved, which shows on the Risk page and
@@ -129,6 +130,7 @@ counts toward the risk findings below. The table keeps them apart.
 | **Trojan spreads from a file share** | A fake “payroll update” (`Trojan:Win32/Fakepay.A`) on `\\file-01\public` is opened on four operations workstations within a quarter of an hour. Defender quarantines it on `ws-ops-01`, `ws-ops-03` and `ws-ops-04`, but fails to on `ws-ops-05`. | malware-detected, malware-outbreak, malware-not-removed | |
 | **Antivirus upkeep** | Definitions updates fail twice on `web-01` (ClamAV) and on `ws-ops-02` (Defender). ClamAV’s nightly scan on `app-01` finds a web shell in an upload folder but only reports it, so the file stays. IT tests Defender on `ws-it-02` with the EICAR test file. | av-definitions-failing; malware-left-clamav and malware-detected for the web shell; malware-detected for the EICAR test, a finding to close as benign | |
 | **Nightly scan finds vulnerable servers** | Signalith's own [vulnerability scan](vulnerabilities.md) of the server network finds Apache httpd 2.4.49 on `web-01` with two vulnerabilities attackers are known to use (CVE-2021-41773 and CVE-2021-42013) and a critical one (CVE-2023-25690), a critical OpenSSH flaw on `app-01` (CVE-2023-38408), and Telnet still open on the jump host `jump-01`. The results are events in Search; the **Vulnerabilities** page lists only your own scans. | vuln-known-exploited, vuln-critical, vuln-cleartext-remote-login | |
+| **Network sensors need attention** | The mirror port of the network sensor `nsm-01` goes down for 25 minutes, so Zeek and Suricata see nothing; a nightly Suricata rules update fails; and the branch office's sensor `nsm-02` stops sending, which Signalith notices itself (a *Sensor silent* event). [Settings > Network sensors](network-sensor.md#settings-network-sensors) shows real sensors only, not these. | network-sensor-unhealthy, once for each problem | |
 | **Benign activity that looks malicious** | A backup job on `file-01` runs encoded PowerShell, and IT fetches a tool with `certutil`. | endpoint-encoded-powershell on `file-01`: one finding to close as benign | endpoint-lolbin-download on `ws-it-02` |
 
 The risk that builds up then raises two more findings on its own:
@@ -136,7 +138,7 @@ The risk that builds up then raises two more findings on its own:
 - **risk-threshold-exceeded**: a user or host passed the risk threshold;
 - **risk-multiple-tactics**: risk from several ATT&CK tactics on one entity.
 
-So 34 of the 36 built-in detections fire from the sample, all of them on.
+So 35 of the 37 built-in detections fire from the sample, all of them on.
 Each detection adds its risk once per thing it found, so the totals on the
 Risk page and the dashboards are the same every time you load.
 

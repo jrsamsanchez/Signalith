@@ -351,10 +351,12 @@ func (g *gen) networkBackground(day window) {
 		g.zeekConnLog(fl, t, "ssl", "SF", 1400, 22000, 3.9, true)
 	}
 
-	// The sensor's health, every hour: Zeek's capture loss and stats, and
-	// Suricata's stats.
+	// The sensor's health, every hour: Zeek's capture loss and stats,
+	// Suricata's stats, and the sensor's own status line (it writes one
+	// every 5 minutes; one an hour is enough here).
 	var pkts int64
 	for t := day.start.Truncate(time.Hour).Add(time.Hour); t.Before(day.end); t = t.Add(time.Hour) {
+		g.sensorStatus(t, "up", nil, "ok")
 		loss := float64(g.rng.intn(50)) / 100 // 0 - 0.49 percent
 		g.b.zeek("capture_loss", t, map[string]any{
 			"ts_delta": 3600.0, "peer": "worker-1", "gaps": g.rng.intn(40), "acks": 90000 + g.rng.intn(40000), "percent_lost": loss,
@@ -423,4 +425,55 @@ func (g *gen) sensorBeacon(ws Host, t time.Time) {
 				})
 		}
 	}
+}
+
+// sensorStatus adds a status line of nsm-01: the capture port's link,
+// the warnings it found and how the last rules update went. The rules
+// update at 03:41 each day.
+func (g *gen) sensorStatus(t time.Time, link string, warnings []string, rules string) {
+	updated := time.Date(t.Year(), t.Month(), t.Day(), 3, 41, 0, 0, time.UTC)
+	if updated.After(t) {
+		updated = updated.AddDate(0, 0, -1)
+	}
+	rx := int64(t.Sub(g.start)/time.Second) * 300
+	if warnings == nil {
+		warnings = []string{}
+	}
+	g.b.sensorStatus(t, map[string]any{
+		"sensor_version": "1.6.0", "layout": "packages",
+		"zeek":        map[string]any{"version": "8.0.4", "running": true},
+		"suricata":    map[string]any{"version": "8.0.1", "running": true},
+		"fluentbit":   map[string]any{"version": "4.0.3"},
+		"rules":       map[string]any{"updated": updated.Format(time.RFC3339), "count": 48211, "update": rules},
+		"tuning":      map[string]any{"hash": "3f2a9c1b7d4e", "result": "ok", "applied": g.start.Format(time.RFC3339), "error": ""},
+		"interface":   map[string]any{"name": "ens192", "link": link, "rx_packets": rx, "rx_dropped": rx / 2000, "drop_percent": 0.1},
+		"disk":        map[string]any{"path": "/var", "free_bytes": int64(53687091200), "free_percent": 63.0, "encrypted": true},
+		"time_synced": true, "warnings": toAny(warnings),
+	})
+}
+
+// sensorUpkeep: the network sensor needs attention three times. Someone
+// unplugs the mirror port of nsm-01 for 25 minutes, so the sensor sees
+// nothing; a nightly rules update fails; and the branch office's sensor
+// nsm-02 goes silent, which Signalith notices itself.
+func (g *gen) sensorUpkeep() {
+	down := g.day(2, 10, 0)
+	for i := 1; i <= 5; i++ {
+		g.sensorStatus(down.Add(time.Duration(i*5)*time.Minute), "down", []string{"capture_link", "no_traffic"}, "ok")
+	}
+	failed := g.day(3, 3, 45)
+	g.sensorStatus(failed, "up", []string{"rules_failed"}, "failed")
+	silent := g.day(1, 22, 30)
+	g.b.generic(silent, "sensor:health", map[string]any{
+		"vendor_product": "Signalith sensor", "signature": "Sensor silent", "host": "nsm-02", "dvc": "nsm-02",
+		"sensor_warnings": []string{"silent"},
+		"message":         "nsm-02 has sent nothing for 16 minutes (last heard " + silent.Add(-16*time.Minute).Format("2006-01-02 15:04") + " UTC): parts of the network go unwatched",
+	})
+	g.story(Story{
+		ID:    "sensor-upkeep",
+		Title: "Network sensors need attention",
+		Summary: "The mirror port of the network sensor nsm-01 goes down for 25 minutes, so Zeek and Suricata see nothing; a nightly Suricata rules update fails; " +
+			"and the branch office's sensor nsm-02 stops sending, which Signalith notices itself. Settings > Network sensors says what to fix on each.",
+		Detections: []string{"network-sensor-unhealthy"},
+	}, silent.Add(time.Minute), "nsm-01", "nsm-02")
 }

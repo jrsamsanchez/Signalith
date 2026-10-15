@@ -244,6 +244,7 @@ these built-in detections:
 | --- | --- | --- |
 | `ids-alert-high` | high | A network IDS such as Suricata raised a high or critical alert (Zeek notices are medium, so they do not count). One finding per signature, source and destination an hour, with risk on both hosts. On by default |
 | `threat-activity` | high | An address, domain, URL or file hash the sensor saw is in your threat intel |
+| `network-sensor-unhealthy` | medium | A network sensor reported Zeek or Suricata stopped, its capture port down or idle, rules or rule tuning failing or old, or a full disk, or Signalith found it silent. One finding per sensor and problem a day; fix it from **Settings > Network sensors**. On by default |
 
 `network-shell-port` and `network-remote-admin-port` are about the process that made
 a connection, which only host data (Sysmon) has, so they leave sensor data alone. If

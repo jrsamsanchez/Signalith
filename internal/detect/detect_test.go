@@ -23,8 +23,8 @@ func TestBuiltinsCompile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(ds) != 36 {
-		t.Fatalf("%d built-in detections, want 36", len(ds))
+	if len(ds) != 37 {
+		t.Fatalf("%d built-in detections, want 37", len(ds))
 	}
 	eng := &search.Engine{Intel: intel.NewStore(intel.NewMemory())}
 	for _, d := range ds {
@@ -37,11 +37,11 @@ func TestBuiltinsCompile(t *testing.T) {
 			t.Errorf("%s: compile: %v", d.ID, err)
 		}
 		// Risk incidents, intel matches, exposures a vulnerability scan
-		// found (such as an open Telnet port) and IDS alerts (each rule
-		// names its own technique, in the event's mitre field) need not
-		// name a technique.
+		// found (such as an open Telnet port), IDS alerts (each rule
+		// names its own technique, in the event's mitre field) and a
+		// network sensor's own health need not name a technique.
 		if len(d.MITRE) == 0 && !slices.Contains(d.Tags, "risk-incident") && !slices.Contains(d.Tags, "threat-intel") && !slices.Contains(d.Tags, "vulnerability") &&
-			!slices.Contains(d.Tags, "intrusion-detection") {
+			!slices.Contains(d.Tags, "intrusion-detection") && !slices.Contains(d.Tags, "sensor-health") {
 			t.Errorf("%s has no ATT&CK mapping", d.ID)
 		}
 		// A transforming query only returns the columns it names, so

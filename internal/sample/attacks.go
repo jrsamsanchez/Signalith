@@ -20,6 +20,7 @@ func (g *gen) attacks() {
 	g.malwareOutbreak()
 	g.antivirusHousekeeping()
 	g.vulnerabilityScan()
+	g.sensorUpkeep()
 }
 
 // day returns a working-hour time n days before the end of the range.
