@@ -35,13 +35,15 @@ servers sharing the Docker quick start's OpenSearch and keeps each report.
 
 | | Scenario | Passes when |
 | --- | --- | --- |
-| S1 | Agents (and, in the lab, syslog devices) sending steadily, then more | No accepted event is lost or stored twice; 99% of batches answered within 2 s |
-| S2 | People using the pages on every server at once, all triaging the same findings and writing in the same case, while agents send | Nobody is sent back to sign in; 95% of searches within 3 s |
+| S1 | Agents (and, in the lab, syslog devices) sending steadily, then more | No accepted event is lost or stored twice; 99% of batches answered within 2 s below the limit; two servers store at least 1.7 times, and three at least 2.4 times, what one server does |
+| S2 | People using the pages on every server at once, all triaging the same findings and writing in the same case, while agents send | Nobody is sent back to sign in; no note or comment refused; 95% of searches within 3 s and of notes within 2 s |
 | S3 | Servers doing nothing, then a flood of made-up session cookies | Few OpenSearch operations per idle server; the cookies cost OpenSearch nothing |
 | S4 | The server that runs the background jobs is stalled, then killed (in the lab also cut off from OpenSearch, its clock moved and OpenSearch's disk filled) | Another server takes over within 45 s; never two at once; nothing lost |
-| S5 | A large configuration: thousands of users, detections and indicators | Recorded: how long each takes to make, and how the pages respond afterwards |
-| S6 | Wrong passwords against many accounts from many addresses, spread over every server | Each account gets only a few real password checks in total, whichever server is asked |
+| S5 | A large configuration: thousands of users, detections and indicators | Pages within 2 s and searches within 3 s for 95% of requests, agents answered within 2 s, as without it; how long each part took to make is recorded |
+| S6 | Wrong passwords against many accounts from many addresses, spread over every server | Each account gets only a few real password checks in total, whichever server is asked, and the guessing is refused |
 | S7 | A rolling upgrade under load | Skipped until rolling upgrades are supported |
+| S8 | A Windows server joined to a Linux one (lab) | It takes at least half its even share of agents' events, runs the background jobs after a takeover within 45 s, and writes to the archive share as its computer account |
+| S9 | One of three OpenSearch nodes stopped under load (lab) | Signalith's own indices never lose their last copy (yellow, not red); fewer than 1% of batches refused and none lost; nobody signed out. Skipped on versions without `opensearch.urls` |
 
 ## Sizing
 
