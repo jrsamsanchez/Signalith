@@ -1,0 +1,42 @@
+# S7, CI size: two servers are upgraded one at a time, as docs/servers.md
+# says, while agents send and analysts keep their pages open. Before each
+# server the upgrade fault waits for the upgrade check to say it is safe,
+# drains the server the check names, runs cmd ({server} is its name),
+# waits until the server is back on a new version and resumes it. The
+# server that runs the jobs goes last, so the jobs move once, to the new
+# version. CI replaces cmd with a script that starts the newer build; on
+# the laptop cluster set SIGNALITH_VERSION to the new image's tag.
+name: s7-small
+description: Upgrade two servers one at a time under light ingest and a few analysts.
+needs: [cluster, rolling_upgrade]
+targets: [https://localhost:8441, https://localhost:8442]
+ca_files: [loadtest/compose/out/siem-a-ca.pem, loadtest/compose/out/siem-b-ca.pem]
+credentials:
+  admin_file: loadtest/compose/out/admin.txt
+  token_file: loadtest/compose/out/token.txt
+opensearch:
+  url: https://localhost:9200
+  ca: loadtest/compose/out/opensearch-ca.pem
+  cert: loadtest/compose/out/opensearch-client.pem
+  key: loadtest/compose/out/opensearch-client-key.pem
+phases:
+  - {name: warm, for: 20s, agents: {n: 10, rate: 200, switch_on_error: true}, users: {n: 4, create: true, think: 3s}}
+  - {name: upgrade, for: 4m, agents: {n: 10, rate: 200, switch_on_error: true}, users: {n: 4, create: true, think: 3s}}
+faults:
+  - at: 30s
+    kind: upgrade
+    cmd: "docker compose -p loadtest -f deploy/docker/docker-compose.yml -f loadtest/compose/docker-compose.loadtest.yml up -d --no-deps {server}"
+criteria:
+  - {name: servers_not_upgraded, max: 0}
+  - {name: upgrade_server_seconds}
+  # The jobs move once, to the first upgraded server, and never run on two
+  # servers at once.
+  - {name: jobs_moves, min: 1, max: 1}
+  - {name: leaders_at_once, max: 1}
+  - {name: events_lost, max: 0}
+  - {name: events_duplicated, max: 0}
+  - {name: events_undelivered, max: 0}
+  - {name: unexpected_signouts, max: 0}
+  # An open page reloads once when its server answers with the new
+  # version, and no more.
+  - {name: page_reloads_per_user, max: 1}

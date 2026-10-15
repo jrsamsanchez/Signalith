@@ -31,7 +31,8 @@ It runs on Linux and Windows. Faults that stop processes (`kill9`, `stop`) need 
 | `s4-chaos.yaml` | Kill, stall, cut off from OpenSearch, clock offset, full disk | Lab |
 | `s5-config.yaml` | Thousands of users, detections and indicators, then everyday use | Lab |
 | `s6-brute.yaml` | Wrong passwords against 20 accounts from 200 addresses | CI, laptop |
-| `s7-rolling-upgrade.yaml` | Rolling upgrade under load (skipped until supported) | Lab |
+| `s7-small.yaml` | Two servers upgraded one at a time under light load | CI, laptop |
+| `s7-rolling-upgrade.yaml` | Three servers upgraded from the previous release under load | Lab |
 | `s8-windows-member.yaml` | A Windows server joins, takes its share, runs the jobs, archives to SMB | Lab |
 | `s9-opensearch-node-loss.yaml` | One of three OpenSearch nodes stopped under load | Lab |
 | `sizing-small.yaml` | Agents from 1k to 32k events/s; rate stored, answer times, CPU, memory | CI, laptop |
@@ -101,6 +102,16 @@ When a criterion fails:
   lost every copy of a shard, or no OpenSearch node answered. Check each index's
   replicas (`GET _cat/indices/<prefix>_*?v`) and the cluster's health.
 - `check_failures`: the report prints each failed check's output.
+- `servers_not_upgraded`: the report's upgrade fault lists each server's step (from
+  and to which version, how long, any error). The upgrade stops at the first server
+  that fails, which stays drained so you can look at it; the reason is the install
+  command's output, or what the server showed when the wait ran out.
+- `jobs_moves`: how often the background jobs went to another server. In a rolling
+  upgrade they should move once, to the first upgraded server; more means a server
+  that ran them was upgraded before the check said so, or a takeover happened.
+- `page_reloads_per_user`: an open page reloads when a server of another version
+  answers, as the web pages do, and only once; a second mismatch soon after only
+  warns.
 
 `-pids siem-a=1234,siem-b=5678` gives the servers' process IDs when they run on the
 load generator's machine (Linux), for `server_cpu_cores` and `server_memory_mb`. For the
@@ -222,6 +233,29 @@ at the end, each took at least half its even share of events, every takeover too
 under 45 s, the Windows server ran the jobs for at least 30 s, and the share check
 succeeded.
 
+### S7: a rolling upgrade
+
+`s7-rolling-upgrade.yaml` upgrades the three servers from the previous release while
+agents send and analysts work. Install the previous release on every server first, and
+put the new one in the apt repository the servers use (and the new MSI at
+`C:\loadtest\signalith-<version>.msi` on a Windows server). Then run it with the new
+version:
+
+```
+TO_VERSION=0.3.0 signalith-loadgen run -f loadtest/s7-rolling-upgrade.yaml -json s7.json
+```
+
+Before each server, the upgrade fault waits until the upgrade check
+(`GET /api/cluster/upgrade`, as `signalith cluster upgrade-check` says it) is safe,
+drains the server it names, runs `cmd` over SSH (`windows_cmd` on Windows), waits until
+the Servers page shows it on `TO_VERSION`, resumes it and goes on with the next. The
+server that runs the jobs goes last. Each server is a target of its own, so agents and
+analysts on a server that is being upgraded move to another one (agents) or see errors
+until it is back (analysts); a load balancer in front hides that from people. It is
+skipped on versions without the upgrade check. On the laptop cluster, `s7-small.yaml`
+does the same with `docker compose ... up -d --no-deps {server}` once
+`SIGNALITH_VERSION` names the new image.
+
 ### S9: an OpenSearch node lost
 
 `s9-opensearch-node-loss.yaml` stops `os-2.lab` for four minutes under load. It needs
@@ -241,7 +275,9 @@ OpenSearch, through the integration test in `cmd/signalith-loadgen`. Each report
 kept as the run's `load-reports` artifact. Its `sizing` job runs `sizing-small.yaml`
 against one server and then two, reads each server's CPU and memory, and keeps the
 reports and the table it makes (`sizing.md`) as `sizing-reports`; set
-`LOADGEN_SIZING=1` to run it yourself. To run the same on Linux with Go:
+`LOADGEN_SIZING=1` to run it yourself. Its `rolling-upgrade` job runs `s7-small.yaml`:
+two servers built as version 9.9.0 are upgraded to a 9.9.1 build one at a time, by a
+script that stops each and starts the newer build on the same files. To run the same on Linux with Go:
 
 ```
 go test -tags integration -run '^TestLoadgen' -v ./cmd/signalith-loadgen/
