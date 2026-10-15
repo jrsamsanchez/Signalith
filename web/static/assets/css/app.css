@@ -982,6 +982,38 @@ dialog.modal::backdrop { background: var(--scrim); backdrop-filter: blur(3px); }
 .auth [data-state] { display: none; }
 .auth[data-view="error"] [data-state="error"], .auth[data-view="signedout"] [data-state="signedout"], .auth[data-view="locked"] [data-state="locked"] { display: flex; }
 
+/* two-step sign-in: the code box, the QR code and the recovery codes, on the
+   sign-in page and in the account menu's dialog */
+.mfa-mark { display: grid; place-items: center; width: 44px; height: 44px; margin-bottom: 14px; border-radius: var(--r-lg); color: var(--accent); background: var(--accent-soft); }
+.mfa-mark .icon { width: 22px; height: 22px; }
+.mfa-mark[data-tone="success"] { color: var(--success); background: var(--success-soft); }
+.mfa-code { font: 600 var(--fs-xl)/1 var(--font-mono); font-variant-numeric: tabular-nums; letter-spacing: .32em; text-align: center; padding-left: calc(12px + .32em); }
+.mfa-code::placeholder { color: var(--text-3); opacity: .45; }
+.mfa-code[data-kind="recovery"] { letter-spacing: .12em; padding-left: calc(12px + .12em); font-size: var(--fs-lg); }
+.mfa-alt { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px 16px; font-size: var(--fs-sm); }
+.mfa-steps { display: grid; gap: 18px; margin: 0; padding: 0; list-style: none; counter-reset: mfa; }
+.mfa-steps > li { position: relative; display: grid; gap: 12px; padding-left: 36px; color: var(--text-2); line-height: 1.5; counter-increment: mfa; }
+.mfa-steps > li::before { content: counter(mfa); position: absolute; left: 0; top: -1px; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; font: 600 var(--fs-sm)/1 var(--font-sans); color: var(--accent); background: var(--accent-soft); }
+.mfa-steps > li > b { color: var(--text); font-weight: 600; }
+.mfa-qr { display: grid; place-items: center; width: 192px; height: 192px; padding: 8px; border-radius: var(--r-lg); background: #fff; box-shadow: 0 0 0 1px var(--line), var(--shadow-xs); }
+.mfa-qr img { display: block; width: 176px; height: 176px; image-rendering: pixelated; }
+.mfa-qr__wait { color: #5b6275; font-size: var(--fs-sm); }
+.mfa-manual summary { cursor: pointer; color: var(--accent); font-weight: 500; font-size: var(--fs-sm); width: fit-content; }
+.mfa-manual[open] summary { margin-bottom: 8px; }
+.mfa-key { display: flex; align-items: center; gap: 6px; padding: 6px 6px 6px 12px; border-radius: var(--r-md); background: var(--sunken); box-shadow: inset 0 0 0 1px var(--line-subtle); }
+.mfa-key code { flex: 1; min-width: 0; font-size: var(--fs-md); letter-spacing: .06em; color: var(--text); overflow-wrap: anywhere; user-select: all; }
+.mfa-codes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0; padding: 14px; list-style: none; border-radius: var(--r-lg); background: var(--sunken); box-shadow: inset 0 0 0 1px var(--line-subtle); counter-reset: code; }
+.mfa-codes li { display: flex; align-items: baseline; gap: 8px; font: 500 var(--fs-md)/1.6 var(--font-mono); color: var(--text); letter-spacing: .04em; counter-increment: code; user-select: all; }
+.mfa-codes li::before { content: counter(code); width: 1.5em; text-align: right; color: var(--text-3); font-size: var(--fs-xs); user-select: none; }
+.mfa-codes__actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.mfa-codes__actions .btn { flex: 1; }
+.mfa-status { display: flex; align-items: center; gap: 12px; padding: 14px; border-radius: var(--r-lg); background: var(--sunken); box-shadow: inset 0 0 0 1px var(--line-subtle); }
+.mfa-status .mfa-mark { margin: 0; flex: none; }
+.mfa-status__text { display: grid; gap: 2px; min-width: 0; }
+.mfa-status__text b { color: var(--text); font-weight: 600; }
+.mfa-status__text span { color: var(--text-2); font-size: var(--fs-sm); }
+@media (max-width: 420px) { .mfa-codes { grid-template-columns: minmax(0, 1fr); } }
+
 /* 16. Responsive ----------------------------------------------------------- */
 @media (max-width: 1279px) { .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 /* below 1360 the inspector becomes a slide-over with a scrim, so the queue keeps every column */
@@ -3185,6 +3217,17 @@ body:has(.page.active .inspector:not([hidden], .hidden)) #toast { bottom: 88px; 
   #page-users .u-user__sub--src { display: block; }
   .u-dialog .u-secret { flex-direction: column; }
 }
+/* two-step sign-in: the badge in the list, and the account menu's dialog */
+#page-users .u-status-cell { display: flex; align-items: center; gap: 6px 8px; flex-wrap: wrap; }
+#page-users .u-mfa { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px 1px 6px; border-radius: var(--r-full); font-size: var(--fs-xs); font-weight: 600; color: var(--success); background: var(--success-soft); white-space: nowrap; }
+#page-users .u-mfa .icon { width: 13px; height: 13px; }
+.u-mfa-dialog { width: min(480px, calc(100vw - 32px)); }
+.u-mfa-dialog .modal__body { display: grid; gap: 16px; }
+.u-mfa-dialog .mfa-qr { margin-top: 2px; }
+.u-mfa-dialog .hint { display: flex; align-items: flex-start; gap: 6px; }
+.u-mfa-dialog .hint .icon { flex: none; margin-top: 2px; }
+.u-mfa-dialog .u-mfa-off { color: var(--danger); }
+.u-mfa-dialog .modal__foot .spacer { flex: 1; }
 /* ==== end page:users ==== */
 
 /* ==== page:notify (styles for this page only) ==== */

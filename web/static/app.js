@@ -129,10 +129,10 @@ const looksLikeIP = (v) => /^\d{1,3}(\.\d{1,3}){3}$/.test(v) || /^[0-9a-f]*:[0-9
 // works behind a proxy; a signed-out session goes to the sign-in page and
 // comes back here afterwards.
 let signingIn = false;
-const toSignIn = (change) => {
+const toSignIn = (change, mfa) => {
   if (signingIn) return;
   signingIn = true;
-  location.assign('login?' + (change ? 'change=1&' : '') + 'next=' + encodeURIComponent(location.pathname + location.search + location.hash));
+  location.assign('login?' + (change ? 'change=1&' : '') + (mfa ? 'mfa=setup&' : '') + 'next=' + encodeURIComponent(location.pathname + location.search + location.hash));
 };
 // A request made with no one using the page in the last few seconds,
 // such as a refresh on a timer, is marked as background so the server does
@@ -230,6 +230,8 @@ async function api(path, body, method, extraHeaders) {
   if (resp.status === 401) toSignIn();
   // A temporary password must be replaced first; the sign-in page asks for it.
   if (resp.status === 403 && data.code === 'password_change_required') toSignIn(true);
+  // Two-step sign-in is required and not set up yet; the sign-in page sets it up.
+  if (resp.status === 403 && data.code === 'mfa_setup_required') toSignIn(false, true);
   if (resp.status === 403 && data.code === 'forbidden') {
     // An admin changed this user's role since the page loaded: reload, so
     // every page, menu and button matches the new role at once.
@@ -300,13 +302,25 @@ function roleChanged(role) {
 // meReady resolves once api/me has answered (to null if it failed).
 const meReady = api('api/me').then((m) => {
   if (m.must_change_password) { toSignIn(true); return m; }
+  if (m.must_setup_mfa) { toSignIn(false, true); return m; }
   me = m;
   setRole(m.role);
   showUser(m);
   let note = null;
-  try { note = sessionStorage.getItem(ROLE_NOTE_KEY); sessionStorage.removeItem(ROLE_NOTE_KEY); } catch (_) { /* ignore */ }
+  let left = null;
+  try {
+    note = sessionStorage.getItem(ROLE_NOTE_KEY); sessionStorage.removeItem(ROLE_NOTE_KEY);
+    left = sessionStorage.getItem('signalith.recovery-left'); sessionStorage.removeItem('signalith.recovery-left');
+  } catch (_) { /* ignore */ }
   if (note && typeof toast === 'function') {
     toast(`An admin changed your role to ${m.role_label || m.role}. The page reloaded to match.`, null, { title: 'Your role changed' });
+  }
+  if (left !== null && typeof toast === 'function') {
+    // Signed in with a recovery code.
+    const n = Number(left);
+    toast(n > 0 ? `You have ${n} recovery code${n === 1 ? '' : 's'} left. Make new ones under Two-step sign-in in the account menu.`
+      : 'That was your last recovery code. Make new ones under Two-step sign-in in the account menu.', null,
+    { title: 'You signed in with a recovery code', tone: n > 0 ? undefined : 'danger' });
   }
   return m;
 }).catch(() => null);
@@ -664,6 +678,9 @@ function showUser(m) {
   $('user-menu-meta').textContent = meta.join(' · ');
   $('user-menu').querySelector('summary').setAttribute('aria-label', `Account menu: ${name}, ${m.role_label || m.role}`);
   $('change-password').classList.toggle('hidden', !m.can_change_password);
+  // Single sign-on users get the second step from where they sign in.
+  $('mfa-open').classList.toggle('hidden', !['local', 'builtin', 'directory'].includes(m.source) || m.auth === 'token');
+  $('mfa-hint').textContent = m.mfa ? 'On' : 'Off';
   // A browser that signed in with HTTP Basic auth keeps sending the
   // password, so signing out would not stick.
   const basic = m.auth === 'basic';

@@ -224,6 +224,7 @@ type Store struct {
 	mu     sync.RWMutex
 	users  map[string]*User
 	hashes map[string]string // username -> bcrypt hash, local users only
+	mfa    map[string]*MFA
 	etags  map[string]string
 
 	// recheck is how often reads look for changes to the file, checked
@@ -240,7 +241,7 @@ const recheckEvery = time.Second
 
 // New returns a store over a backend, with the users it holds now.
 func New(b Backend) (*Store, error) {
-	s := &Store{Now: time.Now, b: b, users: map[string]*User{}, hashes: map[string]string{}, etags: map[string]string{}}
+	s := &Store{Now: time.Now, b: b, users: map[string]*User{}, hashes: map[string]string{}, mfa: map[string]*MFA{}, etags: map[string]string{}}
 	if err := s.load(); err != nil {
 		return nil, err
 	}
@@ -280,7 +281,7 @@ func (s *Store) load() error {
 	if err != nil {
 		return err
 	}
-	people, hashes, etags := make(map[string]*User, len(recs)), map[string]string{}, make(map[string]string, len(recs))
+	people, hashes, etags, mfa := make(map[string]*User, len(recs)), map[string]string{}, make(map[string]string, len(recs)), map[string]*MFA{}
 	for name, r := range recs {
 		u := r.User
 		u.SessionEpoch = r.Epoch
@@ -289,9 +290,12 @@ func (s *Store) load() error {
 		if r.Hash != "" && u.Source == SourceLocal {
 			hashes[name] = r.Hash
 		}
+		if r.MFA != nil {
+			mfa[name] = r.MFA.clone()
+		}
 	}
 	s.mu.Lock()
-	s.users, s.hashes, s.etags = people, hashes, etags
+	s.users, s.hashes, s.etags, s.mfa = people, hashes, etags, mfa
 	s.mu.Unlock()
 	return nil
 }

@@ -74,6 +74,9 @@ const httpsAuto = "server:\n  listen: 0.0.0.0:8080\n  tls:\n    mode: auto\n    
 func goodFacts(t *testing.T, extra string) *Facts {
 	t.Helper()
 	c := loadConfig(t, httpsAuto+"opensearch:\n  url: https://127.0.0.1:9200\n  username: signalith\n  password: "+sentinelOS+"\n  index_prefix: signalith\n"+extra)
+	if c.Auth.MFARequired == "" {
+		c.Auth.MFARequired = "admins"
+	}
 	ca := &tlsauto.CAInfo{Scope: tlsauto.ScopeStandard, Fingerprint: "AB:12", Subject: "Signalith Local CA (siem-1)",
 		NotBefore: now.AddDate(-1, 0, 0), NotAfter: now.AddDate(9, 0, 0), Names: []string{"siem-1", "10.0.0.12"}}
 	f := &Facts{
@@ -1148,6 +1151,19 @@ func TestSessions(t *testing.T) {
 					t.Errorf("%+v", c.Fix)
 				}
 			}},
+	})
+}
+
+func TestMFACheck(t *testing.T) {
+	runCases(t, "accounts.mfa", []checkCase{
+		{name: "off", set: func(f *Facts) { f.Config.Auth.MFARequired = "" }, state: Attention, line: "Admins can sign in with a password alone.",
+			fix: func(t *testing.T, c *Check) {
+				if c.Fix.Setting != "auth.mfa_required" || c.Fix.Docs.Anchor != "two-step-sign-in" {
+					t.Errorf("%+v", c.Fix)
+				}
+			}},
+		{name: "admins", set: func(f *Facts) { f.Config.Auth.MFARequired = "admins" }, state: Good, line: "Admins who sign in with a password also enter a code from an authenticator app."},
+		{name: "everyone", set: func(f *Facts) { f.Config.Auth.MFARequired = "everyone" }, state: Good, line: "Everyone who signs in with a password also enters a code from an authenticator app."},
 	})
 }
 

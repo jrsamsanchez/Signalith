@@ -758,6 +758,19 @@ type Auth struct {
 	// LDAP sets up directory sign-in here instead of on the Users page,
 	// which then shows it read-only.
 	LDAP *users.LDAPSettings `yaml:"ldap,omitempty"`
+	// MFARequired says who must use two-step sign-in (a code from an
+	// authenticator app after the password): off, admins or everyone.
+	// See MFARequiredFor.
+	MFARequired string `yaml:"mfa_required,omitempty"`
+}
+
+// MFARequiredMode returns auth.mfa_required: off, admins or everyone.
+func (c *Config) MFARequiredMode() string {
+	switch m := strings.ToLower(strings.TrimSpace(c.Auth.MFARequired)); m {
+	case "admins", "everyone":
+		return m
+	}
+	return "off"
 }
 
 // UsersFile returns the absolute path of the users file.
@@ -2433,6 +2446,11 @@ func (c *Config) Validate() error {
 			p = append(p, fmt.Sprintf("ingest.max_event_age %q must be a duration from 1h to 3650d, for example 7d or 30d (empty: 7 days)", c.Ingest.MaxEventAge))
 		}
 	}
+	switch strings.ToLower(strings.TrimSpace(c.Auth.MFARequired)) {
+	case "", "off", "admins", "everyone":
+	default:
+		p = append(p, fmt.Sprintf("auth.mfa_required %q must be off, admins or everyone (empty: off)", c.Auth.MFARequired))
+	}
 	switch strings.ToLower(strings.TrimSpace(c.Ingest.URLQuery)) {
 	case "", "keep", "redact", "drop":
 	default:
@@ -2761,6 +2779,7 @@ const header = `# Signalith configuration.
 #                    and wrong passwords from them never lock the address
 # auth.admin_user    the built-in admin, a break-glass account; add other users on the Users page
 # auth.session_timeout  sign the web UI out after this long idle (default 12h)
+# auth.mfa_required     who must use two-step sign-in: off, admins or everyone
 # auth.users_file    where Users page accounts are kept (default users.json in lookups.dir)
 # auth.ldap          optional LDAP / Active Directory sign-in; usually set up on the Users
 #                    page instead (see docs/users.md)

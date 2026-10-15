@@ -87,7 +87,8 @@ The first four phases are complete, and work on hardening for 1.0 has started.
 
 - HTTPS by default, a secured OpenSearch, and [encrypted](encryption.md) passwords, keys
   and archives.
-- [Users and roles](users.md), with Active Directory and LDAP sign-in.
+- [Users and roles](users.md), with Active Directory and LDAP sign-in and two-step sign-in
+  with an authenticator app.
 - [Data retention](retention.md) policies with archives you can restore, and a disk guard.
 - A [security check](security.md) of how each server is set up.
 - [Compliance](compliance.md) coverage for NIST SP 800-53, CIS Controls v8, PCI DSS 4.0,

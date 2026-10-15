@@ -2,7 +2,7 @@ Signalith security report for siem-1
 Checked 2026-10-13 14:02 UTC. Signalith v0.9.0 (go1.26.9). Linux, systemd
 service.
 
-Summary: 1 at risk, 3 need attention, 13 good, 2 Signalith can't check from
+Summary: 1 at risk, 3 need attention, 14 good, 2 Signalith can't check from
 here.
 
 Fix first
@@ -104,6 +104,11 @@ Accounts and sign-in
   [attention]   Built-in admin's password
                 The built-in admin still has the first password the Docker
                 setup made, which is kept as plain text in a Docker volume.
+  [good]        Two-step sign-in
+                Admins who sign in with a password also enter a code from an
+                authenticator app.
+                Other users can turn two-step sign-in on for themselves from
+                the user menu.
   [good]        Signalith's OpenSearch account
                 Signalith signs in to OpenSearch as signalith, an account
                 without admin rights.
@@ -148,7 +153,6 @@ Not checked here
   - Backups, and whether the master key is kept apart from them.
   - Updates for Signalith, OpenSearch and the operating system. Signalith
     doesn't contact the internet to check.
-  - Two-step sign-in. Signalith has none of its own.
   - The computers agents run on.
   - Copies of events outside Signalith, such as exports, moved archives and
     OpenSearch snapshots.
