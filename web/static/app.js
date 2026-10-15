@@ -516,6 +516,7 @@ const JUMP_WORDS = {
   respond: 'response actions respond block ip firewall opnsense pfsense webhook shuffle script isolate disable account soar playbook',
   playbooks: 'playbooks automation soar workflow runbook automatic response steps',
   approvals: 'approvals approve reject pending waiting playbook runs',
+  sensors: 'network sensors zeek suricata ids rules tuning disable threshold suppress local rules sid packet drops capture span mirror',
   security: 'hardening encryption certificate authority ca tls https keys permissions bitlocker luks',
   settings: 'configuration config server opensearch syslog listen address port tls certificate ai assistant model api key restart yaml',
 };
@@ -4094,7 +4095,8 @@ function healthSensorRow(c) {
   const text = `${healthPageNum(c.sending)} sending, ${healthPageNum(c.silent)} silent, ${healthPageNum(c.dropping)} dropping packets` +
     (c.rules_old ? `, ${healthPageNum(c.rules_old)} with old rules` : '') + '. ';
   return healthPageRow('activity', 'Network sensors', c.total === 1 ? '1 sensor' : healthPageNum(c.total) + ' sensors', bad ? 'warn' : '',
-    bad ? 'Needs a look' : 'Healthy', [text, el('a', { href: '#endpoints', 'data-page': 'endpoints', 'data-min-role': 'analyst' }, 'Endpoints')]);
+    bad ? 'Needs a look' : 'Healthy', [text, can('admin') ? el('a', { href: '#sensors', 'data-page': 'sensors' }, 'Settings > Network sensors')
+      : el('a', { href: '#endpoints', 'data-page': 'endpoints', 'data-min-role': 'analyst' }, 'Endpoints')]);
 }
 
 // healthSyslogCard shows the syslog receiver: its listeners, what it did

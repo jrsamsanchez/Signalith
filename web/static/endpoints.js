@@ -7,6 +7,34 @@
 // and how often inventory and checks run.
 'use strict';
 
+// sensorText words a network sensor's warnings (the codes of its status
+// line, and silent, no_status and tuning_failed): what to run on the
+// sensor to fix each. Settings > Network sensors uses it too. Logs differ
+// when the programs run in containers (layout docker).
+window.sensorText = (function () {
+  const COMPOSE = 'sudo docker compose -f /etc/signalith-sensor/docker/docker-compose.yml';
+  const logsOf = (s, unit, service) => (s.layout === 'docker' ? COMPOSE + ' logs ' + service : 'sudo journalctl -u ' + unit + ' -n 50');
+  const SENSOR_WARNING = {
+    capture_ip: () => 'The capture port has an IP address: it should only listen. Remove the address in the sensor’s network settings.',
+    capture_link: () => 'The capture port’s link is down: check its cable and the mirror port.',
+    no_traffic: () => 'No packets reached the capture port since the last check: check the mirror (SPAN) port.',
+    drops: () => 'It drops more than 5% of packets: give it more cores or memory, or mirror less traffic.',
+    rules_old: () => 'Its Suricata rules are more than 3 days old. On the sensor, run sudo systemctl start signalith-suricata-update, then see why with sudo journalctl -u signalith-suricata-update.',
+    rules_failed: () => 'The last Suricata rules update failed. On the sensor, see why with sudo journalctl -u signalith-suricata-update, then run sudo systemctl start signalith-suricata-update.',
+    zeek_stopped: (s) => 'Zeek is not running. On the sensor, see why with ' + logsOf(s, 'signalith-zeek', 'zeek') + ', or run the install line again.',
+    suricata_stopped: (s) => 'Suricata is not running. On the sensor, see why with ' + logsOf(s, 'signalith-suricata', 'suricata') + ', or run the install line again.',
+    disk_low: () => 'Less than 10% of its disk is free: give it a bigger disk.',
+    time_not_synced: () => 'Its clock is not synced, so event times may be off. On the sensor, run sudo timedatectl set-ntp true.',
+    // Why it failed is on Settings > Network sensors only: it can quote
+    // the tuning, which only admins read.
+    tuning_failed: () => 'The rule tuning from Signalith failed its test, so the sensor keeps the tuning it had. ' +
+      'An admin sees why in Settings > Network sensors, fixes the line in Rule tuning and saves; the sensor tries again within 10 minutes.',
+    silent: (s) => 'Signalith has heard nothing from it lately. Check the sensor is on and reaches Signalith, then see why its agent stopped sending with ' + logsOf(s, 'signalith-fluent-bit', 'fluent-bit') + '.',
+    no_status: () => 'It sends no status line, so only whether it sends can be checked: sensors you set up yourself send none. Install it with the line from Add data > Network sensor to see the rest.',
+  };
+  return { logsOf, warning: (w, s) => (SENSOR_WARNING[w] ? SENSOR_WARNING[w](s || {}) : w) };
+}());
+
 (function () {
   const PLATFORM = { windows: 'Windows', linux: 'Linux', darwin: 'macOS' };
   const PLATFORM_ICON = { windows: 'monitor', linux: 'square-terminal', darwin: 'laptop' };
@@ -182,21 +210,7 @@
   // its drops, and free disk.
   // Each warning says what to run on the sensor to fix it; logs differ
   // when the programs run in containers (layout docker).
-  const COMPOSE = 'sudo docker compose -f /etc/signalith-sensor/docker/docker-compose.yml';
-  const logsOf = (s, unit, service) => (s.layout === 'docker' ? COMPOSE + ' logs ' + service : 'sudo journalctl -u ' + unit + ' -n 50');
-  const SENSOR_WARNING = {
-    capture_ip: () => 'The capture port has an IP address: it should only listen. Remove the address in the sensor’s network settings.',
-    capture_link: () => 'The capture port’s link is down: check its cable and the mirror port.',
-    no_traffic: () => 'No packets reached the capture port since the last check: check the mirror (SPAN) port.',
-    drops: () => 'It drops more than 5% of packets: give it more cores or memory, or mirror less traffic.',
-    rules_old: () => 'Its Suricata rules are more than 3 days old. On the sensor, run sudo systemctl start signalith-suricata-update, then see why with sudo journalctl -u signalith-suricata-update.',
-    rules_failed: () => 'The last Suricata rules update failed. On the sensor, see why with sudo journalctl -u signalith-suricata-update, then run sudo systemctl start signalith-suricata-update.',
-    zeek_stopped: (s) => 'Zeek is not running. On the sensor, see why with ' + logsOf(s, 'signalith-zeek', 'zeek') + ', or run the install line again.',
-    suricata_stopped: (s) => 'Suricata is not running. On the sensor, see why with ' + logsOf(s, 'signalith-suricata', 'suricata') + ', or run the install line again.',
-    disk_low: () => 'Less than 10% of its disk is free: give it a bigger disk.',
-    time_not_synced: () => 'Its clock is not synced, so event times may be off. On the sensor, run sudo timedatectl set-ntp true.',
-  };
-  const sensorWarning = (w, s) => (SENSOR_WARNING[w] ? SENSOR_WARNING[w](s) : w);
+  const sensorWarning = window.sensorText.warning;
 
   // rulesAge is how old the rules are, as "1 day old", or why there are none.
   function rulesAge(s) {
@@ -240,6 +254,7 @@
         ...fact('Clock synced', s.time_synced ? 'Yes' : 'No'),
         ...fact('Status sent', s.at ? new Date(s.at).toLocaleString() + ' (' + ago(s.at) + ')' : '')),
       warnings.length ? el('ul', { class: 'ep-agent__why', role: 'list' }, ...warnings.map((w) => el('li', { 'data-tone': 'warning' }, icon('circle-alert'), w))) : null,
+      el('p', { class: 'ep-sensor__more', 'data-min-role': 'admin' }, el('a', { href: '#sensors', 'data-page': 'sensors' }, 'Open in Settings > Network sensors'), ' for its checklist and the rule tuning.'),
     ];
   }
 
