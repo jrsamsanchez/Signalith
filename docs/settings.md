@@ -364,8 +364,9 @@ settings aren't loaded, it is too busy, or it took the request but didn't answer
 says what to do about each. **Test** for the
 AI assistant asks the model one fixed question ("failed logins in the last 24
 hours") and shows the query it wrote, or says what is wrong, such as an unknown
-model or a refused key. A result is marked out of date as soon as one of the
-settings it used changes.
+model, a refused key, or a model too slow for **Answer time limit** (a local model on a
+CPU without a GPU may need `15m` or more). A result is marked out of date as soon as one
+of the settings it used changes.
 
 The AI assistant's **Address** lists the usual addresses for the provider chosen:
 the provider's own service, and for OpenAI or compatible also Ollama, LM Studio and
@@ -425,7 +426,8 @@ badge with its group:
   setups (`ingest.tokens`) are shared too, though they are not on the page.
 - **This server: siem-b**: the server's own settings, such as its listen address,
   HTTPS mode, certificate files, syslog addresses, whether it updates its detection
-  content and **May run background jobs** (`cluster.leader_eligible`, the new name
+  content, what removing a file from its detection and dashboard folders does
+  (`detections.sync`) and **May run background jobs** (`cluster.leader_eligible`, the new name
   of `detections.scheduler`). They can be changed for any server on any server's
   page.
 - **This server's connection and folders**: what the server needs to reach

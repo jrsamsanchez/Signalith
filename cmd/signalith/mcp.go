@@ -20,16 +20,19 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/mcp"
 )
 
-const mcpUsage = `usage: signalith mcp [-url URL] [-user name] [-password-file file] [-ca file] [-check]
+const mcpUsage = `usage: signalith mcp [-url URL] [-token-file file | -user name -password-file file] [-ca file] [-check]
 
 Runs a read-only MCP (Model Context Protocol) server on standard input and
 output, for AI tools such as Claude Desktop. It reads from a Signalith server
-as a Signalith user, so that user's role decides what it can see, and it has
-no tool that changes anything. See docs/ai-tools.md.
+with an API token (Settings > API tokens) or as a Signalith user, so the
+token's or the user's role decides what it can see, and it has no tool that
+changes anything. See docs/ai-tools.md.
 
 Settings, as flags or environment variables:
   -url            SIGNALITH_URL            the server's web address, such as https://siem.example.com:8080
-  -user           SIGNALITH_USER           the Signalith user to read as (a viewer or analyst account is best)
+                  SIGNALITH_TOKEN          an API token made on Settings > API tokens (best)
+  -token-file     SIGNALITH_TOKEN_FILE     or a file holding it
+  -user           SIGNALITH_USER           or the Signalith user to read as (a viewer or analyst account is best)
                   SIGNALITH_PASSWORD       that user's password
   -password-file  SIGNALITH_PASSWORD_FILE  or a file holding the password
   -ca             SIGNALITH_CA_FILE        a PEM file of the CA to trust, when the system does not trust the server's certificate
@@ -42,6 +45,7 @@ func cmdMCP(args []string) error {
 	addr := fs.String("url", os.Getenv("SIGNALITH_URL"), "")
 	user := fs.String("user", os.Getenv("SIGNALITH_USER"), "")
 	passFile := fs.String("password-file", os.Getenv("SIGNALITH_PASSWORD_FILE"), "")
+	tokenFile := fs.String("token-file", os.Getenv("SIGNALITH_TOKEN_FILE"), "")
 	caFile := fs.String("ca", os.Getenv("SIGNALITH_CA_FILE"), "")
 	check := fs.Bool("check", false, "")
 	fs.Parse(args)
@@ -54,7 +58,15 @@ func cmdMCP(args []string) error {
 		}
 		pass = strings.TrimRight(string(b), "\r\n")
 	}
-	c, err := newMCPClient(*addr, *user, pass, *caFile)
+	token := strings.TrimSpace(os.Getenv("SIGNALITH_TOKEN"))
+	if *tokenFile != "" {
+		b, err := os.ReadFile(*tokenFile)
+		if err != nil {
+			return fmt.Errorf("reading the token file: %w", err)
+		}
+		token = strings.TrimSpace(string(b))
+	}
+	c, err := newMCPClient(*addr, *user, pass, token, *caFile)
 	if err != nil {
 		return err
 	}
@@ -80,13 +92,17 @@ func cmdMCP(args []string) error {
 	// Standard output carries the protocol, so the log goes to standard
 	// error, which AI tools keep in their own logs.
 	srv.Log = slog.New(slog.NewTextHandler(os.Stderr, nil))
-	srv.Log.Info("signalith MCP server started", "server", c.BaseURL.Redacted(), "user", c.User, "version", version)
+	who := c.User
+	if c.Token != "" {
+		who = "an API token"
+	}
+	srv.Log.Info("signalith MCP server started", "server", c.BaseURL.Redacted(), "user", who, "version", version)
 	return srv.Serve(ctx, os.Stdin, os.Stdout)
 }
 
 // newMCPClient checks the settings of signalith mcp and returns the client
 // it reads through.
-func newMCPClient(addr, user, pass, caFile string) (*mcp.Client, error) {
+func newMCPClient(addr, user, pass, token, caFile string) (*mcp.Client, error) {
 	if addr == "" {
 		return nil, errors.New("set the Signalith server's address with -url or SIGNALITH_URL")
 	}
@@ -102,10 +118,16 @@ func newMCPClient(addr, user, pass, caFile string) (*mcp.Client, error) {
 	}
 	u.Path, u.RawQuery, u.Fragment = strings.TrimRight(u.Path, "/"), "", ""
 	if u.Scheme == "http" && !loopbackHost(u.Hostname()) {
-		return nil, fmt.Errorf("%s uses plain http, which would send the password unencrypted; use https", u.Redacted())
+		return nil, fmt.Errorf("%s uses plain http, which would send the password or token unencrypted; use https", u.Redacted())
 	}
-	if user == "" || pass == "" {
-		return nil, errors.New("set the Signalith user with -user or SIGNALITH_USER, and its password with SIGNALITH_PASSWORD or SIGNALITH_PASSWORD_FILE")
+	switch {
+	case token != "":
+		if !strings.HasPrefix(token, "sgl_api_") {
+			return nil, errors.New("SIGNALITH_TOKEN is not an API token (they start with sgl_api_; make one on Settings > API tokens)")
+		}
+		user, pass = "", ""
+	case user == "" || pass == "":
+		return nil, errors.New("set an API token with SIGNALITH_TOKEN or SIGNALITH_TOKEN_FILE, or the Signalith user with -user or SIGNALITH_USER and its password with SIGNALITH_PASSWORD or SIGNALITH_PASSWORD_FILE")
 	}
 	tr := http.DefaultTransport.(*http.Transport).Clone()
 	tr.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12}
@@ -124,7 +146,7 @@ func newMCPClient(addr, user, pass, caFile string) (*mcp.Client, error) {
 		tr.TLSClientConfig.RootCAs = pool
 	}
 	return &mcp.Client{
-		BaseURL: u, User: user, Password: pass,
+		BaseURL: u, User: user, Password: pass, Token: token,
 		// A search may run for up to two minutes on the server.
 		HTTP:      &http.Client{Transport: tr, Timeout: 3 * time.Minute},
 		UserAgent: "signalith-mcp/" + version,

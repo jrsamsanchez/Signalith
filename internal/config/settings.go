@@ -306,6 +306,9 @@ var Registry = []Setting{
 	{Key: "opensearch.key_file", Scope: ScopeBootstrap, File: true, Section: "opensearch", Label: "Client key file", Type: TypeText, Restart: true,
 		Help:        "Full path of the client certificate's PEM private key.",
 		Placeholder: "/etc/signalith/opensearch-client-key.pem"},
+	{Key: "opensearch.crl_file", Scope: ScopeBootstrap, File: true, Section: "opensearch", Label: "Revocation list file", Type: TypeText, Restart: true,
+		Help:        "Full path of the revocation list OpenSearch checks client certificates against (plugins.security.ssl.http.crl.file_path). Signalith keeps it, so a removed server's certificate stops working at once.",
+		Placeholder: "/etc/opensearch/crl.pem", EmptyMeans: "none: a removed server's certificate works until it expires", Env: "SIGNALITH_OPENSEARCH_CRL_FILE"},
 	{Key: "opensearch.proxy", Scope: ScopeBootstrap, Section: "opensearch", Label: "Proxy", Type: TypeText, Restart: true,
 		Help:        "A proxy to reach OpenSearch through, such as http://proxy:3128. It sees every event, so use one only when the network needs it.",
 		Placeholder: "http://proxy:3128", EmptyMeans: "connect directly", Env: "SIGNALITH_OPENSEARCH_PROXY",
@@ -373,6 +376,11 @@ var Registry = []Setting{
 			"Manual: an admin checks for them on the Detections page, or uploads them on a computer without internet access. " +
 			"Daily: this server checks once a day and installs them. Rules you turned on stay on, and new rules start off.",
 		Choices: []Choice{{ContentManual, "Manual"}, {ContentDaily, "Daily"}}, EmptyMeans: ContentManual},
+	{Key: "detections.sync", Scope: ScopeServer, Section: "detections", Label: "Detection and dashboard folders", Type: TypeChoice, SharedOnly: true,
+		Help: "The servers of a cluster share one set of detections and dashboards; this server's folders are an inbox for them. " +
+			"Inbox: a file added or changed in a folder, such as by a git pull, is shared with every server, and removing a file changes nothing. " +
+			"Mirror: removing a file also removes that detection or dashboard from every server.",
+		Choices: []Choice{{SyncInbox, "Inbox"}, {SyncMirror, "Mirror"}}, EmptyMeans: SyncInbox},
 	{Key: "detections.content_url", Scope: ScopeCluster, Section: "detections", Label: "Content update address", Type: TypeURL,
 		Help:        "Where content updates are downloaded from, such as a copy on your own web server. Only bundles signed by the Signalith project are installed, wherever they come from.",
 		Placeholder: DefaultContentURL, EmptyMeans: "the Signalith project's GitHub releases"},
@@ -397,9 +405,18 @@ var Registry = []Setting{
 		Confirm: "Event data from findings, such as user names, host names and IP addresses, will be sent to the AI model when an analyst investigates a finding. " +
 			"With a cloud provider, it leaves your network.", ConfirmWhen: "on"},
 	{Key: "assistant.mask_fields", Scope: ScopeCluster, Section: "assistant", Label: "Fields never sent", Type: TypeList,
-		Help: "Fields whose values are replaced with [masked] wherever they appear, such as user or src. Add _raw to leave out the original event text. Wildcards * work. " +
+		Help: "Fields whose values are replaced with stand-ins such as masked-user-1 wherever they appear, such as user or src. The same value always gets the same stand-in, " +
+			"and the real values are put back into the model's searches and its write-up. Add _raw to leave out the original event text. Wildcards * work. " +
 			"Passwords, tokens, keys and cookies are always masked.",
 		Placeholder: "user, _raw", EmptyMeans: "only passwords, tokens, keys and cookies"},
+	{Key: "assistant.request_timeout", Scope: ScopeCluster, Section: "assistant", Label: "Answer time limit", Type: TypeDuration,
+		Help: "How long one answer from the model may take, for Test and each turn of Investigate with AI. Ask waits at most 90 seconds, then keeps its own query. " +
+			"A local model on a CPU without a GPU can take 5 to 15 minutes for one investigation turn, so give it 15m or more. From 30s to 1h.",
+		Placeholder: "15m", EmptyMeans: "3m"},
+	{Key: "assistant.investigate_timeout", Scope: ScopeCluster, Section: "assistant", Label: "Investigation time limit", Type: TypeDuration,
+		Help: "How long one Investigate with AI may take in all, every model turn and search included. " +
+			"The model may take up to 4 turns, so with a slow local model allow about 3 times the answer time limit, such as 45m. From 30s to 2h.",
+		Placeholder: "45m", EmptyMeans: "6m"},
 
 	{Key: "intel.allow_loopback_feeds", Scope: ScopeCluster, Section: "intel", Label: "Allow feeds from this computer", Type: TypeBool, Restart: true,
 		Help:    "Lets feeds download from 127.0.0.1 or ::1, for a feed server on this computer.",

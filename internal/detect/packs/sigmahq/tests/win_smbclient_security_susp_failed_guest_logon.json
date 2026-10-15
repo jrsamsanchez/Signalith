@@ -1,0 +1,5 @@
+{"rule": "71886b70-d7b4-4dbf-acce-87d2ca135262", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-SmbClient/Security","event_id":"31017","data":{"ServerName":"\\1","UserName":""}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-SmbClient/Security","event_id":"31017","data":{"UserName":""}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-SmbClient/Security","event_id":"31017","data":{"ServerName":"\\1","UserName":"unrelated-value"}}
+]}

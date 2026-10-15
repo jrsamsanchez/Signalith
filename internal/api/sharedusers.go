@@ -35,6 +35,9 @@ type SharedUsers struct {
 	// MayDegrade says whether a user signing in by method may sign in
 	// while the shared settings cannot be used (clusterauth.Sessions).
 	MayDegrade func(user, method string) error
+	// APITokens says why API tokens cannot be made now (the cluster is
+	// below their level), "" when they can; nil is always.
+	APITokens func() string
 }
 
 var _ SessionStore = (*clusterauth.Sessions)(nil)

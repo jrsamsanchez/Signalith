@@ -23,6 +23,7 @@
   // Why a log agent needs a new configuration, in plain words.
   const AGENT_REASON = {
     ca: 'It trusts a different certificate authority than this server uses, so its connections fail.',
+    retired_ca: 'It trusts only a certificate authority a server retired when it took the cluster’s, so its connections fail. Give it a new configuration from Add data.',
     plain: 'It sends without encryption.',
     revoked: 'Its agent token was revoked.',
     old: 'It was set up before Signalith could tell agents apart; give it a new configuration to see its computer name.',

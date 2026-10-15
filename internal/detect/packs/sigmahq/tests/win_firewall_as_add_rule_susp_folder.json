@@ -1,0 +1,5 @@
+{"rule": "9e2575e7-2cb9-4da1-adc8-ed94221dca5e", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Windows Firewall With Advanced Security/Firewall","event_id":"2071","data":{"ApplicationPath":":\\Windows\\Tasks\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Windows Firewall With Advanced Security/Firewall","event_id":"2071","data":{"Action":"2","ApplicationPath":":\\Windows\\Tasks\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Windows Firewall With Advanced Security/Firewall","event_id":"2071","data":{}}
+]}

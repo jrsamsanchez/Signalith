@@ -138,6 +138,14 @@ that refused the new certificate (from failed TLS handshakes, over HTTPS and sys
 **To fix:** follow
 [Switching to a new certificate authority](https.md#switching-to-a-new-certificate-authority).
 
+On a server that uses the certificate authority the servers of a cluster share, the page
+shows a **Cluster certificate authority** card with its fingerprint instead of the steps
+to change it, and the buttons that would change it open the Servers page: the cluster's
+certificate authority isn't changed on one server (see
+[One certificate authority](servers.md#one-certificate-authority)). `GET /api/security`
+then says `"ca_owner": "cluster"`, and `POST /api/security/ca` answers `409`. Its key
+isn't in `tls/ca.key`, so the command below shows the copy of its certificate.
+
 **How to check by hand:**
 
 ```sh
@@ -588,6 +596,32 @@ signing in with a certificate
 
 ```sh
 curl -s --cacert root-ca.pem --cert signalith.pem --key signalith-key.pem 'https://localhost:9200/_plugins/_security/authinfo?pretty'
+```
+
+### OpenSearch's revocation list
+
+Shown when `opensearch.crl_file` is set: the revocation list OpenSearch checks client
+certificates against, which makes a removed server lose its OpenSearch access at once
+(see [Ending a server's OpenSearch access at once](servers.md#ending-a-servers-opensearch-access-at-once)).
+
+**Looks at:** whether the file is there, signed by the CA in `opensearch.ca_file`, and in
+force.
+
+- Good: it is, and OpenSearch hears of a revocation at once.
+- Needs attention: it expires within 30 days, with OpenSearch's CA.
+- At risk: it is missing, can't be read, isn't signed by OpenSearch's CA or has expired.
+  OpenSearch refuses every certificate sign-in, Signalith's included, while the list it
+  checks is in that state.
+
+**To fix:** on the Docker quick start, run `docker compose -f
+deploy/docker/docker-compose.yml up -d`, which makes it again. Otherwise, when the
+cluster keeps OpenSearch's CA, Signalith writes it again within a minute; `signalith
+cluster opensearch-ca crl -o crl.pem` writes a copy for OpenSearch's nodes.
+
+**How to check by hand:**
+
+```sh
+openssl crl -in crl.pem -CAfile root-ca.pem -noout -nextupdate
 ```
 
 ## This server

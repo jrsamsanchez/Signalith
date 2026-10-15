@@ -1,0 +1,4 @@
+{"rule": "9c8acf1a-cbf9-4db6-b63c-74baabe03e59", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-NTLM/Operational","event_id":"8004","data":{"WorkstationName":"Windows2019"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-NTLM/Operational","event_id":"8004","data":{}}
+]}

@@ -1,6 +1,6 @@
-# S5: a large configuration, made through the API. The times each seed
-# step takes are recorded (not pass/fail) until the sizing work measures
-# what to expect; the phase after it shows how the servers do with it.
+# S5: a large configuration, made through the API. The time each seed
+# step takes is recorded in the report (values seed_<step>_seconds); the
+# phase after it must stay as quick for people and agents as without it.
 name: s5-config
 description: Thousands of users, detections and indicators, then everyday use.
 targets: [https://lb.lab:8443]
@@ -30,6 +30,8 @@ phases:
     agents: {n: 2000, rate: 20000}
     users: {n: 20, create: true}
 criteria:
-  - {name: page_p95_ms}
-  - {name: search_p95_ms}
-  - {name: ingest_p99_ms}
+  - {name: page_p95_ms, max: 2000}
+  - {name: search_p95_ms, max: 3000}
+  - {name: ingest_p99_ms, max: 2000}
+  - {name: ingest_error_rate, max: 0.01}
+  - {name: unexpected_signouts, max: 0}

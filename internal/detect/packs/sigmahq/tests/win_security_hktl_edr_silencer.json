@@ -1,0 +1,4 @@
+{"rule": "98054878-5eab-434c-85d4-72d4e5a3361b", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"5441","data":{"FilterName":"Custom Outbound Filter"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"5441","data":{}}
+]}

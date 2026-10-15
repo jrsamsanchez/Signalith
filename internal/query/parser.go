@@ -143,13 +143,18 @@ func (p *parser) parseOrTerm(search bool) (Expr, error) {
 		return nil, err
 	}
 	children := []Expr{first}
+	all := first == nil // a bare * matches every event
 	for p.isKeyword("OR") {
 		p.next()
 		e, err := p.parseUnary(search)
 		if err != nil {
 			return nil, err
 		}
+		all = all || e == nil
 		children = append(children, e)
+	}
+	if all {
+		return nil, nil
 	}
 	if len(children) == 1 {
 		return first, nil
@@ -160,9 +165,13 @@ func (p *parser) parseOrTerm(search bool) (Expr, error) {
 func (p *parser) parseUnary(search bool) (Expr, error) {
 	if p.isKeyword("NOT") {
 		p.next()
+		at := p.peek().pos
 		e, err := p.parseUnary(search)
 		if err != nil {
 			return nil, err
+		}
+		if e == nil {
+			return nil, errorf(at, "NOT * matches nothing")
 		}
 		return &Not{Child: e}, nil
 	}
@@ -170,6 +179,7 @@ func (p *parser) parseUnary(search bool) (Expr, error) {
 	if t.kind == tokLParen {
 		p.next()
 		var terms []Expr
+		star := false // the parentheses held only *
 		for {
 			if p.peek().kind == tokRParen {
 				p.next()
@@ -186,9 +196,14 @@ func (p *parser) parseUnary(search bool) (Expr, error) {
 			if err != nil {
 				return nil, err
 			}
+			if e == nil {
+				// * inside parentheses adds nothing, as at the top level.
+				star = true
+				continue
+			}
 			terms = append(terms, e)
 		}
-		if len(terms) == 0 {
+		if len(terms) == 0 && !star {
 			return nil, errorf(t.pos, "empty parentheses")
 		}
 		return simplifyAnd(terms), nil
@@ -211,6 +226,14 @@ func (p *parser) parseAtom(search bool) (Expr, error) {
 			t.text = p.fieldSuffix(t.text)
 		}
 		nt := p.peek()
+		if search && (nt.kind == tokOp || nt.kind == tokWord && nt.text == "IN") {
+			switch t.text {
+			case "AND", "OR", "NOT", "IN":
+				// Only the first term could name such a field, so a
+				// query with it could not be written back.
+				return nil, errorf(t.pos, "%s is a keyword, not a field name", t.text)
+			}
+		}
 		if nt.kind == tokOp {
 			p.next()
 			v, err := p.value()
@@ -334,7 +357,7 @@ func (p *parser) parseCommand() (Command, error) {
 				return nil, err
 			}
 			top.Limit = n
-		} else if n, err := strconv.Atoi(p.peek().text); err == nil && p.peek().kind == tokWord {
+		} else if n, err := strconv.Atoi(p.peek().text); err == nil && n >= 0 && p.peek().kind == tokWord {
 			p.next()
 			top.Limit = n
 		}

@@ -46,6 +46,7 @@ type Docs struct {
 	hub       *shared.Hub
 	users     *shared.Collection[UserBody]
 	directory *shared.Doc[DirectoryBody]
+	tokens    *shared.Collection[APITokenBody]
 	subs      map[string][]func()
 	sessions  []func(ctx context.Context, raw json.RawMessage, v store.Version)
 }
@@ -65,6 +66,8 @@ func (d *Docs) Track(h *shared.Hub) {
 	users := shared.NewCollection[UserBody](h, UserKind, UsersWatch, 1)
 	users.ValidateItem = d.validateUser
 	dir := shared.NewDoc[DirectoryBody](h, DirectoryID, DirectoryID, 1)
+	tokens := shared.NewCollection[APITokenBody](h, APITokenKind, APITokenWatch, 1)
+	tokens.ValidateItem = d.validateAPIToken
 	users.OnChange(func() { d.fire(changeUsers) })
 	dir.OnChange(func(_, _ *DirectoryBody) { d.fire(changeDirectory) })
 	// A sign-out bumps watch:sessions with the id of the session ended,
@@ -84,7 +87,7 @@ func (d *Docs) Track(h *shared.Hub) {
 		return nil
 	})
 	d.mu.Lock()
-	d.hub, d.users, d.directory = h, users, dir
+	d.hub, d.users, d.directory, d.tokens = h, users, dir, tokens
 	d.mu.Unlock()
 }
 

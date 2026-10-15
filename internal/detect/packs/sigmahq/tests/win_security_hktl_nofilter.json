@@ -1,0 +1,6 @@
+{"rule": "7b14c76a-c602-4ae6-9717-eff868153fc0", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"5447","data":{"FilterName":"RonPolicy"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"5449","data":{"ProviderContextName":"RonPolicy"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"5447","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"5449","data":{}}
+]}

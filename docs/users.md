@@ -20,7 +20,7 @@ Each role can do everything the roles above it can.
 | --- | --- | --- |
 | **Viewer** | Managers, auditors, other teams | Run searches and see dashboards, findings, investigations, detections, risk and intel. Cannot change anything. |
 | **Analyst** | SOC analysts | Also triage findings, work investigations, build dashboards, use **Ask** and add or remove intel indicators by hand. |
-| **Admin** | Whoever runs Signalith | Also create and change detections, add and change threat intel feeds and upload intel, edit asset and identity lists, set up agents and create and revoke [agent tokens](agent-tokens.md), manage users and set up directory sign-in, and change server settings. |
+| **Admin** | Whoever runs Signalith | Also create and change detections, add and change threat intel feeds and upload intel, edit asset and identity lists, set up agents and create and revoke [agent tokens](agent-tokens.md) and [API tokens](ai-tools.md#api-tokens), manage users and set up directory sign-in, and change server settings. |
 
 By area:
 
@@ -794,7 +794,15 @@ All routes need a signed-in user (session cookie or HTTP Basic auth) except
 `POST /api/otlp/v1/logs` (which take an [agent token](agent-tokens.md), never a session or
 password), and osquery's routes under `/api/osquery/` (`POST /api/osquery/enroll` takes an agent
 token; the others take the node key a host got when it enrolled; see
-[endpoints.md](endpoints.md)). Requests from a browser that change something must come from the Signalith
+[endpoints.md](endpoints.md)), and the two routes a new server joins the cluster with,
+`GET /api/cluster/join/ca` (the certificate a join token names, which is public) and
+`POST /api/cluster/join` (which takes a proof that the new server holds a join token, never the
+token itself; it counts against the sign-in limits per token and per address, its body is at most
+16 KiB, and every refusal gets the same answer: `403`, with its own text only once the proof
+matched and the token was left unused, such as another version; `500` when the token was used but
+the join could not be finished, so the new server needs a new token), and `GET /api/cluster/join/install.sh`,
+`GET /api/cluster/join/install.ps1` and `GET /api/cluster/join/binary` (the install scripts and this server's
+program, which a new server downloads before it can sign in; see [multi-server.md](multi-server.md)). Requests from a browser that change something must come from the Signalith
 page itself.
 
 Every answer carries the server's version in `X-Signalith-Version`. Answers to
@@ -842,7 +850,9 @@ agents that send events, shown on the [Endpoints page](endpoints.md)), `GET /api
 **Admin:** `GET /api/agents/config`, `POST /api/agent-tokens`,
 `PATCH /api/agent-tokens/{id}`, `POST /api/agent-tokens/{id}/revoke`,
 `POST /api/agent-tokens/legacy/{id}/refuse`, `POST /api/agent-tokens/legacy/{id}/accept`
-(see [agent-tokens.md](agent-tokens.md#commands)), `POST /api/tls/names`, `GET /api/security`,
+(see [agent-tokens.md](agent-tokens.md#commands)), `GET /api/api-tokens`, `POST /api/api-tokens`,
+`POST /api/api-tokens/{id}/revoke` (the [API tokens](ai-tools.md#api-tokens) of the AI tools
+server, which can only read), `POST /api/tls/names`, `GET /api/security`,
 `POST /api/security/ca`, `POST /api/detections`,
 `POST /api/detections/test`, `POST /api/detections/sigma`, `POST /api/detections/enable`, `POST /api/detections/{id}/exceptions`, `DELETE /api/detections/{id}/exceptions/{exception}`, `POST /api/findings/{id}/suppress`,
 `PUT /api/detections/{id}`, `DELETE /api/detections/{id}`,
@@ -860,7 +870,20 @@ agents that send events, shown on the [Endpoints page](endpoints.md)), `GET /api
 `GET /api/vulns/setup`, `PUT /api/vulns/settings`, `POST /api/vulns/networks/{id}/scan`,
 `POST /api/vulns/scans/{id}/stop` (setting up and running [vulnerability scans](vulnerabilities.md)),
 `GET /api/cluster` (the Servers page; see [servers.md](servers.md)), `GET /api/cluster/opensearch` (its OpenSearch card; see [opensearch-failover.md](opensearch-failover.md)), `POST /api/cluster/restart`
-(restart servers one at a time to apply the shared settings), `GET /api/requests/{id}`
+(restart servers one at a time to apply the shared settings), `GET /api/cluster/tls`,
+`POST /api/cluster/tls/choose` (the cluster's one certificate authority; see
+[servers.md](servers.md#one-certificate-authority)), `GET /api/cluster/join/tokens`,
+`POST /api/cluster/tokens`, `DELETE /api/cluster/tokens/{id}` (join tokens that add a server to
+the cluster; a token is shown once, in the answer that makes it), `GET /api/cluster/pending`,
+`POST /api/cluster/servers/{id}/approve` (servers that wait to join, approved by their
+fingerprint), `GET /api/cluster/opensearch-identity`
+(who each server signs in to OpenSearch as; see
+[servers.md](servers.md#each-servers-own-opensearch-certificate)), `GET /api/cluster/lifecycle`,
+`POST /api/cluster/servers/{id}/drain`, `POST /api/cluster/servers/{id}/resume`,
+`DELETE /api/cluster/servers/{id}`, `POST /api/cluster/jobs/move`, `POST /api/cluster/rotate-key`
+(draining and removing servers, and rotating the cluster key; see
+[servers.md](servers.md#draining-and-removing-a-server)), `GET /api/cluster/join/prepare`,
+`GET /api/cluster/servers/{id}/check` (Add a server; see [multi-server.md](multi-server.md)), `GET /api/requests/{id}`
 (work asked of the server that runs the background jobs, such as a feed download or a retention
 run; see [servers.md](servers.md#shared-feeds-and-retention-policies)), every
 `/api/notify` route (the Notifications page; see [notifications.md](notifications.md)), every
@@ -874,7 +897,8 @@ run; see [servers.md](servers.md#shared-feeds-and-retention-policies)), every
 A route added without a role is admin-only, and a test fails until it gets one. That
 includes routes registered outside the role table, straight on the server's outer
 router: any `/api/` route there other than the public ones (sign-in, sign-out, agent
-ingest and the CA certificate, `GET /api/tls/ca.pem`) is admin-only.
+ingest, the CA certificate, `GET /api/tls/ca.pem`, the two join routes and the three install
+downloads) is admin-only.
 
 A refused request:
 

@@ -184,6 +184,10 @@ type Inventory struct {
 	// ServerCA returns the pin (see Pin) of the certificate authority this
 	// server's certificate comes from now, "" for none of its own.
 	ServerCA func() string
+	// Retired returns the pins of the certificate authorities the servers
+	// no longer use since they took the cluster's; nil has none. An agent
+	// whose configuration trusts only those needs a new one (NeedsConfig).
+	Retired func() []string
 	// Leader reports whether this server runs the background jobs, which
 	// remove agents not heard from for 30 days; nil never does.
 	Leader func() bool
@@ -776,6 +780,40 @@ type Agent struct {
 	// Refusing is true for an address that refused the certificate and
 	// never got a batch through.
 	Refusing bool `json:"refusing,omitempty"`
+	// NeedsConfig is true when its configuration trusts only certificate
+	// authorities the servers retired, so it needs a new configuration
+	// from Add data; Reason says why (ReasonRetiredCA).
+	NeedsConfig bool   `json:"needs_config,omitempty"`
+	Reason      string `json:"reason,omitempty"`
+}
+
+// ReasonRetiredCA: the agent's configuration trusts only certificate
+// authorities the servers retired when they took the cluster's.
+const ReasonRetiredCA = "retired_ca"
+
+// FlagRetired marks the agents whose configurations, around their last
+// batch, trust a retired certificate authority (a pin in retired) and
+// not the one in use (current): they need a new configuration. One that
+// trusts both is fine.
+func FlagRetired(agents []Agent, current string, retired []string) {
+	if len(retired) == 0 {
+		return
+	}
+	for i := range agents {
+		a := &agents[i]
+		old, cur := false, false
+		for _, pins := range a.CA {
+			if TrustsCA(pins, current) {
+				cur = true
+			}
+			if slices.ContainsFunc(retired, func(p string) bool { return p != current && TrustsCA(pins, p) }) {
+				old = true
+			}
+		}
+		if old && !cur {
+			a.NeedsConfig, a.Reason = true, ReasonRetiredCA
+		}
+	}
 }
 
 // List returns every agent any server heard from in the last 30 days,
@@ -827,7 +865,11 @@ func (v *Inventory) List(ctx context.Context) ([]Agent, int64, error) {
 		docs = slices.DeleteFunc(docs, func(d Doc) bool { return d.Node == node && have[d.Agent] })
 		docs = append(docs, mine...)
 	}
-	return Merge(docs, now), overflow, err
+	agents := Merge(docs, now)
+	if v.Retired != nil {
+		FlagRetired(agents, v.serverCA(), v.Retired())
+	}
+	return agents, overflow, err
 }
 
 // Merge turns inventory documents into one row per agent. A refusing

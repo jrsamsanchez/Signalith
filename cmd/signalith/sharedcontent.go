@@ -69,6 +69,13 @@ type sharedContent struct {
 	// settings.yaml (runner.importOwn), and by a save there on the
 	// Settings page (settingsStore.HoldFile).
 	ownMu sync.Mutex
+	// holds hold this server's files of the feeds, the retention
+	// policies, the users, the directory sign-in settings and the library
+	// while they move into the shared settings (importhold.go).
+	holds importHolds
+	// library links the shared detections and dashboards (see
+	// sharedlibrary.go).
+	library *sharedLibrary
 }
 
 type osTarget struct {
@@ -81,6 +88,7 @@ func newSharedContent(c *config.Config, node *cluster.Node, log *slog.Logger) *s
 	users := newSharedUsers(log)
 	ct := &sharedContent{sharedDocs: newSharedDocs(users.docs), users: users, node: node, log: log, settingsKick: make(chan struct{}, 1)}
 	ct.cfg.Store(c)
+	ct.library = newSharedLibrary(ct.lib, node, func() *config.Config { return ct.cfg.Load() }, log)
 	return ct
 }
 
@@ -276,6 +284,12 @@ var sharedPrints = []func(fp *cluster.Fingerprints, rt *shared.Runtime, s string
 			fp.Users = s
 		}
 	},
+	// The detections and dashboards, once they are shared too.
+	func(fp *cluster.Fingerprints, rt *shared.Runtime, s string) {
+		if rt.SharedLibrary() {
+			fp.Detections = s
+		}
+	},
 	// Append a new shared feature's entry here.
 }
 
@@ -283,7 +297,7 @@ var sharedPrints = []func(fp *cluster.Fingerprints, rt *shared.Runtime, s string
 // runs the background jobs: a feed download asked on another server, and
 // a retention run. A new shared feature appends its handlers to the list,
 // each with its own request types.
-func contentHandlers(feeds *intel.Feeds, ret *retention.Manager, archives map[string]shared.Handler) map[string]shared.Handler {
+func contentHandlers(feeds *intel.Feeds, ret *retention.Manager, archives, lifecycle map[string]shared.Handler) map[string]shared.Handler {
 	out := map[string]shared.Handler{}
 	for _, hs := range []map[string]shared.Handler{
 		feedHandlers(feeds),
@@ -291,6 +305,9 @@ func contentHandlers(feeds *intel.Feeds, ret *retention.Manager, archives map[st
 		// Restores of shared archives (sharedaudit.go), nil until they
 		// are shared.
 		archives,
+		// Moving the background jobs and rotating the cluster key
+		// (clusterlifecycle.go).
+		lifecycle,
 		// Append a new shared feature's handlers here.
 	} {
 		for k := range hs {

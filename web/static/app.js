@@ -2412,11 +2412,35 @@ function agentTokDefault() {
 // agentTokPurpose follows the source on screen: a new source starts with
 // its own name and no token.
 function agentTokPurpose(purpose) {
+  agentTokClusterCA();
   if (purpose === agentTok.purpose) return;
   agentTok.purpose = purpose;
   agentTok.touched = false;
   agentTokDrop();
   agentTokDefault();
+}
+
+// agentTokClusterCA adds, under the token, a line saying that agents
+// trust the cluster's certificate authority when this server uses it
+// (tls.cluster_ca in api/health), so one file works for every server.
+let agentTokCA = null;
+let agentTokCAAt = 0;
+function agentTokClusterCA() {
+  if (Date.now() - agentTokCAAt > 60000) agentTokCA = null;
+  if (!agentTokCA) {
+    agentTokCAAt = Date.now();
+    agentTokCA = api('api/health').then((h) => h && h.tls).catch(() => { agentTokCA = null; return null; });
+  }
+  agentTokCA.then((t) => {
+    let line = $('agent-cluster-ca');
+    if (!t || !t.cluster_ca || !t.ca_sha256) { if (line) line.remove(); return; }
+    if (!line) {
+      line = el('p', { id: 'agent-cluster-ca', class: 'hint agent-token__help' });
+      $('agent-token-help').after(line);
+    }
+    const fp = t.ca_sha256.split(':').slice(0, 8).join(':') + '…';
+    fill(line, 'Agents trust the cluster’s certificate authority (fingerprint ', el('span', { class: 'mono', title: t.ca_sha256 }, fp), '); one file works for every server.');
+  });
 }
 
 // agentTokDrop forgets the token made on this page; the config shows the

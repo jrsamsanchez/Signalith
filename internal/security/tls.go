@@ -30,6 +30,7 @@ func TLSFactsFrom(m *tlsauto.Manager, c *config.Config) *TLSFacts {
 		t.Mode = config.TLSAuto
 		t.Outside = m.Outside()
 		t.CA, t.Next, t.Previous = m.CAInfo(), m.Next(), m.Previous()
+		t.ClusterCA = m.Store() == tlsauto.KindCluster
 		t.WouldCover = map[string][]string{
 			tlsauto.ScopeStandard: m.WouldCover(tlsauto.ScopeStandard),
 			tlsauto.ScopeStrict:   m.WouldCover(tlsauto.ScopeStrict),

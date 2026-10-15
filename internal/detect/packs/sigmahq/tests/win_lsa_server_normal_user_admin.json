@@ -1,0 +1,6 @@
+{"rule": "7ac407cc-0f48-4328-aede-de1d2e6fef41", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-LSA/Operational","event_id":"300","data":{"SidList":"-518}","TargetUserSid":"S-1-5-21-"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-LSA/Operational","event_id":"300","data":{"SidList":"-518}","TargetUserSid":"S-1-5-21--519"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-LSA/Operational","event_id":"300","data":{"TargetUserSid":"S-1-5-21-"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-LSA/Operational","event_id":"300","data":{"SidList":"-518}"}}
+]}
