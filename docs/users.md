@@ -827,7 +827,9 @@ request, so a server that has not yet read that change reads it first (see
 `GET /api/risk`, `GET /api/risk/object`, `GET /api/intel`, `GET /api/intel/feeds`,
 `GET /api/intel/catalog`, `GET /api/intel/indicators`, `GET /api/intel/lookup`, `GET /api/posture`,
 `GET /api/dashboards`, `GET /api/dashboards/{id}`, `GET /api/dashboards/{id}/yaml`,
-`POST /api/dashboards/{id}/run`, `POST /api/panels/run`, and the web UI.
+`POST /api/dashboards/{id}/run`, `POST /api/panels/run`, `GET /api/cluster/features`
+(which features wait until every server runs a newer version; only admins see which servers
+they wait for), and the web UI.
 
 **Analyst:** `POST /api/ask`, `POST /api/findings`, `POST /api/findings/bulk`,
 `PATCH /api/findings/{id}`, `POST /api/cases`, `PATCH /api/cases/{id}`,
@@ -883,7 +885,8 @@ fingerprint), `GET /api/cluster/opensearch-identity`
 `POST /api/cluster/servers/{id}/drain`, `POST /api/cluster/servers/{id}/resume`,
 `DELETE /api/cluster/servers/{id}`, `POST /api/cluster/jobs/move`, `POST /api/cluster/rotate-key`
 (draining and removing servers, and rotating the cluster key; see
-[servers.md](servers.md#draining-and-removing-a-server)), `GET /api/cluster/join/prepare`,
+[servers.md](servers.md#draining-and-removing-a-server)), `GET /api/cluster/upgrade` (the upgrade checklist of the Servers
+page; see [servers.md](servers.md#upgrading-servers-you-set-up-by-hand)), `GET /api/cluster/join/prepare`,
 `GET /api/cluster/servers/{id}/check` (Add a server; see [multi-server.md](multi-server.md)), `GET /api/requests/{id}`
 (work asked of the server that runs the background jobs, such as a feed download or a retention
 run; see [servers.md](servers.md#shared-feeds-and-retention-policies)), every

@@ -103,10 +103,14 @@ const (
 	// FeatureDrain: the server runs drain, resume and the other requests
 	// of adding and removing servers, so the Servers page offers them.
 	FeatureDrain = "drain"
+	// FeatureYieldNewer: the server running the background jobs hands
+	// them to a server that runs a newer version once it is ready (see
+	// maybeYield), so upgrade-check need not ask for the leader last.
+	FeatureYieldNewer = "yield_newer"
 )
 
 // features are this version's, as its heartbeats list them.
-var features = []string{FeatureSampleData, FeatureIndexedAt, FeatureDrain}
+var features = []string{FeatureSampleData, FeatureIndexedAt, FeatureDrain, FeatureYieldNewer}
 
 // Server states in heartbeats.
 const (
@@ -238,6 +242,20 @@ type Heartbeat struct {
 	// OSIdentity is who the server signs in to OpenSearch as, nil from
 	// versions before it was reported.
 	OSIdentity *OSIdentityStatus `json:"os_identity,omitempty"`
+	// Upgrade is what the server says of rolling upgrades, nil when it
+	// has nothing to say or its version predates it.
+	Upgrade *UpgradeStatus `json:"upgrade,omitempty"`
+}
+
+// UpgradeStatus is what a server's heartbeat says of rolling upgrades.
+type UpgradeStatus struct {
+	// Busy names a step of the background jobs that must not be cut
+	// short, such as "retention run", while one runs.
+	Busy string `json:"busy,omitempty"`
+	// YieldedTo is the server this one last handed the background jobs
+	// to because it runs a newer version, at YieldedAt.
+	YieldedTo string     `json:"yielded_to,omitempty"`
+	YieldedAt *time.Time `json:"yielded_at,omitempty"`
 }
 
 // OSIdentityStatus is who a server signs in to OpenSearch as, as its

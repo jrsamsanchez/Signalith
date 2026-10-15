@@ -11,8 +11,10 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/securefile"
@@ -94,6 +96,12 @@ type Runtime struct {
 	fingerprint string
 	// approval is a waiting server's request to join (approval.go).
 	approval approvalState
+	// migMu lets one run of the level migrations go at a time; migAgain
+	// asks the run going on to go round once more, and migRunning says
+	// one runs (Busy), see runLevelMigrations.
+	migMu      sync.Mutex
+	migAgain   atomic.Bool
+	migRunning atomic.Bool
 }
 
 // Mode is how this server uses the shared configuration.
@@ -327,6 +335,10 @@ type Peer struct {
 	// before key rotations).
 	KeyIDs     []string
 	ClusterKID string
+	// Version is the version it runs, and OfflineSince when its
+	// heartbeat stopped (nil while it is live, or when not known).
+	Version      string
+	OfflineSince *time.Time
 }
 
 // RuntimeOptions are what a Runtime needs.
@@ -371,6 +383,13 @@ type RuntimeOptions struct {
 	// (clusterjoin.RequireSecured); a server with KeyFile warns when it
 	// fails. nil checks nothing.
 	Secured func() error
+	// Version is this server's version, recorded with each level it
+	// raises the cluster to (ClusterBody.LevelVersions).
+	Version string
+	// Migrations are the one-time migrations of the cluster's levels,
+	// which the server running the background jobs runs once each when
+	// the cluster reaches their level (see LevelMigration).
+	Migrations []LevelMigration
 
 	// levelMax stands in for LevelMax, so tests can run a runtime of an
 	// older version; 0 is LevelMax.
@@ -1142,6 +1161,10 @@ func (rt *Runtime) afterCycle(ctx context.Context) {
 		return
 	}
 	if err := checkLevel(body.Level, rt.maxLevel()); err != nil {
+		var le *LevelError
+		if errors.As(err, &le) {
+			le.Since, le.Version = body.LevelVersions[strconv.Itoa(body.Level)], rt.opts.Version
+		}
 		rt.fail(err)
 		return
 	}
@@ -1206,8 +1229,8 @@ func (rt *Runtime) afterCycle(ctx context.Context) {
 		// background jobs: after a rolling upgrade another server may
 		// keep them for good.
 		lease := rt.holdsLease()
-		if lease {
-			rt.RaiseLevel(ctx)
+		if lease && rt.RaiseLevel(ctx) {
+			rt.runLevelMigrations(ctx)
 		}
 		if lease || body.CreatedByID == rt.opts.Self.NodeID {
 			if err := rt.lateImports(ctx, lease); err != nil && ctx.Err() == nil {
@@ -1520,6 +1543,8 @@ func (rt *Runtime) Housekeep(ctx context.Context) {
 		// The loop runs the imports the new level allows.
 		rt.Kick()
 	}
+	rt.runLevelMigrations(ctx)
+	rt.PruneMigrations(ctx)
 }
 
 // maxLevel is the highest level this version reads.
@@ -1595,6 +1620,12 @@ func (rt *Runtime) RaiseLevel(ctx context.Context) bool {
 			return errRaised
 		}
 		b.Level = from + 1
+		if rt.opts.Version != "" {
+			if b.LevelVersions == nil {
+				b.LevelVersions = map[string]string{}
+			}
+			b.LevelVersions[strconv.Itoa(from+1)] = rt.opts.Version
+		}
 		return nil
 	})
 	if err != nil {
@@ -1859,6 +1890,9 @@ func (rt *Runtime) Warnings() []Warning {
 			w = append(w, *iw)
 		}
 		if lw := rt.lateWarning(); lw != nil {
+			w = append(w, *lw)
+		}
+		if lw := rt.levelWarning(); lw != nil {
 			w = append(w, *lw)
 		}
 		if fw := rt.founderWarning(); fw != nil {

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/store"
 )
@@ -156,12 +157,20 @@ func (s *OpenSearch) Modify(ctx context.Context, id string, change func(c *Case)
 		if err := json.Unmarshal(src, &c); err != nil {
 			return err
 		}
+		before := listed(&c)
 		changed, err := change(&c)
 		if err != nil {
 			return changeError{err}
 		}
 		if changed {
-			if _, err := vc.PutIf(ctx, s.Index, id, doc{Case: &c, EntityValues: c.EntityValues()}, v, true); err != nil {
+			// Waiting until the case can be searched again takes up to
+			// a refresh interval (a second). Only the cases list
+			// searches, and it shows neither the timeline nor the
+			// history, so a note or a pinned event is not waited for:
+			// the case itself is read in real time. The list may order
+			// such a case by its previous update time for that second.
+			refresh := listed(&c) != before
+			if _, err := vc.PutIf(ctx, s.Index, id, doc{Case: &c, EntityValues: c.EntityValues()}, v, refresh); err != nil {
 				return err
 			}
 		}
@@ -172,6 +181,15 @@ func (s *OpenSearch) Modify(ctx context.Context, id string, change func(c *Case)
 		return nil, modifyResult(err)
 	}
 	return out, nil
+}
+
+// listed returns what the cases list reads of a case and searches it by:
+// all of it except the timeline, the history and the update time.
+func listed(c *Case) string {
+	cp := *c
+	cp.Entries, cp.History, cp.Updated = nil, nil, time.Time{}
+	b, _ := json.Marshal(doc{Case: &cp, EntityValues: cp.EntityValues()})
+	return string(b)
 }
 
 // Delete removes one case; a missing one is not an error.

@@ -10,6 +10,7 @@ const el = (tag, attrs = {}, ...children) => {
   const n = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
     if (k === 'class') n.className = v;
+    else if (BOOL_ATTRS.has(k) && (v === false || v == null)) continue; // disabled: false leaves it enabled
     else if (k.startsWith('on')) n.addEventListener(k.slice(2), v);
     else n.setAttribute(k, TEXT_ATTRS.has(k) ? visibleText(v) : v);
   }
@@ -20,6 +21,9 @@ const el = (tag, attrs = {}, ...children) => {
   return n;
 };
 const TEXT_ATTRS = new Set(['title', 'aria-label', 'data-label']);
+// BOOL_ATTRS are on whenever present, whatever their value: false leaves
+// them out.
+const BOOL_ATTRS = new Set(['disabled', 'hidden', 'checked', 'required', 'readonly', 'open', 'selected', 'multiple']);
 
 // ---------- hidden characters ----------
 // Some Unicode characters are invisible or reorder the text around them:

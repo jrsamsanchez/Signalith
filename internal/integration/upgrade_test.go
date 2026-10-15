@@ -181,6 +181,8 @@ type prevCaps struct {
 	versionHeader bool
 	upgradeCheck  bool
 	sharedUsers   bool
+	// yieldNewer: its leader hands the jobs to a newer version.
+	yieldNewer bool
 }
 
 // detectCaps reads what s, which runs the previous release, can do.
@@ -195,7 +197,10 @@ func detectCaps(t *testing.T, b upgradeBins, s *testServer) prevCaps {
 	code, _, _ := upgradeCheck(t, s, b.prev)
 	c.upgradeCheck = code == 0 || code == 3
 	c.sharedUsers = c.level >= shared.LevelSharedUsers
-	t.Logf("prev %s: level %d, version header %v, upgrade-check %v, shared users %v", b.prevVersion, c.level, c.versionHeader, c.upgradeCheck, c.sharedUsers)
+	if hb, ok := s.h.heartbeat(s.name); ok {
+		c.yieldNewer = slices.Contains(hb.Features, cluster.FeatureYieldNewer)
+	}
+	t.Logf("prev %s: level %d, version header %v, upgrade-check %v, shared users %v, yield newer %v", b.prevVersion, c.level, c.versionHeader, c.upgradeCheck, c.sharedUsers, c.yieldNewer)
 	return c
 }
 
@@ -334,7 +339,14 @@ func TestUpgradeRollingPair(t *testing.T) {
 	w := watchJobs(h, a, sb)
 	stopGraceful(sb)
 	startBin(sb, b.next)
-	waitStandby(t, a, sb)
+	if caps.yieldNewer {
+		// The previous release hands the jobs to the newer siem-b once it
+		// has been ready a minute, before siem-a is stopped.
+		waitUntil(t, 3*time.Minute, "siem-a hands the jobs to the upgraded siem-b", func() bool { return h.leaseHolder() == "siem-b" })
+	} else {
+		t.Logf("prev %s: does not hand the jobs to a newer version, skipped", b.prevVersion)
+		waitStandby(t, a, sb)
+	}
 
 	safeNext(a, "Upgrade siem-a next")
 	stopGraceful(a)
