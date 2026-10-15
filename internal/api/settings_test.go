@@ -126,7 +126,7 @@ func TestSettingsRoutesAreAdminOnly(t *testing.T) {
 	ts, _, _ := newSettingsServer(t, "", nil)
 	for _, rt := range []struct{ method, path string }{
 		{"GET", "/api/settings"}, {"PUT", "/api/settings"}, {"POST", "/api/settings/test/opensearch"},
-		{"POST", "/api/settings/test/assistant"}, {"POST", "/api/settings/assistant/models"}, {"POST", "/api/settings/restart"}, {"POST", "/api/settings/restart/confirm"},
+		{"POST", "/api/settings/test/assistant"}, {"POST", "/api/settings/test/m365"}, {"POST", "/api/settings/assistant/models"}, {"POST", "/api/settings/restart"}, {"POST", "/api/settings/restart/confirm"},
 		{"GET", "/api/settings/export"},
 	} {
 		if code, out := doAs(t, ts, "andy", "role-password", rt.method, rt.path, "{}"); code != 403 || out["code"] != "forbidden" {
@@ -160,7 +160,7 @@ func TestGetSettings(t *testing.T) {
 	if strings.Contains(raw, "hunter2-secret") {
 		t.Fatal("GET /api/settings returned a secret")
 	}
-	if n := len(view["sections"].([]any)); n != 10 {
+	if n := len(view["sections"].([]any)); n != 11 {
 		t.Errorf("sections %d", n)
 	}
 	pw := field(t, view, "opensearch.password")

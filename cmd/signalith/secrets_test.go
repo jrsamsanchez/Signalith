@@ -196,7 +196,7 @@ func TestSecretsStatusAndEncrypt(t *testing.T) {
 func TestSecretsSet(t *testing.T) {
 	path, _ := secretsSetup(t)
 	if _, err := runCmd(t, "", "set", "server.listen", "-c", path); err == nil ||
-		!strings.Contains(err.Error(), "opensearch.password, assistant.api_key, vulns.nvd_api_key, vulns.openvas_password, auth.ldap.bind_password, auth.oidc.client_secret, ingest.tokens") {
+		!strings.Contains(err.Error(), "opensearch.password, assistant.api_key, vulns.nvd_api_key, vulns.openvas_password, auth.ldap.bind_password, auth.oidc.client_secret, m365.client_secret, ingest.tokens") {
 		t.Errorf("unknown setting: %v", err)
 	}
 	if _, err := runCmd(t, "", "set", "-c", path); err == nil {

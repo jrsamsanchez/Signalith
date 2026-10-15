@@ -104,6 +104,19 @@ if [ "$suricata" = yes ]; then
   fi
   rules="$rules\"count\":$rc,\"update\":\"$rr\"},"
   if [ "$rr" = failed ]; then warn rules_failed; fi
+  # The rule tuning from Signalith (Settings > Network sensors), from
+  # rules-update.sh: which one runs, and how its last fetch went.
+  tstate=$R/var/lib/signalith-sensor/tuning/tuning.state
+  th=$(get TUNING_HASH "$tstate" | tr -cd '0-9a-f' | cut -c 1-12)
+  tr_=$(safe "$(get TUNING_RESULT "$tstate")")
+  ta=$(safe "$(get TUNING_APPLIED "$tstate")")
+  te=$(get TUNING_ERROR "$tstate" | tr -cd 'A-Za-z0-9 ._:,/()=+-' | cut -c 1-200)
+  # The tuning that failed its test, so Signalith tells a failure of the
+  # one saved last from one of a tuning before it.
+  tf=$(get TUNING_FAILED "$tstate" | tr -cd '0-9a-f' | cut -c 1-12)
+  [ -n "$tr_" ] || tr_=never
+  rules="$rules\"tuning\":{\"hash\":\"$th\",\"result\":\"$tr_\",\"applied\":\"$ta\",\"error\":\"$te\",\"failed\":\"$tf\"},"
+  if [ "$tr_" = failed ]; then warn tuning_failed; fi
 fi
 
 # The capture port: link, packets, and the share dropped since the last

@@ -41,6 +41,15 @@ func TestSensorStatus(t *testing.T) {
 		s.RulesCount != 48211 || s.Interface != "ens192" || s.DropPercent != 0.1 || s.DiskFreePercent != 63 || s.DiskEncrypted || !s.TimeSynced {
 		t.Errorf("sensor: %+v", s)
 	}
+	// The tuning goes to the inventory only, never to the event.
+	if s.TuningHash != "3f2a9c1b7d4e" || s.TuningResult != "ok" || s.TuningApplied != "2026-10-15T11:50:00Z" || s.TuningError != "" {
+		t.Errorf("tuning: %+v", s)
+	}
+	for k := range doc {
+		if strings.Contains(k, "tuning") {
+			t.Errorf("event field %s", k)
+		}
+	}
 	if _, err := json.Marshal(s); err != nil {
 		t.Fatal(err)
 	}
@@ -78,6 +87,20 @@ func TestSensorStatusOddValues(t *testing.T) {
 			t.Errorf("%s: no sensor", name)
 		}
 	}
+	// A failed tuning: its error is kept, cut short; a hash that is not
+	// hex and an error with control characters are not.
+	ev := Normalize(SensorStatusTag, map[string]any{"log": `{"kind":"signalith-sensor-status","v":1,"suricata":{"running":true},"tuning":{"hash":"ABC;rm","result":"failed","failed":"0123456789ab","error":"` + strings.Repeat("e", 300) + `"},"warnings":["tuning_failed"]}`}, now)
+	if s := ev.Sensor; s == nil || s.TuningHash != "" || s.TuningResult != "failed" || s.TuningFailed != "0123456789ab" || len(s.TuningError) != 200 || len(s.Warnings) != 1 || s.Warnings[0] != "tuning_failed" {
+		t.Errorf("failed tuning: %+v", ev.Sensor)
+	}
+	if w, _ := ev.Document()["sensor_warnings"].([]string); len(w) != 1 || w[0] != "tuning_failed" {
+		t.Errorf("tuning_failed not in sensor_warnings: %v", ev.Document()["sensor_warnings"])
+	}
+	ev = Normalize(SensorStatusTag, map[string]any{"log": `{"kind":"signalith-sensor-status","v":1,"tuning":{"error":"a\nb"}}`}, now)
+	if ev.Sensor == nil || ev.Sensor.TuningError != "" || ev.Sensor.TuningResult != "" {
+		t.Errorf("odd tuning: %+v", ev.Sensor)
+	}
+
 	// Not a status line: a generic event, and nothing for the inventory.
 	for _, line := range []string{`{"kind":"other","v":1}`, `not json`, `{"kind":"signalith-sensor-status"`} {
 		ev := Normalize(SensorStatusTag, map[string]any{"log": line}, now)

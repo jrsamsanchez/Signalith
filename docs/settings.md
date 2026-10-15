@@ -10,8 +10,9 @@ whether it applies at once or after a restart, which the page does for you.
 lead to the other pages that set Signalith up: **Users** (with directory
 sign-in), **Notifications**, **Data retention**, **Security**, **Servers**,
 **Scanners** (which server scans which network; see
-[vulnerabilities.md](vulnerabilities.md#scanning-each-network-zone-from-inside-it)) and
-**Health**. Agent tokens are on **Add data**, threat intel feeds on **Threat
+[vulnerabilities.md](vulnerabilities.md#scanning-each-network-zone-from-inside-it)),
+**Network sensors** (each sensor's health, what to fix, and the rule tuning they fetch; see
+[network-sensor.md](network-sensor.md#settings-network-sensors)) and **Health**. Agent tokens are on **Add data**, threat intel feeds on **Threat
 intel**; the Settings page links to them too.
 
 Only admins see the page (**Settings** in the sidebar, or type "settings" in the

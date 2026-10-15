@@ -814,7 +814,8 @@ program, which a new server downloads before it can sign in; see [multi-server.m
 `GET /api/sensor/install.sh` (the network sensor's install script, also public), and the two
 routes that script calls with the sensor's own agent token, `GET /api/sensor/config` (the
 sensor's Fluent Bit configuration) and `GET /api/sensor/seen` (whether the sensor's data
-arrives); both take only a token made for a sensor (see
+arrives), and `GET /api/sensor/tuning` (the Suricata rule tuning the sensor fetches every 10
+minutes); all three take only an active token made for a sensor (see
 [network-sensor.md](network-sensor.md#building-a-new-sensor)).
 The two single sign-on routes are public too: `GET /api/auth/oidc/start` sends the browser to
 the identity provider, and `GET /api/auth/oidc/callback` is where it comes back (see
@@ -870,7 +871,10 @@ agents that send events, shown on the [Endpoints page](endpoints.md)), `GET /api
 **Admin:** `GET /api/agents/config`, `GET /api/agents/destinations` (where agents can send,
 with a DNS check; see [load-balancers.md](load-balancers.md)),
 `GET /api/sensor/install` (the line that sets up a
-[network sensor](network-sensor.md#building-a-new-sensor)), `POST /api/agent-tokens`,
+[network sensor](network-sensor.md#building-a-new-sensor)), `GET /api/sensors` (every network
+sensor's health and checklist, and the sensor tokens), `GET /api/sensors/tuning` and
+`PUT /api/sensors/tuning` (the Suricata rule tuning sensors fetch; see
+[network-sensor.md](network-sensor.md#rule-tuning-from-signalith)), `POST /api/agent-tokens`,
 `PATCH /api/agent-tokens/{id}`, `POST /api/agent-tokens/{id}/revoke`,
 `POST /api/agent-tokens/legacy/{id}/refuse`, `POST /api/agent-tokens/legacy/{id}/accept`
 (see [agent-tokens.md](agent-tokens.md#commands)), `GET /api/api-tokens`, `POST /api/api-tokens`,
@@ -918,7 +922,7 @@ run; see [servers.md](servers.md#shared-feeds-and-retention-policies)), every
 `/api/users`, `/api/auth/directory` and `/api/auth/oidc` route below (the last two are
 `GET /api/auth/oidc` and `POST /api/auth/oidc/test`; see [sso.md](sso.md#api)), and every `/api/settings` route
 (`GET` and `PUT /api/settings`, `POST /api/settings/test/opensearch`,
-`POST /api/settings/test/assistant`, `POST /api/settings/assistant/models`, `POST /api/settings/restart`,
+`POST /api/settings/test/assistant`, `POST /api/settings/test/m365`, `POST /api/settings/assistant/models`, `POST /api/settings/restart`,
 `GET /api/settings/export`; see [settings.md](settings.md#api)).
 
 A route added without a role is admin-only, and a test fails until it gets one. That

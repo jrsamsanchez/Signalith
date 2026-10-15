@@ -70,6 +70,11 @@ func TestEveryRouteHasARole(t *testing.T) {
 			return true
 		})
 	}
+	for _, p := range sensorPublicRoutes {
+		if !slices.Contains(publicRoutes, p) {
+			t.Errorf("%s is not public", p)
+		}
+	}
 	if found < 70 {
 		t.Errorf("found only %d route patterns in the source; is the scan still working?", found)
 	}
@@ -92,6 +97,9 @@ func TestEveryRouteHasARole(t *testing.T) {
 		"GET /api/settings/export":   users.Admin,
 		"GET /api/cluster/features":  users.Viewer,
 		"GET /api/cluster/upgrade":   users.Admin,
+		"GET /api/sensors":           users.Admin,
+		"GET /api/sensors/tuning":    users.Admin,
+		"PUT /api/sensors/tuning":    users.Admin,
 	} {
 		if classified[pattern] != want {
 			t.Errorf("%s = %s, want %s", pattern, classified[pattern], want)

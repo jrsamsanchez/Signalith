@@ -54,6 +54,7 @@ type Config struct {
 	Assistant  Assistant  `yaml:"assistant"`
 	Intel      Intel      `yaml:"intel"`
 	Vulns      Vulns      `yaml:"vulns,omitempty"`
+	M365       M365       `yaml:"m365,omitempty"`
 	Notify     Notify     `yaml:"notify,omitempty"`
 	Response   Response   `yaml:"response,omitempty"`
 	Playbooks  Playbooks  `yaml:"playbooks,omitempty"`
@@ -1195,6 +1196,19 @@ func (c *Config) AssistantClient() *assistant.Client {
 	return cl
 }
 
+// M365 reads Microsoft 365's audit log from the Office 365 Management
+// Activity API, as an Entra ID app registration with the API's
+// ActivityFeed.Read permission (internal/m365). It is on when the tenant,
+// the app and its secret are set.
+type M365 struct {
+	TenantID     string `yaml:"tenant_id,omitempty"`
+	ClientID     string `yaml:"client_id,omitempty"`
+	ClientSecret string `yaml:"client_secret,omitempty"`
+	// Cloud is the Microsoft cloud the tenant is in: commercial (the
+	// default), gcc, gcc_high or dod.
+	Cloud string `yaml:"cloud,omitempty"`
+}
+
 // Vulns configures the CVE lookups of vulnerability scans (the
 // Vulnerabilities page keeps its networks in OpenSearch).
 type Vulns struct {
@@ -2083,6 +2097,12 @@ func (c *Config) applyEnv() error {
 		c.Vulns.NVDURL = v
 		c.fromEnv("vulns.nvd_url", "SIGNALITH_NVD_URL")
 	}
+	if v, from, err := envSecret("SIGNALITH_M365_CLIENT_SECRET"); err != nil {
+		return err
+	} else if len(v) > 0 {
+		c.M365.ClientSecret = strings.TrimSpace(v[0])
+		c.fromEnv("m365.client_secret", from)
+	}
 	if v, from, err := envSecret("SIGNALITH_NVD_API_KEY"); err != nil {
 		return err
 	} else if len(v) > 0 {
@@ -2363,6 +2383,14 @@ func (c *Config) Validate() error {
 	if c.Assistant.URL != "" {
 		if u, err := url.Parse(c.Assistant.URL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 			p = append(p, fmt.Sprintf("assistant.url %q must be http(s)://host[:port][/path]", redact.URL(c.Assistant.URL)))
+		}
+	}
+	if _, ok := m365Clouds[c.M365.Cloud]; !ok && c.M365.Cloud != "" {
+		p = append(p, fmt.Sprintf("m365.cloud %q must be commercial, gcc, gcc_high or dod", c.M365.Cloud))
+	}
+	for _, f := range []struct{ key, what, v string }{{"m365.tenant_id", "tenant ID", c.M365.TenantID}, {"m365.client_id", "application ID", c.M365.ClientID}} {
+		if err := m365ID(f.what)(f.v); err != nil {
+			p = append(p, f.key+": "+err.Error())
 		}
 	}
 	if c.Vulns.NVDURL != "" {
@@ -2781,6 +2809,9 @@ const header = `# Signalith configuration.
 #                    format: lines, csv (with column:), stix or auto; see docs/threat-intel.md
 # vulns.nvd_api_key  optional free NVD API key for faster CVE lookups on the
 #                    Vulnerabilities page (SIGNALITH_NVD_API_KEY); see docs/vulnerabilities.md
+# m365.tenant_id, m365.client_id, m365.client_secret  read Microsoft 365's audit
+#                    log with an Entra ID app (SIGNALITH_M365_CLIENT_SECRET); m365.cloud
+#                    is commercial, gcc, gcc_high or dod; see docs/microsoft-365.md
 # notify.file        where the Notifications page keeps its channels and rules
 #                    (default notifications.yaml in lookups.dir); see docs/notifications.md
 # response.file      where the Response actions page keeps its actions (default

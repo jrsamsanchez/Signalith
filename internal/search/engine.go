@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
+	"runtime/debug"
 	"sort"
 	"strings"
 	"sync"
@@ -257,6 +259,9 @@ func (e *Engine) Compile(q *query.Query) (*Plan, error) {
 		if !ok {
 			break
 		}
+		if _, expr := w.Expr.(*query.Cond); expr {
+			break // runs in the server, over the events OpenSearch returns
+		}
 		filters = append(filters, w.Expr)
 		cmds = cmds[1:]
 	}
@@ -402,7 +407,7 @@ func needsAllEvents(cmds []query.Command) bool {
 		switch c.(type) {
 		case *query.Head:
 			return false
-		case *query.Sort, *query.Where, *query.Stats, *query.Top:
+		case *query.Sort, *query.Where, *query.Stats, *query.Top, *query.Dedup, *query.EventStats:
 			return true
 		}
 	}
@@ -414,7 +419,7 @@ func leadingHead(cmds []query.Command) (int, bool) {
 		switch c := c.(type) {
 		case *query.Head:
 			return c.N, true
-		case *query.Table, *query.Rename, *query.Enrich, *query.Intel:
+		case *query.Table, *query.Rename, *query.Enrich, *query.Intel, *query.Eval, *query.Rex, *query.Fillnull:
 			continue
 		}
 		return 0, false
@@ -476,7 +481,24 @@ func (e *Engine) Run(ctx context.Context, src string) (*Result, error) {
 // Execute runs a parsed query. It waits for a turn when MaxSearches are
 // running (ErrBusy after QueueWait), and stops when ctx ends, including
 // during the commands that run over results in memory.
-func (e *Engine) Execute(ctx context.Context, q *query.Query) (*Result, error) {
+func (e *Engine) Execute(ctx context.Context, q *query.Query) (res *Result, err error) {
+	// A bug in a command must fail this search, not the process: the
+	// detection scheduler runs searches outside any HTTP handler, so a
+	// panic there would stop the server, and again at every run.
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("a search stopped on an internal error", "panic", fmt.Sprint(r), "stack", string(debug.Stack()))
+			res, err = nil, ErrInternal
+		}
+	}()
+	return e.execute(ctx, q)
+}
+
+// ErrInternal is a search that stopped on a bug in Signalith rather than
+// in the query; the details are in the server log.
+var ErrInternal = errors.New("the search stopped on an internal error; the details are in the server log")
+
+func (e *Engine) execute(ctx context.Context, q *query.Query) (*Result, error) {
 	start := time.Now()
 	p, err := e.Compile(q)
 	if err != nil {
@@ -494,6 +516,7 @@ func (e *Engine) Execute(ctx context.Context, q *query.Query) (*Result, error) {
 	if p.threat != nil {
 		e.threatAnnotate(res, p.threat, p.Mode == "events")
 	}
+	ctx = withEvaluator(ctx)
 	for _, c := range p.post {
 		if err := ctx.Err(); err != nil {
 			return nil, err

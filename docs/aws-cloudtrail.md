@@ -121,6 +121,10 @@ work as they are:
 
 The call's parameters and response are also kept whole, as JSON text, in
 `request_parameters` and `response_elements`, for searching words anywhere inside them.
+Objects whose keys the caller picks (`tags`, `environment`, `parameters`,
+`defaultArguments`) stay one field of JSON text, such as `requestParameters.tags`, so a
+call with many tags can't use up the day's field names and push out the fields the rules
+read. Those fields are mapped up front.
 Each event also gets the data model fields of what it is:
 
 - A sign-in to the console (`signin.amazonaws.com`) is an **Authentication** event, with

@@ -169,6 +169,7 @@ type Top struct {
 	Limit  int
 	Fields []string
 	By     []string
+	Rare   bool // rare: the least common values first
 }
 
 // Where filters rows: where count > 20 AND src != "10.0.0.1".
@@ -204,9 +205,14 @@ type Intel struct{ Fields []string }
 // matching runs inside OpenSearch, so it must come right after the search.
 type ThreatMatch struct{ Fields []string }
 
-func (*Stats) Name() string       { return "stats" }
-func (*Timechart) Name() string   { return "timechart" }
-func (*Top) Name() string         { return "top" }
+func (*Stats) Name() string     { return "stats" }
+func (*Timechart) Name() string { return "timechart" }
+func (t *Top) Name() string {
+	if t.Rare {
+		return "rare"
+	}
+	return "top"
+}
 func (*Where) Name() string       { return "where" }
 func (*Sort) Name() string        { return "sort" }
 func (*Head) Name() string        { return "head" }
@@ -266,14 +272,28 @@ func CommandString(c Command) string {
 	case *Top:
 		// Always written: without it the default of 10 would apply, and
 		// limit=0 (no limit) would be lost.
-		s := "top limit=" + strconv.Itoa(max(c.Limit, 0))
+		s := c.Name() + " limit=" + strconv.Itoa(max(c.Limit, 0))
 		s += " " + strings.Join(c.Fields, ", ")
+		if len(c.By) > 0 {
+			s += " by " + strings.Join(c.By, ", ")
+		}
+		return s
+	case *EventStats:
+		s := "eventstats " + aggList(c.Aggs)
 		if len(c.By) > 0 {
 			s += " by " + strings.Join(c.By, ", ")
 		}
 		return s
 	case *Where:
 		return "where " + topLevel(c.Expr, " AND ")
+	case *Eval:
+		return evalString(c)
+	case *Rex:
+		return rexString(c)
+	case *Dedup:
+		return dedupString(c)
+	case *Fillnull:
+		return fillnullString(c)
 	case *Sort:
 		keys := make([]string, len(c.Keys))
 		for i, k := range c.Keys {

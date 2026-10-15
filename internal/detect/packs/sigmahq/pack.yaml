@@ -2409,6 +2409,74 @@ rules:
     rule_id: 7707a579-e0d8-4886-a853-ce47e4575aaa
     file: image_load_wmiprvse_wbemcomn_dll_hijack.yml
     path: rules/windows/image_load/image_load_wmiprvse_wbemcomn_dll_hijack.yml
+  - id: sigma-microsoft365-activity-by-terminated-user
+    rule_id: 2e669ed8-742e-4fe5-b3c4-5a59b486c2ee
+    file: microsoft365_activity_by_terminated_user.yml
+    path: rules/cloud/m365/threat_management/microsoft365_activity_by_terminated_user.yml
+  - id: sigma-microsoft365-activity-from-anonymous-ip-addresses
+    rule_id: d8b0a4fe-07a8-41be-bd39-b14afa025d95
+    file: microsoft365_activity_from_anonymous_ip_addresses.yml
+    path: rules/cloud/m365/threat_management/microsoft365_activity_from_anonymous_ip_addresses.yml
+  - id: sigma-microsoft365-activity-from-infrequent-country
+    rule_id: 0f2468a2-5055-4212-a368-7321198ee706
+    file: microsoft365_activity_from_infrequent_country.yml
+    path: rules/cloud/m365/threat_management/microsoft365_activity_from_infrequent_country.yml
+  - id: sigma-microsoft365-data-exfiltration-to-unsanctioned-app
+    rule_id: 2b669496-d215-47d8-bd9a-f4a45bf07cda
+    file: microsoft365_data_exfiltration_to_unsanctioned_app.yml
+    path: rules/cloud/m365/threat_management/microsoft365_data_exfiltration_to_unsanctioned_app.yml
+  - id: sigma-microsoft365-disabling-mfa
+    rule_id: 60de9b57-dc4d-48b9-a6a0-b39e0469f876
+    file: microsoft365_disabling_mfa.yml
+    path: rules/cloud/m365/audit/microsoft365_disabling_mfa.yml
+  - id: sigma-microsoft365-from-susp-ip-addresses
+    rule_id: a3501e8e-af9e-43c6-8cd6-9360bdaae498
+    file: microsoft365_from_susp_ip_addresses.yml
+    path: rules/cloud/m365/threat_detection/microsoft365_from_susp_ip_addresses.yml
+  - id: sigma-microsoft365-impossible-travel-activity
+    rule_id: d7eab125-5f94-43df-8710-795b80fa1189
+    file: microsoft365_impossible_travel_activity.yml
+    path: rules/cloud/m365/threat_management/microsoft365_impossible_travel_activity.yml
+  - id: sigma-microsoft365-logon-from-risky-ip-address
+    rule_id: c191e2fa-f9d6-4ccf-82af-4f2aba08359f
+    file: microsoft365_logon_from_risky_ip_address.yml
+    path: rules/cloud/m365/threat_management/microsoft365_logon_from_risky_ip_address.yml
+  - id: sigma-microsoft365-new-federated-domain-added-audit
+    rule_id: 58f88172-a73d-442b-94c9-95eaed3cbb36
+    file: microsoft365_new_federated_domain_added_audit.yml
+    path: rules/cloud/m365/audit/microsoft365_new_federated_domain_added_audit.yml
+  - id: sigma-microsoft365-new-federated-domain-added-exchange
+    rule_id: 42127bdd-9133-474f-a6f1-97b6c08a4339
+    file: microsoft365_new_federated_domain_added_exchange.yml
+    path: rules/cloud/m365/exchange/microsoft365_new_federated_domain_added_exchange.yml
+  - id: sigma-microsoft365-potential-ransomware-activity
+    rule_id: bd132164-884a-48f1-aa2d-c6d646b04c69
+    file: microsoft365_potential_ransomware_activity.yml
+    path: rules/cloud/m365/threat_management/microsoft365_potential_ransomware_activity.yml
+  - id: sigma-microsoft365-pst-export-alert
+    rule_id: 18b88d08-d73e-4f21-bc25-4b9892a4fdd0
+    file: microsoft365_pst_export_alert.yml
+    path: rules/cloud/m365/threat_management/microsoft365_pst_export_alert.yml
+  - id: sigma-microsoft365-pst-export-alert-using-new-compliancesearchac
+    rule_id: 6897cd82-6664-11ed-9022-0242ac120002
+    file: microsoft365_pst_export_alert_using_new_compliancesearchaction.yml
+    path: rules/cloud/m365/threat_management/microsoft365_pst_export_alert_using_new_compliancesearchaction.yml
+  - id: sigma-microsoft365-susp-inbox-forwarding
+    rule_id: 6c220477-0b5b-4b25-bb90-66183b4089e8
+    file: microsoft365_susp_inbox_forwarding.yml
+    path: rules/cloud/m365/threat_management/microsoft365_susp_inbox_forwarding.yml
+  - id: sigma-microsoft365-susp-oauth-app-file-download-activities
+    rule_id: ee111937-1fe7-40f0-962a-0eb44d57d174
+    file: microsoft365_susp_oauth_app_file_download_activities.yml
+    path: rules/cloud/m365/threat_management/microsoft365_susp_oauth_app_file_download_activities.yml
+  - id: sigma-microsoft365-unusual-volume-of-file-deletion
+    rule_id: 78a34b67-3c39-4886-8fb4-61c46dc18ecd
+    file: microsoft365_unusual_volume_of_file_deletion.yml
+    path: rules/cloud/m365/threat_management/microsoft365_unusual_volume_of_file_deletion.yml
+  - id: sigma-microsoft365-user-restricted-from-sending-email
+    rule_id: ff246f56-7f24-402a-baca-b86540e3925c
+    file: microsoft365_user_restricted_from_sending_email.yml
+    path: rules/cloud/m365/threat_management/microsoft365_user_restricted_from_sending_email.yml
   - id: sigma-net-addinutil-initiated
     rule_id: 5205613d-2a63-4412-a895-3a2458b587b3
     file: net_connection_win_addinutil_initiated.yml

@@ -51,6 +51,7 @@ var secretEnv = map[string]string{
 	"vulns.nvd_api_key":       "SIGNALITH_NVD_API_KEY",
 	"vulns.openvas_password":  "SIGNALITH_OPENVAS_PASSWORD",
 	"auth.ldap.bind_password": "SIGNALITH_LDAP_BIND_PASSWORD",
+	"m365.client_secret":      "SIGNALITH_M365_CLIENT_SECRET",
 	"auth.oidc.client_secret": "SIGNALITH_OIDC_CLIENT_SECRET",
 	"ingest.tokens":           "SIGNALITH_INGEST_TOKEN",
 }

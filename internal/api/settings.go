@@ -37,6 +37,7 @@ func (s *Server) routeSettings(api *router) {
 	api.admin("PUT /api/settings", s.handlePutSettings)
 	api.admin("POST /api/settings/test/opensearch", s.handleTestOpenSearch)
 	api.admin("POST /api/settings/test/assistant", s.handleTestAssistant)
+	api.admin("POST /api/settings/test/m365", s.handleTestM365)
 	api.admin("POST /api/settings/assistant/models", s.handleAssistantModels)
 	api.admin("POST /api/settings/restart", s.handleRestart)
 	api.admin("POST /api/settings/restart/confirm", s.handleConfirmMove)
