@@ -99,6 +99,10 @@ type Lease struct {
 	// Fingerprints returns this server's files fingerprints; fresh asks
 	// for them worked out again now.
 	Fingerprints func(fresh bool) Fingerprints
+	// Holder, when set, returns a lease document with its holder's
+	// fingerprints as this server compares them with its own (see
+	// Settings.HolderFingerprints).
+	Holder func(LeaseDoc) LeaseDoc
 	// Defer, when set, says whether this server should leave the lease to
 	// another live server for now, and why: its clock is far off.
 	Defer func() (bool, string)
@@ -623,6 +627,9 @@ func (l *Lease) guard(doc LeaseDoc, fresh bool) bool {
 	if doc.Fingerprint == "" {
 		l.setCannot("")
 		return true
+	}
+	if l.Holder != nil {
+		doc = l.Holder(doc)
 	}
 	mine := l.fingerprints(fresh)
 	if !mine.Unknown && mine.Combined() == doc.Fingerprint {

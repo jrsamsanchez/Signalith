@@ -141,8 +141,12 @@ To set it up on a scanning server:
 
 1. Install Greenbone Community Edition where that server can reach it
    (<https://greenbone.github.io/docs/latest/>; the Docker containers are the quickest).
-   Let it finish downloading its feeds before the first scan.
+   Let it finish loading its feed before the first scan: on a new install that takes
+   about 40 minutes after the containers start, and **Settings > Scanners** says
+   "still loading its feed" until then.
 2. Make a gvmd user for Signalith: `gvmd --create-user=signalith --password='a long password'`.
+   With the Greenbone containers, run it inside the gvmd one:
+   `docker compose exec -u gvmd gvmd gvmd --create-user=signalith --password='a long password'`.
 3. Give Signalith gvmd's address and that user, on that server only:
 
     | Setting in `signalith.yaml` (under `vulns:`) | Environment variable | What |
@@ -161,6 +165,27 @@ Signalith makes a target and a task in OpenVAS for each scan and removes both wh
 scan ends; stopping the scan in Signalith stops it in OpenVAS too. OpenVAS findings are
 written as events like the others, with `vuln_source=openvas`, `openvas_oid`, `solution`
 and, when the test names one, `cve`.
+
+### What a real OpenVAS scan finds
+
+A weekly CI job ([greenbone.yml](https://github.com/jrsamsanchez/Signalith/blob/main/.github/workflows/greenbone.yml))
+runs Greenbone Community Edition (GMP 22.7, about 190,000 tests) and scans two deliberately
+weak containers through Signalith: Apache 2.4.49 and Redis with no password, ports 80 and
+6379. The scan takes about 6 minutes once the feed has loaded. On 2026-10-15 it found:
+
+| Host | Port | Severity | Finding |
+| --- | --- | --- | --- |
+| Redis | 6379/tcp | high (7.5) | Redis Server No Password |
+| Apache | 80/tcp | medium (5.8) | HTTP Debugging Methods (TRACE/TRACK) Enabled |
+| Both | host | low (2.6) | TCP Timestamps Information Disclosure |
+| Both | host | low (2.1) | ICMP Timestamp Reply Information Disclosure |
+
+OpenVAS did not list Apache 2.4.49's path traversal (CVE-2021-41773): the stock image does
+not expose it, and OpenVAS rates version-only Apache checks as unsure (Linux distributions
+patch without changing the version), so they fall under the 70% cut. Signalith's Nmap
+scan covers that case: it reads the version and matches it to the NVD's CVEs, which list
+CVE-2021-41773 for Apache 2.4.49. The two find different things, which is why a network
+can use both.
 
 ## Results in Search, detections and assets
 
