@@ -1413,6 +1413,14 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	osIdentity := r.osIdentity(ctx, in, c)
 	r.agents.Store(agentsInv)
 	in.jobs.Go(func() { agentsInv.Run(ctx) })
+	// A network sensor gone silent cannot be searched for: the server
+	// that runs the background jobs writes an event for it, which the
+	// built-in detection network-sensor-unhealthy reads.
+	sensorWatch := &agentinv.SensorWatch{Agents: agentsInv, Events: pipeline, Log: log}
+	if r.node != nil {
+		sensorWatch.Leader = r.node.RunsJobs
+	}
+	in.jobs.Go(func() { sensorWatch.Run(ctx) })
 	srv := &api.Server{
 		Config:       c,
 		Tokens:       tokens,
