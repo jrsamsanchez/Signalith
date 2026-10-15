@@ -12,11 +12,12 @@ hide:
 
 # Signalith documentation
 
-<p class="sg-lead">Signalith collects logs from Windows, Linux, network devices and
-OpenTelemetry, stores them in OpenSearch, and adds the security layer on top: a pipe-based
-query language, scheduled detections with a triage queue, Sigma rule import, risk-based
-alerting, threat intel, dashboards and investigation cases. It is one Go program with the
-web UI built in, running as a Windows service, a systemd unit or a container.</p>
+<p class="sg-lead">Signalith collects logs from Windows, Linux, network devices, web servers,
+network sensors and OpenTelemetry, stores them in OpenSearch, and adds the security layer
+on top: a pipe-based query language, thousands of tested detections with a triage queue,
+risk-based alerting, threat intel, vulnerability scanning, dashboards and investigation
+cases. It is one Go program with the web UI built in, running as a Windows service, a
+systemd unit or a container, on one server or several.</p>
 
 [Get started](getting-started.md){ .md-button .md-button--primary }
 [See the roadmap](roadmap.md){ .md-button }
@@ -33,7 +34,7 @@ web UI built in, running as a Windows service, a systemd unit or a container.</p
     ---
 
     Run it with Docker in two commands, or install it on Linux or Windows next to
-    OpenSearch.
+    OpenSearch. Sample data with attacks hidden in it lets you try everything at once.
 
     [:octicons-arrow-right-24: Install and first steps](getting-started.md)
 
@@ -42,7 +43,7 @@ web UI built in, running as a Windows service, a systemd unit or a container.</p
     ---
 
     Fluent Bit agents for Windows and Linux, syslog and CEF from network devices,
-    and OpenTelemetry logs over OTLP.
+    OpenTelemetry logs, web server access logs, osquery, Wazuh and antivirus.
 
     [:octicons-arrow-right-24: Agents and syslog](sending-data.md)
 
@@ -59,35 +60,62 @@ web UI built in, running as a Windows service, a systemd unit or a container.</p
 
     ---
 
-    Scheduled detections mapped to MITRE ATT&CK, Sigma import, a findings queue,
-    risk scores and threat intel matching.
+    Built-in detections and tested SigmaHQ and Splunk content packs mapped to MITRE
+    ATT&CK, a findings queue, risk scores and threat intel matching.
 
     [:octicons-arrow-right-24: Detections](detections.md)
+
+-   :material-creation-outline:{ .lg } **Investigate with AI**
+
+    ---
+
+    One click on a finding asks an AI model of your choice for a verdict and a timeline,
+    and AI tools such as Claude can read Signalith over MCP.
+
+    [:octicons-arrow-right-24: Investigate with AI](investigate.md)
+
+-   :material-lan:{ .lg } **Network sensor**
+
+    ---
+
+    Zeek and Suricata on a sensor plugged into a mirror port, installed with one line,
+    with a Network dashboard.
+
+    [:octicons-arrow-right-24: Network sensor](network-sensor.md)
+
+-   :material-radar:{ .lg } **Vulnerability scanning**
+
+    ---
+
+    Nmap scans matched to CVEs, a scanner in each network zone, and OpenVAS as an option
+    for deeper scans.
+
+    [:octicons-arrow-right-24: Vulnerability scanning](vulnerabilities.md)
 
 -   :material-view-dashboard-outline:{ .lg } **Dashboards**
 
     ---
 
-    The security posture dashboard and dashboards of your own, kept as YAML files
-    you can review in Git.
+    The security posture, network, vulnerability and malware dashboards, and dashboards
+    of your own, kept as YAML files you can review in Git.
 
     [:octicons-arrow-right-24: Dashboards](dashboards.md)
 
--   :material-flask-outline:{ .lg } **Try it with sample data**
+-   :material-server-network:{ .lg } **Several servers**
 
     ---
 
-    A week of made-up activity for a fictional company, with attacks hidden in it.
-    One click loads it, one click removes it.
+    Add a server with one line on Linux, Windows or Docker. Servers share settings,
+    users and detections, take over each other's jobs and upgrade one at a time.
 
-    [:octicons-arrow-right-24: Sample data](sample-data.md)
+    [:octicons-arrow-right-24: Adding servers](multi-server.md)
 
 -   :material-account-key-outline:{ .lg } **Administration**
 
     ---
 
-    Settings, users and roles, Active Directory sign-in, several servers sharing one
-    OpenSearch, and data retention.
+    Settings, users and roles, Active Directory sign-in, agent tokens, data retention
+    and archives, and sizing.
 
     [:octicons-arrow-right-24: Server settings](settings.md)
 
@@ -95,8 +123,8 @@ web UI built in, running as a Windows service, a systemd unit or a container.</p
 
     ---
 
-    HTTPS by default, encrypted secrets, a secured OpenSearch, and a built-in check of
-    how your server is set up.
+    HTTPS by default, encrypted secrets and archives, a secured OpenSearch with its own
+    certificates, and a built-in check of how your server is set up.
 
     [:octicons-arrow-right-24: Security checks](security.md)
 
@@ -115,8 +143,10 @@ web UI built in, running as a Windows service, a systemd unit or a container.</p
 ```text
 Fluent Bit agents ──HTTPS──▶ signalith (Go) ──REST──▶ OpenSearch
  (Windows, Linux)            ingest, parse,          events by data model and day
-syslog devices ─UDP/TCP/TLS▶ query compiler,
+network sensors ───HTTPS───▶ query compiler,
+syslog devices ─UDP/TCP/TLS▶ detections,
 OTLP collectors ──HTTPS────▶ web UI and API ◀── analyst browser
+                             (one server or several)
 ```
 
 Signalith is a personal open-source project by Samuel Sanchez Jr., licensed under
