@@ -201,7 +201,7 @@ systemctl stop opensearch 2>/dev/null || true
 # The package puts its demo certificates next to opensearch.yml even when
 # told not to set them up, and the security plugin refuses to start while
 # they are there.
-find /etc/opensearch -path /etc/opensearch/certs -prune -o -name '*.pem' -print -delete
+rm -f /etc/opensearch/*.pem
 rm -rf /etc/opensearch/certs
 cp -r /root/opensearch-pki/certs /etc/opensearch/certs
 chown -R opensearch:opensearch /etc/opensearch/certs
