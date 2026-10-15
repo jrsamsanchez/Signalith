@@ -306,3 +306,81 @@ func TestRequeueOnlyOwnRunningScan(t *testing.T) {
 		t.Fatal("a stopped scan was requeued")
 	}
 }
+
+// A scan of a network with no scanner of its own goes back in the queue
+// when its server stops running the jobs, and the new job server runs it.
+func TestJobHandoffRequeuesScan(t *testing.T) {
+	old := heartbeat
+	heartbeat = 20 * time.Millisecond
+	defer func() { heartbeat = old }()
+	a, b, _, bArgs, _ := zoneScanners(t)
+	ctx := context.Background()
+	office := target("192.0.2.0/24")
+	office.Schedule = Schedule{Every: Manual}
+	set, err := a.Store.SaveSettings(ctx, Settings{Targets: []Target{office}}, store.Version{}, "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sc, _ := a.Store.NewScan(ctx, set.Targets[0], TriggerManual, "alice")
+	var aLeads atomic.Bool
+	aLeads.Store(true)
+	a.Leader = aLeads.Load
+	started := make(chan struct{})
+	a.Runner = &Runner{Path: "/usr/bin/nmap", Exec: func(ctx context.Context, path string, a []string) (io.ReadCloser, func() ([]byte, error), error) {
+		close(started)
+		<-ctx.Done()
+		return nil, nil, ctx.Err()
+	}}
+	done := make(chan error, 1)
+	go func() { done <- a.Step(ctx) }()
+	<-started
+	aLeads.Store(false)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	got, _, _ := a.Store.Scan(ctx, sc.ID)
+	if got.State != StateQueued || got.ScannerID != "" {
+		t.Fatalf("scan after the handoff = %+v", got)
+	}
+	b.Leader = func() bool { return true }
+	if err := b.Step(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got, _, _ = a.Store.Scan(ctx, sc.ID); got.State != StateDone || got.ScannerID != "n_bbbb" || len(*bArgs) == 0 {
+		t.Errorf("scan after the new job server ran it = %+v", got)
+	}
+}
+
+// A scan someone stops is still recorded as stopped.
+func TestStoppedScanStaysStopped(t *testing.T) {
+	old := heartbeat
+	heartbeat = 20 * time.Millisecond
+	defer func() { heartbeat = old }()
+	a, _, _, _, _ := zoneScanners(t)
+	ctx := context.Background()
+	office := target("192.0.2.0/24")
+	office.Schedule = Schedule{Every: Manual}
+	set, err := a.Store.SaveSettings(ctx, Settings{Targets: []Target{office}}, store.Version{}, "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sc, _ := a.Store.NewScan(ctx, set.Targets[0], TriggerManual, "alice")
+	started := make(chan struct{})
+	a.Runner = &Runner{Path: "/usr/bin/nmap", Exec: func(ctx context.Context, path string, a []string) (io.ReadCloser, func() ([]byte, error), error) {
+		close(started)
+		<-ctx.Done()
+		return nil, nil, ctx.Err()
+	}}
+	done := make(chan error, 1)
+	go func() { done <- a.Step(ctx) }()
+	<-started
+	if err := a.Store.UpdateScan(ctx, sc.ID, map[string]any{"stop": true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if got, _, _ := a.Store.Scan(ctx, sc.ID); got.State != StateStopped {
+		t.Errorf("stopped scan = %+v", got)
+	}
+}
