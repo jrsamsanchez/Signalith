@@ -753,3 +753,32 @@ func TestReleaseToAnAbsentServerFallsBack(t *testing.T) {
 		t.Fatalf("nobody took the lease: %+v", s.lease())
 	}
 }
+
+// A holder whose lease still names its own files, which this server's
+// Holder hook counts as the shared ones (a founder stopped before it
+// switched to the shared settings it filled), is taken over; without the
+// hook it is not.
+func TestFingerprintGuardHolderHook(t *testing.T) {
+	shared := SharedFingerprint("c_1")
+	for _, hook := range []bool{false, true} {
+		s := newSim(t)
+		a, b := s.add("n_a", nil), s.add("n_b", nil)
+		a.setFP(Fingerprints{Retention: "sha256:r1", Feeds: "sha256:f1"})
+		b.setFP(Fingerprints{Retention: shared, Feeds: shared})
+		if hook {
+			b.l.Holder = func(doc LeaseDoc) LeaseDoc {
+				if doc.Holder == "n_a" {
+					doc.Fingerprints.Retention, doc.Fingerprints.Feeds = shared, shared
+					doc.Fingerprint = doc.Fingerprints.Combined()
+				}
+				return doc
+			}
+		}
+		s.run(5 * time.Second)
+		a.paused = true
+		s.run(time.Minute)
+		if b.l.Holding() != hook {
+			t.Errorf("hook %v: b holds the lease: %v (%q)", hook, b.l.Holding(), b.l.View().CannotTake)
+		}
+	}
+}
