@@ -74,7 +74,17 @@ type NodeCfg struct {
 	// settings taken back to its default, whose entry left Values: its
 	// revision goes on counting from there (see ResetMark).
 	Reset map[string]ResetMark `json:"reset,omitempty"`
-	Extra `json:"-"`
+	// Drained is set while an admin has drained the server: it wants no
+	// traffic and runs no background jobs, across restarts, until it is
+	// resumed.
+	Drained *DrainMark `json:"drained,omitempty"`
+	Extra   `json:"-"`
+}
+
+// DrainMark is who drained a server, and when.
+type DrainMark struct {
+	By string    `json:"by"`
+	At time.Time `json:"at"`
 }
 
 // ResetMark is the last change of a setting taken back to its default:

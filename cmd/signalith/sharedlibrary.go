@@ -7,6 +7,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/jrsamsanchez/signalith/internal/assets"
 	"github.com/jrsamsanchez/signalith/internal/cluster"
 	"github.com/jrsamsanchez/signalith/internal/clustercfg"
 	"github.com/jrsamsanchez/signalith/internal/clusterlib"
@@ -17,7 +18,8 @@ import (
 )
 
 // The shared library: the custom detections, the choices made for the
-// shipped ones and the custom dashboards. Once the cluster is at
+// shipped ones and the custom dashboards, and (from
+// shared.LevelSharedLookups) the asset and identity lists. Once the cluster is at
 // shared.LevelSharedLibrary and the founder's folders were imported,
 // every member reads and changes them in OpenSearch
 // (internal/clusterlib), and its folders become inboxes: a file changed
@@ -32,8 +34,10 @@ type sharedLibrary struct {
 	log  *slog.Logger
 	cfg  func() *config.Config
 	// on is true while the components running now take the library from
-	// the shared settings.
-	on atomic.Bool
+	// the shared settings, and lists while they take the asset and
+	// identity lists from there.
+	on    atomic.Bool
+	lists atomic.Bool
 }
 
 func newSharedLibrary(docs *clusterlib.Docs, node *cluster.Node, cfg func() *config.Config, log *slog.Logger) *sharedLibrary {
@@ -46,6 +50,7 @@ func libraryFiles(f clustercfg.Files) clusterlib.Files {
 	return clusterlib.Files{
 		DetectionsDir: func() string { return f.Config().DetectionsDir() },
 		DashboardsDir: func() string { return f.Config().DashboardsDir() },
+		LookupsDir:    func() string { return f.Config().LookupsDir() },
 		Node:          f.Node,
 		Log:           f.Log,
 		Now:           f.Now,
@@ -57,6 +62,7 @@ func (l *sharedLibrary) files() clusterlib.Files {
 	return clusterlib.Files{
 		DetectionsDir: func() string { return l.cfg().DetectionsDir() },
 		DashboardsDir: func() string { return l.cfg().DashboardsDir() },
+		LookupsDir:    func() string { return l.cfg().LookupsDir() },
 		Node:          l.node.Name(),
 		Log:           l.log,
 	}
@@ -85,4 +91,20 @@ func (l *sharedLibrary) start(ctx context.Context, rt *shared.Runtime, on bool, 
 	l.log.Info("detections and dashboards come from the shared settings; this server's folders are an inbox for them",
 		"detections", n, "dashboards", len(list))
 	return nil
+}
+
+// startLists makes lists keep the asset and identity lists in the shared
+// settings when on, and keeps this server's lookups folder in step with
+// them in jobs until ctx ends. Off, they keep using the folder.
+func (l *sharedLibrary) startLists(ctx context.Context, rt *shared.Runtime, on bool, c *config.Config, lists *assets.Store, jobs *sync.WaitGroup) {
+	l.lists.Store(on)
+	if !on || lists == nil {
+		return
+	}
+	b := &clusterlib.Lookups{Docs: l.docs, Node: l.node.Name(), Writable: rt.Writable}
+	lists.UseBackend(b)
+	in := &clusterlib.ListInbox{Lookups: b, Files: l.files(), Lists: lists, SeenFile: filepath.Join(c.StateDir(), clusterlib.LookupsSeenFileName)}
+	l.docs.OnLookups(in.Kick)
+	jobs.Go(func() { in.Run(ctx) })
+	l.log.Info("the asset and identity lists come from the shared settings; this server's lookups folder is an inbox for them")
 }

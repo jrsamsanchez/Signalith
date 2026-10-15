@@ -101,6 +101,11 @@ type clusterServer struct {
 	// Shared is how the server uses the shared settings; nil for a
 	// version before them.
 	Shared *clusterShared `json:"shared,omitempty"`
+	// Features lists what the server's version can do that an older one
+	// cannot, such as drain (cluster.FeatureDrain).
+	Features []string `json:"features,omitempty"`
+	// Removed is true for a server removed from the cluster.
+	Removed bool `json:"removed,omitempty"`
 }
 
 // clusterShared is how a server uses the shared settings, from its
@@ -145,11 +150,22 @@ func (s *Server) handleCluster(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	st := s.Cluster.Status()
+	removed := map[string]bool{}
+	if s.ClusterServers != nil && s.ClusterServers.Off() == "" {
+		for _, rs := range s.ClusterServers.Lifecycle().Removed {
+			removed[rs.NodeID] = true
+		}
+	}
 	servers := make([]clusterServer, 0, len(st.Servers))
 	for _, sv := range st.Servers {
+		if removed[sv.NodeID] && (sv.State == cluster.StateOffline || sv.State == cluster.StateStopped) {
+			// A removed server that no longer runs is listed with the
+			// removed servers only.
+			continue
+		}
 		out := clusterServer{Name: sv.Name, Self: sv.Self, State: sv.State, OfflineSince: sv.OfflineSince,
 			UptimeSeconds: int64(sv.Uptime / time.Second), Version: sv.Version, Jobs: sv.Jobs, StartedAt: sv.StartedAt,
-			NodeID: sv.NodeID, HeartbeatAt: sv.HeartbeatAt, CannotTakeOver: sv.CannotTakeOver}
+			NodeID: sv.NodeID, HeartbeatAt: sv.HeartbeatAt, CannotTakeOver: sv.CannotTakeOver, Removed: removed[sv.NodeID]}
 		if sv.SeenAgo != nil {
 			ago := int64(*sv.SeenAgo / time.Second)
 			out.SeenSecondsAgo = &ago
@@ -159,7 +175,7 @@ func (s *Server) handleCluster(w http.ResponseWriter, r *http.Request) {
 			osInfo.Endpoint = redact.URL(osInfo.Endpoint)
 			out.NodeURL, out.Listen, out.Syslog, out.OS, out.Arch, out.Deployment = d.NodeURL, d.Listen, &syslog, d.OS, d.Arch, d.Deployment
 			out.ClockOffsetMS, out.NotEligible, out.Fingerprints, out.OpenSearch = d.ClockOffsetMS, d.NotEligible, &fp, &osInfo
-			out.MachineMoved, out.Problems = d.MachineMoved, d.Problems
+			out.MachineMoved, out.Problems, out.Features = d.MachineMoved, d.Problems, d.Features
 			if d.Mode != "" {
 				out.Shared = &clusterShared{Mode: d.Mode, ConfigSeq: d.ConfigSeq, NeedsUpgrade: d.NeedsUpgrade, Tamper: d.Tamper,
 					SettingsDrift: d.SettingsDrift, RestartNeeded: d.RestartNeeded, SettingsRefused: d.SettingsRefused, Restart: d.Restart,

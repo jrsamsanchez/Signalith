@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/jrsamsanchez/signalith/internal/assets"
 	"github.com/jrsamsanchez/signalith/internal/cluster/ostest"
 	"github.com/jrsamsanchez/signalith/internal/dashboards"
 	"github.com/jrsamsanchez/signalith/internal/detect"
@@ -38,7 +39,10 @@ type server struct {
 	boards *dashboards.Store
 	detDir string
 	dbDir  string
+	lkDir  string
 	state  string
+	lists  *assets.Store
+	lk     *Lookups
 }
 
 // newServer starts a server named name. With key it joins the cluster;
@@ -52,7 +56,8 @@ func newServer(t *testing.T, o *testOS, name string, key *shared.ClusterKey) *se
 			t.Fatal(err)
 		}
 	}
-	s := &server{t: t, name: name, docs: NewDocs(), detDir: filepath.Join(dir, "detections"), dbDir: filepath.Join(dir, "dashboards"), state: dir}
+	s := &server{t: t, name: name, docs: NewDocs(), detDir: filepath.Join(dir, "detections"), dbDir: filepath.Join(dir, "dashboards"),
+		lkDir: filepath.Join(dir, "lookups"), state: dir}
 	s.rt = shared.NewRuntime(shared.RuntimeOptions{StateDir: dir, Self: shared.Self{NodeID: "n_" + name, Name: name},
 		Content: s.docs.Track, Log: slog.New(slog.DiscardHandler)})
 	s.rt.Use(o.cl, testPrefix, master)
@@ -74,6 +79,9 @@ func newServer(t *testing.T, o *testOS, name string, key *shared.ClusterKey) *se
 	s.lib = lib
 	s.boards, _ = dashboards.NewStore(s.dbDir)
 	s.boards.UseBackend(&Dashboards{Docs: s.docs, Node: name, Writable: s.rt.Writable})
+	s.lists, _ = assets.NewStore(s.lkDir)
+	s.lk = &Lookups{Docs: s.docs, Node: name, Writable: s.rt.Writable}
+	s.lists.UseBackend(s.lk)
 	return s
 }
 
@@ -97,7 +105,8 @@ func (s *server) cycle() {
 }
 
 func (s *server) files() Files {
-	return Files{DetectionsDir: func() string { return s.detDir }, DashboardsDir: func() string { return s.dbDir }, Node: s.name}
+	return Files{DetectionsDir: func() string { return s.detDir }, DashboardsDir: func() string { return s.dbDir },
+		LookupsDir: func() string { return s.lkDir }, Node: s.name}
 }
 
 func (s *server) inbox(mirror bool) *Inbox {
@@ -154,4 +163,8 @@ func encodeBoard(t *testing.T, d *dashboards.Dashboard) []byte {
 		t.Fatal(err)
 	}
 	return data
+}
+
+func (s *server) listInbox() *ListInbox {
+	return &ListInbox{Lookups: s.lk, Files: s.files(), Lists: s.lists, SeenFile: filepath.Join(s.state, LookupsSeenFileName)}
 }

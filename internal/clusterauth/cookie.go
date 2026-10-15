@@ -55,7 +55,7 @@ func ParseCookie(keys *shared.KeySet, clusterID, v string) error {
 	if len(parts) != 4 || parts[0] != cookieVersion {
 		return ErrBadCookie
 	}
-	k := keys.Get(parts[1])
+	k := keys.CookieKey(parts[1])
 	if k == nil {
 		return ErrBadCookie
 	}

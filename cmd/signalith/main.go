@@ -1183,6 +1183,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		if err := r.sharedContent.library.start(ctx, r.shared, sharedOn && r.shared.SharedLibrary(), c, lib, boards, &in.jobs); err != nil {
 			return nil, err
 		}
+		r.sharedContent.library.startLists(ctx, r.shared, sharedOn && r.shared.SharedLookups(), c, lists, &in.jobs)
 	}
 	// The users, the directory sign-in settings and the sessions: shared
 	// by the servers of the cluster once every one reads them there, else
@@ -1556,7 +1557,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		}},
 	}
 	if r.shared != nil {
-		in.jobsList = append(in.jobsList, requestsJob(r.shared, contentHandlers(feeds, ret, r.auditHandlers(ret))))
+		in.jobsList = append(in.jobsList, requestsJob(r.shared, contentHandlers(feeds, ret, r.auditHandlers(ret), r.lifecycleLeaderHandlers())))
 		in.jobsList = append(in.jobsList, r.auditJobs(c, cl, ret)...)
 	}
 	if parts != nil {
@@ -1599,6 +1600,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			srv.Cluster = sharedCluster{Node: r.node, rt: r.shared}
 			srv.Shared = sharedAPI{rt: r.shared, on: sharedOn}
 			srv.ClusterTLS = r.clusterTLSAPI()
+			srv.ClusterServers = r.clusterServersAPI()
 			srv.ClusterOSIdentity = r.clusterOSIdentityAPI()
 			srv.ConfigToken = configToken{rt: r.shared}
 			// A start that keeps the settings in settings.yaml has the

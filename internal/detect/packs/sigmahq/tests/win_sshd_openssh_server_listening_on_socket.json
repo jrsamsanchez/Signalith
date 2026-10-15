@@ -1,0 +1,5 @@
+{"rule": "3ce8e9a4-bc61-4c9b-8e69-d7e2492a8781", "cases": [
+  {"expect":true,"source":"synthesized","channel":"OpenSSH/Operational","event_id":"4","data":{"payload":"Server listening on x","process":"sshd"}},
+  {"expect":false,"source":"synthesized","channel":"OpenSSH/Operational","event_id":"4","data":{"process":"sshd"}},
+  {"expect":false,"source":"synthesized","channel":"OpenSSH/Operational","event_id":"4","data":{"payload":"Server listening on x"}}
+]}

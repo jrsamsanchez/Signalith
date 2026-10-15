@@ -1,0 +1,5 @@
+{"rule": "0d18728b-f5bf-4381-9dcf-915539fff6c2", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-DNS-Client/Operational","event_id":"3008","data":{"QueryName":"post.1"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-DNS-Client/Operational","event_id":"3008","data":{"QueryName":".stage.123456."}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-DNS-Client/Operational","event_id":"3008","data":{}}
+]}

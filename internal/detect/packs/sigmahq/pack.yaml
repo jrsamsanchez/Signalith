@@ -4,7 +4,7 @@ title: SigmaHQ community rules
 description: Windows rules for Sysmon, Security and System events (processes, network connections, files, registry, DNS, DLL loads, process access, logons, scheduled tasks and services installed), and Linux rules for Sysmon for Linux and the Linux audit log, from the SigmaHQ project, converted to Signalith detections. Each rule shipped here fires on its test events and stays quiet on its exclusions, checked in CI.
 source: https://github.com/SigmaHQ/sigma
 version: 42478221b1a062411b8185732c82caa439271122
-date: "2026-10-14"
+date: "2026-10-15"
 license: DRL-1.1
 license_url: https://github.com/SigmaHQ/Detection-Rule-License
 notice: The rules in this pack are by the SigmaHQ authors named in each rule and are licensed under the Detection Rule License (DRL) 1.1. Findings from them name the rule's author.
@@ -7913,6 +7913,10 @@ rules:
     rule_id: 6c82cf5c-090d-4d57-9188-533577631108
     file: win_application_msmpeng_crash_wer.yml
     path: rules/windows/builtin/application/windows_error_reporting/win_application_msmpeng_crash_wer.yml
+  - id: sigma-win-appmodel-runtime-sysinternals-tools-appx-execution
+    rule_id: d29a20b2-be4b-4827-81f2-3d8a59eab5fc
+    file: win_appmodel_runtime_sysinternals_tools_appx_execution.yml
+    path: rules/windows/builtin/appmodel_runtime/win_appmodel_runtime_sysinternals_tools_appx_execution.yml
   - id: sigma-win-appxdeployment-server-applocker-block
     rule_id: 6ae53108-c3a0-4bee-8f45-c7591a2c337f
     file: win_appxdeployment_server_applocker_block.yml
@@ -7941,6 +7945,10 @@ rules:
     rule_id: c977cb50-3dff-4a9f-b873-9290f56132f1
     file: win_appxdeployment_server_uncommon_package_locations.yml
     path: rules/windows/builtin/appxdeployment_server/win_appxdeployment_server_uncommon_package_locations.yml
+  - id: sigma-win-appxpackaging-om-sups-appx-signature
+    rule_id: b5aa7d60-c17e-4538-97de-09029d6cd76b
+    file: win_appxpackaging_om_sups_appx_signature.yml
+    path: rules/windows/builtin/appxpackaging_om/win_appxpackaging_om_sups_appx_signature.yml
   - id: sigma-win-audit-cve
     rule_id: 48d91a3a-2363-43ba-a456-ca71ac3da5c2
     file: win_audit_cve.yml
@@ -7977,6 +7985,14 @@ rules:
     rule_id: 570ae5ec-33dc-427c-b815-db86228ad43e
     file: win_builtin_remove_application.yml
     path: rules/windows/builtin/application/msiinstaller/win_builtin_remove_application.yml
+  - id: sigma-win-capi2-acquire-certificate-private-key
+    rule_id: e2b5163d-7deb-4566-9af3-40afea6858c3
+    file: win_capi2_acquire_certificate_private_key.yml
+    path: rules/windows/builtin/capi2/win_capi2_acquire_certificate_private_key.yml
+  - id: sigma-win-certificateservicesclient-lifecycle-system-cert-export
+    rule_id: 58c0bff0-40a0-46e8-b5e8-b734b84d2017
+    file: win_certificateservicesclient_lifecycle_system_cert_exported.yml
+    path: rules/windows/builtin/certificate_services_client_lifecycle_system/win_certificateservicesclient_lifecycle_system_cert_exported.yml
   - id: sigma-win-codeintegrity-blocked-protected-process-file
     rule_id: 5daf11c3-022b-4969-adb9-365e6c078c7c
     file: win_codeintegrity_blocked_protected_process_file.yml
@@ -8065,6 +8081,38 @@ rules:
     rule_id: 686c0b4b-9dd3-4847-9077-d6c1bbe36fcb
     file: win_defender_virus_scan_disabled.yml
     path: rules/windows/builtin/windefend/win_defender_virus_scan_disabled.yml
+  - id: sigma-win-dns-client-anonymfiles-com
+    rule_id: 29f171d7-aa47-42c7-9c7b-3c87938164d9
+    file: win_dns_client_anonymfiles_com.yml
+    path: rules/windows/builtin/dns_client/win_dns_client_anonymfiles_com.yml
+  - id: sigma-win-dns-client-mal-cobaltstrike
+    rule_id: 0d18728b-f5bf-4381-9dcf-915539fff6c2
+    file: win_dns_client_mal_cobaltstrike.yml
+    path: rules/windows/builtin/dns_client/win_dns_client_mal_cobaltstrike.yml
+  - id: sigma-win-dns-client-mega-nz
+    rule_id: 66474410-b883-415f-9f8d-75345a0a66a6
+    file: win_dns_client_mega_nz.yml
+    path: rules/windows/builtin/dns_client/win_dns_client_mega_nz.yml
+  - id: sigma-win-dns-client-put-io
+    rule_id: 8b69fd42-9dad-4674-abef-7fdef43ef92a
+    file: win_dns_client_put_io.yml
+    path: rules/windows/builtin/dns_client/win_dns_client_put_io.yml
+  - id: sigma-win-dns-client-tor-onion
+    rule_id: 8384bd26-bde6-4da9-8e5d-4174a7a47ca2
+    file: win_dns_client_tor_onion.yml
+    path: rules/windows/builtin/dns_client/win_dns_client_tor_onion.yml
+  - id: sigma-win-dns-client-ufile-io
+    rule_id: 090ffaad-c01a-4879-850c-6d57da98452d
+    file: win_dns_client_ufile_io.yml
+    path: rules/windows/builtin/dns_client/win_dns_client_ufile_io.yml
+  - id: sigma-win-dns-server-failed-dns-zone-transfer
+    rule_id: 6d444368-6da1-43fe-b2fc-44202430480e
+    file: win_dns_server_failed_dns_zone_transfer.yml
+    path: rules/windows/builtin/dns_server/win_dns_server_failed_dns_zone_transfer.yml
+  - id: sigma-win-dns-server-susp-server-level-plugin-dll
+    rule_id: cbe51394-cd93-4473-b555-edf0144952d9
+    file: win_dns_server_susp_server_level_plugin_dll.yml
+    path: rules/windows/builtin/dns_server/win_dns_server_susp_server_level_plugin_dll.yml
   - id: sigma-win-esent-ntdsutil-abuse
     rule_id: e6e88853-5f20-4c4a-8d26-cd469fd8d31f
     file: win_esent_ntdsutil_abuse.yml
@@ -8097,6 +8145,22 @@ rules:
     rule_id: 00bb5bd5-1379-4fcf-a965-a5b6f7478064
     file: win_firewall_as_setting_change.yml
     path: rules/windows/builtin/firewall_as/win_firewall_as_setting_change.yml
+  - id: sigma-win-iis-logging-etw-disabled
+    rule_id: a5b40a90-baf5-4bf7-a6f7-373494881d22
+    file: win_iis_logging_etw_disabled.yml
+    path: rules/windows/builtin/iis-configuration/win_iis_logging_etw_disabled.yml
+  - id: sigma-win-iis-logging-http-disabled
+    rule_id: e8ebd53a-30c2-45bd-81bb-74befba07bdb
+    file: win_iis_logging_http_disabled.yml
+    path: rules/windows/builtin/iis-configuration/win_iis_logging_http_disabled.yml
+  - id: sigma-win-iis-module-removed
+    rule_id: 9e1a1fdf-ee58-40ce-8e15-b66ca5a80e1f
+    file: win_iis_module_removed.yml
+    path: rules/windows/builtin/iis-configuration/win_iis_module_removed.yml
+  - id: sigma-win-lsa-server-normal-user-admin
+    rule_id: 7ac407cc-0f48-4328-aede-de1d2e6fef41
+    file: win_lsa_server_normal_user_admin.yml
+    path: rules/windows/builtin/lsa_server/win_lsa_server_normal_user_admin.yml
   - id: sigma-win-msi-install-from-susp-locations
     rule_id: c7c8aa1c-5aff-408e-828b-998e3620b341
     file: win_msi_install_from_susp_locations.yml
@@ -8613,10 +8677,26 @@ rules:
     rule_id: b4c8da4a-1c12-46b0-8a2b-0a8521d03442
     file: win_software_restriction_policies_block.yml
     path: rules/windows/builtin/application/microsoft_windows_software_restriction_policies/win_software_restriction_policies_block.yml
+  - id: sigma-win-sshd-openssh-server-listening-on-socket
+    rule_id: 3ce8e9a4-bc61-4c9b-8e69-d7e2492a8781
+    file: win_sshd_openssh_server_listening_on_socket.yml
+    path: rules/windows/builtin/openssh/win_sshd_openssh_server_listening_on_socket.yml
   - id: sigma-win-susp-backup-delete
     rule_id: 9703792d-fd9a-456d-a672-ff92efe4806a
     file: win_susp_backup_delete.yml
     path: rules/windows/builtin/application/microsoft_windows_backup/win_susp_backup_delete.yml
+  - id: sigma-win-susp-ntlm-auth
+    rule_id: 98c3bcf1-56f2-49dc-9d8d-c66cf190238b
+    file: win_susp_ntlm_auth.yml
+    path: rules/windows/builtin/ntlm/win_susp_ntlm_auth.yml
+  - id: sigma-win-susp-ntlm-brute-force
+    rule_id: 9c8acf1a-cbf9-4db6-b63c-74baabe03e59
+    file: win_susp_ntlm_brute_force.yml
+    path: rules/windows/builtin/ntlm/win_susp_ntlm_brute_force.yml
+  - id: sigma-win-susp-ntlm-rdp
+    rule_id: ce5678bb-b9aa-4fb5-be4b-e57f686256ad
+    file: win_susp_ntlm_rdp.yml
+    path: rules/windows/builtin/ntlm/win_susp_ntlm_rdp.yml
   - id: sigma-win-system-adcs-enrollment-request-denied
     rule_id: 994bfd6d-0a2e-481e-a861-934069fcf5f5
     file: win_system_adcs_enrollment_request_denied.yml
@@ -8841,10 +8921,26 @@ rules:
     rule_id: a0cb7110-edf0-47a4-9177-541a4083128a
     file: win_system_vul_cve_2020_1472.yml
     path: rules/windows/builtin/system/netlogon/win_system_vul_cve_2020_1472.yml
+  - id: sigma-win-taskscheduler-execution-from-susp-locations
+    rule_id: 424273ea-7cf8-43a6-b712-375f925e481f
+    file: win_taskscheduler_execution_from_susp_locations.yml
+    path: rules/windows/builtin/taskscheduler/win_taskscheduler_execution_from_susp_locations.yml
+  - id: sigma-win-taskscheduler-lolbin-execution-via-task-scheduler
+    rule_id: f0767f15-0fb3-44b9-851e-e8d9a6d0005d
+    file: win_taskscheduler_lolbin_execution_via_task_scheduler.yml
+    path: rules/windows/builtin/taskscheduler/win_taskscheduler_lolbin_execution_via_task_scheduler.yml
+  - id: sigma-win-taskscheduler-susp-schtasks-delete-or-disable
+    rule_id: 9e3cb244-bdb8-4632-8c90-6079c8f4f16d
+    file: win_taskscheduler_susp_schtasks_delete_or_disable.yml
+    path: rules/windows/builtin/taskscheduler/win_taskscheduler_susp_schtasks_delete_or_disable.yml
   - id: sigma-win-terminalservices-rdp-ngrok
     rule_id: 64d51a51-32a6-49f0-9f3d-17e34d640272
     file: win_terminalservices_rdp_ngrok.yml
     path: rules/windows/builtin/terminalservices/win_terminalservices_rdp_ngrok.yml
+  - id: sigma-win-usb-device-plugged
+    rule_id: 1a4bd6e3-4c6e-405d-a9a3-53a116e341d4
+    file: win_usb_device_plugged.yml
+    path: rules/windows/builtin/driverframeworks/win_usb_device_plugged.yml
   - id: sigma-win-wmi-activity-nteventlogfile-cleareventlog
     rule_id: d4f1a2b3-7c8e-4d5f-b6a9-1e0c2d3f4e5b
     file: win_wmi_activity_nteventlogfile_cleareventlog.yml

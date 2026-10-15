@@ -184,6 +184,9 @@ type Server struct {
 	// ClusterTLS is the cluster's one certificate authority; nil on a
 	// server that is not a member of a cluster.
 	ClusterTLS ClusterTLS
+	// ClusterServers drains and removes servers and rotates the cluster
+	// key; nil on a server that is not a member of a cluster.
+	ClusterServers ClusterServers
 	// ClusterOSIdentity is OpenSearch's certificate authority the cluster
 	// keeps; nil on a server that is not a member of a cluster.
 	ClusterOSIdentity ClusterOSIdentity
@@ -302,6 +305,7 @@ func (s *Server) Handler() http.Handler {
 	s.routeSettings(api)
 	s.routeCluster(api)
 	s.routeClusterTLS(api)
+	s.routeClusterServers(api)
 	s.routeClusterOSIdentity(api)
 	s.routeTokens(api)
 	s.routeAgents(api)

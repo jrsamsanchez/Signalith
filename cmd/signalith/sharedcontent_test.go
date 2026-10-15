@@ -296,7 +296,7 @@ func TestEventAgeFollowsTheSettings(t *testing.T) {
 // TestContentHandlersList checks the merged list of the content's
 // request handlers keeps every feature's request types.
 func TestContentHandlersList(t *testing.T) {
-	hs := contentHandlers(nil, nil, nil)
+	hs := contentHandlers(nil, nil, nil, nil)
 	for _, k := range []string{clustercfg.RequestFeedRefresh, clustercfg.RequestRetentionRun} {
 		if hs[k] == nil {
 			t.Errorf("no handler for %s", k)

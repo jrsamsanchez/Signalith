@@ -201,6 +201,18 @@ var sysmonEvents = map[string]string{
 	"shell_core":                           "28115",
 	"smbclient_security":                   "31017",
 	"security_mitigations":                 "12",
+	"dns_client":                           "3008",
+	"taskscheduler":                        "129",
+	"ntlm":                                 "8001",
+	"lsa_server":                           "300",
+	"capi2":                                "70",
+	"driver_framework":                     "2003",
+	"appmodel_runtime":                     "201",
+	"appxpackaging_om":                     "157",
+	"certificateservicesclient_lifecycle_system": "1007",
+	"openssh":           "4",
+	"dns_server":        "6004",
+	"iis_configuration": "29",
 	// Defender log rules (service: windefend) name their events; a
 	// threat detected is the first.
 	"windefend": "1116",

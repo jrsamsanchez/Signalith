@@ -247,6 +247,9 @@ type Store struct {
 	// rewritten within the file system's time resolution (Windows) keeps
 	// its time.
 	sums [4][sha256.Size]byte
+	// backend keeps the user's lists in the shared settings of a cluster
+	// (see shared.go); nil keeps them in Dir only.
+	backend Backend
 }
 
 // lookup indexes one pair of lists. It is never changed once built, so a

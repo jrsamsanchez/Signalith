@@ -41,6 +41,52 @@ const MitigationsChannel = "Microsoft-Windows-Security-Mitigations/KernelMode"
 // its download and upload jobs.
 const BitsChannel = "Microsoft-Windows-Bits-Client/Operational"
 
+// DnsClientChannel is where the DNS client logs the names it looked up
+// (turned off by default).
+const DnsClientChannel = "Microsoft-Windows-DNS-Client/Operational"
+
+// TaskSchedulerChannel is where Task Scheduler logs tasks started,
+// deleted and disabled (its history, turned off by default on clients).
+const TaskSchedulerChannel = "Microsoft-Windows-TaskScheduler/Operational"
+
+// NtlmChannel is where Windows logs NTLM authentications audited by the
+// "Restrict NTLM" policies.
+const NtlmChannel = "Microsoft-Windows-NTLM/Operational"
+
+// LsaChannel is where the Local Security Authority logs, among others,
+// the groups of the users logging on.
+const LsaChannel = "Microsoft-Windows-LSA/Operational"
+
+// Capi2Channel is where CryptoAPI logs certificate operations (turned
+// off by default).
+const Capi2Channel = "Microsoft-Windows-CAPI2/Operational"
+
+// DriverFrameworksChannel is where the user-mode driver framework logs
+// devices plugged in (turned off by default).
+const DriverFrameworksChannel = "Microsoft-Windows-DriverFrameworks-UserMode/Operational"
+
+// AppModelRuntimeChannel is where Windows logs packaged app processes.
+const AppModelRuntimeChannel = "Microsoft-Windows-AppModel-Runtime/Admin"
+
+// AppxPackagingChannel is where Windows logs app package files read,
+// with their signing certificate.
+const AppxPackagingChannel = "Microsoft-Windows-AppxPackaging/Operational"
+
+// CertLifecycleChannel is where Windows logs the computer's certificates
+// being installed, renewed and exported.
+const CertLifecycleChannel = "Microsoft-Windows-CertificateServicesClient-Lifecycle-System/Operational"
+
+// OpenSshChannel is where the Windows OpenSSH server logs (when it is
+// installed).
+const OpenSshChannel = "OpenSSH/Operational"
+
+// DnsServerChannel is the DNS Server log (on DNS servers).
+const DnsServerChannel = "DNS Server"
+
+// IisConfigurationChannel is where IIS logs its configuration being
+// changed (on web servers, turned off by default).
+const IisConfigurationChannel = "Microsoft-IIS-Configuration/Operational"
+
 // namedChannel is a Windows log whose events the parser reads by name:
 // the prefix of its stored fields, and its events.
 type namedChannel struct {
@@ -71,6 +117,11 @@ var appxDeploymentFailed = []string{"DeploymentOperation", "PackageFullName", "P
 // securitySubject is the account that acted, the first data of most
 // Security events.
 var securitySubject = []string{"SubjectUserSid", "SubjectUserName", "SubjectDomainName", "SubjectLogonId"}
+
+// driverOperation is the data of a Plug and Play or power operation a
+// device received or finished (DriverFrameworks-UserMode 2100, 2102).
+var driverOperation = []string{"LifetimeId", "InstanceId", "MajorCode", "MinorCode", "Argument1", "Argument2", "Argument3",
+	"Argument4", "Status"}
 
 // mitigationImage is the data of an image load a code integrity
 // mitigation blocked or audited (Security-Mitigations 11 and 12).
@@ -134,6 +185,56 @@ var namedChannels = map[string]namedChannel{
 		"11": {"A process was blocked from loading an image not signed by Microsoft (audit)", mitigationImage},
 		"12": {"A process was blocked from loading an image not signed by Microsoft", mitigationImage},
 	}},
+	strings.ToLower(DnsClientChannel): {"dnsclient", map[string]systemEvent{
+		"3008": {"A DNS query completed", []string{"QueryName", "QueryType", "QueryOptions", "QueryStatus", "QueryResults"}},
+	}},
+	strings.ToLower(TaskSchedulerChannel): {"taskscheduler", map[string]systemEvent{
+		"129": {"A scheduled task started a process", []string{"TaskName", "Path", "ProcessID", "Priority"}},
+		"141": {"A scheduled task was deleted", []string{"TaskName", "UserName"}},
+		"142": {"A scheduled task was disabled", []string{"TaskName", "UserName"}},
+	}},
+	strings.ToLower(NtlmChannel): {"ntlm", map[string]systemEvent{
+		"8001": {"An outgoing NTLM authentication was audited", []string{"TargetName", "UserName", "DomainName", "CallerPID",
+			"ProcessName", "ClientLUID", "ClientUserName", "ClientDomainName", "MechanismOID"}},
+		"8002": {"An incoming NTLM authentication was audited", []string{"CallerPID", "ProcessName", "ClientLUID", "ClientUserName",
+			"ClientDomainName", "MechanismOID"}},
+		"8004": {"An NTLM authentication to this domain controller was audited", []string{"SChannelName", "UserName", "DomainName",
+			"WorkstationName", "SChannelType"}},
+	}},
+	strings.ToLower(LsaChannel): {"lsa", map[string]systemEvent{
+		"300": {"A user's groups were recorded at logon", []string{"TargetUserSid", "TargetUserName", "TargetDomainName",
+			"TargetLogonId", "TargetLogonGuid", "EventOrginal", "EventCountTotal", "SidList"}},
+	}},
+	strings.ToLower(Capi2Channel): {"capi2", map[string]systemEvent{
+		"70": {"A certificate's private key was acquired", nil},
+	}},
+	strings.ToLower(DriverFrameworksChannel): {"driver", map[string]systemEvent{
+		"2003": {"A user-mode driver was loaded for a device", []string{"LifetimeId", "InstanceId"}},
+		"2100": {"A device received a Plug and Play or power operation", driverOperation},
+		"2102": {"A device finished a Plug and Play or power operation", driverOperation},
+	}},
+	strings.ToLower(AppModelRuntimeChannel): {"appmodel", map[string]systemEvent{
+		"201": {"A packaged app process was created", []string{"ProcessID", "PackageName", "ImageName", "ApplicationName", "Message"}},
+	}},
+	strings.ToLower(AppxPackagingChannel): {"appxpackaging", map[string]systemEvent{
+		"157": {"An app package's signing certificate was read", []string{"subjectName"}},
+	}},
+	strings.ToLower(CertLifecycleChannel): {"certlifecycle", map[string]systemEvent{
+		"1007": {"A certificate was exported", nil},
+	}},
+	strings.ToLower(OpenSshChannel): {"openssh", map[string]systemEvent{
+		"4": {"The OpenSSH server logged a message", []string{"process", "payload"}},
+	}},
+	strings.ToLower(DnsServerChannel): {"dnsserver", map[string]systemEvent{
+		"150":  {"The DNS server could not load a server-level plug-in DLL", nil},
+		"770":  {"The DNS server loaded a server-level plug-in DLL", nil},
+		"771":  {"The DNS server could not load a server-level plug-in DLL", nil},
+		"6004": {"The DNS server refused a zone transfer for a zone it does not hold", nil},
+	}},
+	strings.ToLower(IisConfigurationChannel): {"iisconfig", map[string]systemEvent{
+		"29": {"An IIS configuration setting changed", []string{"PhysicalPath", "ConfigPath", "EffectiveLocationPath",
+			"Configuration", "EditOperationType", "OldValue", "NewValue"}},
+	}},
 	// Security log events no data model holds, read by name for the
 	// rules about them: logon processes registered, time changed,
 	// Kerberos replays, privileged services called and objects
@@ -194,6 +295,18 @@ var NamedChannelServices = map[string]string{
 	"shell-core":                           ShellCoreChannel,
 	"smbclient-security":                   SmbClientSecurityChannel,
 	"security-mitigations":                 MitigationsChannel,
+	"dns-client":                           DnsClientChannel,
+	"taskscheduler":                        TaskSchedulerChannel,
+	"ntlm":                                 NtlmChannel,
+	"lsa-server":                           LsaChannel,
+	"capi2":                                Capi2Channel,
+	"driver-framework":                     DriverFrameworksChannel,
+	"appmodel-runtime":                     AppModelRuntimeChannel,
+	"appxpackaging-om":                     AppxPackagingChannel,
+	"certificateservicesclient-lifecycle-system": CertLifecycleChannel,
+	"openssh":           OpenSshChannel,
+	"dns-server":        DnsServerChannel,
+	"iis-configuration": IisConfigurationChannel,
 }
 
 // IsNamedSecurityEvents reports whether the parser reads each of these

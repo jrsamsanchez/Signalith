@@ -1,12 +1,15 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/jrsamsanchez/signalith/internal/shared"
 )
 
 // doIf is do with an If-Match header.
@@ -89,5 +92,42 @@ func TestDashboardChangesHonourIfMatch(t *testing.T) {
 	_, out = do(t, ts, "GET", "/api/dashboards/etag-board", "", true)
 	if code, _ := doIf(t, ts, "DELETE", "/api/dashboards/etag-board", "", out["etag"].(string)); code != 204 {
 		t.Fatalf("delete with the current version = %d", code)
+	}
+}
+
+// fakeLists is a shared copy of the lists for the API tests: one version
+// per list, a change over an older one refused.
+type fakeLists struct{ etags map[string]string }
+
+func (f *fakeLists) ETag(kind string) string { return f.etags[kind] }
+
+func (f *fakeLists) Put(_ context.Context, by, kind string, _ []byte, etag string) error {
+	if etag != "" && etag != f.etags[kind] {
+		return &shared.StaleError{By: "alice", Node: "siem-a", At: "2026-10-14T10:00:00Z"}
+	}
+	f.etags[kind] += "x"
+	return nil
+}
+
+func TestLookupUploadsHonourIfMatch(t *testing.T) {
+	ts, _ := newTestServerWith(t, func(s *Server) { s.Assets.UseBackend(&fakeLists{etags: map[string]string{"assets": "v1"}}) })
+	_, got := do(t, ts, "GET", "/api/lookups/assets", "", true)
+	if got["shared"] != true || got["etag"] != "v1" {
+		t.Fatalf("get = %v", got)
+	}
+	code, out := doIf(t, ts, "PUT", "/api/lookups/assets", "host\nweb1\n", "v1")
+	if code != 200 || out["etag"] != "v1x" {
+		t.Fatalf("upload over the version shown = %d %v", code, out)
+	}
+	code, out = doIf(t, ts, "PUT", "/api/lookups/assets", "host\nweb2\n", "v1")
+	if code != 412 || out["changed_by"] != "alice" || out["changed_on"] != "siem-a" {
+		t.Fatalf("upload over a changed version = %d %v", code, out)
+	}
+	if _, got := do(t, ts, "GET", "/api/lookups/assets", "", true); got["count"] != float64(1) {
+		t.Fatalf("the refused list is in use: %v", got)
+	}
+	// Without If-Match (a script), the upload applies to the latest.
+	if code, _ := doIf(t, ts, "PUT", "/api/lookups/assets", "host\nweb3\n", ""); code != 200 {
+		t.Fatalf("upload without If-Match = %d", code)
 	}
 }
