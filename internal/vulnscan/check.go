@@ -44,6 +44,8 @@ type Checker struct {
 	GOOS string
 	// Docker says Signalith runs in its container image.
 	Docker bool
+	// Reach finds how this server reaches an address; nil is LocalRoute.
+	Reach func(ctx context.Context, entry string) Route
 }
 
 func (c *Checker) goos() string {
@@ -73,8 +75,9 @@ func (c *Checker) installNmap() []string {
 	}
 }
 
-// Run checks the machine. path is where Nmap was found, or "".
-func (c *Checker) Run(ctx context.Context, set Settings) (checks []Check, path string) {
+// Run checks the machine, and whether it reaches mine, the networks it
+// scans. path is where Nmap was found, or "".
+func (c *Checker) Run(ctx context.Context, set Settings, mine []Target) (checks []Check, path string) {
 	find := c.FindNmap
 	if find == nil {
 		find = FindNmap
@@ -169,9 +172,10 @@ func (c *Checker) Run(ctx context.Context, set Settings) (checks []Check, path s
 	checks = append(checks, key)
 
 	nets := Check{ID: "networks", Title: "Networks to scan",
-		Why: "Signalith scans only the networks you list, on the schedule you pick. Only list networks you own or have permission to scan."}
+		Why: "Signalith scans only the networks you list, on the schedule you pick. Only list networks you own or have permission to scan. " +
+			"Each network is scanned by one server: pick, for each, a server that can reach it, such as one inside a segmented network zone."}
 	enabled := 0
-	for _, t := range set.Targets {
+	for _, t := range mine {
 		if t.Enabled {
 			enabled++
 		}
@@ -179,12 +183,17 @@ func (c *Checker) Run(ctx context.Context, set Settings) (checks []Check, path s
 	switch {
 	case len(set.Targets) == 0:
 		nets.State, nets.Detail = CheckInfo, "No networks yet. Add one to start scanning."
+	case len(mine) == 0:
+		nets.State, nets.Detail = CheckInfo, "This server scans none of the networks; other servers scan them."
 	case enabled == 0:
-		nets.State, nets.Detail = CheckInfo, fmt.Sprintf("%d %s listed, all paused.", len(set.Targets), plural(len(set.Targets), "network", "networks"))
+		nets.State, nets.Detail = CheckInfo, fmt.Sprintf("This server scans %d %s, all paused.", len(mine), plural(len(mine), "network", "networks"))
 	default:
-		nets.State, nets.Detail = CheckOK, fmt.Sprintf("%d %s scheduled.", enabled, plural(enabled, "network", "networks"))
+		nets.State, nets.Detail = CheckOK, fmt.Sprintf("This server scans %d %s on a schedule.", enabled, plural(enabled, "network", "networks"))
 	}
 	checks = append(checks, nets)
+	for _, t := range mine {
+		checks = append(checks, c.reachCheck(ctx, t))
+	}
 	return checks, path
 }
 
