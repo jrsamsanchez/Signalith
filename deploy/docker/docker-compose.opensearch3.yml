@@ -32,7 +32,7 @@ x-node: &node
   # Every node checks client certificates against the revocation list, as
   # the first node does (docker-compose.yml): a node that skipped it would
   # still let a removed server in.
-  entrypoint: ["sh", "-c", "if [ -s config/crl/crl.pem ]; then exec env plugins.security.ssl.http.crl.validate=true plugins.security.ssl.http.crl.file_path=/usr/share/opensearch/config/crl/crl.pem plugins.security.ssl.http.crl.disable_ocsp=true plugins.security.ssl.http.crl.disable_crldp=true plugins.security.ssl.http.crl.prefer_crlfile_over_ocsp=true ./opensearch-docker-entrypoint.sh \"$$@\"; fi; exec ./opensearch-docker-entrypoint.sh \"$$@\"", "sh"]
+  entrypoint: ["sh", "-c", "if [ -s config/crl/crl.pem ]; then exec env plugins.security.ssl.http.crl.validate=true plugins.security.ssl.http.crl.file_path=/usr/share/opensearch/config/crl/crl.pem plugins.security.ssl.http.crl.disable_ocsp=true plugins.security.ssl.http.crl.disable_crldp=true plugins.security.ssl.http.crl.prefer_crlfile_over_ocsp=true ./opensearch-docker-entrypoint.sh \"$$@\"; fi; if [ -e config/crl/crl-required ]; then echo \"OpenSearch does not start without its revocation list, config/crl/crl.pem. Signalith writes it again within a minute, and so does: docker compose -f deploy/docker/docker-compose.yml up -d\" >&2; exit 1; fi; exec ./opensearch-docker-entrypoint.sh \"$$@\"", "sh"]
   command: ["opensearch"]
 
 x-node-env: &node-env

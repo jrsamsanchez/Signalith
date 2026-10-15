@@ -597,6 +597,8 @@ change. It is signed with OpenSearch's CA and valid until the CA expires.
 
 - **Docker:** set up already. The `setup` service makes an empty list in the
   `opensearch-crl` volume, OpenSearch checks it once it is there, and Signalith keeps it.
+  From then on OpenSearch does not start without the list: if it is deleted, OpenSearch
+  waits, restarting, until Signalith or `docker compose ... up -d` writes it again.
   OpenSearch warns at start that the list can be read by others: it holds no secret, and
   Signalith writes it while OpenSearch reads it.
 - **Without Docker:** on each OpenSearch node, put the list where OpenSearch can read it
