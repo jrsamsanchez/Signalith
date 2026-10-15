@@ -25,6 +25,7 @@ const (
 	tokLParen
 	tokRParen
 	tokComma
+	tokRaw // the unlexed text of an eval or where command
 )
 
 func (k tokenKind) String() string {
@@ -45,6 +46,8 @@ func (k tokenKind) String() string {
 		return ")"
 	case tokComma:
 		return ","
+	case tokRaw:
+		return "expression"
 	}
 	return "?"
 }
@@ -152,8 +155,65 @@ func lex(src string) ([]token, error) {
 				i++
 			}
 			toks = append(toks, token{tokWord, src[start:i], start})
+			// eval and where take expressions with their own syntax
+			// (eval's quoted 'field names', + and - between values), so
+			// their text is kept whole and parsed by the command.
+			if w := src[start:i]; len(toks) >= 2 && toks[len(toks)-2].kind == tokPipe &&
+				(strings.EqualFold(w, "eval") || strings.EqualFold(w, "where")) {
+				end := rawEnd(src, i)
+				toks = append(toks, token{tokRaw, src[i:end], i})
+				i = end
+			}
 		}
 	}
 	toks = append(toks, token{tokEOF, "", len(src)})
 	return toks, nil
+}
+
+// rawEnd returns where the command text starting at i ends: at the next |
+// outside quotes, or at the end of the query. Double quotes are read as
+// the lexer reads them. A single quote opens a quoted field name only at
+// the start of a term, and such a name cannot hold a |, so apostrophes in
+// values (O'Brien) do not hide the next command.
+func rawEnd(src string, i int) int {
+	for i < len(src) {
+		switch src[i] {
+		case '|':
+			return i
+		case '"':
+			if end, ok := quoteEnd(src, i, '"', false); ok {
+				i = end
+				continue
+			}
+		case '\'':
+			if i == 0 || strings.IndexByte(" \t\n\r\f\v(,=!<>+-*/%.", src[i-1]) >= 0 {
+				if end, ok := quoteEnd(src, i, '\'', true); ok {
+					i = end
+					continue
+				}
+			}
+		}
+		i++
+	}
+	return i
+}
+
+// quoteEnd returns the index just past the quote that closes the one at
+// i, reading \<quote> and \\ as escapes.
+func quoteEnd(src string, i int, q byte, stopAtPipe bool) (int, bool) {
+	for j := i + 1; j < len(src); j++ {
+		switch src[j] {
+		case '\\':
+			if j+1 < len(src) && (src[j+1] == q || src[j+1] == '\\') {
+				j++
+			}
+		case q:
+			return j + 1, true
+		case '|':
+			if stopAtPipe {
+				return 0, false
+			}
+		}
+	}
+	return 0, false
 }

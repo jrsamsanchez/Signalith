@@ -25,6 +25,7 @@ func TestBuilderRoundTrip(t *testing.T) {
 		{Datamodel: "Network_Traffic", Mode: "stats", AggFunc: "sum", AggField: "bytes", By: []string{"src", "dest"}, Sort: "-sum(bytes)", Limit: 5,
 			Filters: []Filter{{Field: "dest_port", Op: ">", Value: "1024"}}},
 		{Mode: "timechart", AggFunc: "count", Span: "1h", By: []string{"action"}},
+		{Datamodel: "Authentication", Mode: "latest", By: []string{"user", "dest"}, Fields: []string{"_time", "user", "src"}, Limit: 20},
 	}
 	for _, s := range specs {
 		text := Build(s).String()

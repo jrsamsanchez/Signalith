@@ -920,6 +920,14 @@ func (s *Server) handleLanguage(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"commands":  query.Commands,
 		"functions": query.AggFuncs,
+		"eval_functions": func() []string {
+			names := make([]string, 0, len(query.EvalFuncs))
+			for n := range query.EvalFuncs {
+				names = append(names, n)
+			}
+			sort.Strings(names)
+			return names
+		}(),
 		"operators": []string{"=", "!=", "<", "<=", ">", ">=", "IN", "AND", "OR", "NOT"},
 	})
 }
