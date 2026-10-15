@@ -59,6 +59,9 @@ The first four phases are complete, and work on hardening for 1.0 has started.
   with one line on Linux, Windows or Docker, shared settings, users and detections, one
   certificate authority, rolling upgrades, draining and removing a server, and
   [OpenSearch with several nodes](opensearch-failover.md).
+- [Load balancers](load-balancers.md) in front of several servers, with PROXY protocol so
+  the real sender of each connection is kept, and sample HAProxy, nginx and keepalived
+  setups.
 - A load test with [sizing numbers](performance.md).
 
 **More data**
@@ -67,6 +70,10 @@ The first four phases are complete, and work on hardening for 1.0 has started.
   configuration checks, plus [Wazuh](wazuh.md) alerts.
 - [Antivirus](antivirus.md) logs from Defender, ClamAV and consoles that send CEF or LEEF.
 - Apache and Nginx access logs, with web rules from SigmaHQ and Splunk.
+- [AWS CloudTrail](aws-cloudtrail.md) through the OpenTelemetry Collector, with 38 SigmaHQ
+  and 32 Splunk CloudTrail rules.
+- [Microsoft Entra ID and Azure](azure.md) sign-ins, audit log, risk detections and
+  activity log through an Event Hub and the OpenTelemetry Collector, with 108 SigmaHQ rules.
 - A [network sensor](network-sensor.md) with Zeek and Suricata, installed with one line,
   network detections for sensor, firewall, DNS and proxy data, and a Network dashboard.
 - [Vulnerability scanning](vulnerabilities.md) with Nmap and CVE matching, a scanner for
@@ -92,16 +99,8 @@ The first four phases are complete, and work on hardening for 1.0 has started.
 :   One page listing every network sensor with its health, where an admin can turn off a
     noisy rule on all sensors or revoke a sensor.
 
-**Load balancers**
-:   Several servers behind one address, with PROXY protocol so the real sender of each
-    connection is kept, and sample HAProxy, nginx and keepalived setups.
-
-**Cloud logs**
-:   AWS CloudTrail through the OpenTelemetry Collector is available, with 38 SigmaHQ and 32
-    Splunk CloudTrail rules ([AWS CloudTrail](aws-cloudtrail.md)), and so are Microsoft Entra
-    ID's sign-ins, audit log and risk detections and the Azure activity log, with 108 SigmaHQ
-    rules ([Entra ID and Azure](azure.md)). Splunk's Azure rules and Microsoft 365 audit logs
-    are next.
+**More cloud logs**
+:   Splunk's Azure detections and Microsoft 365 audit logs.
 
 ## Next <span class="sg-pill sg-pill--next">Planned</span> { #next data-toc-label="Next" }
 
