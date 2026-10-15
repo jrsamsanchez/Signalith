@@ -139,6 +139,11 @@ resource "hcloud_server" "linux" {
     ipv4_enabled = true
     ipv6_enabled = false
   }
+  # A newer setup script must not rebuild machines that already run: it is
+  # only used on their first boot.
+  lifecycle {
+    ignore_changes = [user_data]
+  }
   depends_on = [hcloud_network_subnet.lab]
 }
 

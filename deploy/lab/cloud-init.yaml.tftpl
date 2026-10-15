@@ -17,6 +17,18 @@ write_files:
     append: true
     encoding: b64
     content: ${base64encode("\n# Signalith lab\n${hosts}\n")}
+  # The private network's card sometimes comes up after the first boot's
+  # network setup, without an address: ask for one on every card but eth0.
+  - path: /etc/netplan/60-lab-private.yaml
+    permissions: "0600"
+    content: |
+      network:
+        version: 2
+        ethernets:
+          lab-private:
+            match:
+              name: "en*"
+            dhcp4: true
   - path: /root/.ssh/authorized_keys
     append: true
     encoding: b64
@@ -47,7 +59,10 @@ write_files:
       StandardOutput=append:/var/log/lab-setup.log
       StandardError=append:/var/log/lab-setup.log
       TimeoutStartSec=infinity
+%{ endif ~}
 runcmd:
+  - netplan apply
+%{ if conductor ~}
   - systemctl daemon-reload
   - systemctl start --no-block lab-setup.service
 %{ endif ~}
