@@ -387,8 +387,12 @@ func defenderResource(f map[string]any, path string) {
 
 // setPID reads the number after "pid:" into process_id.
 func setPID(f map[string]any, s string) {
-	i := strings.Index(strings.ToLower(s), "pid:")
-	if i < 0 {
+	// Matched in place: lowering s can change its length (invalid UTF-8,
+	// 'İ'), so an index into strings.ToLower(s) is not one into s.
+	i := 0
+	for ; i+4 <= len(s) && !strings.EqualFold(s[i:i+4], "pid:"); i++ {
+	}
+	if i+4 > len(s) {
 		return
 	}
 	s = s[i+4:]
