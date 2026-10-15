@@ -548,6 +548,31 @@ intel feeds by the built-in `threat-activity` detection: `src`, `dest`, `dest_ip
 domain, a connection to a known command and control address or the download of a known
 malware file becomes a finding. See [Threat intel](threat-intel.md).
 
+### Hosts in the asset list
+
+The sensor's Zeek learns which hosts of your network are up, which services they offer and
+which software they run (its `known_hosts`, `known_services` and `software` logs, which the
+install script turns on), and which names your DHCP server hands out (`dhcp.log`). Every
+server reads these from the last 7 days every 10 minutes and adds each address to the asset
+list (**Assets & identities**) as a found host, with category `discovered` and
+`service:<name>` for each service seen (`service:ssh`, `service:smb`, at most 8), and the
+DHCP name the client gave as its host name. Searches, `enrich` and findings then show those
+hosts with asset context.
+
+Like the osquery hosts of the [Endpoints page](endpoints.md) and the hosts
+[scans](vulnerabilities.md) find, these are never written to your list: they are kept in
+memory, go when the sensor has not seen the host for 7 days, and your own rows always win.
+A host your list names (by host name or address) is described by your row; one inside a
+network (CIDR) row of your list is looked up as that row, and is still listed as found, so
+you can see it. The order is your list, the sample data, then the osquery hosts, the scanned
+hosts and the hosts the sensor saw. To describe a discovered host (owner, priority), add a
+row for it to your list.
+
+DNS is never added as a service: the DNS detections leave out hosts whose category contains
+`dns` (see [Network detections](#network-detections)), which only you should decide. Zeek
+logs these only for the networks it knows as yours (`Site::local_nets`, from the script's
+`--networks`), so internet hosts do not fill the list.
+
 ### The ids-alert-high detection
 
 The built-in `ids-alert-high` detection (on by default) turns every high or critical IDS

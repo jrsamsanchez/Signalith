@@ -514,6 +514,13 @@ func (s *Store) Found() []Asset {
 				break
 			}
 		}
+		// A host found by its address alone (a scan or the network
+		// sensor) that the list names by that address.
+		for _, ip := range a.IP {
+			if addr, err := netip.ParseAddr(ip); err == nil && !known {
+				_, known = own.byIP[addr.Unmap()]
+			}
+		}
 		if !known {
 			out = append(out, a)
 		}

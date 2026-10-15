@@ -1263,7 +1263,8 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	// rest.
 	vstore := vulnscan.NewStore(cl, c.OpenSearch.IndexPrefix)
 	nvd := vulnscan.NewNVD(c.NVDURL(), c.Vulns.NVDAPIKey)
-	in.jobs.Go(func() { feedFoundAssets(ctx, estore, vstore, lists, log) })
+	sensorHosts := &sensorDiscovery{cl: cl, prefix: c.OpenSearch.IndexPrefix, log: log}
+	in.jobs.Go(func() { feedFoundAssets(ctx, estore, vstore, sensorHosts, lists, log) })
 	// Notifications: the channels and rules set on the Notifications
 	// page, and the deliveries index that makes each message go out once.
 	notes, deliveries, senders := newNotify(c, cl, log)
@@ -2115,10 +2116,11 @@ func reloadLookups(ctx context.Context, lists *assets.Store, log *slog.Logger) {
 
 // feedFoundAssets puts the hosts Signalith finds itself in the asset
 // list's found hosts every minute: the osquery hosts on the Endpoints page
-// (category endpoint and their platform) and the hosts vulnerability
-// scans found (category scanned), so their names and addresses get asset
-// context until the user's own list describes them.
-func feedFoundAssets(ctx context.Context, es *endpoint.Store, vs *vulnscan.Store, lists *assets.Store, log *slog.Logger) {
+// (category endpoint and their platform), the hosts vulnerability scans
+// found (category scanned) and the hosts a network sensor saw (category
+// discovered), so their names and addresses get asset context until the
+// user's own list describes them.
+func feedFoundAssets(ctx context.Context, es *endpoint.Store, vs *vulnscan.Store, sd *sensorDiscovery, lists *assets.Store, log *slog.Logger) {
 	t := time.NewTicker(time.Minute)
 	defer t.Stop()
 	failed, vfailed := false, false
@@ -2156,7 +2158,15 @@ func feedFoundAssets(ctx context.Context, es *endpoint.Store, vs *vulnscan.Store
 			log.Debug("could not read the scanned hosts for the asset list; trying again every minute", "err", verr)
 			vfailed = true
 		}
-		if err == nil || verr == nil {
+		seen, serr := sd.Hosts(ctx)
+		for _, a := range seen {
+			if known[a.IP[0]] {
+				continue
+			}
+			known[a.IP[0]] = true
+			as = append(as, a)
+		}
+		if err == nil || verr == nil || serr == nil {
 			lists.SetFound(as)
 		}
 		select {
@@ -2165,6 +2175,52 @@ func feedFoundAssets(ctx context.Context, es *endpoint.Store, vs *vulnscan.Store
 		case <-t.C:
 		}
 	}
+}
+
+// sensorDiscovery reads the hosts a network sensor's Zeek saw (known
+// hosts, services and software, DHCP leases) for the asset list, at most
+// every discoveryEvery; in between, and when a read fails, it keeps the
+// hosts it read last.
+type sensorDiscovery struct {
+	cl     *store.Client
+	prefix string
+	log    *slog.Logger
+
+	last   time.Time
+	hosts  []assets.Asset
+	failed bool
+}
+
+// discoveryEvery is how often the sensor's hosts are read again.
+const discoveryEvery = 10 * time.Minute
+
+// Hosts returns the hosts the sensor saw in the last
+// assets.DiscoveryWindow; the error is the last read's.
+func (d *sensorDiscovery) Hosts(ctx context.Context) ([]assets.Asset, error) {
+	if d == nil || d.cl == nil {
+		return nil, errors.New("no sensor discovery")
+	}
+	now := time.Now()
+	if !d.last.IsZero() && now.Sub(d.last) < discoveryEvery {
+		if d.failed {
+			return d.hosts, errors.New("the last read failed")
+		}
+		return d.hosts, nil
+	}
+	d.last = now
+	rctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	resp, err := d.cl.Search(rctx, assets.DiscoveryIndex(d.prefix), assets.DiscoveryQuery(now.Add(-assets.DiscoveryWindow)))
+	if err != nil {
+		if !d.failed && ctx.Err() == nil {
+			d.log.Debug("could not read the hosts the network sensor saw for the asset list; trying again in 10 minutes", "err", err)
+		}
+		d.failed = true
+		return d.hosts, err
+	}
+	d.failed = false
+	d.hosts = assets.ParseDiscovery(resp)
+	return d.hosts, nil
 }
 
 // scannedAsset is a host a vulnerability scan found, as an asset.
