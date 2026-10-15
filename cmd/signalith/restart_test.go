@@ -222,7 +222,10 @@ func startRunnerWith(t *testing.T, o runOptions) *running {
 		})
 	}
 	t.Cleanup(rs.stop)
-	deadline := time.Now().Add(10 * time.Second)
+	// The first server of a test process parses the built-in detection
+	// packs (once per process), which takes well over 10s under -race on
+	// a busy machine.
+	deadline := time.Now().Add(60 * time.Second)
 	for {
 		// With HTTPS on, plain HTTP on the same port answers with a
 		// redirect.
