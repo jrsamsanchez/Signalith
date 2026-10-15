@@ -42,6 +42,9 @@ type Event struct {
 	// line identifies the event (network sensors, see sensorDocID), so the
 	// same line sent again, even in another batch, is stored once.
 	ID string
+	// Sensor is what a sensor's status line says (tag sensor.status), for
+	// the agent inventory; it is not stored with the event.
+	Sensor *SensorStatus
 }
 
 // DefaultMaxEventAge is how old an event's own time may be and still be
@@ -225,6 +228,9 @@ type Result struct {
 	// Hosts are the first few host names in the events, to tell agents
 	// apart in Health page warnings (see NotePlaintext).
 	Hosts []string `json:"-"`
+	// Sensor is the newest sensor status line in the events, nil when
+	// there is none.
+	Sensor *SensorStatus `json:"-"`
 }
 
 // maxResultHosts caps Result.Hosts, and maxHostName the length of a name
@@ -242,6 +248,13 @@ func (r *Result) noteHost(ev *Event) {
 		return
 	}
 	r.Hosts = append(r.Hosts, h)
+}
+
+// noteSensor keeps the newest sensor status line of the events.
+func (r *Result) noteSensor(ev *Event) {
+	if s := ev.Sensor; s != nil && (r.Sensor == nil || !s.At.Before(r.Sensor.At)) {
+		r.Sensor = s
+	}
 }
 
 func (r *Result) add(o *Result) {
@@ -268,6 +281,7 @@ func (p *Pipeline) Ingest(ctx context.Context, tag string, records []map[string]
 		events := make([]Event, 0, end-start)
 		for _, r := range records[start:end] {
 			events = append(events, Normalize(tag, r, p.now()))
+			total.noteSensor(&events[len(events)-1])
 		}
 		res, err := p.write(ctx, events, nil)
 		if err != nil {
@@ -610,6 +624,8 @@ func (e Event) Document() map[string]any {
 func Normalize(tag string, r map[string]any, now time.Time) Event {
 	var ev Event
 	switch {
+	case tag == SensorStatusTag:
+		ev = parseSensorStatus(r)
 	case isWazuhTag(tag) || IsWazuhAlert(r):
 		ev = parseWazuhRecord(r)
 	case isZeekTag(tag) || (!isSuricataTag(tag) && IsZeekRecord(r)):

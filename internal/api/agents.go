@@ -58,7 +58,7 @@ func (s *Server) agents() *agentinv.Inventory { return s.Agents }
 // its resourcedetection processor puts its computer's name on every
 // event, so a batch with one host name is named by it. A Collector that
 // forwards other computers' events is told apart by address and token.
-func (s *Server) noteAgent(r *http.Request, intake, tag string, who agenttokens.Identity, events int, hosts []string) {
+func (s *Server) noteAgent(r *http.Request, intake, tag string, who agenttokens.Identity, events int, hosts []string, sensor *ingest.SensorStatus) {
 	name := r.Header.Get(agentinv.AgentHeader)
 	if name == "" && intake == ingest.IntakeOTLP {
 		if len(hosts) != 1 && events == 0 {
@@ -78,6 +78,7 @@ func (s *Server) noteAgent(r *http.Request, intake, tag string, who agenttokens.
 		TokenID: who.ID, TokenName: who.Name,
 		Config: r.Header.Get(agentinv.ConfigHeader),
 		Events: events,
+		Sensor: sensor,
 	})
 }
 

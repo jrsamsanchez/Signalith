@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jrsamsanchez/signalith/deploy"
 	"github.com/jrsamsanchez/signalith/internal/agentinv"
@@ -19,6 +20,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/agenttokens"
 	"github.com/jrsamsanchez/signalith/internal/cluster/ostest"
 	"github.com/jrsamsanchez/signalith/internal/config"
+	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"github.com/jrsamsanchez/signalith/internal/store"
 	"github.com/jrsamsanchez/signalith/internal/users"
 )
@@ -235,5 +237,60 @@ func TestSensorSeen(t *testing.T) {
 	}
 	if code, _, _ := sensorGet(t, ts, "/api/sensor/seen", ""); code != 401 {
 		t.Errorf("no token: %d", code)
+	}
+}
+
+// A status line reaches the agent's row and the Health page's counts.
+func TestSensorStatusOnEndpointsAndHealth(t *testing.T) {
+	ts, _ := newSensorServer(t)
+	_, sensor := makeToken(t, ts, "token 6", "sensor")
+	now := time.Now().UTC()
+	line := `{"kind":"signalith-sensor-status","v":1,"time":"` + now.Format(time.RFC3339) + `","host":"nsm-01","role":"sensor",` +
+		`"suricata":{"version":"8.0.1","running":true},"rules":{"updated":"` + now.Add(-96*time.Hour).Format(time.RFC3339) + `","count":10,"update":"ok"},` +
+		`"interface":{"name":"eth1","link":"up","drop_percent":9.5}}`
+	rec, _ := json.Marshal([]map[string]any{{"log": line}})
+	if code, body := agentSend(t, ts.URL, "/api/ingest", sensor, string(rec), map[string]string{"X-Signalith-Tag": "sensor.status", "X-Signalith-Agent": "nsm-01"}); code != 200 {
+		t.Fatalf("send: %d %s", code, body)
+	}
+	_, out, raw := call(t, ts, "GET", "/api/agents", "", "admin", adminPass, nil)
+	agents, _ := out["agents"].([]any)
+	if len(agents) != 1 {
+		t.Fatalf("agents: %s", raw)
+	}
+	s, _ := agents[0].(map[string]any)["sensor"].(map[string]any)
+	if s["interface"] != "eth1" || s["drop_percent"] != 9.5 || s["rules_count"] != 10.0 {
+		t.Errorf("sensor on the row: %v", s)
+	}
+	for _, u := range []string{"admin", "vera"} {
+		pass := adminPass
+		if u != "admin" {
+			pass = "role-password"
+		}
+		_, h, raw := call(t, ts, "GET", "/api/health", "", u, pass, nil)
+		got, _ := h["sensors"].(map[string]any)
+		if got["total"] != 1.0 || got["sending"] != 1.0 || got["silent"] != 0.0 || got["dropping"] != 1.0 || got["rules_old"] != 1.0 {
+			t.Errorf("%s: health sensors: %s", u, raw)
+		}
+	}
+}
+
+func TestCountSensors(t *testing.T) {
+	now := time.Date(2026, 10, 15, 12, 0, 0, 0, time.UTC)
+	fresh := now.Add(-time.Hour).Format(time.RFC3339)
+	agents := []agentinv.Agent{
+		{Tag: "win.security", LastSeen: now},
+		{Tag: "zeek.conn", LastSeen: now.Add(-time.Minute)},
+		{Tag: "suricata.eve", LastSeen: now.Add(-20 * time.Minute)},
+		{Tag: "sensor.status", LastSeen: now, Sensor: &ingest.SensorStatus{DropPercent: 5.1, Suricata: &ingest.SensorTool{}, RulesUpdated: fresh, RulesUpdate: "ok"}},
+		{Tag: "zeek.dns", LastSeen: now, Sensor: &ingest.SensorStatus{Suricata: &ingest.SensorTool{}, RulesUpdated: fresh, RulesUpdate: "failed"}},
+		{Tag: "zeek.dns", LastSeen: now, Sensor: &ingest.SensorStatus{Zeek: &ingest.SensorTool{}}},
+		{Tag: "zeek", Refusing: true},
+	}
+	got := countSensors(agents, now)
+	if got == nil || *got != (sensorCounts{Total: 5, Sending: 4, Silent: 1, Dropping: 1, RulesOld: 1}) {
+		t.Errorf("counts: %+v", got)
+	}
+	if countSensors(agents[:1], now) != nil {
+		t.Error("no sensors: counts")
 	}
 }

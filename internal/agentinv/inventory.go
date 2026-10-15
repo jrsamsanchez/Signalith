@@ -33,6 +33,7 @@ import (
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/cluster"
+	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"github.com/jrsamsanchez/signalith/internal/store"
 )
 
@@ -89,6 +90,9 @@ type Contact struct {
 	Config string
 	// Events is how many of its events were stored.
 	Events int
+	// Sensor is the newest status line in the batch of a sensor the
+	// sensor install script built (ingest.Result.Sensor), nil for none.
+	Sensor *ingest.SensorStatus
 }
 
 // Doc is an inventory document: how one server heard from one agent.
@@ -117,6 +121,10 @@ type Doc struct {
 	// RefusedMinutes is in how many minutes of the last hour the address
 	// refused the certificate (see minRefusedMinutes).
 	RefusedMinutes int `json:"refused_minutes,omitempty"`
+	// Sensor is what the agent's sensor said in its last status line: a
+	// sensor sends one every 5 minutes, and its Zeek and Suricata batches
+	// in between keep it.
+	Sensor *ingest.SensorStatus `json:"sensor,omitempty"`
 }
 
 // Transports.
@@ -413,6 +421,9 @@ func (v *Inventory) Note(c Contact) {
 	d.Name, d.Address, d.Tag, d.Intake, d.Transport, d.Local = name, c.Address, c.Tag, c.Intake, transport, c.Local
 	d.Token, d.TokenName, d.CA, d.ConfigVersion, d.ServerCA = c.TokenID, c.TokenName, ca, version, serverCA
 	d.LastSeen = now
+	if c.Sensor != nil && (d.Sensor == nil || !c.Sensor.At.Before(d.Sensor.At)) {
+		d.Sensor = c.Sensor
+	}
 	e.events.add(now, int64(c.Events))
 	e.dirty = true
 }
@@ -785,6 +796,9 @@ type Agent struct {
 	// from Add data; Reason says why (ReasonRetiredCA).
 	NeedsConfig bool   `json:"needs_config,omitempty"`
 	Reason      string `json:"reason,omitempty"`
+	// Sensor is the newest status line any server got from it, for a
+	// sensor the install script built.
+	Sensor *ingest.SensorStatus `json:"sensor,omitempty"`
 }
 
 // ReasonRetiredCA: the agent's configuration trusts only certificate
@@ -900,6 +914,9 @@ func Merge(docs []Doc, now time.Time) []Agent {
 		}
 		if l, ok := latest[d.Agent]; !ok || d.LastSeen.After(l.LastSeen) {
 			latest[d.Agent] = d
+		}
+		if d.Sensor != nil && (a.Sensor == nil || d.Sensor.At.After(a.Sensor.At)) {
+			a.Sensor = d.Sensor
 		}
 		addUnique(&a.Addresses, d.Address)
 		addUnique(&a.Servers, d.Server)

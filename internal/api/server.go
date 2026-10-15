@@ -235,7 +235,8 @@ type Server struct {
 	caMu          sync.Mutex // one change of certificate authority at a time
 	blockedLog    logOnce    // blocked osquery hosts that tried to enroll
 	tokensOnce    sync.Once
-	tokenRate     tokenRate // agent token creation
+	tokenRate     tokenRate         // agent token creation
+	sensorCache   sensorHealthCache // the Health page's network sensor counts
 }
 
 // EventAge is what keeps the age of events the server accepts in step
@@ -461,7 +462,7 @@ func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 	res, err = s.Pipeline.IngestBody(withOrigin(r, ingest.IntakeAgent, who), tag, body)
 	if res != nil {
 		s.tokens().Note(who.ID, from.String(), res.Indexed+res.Duplicates)
-		s.noteAgent(r, ingest.IntakeAgent, tag, who, res.Indexed+res.Duplicates, nil)
+		s.noteAgent(r, ingest.IntakeAgent, tag, who, res.Indexed+res.Duplicates, nil, res.Sensor)
 	}
 	if err != nil {
 		var bad *ingest.BodyError
@@ -1068,6 +1069,9 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		if b := s.Cluster.Banners(); len(b) > 0 {
 			out["cluster_banners"] = b
 		}
+	}
+	if sensors := s.sensorHealth(ctx); sensors != nil {
+		out["sensors"] = sensors
 	}
 	// Everyone signed in sees whether things work. Where they run (file
 	// paths, addresses, the OpenSearch URL and its errors) and the setup
