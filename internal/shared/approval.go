@@ -95,6 +95,8 @@ type approvalState struct {
 	// refused is the last approval it could not open, so the log says it
 	// once.
 	refused string
+	// waiting is what the sign-in page says while it waits.
+	waiting string
 }
 
 // awaitApproval is a step of a server in legacy b: it writes its pending
@@ -153,9 +155,24 @@ func (rt *Runtime) awaitApproval(ctx context.Context) {
 		if b, ok := rt.peekClusterName(actx); ok {
 			name = fmt.Sprintf("cluster '%s'", b)
 		}
+		rt.mu.Lock()
+		rt.approval.waiting = fmt.Sprintf("This server waits to join %s. Approve it on the Servers page of another server: fingerprint %s", name, d.Fingerprint)
+		rt.mu.Unlock()
 		rt.log.Warn(fmt.Sprintf("This server waits to join %s. Approve it on another server (Servers page, or signalith cluster approve): fingerprint %s", name, d.Fingerprint),
 			"fingerprint", d.Fingerprint)
 	}
+}
+
+// Waiting is what the sign-in page of a server that waits for approval
+// says: the cluster it waits to join and its fingerprint. It is "" on
+// any other server.
+func (rt *Runtime) Waiting() string {
+	if m, _ := rt.Mode(); m != ModeLegacyB {
+		return ""
+	}
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	return rt.approval.waiting
 }
 
 func cmpOr(a, b string) string {

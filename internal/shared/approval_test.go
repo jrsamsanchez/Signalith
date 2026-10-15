@@ -56,6 +56,12 @@ func TestWaitingServerIsApproved(t *testing.T) {
 	}
 	mustContain(t, "log", b.logs.String(), "waits to join cluster 'Signalith'")
 	mustContain(t, "log", b.logs.String(), fp)
+	if w := b.rt.Waiting(); !strings.Contains(w, "waits to join cluster 'Signalith'") || !strings.Contains(w, fp) {
+		t.Errorf("sign-in page line %q", w)
+	}
+	if a.rt.Waiting() != "" {
+		t.Error("a member says it waits")
+	}
 	list, err := a.rt.Pending(ctx)
 	if err != nil || len(list) != 1 || list[0].NodeID != "n_siem-b" || list[0].Fingerprint != fp {
 		t.Fatalf("pending = %+v, %v", list, err)
@@ -118,6 +124,9 @@ func TestWaitingServerIsApproved(t *testing.T) {
 	}
 	b.step()
 	b.wantMode(ModeMember)
+	if b.rt.Waiting() != "" {
+		t.Error("a joined server still says it waits")
+	}
 	if b.key().ID() != a.key().ID() {
 		t.Errorf("joined with %s", b.key().ID())
 	}

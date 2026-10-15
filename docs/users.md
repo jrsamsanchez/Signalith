@@ -794,7 +794,11 @@ All routes need a signed-in user (session cookie or HTTP Basic auth) except
 `POST /api/otlp/v1/logs` (which take an [agent token](agent-tokens.md), never a session or
 password), and osquery's routes under `/api/osquery/` (`POST /api/osquery/enroll` takes an agent
 token; the others take the node key a host got when it enrolled; see
-[endpoints.md](endpoints.md)). Requests from a browser that change something must come from the Signalith
+[endpoints.md](endpoints.md)), and the two routes a new server joins the cluster with,
+`GET /api/cluster/join/ca` (the certificate a join token names, which is public) and
+`POST /api/cluster/join` (which takes a proof that the new server holds a join token, never the
+token itself; it counts against the sign-in limits per token and per address, its body is at most
+16 KiB, and every refusal gets the same answer). Requests from a browser that change something must come from the Signalith
 page itself.
 
 Every answer carries the server's version in `X-Signalith-Version`. Answers to
@@ -862,7 +866,11 @@ agents that send events, shown on the [Endpoints page](endpoints.md)), `GET /api
 `GET /api/cluster` (the Servers page; see [servers.md](servers.md)), `POST /api/cluster/restart`
 (restart servers one at a time to apply the shared settings), `GET /api/cluster/tls`,
 `POST /api/cluster/tls/choose` (the cluster's one certificate authority; see
-[servers.md](servers.md#one-certificate-authority)), `GET /api/requests/{id}`
+[servers.md](servers.md#one-certificate-authority)), `GET /api/cluster/join/tokens`,
+`POST /api/cluster/tokens`, `DELETE /api/cluster/tokens/{id}` (join tokens that add a server to
+the cluster; a token is shown once, in the answer that makes it), `GET /api/cluster/pending`,
+`POST /api/cluster/servers/{id}/approve` (servers that wait to join, approved by their
+fingerprint), `GET /api/requests/{id}`
 (work asked of the server that runs the background jobs, such as a feed download or a retention
 run; see [servers.md](servers.md#shared-feeds-and-retention-policies)), every
 `/api/notify` route (the Notifications page; see [notifications.md](notifications.md)), every
@@ -876,7 +884,7 @@ run; see [servers.md](servers.md#shared-feeds-and-retention-policies)), every
 A route added without a role is admin-only, and a test fails until it gets one. That
 includes routes registered outside the role table, straight on the server's outer
 router: any `/api/` route there other than the public ones (sign-in, sign-out, agent
-ingest and the CA certificate, `GET /api/tls/ca.pem`) is admin-only.
+ingest, the CA certificate, `GET /api/tls/ca.pem`, and the two join routes) is admin-only.
 
 A refused request:
 

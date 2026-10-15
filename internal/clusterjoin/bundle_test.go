@@ -19,7 +19,7 @@ func testBundle(t *testing.T) *Bundle {
 	raw, _ := base64.StdEncoding.DecodeString(k.Text())
 	return &Bundle{ClusterID: "c_1", ClusterName: "Signalith", IndexPrefix: "signalith",
 		OpenSearch: OpenSearch{URL: "https://os.plant.local:9200", URLs: []string{"https://os2.plant.local:9200"}, CAPEM: "-----BEGIN CERTIFICATE-----",
-			Username: "signalith", Password: "pw", Shared: true},
+			Username: "signalith", Password: "pw-in-the-bundle", Shared: true},
 		KID: k.ID(), ClusterKey: raw, NodeName: "siem-c", Listen: "0.0.0.0:8443",
 		Syslog: &SyslogDefaults{UDP: "0.0.0.0:514"}, IssuerVersion: "1.5.0", Level: shared.LevelMax}
 }
@@ -32,14 +32,14 @@ func TestBundleRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(sealed, "pw") || strings.Contains(sealed, "Signalith") {
+	if strings.Contains(sealed, "pw-in-the-bundle") || strings.Contains(sealed, "Signalith") {
 		t.Error("the sealed bundle shows its contents")
 	}
 	got, err := Open(nk, "n_c", tok.ID, tok.Secret, sealed)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.KID != b.KID || !bytes.Equal(got.ClusterKey, b.ClusterKey) || got.OpenSearch.Password != "pw" ||
+	if got.KID != b.KID || !bytes.Equal(got.ClusterKey, b.ClusterKey) || got.OpenSearch.Password != "pw-in-the-bundle" ||
 		got.Syslog == nil || got.Syslog.UDP != "0.0.0.0:514" || len(got.OpenSearch.URLs) != 1 || !got.OpenSearch.Shared {
 		t.Errorf("opened %+v", got)
 	}

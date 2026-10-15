@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 
 	"github.com/jrsamsanchez/signalith/internal/auth"
@@ -23,7 +24,7 @@ const (
 
 // publicRoutes work without signing in. Ingest checks its own token; the
 // CA certificate is public.
-var publicRoutes = append([]string{"POST /api/ingest", otlpLogsRoute, "POST /api/login", "POST /api/logout", "GET /api/tls/ca.pem"}, osqueryRoutes...)
+var publicRoutes = slices.Concat([]string{"POST /api/ingest", otlpLogsRoute, "POST /api/login", "POST /api/logout", "GET /api/tls/ca.pem"}, osqueryRoutes, joinPublicRoutes)
 
 // routeLogin adds the routes that work without signing in: the sign-in
 // page, its static assets, and sign-in and sign-out.
@@ -33,6 +34,7 @@ func (s *Server) routeLogin(mux *http.ServeMux) {
 	mux.Handle("POST /api/login", s.configToken(true, http.HandlerFunc(s.handleLogin)))
 	mux.HandleFunc("POST /api/logout", s.handleLogout)
 	mux.HandleFunc("GET /api/tls/ca.pem", s.handleCAPEM)
+	s.routeJoinPublic(mux)
 	if s.UI != nil {
 		mux.HandleFunc("GET /login", s.handleLoginPage)
 		// Stylesheets, fonts, the logo and the sign-in script are public so
@@ -246,6 +248,7 @@ func (s *Server) handleLoginPage(w http.ResponseWriter, r *http.Request) {
 		// offers the new one, hidden otherwise.
 		page = bytes.Replace(page, []byte(`id="ca-next" hidden`), []byte(`id="ca-next"`), 1)
 	}
+	page = s.joinWaiting(page)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	_, _ = w.Write(page)

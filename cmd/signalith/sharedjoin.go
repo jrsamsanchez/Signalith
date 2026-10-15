@@ -1,0 +1,200 @@
+package main
+
+import (
+	"cmp"
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"net"
+	"net/url"
+	"strings"
+	"time"
+
+	"github.com/jrsamsanchez/signalith/internal/api"
+	"github.com/jrsamsanchez/signalith/internal/cluster"
+	"github.com/jrsamsanchez/signalith/internal/clusterjoin"
+	"github.com/jrsamsanchez/signalith/internal/config"
+	"github.com/jrsamsanchez/signalith/internal/shared"
+	"github.com/jrsamsanchez/signalith/internal/tlsauto"
+)
+
+// Adding servers to the cluster (internal/clusterjoin): join tokens made
+// on the Servers page or with signalith cluster token, the public join a
+// new server makes with one (signalith join), and the approval of a
+// server that waits with its fingerprint. The token documents are one
+// shared collection (sharedDocs.join); everything else is in the
+// runtime index.
+
+// joinInfo is what a server waiting for approval says about itself in
+// its pending document.
+func joinInfo(c *config.Config) func() shared.PendingDoc {
+	nu := nodeURL(c)
+	return func() shared.PendingDoc {
+		return shared.PendingDoc{Version: version, NodeURL: nu, Addresses: localAddresses(8)}
+	}
+}
+
+// localAddresses lists up to max of this machine's own addresses,
+// loopback and link-local ones left out.
+func localAddresses(max int) []string {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, a := range addrs {
+		n, ok := a.(*net.IPNet)
+		if !ok || n.IP.IsLoopback() || n.IP.IsLinkLocalUnicast() || n.IP.IsLinkLocalMulticast() {
+			continue
+		}
+		out = append(out, n.IP.String())
+		if len(out) == max {
+			break
+		}
+	}
+	return out
+}
+
+// joinAPI is the cluster's joins as the API uses them (api.ClusterJoin).
+type joinAPI struct {
+	rt     *shared.Runtime
+	tokens *clusterjoin.Tokens
+	c      *config.Config
+	node   string
+	log    *slog.Logger
+	// leaf signs a joining server's HTTPS certificate from the cluster's
+	// certificate authority; nil gives none.
+	leaf clusterjoin.LeafFunc
+}
+
+// sharedJoin returns the API's view of the cluster's joins for the start
+// with the configuration c and the HTTPS certificate certs; nil on a
+// server that keeps no shared settings.
+func (r *runner) sharedJoin(c *config.Config, certs *tlsauto.Manager) api.ClusterJoin {
+	if r.shared == nil || r.sharedContent == nil {
+		return nil
+	}
+	j := &joinAPI{rt: r.shared, tokens: r.sharedContent.join, c: c, log: r.log}
+	if r.node != nil {
+		j.node = r.node.Name()
+	}
+	j.leaf = r.joinLeaf(certs)
+	return j
+}
+
+// joinLeaf is the joining server's HTTPS certificate from the cluster's
+// certificate authority, once the cluster keeps one (filled in with the
+// TLS seed).
+func (r *runner) joinLeaf(*tlsauto.Manager) clusterjoin.LeafFunc { return nil }
+
+func (j *joinAPI) view() clusterjoin.View { return clusterjoin.ViewOf(j.c) }
+
+// tokenURL is the address a join token names: this server's
+// server.node_url, else server.public_url, else the address the admin's
+// browser reached it at. It must be https.
+func (j *joinAPI) tokenURL(origin string) (string, error) {
+	for _, u := range []string{j.c.Server.NodeURL, j.c.Server.PublicURL, origin} {
+		if u = strings.TrimSpace(u); u == "" {
+			continue
+		}
+		if p, err := url.Parse(u); err == nil && p.Scheme == "https" && p.Hostname() != "" {
+			return u, nil
+		}
+	}
+	return "", errors.New("a join token needs this server's https address: set server.node_url (or server.public_url) on the Settings page, " +
+		"or make the token from a browser that reaches this server over HTTPS")
+}
+
+func (j *joinAPI) Issue(ctx context.Context, by string, req api.JoinTokenRequest) (*clusterjoin.Issued, error) {
+	if err := j.rt.Writable(); err != nil {
+		return nil, err
+	}
+	if err := j.view().Secured(); err != nil {
+		return nil, err
+	}
+	u, err := j.tokenURL(req.Origin)
+	if err != nil {
+		return nil, err
+	}
+	return j.tokens.Issue(ctx, clusterjoin.IssueArgs{By: by, Node: cmp.Or(j.node, j.rt.Self().Name), URL: u, CADER: req.CADER,
+		TTL: time.Duration(req.TTLMinutes) * time.Minute, Platform: req.Platform, Note: req.Note, NodeURL: req.NodeURL})
+}
+
+func (j *joinAPI) Revoke(ctx context.Context, by, id string) error {
+	return j.tokens.Revoke(ctx, by, id)
+}
+
+func (j *joinAPI) Tokens() []clusterjoin.TokenInfo { return j.tokens.List() }
+
+func (j *joinAPI) approver() *clusterjoin.Approver {
+	return &clusterjoin.Approver{RT: j.rt, Secured: j.view().Secured, Log: j.log}
+}
+
+func (j *joinAPI) Pending(ctx context.Context) ([]shared.PendingDoc, error) {
+	if m, _ := j.rt.Mode(); m != shared.ModeMember {
+		return nil, nil
+	}
+	return j.approver().Pending(ctx)
+}
+
+func (j *joinAPI) Approve(ctx context.Context, nodeID, fingerprint, by string) (*shared.PendingDoc, error) {
+	return j.approver().Approve(ctx, nodeID, fingerprint, by)
+}
+
+func (j *joinAPI) Answer(ctx context.Context, req *clusterjoin.Request) (string, error) {
+	return clusterjoin.Answer(ctx, clusterjoin.Deps{RT: j.rt, Tokens: j.tokens, Version: version, View: j.view,
+		IssueLeaf: j.leaf, Credential: joinCredential(j.view), Log: j.log}, req)
+}
+
+// joinCredential is the OpenSearch credential a joining server gets:
+// the answering server's own, until Signalith keeps OpenSearch's
+// certificate authority and issues each server its own (the osca hook).
+var joinCredential = func(view func() clusterjoin.View) clusterjoin.CredentialFunc {
+	return clusterjoin.DefaultCredential(view)
+}
+
+// Install and Binary hand out nothing yet: a new server installs
+// Signalith from a package, the .msi or the Docker image first.
+func (j *joinAPI) Install(string) ([]byte, string)        { return nil, "" }
+func (j *joinAPI) Binary(string, string) (string, string) { return "", "" }
+
+func (j *joinAPI) Waiting() string { return j.rt.Waiting() }
+
+// joinJobs is the housekeeping of joins, run by the server that runs the
+// background jobs: expired join tokens are deleted, and the requests of
+// servers that stopped waiting for approval a day ago.
+func (r *runner) joinJobs() []cluster.Job {
+	if r.shared == nil || r.sharedContent == nil {
+		return nil
+	}
+	rt, tokens, log := r.shared, r.sharedContent.join, r.log
+	return []cluster.Job{{Name: "join housekeeping", Run: func(ctx context.Context) {
+		for {
+			joinHousekeep(ctx, rt, tokens, time.Now(), log)
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(time.Hour):
+			}
+		}
+	}}}
+}
+
+// joinHousekeep is one round of joinJobs at now.
+func joinHousekeep(ctx context.Context, rt *shared.Runtime, tokens *clusterjoin.Tokens, now time.Time, log *slog.Logger) {
+	if n, err := tokens.Expire(ctx, now); err != nil {
+		if ctx.Err() == nil {
+			log.Warn("could not delete the expired join tokens", "err", err)
+		}
+	} else if n > 0 {
+		log.Info(fmt.Sprintf("deleted %d expired join tokens", n))
+	}
+	if n, err := rt.DropStalePending(ctx, now); err != nil {
+		if ctx.Err() == nil {
+			log.Warn("could not delete the old requests to join", "err", err)
+		}
+	} else if n > 0 {
+		log.Info(fmt.Sprintf("deleted %d requests to join that no server came back for", n))
+	}
+}

@@ -10,6 +10,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/cluster"
 	"github.com/jrsamsanchez/signalith/internal/clusterauth"
 	"github.com/jrsamsanchez/signalith/internal/clustercfg"
+	"github.com/jrsamsanchez/signalith/internal/clusterjoin"
 	"github.com/jrsamsanchez/signalith/internal/config"
 	"github.com/jrsamsanchez/signalith/internal/shared"
 	"github.com/jrsamsanchez/signalith/internal/store"
@@ -47,7 +48,10 @@ func openShared(c *config.Config, node *cluster.Node, log *slog.Logger) (*shared
 		Content:    ct.track,
 		Importers:  sharedImporters(ct.sharedDocs, ct.files()),
 		Log:        log,
+		JoinInfo:   joinInfo(c),
 	})
+	// Join tokens are made and used by a member only.
+	ct.join.Writable = rt.Writable
 	ct.rt.Store(rt)
 	ct.users.follow(rt)
 	return rt, ct
@@ -67,12 +71,14 @@ type sharedDocs struct {
 	auth *clusterauth.Docs
 	// tls holds the cluster's certificate authority (see sharedtls.go).
 	tls *sharedTLS
+	// join holds the join tokens (see sharedjoin.go).
+	join *clusterjoin.Tokens
 }
 
 // newSharedDocs returns the documents of a process, with auth as the
 // users' documents.
 func newSharedDocs(auth *clusterauth.Docs) sharedDocs {
-	d := sharedDocs{docs: clustercfg.NewDocs(), auth: auth, tls: newSharedTLS()}
+	d := sharedDocs{docs: clustercfg.NewDocs(), auth: auth, tls: newSharedTLS(), join: clusterjoin.New(nil)}
 	// The users and directory importers and the auth settings of
 	// signalith.yaml reach the users' documents.
 	d.docs.UseAuth(auth)
@@ -93,6 +99,7 @@ func (d sharedDocs) trackers() []sharedTracker {
 		d.docs,
 		d.auth,
 		d.tls.tls,
+		d.join,
 		// Append a new shared collection here.
 	}
 }

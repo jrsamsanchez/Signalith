@@ -16,8 +16,15 @@ var fastTiming = shared.Timing{Poll: 10 * time.Millisecond, Resync: time.Minute,
 // own state folder; lease says whether it holds the job lease.
 func (e *env) runtime(name string, lease bool) (*shared.Runtime, string) {
 	e.t.Helper()
+	return e.runtimeWith(name, lease, nil)
+}
+
+// runtimeWith is runtime with content, which makes the shared documents
+// on each hub the runtime builds.
+func (e *env) runtimeWith(name string, lease bool, content func(*shared.Hub)) (*shared.Runtime, string) {
+	e.t.Helper()
 	dir := e.t.TempDir()
-	rt := shared.NewRuntime(shared.RuntimeOptions{StateDir: dir, Self: shared.Self{NodeID: "n_" + name, Name: name},
+	rt := shared.NewRuntime(shared.RuntimeOptions{StateDir: dir, Self: shared.Self{NodeID: "n_" + name, Name: name}, Content: content,
 		HoldsLease: func() bool { return lease },
 		LeaseCheck: func(context.Context) error {
 			if !lease {

@@ -1405,6 +1405,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		Version:    version,
 	}
 	srv.KnownBrowsers = r.browsers
+	srv.Join = r.sharedJoin(c, certs)
 	if parts != nil {
 		srv.SessionStore, srv.KnownBrowsers, srv.SharedUsers = parts.sessions, parts.browsers, parts.api(c)
 	}
@@ -1546,6 +1547,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	if r.shared != nil {
 		in.jobsList = append(in.jobsList, requestsJob(r.shared, contentHandlers(feeds, ret, r.auditHandlers(ret))))
 		in.jobsList = append(in.jobsList, r.auditJobs(c, cl, ret)...)
+		in.jobsList = append(in.jobsList, r.joinJobs()...)
 	}
 	if parts != nil {
 		// Signed-in directory users are checked again by this one server
