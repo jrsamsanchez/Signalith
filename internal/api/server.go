@@ -193,6 +193,9 @@ type Server struct {
 	// ClusterOSIdentity is OpenSearch's certificate authority the cluster
 	// keeps; nil on a server that is not a member of a cluster.
 	ClusterOSIdentity ClusterOSIdentity
+	// Install hands new servers the install scripts and this server's
+	// program; nil turns that off.
+	Install *ClusterInstall
 
 	authOnce     sync.Once
 	creds        credCache  // recently checked Basic credentials
@@ -310,6 +313,7 @@ func (s *Server) Handler() http.Handler {
 	s.routeClusterTLS(api)
 	s.routeClusterServers(api)
 	s.routeClusterOSIdentity(api)
+	s.routeClusterInstall(mux, api)
 	s.routeTokens(api)
 	s.routeAPITokens(api)
 	s.routeAgents(api)

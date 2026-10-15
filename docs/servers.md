@@ -247,10 +247,13 @@ with it, if anything.
 
 ## Adding a server by hand
 
-With OpenSearch secured (https and a sign-in), a new server can join with one
+The easiest way: **Add a server** on the Servers page checks OpenSearch is ready and
+gives you one line to run on the new computer (see [Adding servers](multi-server.md)).
+
+From the command line, with OpenSearch secured (https and a sign-in), a new server can join with one
 command instead of the steps below: make a join token on a member with
 `signalith cluster token`, then, on the new computer with Signalith installed, run
-`sudo signalith join '<token>'` (see [join](cluster-cli.md#join)). It checks the
+`sudo signalith join` and paste the token (see [join](cluster-cli.md#join)). It checks the
 member by the certificate the token names, receives the cluster key and the
 OpenSearch settings encrypted for it alone, checks it can use OpenSearch from there,
 and starts. Or start the new server with the same OpenSearch settings and no key: it

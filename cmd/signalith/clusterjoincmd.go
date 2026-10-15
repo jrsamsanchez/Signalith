@@ -15,6 +15,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/jrsamsanchez/signalith/internal/api"
+	"github.com/jrsamsanchez/signalith/internal/clusterinstall"
 	"github.com/jrsamsanchez/signalith/internal/clusterjoin"
 	"github.com/jrsamsanchez/signalith/internal/config"
 	"github.com/jrsamsanchez/signalith/internal/shared"
@@ -115,17 +116,39 @@ func (x *clusterCLI) token(ctx context.Context, o tokenOptions, asJSON bool) err
 	x.audit("join token made", "token", is.Token.ID, "platform", o.platform, "expires_at", is.ExpiresAt, "note", o.note)
 	text := is.Token.String()
 	linux, windows, docker := api.JoinLines(text)
+	commands := map[string]string{"linux": linux, "windows": windows, "docker": docker}
+	// The same lines as Servers > Add a server: they install Signalith
+	// when the new computer has none, then join.
+	goos, goarch := installFiles.Platform()
+	c, lerr := clusterinstall.Lines(clusterinstall.Line{URL: is.Token.URL, Token: text, Version: version,
+		GOOS: goos, GOARCH: goarch, BinarySHA256: installFiles.BinarySHA256()})
+	if lerr == nil {
+		commands = map[string]string{"linux": c.Linux, "linux_note": c.LinuxNote, "windows": c.Windows, "windows_note": c.WindowsNote,
+			"docker": c.Docker, "docker_run": c.DockerRun}
+	}
 	if asJSON {
 		enc := json.NewEncoder(x.out)
 		enc.SetIndent("", "  ")
-		return enc.Encode(tokenAnswer{ID: is.Token.ID, Token: text, ExpiresAt: is.ExpiresAt,
-			Commands: map[string]string{"linux": linux, "windows": windows, "docker": docker}})
+		return enc.Encode(tokenAnswer{ID: is.Token.ID, Token: text, ExpiresAt: is.ExpiresAt, Commands: commands})
 	}
 	fmt.Fprintf(x.out, "Join token %s, which works once, until %s:\n\n  %s\n\n", is.Token.ID, is.ExpiresAt.Local().Format("2006-01-02 15:04 MST"), text)
-	fmt.Fprintf(x.out, "On the new server, once Signalith is installed:\n")
-	fmt.Fprintf(x.out, "  Linux:                        %s\n", linux)
-	fmt.Fprintf(x.out, "  Windows (elevated PowerShell): %s\n", windows)
-	fmt.Fprintf(x.out, "  Docker (in its .env file):     %s\n", docker)
+	if lerr == nil {
+		fmt.Fprintf(x.out, "On the new server (see https://signalith.io/docs/multi-server/):\n\n")
+		fmt.Fprintf(x.out, "Linux, in a terminal (it asks for your sudo password):\n\n  %s\n\n", c.Linux)
+		if c.LinuxNote != "" {
+			fmt.Fprintf(x.out, "  %s\n\n", c.LinuxNote)
+		}
+		fmt.Fprintf(x.out, "Windows, in PowerShell opened with Run as administrator:\n\n  %s\n\n", c.Windows)
+		if c.WindowsNote != "" {
+			fmt.Fprintf(x.out, "  %s\n\n", c.WindowsNote)
+		}
+		fmt.Fprintf(x.out, "Docker: save these lines as deploy/docker/join.env, set SIGNALITH_NODE_URL, then run %s\n\n%s\n", c.DockerRun, c.Docker)
+	} else {
+		fmt.Fprintf(x.out, "On the new server, once Signalith is installed:\n")
+		fmt.Fprintf(x.out, "  Linux:                        %s\n", linux)
+		fmt.Fprintf(x.out, "  Windows (elevated PowerShell): %s\n", windows)
+		fmt.Fprintf(x.out, "  Docker (in its .env file):     %s\n", docker)
+	}
 	fmt.Fprintf(x.out, "\nThe token is not shown again. To cancel it: signalith cluster token -revoke %s\n", is.Token.ID)
 	return nil
 }

@@ -151,7 +151,13 @@ func (s *testServer) joinToken(args ...string) string {
 	t.Helper()
 	var out string
 	var code int
-	// The cluster is founded within seconds of the first start.
+	// The cluster is founded within seconds of the first start. A token
+	// can be made while the founder still moves its files into OpenSearch,
+	// but joins are answered only once it is done.
+	waitUntil(t, 60*time.Second, s.name+" is a member of its cluster", func() bool {
+		st, ok := s.clusterStatus()
+		return ok && st.Shared.Mode == "member"
+	})
 	waitUntil(t, 60*time.Second, s.name+" makes a join token", func() bool {
 		out, code = s.runCode(append([]string{"cluster", "token", "-url", fmt.Sprintf("https://127.0.0.1:%d", s.port)}, args...)...)
 		return code == 0

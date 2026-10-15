@@ -196,7 +196,8 @@ services:
     # A fixed name, which goes into Signalith's own HTTPS certificate and the
     # name of its certificate authority ("Signalith Local CA (signalith)").
     # Without it the name would be the container's random ID, new each time.
-    hostname: signalith
+    # SIGNALITH_NODE_NAME in a .env file next to this file changes it.
+    hostname: ${SIGNALITH_NODE_NAME:-signalith}
     # After a reboot this can start before OpenSearch is ready; it waits for it.
     restart: unless-stopped
     depends_on:
@@ -270,6 +271,33 @@ services:
     ulimits:
       core: 0
     # Keep at most 5 log files of 10 MB, so the container log cannot fill the disk.
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+
+  # Opens OpenSearch's port to the other Signalith servers of a cluster
+  # (Servers > Add a server > Prepare OpenSearch). Off unless the cluster
+  # profile is on: put COMPOSE_PROFILES=cluster in a .env file next to this
+  # file, so every "up" keeps it. It passes connections on as they are:
+  # TLS and the client certificate still run between each server and
+  # OpenSearch. Only open the port to the other servers in the firewall.
+  opensearch-port:
+    profiles: ["cluster"]
+    image: ghcr.io/jrsamsanchez/signalith:${SIGNALITH_VERSION:-main}
+    pull_policy: always
+    command: ["tcp-forward", "-listen", "0.0.0.0:9200", "-to", "opensearch:9200"]
+    restart: unless-stopped
+    depends_on:
+      opensearch: { condition: service_started }
+    ports:
+      # To take it from one network only, put this computer's address in
+      # front, e.g. SIGNALITH_OPENSEARCH_PORT=192.168.1.20:9200 in .env.
+      - "${SIGNALITH_OPENSEARCH_PORT:-9200}:9200"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     logging:
       driver: json-file
       options: { max-size: "10m", max-file: "5" }

@@ -9,6 +9,8 @@
 
 Then `sudo signalith initial-password` (on Windows, `signalith initial-password` in PowerShell as Administrator) shows the first admin password. Signalith needs OpenSearch 2.x; see [Install from packages](https://signalith.io/docs/install-packages/).
 
+Adding a server to a cluster? Use **Add a server** on the Servers page: it gives one line to run on the new computer. `install.sh` and `signalith-{VERSION}-windows-amd64.zip` (the program and `install.ps1`) are the same install scripts, for automation; see [Adding servers](https://signalith.io/docs/multi-server/).
+
 {GPG}Already using Signalith's [apt or dnf repository](https://signalith.io/docs/install-packages/)? `sudo apt upgrade` or `sudo dnf upgrade` installs this release.
 
 ## Check your download

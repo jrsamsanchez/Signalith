@@ -285,7 +285,7 @@ func TestDockerCompose(t *testing.T) {
 	}
 	// A fixed host name for the certificate and its CA, not the
 	// container's ID.
-	if s.Hostname != "signalith" {
+	if s.Hostname != "${SIGNALITH_NODE_NAME:-signalith}" {
 		t.Errorf("signalith hostname %q", s.Hostname)
 	}
 }
