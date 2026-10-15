@@ -1,0 +1,4 @@
+{"rule": "97b9ce1e-c5ab-11ea-87d0-0242ac130003", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Windows Defender/Operational","event_id":"1121","data":{"ProcessName":"\\psexesvc.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Windows Defender/Operational","event_id":"1121","data":{}}
+]}

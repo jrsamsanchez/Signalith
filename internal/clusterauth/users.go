@@ -66,7 +66,9 @@ func record(b *UserBody, etag string) users.Record {
 // validateUser refuses a user document whose body names another user
 // than its id, has a role or source this version does not know, or is a
 // built-in admin other than the one the cluster document names: a forged
-// second built-in admin is refused even with a valid MAC.
+// second built-in admin is refused even with a valid MAC. While the
+// built-in admin is renamed (ClusterBody.BuiltinPrev is set), the old
+// name's document is accepted as well, until the rename ends it.
 func (d *Docs) validateUser(name string, b *UserBody) error {
 	if b.Username != name {
 		return fmt.Errorf("it holds the user %q", b.Username)
@@ -77,7 +79,7 @@ func (d *Docs) validateUser(name string, b *UserBody) error {
 	switch b.Source {
 	case users.SourceLocal, users.SourceDirectory:
 	case users.SourceBuiltin:
-		if c, ok := d.clusterBody(); !ok || c.Builtin == "" || c.Builtin != name {
+		if c, ok := d.clusterBody(); !ok || c.Builtin == "" || c.Builtin != name && (c.BuiltinPrev == "" || c.BuiltinPrev != name) {
 			return errors.New("it is a built-in admin the cluster document does not name")
 		}
 		if b.Role != users.Admin || b.Disabled {

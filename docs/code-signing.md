@@ -5,7 +5,7 @@ what the project built from its public source.
 
 | Download | Signed with |
 | --- | --- |
-| Windows installer (`.msi`) and `signalith-windows-amd64.exe` | Authenticode, once Windows code signing is set up (below) |
+| Windows installer (`.msi`) and `signalith-windows-amd64.exe` | Not yet Authenticode-signed (below) |
 | Linux packages (`.deb`, `.rpm`) and the apt and dnf repositories | The Signalith release GPG key, once it is set up |
 | Container images on GHCR | Sigstore, with build provenance |
 | Every release file (through `SHA256SUMS`) | Sigstore and GitHub build provenance (and GPG, once set up) |
@@ -14,17 +14,14 @@ what the project built from its public source.
 
 ## Windows
 
-Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by
-[SignPath Foundation](https://signpath.org).
+The Windows files are not yet Authenticode-signed, so Windows SmartScreen warns before
+running the installer; the checksums and their Sigstore signature still let you check
+them.
 
-Until that is in place, the Windows files are not Authenticode-signed and Windows
-SmartScreen warns before running the installer; the checksums and their Sigstore
-signature still let you check them.
-
-Only files built by the project's GitHub Actions **Release** workflow from a tagged
-commit in [jrsamsanchez/Signalith](https://github.com/jrsamsanchez/Signalith) are sent
-for signing, and a maintainer approves each signing request. Every signed file is named
-Signalith and carries the release's version.
+When Authenticode signing is added, only files built by the project's GitHub Actions
+**Release** workflow from a tagged commit in
+[jrsamsanchez/Signalith](https://github.com/jrsamsanchez/Signalith) will be signed, and
+every signed file is named Signalith and carries the release's version.
 
 ## Team roles
 
@@ -36,7 +33,7 @@ Signalith and carries the release's version.
 - **Approvers:** the [repository owner](https://github.com/jrsamsanchez) approves each
   release and each signing request.
 
-Everyone in these roles uses multi-factor authentication for GitHub and SignPath.
+Everyone in these roles uses multi-factor authentication for GitHub.
 
 ## Privacy
 

@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"os/signal"
@@ -43,6 +44,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/findings"
 	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"github.com/jrsamsanchez/signalith/internal/intel"
+	"github.com/jrsamsanchez/signalith/internal/m365"
 	"github.com/jrsamsanchez/signalith/internal/nlq"
 	"github.com/jrsamsanchez/signalith/internal/notify"
 	"github.com/jrsamsanchez/signalith/internal/playbooks"
@@ -56,6 +58,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/search"
 	"github.com/jrsamsanchez/signalith/internal/secrets"
 	"github.com/jrsamsanchez/signalith/internal/securefile"
+	"github.com/jrsamsanchez/signalith/internal/sensortune"
 	"github.com/jrsamsanchez/signalith/internal/shared"
 	"github.com/jrsamsanchez/signalith/internal/store"
 	"github.com/jrsamsanchez/signalith/internal/syslog"
@@ -80,16 +83,19 @@ Usage:
   signalith initial-password [-c file]    print the first admin password the Docker quick start or a package made
   signalith query     [-c file] [-explain] "<query>"   run a query from the shell
   signalith ask       [-c file] [-ai] "<question>"     turn a question into a query
+  signalith mcp       [-url URL] [-user name] [-check]  read-only MCP server for AI tools such as Claude Desktop
   signalith archive   list|verify|restore [-c file] ...  list, check or restore archived days
   signalith sample-data load|remove|status [-c file] [-size ...]  load or remove a week of sample data to try
   signalith tokens    list|create|rename|revoke|legacy [-c file] ...  the tokens agents send with
   signalith secrets   status|encrypt|set|rotate-master [-c file] ...  the master key and stored passwords
   signalith content   status|install|remove [-c file] ...  content pack updates (newer tested rules)
   signalith security  [-c file] [-json]   print the security report (exit 2 when something is at risk)
-  signalith cluster   status|found|export|import|export-key|import-key|reset-key|accept-restore [-c file] ...  the settings the servers share in OpenSearch
+  signalith cluster   status|found|export|import|export-key|import-key|reset-key|accept-restore|token|approve [-c file] ...  the settings the servers share in OpenSearch
+  signalith join      '<token>' [-c file] [--name] [--listen] [--node-url] [--copy-syslog] [--no-start] [--merge] [--yes]   add this server to a cluster
+  signalith opensearch-check <url> [--ca file] [--cert file --key file] [--user u]   check OpenSearch is ready for several servers
   signalith service   install|uninstall|start|stop     manage the Windows service
-  signalith opensearch-certs -out DIR [-node name] [-san name]   certificates to secure your own OpenSearch
-  signalith bootstrap-docker -opensearch-dir DIR -signalith-dir DIR   prepare the Docker quick start (its setup service runs this)
+  signalith opensearch-certs [-ca-dir DIR] -node NAME [-san ...] [-peer ...] -out DIR   certificates to secure your own OpenSearch
+  signalith bootstrap-docker [-opensearch-name NAME] [-nodes N] [-export-ca-key] [-apply-security] [-new-ca]   prepare the Docker quick start (its setup service runs this)
   signalith version
 
 The config file defaults to %s
@@ -144,6 +150,8 @@ func main() {
 		err = cmdQuery(args)
 	case "ask":
 		err = cmdAsk(args)
+	case "mcp":
+		err = cmdMCP(args)
 	case "service":
 		err = cmdService(args)
 	case "archive":
@@ -160,6 +168,12 @@ func main() {
 		err = cmdSecurity(args)
 	case "cluster":
 		err = cmdCluster(args)
+	case "join":
+		os.Exit(runJoinCommand(args))
+	case "opensearch-check":
+		err = cmdOpenSearchCheck(args)
+	case "tcp-forward":
+		err = cmdTCPForward(args)
 	case "version", "-v", "--version":
 		fmt.Println("signalith", version)
 	case "help", "-h", "--help":
@@ -769,8 +783,7 @@ func cmdQuery(args []string) error {
 }
 
 func newAssistant(c *config.Config) *assistant.Client {
-	a := c.Assistant
-	return assistant.New(a.Provider, a.URL, a.Model, a.APIKey)
+	return c.AssistantClient()
 }
 
 // cmdAsk prints the query for a plain-English question, with how each
@@ -909,6 +922,11 @@ func serve(ctx context.Context, path string, log *slog.Logger) error {
 	// GOTRACEBACK set in the environment, and on Linux hardenProcess
 	// keeps even GOTRACEBACK=crash from writing a core file.
 	debug.SetTraceback("single")
+	// A new server started with SIGNALITH_JOIN (Docker) joins its cluster
+	// first, which writes the settings and keys loaded next.
+	if err := joinFromEnv(path, log); err != nil {
+		return err
+	}
 	c, err := loadConfig(path, log)
 	if err != nil {
 		return err
@@ -921,6 +939,10 @@ func serve(ctx context.Context, path string, log *slog.Logger) error {
 	}
 	defer node.Close()
 	defer node.Stop()
+	// The audit spool belongs to the process too, and hears every audit
+	// line logged from here on (see sharedaudit.go).
+	audits, log := openAudit(c, node, log)
+	go audits.sink.Run(ctx)
 	// The first start of the Docker quick start with this version decides
 	// whether it was upgraded from one whose agents send the example
 	// ingest token (see config.Config.OldToken).
@@ -936,6 +958,7 @@ func serve(ctx context.Context, path string, log *slog.Logger) error {
 	}
 	r := newRunner(path, log)
 	r.node = node
+	r.audit = audits
 	// The shared configuration belongs to the process too; each start of
 	// the components points it at their OpenSearch client.
 	r.shared, r.sharedContent = openShared(c, node, log)
@@ -1050,16 +1073,29 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	// The shared configuration looks at this OpenSearch first: whether
 	// the feeds and retention policies come from it or from this server's
 	// files depends on what it finds.
-	sharedOn := false
+	sharedOn, settingsOn := false, false
 	if r.node != nil {
 		sharedOn = useShared(r.shared, r.sharedContent, c, cl)
+		// The settings of the Settings page come from the shared settings
+		// when c was loaded with them, or would have been but could not
+		// start with them (see startWithout).
+		settingsOn = r.settingsShared() && (c.SharedSettings() || c.SharedSkipped())
+		r.sharedContent.settingsOn.Store(settingsOn)
+		if settingsOn {
+			r.sharedContent.followDocs(r.shared)
+		}
 	}
 	ret := newRetention(c, cl, log)
+	archiveCrypto(ret.Archive, c, r.clusterKey)
 	if sharedOn {
 		r.sharedContent.sharedRetention(ret)
+	} else {
+		r.sharedContent.holdRetention(ret)
 	}
+	r.useAudit(ctx, in, c, cl, ret)
 	maxAge := c.MaxEventAge(retentionKeepDays(ret))
 	pipeline := &ingest.Pipeline{Store: cl, Prefix: c.OpenSearch.IndexPrefix, MaxEventAge: maxAge, Log: log}
+	pipeline.SetURLQuery(c.URLQueryMode())
 	// Each day's new field names are shared out among the servers that
 	// stored events in the last 10 minutes, and none are added to an index
 	// whose mapping is near OpenSearch's limit. The node lasts across
@@ -1077,6 +1113,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			Allow: c.Syslog.AllowList(), Ready: templateReady,
 			MaxAge: maxAge, PublicPort: c.Syslog.PublicPort,
 			Servers: indexingServers,
+			Proxy:   proxyFor(c, c.Syslog.ProxyProtocol, log),
 		}
 		if certs != nil {
 			sc.GetCertificate = certs.GetCertificate
@@ -1127,6 +1164,8 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	feeds := newFeeds(c, indicators, log)
 	if sharedOn {
 		r.sharedContent.sharedFeeds(ctx, feeds, indicators, cl, c.OpenSearch.IndexPrefix, &in.jobs)
+	} else {
+		r.sharedContent.holdFeeds(feeds)
 	}
 	if err := feeds.Load(); err != nil {
 		if sharedOn {
@@ -1157,6 +1196,17 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			log.Error("dashboard file has errors; fix it to show the dashboard", "file", p.File, "err", p.Error)
 		}
 	}
+	if r.sharedContent != nil {
+		// Saved in this server's folders until the shared library is in
+		// use: held while they move into it (importhold.go).
+		lib.Hold = r.sharedContent.holdFile(shared.ImportDetections)
+		boards.Hold = r.sharedContent.holdFile(shared.ImportDashboards)
+		lists.Hold = r.sharedContent.holdFile(shared.ImportLookups)
+		if err := r.sharedContent.library.start(ctx, r.shared, sharedOn && r.shared.SharedLibrary(), c, lib, boards, &in.jobs); err != nil {
+			return nil, err
+		}
+		r.sharedContent.library.startLists(ctx, r.shared, sharedOn && r.shared.SharedLookups(), c, lists, &in.jobs)
+	}
 	// The users, the directory sign-in settings and the sessions: shared
 	// by the servers of the cluster once every one reads them there, else
 	// this server's own.
@@ -1172,10 +1222,15 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	var people *users.Store
 	var dir *users.Directory
 	if parts != nil {
+		// The sessions made while this server kept its users in its own
+		// files carry over.
+		parts.carry(ctx, r.sessions, r.people, c, log)
 		people, dir = parts.store, parts.dir
 		n := people.Count()
 		log.Info("users loaded from the shared settings", "local", n[users.SourceLocal], "directory", n[users.SourceDirectory])
 	} else {
+		// The sessions are kept here again.
+		r.sessions.Forward(nil)
 		// Lockouts other servers reported while the users were shared no
 		// longer count.
 		r.limiter.External(nil)
@@ -1206,11 +1261,17 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	// notes the hosts that reach it and writes their last contact in bulk.
 	estore := endpoint.NewStore(cl, c.OpenSearch.IndexPrefix)
 	in.jobs.Go(func() { estore.Run(ctx, 30*time.Second) })
+	// The Suricata rule tuning network sensors fetch (Settings > Network
+	// sensors), one document next to the endpoint settings.
+	tuning := sensortune.NewStore(cl, c.OpenSearch.IndexPrefix)
 	// Network scans for vulnerabilities, set up on the Vulnerabilities
-	// page. The server that runs the background jobs runs them.
+	// page. Every server runs the scans of the networks that name it as
+	// their scanner; the server that runs the background jobs runs the
+	// rest.
 	vstore := vulnscan.NewStore(cl, c.OpenSearch.IndexPrefix)
 	nvd := vulnscan.NewNVD(c.NVDURL(), c.Vulns.NVDAPIKey)
-	in.jobs.Go(func() { feedFoundAssets(ctx, estore, vstore, lists, log) })
+	sensorHosts := &sensorDiscovery{cl: cl, prefix: c.OpenSearch.IndexPrefix, log: log}
+	in.jobs.Go(func() { feedFoundAssets(ctx, estore, vstore, sensorHosts, lists, log) })
 	// Notifications: the channels and rules set on the Notifications
 	// page, and the deliveries index that makes each message go out once.
 	notes, deliveries, senders := newNotify(c, cl, log)
@@ -1262,6 +1323,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		Risk:     &risk.Store{Client: cl, Prefix: c.OpenSearch.IndexPrefix},
 		Server:   sampleServer,
 		NodeID:   sampleNode,
+		URLQuery: pipeline.URLQuery,
 		Log:      log,
 	}
 	dispatcher := &notify.Dispatcher{
@@ -1324,9 +1386,19 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		lcancel()
 	}
 	in.jobs.Go(func() { tokens.Run(ctx) })
+	// OpenVAS, optional, runs the deeper scans of this server's networks
+	// that ask for them.
+	var openvas *vulnscan.OpenVAS
+	if c.Vulns.OpenVASAddress != "" {
+		openvas = &vulnscan.OpenVAS{Address: c.Vulns.OpenVASAddress, Username: c.Vulns.OpenVASUsername,
+			Password: c.Vulns.OpenVASPassword, CAFile: c.Vulns.OpenVASCAFile}
+	}
 	scanner := &vulnscan.Scanner{
-		Store: vstore, NVD: nvd, Events: pipeline, Server: sampleServer, Log: log,
-		Checker: &vulnscan.Checker{NVD: nvd, Docker: cluster.InContainer()},
+		Store: vstore, NVD: nvd, Events: pipeline, Server: sampleServer, NodeID: sampleNode, Log: log, OpenVAS: openvas,
+		Checker: &vulnscan.Checker{NVD: nvd, Docker: cluster.InContainer(), OpenVAS: openvas},
+	}
+	if r.node != nil {
+		scanner.Leader, scanner.Paused = r.node.RunsJobs, r.node.WritesRefused
 	}
 	// The agents that send events, for the Endpoints page: counted here,
 	// written once a minute to the runtime index next to the agent
@@ -1340,49 +1412,78 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			return agentinv.Pin(certs.Fingerprint())
 		},
 		Leader: func() bool { return r.node != nil && r.node.RunsJobs() }}
+	// The cluster's one certificate authority, once it has one.
+	tlsStatus := r.sharedTLS(ctx, in, c, certs, agentsInv)
+	// This server's own OpenSearch certificate, once the cluster keeps
+	// OpenSearch's certificate authority.
+	osIdentity := r.osIdentity(ctx, in, c)
 	r.agents.Store(agentsInv)
 	in.jobs.Go(func() { agentsInv.Run(ctx) })
-	srv := &api.Server{
-		Config:     c,
-		Tokens:     tokens,
-		Agents:     agentsInv,
-		Engine:     eng,
-		Pipeline:   pipeline,
-		Syslog:     receiver,
-		Backend:    cl,
-		Detections: lib,
-		Scheduler:  sched,
-		Findings:   fstore,
-		Assets:     lists,
-		Intel:      indicators,
-		Feeds:      feeds,
-		Notify:     &api.Notify{Settings: notes, Deliveries: deliveries, Sender: senders, Server: sampleServer},
-		Dashboards: boards,
-		Cases:      cstore,
-		Respond:    responder,
-		Playbooks:  &api.Playbooks{Manager: pbooks, Runs: pruns},
-		Retention:  ret,
-		Sample:     sampleLoader,
-		Content:    updater,
-		Endpoints:  estore,
-		Vulns:      &api.Vulns{Store: vstore, Scanner: scanner},
-		Background: r.backgroundContext(parent),
-		Assistant:  newAssistant(c),
-		Users:      people,
-		Directory:  dir,
-		TLS:        certs,
-		Sessions:   r.sessions,
-		Limiter:    r.limiter,
-		Restarter:  r,
-		Security:   r.security,
-		Started:    r.started,
-		UI:         web.FS(),
-		Log:        log,
-		Version:    version,
+	// A network sensor gone silent cannot be searched for: the server
+	// that runs the background jobs writes an event for it, which the
+	// built-in detection network-sensor-unhealthy reads.
+	sensorWatch := &agentinv.SensorWatch{Agents: agentsInv, Events: pipeline, Log: log}
+	if r.node != nil {
+		sensorWatch.Leader = r.node.RunsJobs
 	}
+	in.jobs.Go(func() { sensorWatch.Run(ctx) })
+	srv := &api.Server{
+		Config:       c,
+		Tokens:       tokens,
+		Agents:       agentsInv,
+		Engine:       eng,
+		Pipeline:     pipeline,
+		EventAge:     live,
+		Syslog:       receiver,
+		Backend:      cl,
+		Detections:   lib,
+		Scheduler:    sched,
+		Findings:     fstore,
+		Assets:       lists,
+		Intel:        indicators,
+		Feeds:        feeds,
+		Notify:       &api.Notify{Settings: notes, Deliveries: deliveries, Sender: senders, Server: sampleServer},
+		Dashboards:   boards,
+		Cases:        cstore,
+		Respond:      responder,
+		Playbooks:    &api.Playbooks{Manager: pbooks, Runs: pruns},
+		Retention:    ret,
+		Sample:       sampleLoader,
+		Content:      updater,
+		Endpoints:    estore,
+		SensorTuning: tuning,
+		Vulns:        &api.Vulns{Store: vstore, Scanner: scanner},
+		Background:   r.backgroundContext(parent),
+		Assistant:    newAssistant(c),
+		Users:        people,
+		Directory:    dir,
+		TLS:          certs,
+		Sessions:     r.sessions,
+		Limiter:      r.limiter,
+		Restarter:    r,
+		Security:     r.security,
+		Started:      r.started,
+		UI:           web.FS(),
+		Log:          log,
+		Version:      version,
+	}
+	followProxyTrust(srv)
 	srv.KnownBrowsers = r.browsers
+	srv.Join = r.sharedJoin(c, certs)
+	if r.shared != nil && r.sharedContent != nil {
+		srv.ComplianceNotes = r.sharedContent.comp
+	}
+	wireFeatures(srv, r.shared)
 	if parts != nil {
 		srv.SessionStore, srv.KnownBrowsers, srv.SharedUsers = parts.sessions, parts.browsers, parts.api(c)
+		if rt := r.shared; rt != nil {
+			srv.SharedUsers.APITokens = func() string {
+				if rt.APITokens() {
+					return ""
+				}
+				return "API tokens need every server on a version that supports them: upgrade the others first."
+			}
+		}
 	}
 	in.jobs.Go(func() { srv.RunContentUpdates(ctx) })
 	pbRunner := &playbooks.Runner{
@@ -1451,8 +1552,26 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			return false
 		}
 	}
+	// Vulnerability scans run on every server, not as a background job:
+	// each runs those of the networks it scans (see vulnscan.Scanner).
+	// Networks can be added on the page at any time, so the scanner runs
+	// even with none yet.
+	in.jobs.Go(func() {
+		if !ready(ctx) || !vulnsOK {
+			return
+		}
+		scanner.Run(ctx)
+	})
 	// The background jobs run only while this server holds the job lease:
 	// of the servers that share one OpenSearch, one runs them.
+	runtimeIndex := cluster.RuntimeIndex(c.OpenSearch.IndexPrefix)
+	o365 := &m365.Poller{
+		Settings: func() m365.Settings { return m365.FromConfig(srv.Running()) },
+		Store:    cl, Index: runtimeIndex, Ingest: pipeline.Ingest, Log: log,
+	}
+	srv.M365Cursors = func(ctx context.Context, tenant string) ([]m365.Cursor, error) {
+		return m365.Cursors(ctx, cl, runtimeIndex, tenant)
+	}
 	in.jobsList = []cluster.Job{
 		{Name: "index upgrades", Run: func(ctx context.Context) {
 			if !ready(ctx) {
@@ -1503,24 +1622,25 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			log.Info("playbooks will run for new findings that match them", "file", c.PlaybooksFile())
 			pbRunner.Run(ctx)
 		}},
-		{Name: "vulnerability scans", Run: func(ctx context.Context) {
-			if !ready(ctx) || !vulnsOK {
-				return
-			}
-			// Networks can be added on the page at any time, so the
-			// scanner runs even with none yet.
-			log.Info("vulnerability scans will run on their schedules")
-			scanner.Run(ctx)
-		}},
 		// Retention keeps running while OpenSearch refuses writes (its
 		// disk is full): its disk guard is what frees space.
 		{Name: "retention", Emergency: true, Run: func(ctx context.Context) {
 			ret.Start(ctx)
 			ret.Wait()
 		}},
+		// Microsoft 365's audit log is read while Settings > Microsoft 365
+		// names a tenant; a change there applies at the next round.
+		{Name: "microsoft 365 audit log", Run: func(ctx context.Context) {
+			if !ready(ctx) {
+				return
+			}
+			o365.Run(ctx)
+		}},
 	}
 	if r.shared != nil {
-		in.jobsList = append(in.jobsList, requestsJob(r.shared, contentHandlers(feeds, ret)))
+		in.jobsList = append(in.jobsList, requestsJob(r.shared, contentHandlers(feeds, ret, r.auditHandlers(ret), r.lifecycleLeaderHandlers())))
+		in.jobsList = append(in.jobsList, r.auditJobs(c, cl, ret)...)
+		in.jobsList = append(in.jobsList, r.joinJobs()...)
 	}
 	if parts != nil {
 		// Signed-in directory users are checked again by this one server
@@ -1533,13 +1653,17 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		in.jobs.Go(func() { r.sharedContent.apply(ctx, r.shared, c) })
 	}
 	in.retention = ret
+	srv.Audit = r.auditAPI(c, cl)
 	if hook := jobStarting; hook != nil {
 		in.jobsList = watchJobs(in.jobsList, c, hook)
 	}
-	if !c.Detections.Scheduler && sharedOn {
+	if c.Scanner() {
+		log.Info("this server is a scanner (cluster.role), so it never runs detections, threat intel downloads, notifications, playbooks or retention; " +
+			"it scans the networks picked for it on the Vulnerabilities page")
+	} else if !c.LeaderEligible() && sharedOn {
 		log.Warn("detections.scheduler is off, so this server never runs detections, threat intel downloads, notifications, playbooks or retention; " +
 			"another server that shares its OpenSearch does")
-	} else if !c.Detections.Scheduler {
+	} else if !c.LeaderEligible() {
 		log.Warn("detections.scheduler is off, so this server never runs detections, threat intel downloads, notifications, playbooks or retention; " +
 			"another server that shares its OpenSearch does. The Data retention and feed settings are read-only here")
 	}
@@ -1550,21 +1674,41 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		// run, download or message, so a server that lost the job lease
 		// stops at once, even before its jobs' context ends.
 		sched.Allowed, feeds.Allowed, dispatcher.Allowed, pbRunner.Allowed = r.node.RunsJobs, r.node.RunsJobs, r.node.RunsJobs, r.node.RunsJobs
+		o365.Allowed, o365.Epoch, o365.NodeID = r.node.RunsJobs, r.node.Lease().Epoch, r.node.ID()
 		// Detection run state carries the lease epoch, so a server that
 		// lost the lease cannot write over a newer one's, and slots are
 		// worked out on OpenSearch's clock, which every server shares.
 		sched.Epoch, sched.NodeID, sched.ClusterNow = r.node.Lease().Epoch, r.node.ID(), r.node.ClusterNow
-		scanner.Allowed = r.node.RunsJobs
 		srv.Cluster = r.node
+		srv.NodeURLChanged = func(c *config.Config) { r.node.SetNodeURL(nodeURL(c)) }
+		wireUpgrade(srv, r.node, r.shared, cl, c.OpenSearch.IndexPrefix)
 		if r.shared != nil {
 			srv.Cluster = sharedCluster{Node: r.node, rt: r.shared}
 			srv.Shared = sharedAPI{rt: r.shared, on: sharedOn}
+			srv.ClusterTLS = r.clusterTLSAPI()
+			srv.ClusterServers = r.clusterServersAPI()
+			srv.ClusterOSIdentity = r.clusterOSIdentityAPI()
 			srv.ConfigToken = configToken{rt: r.shared}
+			// A start that keeps the settings in settings.yaml has the
+			// store too, so a save there holds off the move of this
+			// server's own settings into the shared settings, and goes
+			// there once they moved (settingsStore.HoldFile).
+			srv.Settings = settingsStore{r: r, files: !settingsOn}
+			if settingsOn {
+				// The shared settings and this server's own are followed
+				// while this start runs: what applies at once is applied,
+				// and the rest waits for a restart. The settings set aside
+				// with signalith settings reset -local are refused there.
+				in.jobs.Go(func() { r.followSettings(ctx, srv, ret, c) })
+				in.jobs.Go(func() { r.settleSetAside(ctx, c) })
+			}
 		}
 		in.node = r.node
 	}
+	srv.Install = clusterInstall()
 	tokenSrv.Store(srv)
 	in.srv, in.handler = srv, srv.Handler()
+	r.srv.Store(srv)
 	// The example ingest token of an older Docker quick start: decide
 	// whether this one was upgraded if that is still open, and end it for
 	// good once agents on plain HTTP are refused.
@@ -1580,17 +1724,29 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		// Last, once everything started: the node points at this
 		// OpenSearch, and runs these jobs while it holds the job lease.
 		settings := cluster.Settings{
-			Eligible: c.Detections.Scheduler, NodeURL: nodeURL(c), Listen: c.Server.Listen,
+			Eligible: c.LeaderEligible(), Role: c.Cluster.Role, NodeURL: nodeURL(c), Listen: c.Server.Listen,
 			Syslog: cluster.Syslog{UDP: c.Syslog.UDP, TCP: c.Syslog.TCP, TLS: c.Syslog.TLS},
 			Fingerprints: func() cluster.Fingerprints {
 				fp := filesFingerprints(c, ret, feeds, notes, pbooks)
 				fp.Users = usersFingerprint(people, dir)
 				return sharedFingerprints(fp, r.shared, sharedOn)
 			},
-			Indexed: pipeline.LastIndexed,
+			HolderFingerprints: func(holder string, fp cluster.Fingerprints) cluster.Fingerprints {
+				return holderFingerprints(fp, holder, r.shared, sharedOn)
+			},
+			Indexed:    pipeline.LastIndexed,
+			TLS:        tlsStatus,
+			OSIdentity: osIdentity,
+			Busy:       jobsBusy(ret, r.shared),
 		}
+		settings.Traffic = trafficOf(agentsInv, receiver)
 		if rt := r.shared; rt != nil {
 			settings.Shared = func() cluster.SharedStatus { return sharedStatus(rt, r.sharedContent) }
+			settings.Restart = r.restartStatus
+			settings.Pending = func() (restart, refused []string) {
+				restart, refused, _ = r.sharedContent.settingsStatus()
+				return restart, refused
+			}
 			settings.Housekeep = rt.Housekeep
 			if parts != nil {
 				settings.Housekeep = func(ctx context.Context) {
@@ -1604,7 +1760,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		// may still hold the lease from before a restart in place, which
 		// Use gives up in the background: until then it must not start
 		// them with settings that say it never runs them.
-		if c.Detections.Scheduler {
+		if c.LeaderEligible() {
 			r.node.SetJobs(in.jobsList)
 		} else {
 			r.node.SetJobs(nil)
@@ -1808,7 +1964,7 @@ func openNode(c *config.Config, log *slog.Logger) (*cluster.Node, *slog.Logger, 
 		log.Warn(w)
 	}
 	log.Info("this server's identity", "node_id", local.Identity.NodeID, "state_dir", local.Dir)
-	node := cluster.New(cluster.Options{Local: local, Version: version, Deployment: deployment(), Log: log})
+	node := cluster.New(cluster.Options{Local: local, Version: version, Deployment: deployment(), Log: log, Timing: nodeTiming()})
 	return node, log, nil
 }
 
@@ -1838,6 +1994,7 @@ func (r *runner) openUsers(c *config.Config) (*users.Store, *users.Directory, er
 		if err != nil {
 			return nil, nil, err
 		}
+		people.Hold = r.sharedContent.holdFile(shared.ImportUsers)
 		r.people = people
 	}
 	if r.people.BuiltinAdmin != c.Auth.AdminUser {
@@ -1851,6 +2008,7 @@ func (r *runner) openUsers(c *config.Config) (*users.Store, *users.Directory, er
 	if err != nil {
 		return nil, nil, err
 	}
+	dir.Hold = r.sharedContent.holdFile(shared.ImportDirectory)
 	return r.people, dir, nil
 }
 
@@ -2003,16 +2161,26 @@ func reloadLookups(ctx context.Context, lists *assets.Store, log *slog.Logger) {
 
 // feedFoundAssets puts the hosts Signalith finds itself in the asset
 // list's found hosts every minute: the osquery hosts on the Endpoints page
-// (category endpoint and their platform) and the hosts vulnerability
-// scans found (category scanned), so their names and addresses get asset
-// context until the user's own list describes them.
-func feedFoundAssets(ctx context.Context, es *endpoint.Store, vs *vulnscan.Store, lists *assets.Store, log *slog.Logger) {
+// (category endpoint and their platform), the hosts vulnerability scans
+// found (category scanned) and the hosts a network sensor saw (category
+// discovered), so their names and addresses get asset context until the
+// user's own list describes them.
+func feedFoundAssets(ctx context.Context, es *endpoint.Store, vs *vulnscan.Store, sd *sensorDiscovery, lists *assets.Store, log *slog.Logger) {
 	t := time.NewTicker(time.Minute)
 	defer t.Stop()
 	failed, vfailed := false, false
 	for {
 		var as []assets.Asset
-		known := map[string]bool{}
+		// Addresses already given to a host, compared in their canonical
+		// form (an osquery host may list ::ffff:10.0.0.1).
+		known := map[netip.Addr]bool{}
+		canon := func(ip string) netip.Addr {
+			a, err := netip.ParseAddr(strings.TrimSpace(ip))
+			if err != nil {
+				return netip.Addr{}
+			}
+			return a.Unmap().WithZone("")
+		}
 		nodes, err := es.Nodes(ctx)
 		if err == nil {
 			for _, n := range nodes {
@@ -2021,7 +2189,9 @@ func feedFoundAssets(ctx context.Context, es *endpoint.Store, vs *vulnscan.Store
 					a.Host = append(a.Host, short)
 				}
 				for _, ip := range n.IPs {
-					known[ip] = true
+					if a := canon(ip); a.IsValid() {
+						known[a] = true
+					}
 				}
 				as = append(as, a)
 			}
@@ -2033,10 +2203,12 @@ func feedFoundAssets(ctx context.Context, es *endpoint.Store, vs *vulnscan.Store
 		hosts, verr := vs.Hosts(ctx)
 		if verr == nil {
 			for _, h := range hosts {
-				if known[h.Address] {
-					continue
+				if a := canon(h.Address); a.IsValid() {
+					if known[a] {
+						continue
+					}
+					known[a] = true
 				}
-				known[h.Address] = true
 				as = append(as, scannedAsset(h))
 			}
 			vfailed = false
@@ -2044,7 +2216,16 @@ func feedFoundAssets(ctx context.Context, es *endpoint.Store, vs *vulnscan.Store
 			log.Debug("could not read the scanned hosts for the asset list; trying again every minute", "err", verr)
 			vfailed = true
 		}
-		if err == nil || verr == nil {
+		seen, serr := sd.Hosts(ctx)
+		for _, a := range seen {
+			ip := canon(a.IP[0])
+			if !ip.IsValid() || known[ip] {
+				continue
+			}
+			known[ip] = true
+			as = append(as, a)
+		}
+		if err == nil || verr == nil || serr == nil {
 			lists.SetFound(as)
 		}
 		select {
@@ -2053,6 +2234,52 @@ func feedFoundAssets(ctx context.Context, es *endpoint.Store, vs *vulnscan.Store
 		case <-t.C:
 		}
 	}
+}
+
+// sensorDiscovery reads the hosts a network sensor's Zeek saw (known
+// hosts, services and software, DHCP leases) for the asset list, at most
+// every discoveryEvery; in between, and when a read fails, it keeps the
+// hosts it read last.
+type sensorDiscovery struct {
+	cl     *store.Client
+	prefix string
+	log    *slog.Logger
+
+	last   time.Time
+	hosts  []assets.Asset
+	failed bool
+}
+
+// discoveryEvery is how often the sensor's hosts are read again.
+const discoveryEvery = 10 * time.Minute
+
+// Hosts returns the hosts the sensor saw in the last
+// assets.DiscoveryWindow; the error is the last read's.
+func (d *sensorDiscovery) Hosts(ctx context.Context) ([]assets.Asset, error) {
+	if d == nil || d.cl == nil {
+		return nil, errors.New("no sensor discovery")
+	}
+	now := time.Now()
+	if !d.last.IsZero() && now.Sub(d.last) < discoveryEvery {
+		if d.failed {
+			return d.hosts, errors.New("the last read failed")
+		}
+		return d.hosts, nil
+	}
+	d.last = now
+	rctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	resp, err := d.cl.Search(rctx, assets.DiscoveryIndex(d.prefix), assets.DiscoveryQuery(now.Add(-assets.DiscoveryWindow)))
+	if err != nil {
+		if !d.failed && ctx.Err() == nil {
+			d.log.Debug("could not read the hosts the network sensor saw for the asset list; trying again in 10 minutes", "err", err)
+		}
+		d.failed = true
+		return d.hosts, err
+	}
+	d.failed = false
+	d.hosts = assets.ParseDiscovery(resp)
+	return d.hosts, nil
 }
 
 // scannedAsset is a host a vulnerability scan found, as an asset.

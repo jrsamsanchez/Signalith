@@ -13,13 +13,16 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/netip"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
 	"sync"
+	"time"
 )
 
 // Priorities, lowest first. Priority scales risk and raises urgency.
@@ -123,7 +126,7 @@ func readCSV(data []byte, known []string, required string) ([]map[string]string,
 		empty := true
 		for i, v := range rec {
 			if i < len(header) {
-				m[header[i]] = strings.TrimSpace(unquoteCell(v))
+				m[header[i]] = strings.TrimSpace(unquoteCell(newlines.Replace(v)))
 				if m[header[i]] != "" {
 					empty = false
 				}
@@ -139,6 +142,11 @@ func readCSV(data []byte, known []string, required string) ([]map[string]string,
 	}
 	return rows, lines, nil
 }
+
+// newlines makes every line break in a cell \n. The CSV reader turns
+// \r\n inside quotes into \n but keeps a lone \r, so a cell holding one
+// would not read back the same from the download.
+var newlines = strings.NewReplacer("\r\n", "\n", "\r", "\n")
 
 func checkPriority(p string) (string, error) {
 	p = strings.ToLower(p)
@@ -247,6 +255,13 @@ type Store struct {
 	// rewritten within the file system's time resolution (Windows) keeps
 	// its time.
 	sums [4][sha256.Size]byte
+	// backend keeps the user's lists in the shared settings of a cluster
+	// (see shared.go); nil keeps them in Dir only.
+	backend Backend
+	// Hold, when set, is taken around each upload kept in Dir only (no
+	// backend): release is called once it is saved, and an error refuses
+	// it (while the lists move into a cluster's shared settings).
+	Hold func() (release func(), err error)
 }
 
 // lookup indexes one pair of lists. It is never changed once built, so a
@@ -473,11 +488,42 @@ func (s *Store) Asset(v string) (*Asset, bool) {
 // SetFound replaces the hosts Signalith found itself, such as the osquery
 // hosts on the Endpoints page. They are never written to a file or the
 // user's list, and the user's list and the sample data win over them.
+//
+// as is in order of trust: osquery hosts, then scanned hosts, then the
+// hosts a network sensor saw. A host name goes to the first host that
+// has it; a later one keeps its address but loses the name, so a device
+// that announces another host's name (a DHCP client chooses its own)
+// cannot take that name's lookups over.
 func (s *Store) SetFound(as []Asset) {
-	l := newLookup(append([]Asset(nil), as...), nil)
+	l := newLookup(firstNames(as), nil)
 	s.mu.Lock()
 	s.found = l
 	s.mu.Unlock()
+}
+
+// firstNames copies as, leaving out of each host the names (and short
+// names) an earlier host already has.
+func firstNames(as []Asset) []Asset {
+	out := make([]Asset, 0, len(as))
+	taken := map[string]bool{}
+	for _, a := range as {
+		var hs []string
+		for _, h := range a.Host {
+			if n := normHost(h); n != "" && !taken[n] {
+				hs = append(hs, h)
+			}
+		}
+		for _, h := range hs {
+			n := normHost(h)
+			taken[n] = true
+			if short, _, ok := strings.Cut(n, "."); ok && short != "" {
+				taken[short] = true
+			}
+		}
+		a.Host = hs
+		out = append(out, a)
+	}
+	return out
 }
 
 // Found returns copies of the hosts Signalith found itself that the
@@ -497,6 +543,13 @@ func (s *Store) Found() []Asset {
 			if _, ok := own.asset(h); ok {
 				known = true
 				break
+			}
+		}
+		// A host found by its address alone (a scan or the network
+		// sensor) that the list names by that address.
+		for _, ip := range a.IP {
+			if addr, err := netip.ParseAddr(ip); err == nil && !known {
+				_, known = own.byIP[addr.Unmap()]
 			}
 		}
 		if !known {
@@ -672,13 +725,31 @@ func replaceFile(path string, data []byte) error {
 		err = os.Chmod(name, 0o640)
 	}
 	if err == nil {
-		err = os.Rename(name, path)
+		err = renameOver(name, path)
 	}
 	if err != nil {
 		_ = os.Remove(name)
 	}
 	return err
 }
+
+// renameOver renames from over to. On Windows a file another goroutine
+// or program is reading at that moment cannot be replaced (access is
+// denied until it is closed), so it tries again for a while: readers
+// here close the file at once, but an antivirus scanning the file just
+// written, on a busy computer, can keep it open for longer than a
+// moment.
+func renameOver(from, to string) error {
+	err := os.Rename(from, to)
+	for deadline := time.Now().Add(renameWait); err != nil && runtime.GOOS == "windows" && errors.Is(err, fs.ErrPermission) && time.Now().Before(deadline); {
+		time.Sleep(25 * time.Millisecond)
+		err = os.Rename(from, to)
+	}
+	return err
+}
+
+// renameWait is how long renameOver tries again.
+const renameWait = 5 * time.Second
 
 // CSV returns a list as CSV, for download. Cells a spreadsheet would run
 // as a formula are written with a leading quote (see SafeCell), as the web
@@ -735,9 +806,10 @@ func MarshalIdentities(ids []Identity) []byte {
 // formula: a value starting with =, +, -, @, a tab or a carriage return
 // gets a leading single quote, which spreadsheets show as text. Reading a
 // list back (unquoteCell) removes it again, so a downloaded list can be
-// edited and uploaded unchanged.
+// edited and uploaded unchanged. A value that is already quoted, such as
+// '=x, gets one quote more, so reading it back keeps its own.
 func SafeCell(s string) string {
-	if s != "" && strings.ContainsRune("=+-@\t\r", rune(s[0])) {
+	if formulaAfterQuotes(s) {
 		return "'" + s
 	}
 	return s
@@ -745,10 +817,17 @@ func SafeCell(s string) string {
 
 // unquoteCell undoes SafeCell.
 func unquoteCell(s string) string {
-	if len(s) > 1 && s[0] == '\'' && strings.ContainsRune("=+-@\t\r", rune(s[1])) {
+	if strings.HasPrefix(s, "'") && formulaAfterQuotes(s) {
 		return s[1:]
 	}
 	return s
+}
+
+// formulaAfterQuotes reports whether s, past any leading single quotes,
+// starts the way a formula does.
+func formulaAfterQuotes(s string) bool {
+	s = strings.TrimLeft(s, "'")
+	return s != "" && strings.ContainsRune("=+-@\t\r", rune(s[0]))
 }
 
 // UserFields hold usernames; every other entity field is looked up as an asset.

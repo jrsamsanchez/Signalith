@@ -1,0 +1,4 @@
+{"rule": "410d2a41-1e6d-452f-85e5-abdd8257a823", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"operationName":"Hard Delete application"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{}}
+]}

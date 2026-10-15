@@ -10,10 +10,13 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/cluster"
 	"github.com/jrsamsanchez/signalith/internal/cluster/ostest"
 	"github.com/jrsamsanchez/signalith/internal/clustercfg"
+	"github.com/jrsamsanchez/signalith/internal/config"
+	"github.com/jrsamsanchez/signalith/internal/retention"
 	"github.com/jrsamsanchez/signalith/internal/shared"
 )
 
@@ -261,4 +264,45 @@ func (rs *running) callWith(method, path, body string, headers map[string]string
 	var out map[string]any
 	_ = json.NewDecoder(resp.Body).Decode(&out)
 	return resp.StatusCode, out, nil
+}
+
+// ageRecorder records the event ages it is given.
+type ageRecorder struct{ got []time.Duration }
+
+func (a *ageRecorder) SetMaxEventAge(d time.Duration) { a.got = append(a.got, d) }
+func (a *ageRecorder) SetMaxAge(d time.Duration)      { a.got = append(a.got, d) }
+
+// TestEventAgeFollowsTheSettings: ingest.max_event_age changed while the
+// server runs reaches the pipeline and syslog at once.
+func TestEventAgeFollowsTheSettings(t *testing.T) {
+	c := config.Default()
+	ret := &retention.Manager{Config: c.RetentionPolicies(), Store: retention.NewStore(filepath.Join(t.TempDir(), "retention.yaml"))}
+	pipeline, receiver := &ageRecorder{}, &ageRecorder{}
+	live := &liveMaxAge{c: c, ret: ret, pipeline: pipeline, receiver: receiver, last: c.MaxEventAge(90)}
+	next := *c
+	next.Ingest.MaxEventAge = "30d"
+	live.Use(&next)
+	want := 30 * 24 * time.Hour
+	if len(pipeline.got) != 1 || pipeline.got[0] != want || len(receiver.got) != 1 || receiver.got[0] != want {
+		t.Errorf("pipeline %v syslog %v", pipeline.got, receiver.got)
+	}
+	// The same age again changes nothing.
+	live.Use(&next)
+	if len(pipeline.got) != 1 {
+		t.Errorf("set again: %v", pipeline.got)
+	}
+}
+
+// TestContentHandlersList checks the merged list of the content's
+// request handlers keeps every feature's request types.
+func TestContentHandlersList(t *testing.T) {
+	hs := contentHandlers(nil, nil, nil, nil)
+	for _, k := range []string{clustercfg.RequestFeedRefresh, clustercfg.RequestRetentionRun} {
+		if hs[k] == nil {
+			t.Errorf("no handler for %s", k)
+		}
+	}
+	if len(hs) != 2 {
+		t.Errorf("got %d handlers, want 2", len(hs))
+	}
 }

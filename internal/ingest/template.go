@@ -18,12 +18,18 @@ import (
 // hashes the template says so): a server only replaces a template of a
 // lower version, so an older Signalith started next to a newer one does
 // not put its older template back.
-const TemplateVersion = 13
+const TemplateVersion = 28
+
+// totalFieldsLimit is index.mapping.total_fields.limit: the most fields one
+// daily index may have. It leaves room above the known fields, a day's
+// budget of new names and a burst of names from several servers before
+// the mapping guard (mappingStop) sees them.
+const totalFieldsLimit = 2400
 
 // templateHash is the SHA-256 of IndexTemplate("p", auto replicas) as
 // JSON, which TestTemplateVersionBumped compares, so a change to the
 // template cannot go out without a new TemplateVersion.
-const templateHash = "7791ad61b6e84cc1608e6c7b6d2b041dd85c0adb9eb73e9f248470ffca08e0f8"
+const templateHash = "b7c9b2b5aa9f849916884f0bf1f726558eeed2afcdb941726e7d07e45452bc2f"
 
 // IndexTemplate returns the OpenSearch index template every Signalith index
 // uses: strings are exact-match keywords (fast filters and stats), the raw
@@ -69,7 +75,7 @@ func IndexTemplate(prefix string, replicas map[string]any) map[string]any {
 		"number_of_shards": 1,
 		"refresh_interval": "5s",
 		"mapping": map[string]any{
-			"total_fields":     map[string]any{"limit": 2000},
+			"total_fields":     map[string]any{"limit": totalFieldsLimit},
 			"ignore_malformed": true,
 		},
 	}

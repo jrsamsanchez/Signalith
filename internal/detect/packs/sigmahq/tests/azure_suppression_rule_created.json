@@ -1,0 +1,4 @@
+{"rule": "92cc3e5d-eb57-419d-8c16-5c63f325a401", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"activitylogs","data":{"operationName":"MICROSOFT.SECURITY/ALERTSSUPPRESSIONRULES/WRITE"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"activitylogs","data":{}}
+]}

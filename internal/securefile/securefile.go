@@ -25,6 +25,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 	"unicode/utf16"
 )
 
@@ -169,13 +170,36 @@ func resolveLink(path string) (string, error) {
 	return target, nil
 }
 
-// rename puts a file in place; tests replace it.
-var rename = os.Rename
+// rename puts a file in place; tests replace it, and fileInUse.
+var (
+	rename    = os.Rename
+	fileInUse = inUse
+)
+
+// renameWait is how long a rename is tried again while the file is open
+// elsewhere for a moment (Windows).
+const renameWait = 2 * time.Second
+
+// renameRetry renames old to new, trying again for up to renameWait while
+// the file is in use: on Windows, a reader that has the old file open
+// keeps it from being replaced until it closes it.
+func renameRetry(old, new string) error {
+	deadline := time.Now().Add(renameWait)
+	pause := 5 * time.Millisecond
+	for {
+		err := rename(old, new)
+		if err == nil || !fileInUse(err) || time.Now().After(deadline) {
+			return err
+		}
+		time.Sleep(pause)
+		pause = min(2*pause, 100*time.Millisecond)
+	}
+}
 
 // Commit puts the file in place.
 func (p *Pending) Commit() error {
 	defer p.done()
-	err := rename(p.tmp, p.path)
+	err := renameRetry(p.tmp, p.path)
 	if err != nil && isBusy(err) {
 		// A file mounted into a container on its own (a Docker bind mount
 		// of one file) cannot be replaced, only written in place.
@@ -203,7 +227,7 @@ func (p *Pending) CommitNew() error {
 	if _, serr := os.Lstat(p.path); serr == nil {
 		return &fs.PathError{Op: "create", Path: p.path, Err: fs.ErrExist}
 	}
-	return rename(p.tmp, p.path)
+	return renameRetry(p.tmp, p.path)
 }
 
 // Discard removes the temporary file.

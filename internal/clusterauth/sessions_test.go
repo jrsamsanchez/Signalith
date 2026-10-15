@@ -3,11 +3,13 @@ package clusterauth
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/jrsamsanchez/signalith/internal/auth"
 	"github.com/jrsamsanchez/signalith/internal/cluster/ostest"
 	"github.com/jrsamsanchez/signalith/internal/shared"
 	"github.com/jrsamsanchez/signalith/internal/users"
@@ -339,4 +341,97 @@ func TestSessionCacheKept(t *testing.T) {
 	if reqs := requestsTo(o.fake.Requests(), "_sessions"); len(reqs) != 0 {
 		t.Errorf("read again after a restart: %v", reqs)
 	}
+}
+
+// The sessions a server made in memory before it used the shared users
+// carry over with their cookies, on that server only, for the users the
+// shared settings have as they were; a new password, disabling or signing
+// out ends them as any other.
+func TestCarrySessions(t *testing.T) {
+	o, a, b, clk := pair(t)
+	ctx := context.Background()
+	a.addUser("jlee", users.Analyst)
+	a.addUser("kim", users.Viewer)
+	a.addUser("pat", users.Viewer)
+	off := true
+	if _, err := a.store.Update(ctx, "kim", users.Change{Disabled: &off}); err != nil {
+		t.Fatal(err)
+	}
+	b.cycle()
+	hashOf := func(name string) string {
+		u, _, ok := a.docs.Users().Get(name)
+		if !ok {
+			t.Fatalf("no user %s", name)
+		}
+		return u.PasswordHash
+	}
+	legacy := auth.NewSessions(time.Hour)
+	legacy.Now = clk.Now
+	start := func(user, method string) string {
+		return legacy.Start(auth.NewSession{User: user, Method: method})
+	}
+	tokens := map[string]string{
+		"admin":  start("admin", users.SourceBuiltin),
+		"jlee":   start("jlee", users.SourceLocal),
+		"kim":    start("kim", users.SourceLocal),
+		"pat":    start("pat", users.SourceLocal),
+		"role":   start("jlee", users.SourceLocal),
+		"nobody": start("nobody", users.SourceLocal),
+	}
+	want := map[string]carryCase{
+		"admin":  {users.Admin, builtinHash(), true},
+		"jlee":   {users.Analyst, hashOf("jlee"), true},
+		"kim":    {users.Viewer, hashOf("kim"), false},
+		"pat":    {users.Viewer, "another-hash", false},
+		"role":   {users.Admin, hashOf("jlee"), false},
+		"nobody": {users.Viewer, "", false},
+	}
+	byHash := map[[32]byte]string{}
+	for k, tok := range tokens {
+		byHash[sha256.Sum256([]byte(tok))] = k
+	}
+	var list []Carried
+	for _, h := range legacy.Take() {
+		w := want[byHash[h.Hash]]
+		list = append(list, Carried{Held: h, Role: w.role, PasswordHash: w.hash})
+	}
+	if legacy.Len() != 0 {
+		t.Error("the sessions were not taken from memory")
+	}
+	if n, dropped := a.sessions.Carry(ctx, list); n != 2 || dropped != 4 {
+		t.Fatalf("carried %d, dropped %d", n, dropped)
+	}
+	for k, w := range want {
+		if got := a.valid(tokens[k]); got != w.kept {
+			t.Errorf("%s: valid %v, want %v", k, got, w.kept)
+		}
+		if b.valid(tokens[k]) {
+			t.Errorf("%s: the old cookie works on another server", k)
+		}
+	}
+	if s, ok := a.sessions.Lookup(ctx, tokens["admin"], false); !ok || s.Method != users.SourceBuiltin || s.Epoch != 1 {
+		t.Errorf("the admin's carried session: %+v %v", s, ok)
+	}
+	// Signing out ends it, and deletes its document.
+	a.sessions.Delete(ctx, tokens["admin"])
+	if a.valid(tokens["admin"]) || o.sessionDocs(t, "admin") != 0 {
+		t.Error("a carried session signed out still works")
+	}
+	// A new password set on another server ends it.
+	if _, err := b.store.SetPassword(ctx, "jlee", "another-password", false); err != nil {
+		t.Fatal(err)
+	}
+	a.cycle()
+	clk.Advance(CacheFor)
+	if a.valid(tokens["jlee"]) {
+		t.Error("a carried session works after a new password")
+	}
+}
+
+// carryCase is what TestCarrySessions carries a session with, and
+// whether it is kept.
+type carryCase struct {
+	role users.Role
+	hash string
+	kept bool
 }

@@ -1,0 +1,6 @@
+{"rule": "503fe26e-b5f2-4944-a126-eab405cc06e5", "cases": [
+  {"expect":true,"source":"synthesized","channel":"zeek:kerberos","event_id":"","data":{"cipher":"rc4-hmac","request_type":"TGS"}},
+  {"expect":false,"source":"synthesized","channel":"zeek:kerberos","event_id":"","data":{"cipher":"rc4-hmac","request_type":"TGS","service":"$"}},
+  {"expect":false,"source":"synthesized","channel":"zeek:kerberos","event_id":"","data":{"request_type":"TGS"}},
+  {"expect":false,"source":"synthesized","channel":"zeek:kerberos","event_id":"","data":{"cipher":"rc4-hmac"}}
+]}

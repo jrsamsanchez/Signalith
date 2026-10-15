@@ -193,7 +193,9 @@ func ReadAuditd(line string) (AuditdRecord, bool) {
 		}
 	}
 	execve := rec.Type == "EXECVE"
-	pieces := map[string]string{}
+	// An argument's pieces are joined once at the end: adding each to a
+	// string would take time quadratic in their number.
+	pieces := map[string]*strings.Builder{}
 	for _, kv := range auditdFields(body) {
 		k, v := strings.ToLower(kv[0]), kv[1]
 		if k == "msg" {
@@ -206,13 +208,18 @@ func ReadAuditd(line string) (AuditdRecord, bool) {
 		}
 		// A long argument comes in pieces: a1_len=..., a1[0]=..., a1[1]=...
 		if p := auditArgPiece.FindStringSubmatch(k); execve && p != nil {
-			pieces[p[1]] += auditdValue(k, v, rec.Interpreted, true)
+			b := pieces[p[1]]
+			if b == nil {
+				b = &strings.Builder{}
+				pieces[p[1]] = b
+			}
+			b.WriteString(auditdValue(k, v, rec.Interpreted, true))
 			continue
 		}
 		set(k, auditdValue(k, v, rec.Interpreted, execve && isAuditArg(k)))
 	}
-	for n, a := range pieces {
-		set("a"+n, a)
+	for n, b := range pieces {
+		set("a"+n, b.String())
 	}
 	for _, kv := range auditdFields(enriched) {
 		set(strings.ToUpper(kv[0]), strings.Trim(kv[1], `"`))
@@ -260,7 +267,13 @@ func auditdFields(s string) [][2]string {
 		}
 		k := s[:eq]
 		if strings.ContainsAny(k, " \t") {
-			// Text that is not key=value: skip a word.
+			// Text that is not key=value: skip a word. The words before
+			// the last space are skipped at once, so many of them do not
+			// take time quadratic in the line's length.
+			if i := strings.LastIndexByte(k, ' '); i >= 0 {
+				s = strings.TrimSpace(s[i+1:])
+				continue
+			}
 			_, s, _ = strings.Cut(s, " ")
 			s = strings.TrimSpace(s)
 			continue

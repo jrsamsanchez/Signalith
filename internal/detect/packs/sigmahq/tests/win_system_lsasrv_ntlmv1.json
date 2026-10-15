@@ -1,0 +1,3 @@
+{"rule": "e9d4ab66-a532-4ef7-a502-66a9e4a34f5d", "cases": [
+  {"expect":true,"source":"synthesized","channel":"System","event_id":"6038","data":{"Provider_Name":"LsaSrv"}}
+]}

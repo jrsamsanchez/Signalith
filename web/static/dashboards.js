@@ -40,7 +40,7 @@
 
   // The three kinds of dashboard: posture (computed), built-in panel
   // dashboards and custom ones.
-  const BUILTIN_ICON = { posture: 'shield', malware: 'bug', vulnerabilities: 'scan-search' };
+  const BUILTIN_ICON = { posture: 'shield', malware: 'bug', network: 'activity', vulnerabilities: 'scan-search' };
   const kindOf = (id) => {
     if (id === 'posture') return 'posture';
     const meta = dash.list.find((d) => d.id === id);
@@ -968,8 +968,15 @@
   // none of them found anything: what data it needs and where to set it up.
   function renderNoData(slot, d, results) {
     const none = results.length && results.every((pr, i) => d.panels[i] && panelEmpty(d.panels[i], pr));
-    if (!none || (d.id !== 'malware' && d.id !== 'vulnerabilities')) { put(slot); return; }
+    if (!none || (d.id !== 'malware' && d.id !== 'network' && d.id !== 'vulnerabilities')) { put(slot); return; }
     const admin = typeof can === 'function' && can('admin');
+    if (d.id === 'network') {
+      put(slot, el('div', { class: 'card db-nodata' }, emptyState('activity', 'No network sensor events yet',
+        'A network sensor running Zeek or Suricata fills this dashboard: IDS alerts, connections, DNS lookups, web requests, files and certificates seen on your network.',
+        admin ? el('button', { class: 'btn btn--primary btn--sm', type: 'button', onclick: () => openSensorSetup() }, icon('activity'), 'Set up a network sensor') : null,
+        null, admin ? null : 'An admin can set this up on the Add data page.')));
+      return;
+    }
     if (d.id === 'vulnerabilities') {
       put(slot, el('div', { class: 'card db-nodata' }, emptyState('scan-search', 'No vulnerability scans yet',
         'Scans of your networks on the Vulnerabilities page fill this dashboard: hosts, open ports, and known vulnerabilities in the software on them.',
@@ -1079,7 +1086,7 @@
         return;
       }
       default:
-        put(box, panelTable(res), ...notes.map(note));
+        put(box, panelTable(res, earliest), ...notes.map(note));
     }
   }
 
@@ -1089,8 +1096,10 @@
   };
 
   // panelTable shows up to 100 rows and 8 columns; columns that do not fit
-  // the panel's width are hidden (Open in Search shows everything).
-  function panelTable(res) {
+  // the panel's width are hidden (Open in Search shows everything). A TLS
+  // fingerprint or a connection's Community ID opens every event with it
+  // (see PIVOTS in app.js), over the panel's time range.
+  function panelTable(res, earliest) {
     const rows = res.rows || [];
     if (!rows.length) return emptyState('search', 'No results', 'Nothing matched in this time range.');
     let cols = res.columns || [];
@@ -1104,13 +1113,33 @@
       el('tbody', {}, ...rows.slice(0, 100).map((r) => el('tr', {}, ...cols.map((c) => {
         const v = r[c];
         const text = c === '_time' ? shortTime(v) : fmtValue(v);
-        return el('td', { class: typeof v === 'number' ? 'num' : '', title: c === '_time' ? fmtTime(v) : text }, text);
+        const pivot = typeof PIVOTS !== 'undefined' && PIVOTS[c] && v != null && v !== '' && !Array.isArray(v);
+        return el('td', { class: (typeof v === 'number' ? 'num' : '') + (pivot ? ' mono' : ''), title: c === '_time' ? fmtTime(v) : text },
+          pivot ? el('a', {
+            href: '#search', class: 'db-pivot', title: `Search every event with ${c}=${text}`,
+            onclick: (ev) => { ev.preventDefault(); openSearch(c + '=' + quoteValue(v), earliest); },
+          }, text) : text);
       }))))));
   }
 
   // ---------- saving ----------
+  // saveDashboard saves over the version the page shows (d.etag): when
+  // someone changed the dashboard meanwhile it asks whether to reload to
+  // see their change or overwrite it.
   async function saveDashboard(d) {
-    const saved = await api('api/dashboards/' + encodeURIComponent(d.id), d, 'PUT');
+    const path = 'api/dashboards/' + encodeURIComponent(d.id);
+    let saved;
+    try {
+      saved = await api(path, d, 'PUT', libraryIfMatch(d.etag));
+    } catch (e) {
+      if (e.status !== 412) throw e;
+      const choice = await libraryStale(e, 'dashboard');
+      if (choice !== 'overwrite') {
+        if (choice === 'reload') { closeEditor(); await showDashboard(d.id); }
+        throw new Error('it was not saved, because someone else changed this dashboard meanwhile.');
+      }
+      saved = await api(path, d, 'PUT', libraryIfMatch(await latestETag(path)));
+    }
     if (saved.id === dash.current) dash.def = saved;
     return saved;
   }
@@ -1136,7 +1165,9 @@
     say(`Removed “${title}”.`, {
       label: 'Undo',
       run: async () => {
-        try { await saveDashboard(before); } catch (e) { sayError('Couldn’t restore the panel: ' + e.message); return; }
+        // Saved over the removal this page just made.
+        const again = { ...before, etag: dash.def && dash.def.id === before.id ? dash.def.etag : before.etag };
+        try { await saveDashboard(again); } catch (e) { sayError('Couldn’t restore the panel: ' + e.message); return; }
         if (dash.current === before.id) runDashboard();
       },
     });
@@ -1260,8 +1291,17 @@
     const btn = el('button', { class: 'btn btn--danger', type: 'button' }, 'Delete dashboard');
     btn.addEventListener('click', async () => {
       btn.disabled = true;
+      const path = 'api/dashboards/' + encodeURIComponent(d.id);
       try {
-        await api('api/dashboards/' + encodeURIComponent(d.id), undefined, 'DELETE');
+        try {
+          await api(path, undefined, 'DELETE', libraryIfMatch(d.etag));
+        } catch (e) {
+          if (e.status !== 412) throw e;
+          const choice = await libraryStale(e, 'dashboard');
+          if (choice === 'reload') { closeEditor(); await showDashboard(d.id); return; }
+          if (choice !== 'overwrite') { btn.disabled = false; return; }
+          await api(path, undefined, 'DELETE', libraryIfMatch(await latestETag(path)));
+        }
       } catch (e) {
         put(msg, problemsAlert(e));
         msg.hidden = false;

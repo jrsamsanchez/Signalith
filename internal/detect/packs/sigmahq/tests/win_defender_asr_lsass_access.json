@@ -1,0 +1,7 @@
+{"rule": "a0a278fe-2c0e-4de2-ac3c-c68b08a9ba98", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Windows Defender/Operational","event_id":"1121","data":{"Path":"\\lsass.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Windows Defender/Operational","event_id":"1121","data":{"Path":"\\lsass.exe","ProcessName":"C:\\Program Files (x86)\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Windows Defender/Operational","event_id":"1121","data":{"Path":"\\lsass.exe","ProcessName":"C:\\Windows\\System32\\msiexec.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Windows Defender/Operational","event_id":"1121","data":{"Path":"\\lsass.exe","ProcessName":"C:\\Windows\\Temp\\asgard2-agent\\\\thor64.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Windows Defender/Operational","event_id":"1121","data":{}}
+]}

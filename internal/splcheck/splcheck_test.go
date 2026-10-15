@@ -193,6 +193,17 @@ func TestOrBeforeAnd(t *testing.T) {
 	}
 }
 
+// A "!" without "=" once made the lexer loop forever (found by
+// FuzzSplunkSearch in internal/detect).
+func TestLoneBang(t *testing.T) {
+	if _, err := ParseWhere(`Processes.process_name=a.exe !Processes.user=x`, "Processes", nil); err == nil {
+		t.Error("ParseWhere: want an error")
+	}
+	if _, err := Parse(rule("`sysmon` !EventCode=10 TargetImage=*lsass.exe | stats count by dest"), nil); err == nil {
+		t.Error("Parse: want an error")
+	}
+}
+
 // An unquoted value reads \\ as one backslash, as a quoted one does.
 func TestUnquotedBackslash(t *testing.T) {
 	e, err := ParseWhere(`Processes.process=*\\users\\public\\* Processes.process_name="*\\\\*"`, "Processes", nil)
@@ -440,5 +451,38 @@ func TestRegexStage(t *testing.T) {
 	}
 	if _, ok, err := regexStage(`regex process="(?<!x)y"`, field); !ok || err == nil {
 		t.Errorf("lookbehind: %v %v", ok, err)
+	}
+}
+
+// A Web detection (datamodel=Web, with or without its node) reads web
+// server access log lines.
+func TestWebRule(t *testing.T) {
+	for _, dm := range []string{"Web", "Web.Web"} {
+		src := rule("| tstats count from datamodel=" + dm + " where Web.url=\"*/_layouts/15/ToolPane.aspx*\" Web.http_method=POST by Web.src, Web.dest")
+		r, err := Parse(src, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r.Node != "Web" || NodeModel[r.Node] != "Web" {
+			t.Fatalf("node %s", r.Node)
+		}
+		pos := 0
+		for _, c := range Cases(r) {
+			if c.Channel != "web:access" {
+				t.Errorf("channel %s", c.Channel)
+			}
+			if c.Expect {
+				pos++
+				if !strings.Contains(c.Data["url"], "/_layouts/15/ToolPane.aspx") || c.Data["http_method"] != "POST" {
+					t.Errorf("positive %v", c.Data)
+				}
+			}
+		}
+		if pos == 0 {
+			t.Errorf("%s: no positive case", dm)
+		}
+	}
+	if _, err := Parse(rule("| tstats count from datamodel=Endpoint where Processes.process_name=x by Processes.dest"), nil); err == nil {
+		t.Error("Endpoint without a node parsed")
 	}
 }

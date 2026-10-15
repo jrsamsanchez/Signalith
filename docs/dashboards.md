@@ -1,7 +1,7 @@
 # Dashboards
 
-The **Dashboards** tab has two built-in dashboards, **Security posture** and
-**Malware**, and any custom dashboards you build. Pick one from the list at the top left, choose a time
+The **Dashboards** tab has four built-in dashboards, **Security posture**,
+**Malware**, **Network** and **Vulnerabilities**, and any custom dashboards you build. Pick one from the list at the top left, choose a time
 range, and optionally turn on auto-refresh (every minute, 5 or 15 minutes; it pauses
 while the browser tab is hidden).
 
@@ -48,6 +48,17 @@ consoles. It opens on the last 7 days. Until antivirus events arrive it shows a
 **Set up antivirus logs** button (for admins) that opens Add data. See
 [antivirus.md](antivirus.md#the-malware-dashboard) for each panel.
 
+## Network
+
+A built-in panel dashboard for a [network sensor](network-sensor.md) (Zeek,
+Suricata): IDS alerts and the hosts with high ones, connections and data sent to the
+internet, alerts over time by severity, the top signatures, talkers and external
+destinations, DNS lookups and failed lookups, web requests by status and user agent,
+files by type, self-signed certificates, the commonest and rarest TLS client fingerprints
+(JA4, JA3; click one to search every event with it), sign-ins seen on the network, files
+changed on shares, and the sensor's packet loss. It opens on the last 24 hours. Until sensor events arrive it shows a **Set up a network sensor** button
+(for admins) that opens Add data.
+
 ## Vulnerabilities
 
 A built-in panel dashboard for the scans on the [Vulnerabilities page](vulnerabilities.md):
@@ -68,7 +79,7 @@ are on). It saves *Malware (copy)* as a custom dashboard with the same panels an
 opens it, ready to edit. **Add to dashboard** on the Search page lists custom
 dashboards only.
 
-The ids `posture`, `malware` and `vulnerabilities` belong to the built-in dashboards. A file
+The ids `posture`, `malware`, `network` and `vulnerabilities` belong to the built-in dashboards. A file
 `malware.yaml` in `dashboards.dir` is ignored and listed as a problem: rename the
 file and change its `id` to keep it.
 
@@ -116,6 +127,13 @@ so dashboards you copy in or `git pull` show up without a restart. A file with
 mistakes is listed at the top of the Dashboards page with every problem, and
 `signalith validate` checks every file.
 
+On the servers of a cluster, custom dashboards are shared: a dashboard saved on any
+server is the same everywhere, and every server's dashboards folder holds a copy. A file
+added or changed in a server's folder is shared; removing one changes nothing unless
+`detections.sync` is `mirror`. A save made from a page that read an older version is
+refused with `412`, and the page offers to reload or overwrite. See
+[Shared detections, dashboards and asset lists](servers.md#shared-detections-dashboards-and-asset-lists).
+
 ## Format
 
 ```yaml
@@ -154,7 +172,7 @@ panels:
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `id` | from the title | File name without `.yaml`. `posture`, `malware` and `vulnerabilities` are reserved for the built-in dashboards |
+| `id` | from the title | File name without `.yaml`. `posture`, `malware`, `network` and `vulnerabilities` are reserved for the built-in dashboards |
 | `title` | required | Shown in the dashboard list |
 | `description` | none | Shown under the title |
 | `time_range` | `24h` | Default time range for panels |
@@ -177,7 +195,7 @@ Every endpoint needs the admin sign-in, like the rest of the API.
 | Endpoint | Purpose |
 | --- | --- |
 | `GET /api/posture?range=24h` | The security posture report (range 1m to 90d) |
-| `GET /api/dashboards` | List: the built-in dashboards (posture, then malware and vulnerabilities, each with `"builtin": true`, even when custom dashboards are off), every custom one, and files with problems |
+| `GET /api/dashboards` | List: the built-in dashboards (posture, then malware, network and vulnerabilities, each with `"builtin": true`, even when custom dashboards are off), every custom one, and files with problems |
 | `POST /api/dashboards` | Create; without `id`, one is made from the title. 409 if the id exists or belongs to a built-in dashboard |
 | `GET /api/dashboards/{id}` | One dashboard as JSON |
 | `GET /api/dashboards/{id}/yaml` | Download its YAML file |

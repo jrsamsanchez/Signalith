@@ -1,0 +1,4 @@
+{"rule": "b3d57a5c-c92e-4b48-9a79-5f124b7cf964", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Application","event_id":"33205","data":{"Data":"object_name:sp_procoption statement:EXEC","Provider_Name":"MSSQL"}},
+  {"expect":false,"source":"synthesized","channel":"Application","event_id":"33205","data":{"Provider_Name":"MSSQL"}}
+]}

@@ -90,6 +90,11 @@ func parseAggs(s string, field func(string) (string, error)) ([]Agg, error) {
 			aggs = append(aggs, Agg{Name: "count", Func: "count"})
 			continue
 		}
+		if m[2] == "_raw" {
+			// Each event's raw text is its own: this counts events.
+			aggs = append(aggs, Agg{Name: m[3], Func: "count"})
+			continue
+		}
 		f, err := field(m[2])
 		if err != nil {
 			return nil, err
@@ -184,6 +189,12 @@ var sameAsEvent = map[string]bool{
 
 // rawGroupField is the Signalith field a raw count groups by.
 func rawGroupField(node, f string) (string, bool, error) {
+	if node == CloudTrailNode {
+		if name, ok := cloudTrailField(f); ok {
+			// Each record has its own call, service and account.
+			return name, true, nil
+		}
+	}
 	if sameAsEvent[f] {
 		return "", false, nil
 	}
@@ -225,7 +236,7 @@ func (t *Threshold) Fields() []string {
 // clause, over node's fields.
 func tstatsThreshold(node, head, by string, limits []Limit) (*Threshold, error) {
 	field := func(f string) (string, error) {
-		name, ok := strings.CutPrefix(f, node+".")
+		name, ok := strings.CutPrefix(f, nodePrefix(node)+".")
 		if !ok || !slices.Contains(Nodes[node], name) && name != "dest" {
 			return "", fmt.Errorf("field %s has no Signalith mapping", f)
 		}

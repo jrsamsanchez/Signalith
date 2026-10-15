@@ -1,0 +1,36 @@
+name: Cluster smoke
+# Weekly, and by hand: builds the image from this code, starts the load
+# balancer lab (deploy/docker/docker-compose.cluster.yml: two servers behind
+# HAProxy with PROXY protocol, one OpenSearch) and runs
+# deploy/docker/cluster-smoke.sh: agents and syslog reach both servers, each
+# client is seen by its own address, and one server carries on when the
+# other stops.
+on:
+  schedule:
+    - cron: '17 5 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SIGNALITH_IMAGE: signalith:local
+      COMPOSE: docker compose -f deploy/docker/docker-compose.cluster.yml
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Build the image
+        run: docker build -f deploy/docker/Dockerfile -t signalith:local .
+      - name: Start the lab
+        run: $COMPOSE up -d
+      - name: Smoke test
+        run: sh deploy/docker/cluster-smoke.sh
+      - name: Logs
+        if: failure()
+        run: $COMPOSE logs --tail 200
+      - name: Remove the lab
+        if: always()
+        run: $COMPOSE down -v

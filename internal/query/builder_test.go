@@ -25,6 +25,7 @@ func TestBuilderRoundTrip(t *testing.T) {
 		{Datamodel: "Network_Traffic", Mode: "stats", AggFunc: "sum", AggField: "bytes", By: []string{"src", "dest"}, Sort: "-sum(bytes)", Limit: 5,
 			Filters: []Filter{{Field: "dest_port", Op: ">", Value: "1024"}}},
 		{Mode: "timechart", AggFunc: "count", Span: "1h", By: []string{"action"}},
+		{Datamodel: "Authentication", Mode: "latest", By: []string{"user", "dest"}, Fields: []string{"_time", "user", "src"}, Limit: 20},
 	}
 	for _, s := range specs {
 		text := Build(s).String()
@@ -39,6 +40,21 @@ func TestBuilderRoundTrip(t *testing.T) {
 		if !reflect.DeepEqual(got, s) {
 			t.Errorf("round trip:\n got %+v\nwant %+v\n(%s)", got, s, text)
 		}
+	}
+}
+
+// One leading sign is the sort order; FuzzParse found a field named
+// "-x" losing its sign.
+func TestBuilderSortSigns(t *testing.T) {
+	s, ok := FromQuery(mustParse(t, `* | sort +-x`))
+	if !ok || s.Sort != "+-x" {
+		t.Fatalf("FromQuery = %+v %v", s, ok)
+	}
+	if got := Build(s).String(); got != "*\n| sort +-x" {
+		t.Errorf("Build = %q", got)
+	}
+	if got := Build(Spec{Sort: "-"}).String(); got != "*" {
+		t.Errorf("Build with no sort field = %q", got)
 	}
 }
 

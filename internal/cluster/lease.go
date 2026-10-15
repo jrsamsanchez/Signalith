@@ -99,6 +99,10 @@ type Lease struct {
 	// Fingerprints returns this server's files fingerprints; fresh asks
 	// for them worked out again now.
 	Fingerprints func(fresh bool) Fingerprints
+	// Holder, when set, returns a lease document with its holder's
+	// fingerprints as this server compares them with its own (see
+	// Settings.HolderFingerprints).
+	Holder func(LeaseDoc) LeaseDoc
 	// Defer, when set, says whether this server should leave the lease to
 	// another live server for now, and why: its clock is far off.
 	Defer func() (bool, string)
@@ -607,6 +611,9 @@ func (l *Lease) guard(doc LeaseDoc, fresh bool) bool {
 	if doc.Fingerprint == "" {
 		return true
 	}
+	if l.Holder != nil {
+		doc = l.Holder(doc)
+	}
 	mine := l.fingerprints(fresh)
 	if !mine.Unknown && mine.Combined() == doc.Fingerprint {
 		return true
@@ -805,7 +812,11 @@ func (l *Lease) waitDraining() {
 // meanwhile as long as Step keeps being called), then the lease is
 // written with no holder, so another server takes over within seconds. A
 // Release while another one is in progress waits for that one.
-func (l *Lease) Release(reason string) {
+func (l *Lease) Release(reason string) { l.ReleaseTo(reason, "") }
+
+// ReleaseTo is Release naming the server prefer (a node id) to take the
+// lease: the others wait PreferWait for it first. "" names none.
+func (l *Lease) ReleaseTo(reason, prefer string) {
 	l.mu.Lock()
 	switch l.state {
 	case standby:
@@ -853,6 +864,7 @@ func (l *Lease) Release(reason string) {
 	doc, ver := l.doc, l.ver
 	l.mu.Unlock()
 	doc.Holder, doc.HolderBoot, doc.ReleasedBy, doc.ReleaseReason, doc.RenewedAt = "", "", l.Self.NodeID, reason, l.Clock.Now().UTC()
+	doc.Prefer = prefer
 	if !fp.Unknown {
 		doc.Fingerprints, doc.Fingerprint = fp, fp.Combined()
 	}

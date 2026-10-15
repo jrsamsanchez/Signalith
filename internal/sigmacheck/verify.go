@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -16,16 +17,32 @@ import (
 
 // Windows channels the test events come from.
 const (
-	SysmonChannel     = "Microsoft-Windows-Sysmon/Operational"
-	SecurityChannel   = "Security"
-	SystemChannel     = ingest.SystemChannel
-	PowerShellChannel = ingest.PowerShellChannel
+	SysmonChannel        = "Microsoft-Windows-Sysmon/Operational"
+	SecurityChannel      = "Security"
+	SystemChannel        = ingest.SystemChannel
+	ApplicationChannel   = ingest.ApplicationChannel
+	CodeIntegrityChannel = ingest.CodeIntegrityChannel
+	PowerShellChannel    = ingest.PowerShellChannel
+	DefenderChannel      = ingest.DefenderChannel
 	// LinuxSysmonChannel is Sysmon for Linux, whose events have Sysmon's
 	// event IDs and fields.
 	LinuxSysmonChannel = ingest.LinuxSysmonChannel
 	// AuditdChannel is Linux audit records, whose event ID is the record
 	// type (EXECVE) and whose data are its fields by auditd's names.
 	AuditdChannel = ingest.AuditdChannel
+	// WebChannel is web server access log lines, whose data are the
+	// request's Web data model fields (url, http_method, status).
+	WebChannel = ingest.WebChannel
+	// CloudTrailChannel is AWS CloudTrail records, whose data are the
+	// record's fields by their dotted names (userIdentity.type).
+	CloudTrailChannel = ingest.CloudTrailChannel
+	// AzureChannel is Entra ID and Azure records, whose data are the
+	// fields Sigma's rules name (ResultType), and whose event ID is the
+	// rule's service (signinlogs).
+	AzureChannel = ingest.AzureChannel
+	// O365Channel is Microsoft 365 audit records, whose data are the
+	// fields of the Sigma rule.
+	O365Channel = ingest.O365Channel
 )
 
 // TestFile holds a shipped rule's test events.
@@ -59,6 +76,26 @@ var security4688 = map[string]string{
 // the event's channel has no Sigma view here.
 func (c Case) SigmaView() (map[string]string, bool) {
 	switch {
+	case strings.HasPrefix(c.Channel, ZeekChannelPrefix):
+		// A network event: Zeek's keys, or Sigma's taxonomy.
+		return maps.Clone(c.Data), true
+	case c.Channel == WebChannel:
+		// The request's fields by their W3C names; the path is the
+		// target's part before the query.
+		out := map[string]string{}
+		for w3c, f := range ingest.WebFields {
+			if v := c.Data[f]; v != "" {
+				out[w3c] = v
+			}
+		}
+		if u := c.Data["url"]; u != "" {
+			out["cs-uri-stem"], _, _ = strings.Cut(u, "?")
+		}
+		return out, true
+	case c.Channel == CloudTrailChannel, c.Channel == AzureChannel, c.Channel == O365Channel:
+		// Sigma's CloudTrail rules name the record's own fields, and its
+		// Azure rules the fields the record is built from.
+		return maps.Clone(c.Data), true
 	case c.Channel == AuditdChannel:
 		// A recorded line's fields, or the fields a line is built from.
 		fields := c.Data
@@ -76,6 +113,23 @@ func (c Case) SigmaView() (map[string]string, bool) {
 		return out, true
 	case strings.EqualFold(c.Channel, SysmonChannel), strings.EqualFold(c.Channel, LinuxSysmonChannel),
 		strings.EqualFold(c.Channel, PowerShellChannel) && c.EventID == "4104":
+		out := map[string]string{"EventID": c.EventID}
+		for k, v := range c.Data {
+			out[k] = v
+		}
+		return out, true
+	case strings.EqualFold(c.Channel, DefenderChannel):
+		// Defender rules name the event's data as its message labels
+		// it (Path, ProcessName, NewValue).
+		out := map[string]string{"EventID": c.EventID}
+		for k, v := range c.Data {
+			out[k] = v
+		}
+		return out, true
+	case c.Channel == ApplicationChannel || c.Channel == CodeIntegrityChannel || ingest.IsNamedChannel(c.Channel):
+		// Application and Code Integrity log rules name the provider and
+		// the event's data values (Data); Firewall and BITS log rules
+		// their events' data by name.
 		out := map[string]string{"EventID": c.EventID}
 		for k, v := range c.Data {
 			out[k] = v
@@ -101,7 +155,7 @@ func (c Case) SigmaView() (map[string]string, bool) {
 			}
 		}
 		return out, true
-	case c.Channel == SecurityChannel && slices.Contains(SecurityEvents, c.EventID):
+	case c.Channel == SecurityChannel && (slices.Contains(SecurityEvents, c.EventID) || ingest.IsNamedSecurityEvents(c.EventID)):
 		// Security log rules (service: security) name the event's own
 		// data.
 		out := map[string]string{"EventID": c.EventID}
@@ -114,13 +168,29 @@ func (c Case) SigmaView() (map[string]string, bool) {
 }
 
 // Record is a case's event as the agent sends it, with its Fluent Bit tag:
-// a journal record for Sysmon for Linux, else a Windows event record.
+// a journal record for Sysmon for Linux, an audit or access log line, else
+// a Windows event record.
 func (c Case) Record(host string, t time.Time) (string, map[string]any) {
+	if strings.HasPrefix(c.Channel, ZeekChannelPrefix) {
+		return c.zeekRecord(host, t)
+	}
 	if strings.EqualFold(c.Channel, LinuxSysmonChannel) {
 		return "linux.journal", ingest.LinuxSysmonRecord(c.EventID, host, t, c.Data)
 	}
 	if c.Channel == AuditdChannel {
 		return "linux.audit", ingest.AuditdRecordFor(ingest.AuditdLine(c.EventID, t, c.Data), host)
+	}
+	if c.Channel == CloudTrailChannel {
+		return ingest.CloudTrailTag, ingest.CloudTrailRecord(host, t, c.Data)
+	}
+	if c.Channel == AzureChannel {
+		return ingest.AzureTag, ingest.AzureRecord(host, t, c.EventID, c.Data)
+	}
+	if c.Channel == O365Channel {
+		return ingest.O365Tag, ingest.O365SigmaRecord(host, t, c.Data)
+	}
+	if c.Channel == WebChannel {
+		return ingest.WebTag, ingest.WebRecord(ingest.AccessLine(t, c.Data), "/var/log/nginx/access.log", host, t)
 	}
 	return "win.events", ingest.WinEventRecord(c.Channel, c.EventID, host, t, c.Data)
 }
@@ -147,12 +217,54 @@ var sysmonEvents = map[string]string{
 	"registry_set":         "13",
 	"create_stream_hash":   "15",
 	"pipe_created":         "17",
+	"raw_access_thread":    "9",
 	"dns_query":            "22",
 	"file_delete":          "26",
 	"ps_script":            "4104",
 	// Windows System log rules (service: system) are about services
-	// installed.
-	"system": "7045",
+	// installed, or name the other System events they are about (a
+	// service changing state, by default).
+	"system":       "7045",
+	"system_event": "7036",
+	// Application log rules (service: application) name their events;
+	// an application crash is the first.
+	"application": "1000",
+	// Code Integrity log rules name their events; an unsigned driver
+	// loaded is the first.
+	"code_integrity": "3001",
+	// Rules about the logs the parser reads by name name their events:
+	// a firewall rule added, a BITS transfer started, an app package
+	// deployed and a WMI operation failed are the first.
+	"firewall_as":           "2004",
+	"bits_client":           "16403",
+	"appxdeployment_server": "400",
+	"wmi":                   "5858",
+	// Sysmon's own events (service: sysmon): a configuration change,
+	// or a file block.
+	"sysmon_event":      "16",
+	"sysmon_file_block": "27",
+	// Security events no data model holds, read by name; each rule
+	// names its events.
+	"security_named":                       "4611",
+	"terminalservices_localsessionmanager": "21",
+	"shell_core":                           "28115",
+	"smbclient_security":                   "31017",
+	"security_mitigations":                 "12",
+	"dns_client":                           "3008",
+	"taskscheduler":                        "129",
+	"ntlm":                                 "8001",
+	"lsa_server":                           "300",
+	"capi2":                                "70",
+	"driver_framework":                     "2003",
+	"appmodel_runtime":                     "201",
+	"appxpackaging_om":                     "157",
+	"certificateservicesclient_lifecycle_system": "1007",
+	"openssh":           "4",
+	"dns_server":        "6004",
+	"iis_configuration": "29",
+	// Defender log rules (service: windefend) name their events; a
+	// threat detected is the first.
+	"windefend": "1116",
 }
 
 // SecurityEvents are the Security log events Security log rules
@@ -160,19 +272,66 @@ var sysmonEvents = map[string]string{
 // SecurityCategory of its one event, or of the events of one of
 // SecurityGroups.
 var SecurityEvents = []string{"4624", "4625", "4648", "4656", "4657", "4661", "4662", "4663", "4697", "4698", "4706", "4719",
-	"4720", "4732", "4738", "4794", "4768", "4769", "5136", "5145", "5156", "5157"}
+	"4720", "4732", "4738", "4794", "4768", "4769", "5136", "5145", "5156", "5157", "4728", "4729", "4730", "1102", "4699",
+	"4701", "4702", "5140"}
 
 // SecurityGroups are Security events with the same data that a rule may
 // name together: a handle to an object requested (4656) and the access
-// made with it (4663). Test events are made as the last one first.
-var SecurityGroups = [][]string{{"4656", "4663"}}
+// made with it (4663), and a scheduled task deleted (4699) or disabled
+// (4701). Test events are made as the last one first.
+var SecurityGroups = [][]string{{"4656", "4663"}, {"4699", "4701"}}
 
 // SecurityCategory is the category of a Security log rule about its
 // events (sorted), as Bases, Cases and Channel know it; it is known (by
 // SysmonEventID) for one of SecurityEvents or a group of SecurityGroups.
 func SecurityCategory(eventIDs ...string) string { return "security_" + strings.Join(eventIDs, "_") }
 
+// SysmonServiceCategory is the category of a rule about Sysmon's own
+// events (service: sysmon): its file blocks (27, 28, 29), or others.
+func SysmonServiceCategory(eventIDs ...string) string {
+	if len(eventIDs) > 0 && !slices.ContainsFunc(eventIDs, func(id string) bool { return id != "27" && id != "28" && id != "29" }) {
+		return "sysmon_file_block"
+	}
+	return "sysmon_event"
+}
+
+// SystemCategory is the category of a System log rule (service: system)
+// about its events: services installed (7045), or other events.
+func SystemCategory(eventIDs ...string) string {
+	if len(eventIDs) > 0 && !slices.Contains(eventIDs, "7045") {
+		return "system_event"
+	}
+	return "system"
+}
+
 func init() {
+	// Other System events have no typical data: each rule names its
+	// event's.
+	Bases["system_event"] = map[string]string{}
+	Bases["application"] = map[string]string{}
+	Bases["code_integrity"] = map[string]string{}
+	for service := range ingest.NamedChannelServices {
+		Bases[ingest.NamedChannelCategory(service)] = map[string]string{}
+	}
+	// A web request's fields are the rule's own.
+	Bases["webserver"] = map[string]string{}
+	sysmonEvents["webserver"] = "access"
+	// So are a CloudTrail record's.
+	Bases["cloudtrail"] = map[string]string{}
+	sysmonEvents["cloudtrail"] = "AwsApiCall"
+	// And an Azure record's, by its service.
+	for _, service := range ingest.AzureServices {
+		Bases[service] = map[string]string{}
+		sysmonEvents[service] = service
+	}
+	// And a Microsoft 365 record's.
+	Bases["m365"] = map[string]string{}
+	sysmonEvents["m365"] = "audit"
+	Bases["sysmon_event"] = map[string]string{}
+	Bases["security_named"] = map[string]string{}
+	Bases["sysmon_file_block"] = Bases["file_event"]
+	// A task disabled has the data of a task deleted.
+	Bases[SecurityCategory("4701")] = Bases[SecurityCategory("4699")]
 	for _, id := range SecurityEvents {
 		sysmonEvents[SecurityCategory(id)] = id
 	}
@@ -189,8 +348,28 @@ func Channel(category string) string {
 	switch category {
 	case "ps_script":
 		return PowerShellChannel
-	case "system":
+	case "system", "system_event":
 		return SystemChannel
+	case "application":
+		return ApplicationChannel
+	case "code_integrity":
+		return CodeIntegrityChannel
+	case "windefend":
+		return DefenderChannel
+	case "webserver":
+		return WebChannel
+	case "cloudtrail":
+		return CloudTrailChannel
+	case "m365":
+		return O365Channel
+	}
+	if slices.Contains(ingest.AzureServices, category) {
+		return AzureChannel
+	}
+	for service, channel := range ingest.NamedChannelServices {
+		if category == ingest.NamedChannelCategory(service) {
+			return channel
+		}
 	}
 	if strings.HasPrefix(category, "security_") {
 		return SecurityChannel
@@ -426,6 +605,51 @@ var Bases = map[string]map[string]string{
 		"StartType":   "auto start",
 		"AccountName": "LocalSystem",
 	},
+	"security_4728": {
+		"MemberName": "CN=Example User,OU=Staff,DC=corp,DC=example,DC=com", "MemberSid": "S-1-5-21-1000-1201",
+		"TargetUserName": "Report Readers", "TargetDomainName": "CORP", "TargetSid": "S-1-5-21-1000-1301",
+		"SubjectUserSid": "S-1-5-21-1000-1104", "SubjectUserName": "tester", "SubjectDomainName": "CORP", "SubjectLogonId": "0x1a2b3c",
+	},
+	"security_4729": {
+		"MemberName": "CN=Example User,OU=Staff,DC=corp,DC=example,DC=com", "MemberSid": "S-1-5-21-1000-1201",
+		"TargetUserName": "Report Readers", "TargetDomainName": "CORP", "TargetSid": "S-1-5-21-1000-1301",
+		"SubjectUserSid": "S-1-5-21-1000-1104", "SubjectUserName": "tester", "SubjectDomainName": "CORP", "SubjectLogonId": "0x1a2b3c",
+	},
+	"security_4730": {
+		"TargetUserName": "Report Readers", "TargetDomainName": "CORP", "TargetSid": "S-1-5-21-1000-1301",
+		"SubjectUserSid": "S-1-5-21-1000-1104", "SubjectUserName": "tester", "SubjectDomainName": "CORP", "SubjectLogonId": "0x1a2b3c", "PrivilegeList": "-",
+	},
+	"security_1102": {"SubjectUserSid": "S-1-5-21-1000-1104", "SubjectUserName": "tester", "SubjectDomainName": "CORP", "SubjectLogonId": "0x1a2b3c", "Provider_Name": "Microsoft-Windows-Eventlog"},
+	"security_4699": {
+		"SubjectUserSid": "S-1-5-21-1000-1104", "SubjectUserName": "tester", "SubjectDomainName": "CORP", "SubjectLogonId": "0x1a2b3c",
+		"TaskName":    `\ExampleUpdater`,
+		"TaskContent": `<?xml version="1.0" encoding="UTF-16"?><Task version="1.2"><Actions Context="Author"><Exec><Command>D:\apps\updater\updater.exe</Command></Exec></Actions></Task>`,
+	},
+	"security_4702": {
+		"SubjectUserSid": "S-1-5-21-1000-1104", "SubjectUserName": "tester", "SubjectDomainName": "CORP", "SubjectLogonId": "0x1a2b3c",
+		"TaskName":       `\ExampleUpdater`,
+		"TaskContentNew": `<?xml version="1.0" encoding="UTF-16"?><Task version="1.2"><Actions Context="Author"><Exec><Command>D:\apps\updater\updater.exe</Command></Exec></Actions></Task>`,
+	},
+	"security_5140": {
+		"SubjectUserSid": "S-1-5-21-1000-1104", "SubjectUserName": "tester", "SubjectDomainName": "CORP", "SubjectLogonId": "0x1a2b3c",
+		"ObjectType": "File", "IpAddress": "192.0.2.10", "IpPort": "50123", "ShareName": `\\*\Projects`,
+		"ShareLocalPath": `\??\D:\Projects`, "AccessMask": "0x1", "AccessList": "%%4416",
+	},
+	"windefend": {
+		"ThreatName":    "Trojan:Win32/Example",
+		"SeverityName":  "Severe",
+		"CategoryName":  "Trojan",
+		"Path":          `file:_C:\Users\tester\Downloads\invoice.exe`,
+		"SourceName":    "Real-Time Protection",
+		"ProcessName":   `C:\Windows\explorer.exe`,
+		"DetectionUser": `CORP\tester`,
+	},
+	"raw_access_thread": {
+		"Image":     `D:\apps\backup\backup.exe`,
+		"ProcessId": "4242",
+		"User":      `CORP\tester`,
+		"Device":    `\Device\HarddiskVolume3`,
+	},
 	"pipe_created": {
 		"Image":     `D:\apps\launcher\launcher.exe`,
 		"ProcessId": "4242",
@@ -608,12 +832,16 @@ func CasesOn(channel, category string, syn *Synthesis, fields []string) []Case {
 	}
 	var out []Case
 	add := func(expect bool, ev map[string]string) {
+		if channel == WebChannel {
+			out = append(out, Case{Expect: expect, Source: "synthesized", Channel: channel, EventID: id, Data: webData(ev)})
+			return
+		}
 		eid := id
 		if _, ok := ev["EventID"]; !ok && !expect && slices.Contains(fields, "EventID") {
 			// A near miss without the event ID: every event has one.
 			return
 		}
-		if _, ok := ev["Provider_Name"]; !ok && !expect && channel == SystemChannel && slices.Contains(fields, "Provider_Name") {
+		if _, ok := ev["Provider_Name"]; !ok && !expect && (channel == SystemChannel || channel == ApplicationChannel) && slices.Contains(fields, "Provider_Name") {
 			// Nor without its provider.
 			return
 		}
@@ -623,6 +851,11 @@ func CasesOn(channel, category string, syn *Synthesis, fields []string) []Case {
 			eid = v
 			ev = maps.Clone(ev)
 			delete(ev, "EventID")
+		}
+		if n, err := strconv.Atoi(eid); err == nil && n < 1000 && channel == SecurityChannel {
+			// A Windows 2000 or XP event, which never reaches Signalith
+			// (Rule.EventIDs).
+			return
 		}
 		out = append(out, Case{Expect: expect, Source: "synthesized", Channel: channel, EventID: eid, Data: ev})
 		if also4688 {
@@ -640,6 +873,21 @@ func CasesOn(channel, category string, syn *Synthesis, fields []string) []Case {
 	}
 	for _, ev := range syn.Negative {
 		add(false, ev)
+	}
+	return out
+}
+
+// webData is a synthesized web request's fields (W3C names) as Web data
+// model fields. A path alone (cs-uri-stem) is the target.
+func webData(ev map[string]string) map[string]string {
+	out := map[string]string{}
+	for k, v := range ev {
+		if f, ok := ingest.WebFields[strings.ToLower(k)]; ok && f != "uri_path" {
+			out[f] = v
+		}
+	}
+	if p, ok := ev["cs-uri-stem"]; ok && out["url"] == "" {
+		out["url"] = p
 	}
 	return out
 }

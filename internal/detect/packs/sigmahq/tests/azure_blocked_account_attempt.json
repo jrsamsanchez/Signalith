@@ -1,0 +1,5 @@
+{"rule": "4afac85c-224a-4dd7-b1af-8da40e1c60bd", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"signinlogs","data":{"ResultDescription":"Failure","ResultType":"50057"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"signinlogs","data":{"ResultType":"50057"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"signinlogs","data":{"ResultDescription":"Failure"}}
+]}

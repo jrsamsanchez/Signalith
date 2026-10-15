@@ -1,0 +1,4 @@
+{"rule": "aeaef14c-e5bf-4690-a9c8-835caad458bd", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"properties.message":"Disable PIM Alert"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{}}
+]}

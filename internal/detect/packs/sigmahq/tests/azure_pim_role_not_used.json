@@ -1,0 +1,4 @@
+{"rule": "8c6ec464-4ae4-43ac-936a-291da66ed13d", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"pim","data":{"riskEventType":"redundantAssignmentAlertIncident"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"pim","data":{}}
+]}

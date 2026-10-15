@@ -157,6 +157,9 @@ func lex(s string, macros map[string]*Macro, depth int) ([]token, error) {
 		case c == '=':
 			out = append(out, token{'o', "="})
 			i++
+		case c == '!':
+			// Not a word either: the loop below would never move on.
+			return nil, errors.New(`"!" without "=" is not supported`)
 		case c == '<' || c == '>':
 			return nil, errors.New("comparisons with < or > are not supported")
 		default:
@@ -269,6 +272,10 @@ func (p *parser) primary() (Expr, error) {
 		p.i++
 		return e, nil
 	}
+	// A quoted name before = or != is a field ("a.b"=c), as in Splunk.
+	if t.kind == 's' && p.i+1 < len(p.toks) && p.toks[p.i+1].kind == 'o' && (p.toks[p.i+1].text == "=" || p.toks[p.i+1].text == "!=") {
+		t.kind = 'w'
+	}
 	if t.kind != 'w' {
 		return nil, fmt.Errorf("expected a field, found %q", t.text)
 	}
@@ -333,6 +340,15 @@ func (p *parser) field(name string) (string, error) {
 				return f, nil
 			}
 		}
+		if _, ok := azureSources[source]; ok {
+			// Resolved once the renames before are known (resolveAzure).
+			return rawFieldPrefix + name, nil
+		}
+		if source == "cloudtrail" {
+			if _, ok := cloudTrailField(name); ok {
+				return rawFieldPrefix + name, nil
+			}
+		}
 		if source == "linux_auditd" {
 			if _, ok := ingest.AuditdField(name); ok {
 				return rawFieldPrefix + name, nil
@@ -347,7 +363,7 @@ func (p *parser) field(name string) (string, error) {
 		}
 		return "", fmt.Errorf("field %s has no Signalith mapping", name)
 	}
-	f, ok := strings.CutPrefix(name, p.node+".")
+	f, ok := strings.CutPrefix(name, nodePrefix(p.node)+".")
 	if !ok {
 		return "", fmt.Errorf("field %s is not a field of %s", name, p.node)
 	}

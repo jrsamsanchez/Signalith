@@ -73,6 +73,9 @@ func (s *Server) dashboardsReady(w http.ResponseWriter) bool {
 }
 
 func writeDashboardError(w http.ResponseWriter, err error) {
+	if libraryError(w, err) {
+		return
+	}
 	var ve *dashboards.ValidationError
 	switch {
 	case errors.As(err, &ve):
@@ -142,6 +145,15 @@ type dashboardSummary struct {
 	Refresh     string `json:"refresh,omitempty"`
 	Panels      int    `json:"panels"`
 	Builtin     bool   `json:"builtin,omitempty"`
+	// ETag is a custom dashboard's version, for If-Match on a change.
+	ETag string `json:"etag,omitempty"`
+}
+
+// savedDashboard is a custom dashboard with its version, for If-Match on
+// the next change.
+type savedDashboard struct {
+	*dashboards.Dashboard
+	ETag string `json:"etag"`
 }
 
 func (s *Server) handleListDashboards(w http.ResponseWriter, r *http.Request) {
@@ -164,9 +176,13 @@ func (s *Server) handleListDashboards(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, d := range list {
-		out = append(out, dashboardSummary{ID: d.ID, Title: d.Title, Description: d.Description, TimeRange: d.TimeRange, Refresh: d.Refresh, Panels: len(d.Panels)})
+		out = append(out, dashboardSummary{ID: d.ID, Title: d.Title, Description: d.Description, TimeRange: d.TimeRange, Refresh: d.Refresh, Panels: len(d.Panels),
+			ETag: dashboards.ETag(d)})
 	}
 	resp["dashboards"], resp["problems"], resp["dir"] = out, problems, s.Dashboards.Dir
+	if s.Dashboards.Shared() {
+		resp["shared"] = true
+	}
 	writeJSON(w, http.StatusOK, resp)
 }
 
@@ -179,7 +195,7 @@ func (s *Server) handleGetDashboard(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	writeJSON(w, http.StatusOK, d)
+	writeJSON(w, http.StatusOK, savedDashboard{Dashboard: d, ETag: dashboards.ETag(d)})
 }
 
 func (s *Server) handleDashboardYAML(w http.ResponseWriter, r *http.Request) {
@@ -213,16 +229,17 @@ func (s *Server) handleCreateDashboard(w http.ResponseWriter, r *http.Request) {
 	} else if id == dashboards.PostureID || dashboards.IsBuiltin(id) {
 		writeError(w, http.StatusConflict, errBuiltinIDTaken)
 		return
-	} else if s.Dashboards.Exists(d.ID) {
-		writeError(w, http.StatusConflict, errors.New("a dashboard with id "+d.ID+" already exists"))
-		return
 	}
-	if err := s.Dashboards.Put(&d); err != nil {
+	if err := s.Dashboards.Create(r.Context(), userOf(r), &d); err != nil {
+		if errors.Is(err, dashboards.ErrExists) {
+			writeError(w, http.StatusConflict, errors.New("a dashboard with id "+d.ID+" already exists"))
+			return
+		}
 		writeDashboardError(w, err)
 		return
 	}
 	s.Log.Info("dashboard created", "dashboard", d.ID, "by", userOf(r))
-	writeJSON(w, http.StatusCreated, d)
+	writeJSON(w, http.StatusCreated, savedDashboard{Dashboard: &d, ETag: dashboards.ETag(&d)})
 }
 
 func (s *Server) handlePutDashboard(w http.ResponseWriter, r *http.Request) {
@@ -241,12 +258,14 @@ func (s *Server) handlePutDashboard(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, errors.New("id in the body does not match the URL"))
 		return
 	}
-	if err := s.Dashboards.Put(&d); err != nil {
+	// With If-Match, a change made since the page read the dashboard is
+	// not overwritten: 412 names who made it.
+	if err := s.Dashboards.PutIf(r.Context(), userOf(r), &d, ifMatch(r)); err != nil {
 		writeDashboardError(w, err)
 		return
 	}
 	s.Log.Info("dashboard saved", "dashboard", d.ID, "by", userOf(r))
-	writeJSON(w, http.StatusOK, d)
+	writeJSON(w, http.StatusOK, savedDashboard{Dashboard: &d, ETag: dashboards.ETag(&d)})
 }
 
 func (s *Server) handleDeleteDashboard(w http.ResponseWriter, r *http.Request) {
@@ -257,7 +276,7 @@ func (s *Server) handleDeleteDashboard(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, errors.New("the security posture dashboard is built in and cannot be deleted"))
 		return
 	}
-	if err := s.Dashboards.Delete(r.PathValue("id")); err != nil {
+	if err := s.Dashboards.DeleteIf(r.Context(), userOf(r), r.PathValue("id"), ifMatch(r)); err != nil {
 		writeDashboardError(w, err)
 		return
 	}
@@ -276,17 +295,17 @@ func (s *Server) handleAddPanel(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	d, err := s.Dashboards.Get(r.PathValue("id"))
+	// The panel is added to the dashboard as it is now, so a change made
+	// on another server meanwhile is kept.
+	d, err := s.Dashboards.Update(r.Context(), userOf(r), r.PathValue("id"), "", func(d *dashboards.Dashboard) error {
+		d.Panels = append(d.Panels, p)
+		return nil
+	})
 	if err != nil {
 		writeDashboardError(w, err)
 		return
 	}
-	d.Panels = append(d.Panels, p)
-	if err := s.Dashboards.Put(d); err != nil {
-		writeDashboardError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, d)
+	writeJSON(w, http.StatusOK, savedDashboard{Dashboard: d, ETag: dashboards.ETag(d)})
 }
 
 type runRequest struct {

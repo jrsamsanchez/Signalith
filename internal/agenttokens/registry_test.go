@@ -486,3 +486,23 @@ func TestLoadRacingRevoke(t *testing.T) {
 		t.Fatalf("after load: %v", res)
 	}
 }
+
+func TestSensorPurpose(t *testing.T) {
+	if !ValidPurpose(PurposeSensor) || ValidPurpose("Sensor") {
+		t.Error("sensor purpose")
+	}
+	fake := ostest.New(t)
+	r := newReg(t, fake.URL, "n1")
+	tok, secret, err := r.Create(context.Background(), "Network sensor nsm-01", PurposeSensor, "sam")
+	if err != nil || tok.Purpose != "sensor" {
+		t.Errorf("sensor token: %+v %v", tok, err)
+	}
+	// Check says what the token was made for, so the sensor's own routes
+	// can refuse other agents' tokens.
+	if id, res := r.Check(secret); res != Valid || id.Purpose != PurposeSensor {
+		t.Errorf("check: %+v %v", id, res)
+	}
+	if err := errPurposeInvalid(); !strings.Contains(err.Msg, "sensor") {
+		t.Errorf("message: %s", err.Msg)
+	}
+}

@@ -19,10 +19,13 @@ import (
 // many fields its mapping really has, and grants none once it reaches
 // mappingStop. The count is kept for mappingTTL, so a burst of new names
 // can pass mappingStop by up to one window's worth of shares, which still
-// leaves room under the template's limit of 2000; past that, write keeps
-// events with their known fields only (see retryable).
+// leaves room under the template's limit (totalFieldsLimit); past that,
+// write keeps events with their known fields only (see retryable). It sits
+// above the known fields plus a whole day's budget of new names (about
+// 1,800 since the cloud rules' fields), so a server alone always gets
+// its budget, and 400 below the limit for a burst from several servers.
 const (
-	mappingStop    = 1600
+	mappingStop    = 2000
 	mappingTTL     = 30 * time.Second
 	mappingTimeout = 2 * time.Second
 )

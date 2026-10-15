@@ -281,6 +281,25 @@ With a strict CA, a name it doesn't cover is refused under **Agents send to**, w
 to do instead. CAs made by versions before Signalith had limits can vouch for any
 website. The Security page marks them **Needs attention**; switch to a new one.
 
+### On the servers of a cluster
+
+Servers that share one OpenSearch share one certificate authority once every server
+runs a version that can (see [One certificate authority](servers.md#one-certificate-authority)).
+Then:
+
+- the CA's key is not in `tls/ca.key`: it is kept in the cluster's shared settings,
+  encrypted with the cluster key, and in the server's encrypted copy of them
+  (`cluster/cache.enc`). `tls/ca.pem` holds a copy of the cluster's CA certificate, and
+  `tls/cluster-ca.txt` marks that the server uses it;
+- `GET /api/tls/ca.pem` and Add data give out the cluster's CA, the same file on every
+  server;
+- the CA a server used before is kept, certificate only, in
+  `tls/retired/<date>-<fingerprint>/ca.pem`, and never signs again;
+- a name added for agents on one server is covered by every server's certificate within
+  seconds, instead of being kept in `tls/names.txt`;
+- the steps below are refused (`409`): changing the cluster's CA comes in a later
+  version.
+
 ## Switching to a new certificate authority
 
 Make a new CA when:

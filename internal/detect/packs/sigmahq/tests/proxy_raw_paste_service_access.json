@@ -1,0 +1,4 @@
+{"rule": "5468045b-4fcc-4d1a-973c-c9c9578edacb", "cases": [
+  {"expect":true,"source":"synthesized","channel":"zeek:http","event_id":"proxy","data":{"c-uri":"http://downloads.example.com/.paste.ee/r/","cs-host":"downloads.example.com"}},
+  {"expect":false,"source":"synthesized","channel":"zeek:http","event_id":"proxy","data":{}}
+]}

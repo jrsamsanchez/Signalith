@@ -33,6 +33,7 @@ import (
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/cluster"
+	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"github.com/jrsamsanchez/signalith/internal/store"
 )
 
@@ -56,6 +57,10 @@ const (
 	keepFor = 30 * 24 * time.Hour
 	// SilentAfter is how long without events makes an agent silent.
 	SilentAfter = time.Hour
+	// SensorSilentAfter is how long without events makes a network sensor
+	// the install script built silent: it sends its status line every 5
+	// minutes, so three missed are enough to tell.
+	SensorSilentAfter = 15 * time.Minute
 	// minRefusedMinutes is in how many minutes of the last hour an address
 	// that never got a batch through must have refused the certificate to
 	// be listed on its own. An agent keeps trying; a browser shown a
@@ -89,6 +94,9 @@ type Contact struct {
 	Config string
 	// Events is how many of its events were stored.
 	Events int
+	// Sensor is the newest status line in the batch of a sensor the
+	// sensor install script built (ingest.Result.Sensor), nil for none.
+	Sensor *ingest.SensorStatus
 }
 
 // Doc is an inventory document: how one server heard from one agent.
@@ -117,7 +125,18 @@ type Doc struct {
 	// RefusedMinutes is in how many minutes of the last hour the address
 	// refused the certificate (see minRefusedMinutes).
 	RefusedMinutes int `json:"refused_minutes,omitempty"`
+	// Sensor is what the agent's sensor said in its last status line: a
+	// sensor sends one every 5 minutes, and its Zeek and Suricata batches
+	// in between keep it.
+	Sensor *ingest.SensorStatus `json:"sensor,omitempty"`
+	// SensorToken is the token the status line in Sensor came with.
+	SensorToken string `json:"sensor_token,omitempty"`
 }
+
+// sensorTakeover is how long a sensor's status line holds its row
+// against status lines that come with another token: three missed
+// lines, after which a reinstalled sensor's new token takes over.
+const sensorTakeover = 15 * time.Minute
 
 // Transports.
 const (
@@ -184,6 +203,10 @@ type Inventory struct {
 	// ServerCA returns the pin (see Pin) of the certificate authority this
 	// server's certificate comes from now, "" for none of its own.
 	ServerCA func() string
+	// Retired returns the pins of the certificate authorities the servers
+	// no longer use since they took the cluster's; nil has none. An agent
+	// whose configuration trusts only those needs a new one (NeedsConfig).
+	Retired func() []string
 	// Leader reports whether this server runs the background jobs, which
 	// remove agents not heard from for 30 days; nil never does.
 	Leader func() bool
@@ -204,6 +227,8 @@ type Inventory struct {
 
 	logMu    sync.Mutex
 	lastFail time.Time
+
+	traffic traffic
 }
 
 func (v *Inventory) now() time.Time {
@@ -372,6 +397,7 @@ func (v *Inventory) Note(c Contact) {
 		return
 	}
 	now := v.now().UTC()
+	v.traffic.note(now, c.Events)
 	name := CleanName(c.Name)
 	key := Key(name, c.Address, c.TokenID)
 	ca, version, _ := ParseConfig(c.Config)
@@ -409,6 +435,19 @@ func (v *Inventory) Note(c Contact) {
 	d.Name, d.Address, d.Tag, d.Intake, d.Transport, d.Local = name, c.Address, c.Tag, c.Intake, transport, c.Local
 	d.Token, d.TokenName, d.CA, d.ConfigVersion, d.ServerCA = c.TokenID, c.TokenName, ca, version, serverCA
 	d.LastSeen = now
+	// The status line of the batch that came last, whatever time the line
+	// gives itself (see ingest's storedSensor).
+	// A recent line that came with another token is kept: a token never
+	// rewrites the health of a sensor another token speaks for.
+	if c.Sensor != nil && (d.Sensor == nil || d.SensorToken == c.TokenID || now.Sub(d.Sensor.Received) > sensorTakeover) {
+		s := *c.Sensor
+		if s.At.IsZero() || s.At.After(now) {
+			s.At = now
+		}
+		s.Received = now
+		d.Sensor = &s
+		d.SensorToken = c.TokenID
+	}
 	e.events.add(now, int64(c.Events))
 	e.dirty = true
 }
@@ -776,6 +815,43 @@ type Agent struct {
 	// Refusing is true for an address that refused the certificate and
 	// never got a batch through.
 	Refusing bool `json:"refusing,omitempty"`
+	// NeedsConfig is true when its configuration trusts only certificate
+	// authorities the servers retired, so it needs a new configuration
+	// from Add data; Reason says why (ReasonRetiredCA).
+	NeedsConfig bool   `json:"needs_config,omitempty"`
+	Reason      string `json:"reason,omitempty"`
+	// Sensor is the newest status line any server got from it, for a
+	// sensor the install script built.
+	Sensor *ingest.SensorStatus `json:"sensor,omitempty"`
+}
+
+// ReasonRetiredCA: the agent's configuration trusts only certificate
+// authorities the servers retired when they took the cluster's.
+const ReasonRetiredCA = "retired_ca"
+
+// FlagRetired marks the agents whose configurations, around their last
+// batch, trust a retired certificate authority (a pin in retired) and
+// not the one in use (current): they need a new configuration. One that
+// trusts both is fine.
+func FlagRetired(agents []Agent, current string, retired []string) {
+	if len(retired) == 0 {
+		return
+	}
+	for i := range agents {
+		a := &agents[i]
+		old, cur := false, false
+		for _, pins := range a.CA {
+			if TrustsCA(pins, current) {
+				cur = true
+			}
+			if slices.ContainsFunc(retired, func(p string) bool { return p != current && TrustsCA(pins, p) }) {
+				old = true
+			}
+		}
+		if old && !cur {
+			a.NeedsConfig, a.Reason = true, ReasonRetiredCA
+		}
+	}
 }
 
 // List returns every agent any server heard from in the last 30 days,
@@ -827,7 +903,11 @@ func (v *Inventory) List(ctx context.Context) ([]Agent, int64, error) {
 		docs = slices.DeleteFunc(docs, func(d Doc) bool { return d.Node == node && have[d.Agent] })
 		docs = append(docs, mine...)
 	}
-	return Merge(docs, now), overflow, err
+	agents := Merge(docs, now)
+	if v.Retired != nil {
+		FlagRetired(agents, v.serverCA(), v.Retired())
+	}
+	return agents, overflow, err
 }
 
 // Merge turns inventory documents into one row per agent. A refusing
@@ -858,6 +938,9 @@ func Merge(docs []Doc, now time.Time) []Agent {
 		}
 		if l, ok := latest[d.Agent]; !ok || d.LastSeen.After(l.LastSeen) {
 			latest[d.Agent] = d
+		}
+		if d.Sensor != nil && (a.Sensor == nil || sensorReceived(d.Sensor).After(sensorReceived(a.Sensor))) {
+			a.Sensor = d.Sensor
 		}
 		addUnique(&a.Addresses, d.Address)
 		addUnique(&a.Servers, d.Server)
@@ -951,4 +1034,25 @@ func addUnique(list *[]string, s string) {
 	if s != "" && !slices.Contains(*list, s) {
 		*list = append(*list, s)
 	}
+}
+
+// sensorReceived is when a server got a sensor's status line, for which
+// server's is the newest; a document written before Received was kept
+// gives the line's own time.
+func sensorReceived(s *ingest.SensorStatus) time.Time {
+	if s.Received.IsZero() {
+		return s.At
+	}
+	return s.Received
+}
+
+// Silent says whether agent a is silent at now: nothing from it in
+// SilentAfter, or in SensorSilentAfter for a sensor that sends a status
+// line. The Endpoints and Health pages both go by it.
+func Silent(a Agent, now time.Time) bool {
+	after := SilentAfter
+	if a.Sensor != nil {
+		after = SensorSilentAfter
+	}
+	return now.Sub(a.LastSeen) > after
 }

@@ -1,0 +1,4 @@
+{"rule": "39f919f3-980b-4e6f-a975-8af7e507ef2b", "cases": [
+  {"expect":true,"source":"synthesized","channel":"System","event_id":"16","data":{"HiveName":"\\Temp\\SECURITY","Provider_Name":"Microsoft-Windows-Kernel-General"}},
+  {"expect":false,"source":"synthesized","channel":"System","event_id":"16","data":{"Provider_Name":"Microsoft-Windows-Kernel-General"}}
+]}

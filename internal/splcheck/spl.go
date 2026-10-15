@@ -115,6 +115,11 @@ var Nodes = map[string][]string{
 	// Network_Traffic.All_Traffic, as Sysmon's network connections (3)
 	// fill it.
 	"All_Traffic": {"app", "dest_ip", "dest_port", "src_ip", "src_port", "transport"},
+	// Web, as web servers' access logs fill it.
+	"Web": {
+		"url", "url_length", "uri_path", "uri_query", "http_method", "status", "http_user_agent",
+		"http_user_agent_length", "http_referrer", "src", "dest", "user", "bytes_out", "dest_port",
+	},
 }
 
 // NodeRenames are the node fields Signalith stores under another name:
@@ -134,7 +139,7 @@ func nodeField(node, f string) string {
 
 // The stages after the where clause that only reshape the results.
 var (
-	tstatsRe    = regexp.MustCompile(`(?is)^\|\s*tstats\s+(.*?)\s*\bfrom\s+datamodel=(Endpoint|Network_Traffic)\.(\w+)\s+where\s+(.*?)\s+by\s+([^|]*)$`)
+	tstatsRe    = regexp.MustCompile(`(?is)^\|\s*tstats\s+(.*?)\s*\bfrom\s+datamodel=(Endpoint|Network_Traffic|Web)(?:\.(\w+))?\s+where\s+(.*?)\s+by\s+([^|]*)$`)
 	harmlessRe  = regexp.MustCompile("^`(drop_dm_object_name|security_content_ctime)\\([^`]*\\)`$")
 	filterRe    = regexp.MustCompile("^`[\\w-]+_filter`$")
 	summariesRe = regexp.MustCompile("`security_content_summariesonly`")
@@ -149,6 +154,11 @@ var (
 // rename fields, format times and apply the rule's own (empty) filter
 // macro is understood; anything else is an error that says what.
 func Parse(src []byte, macros map[string]*Macro) (*Rule, error) {
+	return ParseWith(src, macros, ParseOptions{})
+}
+
+// ParseWith is Parse with options.
+func ParseWith(src []byte, macros map[string]*Macro, opt ParseOptions) (*Rule, error) {
 	var r Rule
 	if err := yaml.Unmarshal(src, &r); err != nil {
 		return nil, err
@@ -173,12 +183,26 @@ func Parse(src []byte, macros map[string]*Macro) (*Rule, error) {
 	}
 	first := summariesRe.ReplaceAllString("| "+stages[0], "")
 	m := tstatsRe.FindStringSubmatch(first)
+	if opt.Network {
+		if _, nm, ok := sensorNode(first); ok {
+			m = nm
+		} else if m == nil {
+			return nil, errors.New("search is not a tstats search of Network_Traffic, Network_Resolution or Web")
+		}
+	}
 	if m == nil {
-		return nil, errors.New("search is not a tstats search of Endpoint.Processes, Filesystem or Registry")
+		return nil, errors.New("search is not a tstats search of Endpoint.Processes, Filesystem, Registry or Web")
 	}
 	r.Node = m[3]
+	if r.Node == "" && strings.EqualFold(m[2], "Web") {
+		// datamodel=Web is its one node, Web.
+		r.Node = "Web"
+	}
 	fields, ok := Nodes[r.Node]
-	if !ok || (m[2] == "Network_Traffic") != (r.Node == "All_Traffic") {
+	if !opt.Network && IsSensorNode(r.Node) {
+		ok = false
+	}
+	if !ok || !IsSensorNode(r.Node) && ((m[2] == "Network_Traffic") != (r.Node == "All_Traffic") || strings.EqualFold(m[2], "Web") != (r.Node == "Web")) {
 		return nil, fmt.Errorf("data model node %s.%s is not supported", m[2], r.Node)
 	}
 	var present []Expr
@@ -231,25 +255,34 @@ func Parse(src []byte, macros map[string]*Macro) (*Rule, error) {
 // the node, and each node's fields map to the Signalith fields they are
 // stored as. The code stays in the clause as signature_id.
 var (
-	rawRe = regexp.MustCompile("(?s)^`(powershell|sysmon|wineventlog_security|wineventlog_system|linux_auditd)`\\s+(.*)$")
+	rawRe = regexp.MustCompile("(?s)^`(powershell|sysmon|wineventlog_security|wineventlog_system|linux_auditd|cloudtrail|azure_monitor_aad|azure_monitor_activity)`\\s+(.*)$")
 	// rawNodes are the nodes of each source by event code.
 	rawNodes = map[string]map[string]string{
 		"powershell": {"4104": "PowerShell"},
 		"sysmon": {
 			"1": "Processes", "3": "NetworkConnection", "7": "ImageLoad", "8": "ProcessAccess", "10": "ProcessAccess",
-			"22": "DnsQuery", "15": "FileStream", "17": "Pipe", "18": "Pipe",
+			"22": "DnsQuery", "15": "FileStream", "17": "Pipe", "18": "Pipe", "5": "ProcessTerminated", "9": "RawAccessRead",
 			"11": "Filesystem", "23": "Filesystem", "26": "Filesystem", "12": "Registry", "13": "Registry", "14": "Registry",
 		},
 		// Security events the Windows parser reads.
 		"wineventlog_security": {
 			"4624": "Logon", "4625": "Logon", "4698": "TaskCreated", "4663": "ObjectAccess", "5136": "DirectoryChange", "5145": "ShareAccess",
 			"4768": "KerberosTGT", "4769": "KerberosService", "4738": "UserChanged", "4732": "GroupMemberAdded",
+			"4648": "ExplicitLogon", "4776": "NtlmAuth", "4771": "KerberosPreAuth", "4741": "ComputerChanged",
+			"4742": "ComputerChanged", "4781": "AccountRenamed", "4727": "GroupChanged", "4730": "GroupChanged",
+			"4737": "GroupChanged", "4798": "LocalGroupRead", "4799": "LocalGroupRead", "4886": "CertRequest",
+			"4887": "CertRequest",
 		},
 		// The Service Control Manager's service installed event.
 		"wineventlog_system": {"7045": "ServiceInstalled"},
 		// Linux audit records: every record type is one node, whose
 		// fields are auditd's own (AuditdNode).
 		"linux_auditd": {},
+		// CloudTrail records: one node (CloudTrailNode).
+		"cloudtrail": {},
+		// Entra ID and Azure records: one node (AzureNode).
+		"azure_monitor_aad":      {},
+		"azure_monitor_activity": {},
 	}
 	// RawFields are the event fields a raw search may name on each node,
 	// with the Signalith field each is stored as.
@@ -358,6 +391,57 @@ var (
 			"TargetUserName": "object", "TargetSid": "object_sid", "MemberSid": "member_sid", "MemberName": "member",
 			"SubjectUserName": "user",
 		},
+		// A logon with explicit credentials; the add-on names the account
+		// that acted Caller_User_Name and the one it used Target_User_Name.
+		"ExplicitLogon": {
+			"SubjectUserName": "src_user", "Caller_User_Name": "src_user", "TargetUserName": "user", "Target_User_Name": "user",
+			"TargetServerName": "dest", "TargetInfo": "target_info", "ProcessName": "process_path", "IpAddress": "src",
+			"src_ip": "src",
+		},
+		// An account's password checked for NTLM, and Kerberos
+		// pre-authentication failed.
+		"NtlmAuth": {
+			"TargetUserName": "user", "Workstation": "src_host", "Status": "ntlm_status", "PackageName": "authentication_method",
+		},
+		"KerberosPreAuth": {
+			"TargetUserName": "user", "TargetSid": "user_sid", "ServiceName": "kerberos_service", "TicketOptions": "ticket_options",
+			"Status": "kerberos_status", "PreAuthType": "pre_auth_type", "IpAddress": "src", "src_ip": "src",
+		},
+		// A computer account created or changed, an account renamed, and
+		// a global group created, deleted or changed.
+		"ComputerChanged": {
+			"TargetUserName": "object", "TargetDomainName": "object_domain", "TargetSid": "object_sid", "SubjectUserName": "user",
+			"SubjectDomainName": "user_domain", "SamAccountName": "sam_account_name", "PrimaryGroupId": "primary_group_id",
+			"OldUacValue": "old_uac_value", "NewUacValue": "new_uac_value", "UserAccountControl": "user_account_control",
+			"DnsHostName": "dns_host_name", "ServicePrincipalNames": "service_principal_names",
+			"AllowedToDelegateTo": "allowed_to_delegate_to",
+		},
+		"AccountRenamed": {
+			"OldTargetUserName": "old_object", "NewTargetUserName": "object", "TargetDomainName": "object_domain",
+			"TargetSid": "object_sid", "SubjectUserName": "user", "Caller_User_Name": "user", "SubjectLogonId": "logon_id",
+		},
+		"GroupChanged": {
+			"TargetUserName": "object", "TargetDomainName": "object_domain", "TargetSid": "object_sid", "SubjectUserName": "user",
+			"SubjectDomainName": "user_domain",
+		},
+		// A user's local groups or a local group's members listed.
+		"LocalGroupRead": {
+			"TargetUserName": "object", "TargetSid": "object_sid", "SubjectUserName": "user", "SubjectUserSid": "user_sid",
+			"CallerProcessName": "process_path", "CallerProcessId": "process_id",
+		},
+		// A certificate requested and issued by Certificate Services.
+		"CertRequest": {
+			"RequestId": "cert_request_id", "Requester": "cert_requester", "Attributes": "cert_attributes",
+			"Disposition": "cert_disposition", "Subject": "cert_subject",
+		},
+		// A process terminated, and a drive read directly.
+		"ProcessTerminated": {
+			"Image": "process_path", "process_path": "process_path", "process_name": "process_name", "ProcessId": "process_id",
+			"ProcessID": "process_id",
+		},
+		"RawAccessRead": {
+			"Device": "device", "Image": "process_path", "process_path": "process_path", "process_name": "process_name",
+		},
 		"ServiceInstalled": {
 			"ServiceName": "service_name", "ImagePath": "service_path", "ServiceType": "service_type",
 			"StartType": "service_start_type", "AccountName": "service_account",
@@ -370,7 +454,12 @@ var (
 	searchRe    = regexp.MustCompile(`(?is)^search\s+(.+)$`)
 	fillnullRe  = regexp.MustCompile(`(?i)^fillnull$`)
 	statsRe     = regexp.MustCompile(`(?is)^stats\s`)
+	tableRe     = regexp.MustCompile(`(?is)^table\s`)
 	renameRe    = regexp.MustCompile(`(?is)^rename\s`)
+	// fillnull with a value, and iplocation after stats, which only adds
+	// columns, on an Azure search.
+	fillnullValueRe = regexp.MustCompile(`(?i)^fillnull(?:\s+value\s*=\s*\S+)?$`)
+	iplocationRe    = regexp.MustCompile(`(?i)^iplocation\s+\w+$`)
 )
 
 // AuditdNode is the node of Linux audit records (the linux_auditd
@@ -409,7 +498,15 @@ func resolveRaw(e Expr, node string) error {
 	case *Not:
 		return resolveRaw(x.Kid, node)
 	case *Cmp:
-		if name, ok := strings.CutPrefix(x.Field, rawFieldPrefix); ok && node == AuditdNode {
+		if name, ok := strings.CutPrefix(x.Field, rawFieldPrefix); ok && node == AzureNode {
+			return resolveAzure(x, nil)
+		} else if ok && node == CloudTrailNode {
+			f, ok := cloudTrailField(name)
+			if !ok {
+				return fmt.Errorf("field %s is not a field of %s events", name, node)
+			}
+			x.Field = f
+		} else if ok && node == AuditdNode {
 			f, ok := ingest.AuditdField(name)
 			if !ok {
 				return fmt.Errorf("field %s is not a field of %s events", name, node)
@@ -440,6 +537,11 @@ const xmlkvSuffix = "+xmlkv"
 // its by fields; Signalith keeps them, so it finds those too.)
 func parseRaw(r *Rule, source, terms string, later []string, macros map[string]*Macro) (*Rule, error) {
 	filled, counted, xml, renamed := false, false, false, false
+	_, azure := azureSources[source]
+	// An Azure search's renames, and its search stages after them, read
+	// by the names before (azureUnrename).
+	var renames []rename
+	var azureSearches []Expr
 	var searches []string
 	// A count with limits: the bucket span, the stats stage and the where.
 	var span time.Duration
@@ -447,9 +549,20 @@ func parseRaw(r *Rule, source, terms string, later []string, macros map[string]*
 	var limits []Limit
 	var regexes []Expr
 	bits := newBitStages()
+	rawField := func(f string) (string, error) {
+		if azure {
+			// Resolved now, by the names before the renames so far.
+			name, ok := azureField(azureUnrename(f, renames))
+			if !ok {
+				return "", fmt.Errorf("field %s is not a field of %s events", f, AzureNode)
+			}
+			return name, nil
+		}
+		return rawFieldPrefix + f, nil
+	}
 	for _, s := range later {
 		if !counted && !renamed {
-			e, ok, err := bits.stage(s, func(f string) (string, error) { return rawFieldPrefix + f, nil })
+			e, ok, err := bits.stage(s, rawField)
 			if err != nil {
 				return nil, err
 			}
@@ -459,7 +572,7 @@ func parseRaw(r *Rule, source, terms string, later []string, macros map[string]*
 				}
 				continue
 			}
-			e, ok, err = regexStage(s, func(f string) (string, error) { return rawFieldPrefix + f, nil })
+			e, ok, err = regexStage(s, rawField)
 			if err != nil {
 				return nil, err
 			}
@@ -470,6 +583,25 @@ func parseRaw(r *Rule, source, terms string, later []string, macros map[string]*
 		}
 		switch {
 		case harmlessRe.MatchString(s) || filterRe.MatchString(s):
+		case azure && renameRe.MatchString(s) && !counted:
+			// Before stats, a later stage may read the new names.
+			rs, err := parseRename(s)
+			if err != nil {
+				return nil, err
+			}
+			renames = append(renames, rs...)
+		case azure && searchRe.MatchString(s) && !counted:
+			e, err := ParseWhere(searchRe.FindStringSubmatch(s)[1], rawSource(source), macros)
+			if err != nil {
+				return nil, err
+			}
+			if err := resolveAzure(e, renames); err != nil {
+				return nil, err
+			}
+			azureSearches = append(azureSearches, e)
+		case azure && fillnullValueRe.MatchString(s) && !counted && !filled:
+			filled = true
+		case azure && iplocationRe.MatchString(s) && counted:
 		case xmlkvRe.MatchString(s) && !counted && !filled && !xml && !renamed && len(searches) == 0:
 			xml = true
 		case searchRe.MatchString(s) && xml && !counted && !filled:
@@ -483,6 +615,10 @@ func parseRaw(r *Rule, source, terms string, later []string, macros map[string]*
 		case statsRe.MatchString(s) && !counted:
 			counted = true
 			stats = s
+		case tableRe.MatchString(s) && !counted && !filled:
+			// A table only picks the columns shown: every event the
+			// search finds is a row.
+			counted = true
 		case counted && limits == nil && isLimits(s):
 			limits, _ = parseLimits(s)
 		case evalRe.MatchString(s) && counted:
@@ -522,8 +658,14 @@ func parseRaw(r *Rule, source, terms string, later []string, macros map[string]*
 		where = top[0]
 	}
 	var code *Cmp
-	if source == "linux_auditd" {
+	switch source {
+	case "linux_auditd":
 		r.Node = AuditdNode
+	case "cloudtrail":
+		r.Node = CloudTrailNode
+	}
+	if azure {
+		r.Node = AzureNode
 	}
 	for _, k := range top {
 		if c, ok := k.(*Cmp); ok && c.Field == eventCode {
@@ -533,7 +675,7 @@ func parseRaw(r *Rule, source, terms string, later []string, macros map[string]*
 			code = c
 		}
 	}
-	if r.Node == AuditdNode {
+	if r.Node == AuditdNode || r.Node == CloudTrailNode || r.Node == AzureNode {
 		if countField(where, eventCode) != 0 {
 			return nil, fmt.Errorf("a %s search names no event code", source)
 		}
@@ -547,7 +689,15 @@ func parseRaw(r *Rule, source, terms string, later []string, macros map[string]*
 		}
 		r.Node = n
 	}
-	if limits != nil {
+	if limits != nil && azure {
+		// Entra ID's records have what these counts group by, so
+		// fillnull adds no groups.
+		t, err := azureThreshold(stats, span, limits, renames)
+		if err != nil {
+			return nil, err
+		}
+		r.Threshold = t
+	} else if limits != nil {
 		if filled {
 			return nil, fmt.Errorf("a count after fillnull is not supported")
 		}
@@ -573,7 +723,8 @@ func parseRaw(r *Rule, source, terms string, later []string, macros map[string]*
 		top = append(top, e)
 	}
 	top = append(top, regexes...)
-	if len(top) < 2 && r.Node != AuditdNode {
+	top = append(top, azureSearches...)
+	if len(top) < 2 && r.Node != AuditdNode && r.Node != CloudTrailNode && r.Node != AzureNode {
 		return nil, fmt.Errorf("a %s search must name a field besides its event code", source)
 	}
 	where = &And{Kids: top}
@@ -583,8 +734,17 @@ func parseRaw(r *Rule, source, terms string, later []string, macros map[string]*
 	if err := resolveRaw(where, r.Node); err != nil {
 		return nil, err
 	}
+	if r.Node == CloudTrailNode {
+		if where, err = cloudTrailSuccess(where); err != nil {
+			return nil, err
+		}
+	}
 	if err := fieldsOf(where, r.Node, xml); err != nil {
 		return nil, err
+	}
+	if azure {
+		// The records of the macro's sourcetype.
+		where = &And{Kids: []Expr{&Cmp{Field: "sourcetype", Values: []string{azureSources[source]}}, where}}
 	}
 	unescapeXML(where)
 	r.Where = where
@@ -628,7 +788,7 @@ func fieldsOf(e Expr, node string, xml bool) error {
 	case *Not:
 		return fieldsOf(x.Kid, node, xml)
 	case *Cmp:
-		if x.Field == eventCode || node == AuditdNode && strings.HasPrefix(x.Field, "auditd_") {
+		if x.Field == eventCode || node == AuditdNode && strings.HasPrefix(x.Field, "auditd_") || node == CloudTrailNode || node == AzureNode {
 			return nil
 		}
 		for _, f := range RawFields[node] {

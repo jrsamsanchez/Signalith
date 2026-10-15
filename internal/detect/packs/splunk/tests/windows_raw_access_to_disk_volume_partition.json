@@ -1,0 +1,11 @@
+{"rule": "a85aa37e-9647-11ec-90c5-acde48001122", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"9","data":{"Device":"\\Device\\HarddiskVolume x","Image":"C:\\Program Files\\Example\\app.exe","ProcessId":"4242","User":"CORP\\tester"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"9","data":{"Device":"\\Device\\HarddiskVolume x","Image":"C:\\Program Files\\Example\\app.exe","ProcessId":"4242","User":"CORP\\tester"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"9","data":{"Device":"\\Device\\HarddiskVolume x","Image":"C:\\Program Files\\Example\\app.exe","ProcessId":"4242","User":"CORP\\tester"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"9","data":{"Device":"\\Device\\HarddiskVolume y","Image":"C:\\Program Files\\Example\\app.exe","ProcessId":"4242","User":"CORP\\tester"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"9","data":{"Device":"\\Device\\HarddiskVolume2","Image":"C:\\Program Files\\Example\\app.exe","ProcessId":"4242","User":"CORP\\tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"9","data":{"Device":"\\Device\\HarddiskVolume x","Image":"x \\Windows\\System32\\ x","ProcessId":"4242","User":"CORP\\tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"9","data":{"Device":"\\Device\\HarddiskVolume x","Image":"x \\Windows\\SysWOW64\\ x","ProcessId":"4242","User":"CORP\\tester"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"9","data":{"Device":"\\Device\\HarddiskVolume1","Image":"C:\\Temp\\c.exe","ProcessGuid":"{414E8EDF-CABB-6218-F103-000000003702}","ProcessId":"6068","RuleName":"-","UtcTime":"2022-02-25 12:25:31.890"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"9","data":{"Device":"\\Device\\HarddiskVolume1","Image":"C:\\Temp\\c.exe","ProcessGuid":"{414E8EDF-CABB-6218-F103-000000003702}","ProcessId":"6068","RuleName":"-","UtcTime":"2022-02-25 12:25:32.921"}}
+]}

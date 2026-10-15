@@ -49,7 +49,12 @@ var windowsSources = []string{
 	"Windows Event Log Security 4768", "Windows Event Log Security 4769",
 	"Windows Event Log Security 4738", "Windows Event Log Security 4732",
 	"Sysmon EventID 3", "Sysmon EventID 22", "Windows Event Log Security 4624", "Windows Event Log Security 4625",
-	"Sysmon EventID 15", "Sysmon EventID 17", "Sysmon EventID 18",
+	"Sysmon EventID 15", "Sysmon EventID 17", "Sysmon EventID 18", "Sysmon EventID 5", "Sysmon EventID 9",
+	"Windows Event Log Security 4648", "Windows Event Log Security 4776", "Windows Event Log Security 4771",
+	"Windows Event Log Security 4741", "Windows Event Log Security 4742", "Windows Event Log Security 4781",
+	"Windows Event Log Security 4727", "Windows Event Log Security 4730", "Windows Event Log Security 4737",
+	"Windows Event Log Security 4798", "Windows Event Log Security 4799", "Windows Event Log Security 4886",
+	"Windows Event Log Security 4887",
 	// Linux audit records, which Signalith reads from the audit log.
 	"Linux Auditd Execve", "Linux Auditd Proctitle", "Linux Auditd Syscall", "Linux Auditd Path", "Linux Auditd Cwd",
 	"Linux Auditd Service Stop", "Linux Auditd Add User", "Linux Auditd Daemon Start", "Linux Auditd Daemon End",
@@ -92,7 +97,7 @@ func main() {
 		Name:   "splunk",
 		Title:  "Splunk Security Content",
 		Format: "splunk",
-		Description: "Windows detections for process, file and registry events from Splunk's Threat Research Team (security_content), converted to Signalith detections. " +
+		Description: "Windows detections for process, file and registry events, web detections for web requests, network detections over connections and DNS lookups, AWS detections for CloudTrail records and Entra ID detections for its sign-in and audit logs, from Splunk's Threat Research Team (security_content), converted to Signalith detections. " +
 			"TTP rules raise findings; anomaly rules only add risk, as in Splunk's risk-based alerting. Each rule shipped here agrees with Splunk's reading of its search on its test events, checked in CI.",
 		Source:     "https://github.com/splunk/security_content",
 		Version:    commit,
@@ -145,6 +150,22 @@ func main() {
 	usedIDs := map[string]bool{}
 	usedMacros := map[string]bool{}
 	rules, _ := filepath.Glob(filepath.Join(*splunkDir, "detections", "endpoint", "*.yml"))
+	// Web detections search the Web data model, whatever log fills it,
+	// and so do a few network ones. The other network detections are
+	// tstats searches over connections and DNS lookups, which a network
+	// sensor fills, or searches of Sysmon's network events.
+	web, _ := filepath.Glob(filepath.Join(*splunkDir, "detections", "web", "*.yml"))
+	rules = append(rules, web...)
+	network, _ := filepath.Glob(filepath.Join(*splunkDir, "detections", "network", "*.yml"))
+	rules = append(rules, network...)
+	// Cloud detections that read CloudTrail records, or Entra ID and
+	// Azure records.
+	cloud, _ := filepath.Glob(filepath.Join(*splunkDir, "detections", "cloud", "*.yml"))
+	for _, f := range cloud {
+		if src, err := os.ReadFile(f); err == nil && cloudFile.Match(src) {
+			rules = append(rules, f)
+		}
+	}
 	sort.Strings(rules)
 	for _, f := range rules {
 		rel, _ := filepath.Rel(*splunkDir, f)
@@ -166,11 +187,23 @@ func main() {
 			skip("type "+meta.Type+" (not TTP or Anomaly)", rel)
 			continue
 		}
-		if !slices.ContainsFunc(meta.DataSource, func(s string) bool { return slices.Contains(windowsSources, s) }) {
+		web := webSearch.MatchString(meta.Search)
+		opt := splcheck.ParseOptions{Network: detect.SplunkNetworkRule(rel) && !web}
+		if opt.Network {
+			// A network rule over connections or DNS lookups reads its
+			// data model from any source, a network sensor's among them.
+			// One over Sysmon's events is endpoint content, left to the
+			// endpoint rules.
+			r, err := splcheck.ParseWith(src, macros, opt)
+			if err != nil || !splcheck.IsSensorNode(r.Node) {
+				skip("network detection that is not a tstats search of connections or DNS lookups", rel)
+				continue
+			}
+		} else if !slices.ContainsFunc(meta.DataSource, func(s string) bool { return slices.Contains(windowsSources, s) }) && !web && !cloudSearch.MatchString(meta.Search) {
 			skip("no Windows Sysmon or Security log data source", rel)
 			continue
 		}
-		rule, err := splcheck.Parse(src, macros)
+		rule, err := splcheck.ParseWith(src, macros, opt)
 		if err != nil {
 			skip("does not convert exactly: "+short(err), rel)
 			continue
@@ -201,7 +234,11 @@ func main() {
 		}
 		tf := &sigmacheck.TestFile{Rule: rule.ID, Cases: splcheck.Cases(rule)}
 		if !slices.ContainsFunc(tf.Cases, func(c sigmacheck.Case) bool { return c.Expect }) {
-			skip("no test events: no Windows event as Signalith stores it matches the rule", rel)
+			if opt.Network && splcheck.IsSensorNode(rule.Node) {
+				skip("no test events: no network sensor event as Signalith stores it matches the rule", rel)
+			} else {
+				skip("no test events: no Windows event as Signalith stores it matches the rule", rel)
+			}
 			continue
 		}
 		for _, c := range recorded[rule.ID] {
@@ -274,6 +311,16 @@ func markMacros(s string, macros map[string]*splcheck.Macro, used map[string]boo
 	}
 }
 
+// cloudSearch is a search of CloudTrail, Entra ID or Azure records, and
+// cloudFile a rule file with one.
+var (
+	cloudSearch = regexp.MustCompile("^\\s*`(cloudtrail|azure_monitor_aad|azure_monitor_activity)`")
+	cloudFile   = regexp.MustCompile("(?m)^(?:search:\\s*['|>-]*)?\\s*`(cloudtrail|azure_monitor_aad|azure_monitor_activity)`")
+)
+
+// webSearch is a search of the Web data model.
+var webSearch = regexp.MustCompile(`(?i)\bfrom\s+datamodel=Web\b`)
+
 var quoted = regexp.MustCompile(`"[^"]*"|\b[A-Z][a-z]+\.\w+`)
 
 func short(err error) string {
@@ -313,7 +360,7 @@ func writeReport(p *detect.Pack, skipped map[string][]string) {
 	for _, v := range skipped {
 		total += len(v)
 	}
-	fmt.Fprintf(&b, "%d rules shipped. %d endpoint detections were left out:\n\n| Rules | Reason |\n| ---: | --- |\n", len(p.Rules), total)
+	fmt.Fprintf(&b, "%d rules shipped. %d endpoint, web and network detections were left out:\n\n| Rules | Reason |\n| ---: | --- |\n", len(p.Rules), total)
 	reasons := make([]string, 0, len(skipped))
 	for r := range skipped {
 		reasons = append(reasons, r)

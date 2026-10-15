@@ -1,0 +1,10 @@
+# Written by the Signalith sensor install script (deploy/sensor/install.sh).
+[Unit]
+Description=Signalith sensor: status line every 5 minutes
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=5min
+
+[Install]
+WantedBy=timers.target

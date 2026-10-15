@@ -59,7 +59,7 @@ func (e *testEnv) server(name string, change func(*RuntimeOptions)) *testServer 
 // step runs one step of the runtime's loop.
 func (s *testServer) step() {
 	s.t.Helper()
-	s.rt.step(context.Background())
+	s.rt.step(context.Background(), false)
 }
 
 func (s *testServer) mode() Mode {
@@ -587,7 +587,7 @@ func TestCacheAtStartAndDegraded(t *testing.T) {
 		t.Error("a degraded server is ready")
 	}
 	again.Use(e.c, testPrefix, a.master)
-	again.step(context.Background())
+	again.step(context.Background(), false)
 	if m, _ := again.Mode(); m != ModeMember {
 		t.Fatalf("mode = %s, want member once OpenSearch answers", m)
 	}
@@ -636,5 +636,123 @@ func TestDropSealed(t *testing.T) {
 	}
 	if same, paths, _ := dropSealed(`{"a":1.50}`, "x"); same != `{"a":1.50}` || len(paths) != 0 {
 		t.Errorf("a body with nothing sealed changed: %s %v", same, paths)
+	}
+}
+
+// A cache.enc older than 30 days is not used, but the revisions it
+// applied are: a copy of the cluster document written back from before is
+// refused by a server that starts with it.
+func TestOldCacheKeepsRevisions(t *testing.T) {
+	e := newEnv(t)
+	a := e.server("siem-a", nil)
+	a.holds.Store(true)
+	a.step()
+	a.wantMode(ModeMember)
+	before := e.os.Source(testIndex, ClusterDocID)
+	if _, err := a.rt.Migrate(context.Background(), "x@1", func(context.Context) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	a.step()
+	ctx, cancel := context.WithCancel(context.Background())
+	a.rt.Start(ctx)
+	waitFor(t, func() bool { return a.rt.FlushCache() == nil && fileExists(CachePath(a.dir)) })
+	cancel()
+	a.rt.Wait()
+
+	e.os.Put(testIndex, ClusterDocID, before)
+	e.clock.SetWall(e.clock.Now().Add(CacheMaxAge + time.Hour))
+	again := NewRuntime(RuntimeOptions{StateDir: a.dir, Self: Self{NodeID: "n_siem-a", Name: "siem-a"}, Clock: e.clock})
+	again.Use(e.c, testPrefix, a.master)
+	if body, ok := again.Cluster().Get(); ok && body.Migrations["x@1"] == "" {
+		t.Error("the cluster document written back from before is in use")
+	}
+	if tamper := again.Hub().Tamper(); len(tamper) != 1 || tamper[0] != ClusterDocID {
+		t.Errorf("tamper = %v", tamper)
+	}
+	if !fileExists(CachePath(a.dir)) {
+		t.Error("the old copy was removed with the revisions it keeps")
+	}
+}
+
+// A server that keeps the key of a cluster it was a member of, but no
+// copy of its shared settings, does not take a cluster document of
+// another cluster signed with a key it does not have for a cluster it is
+// not part of, which would put it back on its own files (legacy b).
+func TestReplacedClusterWithoutCache(t *testing.T) {
+	e := newEnv(t)
+	a := e.server("siem-a", nil)
+	a.holds.Store(true)
+	a.step()
+	b := e.server("siem-b", nil)
+	b.give(a.key())
+	b.step()
+	b.wantMode(ModeMember)
+	if fileExists(CachePath(b.dir)) {
+		t.Fatal("the server keeps a copy")
+	}
+	env, body := clusterBody(t, e)
+	body.ClusterID = "c_other"
+	raw, err := json.Marshal(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	k2, err := NewClusterKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.putSigned(k2, ClusterDocID, "cluster", 1, env.Rev+1, string(raw), nil)
+	again := NewRuntime(RuntimeOptions{StateDir: b.dir, Self: Self{NodeID: "n_siem-b", Name: "siem-b"}, Clock: e.clock})
+	again.Use(e.c, testPrefix, b.master)
+	if m, why := again.Mode(); m != ModeKeyMissing {
+		t.Fatalf("mode = %s (%s), want %s", m, why, ModeKeyMissing)
+	}
+	if ok, _ := again.Ready(); ok {
+		t.Error("the server is ready")
+	}
+}
+
+// An importer's hold covers reading its source and recording the import,
+// also when there is nothing to import: a change of the source made
+// after the read waits until the import is recorded, and then finds it
+// moved, instead of landing in a file no longer read.
+func TestImportHoldCoversNothingToImport(t *testing.T) {
+	for _, source := range []string{"", "h"} {
+		e := newEnv(t)
+		var events []string
+		var held bool
+		a := e.server("siem-a", func(o *RuntimeOptions) {
+			o.Importers = []Importer{{Name: "feeds",
+				Hold: func() func() {
+					events, held = append(events, "hold"), true
+					return func() {
+						if _, b := clusterBody(t, e); b.Import.Done["feeds"] != "" {
+							events = append(events, "recorded")
+						}
+						events, held = append(events, "release"), false
+					}
+				},
+				Source: func() (string, error) {
+					if !held {
+						t.Error("the source was read without the hold")
+					}
+					events = append(events, "read")
+					return source, nil
+				},
+				Run: func(context.Context, string) error {
+					events = append(events, "run")
+					return nil
+				}}}
+		})
+		a.holds.Store(true)
+		if err := a.rt.found(context.Background(), "signalith", false); err != nil {
+			t.Fatal(err)
+		}
+		want := "hold,read,recorded,release"
+		if source != "" {
+			want = "hold,read,run,recorded,release"
+		}
+		if got := strings.Join(events, ","); got != want {
+			t.Errorf("source %q: %s, want %s", source, got, want)
+		}
 	}
 }

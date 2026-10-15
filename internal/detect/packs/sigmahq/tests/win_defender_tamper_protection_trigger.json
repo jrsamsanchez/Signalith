@@ -1,0 +1,4 @@
+{"rule": "49e5bc24-8b86-49f1-b743-535f332c2856", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Windows Defender/Operational","event_id":"5013","data":{"Value":"\\Real-Time Protection\\DisableScriptScanning"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Windows Defender/Operational","event_id":"5013","data":{}}
+]}

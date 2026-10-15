@@ -24,7 +24,9 @@ const (
 	OTelWindowsCAPath = OTelWindowsDir + `\signalith-ca.pem`
 	// Where the Collector keeps its queue of unsent logs and its place in
 	// each log, so a restart neither loses nor repeats events.
-	otelLinuxState   = "/var/lib/otelcol-contrib"
+	otelLinuxState = "/var/lib/otelcol-contrib"
+	// The environment file the Linux packages' service reads.
+	otelLinuxEnv     = "/etc/otelcol-contrib/otelcol-contrib.conf"
 	otelWindowsState = `C:\ProgramData\OpenTelemetry Collector\signalith`
 )
 
@@ -44,6 +46,17 @@ func generateOTel(o Options) (*Agent, error) {
 	if host == "" {
 		host = "linux"
 	}
+	// AWS CloudTrail: a Collector that reads CloudTrail's bucket alone.
+	trail := o.OS == "aws"
+	// Entra ID and Azure: a Collector that reads their event hub alone.
+	hub := o.OS == "azure"
+	cloud := trail || hub
+	var src cloudTrailSource
+	if trail {
+		if src, err = cloudTrailOptions(o); err != nil {
+			return nil, err
+		}
+	}
 	a := &Agent{OS: "otel", ServerURL: u.Scheme + "://" + u.Host, ServerLoopback: IsLoopback(u)}
 	useCA := u.Scheme == "https" && (strings.TrimSpace(o.CA) != "" || o.CAUnknown)
 	if useCA {
@@ -62,6 +75,9 @@ func generateOTel(o Options) (*Agent, error) {
 	case "linux":
 		a.ConfigPath = OTelLinuxConfig
 		fmt.Fprintf(&b, "    directory: %s\n", otelLinuxState)
+		if cloud {
+			break
+		}
 		b.WriteString("\nreceivers:\n")
 		if o.LinuxSource == "journal" {
 			b.WriteString("  journald:\n    identifiers: [sshd, sshd-session, sudo, su, useradd, userdel, usermod, gpasswd]\n" +
@@ -72,15 +88,64 @@ func generateOTel(o Options) (*Agent, error) {
 				"    storage: file_storage/signalith\n")
 			receivers = append(receivers, "filelog/auth")
 		}
+		// Web servers' access logs (Apache, Nginx); a host without one has
+		// no such files.
+		b.WriteString("  filelog/web:\n    include: [" + strings.Join(WebAccessLogs, ", ") + "]\n" +
+			"    include_file_path: true\n    storage: file_storage/signalith\n")
+		receivers = append(receivers, "filelog/web")
 	case "windows":
 		a.ConfigPath = OTelWindowsConfig
 		fmt.Fprintf(&b, "    directory: %s\n", yamlPath(otelWindowsState))
+		if cloud {
+			break
+		}
 		b.WriteString("\nreceivers:\n")
 		b.WriteString("  windowseventlog/security:\n    channel: Security\n    storage: file_storage/signalith\n")
 		receivers = append(receivers, "windowseventlog/security")
 		// The System log, where services installed are recorded.
 		b.WriteString("  windowseventlog/system:\n    channel: System\n    storage: file_storage/signalith\n")
 		receivers = append(receivers, "windowseventlog/system")
+		// The Application log, where SQL Server, Windows Installer and
+		// other programs log.
+		b.WriteString("  windowseventlog/application:\n    channel: Application\n    storage: file_storage/signalith\n")
+		receivers = append(receivers, "windowseventlog/application")
+		// Code Integrity: unsigned, revoked and blocked drivers and
+		// images.
+		b.WriteString("  windowseventlog/codeintegrity:\n    channel: Microsoft-Windows-CodeIntegrity/Operational\n    storage: file_storage/signalith\n")
+		receivers = append(receivers, "windowseventlog/codeintegrity")
+		// Windows Firewall's rules and settings changed, BITS's download
+		// and upload jobs, app packages installed, WMI activity, Remote
+		// Desktop sessions, shell app shortcuts, SMB client security and
+		// exploit protection blocks.
+		b.WriteString("  windowseventlog/firewall:\n    channel: Microsoft-Windows-Windows Firewall With Advanced Security/Firewall\n    storage: file_storage/signalith\n")
+		b.WriteString("  windowseventlog/bits:\n    channel: Microsoft-Windows-Bits-Client/Operational\n    storage: file_storage/signalith\n")
+		b.WriteString("  windowseventlog/appx:\n    channel: Microsoft-Windows-AppXDeploymentServer/Operational\n    storage: file_storage/signalith\n")
+		b.WriteString("  windowseventlog/wmi:\n    channel: Microsoft-Windows-WMI-Activity/Operational\n    storage: file_storage/signalith\n")
+		b.WriteString("  windowseventlog/rdp:\n    channel: Microsoft-Windows-TerminalServices-LocalSessionManager/Operational\n    storage: file_storage/signalith\n")
+		b.WriteString("  windowseventlog/shell:\n    channel: Microsoft-Windows-Shell-Core/Operational\n    storage: file_storage/signalith\n")
+		b.WriteString("  windowseventlog/smbclient:\n    channel: Microsoft-Windows-SmbClient/Security\n    storage: file_storage/signalith\n")
+		b.WriteString("  windowseventlog/mitigations:\n    channel: Microsoft-Windows-Security-Mitigations/KernelMode\n    storage: file_storage/signalith\n")
+		receivers = append(receivers, "windowseventlog/firewall", "windowseventlog/bits", "windowseventlog/appx", "windowseventlog/wmi",
+			"windowseventlog/rdp", "windowseventlog/shell", "windowseventlog/smbclient", "windowseventlog/mitigations")
+		// The DNS client, Task Scheduler, NTLM, LSA, CryptoAPI, device
+		// driver, packaged app, app package and certificate logs, which
+		// every Windows has (some turned off until an admin turns them on).
+		// The OpenSSH server, DNS Server and IIS logs are left out: the
+		// receiver stops the collector on a log the computer doesn't have.
+		for _, l := range [][2]string{
+			{"dnsclient", "Microsoft-Windows-DNS-Client/Operational"},
+			{"taskscheduler", "Microsoft-Windows-TaskScheduler/Operational"},
+			{"ntlm", "Microsoft-Windows-NTLM/Operational"},
+			{"lsa", "Microsoft-Windows-LSA/Operational"},
+			{"capi2", "Microsoft-Windows-CAPI2/Operational"},
+			{"drivers", "Microsoft-Windows-DriverFrameworks-UserMode/Operational"},
+			{"appmodel", "Microsoft-Windows-AppModel-Runtime/Admin"},
+			{"appxpackaging", "Microsoft-Windows-AppxPackaging/Operational"},
+			{"certificates", "Microsoft-Windows-CertificateServicesClient-Lifecycle-System/Operational"},
+		} {
+			fmt.Fprintf(&b, "  windowseventlog/%s:\n    channel: %s\n    storage: file_storage/signalith\n", l[0], l[1])
+			receivers = append(receivers, "windowseventlog/"+l[0])
+		}
 		if o.Sysmon {
 			b.WriteString("  windowseventlog/sysmon:\n    channel: Microsoft-Windows-Sysmon/Operational\n    storage: file_storage/signalith\n")
 			receivers = append(receivers, "windowseventlog/sysmon")
@@ -92,9 +157,22 @@ func generateOTel(o Options) (*Agent, error) {
 	default:
 		return nil, fmt.Errorf("unknown collector os %q; use linux or windows", host)
 	}
-	b.WriteString("  # Apps and SDKs on this host can send OTLP logs here too.\n" +
-		"  otlp:\n    protocols:\n      grpc:\n        endpoint: 127.0.0.1:4317\n      http:\n        endpoint: 127.0.0.1:4318\n")
-	receivers = append(receivers, "otlp")
+	extensions := "file_storage/signalith"
+	if trail {
+		// CloudTrail's files, as S3 tells the queue about them.
+		b.WriteString("  aws_logs_encoding/cloudtrail:\n    format: cloudtrail\n")
+		extensions += ", aws_logs_encoding/cloudtrail"
+		b.WriteString("\nreceivers:\n" + src.receiver())
+		receivers = append(receivers, "aws_s3/cloudtrail")
+	} else if hub {
+		// The messages Entra ID and Azure send to the event hub.
+		b.WriteString("\nreceivers:\n" + azureReceiver())
+		receivers = append(receivers, "azure_event_hub/signalith")
+	} else {
+		b.WriteString("  # Apps and SDKs on this host can send OTLP logs here too.\n" +
+			"  otlp:\n    protocols:\n      grpc:\n        endpoint: 127.0.0.1:4317\n      http:\n        endpoint: 127.0.0.1:4318\n")
+		receivers = append(receivers, "otlp")
+	}
 
 	b.WriteString("\nprocessors:\n" +
 		"  resourcedetection/signalith:\n    detectors: [system]\n" +
@@ -117,13 +195,24 @@ func generateOTel(o Options) (*Agent, error) {
 	b.WriteString("    retry_on_failure:\n      max_elapsed_time: 0\n" +
 		"    sending_queue:\n      storage: file_storage/signalith\n")
 
-	b.WriteString("\nservice:\n  extensions: [file_storage/signalith]\n  pipelines:\n    logs/signalith:\n")
+	b.WriteString("\nservice:\n  extensions: [" + extensions + "]\n  pipelines:\n    logs/signalith:\n")
 	fmt.Fprintf(&b, "      receivers: [%s]\n", strings.Join(receivers, ", "))
 	b.WriteString("      processors: [resourcedetection/signalith, batch/signalith]\n      exporters: [otlphttp/signalith]\n")
 	a.Config = b.String()
 
+	version := "0.100"
+	if trail {
+		// The first with aws_s3 and aws_logs_encoding by these names.
+		version = "0.153"
+		a.Steps = src.steps()
+	}
+	if hub {
+		// The first with the azure_event_hub receiver by this name.
+		version = "0.145"
+		a.Steps = azureSteps()
+	}
 	if host == "linux" {
-		a.Steps = []string{"Install the OpenTelemetry Collector Contrib package (otelcol-contrib, 0.100 or later, .deb or .rpm) from https://opentelemetry.io/docs/collector/installation/"}
+		a.Steps = append(a.Steps, "Install the OpenTelemetry Collector Contrib package (otelcol-contrib, "+version+" or later, .deb or .rpm) from https://opentelemetry.io/docs/collector/installation/")
 		if useCA {
 			a.Steps = append(a.Steps, caStep(a, "signalith-ca.pem"))
 		}
@@ -133,23 +222,35 @@ func generateOTel(o Options) (*Agent, error) {
 		if useCA {
 			files = "sudo install -m 644 -o root -g root signalith-ca.pem " + OTelLinuxCAPath + " && " + files
 		}
-		read := "Let the Collector read the system logs, then restart it"
-		if o.LinuxSource != "journal" {
-			// /var/log/secure is root's alone; the journal has the same events.
-			read = "Let the Collector read the system logs, then restart it. On Red Hat-family systems, where /var/log/secure is readable only by root, choose the systemd journal above instead"
+		a.Steps = append(a.Steps, "From the folder you saved it in, put it in place. Only root and the Collector can read it, since it holds the agent token: "+files)
+		if trail {
+			a.Steps = append(a.Steps,
+				"Not on EC2 with a role? Add the IAM user's access key to the Collector's environment file, "+otelLinuxEnv+", as two lines, AWS_ACCESS_KEY_ID=... and AWS_SECRET_ACCESS_KEY=..., then keep it private: sudo chmod 640 "+otelLinuxEnv+" && sudo chgrp otelcol-contrib "+otelLinuxEnv,
+				"Restart the Collector: sudo systemctl restart otelcol-contrib",
+				"CloudTrail writes a file every few minutes, so events appear in Search within about 15 minutes; check the Health page if they do not, and the Collector's own log with journalctl -u otelcol-contrib.")
+		} else if hub {
+			a.Steps = append(a.Steps,
+				"Give the Collector the event hub's connection string: add it to the Collector's environment file, "+otelLinuxEnv+", as one line, "+azureHubEnv+"=Endpoint=sb://..., then keep the file private: sudo chmod 640 "+otelLinuxEnv+" && sudo chgrp otelcol-contrib "+otelLinuxEnv,
+				"Restart the Collector: sudo systemctl restart otelcol-contrib",
+				"Entra ID and Azure send their logs within a few minutes, so events appear in Search within about 10 minutes; check the Health page if they do not, and the Collector's own log with journalctl -u otelcol-contrib.")
+		} else {
+			read := "Let the Collector read the system logs, then restart it"
+			if o.LinuxSource != "journal" {
+				// /var/log/secure is root's alone; the journal has the same events.
+				read = "Let the Collector read the system logs, then restart it. On Red Hat-family systems, where /var/log/secure is readable only by root, choose the systemd journal above instead"
+			}
+			a.Steps = append(a.Steps,
+				read+": sudo usermod -aG adm,systemd-journal otelcol-contrib && sudo systemctl restart otelcol-contrib",
+				"Events appear in Search within a minute; check the Health page if they do not, and the Collector's own log with journalctl -u otelcol-contrib.")
 		}
-		a.Steps = append(a.Steps,
-			"From the folder you saved it in, put it in place. Only root and the Collector can read it, since it holds the agent token: "+files,
-			read+": sudo usermod -aG adm,systemd-journal otelcol-contrib && sudo systemctl restart otelcol-contrib",
-			"Events appear in Search within a minute; check the Health page if they do not, and the Collector's own log with journalctl -u otelcol-contrib.")
 	} else {
-		if o.Sysmon {
+		if o.Sysmon && !cloud {
 			a.Steps = append(a.Steps, "Install Sysmon with a config such as SwiftOnSecurity's sysmon-config, so process and network events are recorded")
 		}
-		if o.PowerShell {
+		if o.PowerShell && !cloud {
 			a.Steps = append(a.Steps, scriptBlockLoggingStep)
 		}
-		a.Steps = append(a.Steps, "Install the OpenTelemetry Collector Contrib for Windows (the otelcol-contrib .msi, 0.100 or later) from https://github.com/open-telemetry/opentelemetry-collector-releases/releases")
+		a.Steps = append(a.Steps, "Install the OpenTelemetry Collector Contrib for Windows (the otelcol-contrib .msi, "+version+" or later) from https://github.com/open-telemetry/opentelemetry-collector-releases/releases")
 		files := "config.yaml"
 		if useCA {
 			a.Steps = append(a.Steps, caStep(a, "signalith-ca.pem"))
@@ -157,15 +258,38 @@ func generateOTel(o Options) (*Agent, error) {
 		}
 		a.Steps = append(a.Steps, "Save the configuration below as config.yaml. It replaces the installer's example configuration; if this Collector already sends elsewhere, add the Signalith receivers, exporter and pipeline to your own instead.")
 		a.ConfigStep = len(a.Steps)
+		queue := "Security log events"
+		if trail {
+			queue = "CloudTrail records"
+		}
+		if hub {
+			queue = "Entra ID and Azure records"
+		}
 		a.Steps = append(a.Steps,
-			"In an elevated PowerShell, put them in place from your Downloads folder, and let only SYSTEM and Administrators read the configuration, which holds the agent token, and the Collector's queue, which holds Security log events: "+
+			"In an elevated PowerShell, put them in place from your Downloads folder, and let only SYSTEM and Administrators read the configuration, which holds the agent token, and the Collector's queue, which holds "+queue+": "+
 				`cd "$env:USERPROFILE\Downloads"`+"\n"+
 				"Copy-Item "+files+` '`+OTelWindowsDir+`\' -Force`+"\n"+
 				`icacls '`+OTelWindowsConfig+`' /inheritance:r /grant:r '*S-1-5-18:F' '*S-1-5-32-544:F'`+"\n"+
 				`New-Item -ItemType Directory -Force '`+otelWindowsState+`' | Out-Null`+"\n"+
-				`icacls '`+otelWindowsState+`' /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F'`,
-			"Restart the Collector in an elevated PowerShell: Set-Service otelcol-contrib -StartupType Automatic; Restart-Service otelcol-contrib",
-			"Events appear in Search within a minute; check the Health page if they do not, and the Collector's events in the Application log of Event Viewer.")
+				`icacls '`+otelWindowsState+`' /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F'`)
+		if trail {
+			a.Steps = append(a.Steps,
+				"Not on EC2 with a role? Give the Collector's service the IAM user's access key, in an elevated PowerShell (put the key's two parts in place of the dots): "+
+					`Set-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Services\otelcol-contrib' -Name Environment -Type MultiString -Value 'AWS_ACCESS_KEY_ID=...','AWS_SECRET_ACCESS_KEY=...'`)
+		}
+		if hub {
+			a.Steps = append(a.Steps,
+				"Give the Collector's service the event hub's connection string, in an elevated PowerShell (paste the connection string in place of the dots, inside the quotes): "+
+					`Set-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Services\otelcol-contrib' -Name Environment -Type MultiString -Value '`+azureHubEnv+`=...'`)
+		}
+		a.Steps = append(a.Steps, "Restart the Collector in an elevated PowerShell: Set-Service otelcol-contrib -StartupType Automatic; Restart-Service otelcol-contrib")
+		if trail {
+			a.Steps = append(a.Steps, "CloudTrail writes a file every few minutes, so events appear in Search within about 15 minutes; check the Health page if they do not, and the Collector's events in the Application log of Event Viewer.")
+		} else if hub {
+			a.Steps = append(a.Steps, "Entra ID and Azure send their logs within a few minutes, so events appear in Search within about 10 minutes; check the Health page if they do not, and the Collector's events in the Application log of Event Viewer.")
+		} else {
+			a.Steps = append(a.Steps, "Events appear in Search within a minute; check the Health page if they do not, and the Collector's events in the Application log of Event Viewer.")
+		}
 	}
 	return a, nil
 }

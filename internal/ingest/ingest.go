@@ -37,6 +37,14 @@ type Event struct {
 	// whose batches mix devices. It is recorded in the event's
 	// signalith_* fields.
 	Origin Origin
+	// ID is the event's document ID, "" to let the request's position
+	// (IngestBody) or OpenSearch pick one. Parsers set it when the raw
+	// line identifies the event (network sensors, see sensorDocID), so the
+	// same line sent again, even in another batch, is stored once.
+	ID string
+	// Sensor is what a sensor's status line says (tag sensor.status), for
+	// the agent inventory; it is not stored with the event.
+	Sensor *SensorStatus
 }
 
 // DefaultMaxEventAge is how old an event's own time may be and still be
@@ -100,6 +108,9 @@ type Pipeline struct {
 	// liveMaxAge, when set (SetMaxEventAge), replaces MaxEventAge: the
 	// retention policies it follows can change while the pipeline runs.
 	liveMaxAge atomic.Int64
+	// urlQuery is ingest.url_query (SetURLQuery): 0 keeps the query
+	// strings of web addresses, 1 hides their values, 2 drops them.
+	urlQuery atomic.Int32
 
 	stats   Stats
 	names   fieldBudget
@@ -220,6 +231,9 @@ type Result struct {
 	// Hosts are the first few host names in the events, to tell agents
 	// apart in Health page warnings (see NotePlaintext).
 	Hosts []string `json:"-"`
+	// Sensor is the last sensor status line among the events that were
+	// stored (in the order they came), nil when there is none.
+	Sensor *SensorStatus `json:"-"`
 }
 
 // maxResultHosts caps Result.Hosts, and maxHostName the length of a name
@@ -240,6 +254,11 @@ func (r *Result) noteHost(ev *Event) {
 }
 
 func (r *Result) add(o *Result) {
+	// Batches are written in the order they came: a later one's status
+	// line is the newer.
+	if o.Sensor != nil {
+		r.Sensor = o.Sensor
+	}
 	r.Indexed += o.Indexed
 	r.Rejected += o.Rejected
 	r.Duplicates += o.Duplicates
@@ -313,12 +332,14 @@ func (p *Pipeline) write(ctx context.Context, events []Event, ids []string) (*Re
 	// whose mapping is near OpenSearch's limit, asked once per index.
 	budget := namesBudget(p.servers())
 	full := map[string]bool{}
+	urlQuery := p.URLQuery()
 	for i := range events {
 		ev := &events[i]
 		if ev.Fields == nil {
 			ev.Fields = map[string]any{}
 		}
 		nReserved := p.dropReserved(ev.Fields, &reserved)
+		ApplyURLQuery(ev.Fields, urlQuery)
 		// After the drop, so only Signalith sets these. The sample data
 		// carries its own marker instead.
 		if p.SampleMark == "" {
@@ -351,8 +372,8 @@ func (p *Pipeline) write(ctx context.Context, events []Event, ids []string) (*Re
 			ev.Fields["dropped_fields"] = int64(n)
 			res.FieldsDropped += n
 		}
-		doc := store.IndexedDoc{Index: index, Doc: ev.Document()}
-		if i < len(ids) {
+		doc := store.IndexedDoc{Index: index, Doc: ev.Document(), ID: ev.ID}
+		if doc.ID == "" && i < len(ids) {
 			doc.ID = ids[i]
 		}
 		docs = append(docs, doc)
@@ -381,6 +402,7 @@ func (p *Pipeline) write(ctx context.Context, events []Event, ids []string) (*Re
 	errs, res.Duplicates = store.WithoutConflicts(errs, docs)
 	res.Rejected = len(errs)
 	res.Indexed = len(docs) - len(errs)
+	res.Sensor = storedSensor(events, errs, recv)
 	for _, e := range errs {
 		if temporary(e) {
 			res.Temporary++
@@ -410,6 +432,27 @@ func (p *Pipeline) write(ctx context.Context, events []Event, ids []string) (*Re
 			"fields", strings.Join(reserved, ", "))
 	}
 	return res, nil
+}
+
+// storedSensor returns the last sensor status line among the events that
+// were stored (errs are the ones that were not). Which line is newest
+// goes by the order they came, never by the time a line gives itself: a
+// sensor whose clock ran ahead, or a sender writing a time far ahead,
+// would otherwise keep its status forever. That time is kept for the
+// page, but never later than when the line arrived (recv).
+func storedSensor(events []Event, errs []store.BulkItemError, recv time.Time) *SensorStatus {
+	var out *SensorStatus
+	for i := len(events) - 1; i >= 0 && out == nil; i-- {
+		s := events[i].Sensor
+		if s == nil || slices.ContainsFunc(errs, func(e store.BulkItemError) bool { return e.Pos == i }) {
+			continue
+		}
+		out = s
+	}
+	if out != nil && (out.At.IsZero() || out.At.After(recv)) {
+		out.At = recv
+	}
+	return out
 }
 
 // dropReserved removes the fields a sender may not set (see Reserved)
@@ -605,12 +648,26 @@ func (e Event) Document() map[string]any {
 func Normalize(tag string, r map[string]any, now time.Time) Event {
 	var ev Event
 	switch {
+	case tag == SensorStatusTag:
+		ev = parseSensorStatus(r)
 	case isWazuhTag(tag) || IsWazuhAlert(r):
 		ev = parseWazuhRecord(r)
+	case isZeekTag(tag) || (!isSuricataTag(tag) && IsZeekRecord(r)):
+		ev = parseZeekRecord(tag, r)
+	case isSuricataTag(tag) || IsSuricataEVE(r):
+		ev = parseSuricataRecord(r)
+	case tag == CloudTrailTag || strings.HasPrefix(tag, CloudTrailTag+".") || IsCloudTrailRecord(r):
+		ev = ParseCloudTrail(r)
+	case tag == AzureTag || strings.HasPrefix(tag, AzureTag+".") || IsAzureRecord(r):
+		ev = ParseAzure(r)
+	case tag == O365Tag || strings.HasPrefix(tag, O365Tag+".") || IsO365Record(r):
+		ev = ParseO365(r)
 	case isWindowsRecord(tag, r):
 		ev = parseWindows(r)
 	case strings.HasPrefix(tag, "linux.clamav"):
 		ev = parseClamAVRecord(r)
+	case strings.HasPrefix(tag, WebTag):
+		ev = parseWebRecord(r)
 	case strings.HasPrefix(tag, "linux.audit"):
 		ev = parseAuditdRecord(r)
 	case strings.HasPrefix(tag, "linux.journal") || has(r, "MESSAGE"):

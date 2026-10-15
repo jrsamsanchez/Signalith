@@ -13,6 +13,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/splcheck"
 )
@@ -266,6 +267,32 @@ func packThrottle(category, datamodel string) []string {
 		return []string{"host", "process_path", "target_process_path"}
 	case "pipe_created":
 		return []string{"host", "process_path", "pipe_name"}
+	case "raw_access_thread":
+		return []string{"host", "process_path", "device"}
+	case "windefend":
+		// A Defender event: which one, and the threat, file or setting.
+		return []string{"host", "signature_id", "signature", "file_path", "setting"}
+	case "application", "code_integrity":
+		// An Application or Code Integrity event: which program logged
+		// which one.
+		return []string{"host", "provider", "signature_id"}
+	case "firewall_as":
+		// A firewall rule or setting changed: which change, and the rule
+		// and program.
+		return []string{"host", "signature_id", "firewall_rule_name", "firewall_application_path"}
+	case "bits_client":
+		// A BITS job: what it downloads, where to.
+		return []string{"host", "signature_id", "bits_remote_name", "bits_local_name"}
+	case "appxdeployment_server":
+		// An app package: which event, and which package from where.
+		return []string{"host", "signature_id", "appx_package_full_name", "appx_path"}
+	case "wmi":
+		// A WMI event: which one, and what it ran.
+		return []string{"host", "signature_id", "wmi_operation", "wmi_consumer"}
+	case "system_event":
+		// A System log event: which one, and what it names first (the
+		// service of a service event).
+		return []string{"host", "provider", "signature_id", "system_param1"}
 	case "auditd":
 		// An audit record: its type, program and what it ran or touched.
 		return []string{"host", "auditd_type", "auditd_exe", "process", "auditd_name"}
@@ -279,6 +306,9 @@ func packThrottle(category, datamodel string) []string {
 		return []string{"host", "process_path", "registry_path"}
 	case "network_resolution":
 		return []string{"host", "process_path", "query"}
+	case "web":
+		// A web request: the server, the client and the path asked for.
+		return []string{"host", "src", "uri_path"}
 	case "image_load":
 		return []string{"host", "process_path", "loaded_file_path"}
 	case "script":
@@ -328,17 +358,43 @@ func PackDetection(p *Pack, r PackRule, src []byte) (*Detection, error) {
 		return nil, err
 	}
 	category := meta.Logsource.Category
-	if category == "" && strings.EqualFold(meta.Logsource.Service, "auditd") {
-		category = "auditd"
+	if service := strings.ToLower(meta.Logsource.Service); category == "" {
+		switch {
+		case service == "auditd", service == "windefend", service == "application":
+			category = service
+		case service == "codeintegrity-operational":
+			category = "code_integrity"
+		default:
+			if _, ok := ingest.NamedChannelServices[service]; ok {
+				category = ingest.NamedChannelCategory(service)
+			}
+		case service == "system" && q.Datamodel == "Other":
+			category = "system_event"
+		}
 	}
 	d.Throttle = Throttle{Window: "24h", Fields: packThrottle(strings.ToLower(category), q.Datamodel)}
 	score := sigmaRisk[strings.ToLower(meta.Level)]
 	if score == 0 {
 		score = 25
 	}
-	d.Risk = &Risk{Score: score, Objects: []RiskObject{{Field: "user", Type: "user"}, {Field: "host", Type: "system"}}}
+	d.Risk = &Risk{Score: score, Objects: riskObjects(q.Datamodel)}
 	if l := strings.ToLower(meta.Level); l == "low" || l == "informational" {
 		d.Risk.Only = true
+	}
+	if ncat := sigmaNetworkCategory(map[string]any{
+		"product": meta.Logsource.Product, "category": meta.Logsource.Category, "service": meta.Logsource.Service,
+	}); ncat != "" {
+		// A network rule: about the address that sent the traffic, not
+		// the sensor ($host$) that saw it.
+		d.Title = strings.TrimSpace(meta.Title) + " from $src$"
+		d.Throttle.Fields = packNetworkThrottle(ncat, q.Datamodel)
+		d.Risk.Objects = []RiskObject{{Field: "src", Type: "system"}, {Field: "user", Type: "user"}}
+		if ncat == zeekCategoryPrefix+"x509" {
+			// A certificate has no client or account: it is about the
+			// sensor that saw it.
+			d.Title = strings.TrimSpace(meta.Title) + " seen by $host$"
+			d.Risk.Objects = []RiskObject{{Field: "host", Type: "system"}}
+		}
 	}
 	tags := []string{"sigma", p.Name}
 	if meta.Logsource.Product != "" {

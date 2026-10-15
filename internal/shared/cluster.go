@@ -35,14 +35,22 @@ const (
 // level 1 ignores them, so the level is raised only once every server
 // seen lately reads level 2 (RaiseLevel), and from then on an older
 // version refuses to start rather than keep users of its own.
+//
+// Level 3 keeps the settings of the Settings page in the shared settings
+// too, and has each server run the requests that name it (a restart of
+// these servers, one at a time), so it is raised the same way.
 const (
 	LevelMin = 1
-	LevelMax = 2
+	LevelMax = LevelAPITokens
 )
 
 // LevelSharedUsers is the level from which users are kept in the shared
 // settings.
 const LevelSharedUsers = 2
+
+// LevelSharedSettings is the level from which the settings of the
+// Settings page are kept in the shared settings.
+const LevelSharedSettings = 3
 
 // The names of the importers of users and of the directory sign-in
 // settings in cluster.import.done: users become shared once both ran.
@@ -50,6 +58,10 @@ const (
 	ImportUsers     = "users"
 	ImportDirectory = "directory"
 )
+
+// ImportSettings is the name of the importer of the founder's settings in
+// cluster.import.done: settings become shared once it ran.
+const ImportSettings = "settings"
 
 // Import states.
 const (
@@ -119,13 +131,26 @@ type ClusterBody struct {
 	// Builtin is the user name of the built-in admin, set by the users
 	// importer: it is fixed for the cluster from then on.
 	Builtin string `json:"builtin,omitempty"`
+	// BuiltinPrev is the built-in admin's name before a rename (signalith
+	// cluster apply), set only while the rename is under way: until it is
+	// cleared, a user document of either name may be the built-in admin.
+	BuiltinPrev string `json:"builtin_prev,omitempty"`
 	// Merged lists the servers whose files were merged in when they
 	// joined (signalith join --merge).
 	Merged map[string]json.RawMessage `json:"merged,omitempty"`
 	// Migrations holds, per migration run once for the cluster, when it
 	// ran.
 	Migrations map[string]string `json:"migrations,omitempty"`
-	Extra      `json:"-"`
+	// Removed lists the servers removed from the cluster, newest last:
+	// such a server is never given the cluster key again, and does not add
+	// itself back to the keyring.
+	Removed []RemovedServer `json:"removed,omitempty"`
+	// LevelVersions holds, per level (as a decimal string), the version
+	// of the server that raised the cluster to it, so an older version
+	// that refuses to start can name the version to install. Versions
+	// before it keep it through Extra.
+	LevelVersions map[string]string `json:"level_versions,omitempty"`
+	Extra         `json:"-"`
 }
 
 // ErrClusterExists is a founding that found a cluster already there.
@@ -134,12 +159,21 @@ var ErrClusterExists = errors.New("the servers sharing this OpenSearch are a clu
 // LevelError is a cluster whose stored formats this version cannot use.
 type LevelError struct {
 	Level int
+	// Since is the version of the server that raised the cluster to
+	// Level, "" when the cluster document does not say; Version is this
+	// server's.
+	Since   string
+	Version string
 	// max is the highest level this version reads, LevelMax when 0.
 	max int
 }
 
 func (e *LevelError) Error() string {
 	top := cmp.Or(e.max, LevelMax)
+	if e.Level > top && e.Since != "" {
+		return fmt.Sprintf("This server runs %s; the cluster uses a newer format since %s was installed. Install %s or newer.",
+			cmp.Or(e.Version, "an older version"), e.Since, e.Since)
+	}
 	if e.Level > top {
 		return fmt.Sprintf("the shared settings in OpenSearch are at level %d, which a newer version of Signalith wrote; this version reads up to level %d. "+
 			"Install the version the other servers run, or a newer one", e.Level, top)
@@ -178,6 +212,12 @@ type Importer struct {
 	Source func() (string, error)
 	// Run imports it, by the user by.
 	Run func(ctx context.Context, by string) error
+	// Hold, when set, holds the source from before it is read until the
+	// import is recorded, and returns the release. A change of the source
+	// made meanwhile waits for it, and then finds the source moved; one
+	// made after the read would otherwise be lost, also when there was
+	// nothing to import and Run never ran.
+	Hold func() (release func())
 	// MinLevel is the cluster level the importer needs (0 for any): one
 	// whose content a server of a version that reads only lower levels
 	// would ignore waits until the level is raised, and then runs as a
@@ -216,6 +256,9 @@ func (rt *Runtime) importOne(ctx context.Context, by string, im Importer, check 
 	}
 	if im.MinLevel > body.Level {
 		return nil
+	}
+	if im.Hold != nil {
+		defer im.Hold()()
 	}
 	hash := importNone
 	if im.Source != nil {

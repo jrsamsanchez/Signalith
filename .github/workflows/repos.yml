@@ -1,0 +1,30 @@
+name: Package repositories
+# Installs the latest release from the published apt and dnf repositories
+# (https://signalith.io/apt and /rpm) the way docs/install-packages.md says,
+# after every website publish and once a week, so a broken publish or an
+# expiring signing key shows up here first.
+on:
+  workflow_run:
+    workflows: [Website]
+    types: [completed]
+  schedule:
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  install:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Install the latest release from the repositories
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=50" \
+            --jq '[.[] | select(.draft | not) | select(.prerelease | not) | select(.tag_name | test("^v[0-9]"))][0].tag_name')
+          if [ -z "$tag" ]; then echo "No release yet."; exit 0; fi
+          .github/scripts/install-from-repos.sh https://signalith.io "${tag#v}"

@@ -10,6 +10,7 @@ const el = (tag, attrs = {}, ...children) => {
   const n = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
     if (k === 'class') n.className = v;
+    else if (BOOL_ATTRS.has(k) && (v === false || v == null)) continue; // disabled: false leaves it enabled
     else if (k.startsWith('on')) n.addEventListener(k.slice(2), v);
     else n.setAttribute(k, TEXT_ATTRS.has(k) ? visibleText(v) : v);
   }
@@ -20,6 +21,9 @@ const el = (tag, attrs = {}, ...children) => {
   return n;
 };
 const TEXT_ATTRS = new Set(['title', 'aria-label', 'data-label']);
+// BOOL_ATTRS are on whenever present, whatever their value: false leaves
+// them out.
+const BOOL_ATTRS = new Set(['disabled', 'hidden', 'checked', 'required', 'readonly', 'open', 'selected', 'multiple']);
 
 // ---------- hidden characters ----------
 // Some Unicode characters are invisible or reorder the text around them:
@@ -502,8 +506,9 @@ slideOver.addEventListener('change', syncInspectInert);
 const JUMP_WORDS = {
   dashboards: 'home overview posture charts', findings: 'alerts incidents queue triage', cases: 'cases investigations',
   risk: 'risk scores', vulns: 'vulnerabilities cve scan scanner nmap ports open services patch exposure kev exploited', search: 'query events logs hunt', intel: 'threat intel ioc indicators feeds',
-  detections: 'rules sigma alerts', coverage: 'mitre attack matrix techniques tactics', assets: 'hosts users identities cmdb priority',
-  data: 'ingest agents fluent bit sources onboarding syslog firewall switch router cisco wazuh ossec alerts sample demo test data try example', retention: 'retention rotation archive restore delete storage disk guard policies',
+  detections: 'rules sigma alerts', coverage: 'mitre attack matrix techniques tactics',
+  compliance: 'compliance audit auditor evidence report controls framework nist 800-53 cis pci dss iso 27001 hipaa soc 2 soc2', assets: 'hosts users identities cmdb priority',
+  data: 'ingest agents fluent bit sources onboarding syslog firewall switch router cisco wazuh ossec alerts sample demo test data try example zeek suricata ids ips network sensor span mirror pfsense opnsense security onion', retention: 'retention rotation archive restore delete storage disk guard policies',
   health: 'status opensearch ingest', help: 'help syntax language commands',
   servers: 'cluster nodes servers background jobs leader failover standby readyz',
   users: 'accounts people roles permissions ldap active directory sign-in passwords',
@@ -511,6 +516,7 @@ const JUMP_WORDS = {
   respond: 'response actions respond block ip firewall opnsense pfsense webhook shuffle script isolate disable account soar playbook',
   playbooks: 'playbooks automation soar workflow runbook automatic response steps',
   approvals: 'approvals approve reject pending waiting playbook runs',
+  sensors: 'network sensors zeek suricata ids rules tuning disable threshold suppress local rules sid packet drops capture span mirror',
   security: 'hardening encryption certificate authority ca tls https keys permissions bitlocker luks',
   settings: 'configuration config server opensearch syslog listen address port tls certificate ai assistant model api key restart yaml',
 };
@@ -896,9 +902,15 @@ const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
 // (#query-hl), so the analyst types plain text and still sees commands,
 // functions, keywords and values apart. The Query guide uses the same
 // colouring for its examples.
-const lang = { commands: ['stats', 'timechart', 'top', 'where', 'sort', 'head', 'table', 'rename', 'enrich', 'threatmatch', 'intel'], functions: ['count', 'dc', 'sum', 'avg', 'min', 'max'] };
-const QL_KEYWORDS = new Set(['and', 'or', 'not', 'in', 'as', 'by', 'over']);
+const lang = {
+  commands: ['stats', 'eventstats', 'timechart', 'top', 'rare', 'where', 'eval', 'rex', 'dedup', 'fillnull', 'sort', 'head', 'table', 'rename', 'enrich', 'threatmatch', 'intel'],
+  functions: ['count', 'dc', 'sum', 'avg', 'min', 'max', 'median', 'perc95', 'stdev', 'var', 'range', 'mode', 'values', 'list', 'first', 'last', 'earliest', 'latest'],
+  // eval and where expression functions (query.EvalFuncs).
+  evalFunctions: ['abs', 'case', 'ceil', 'ceiling', 'cidrmatch', 'coalesce', 'exp', 'false', 'floor', 'if', 'in', 'isnotnull', 'isnull', 'isnum', 'isstr', 'len', 'like', 'ln', 'log', 'lower', 'ltrim', 'match', 'max', 'md5', 'min', 'mvappend', 'mvcount', 'mvdedup', 'mvindex', 'mvjoin', 'mvsort', 'now', 'null', 'nullif', 'pow', 'replace', 'round', 'rtrim', 'sha1', 'sha256', 'split', 'sqrt', 'strftime', 'strptime', 'substr', 'time', 'tonumber', 'tostring', 'trim', 'true', 'typeof', 'upper', 'urldecode'],
+};
+const QL_KEYWORDS = new Set(['and', 'or', 'not', 'in', 'as', 'by', 'over', 'xor', 'like']);
 const QL_FUNCS = new Set(lang.functions);
+const QL_EVAL_FUNCS = new Set(lang.evalFunctions);
 const QL_KEYS = new Set(['datamodel', 'index', 'earliest', 'latest']);
 
 // tokenizeQuery splits query text into [text, class] pieces.
@@ -935,7 +947,8 @@ function tokenizeQuery(text) {
       const lw = w.toLowerCase();
       const next = (text.slice(j).match(/^\s*(\S)/) || [])[1];
       if (afterPipe) { cls = 'tok-cmd'; cmd = lw; } else if (QL_KEYWORDS.has(lw) && (cmd || w === w.toUpperCase())) cls = 'tok-kw';
-      else if (QL_FUNCS.has(lw) && (next === '(' || (lw === 'count' && (cmd === 'stats' || cmd === 'timechart')))) cls = 'tok-fn';
+      else if ((QL_FUNCS.has(lw) || /^perc\d{1,2}$/.test(lw)) && (next === '(' || (lw === 'count' && ['stats', 'eventstats', 'timechart'].includes(cmd)))) cls = 'tok-fn';
+      else if (QL_EVAL_FUNCS.has(lw) && next === '(' && (cmd === 'eval' || cmd === 'where')) cls = 'tok-fn';
       else if (!cmd && QL_KEYS.has(lw) && next === '=') cls = 'tok-cmd';
       else if (afterOp) cls = 'tok-str';
       afterPipe = false;
@@ -1120,9 +1133,11 @@ function updateSuggestions() {
   } else if (word.length > 0 && !/[=<>]\s*$/.test(before)) {
     const inSearch = !before.includes('|');
     items = fields.map((f) => ({ text: f.name + (inSearch ? '=' : ''), kind: f.type }));
+    // eval and where take functions too: len(, lower(, if( ...
+    if (/\|\s*(eval|where)\b[^|]*$/i.test(before)) items.push(...lang.evalFunctions.map((f) => ({ text: f + '(', kind: 'function' })));
     if (inSearch) items.push({ text: 'datamodel=', kind: 'source' }, { text: 'earliest=', kind: 'time' });
   } else if (/datamodel=$/i.test(before)) {
-    items = ['Authentication', 'Endpoint', 'Network_Traffic', 'Change', 'Malware', 'Filesystem', 'Registry', 'Network_Resolution', 'Image_Load', 'Script', 'Inventory', 'Configuration_Check', 'Alerts', 'Other'].map((m) => ({ text: m + ' ', kind: 'model' }));
+    items = ['Authentication', 'Endpoint', 'Network_Traffic', 'Change', 'Malware', 'Filesystem', 'Registry', 'Network_Resolution', 'Intrusion_Detection', 'Web', 'Certificates', 'File_Transfers', 'Image_Load', 'Script', 'Inventory', 'Configuration_Check', 'Alerts', 'Other'].map((m) => ({ text: m + ' ', kind: 'model' }));
   }
   const w = word.toLowerCase();
   suggestions = items.filter((i) => i.text.toLowerCase().startsWith(w) && i.text.toLowerCase() !== w).slice(0, 8);
@@ -1246,7 +1261,10 @@ function readSpec() {
 function updateBuilderVisibility() {
   const mode = $('b-mode').value;
   $('b-agg-group').classList.toggle('hidden', mode === 'events');
-  $('b-agg-field-wrap').classList.toggle('hidden', $('b-agg').value === 'count');
+  // "The latest event for each" only needs the fields (dedup).
+  $('b-agg-func-wrap').classList.toggle('hidden', mode === 'latest');
+  $('b-agg-field-wrap').classList.toggle('hidden', mode === 'latest' || $('b-agg').value === 'count');
+  $('b-by-label').textContent = mode === 'latest' ? 'Fields' : 'Split by';
 }
 let buildTimer = null;
 function builderChanged() {
@@ -1659,7 +1677,29 @@ function drawBars(box, items, valueName) {
 
 // Events read best as a list: the time, then the raw text with the key
 // fields under it. Columns added by | enrich follow the field they describe.
-const EVENT_FIELDS = ['host', 'sourcetype', 'action', 'user', 'src', 'dest', 'process_name', 'signature'];
+const EVENT_FIELDS = ['host', 'sourcetype', 'action', 'user', 'src', 'dest', 'process_name', 'signature', 'ja4', 'ja3', 'ja3s', 'ja4s'];
+// PIVOTS are fields whose value names the same thing in every event that
+// has it, whatever the search: a TLS fingerprint (one client program, or
+// one server's answer) or one connection seen by Zeek and Suricata. The
+// cell menu searches everything with the value, and who has it.
+const PIVOTS = {
+  ja3: { what: 'TLS client fingerprint', by: 'src', who: 'clients', other: 'dest', others: 'servers' },
+  ja4: { what: 'TLS client fingerprint', by: 'src', who: 'clients', other: 'dest', others: 'servers' },
+  ja3s: { what: 'TLS server fingerprint', by: 'dest', who: 'servers', other: 'src', others: 'clients' },
+  ja4s: { what: 'TLS server fingerprint', by: 'dest', who: 'servers', other: 'src', others: 'clients' },
+  community_id: { what: 'connection', conn: true },
+};
+function pivotItems(item, field, value) {
+  const p = PIVOTS[field];
+  if (!p || value == null || value === '') return [];
+  const term = field + '=' + quoteValue(value);
+  const run = (q) => { setQuery(q); runSearch(); };
+  if (p.conn) return [item('network', 'Show this connection in every log', () => run(term + '\n| sort _time'))];
+  return [
+    item('fingerprint', `Search every event with this ${p.what}`, () => run(term)),
+    item('chart-bar', `List the ${p.who} with this ${p.what}`, () => run(`${term}\n| stats count, dc(${p.other}) as ${p.others} by ${p.by}\n| sort -count`)),
+  ];
+}
 function renderEvents(box, res, opts) {
   const rows = res.rows || [];
   if (!rows.length) {
@@ -1818,7 +1858,7 @@ function exportResults() {
 // ---------- histogram ----------
 // Events over time for the search part of the query, as a strip of bars
 // above the results. Skipped when a command before any summary drops
-// events (where, threatmatch, head), since the bars would overcount.
+// events (where, threatmatch, head, dedup), since the bars would overcount.
 const HIST_SPAN = { '-15m': '30s', '-1h': '1m', '-4h': '5m', '-24h': '30m', '-7d': '3h', '-30d': '12h' };
 function hideHistogram() {
   const box = $('histogram');
@@ -1829,7 +1869,7 @@ function hideHistogram() {
 async function loadHistogram(seq, query, earliest) {
   const box = $('histogram');
   const segs = pipeSegments(query);
-  if (['where', 'threatmatch', 'head'].includes(commandOf(segs[1]))) { hideHistogram(); return; }
+  if (['where', 'threatmatch', 'head', 'dedup'].includes(commandOf(segs[1]))) { hideHistogram(); return; }
   const search = segs[0].trim() || '*';
   const ownTime = /\b(earliest|latest)\s*=/i.test(search);
   const fetchHist = (span) => api('api/search', { query: search + '\n| timechart ' + (span ? 'span=' + span + ' ' : '') + 'count', earliest });
@@ -1951,6 +1991,7 @@ function showCellMenu(ev, col, value, kind, row, canSort) {
   const field = col === '_time' ? null : col;
   const items = [];
   if (field && kind !== 'timechart') {
+    items.push(...pivotItems(item, field, value));
     items.push(item('filter', `Filter to ${field}=${fmtValue(value)}`, () => addSearchTerm(field + '=' + quoteValue(value))));
     items.push(item('filter-x', `Exclude ${field}=${fmtValue(value)}`, () => addSearchTerm(field + '!=' + quoteValue(value))));
     items.push(item('chart-bar', `Count events by ${field}`, () => {
@@ -2191,6 +2232,9 @@ const starters = [
   ['Successful logon after failures (password spraying)', 'datamodel=Authentication\n| stats count by src, action\n| sort src'],
   ['New local accounts created', 'datamodel=Change object_category=user action=created\n| table _time, host, user, object'],
   ['Encoded PowerShell commands (T1059.001)', 'datamodel=Endpoint process_name=powershell.exe process="*-enc*"\n| table _time, host, user, process'],
+  ['Latest logon for each user', 'datamodel=Authentication action=success\n| dedup user\n| table _time, user, src, dest'],
+  ['Uploads much larger than downloads (exfiltration)', 'datamodel=Network_Traffic bytes_out>1000000\n| eval ratio=round(bytes_out / bytes_in, 1)\n| where ratio > 10\n| table _time, src, dest, dest_port, bytes_out, bytes_in, ratio'],
+  ['Long command lines (T1027)', 'datamodel=Endpoint\n| where len(process) > 1000\n| table _time, host, user, process_name, process'],
   ['Rare processes across hosts', 'datamodel=Endpoint\n| stats dc(host) as hosts, count by process_name\n| where hosts < 2\n| sort count'],
   ['sudo to root by user', 'datamodel=Authentication app=sudo action=success\n| top limit=20 src_user'],
   ['Connections to uncommon ports', 'datamodel=Network_Traffic dest_port>1024\n| stats count by dest, dest_port, process_name\n| sort -count'],
@@ -2342,6 +2386,20 @@ $('osquery-platform').addEventListener('change', loadAgentConfig);
 $('sysmon').addEventListener('change', loadAgentConfig);
 $('sysmon-linux').addEventListener('change', loadAgentConfig);
 $('powershell').addEventListener('change', loadAgentConfig);
+['sensor-zeek', 'sensor-suricata', 'sensor-protocols'].forEach((id) => $(id).addEventListener('change', loadAgentConfig));
+// The paths are asked for as they are typed, like the server address.
+let sensorPathTimer = 0;
+['sensor-zeek-dir', 'sensor-eve-path', 'aws-bucket', 'aws-queue'].forEach((id) => $(id).addEventListener('input', () => {
+  clearTimeout(sensorPathTimer);
+  sensorPathTimer = setTimeout(loadAgentConfig, 400);
+}));
+$('sensor-syslog').addEventListener('click', (e) => {
+  e.preventDefault();
+  const radio = document.querySelector('input[name=os][value=syslog]');
+  radio.checked = true;
+  radio.focus();
+  loadDataSource();
+});
 $('wazuh-syslog').addEventListener('click', (e) => {
   e.preventDefault();
   const radio = document.querySelector('input[name=os][value=syslog]');
@@ -2367,10 +2425,15 @@ agentServerEl.addEventListener('change', async () => {
 // in storage; changing the name or the source drops it, so the next copy
 // makes a new token. "Use a token I already have" takes a pasted token
 // instead (checked here only).
-const AGENT_TOKEN_DEFAULTS = { linux: 'Linux servers', windows: 'Windows servers', otel: 'OpenTelemetry Collector', osquery: 'osquery hosts' };
+const AGENT_TOKEN_DEFAULTS = { linux: 'Linux servers', windows: 'Windows servers', otel: 'OpenTelemetry Collector', osquery: 'osquery hosts', wazuh: 'Wazuh manager', sensor: 'Network sensor', aws: 'AWS CloudTrail', azure: 'Entra ID and Azure' };
+// AGENT_TOKEN_PURPOSES is the token purpose of a source whose agent is
+// another's: Fluent Bit on the Wazuh manager is a Linux agent, and the
+// Collectors that read AWS CloudTrail or Azure's event hub OpenTelemetry
+// Collectors.
+const AGENT_TOKEN_PURPOSES = { wazuh: 'linux', aws: 'otel', azure: 'otel' };
 const agentTokenNameKey = 'signalith.agentTokenName.';
 const agentTok = {
-  purpose: '', // linux, windows or otel: what the setup on screen is for
+  purpose: '', // linux, windows, otel, osquery, wazuh, sensor, aws or azure: what the setup on screen is for
   secret: '', // the token made on this page for name + purpose
   madeFor: '', // purpose + name the secret was made for
   made: null, // the token record of the secret, for the success line
@@ -2412,11 +2475,35 @@ function agentTokDefault() {
 // agentTokPurpose follows the source on screen: a new source starts with
 // its own name and no token.
 function agentTokPurpose(purpose) {
+  agentTokClusterCA();
   if (purpose === agentTok.purpose) return;
   agentTok.purpose = purpose;
   agentTok.touched = false;
   agentTokDrop();
   agentTokDefault();
+}
+
+// agentTokClusterCA adds, under the token, a line saying that agents
+// trust the cluster's certificate authority when this server uses it
+// (tls.cluster_ca in api/health), so one file works for every server.
+let agentTokCA = null;
+let agentTokCAAt = 0;
+function agentTokClusterCA() {
+  if (Date.now() - agentTokCAAt > 60000) agentTokCA = null;
+  if (!agentTokCA) {
+    agentTokCAAt = Date.now();
+    agentTokCA = api('api/health').then((h) => h && h.tls).catch(() => { agentTokCA = null; return null; });
+  }
+  agentTokCA.then((t) => {
+    let line = $('agent-cluster-ca');
+    if (!t || !t.cluster_ca || !t.ca_sha256) { if (line) line.remove(); return; }
+    if (!line) {
+      line = el('p', { id: 'agent-cluster-ca', class: 'hint agent-token__help' });
+      $('agent-token-help').after(line);
+    }
+    const fp = t.ca_sha256.split(':').slice(0, 8).join(':') + '…';
+    fill(line, 'Agents trust the cluster’s certificate authority (fingerprint ', el('span', { class: 'mono', title: t.ca_sha256 }, fp), '); one file works for every server.');
+  });
 }
 
 // agentTokDrop forgets the token made on this page; the config shows the
@@ -2429,6 +2516,7 @@ function agentTokDrop() {
   $('agent-token-made').classList.add('hidden');
   $('agent-token-made').replaceChildren();
   if (had && agentSetupData) agentSetupRender(agentSetupData);
+  if (had && typeof sensorSetupRender === 'function') sensorSetupRender();
 }
 
 function agentTokError(msg) {
@@ -2498,7 +2586,7 @@ async function agentTokEnsure() {
   const key = agentTokKey();
   agentTok.creating = (async () => {
     try {
-      const r = await api('api/agent-tokens', { name, purpose: agentTok.purpose });
+      const r = await api('api/agent-tokens', { name, purpose: AGENT_TOKEN_PURPOSES[agentTok.purpose] || agentTok.purpose });
       if (key !== agentTokKey()) return false; // the name changed meanwhile: ask again
       agentTok.secret = r.secret;
       agentTok.made = r.token || { name };
@@ -2508,6 +2596,7 @@ async function agentTokEnsure() {
       agentTokError('');
       agentTokMadeNote();
       if (agentSetupData) agentSetupRender(agentSetupData);
+      if (typeof sensorSetupRender === 'function') sensorSetupRender();
       if (typeof tokensReload === 'function') tokensReload();
       return true;
     } catch (e) {
@@ -2525,22 +2614,25 @@ function agentTokMadeNote() {
   const box = $('agent-token-made');
   box.replaceChildren(icon('circle-check'), el('div', {},
     el('b', {}, `Created token “${agentTok.made.name}”.`),
-    el('p', {}, 'It’s in the configuration below. Signalith shows it only now, so copy or download the configuration before you leave this page.')));
+    el('p', {}, typeof sensorSetupActive === 'function' && sensorSetupActive()
+      ? 'It’s in the line below. Signalith shows it only now, so copy the line before you leave this page.'
+      : 'It’s in the configuration below. Signalith shows it only now, so copy or download the configuration before you leave this page.')));
   box.classList.remove('hidden');
 }
 
 // agentTokFill puts the token into text, when there is one to put in.
 const agentTokFill = (text) => (agentTok.secret ? String(text).split(agentTokPlaceholder()).join(agentTok.secret) : String(text));
 // agentTokShown is what the page shows for text: the token made here, or
-// a chip where it will go.
-function agentTokShown(text) {
+// a chip where it will go (copyOnly: text that can only be copied).
+function agentTokShown(text, copyOnly) {
   const ph = agentTokPlaceholder();
   if (agentTok.secret && !agentTok.paste) return [agentTokFill(text)];
   const parts = String(text).split(ph);
   const out = [parts[0]];
   for (let i = 1; i < parts.length; i++) {
-    out.push(el('span', { class: 'agent-token-chip', title: 'Signalith puts the agent token here when you copy or download' },
-      icon('key-round', 'icon--xs'), agentTok.paste ? 'your token added when you copy or download' : 'token added when you copy or download'), parts[i]);
+    const when = copyOnly ? 'when you copy' : 'when you copy or download';
+    out.push(el('span', { class: 'agent-token-chip', title: 'Signalith puts the agent token here ' + when },
+      icon('key-round', 'icon--xs'), (agentTok.paste ? 'your token added ' : 'token added ') + when), parts[i]);
   }
   return out;
 }
@@ -2586,48 +2678,130 @@ async function agentSetupLoad() {
   const osq = os === 'osquery';
   // Wazuh: Fluent Bit on the Linux machine that runs the Wazuh manager.
   const wazuh = os === 'wazuh';
-  const host = otel ? $('otel-host').value : osq ? '' : os;
-  agentTokPurpose(otel ? 'otel' : osq ? 'osquery' : os);
-  $('otel-opts').classList.toggle('hidden', !otel);
+  // Network sensor: Fluent Bit on the Linux machine that runs Zeek or
+  // Suricata.
+  const sensor = os === 'sensor';
+  // AWS CloudTrail: an OpenTelemetry Collector, on Linux or Windows, that
+  // reads CloudTrail's bucket.
+  const aws = os === 'aws';
+  // Entra ID and Azure: an OpenTelemetry Collector that reads the event
+  // hub they send their logs to.
+  const azure = os === 'azure';
+  const cloud = aws || azure;
+  const collector = otel || cloud;
+  const host = collector ? $('otel-host').value : osq || sensor ? '' : os;
+  agentTokPurpose(otel ? 'otel' : osq ? 'osquery' : sensor ? 'sensor' : os);
+  $('aws-paths').classList.toggle('hidden', !aws);
+  $('sensor-opts').classList.toggle('hidden', !sensor);
+  $('sensor-paths').classList.toggle('hidden', !sensor);
+  $('sensor-note').classList.toggle('hidden', !sensor);
+  const zeek = $('sensor-zeek').checked;
+  const suricata = $('sensor-suricata').checked;
+  $('sensor-protocols-opt').classList.toggle('hidden', !(zeek && suricata));
+  $('sensor-zeek-row').classList.toggle('hidden', !zeek);
+  $('sensor-eve-row').classList.toggle('hidden', !suricata);
+  $('otel-opts').classList.toggle('hidden', !collector);
   $('osquery-opts').classList.toggle('hidden', !osq);
-  $('linux-opts').classList.toggle('hidden', host !== 'linux');
+  $('linux-opts').classList.toggle('hidden', host !== 'linux' || cloud);
   // The Collector reads Sysmon for Linux's events with Fluent Bit only.
   $('sysmon-linux').closest('label').classList.toggle('hidden', otel);
-  $('windows-opts').classList.toggle('hidden', host !== 'windows');
+  $('windows-opts').classList.toggle('hidden', host !== 'windows' || cloud);
   $('wazuh-note').classList.toggle('hidden', !wazuh);
   const osqName = { linux: 'Linux', windows: 'Windows', darwin: 'macOS' }[$('osquery-platform').value];
   $('agent-title').textContent = osq ? 'Manage ' + osqName + ' hosts with osquery' : otel ? 'Set up the OpenTelemetry Collector on ' + (host === 'windows' ? 'Windows' : 'Linux')
+    : aws ? 'Read AWS CloudTrail with the OpenTelemetry Collector on ' + (host === 'windows' ? 'Windows' : 'Linux')
+    : azure ? 'Read Entra ID and Azure logs with the OpenTelemetry Collector on ' + (host === 'windows' ? 'Windows' : 'Linux')
     : wazuh ? 'Set up Fluent Bit on the Wazuh manager'
+    : sensor ? 'Send network sensor logs with Fluent Bit'
     : 'Set up Fluent Bit on ' + (os === 'windows' ? 'Windows' : 'Linux');
   $('agent-sub').textContent = wazuh ? 'Do this once, on the Wazuh manager. Your Wazuh agents keep reporting to it as before.'
+    : aws ? 'Do this once, on a machine that can reach AWS and this server, such as a small EC2 instance.'
+    : azure ? 'Do this once, on a machine that can reach Azure and this server, such as a small Azure VM.'
+    : sensor ? 'Do this on the machine that runs Zeek or Suricata.'
     : 'Do this on each host you want to collect from.';
+  // Network sensor > Set up a new sensor: one line instead of a
+  // configuration (sensor-setup.js).
+  if (typeof sensorSetupSync === 'function' && sensorSetupSync(sensor)) return;
   const steps = $('agent-steps');
   const seq = ++agentSetupSeq;
   steps.setAttribute('aria-busy', 'true');
   if (!agentSetupConfig) agentSetupSkeleton();
   const q = wazuh ? new URLSearchParams({ os: 'linux', source: 'wazuh' })
+    : sensor ? new URLSearchParams({ os: 'linux', source: 'sensor', zeek, suricata, suricata_protocols: $('sensor-protocols').checked,
+      zeek_dir: $('sensor-zeek-dir').value.trim(), eve_path: $('sensor-eve-path').value.trim() })
+    : aws ? new URLSearchParams({ os, aws_bucket: $('aws-bucket').value.trim(), aws_queue: $('aws-queue').value.trim() })
+    : azure ? new URLSearchParams({ os })
     : new URLSearchParams({ os, source: $('linux-source').value, sysmon: (host === 'linux' ? !otel && $('sysmon-linux').checked : $('sysmon').checked), powershell: $('powershell').checked });
-  if (otel) q.set('collector', host);
+  if (collector) q.set('collector', host);
   if (osq) q.set('platform', $('osquery-platform').value);
   const server = agentServerValue();
   agentServerSent = server;
-  if (server) q.set('server', server);
+  agentDestLoad();
+  if (agentDest.to) q.set('to', agentDest.to);
+  else if (server) q.set('server', server);
   try {
     const a = await api('api/agents/config?' + q);
     if (seq !== agentSetupSeq) return;
     if (!server && agentServerFirst(a)) return loadAgentConfig();
     agentServerError('');
+    sensorFieldError('');
+    awsFieldError('');
     try {
-      if (server && server !== agentServerGuess) localStorage.setItem(agentServerKey, server);
+      if (agentDest.to) { /* one server's own address: not remembered */ }
+      else if (server && server !== agentServerGuess) localStorage.setItem(agentServerKey, server);
       else localStorage.removeItem(agentServerKey);
     } catch (_) { /* storage may be blocked */ }
     agentSetupRender(a);
   } catch (e) {
     if (seq !== agentSetupSeq) return;
-    if (e.field === 'server') agentServerError(e.message);
+    if (e.field === 'server' || e.field === 'to') agentServerError(e.message);
+    else if (sensor && ['tools', 'zeek_dir', 'eve_path'].includes(e.field)) sensorFieldError(e.field, e.message);
+    else if (aws && ['aws_bucket', 'aws_queue'].includes(e.field)) awsFieldError(e.field, e.message);
     else agentSetupError(e);
   } finally {
     if (seq === agentSetupSeq) steps.removeAttribute('aria-busy');
+  }
+}
+
+// sensorFieldError shows a network sensor option's error under it (field
+// tools, zeek_dir or eve_path), or clears them all when field is empty.
+function sensorFieldError(field, msg) {
+  const slots = { tools: ['sensor-tools-error', null], zeek_dir: ['sensor-zeek-dir-error', 'sensor-zeek-dir'], eve_path: ['sensor-eve-path-error', 'sensor-eve-path'] };
+  for (const [f, [errId, inputId]] of Object.entries(slots)) {
+    const on = f === field && msg;
+    const err = $(errId);
+    err.replaceChildren(...(on ? [icon('circle-alert'), msg.charAt(0).toUpperCase() + msg.slice(1) + (/[.?!]$/.test(msg) ? '' : '.')] : []));
+    err.classList.toggle('hidden', !on);
+    if (inputId) {
+      if (on) $(inputId).setAttribute('aria-invalid', 'true');
+      else $(inputId).removeAttribute('aria-invalid');
+    }
+  }
+  // nothing to show for a config that can't be made
+  if (field) {
+    agentSetupConfig = '';
+    $('agent-steps').replaceChildren();
+    agentFileEl.classList.add('hidden');
+  }
+}
+
+// awsFieldError shows a CloudTrail option's error under it (field
+// aws_bucket or aws_queue), or clears both when field is empty.
+function awsFieldError(field, msg) {
+  for (const f of ['aws_bucket', 'aws_queue']) {
+    const id = f === 'aws_bucket' ? 'aws-bucket' : 'aws-queue';
+    const on = f === field && msg;
+    const err = $(id + '-error');
+    err.replaceChildren(...(on ? [icon('circle-alert'), msg.charAt(0).toUpperCase() + msg.slice(1) + (/[.?!]$/.test(msg) ? '' : '.')] : []));
+    err.classList.toggle('hidden', !on);
+    if (on) $(id).setAttribute('aria-invalid', 'true');
+    else $(id).removeAttribute('aria-invalid');
+  }
+  // nothing to show for a config that can't be made
+  if (field) {
+    agentSetupConfig = '';
+    $('agent-steps').replaceChildren();
+    agentFileEl.classList.add('hidden');
   }
 }
 
@@ -2682,6 +2856,105 @@ function agentServerWarn(a) {
       ' (find it with ', el('code', {}, 'ipconfig'), ' on Windows or ', el('code', {}, 'ip addr'),
       ' on Linux), and allow port ' + port + ' through the firewall.')));
 }
+
+// ---------- add data: where agents send ----------
+// With several servers, Add data asks where agents send: the shared
+// address (a load balancer or DNS name in front of every server, the
+// public address) or one server's own, and says which servers the shared
+// address reaches (api/agents/destinations). With one server nothing shows.
+const agentDest = { loaded: false, to: '', typed: '', choices: [], warning: '' };
+
+async function agentDestLoad() {
+  if (agentDest.loaded) return;
+  agentDest.loaded = true;
+  try {
+    const d = await api('api/agents/destinations');
+    agentDest.choices = d.choices || [];
+    agentDest.warning = d.warning || '';
+  } catch (_) {
+    agentDest.choices = [];
+  }
+  agentDestRender();
+}
+
+function agentDestPick(to) {
+  if (to === agentDest.to) return;
+  const c = agentDest.choices.find((x) => x.id === to && x.kind !== 'shared');
+  if (to && !c) return;
+  if (!agentDest.to) agentDest.typed = agentServerEl.value;
+  agentDest.to = to;
+  agentServerEl.readOnly = !!to;
+  agentServerEl.value = to ? c.url : agentDest.typed || agentServerGuess;
+  agentServerError('');
+  agentDestRender();
+  const b = document.querySelector(`#agent-dest [data-to="${CSS.escape(to)}"]`);
+  if (b) b.focus();
+  loadAgentConfig();
+}
+
+function agentDestRender() {
+  let box = $('agent-dest');
+  const servers = agentDest.choices.filter((c) => c.kind !== 'shared');
+  if (servers.length < 2) {
+    if (box) box.remove();
+    return;
+  }
+  if (!box) {
+    box = el('div', { id: 'agent-dest', class: 'agent-dest' });
+    $('agent-server-warn').after(box);
+  }
+  const shared = agentDest.choices.find((c) => c.kind === 'shared') || {};
+  const choice = (to, label, title) => el('button', { type: 'button', role: 'radio', 'data-to': to, title,
+    'aria-checked': String(agentDest.to === to), tabindex: agentDest.to === to ? '0' : '-1' }, label);
+  const seg = el('div', { class: 'seg agent-dest__seg', role: 'radiogroup', 'aria-labelledby': 'agent-dest-label' },
+    choice('', 'Shared address', shared.url || ''),
+    ...servers.map((s) => choice(s.id, s.name + (s.kind === 'self' ? ' (this server)' : '') + ' only', s.url)));
+  seg.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-to]');
+    if (b) agentDestPick(b.dataset.to);
+  });
+  seg.addEventListener('keydown', (e) => {
+    const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+    if (!step) return;
+    e.preventDefault();
+    const all = [...seg.querySelectorAll('[data-to]')];
+    const i = all.findIndex((b) => b.dataset.to === agentDest.to);
+    agentDestPick(all[(i + step + all.length) % all.length].dataset.to);
+  });
+  box.replaceChildren(
+    el('div', { class: 'agent-addr__row' }, el('span', { class: 'label', id: 'agent-dest-label' }, 'Where do agents send?'), seg),
+    agentDestNote(shared, servers));
+}
+
+// agentDestNote says what the choice means: for the shared address, which
+// servers its name reaches; for one server, that its agents wait while
+// it is down.
+function agentDestNote(shared, servers) {
+  if (agentDest.to) {
+    const s = servers.find((x) => x.id === agentDest.to) || {};
+    return el('p', { class: 'hint' }, icon('info'), el('span', {},
+      `These agents send only to ${s.name}. While it is down they keep their events and wait; the shared address lets them carry on with another server.`));
+  }
+  let host = shared.url || '';
+  try { host = new URL(shared.url).hostname; } catch (_) { /* keep the address */ }
+  if (shared.problem || agentDest.warning) {
+    const text = shared.problem || agentDest.warning;
+    const cut = text.indexOf('. ');
+    return el('div', { class: 'alert', 'data-tone': 'warning', role: 'status' }, icon('triangle-alert'),
+      el('div', {}, el('b', {}, cut > 0 ? text.slice(0, cut + 1) : text), cut > 0 ? el('p', {}, text.slice(cut + 2)) : null));
+  }
+  if ((shared.reaches || []).length) {
+    return el('p', { class: 'hint' }, icon('circle-check'), el('span', {}, `${host} reaches ${agentDestList(shared.reaches)}.`));
+  }
+  if ((shared.resolves || []).length) {
+    const addrs = shared.resolves.map((r) => r.addr).join(', ');
+    return el('p', { class: 'hint' }, icon('circle-check'), el('span', {},
+      `${host} points at ${addrs}, none of the servers’ own addresses: a load balancer that passes agents on to them.`));
+  }
+  return el('p', { class: 'hint' }, icon('info'), el('span', {}, 'Agents send to the public address, which should reach every server.'));
+}
+
+const agentDestList = (list) => list.length < 2 ? list.join('') : list.slice(0, -1).join(', ') + ' and ' + list[list.length - 1];
 
 function agentSetupRender(a) {
   agentSetupData = a;
@@ -2929,15 +3202,18 @@ try { syslogState.vendor = localStorage.getItem(syslogVendorKey) || 'rsyslog'; }
 // setup lives in antivirus.js.
 function loadDataSource() {
   const src = document.querySelector('input[name=os]:checked').value;
-  $('agent-setup').classList.toggle('hidden', src === 'syslog' || src === 'antivirus');
+  $('agent-setup').classList.toggle('hidden', src === 'syslog' || src === 'antivirus' || src === 'm365');
   $('syslog-setup').classList.toggle('hidden', src !== 'syslog');
   $('antivirus-setup').classList.toggle('hidden', src !== 'antivirus');
+  $('m365-setup').classList.toggle('hidden', src !== 'm365');
+  if (src === 'm365') return typeof m365Open === 'function' ? m365Open() : null;
   if (src === 'antivirus') return typeof antivirusOpen === 'function' ? antivirusOpen() : null;
   return src === 'syslog' ? syslogOpen() : loadAgentConfig();
 }
 
 // pickDataSource selects a source card on the Add data page: linux,
-// windows, syslog, antivirus or otel. It is false for anything else.
+// windows, syslog, antivirus, otel, osquery, wazuh, sensor, aws, azure or m365. It is false
+// for anything else.
 function pickDataSource(src) {
   const r = document.querySelector(`input[name=os][value="${CSS.escape(String(src))}"]`);
   if (r) r.checked = true;
@@ -2948,6 +3224,13 @@ function pickDataSource(src) {
 // such as the Malware dashboard when it has no events yet.
 function openAntivirusSetup() {
   pickDataSource('antivirus');
+  showPage('data');
+}
+
+// openSensorSetup is the way to the Network sensor option from other
+// pages, such as the Network dashboard when it has no events yet.
+function openSensorSetup() {
+  pickDataSource('sensor');
   showPage('data');
 }
 
@@ -3650,7 +3933,7 @@ async function loadHealth(quiet) {
   st.busy = true;
   st.tried = Date.now();
   try {
-    const h = await api('api/health');
+    const h = await api('api/health?scope=cluster');
     st.data = h;
     st.at = Date.now();
     st.failed = false;
@@ -3779,15 +4062,58 @@ function healthPageRender(h) {
       healthPageRow('database', 'OpenSearch', os.url || '', osRow[0], osRow[1], osRow[2]),
       healthPageRow('inbox', 'Ingest', 'api/ingest', ingRow[0], ingRow[1], ingRow[2]),
       healthPageRow('server', 'Signalith server', h.version ? 'Version ' + h.version : '', '', 'Running',
-        h.config_file ? ['Config file ', el('code', {}, h.config_file)] : can('admin') ? 'No config file.' : '')));
+        h.config_file ? ['Config file ', el('code', {}, h.config_file)] : can('admin') ? 'No config file.' : ''),
+      h.sensors ? healthSensorRow(h.sensors) : null));
   const card = el('div', { class: 'card' },
     el('div', { class: 'card__head' }, el('div', {}, el('h3', { class: 'card__title' }, 'Components'))),
     el('div', { class: 'table-wrap' }, table),
     el('div', { class: 'table-foot' }, el('span', { class: 'live', id: 'health-live' })));
   const box = $('health');
   box.removeAttribute('aria-busy');
-  box.replaceChildren(...(alerts.length ? [el('div', { class: 'hp-alerts' }, ...alerts)] : []), kpis, card, healthSyslogCard(sl));
+  box.replaceChildren(...(alerts.length ? [el('div', { class: 'hp-alerts' }, ...alerts)] : []), kpis, card, ...healthClusterCard(h.cluster), healthSyslogCard(sl));
   healthPageFoot();
+}
+
+// healthClusterCard totals what every running server received, with a
+// row per server for admins, when two or more share this OpenSearch (a
+// load balancer spreads agents and devices over them). A server whose
+// version does not report figures says so instead of showing zero.
+function healthClusterCard(c) {
+  if (!c || !c.totals) return [];
+  const t = c.totals;
+  if ((t.servers || 0) + (t.no_figures || 0) < 2) return [];
+  const last = (x) => x && x.last_at ? ago(x.last_at) : 'none yet';
+  const head = el('thead', {}, el('tr', {},
+    el('th', { scope: 'col', 'data-col': 'name' }, 'Server'), el('th', { scope: 'col', class: 'num' }, 'Agent batches'),
+    el('th', { scope: 'col', class: 'num' }, 'Agent events'), el('th', { scope: 'col', class: 'num' }, 'Syslog messages'),
+    el('th', { scope: 'col' }, 'Last agent batch')));
+  const rows = (c.servers || []).map((s) => {
+    const name = el('td', { 'data-col': 'name' }, el('div', { class: 'cell-title' }, s.name + (s.self ? ' (this server)' : '')),
+      el('div', { class: 'muted' }, s.state));
+    if (!s.figures) return el('tr', {}, name, el('td', { colspan: '4', class: 'muted' }, 'No figures: this server runs an older version.'));
+    return el('tr', {}, name, el('td', { class: 'num' }, healthPageNum(s.ingest.batches)), el('td', { class: 'num' }, healthPageNum(s.ingest.events)),
+      el('td', { class: 'num' }, healthPageNum(s.syslog.messages)), el('td', { class: 'muted' }, last(s.ingest)));
+  });
+  const total = el('tr', { class: 'hp-total' }, el('th', { scope: 'row', 'data-col': 'name' }, 'All servers'),
+    el('td', { class: 'num' }, healthPageNum(t.ingest.batches)), el('td', { class: 'num' }, healthPageNum(t.ingest.events)),
+    el('td', { class: 'num' }, healthPageNum(t.syslog.messages)), el('td', { class: 'muted' }, last(t.ingest)));
+  const n = t.servers || 0;
+  const sub = `${n} running ${n === 1 ? 'server' : 'servers'}, each since it last started` +
+    (t.no_figures ? `; ${t.no_figures} more on an older version ${t.no_figures === 1 ? 'is' : 'are'} not counted.` : '.');
+  return [el('div', { class: 'card hp-cluster' },
+    el('div', { class: 'card__head' }, el('div', {}, el('h3', { class: 'card__title' }, 'All servers'), el('p', { class: 'card__sub' }, sub))),
+    el('div', { class: 'table-wrap' }, el('table', { class: 'table hp-cluster__table' }, head, el('tbody', {}, ...rows, total))))];
+}
+
+// healthSensorRow is the network sensors' row: how many send, went
+// silent or drop packets, and whether any runs on old rules.
+function healthSensorRow(c) {
+  const bad = c.silent || c.dropping || c.rules_old;
+  const text = `${healthPageNum(c.sending)} sending, ${healthPageNum(c.silent)} silent, ${healthPageNum(c.dropping)} dropping packets` +
+    (c.rules_old ? `, ${healthPageNum(c.rules_old)} with old rules` : '') + '. ';
+  return healthPageRow('activity', 'Network sensors', c.total === 1 ? '1 sensor' : healthPageNum(c.total) + ' sensors', bad ? 'warn' : '',
+    bad ? 'Needs a look' : 'Healthy', [text, can('admin') ? el('a', { href: '#sensors', 'data-page': 'sensors' }, 'Settings > Network sensors')
+      : el('a', { href: '#endpoints', 'data-page': 'endpoints', 'data-min-role': 'analyst' }, 'Endpoints')]);
 }
 
 // healthSyslogCard shows the syslog receiver: its listeners, what it did
@@ -3893,6 +4219,8 @@ function healthSyslogRejected(sl) {
     rb.too_large && [rb.too_large, 'over 64 KB, the most a message may be', ['.']],
     rb.bad_framing && [rb.bad_framing, `from ${tcp(rb.bad_framing)} that did not send syslog`, ['.']],
     conns && [conns, `${tcp(conns)} over the connection limit`, ['.']],
+    rb.proxy_untrusted && [rb.proxy_untrusted, `${tcp(rb.proxy_untrusted)} with a PROXY header from an untrusted peer`,
+      ['. If it is your load balancer, add its address to Trusted reverse proxies on the Settings page, under HTTPS.']],
   ].filter(Boolean);
   const one = why.length === 1;
   const line = ([n, what, more]) => [one ? what.charAt(0).toUpperCase() + what.slice(1) : `${healthPageNum(n)} ${what}`, ...more];

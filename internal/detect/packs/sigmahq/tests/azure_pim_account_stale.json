@@ -1,0 +1,4 @@
+{"rule": "e402c26a-267a-45bd-9615-bd9ceda6da85", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"pim","data":{"riskEventType":"staleSignInAlertIncident"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"pim","data":{}}
+]}

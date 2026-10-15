@@ -53,7 +53,9 @@
 <symbol id="i-circle-help" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></symbol>
 <symbol id="i-circle-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></symbol>
 <symbol id="i-clipboard-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/><path d="M16 4h2a2 2 0 0 1 2 2v4"/><path d="M21 14H11"/><path d="m15 10-4 4 4 4"/></symbol>
+<symbol id="i-clipboard-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 14 2 2 4-4"/></symbol>
 <symbol id="i-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></symbol>
+<symbol id="i-cloud" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></symbol>
 <symbol id="i-cloud-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M12 13v8l-4-4"/><path d="m12 21 4-4"/><path d="M4.393 15.269A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.436 8.284"/></symbol>
 <symbol id="i-code" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="m16 18 6-6-6-6"/><path d="m8 6-6 6 6 6"/></symbol>
 <symbol id="i-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></symbol>
@@ -187,6 +189,7 @@
       <div class="nav__label">Detect &amp; respond</div>
       <a class="nav__item" href="#detections" data-page="detections"><svg class="icon" aria-hidden="true"><use href="#i-crosshair"/></svg><span>Detections</span></a>
       <a class="nav__item" href="#coverage" data-page="coverage"><svg class="icon" aria-hidden="true"><use href="#i-grid-3x3"/></svg><span>ATT&amp;CK coverage</span></a>
+      <a class="nav__item" href="#compliance" data-page="compliance"><svg class="icon" aria-hidden="true"><use href="#i-clipboard-check"/></svg><span>Compliance</span></a>
       <a class="nav__item" href="#playbooks" data-page="playbooks" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-list-checks"/></svg><span>Playbooks</span></a>
       <a class="nav__item" href="#respond" data-page="respond" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-zap"/></svg><span>Response actions</span></a>
     </div>
@@ -205,10 +208,14 @@
       <div class="nav__label">Settings</div>
       <a class="nav__item" href="#settings" data-page="settings" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-sliders-horizontal"/></svg><span>Server</span></a>
       <a class="nav__item" href="#users" data-page="users" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-users"/></svg><span>Users</span></a>
+      <a class="nav__item" href="#apitokens" data-page="apitokens" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-key-round"/></svg><span>API tokens</span></a>
       <a class="nav__item" href="#notify" data-page="notify" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-bell"/></svg><span>Notifications</span></a>
       <a class="nav__item" href="#retention" data-page="retention" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-hourglass"/></svg><span>Data retention</span></a>
       <a class="nav__item" href="#security" data-page="security" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-shield-check"/></svg><span>Security</span></a>
       <a class="nav__item" href="#servers" data-page="servers" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-server"/></svg><span>Servers</span></a>
+      <a class="nav__item" href="#scanners" data-page="scanners" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-radar"/></svg><span>Scanners</span></a>
+      <a class="nav__item" href="#sensors" data-page="sensors" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-router"/></svg><span>Network sensors</span></a>
+      <a class="nav__item" href="#audit" data-page="audit" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-scroll-text"/></svg><span>Audit</span></a>
       <a class="nav__item" href="#health" data-page="health"><svg class="icon" aria-hidden="true"><use href="#i-activity"/></svg><span>Health</span></a>
     </div>
     <p class="nav__empty hidden" id="jump-empty">No page matches.</p>
@@ -258,10 +265,14 @@
     <div class="set-tabs__list">
       <a class="set-tab" href="#settings" data-page="settings" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-sliders-horizontal"/></svg><span>Server</span></a>
       <a class="set-tab" href="#users" data-page="users" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-users"/></svg><span>Users</span></a>
+      <a class="set-tab" href="#apitokens" data-page="apitokens" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-key-round"/></svg><span>API tokens</span></a>
       <a class="set-tab" href="#notify" data-page="notify" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-bell"/></svg><span>Notifications</span></a>
       <a class="set-tab" href="#retention" data-page="retention" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-hourglass"/></svg><span>Data retention</span></a>
       <a class="set-tab" href="#security" data-page="security" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-shield-check"/></svg><span>Security</span><span id="security-count" class="nav__count hidden" data-critical></span></a>
       <a class="set-tab" href="#servers" data-page="servers" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-server"/></svg><span>Servers</span></a>
+      <a class="set-tab" href="#scanners" data-page="scanners" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-radar"/></svg><span>Scanners</span></a>
+      <a class="set-tab" href="#sensors" data-page="sensors" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-router"/></svg><span>Network sensors</span></a>
+      <a class="set-tab" href="#audit" data-page="audit" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-scroll-text"/></svg><span>Audit</span></a>
       <a class="set-tab" href="#health" data-page="health"><svg class="icon" aria-hidden="true"><use href="#i-activity"/></svg><span>Health</span></a>
     </div>
   </nav>
@@ -335,12 +346,13 @@
                 <label class="label" for="b-mode">Show</label>
                 <select id="b-mode" class="select select--block">
                   <option value="events">Matching events</option>
+                  <option value="latest">The latest event for each</option>
                   <option value="stats">A table of</option>
                   <option value="timechart">A chart over time of</option>
                 </select>
               </div>
               <div id="b-agg-group" class="b-agg hidden">
-                <div class="field">
+                <div class="field" id="b-agg-func-wrap">
                   <label class="label" for="b-agg">Calculate</label>
                   <select id="b-agg" class="select select--block">
                     <option value="count">count</option>
@@ -349,6 +361,9 @@
                     <option value="avg">average of</option>
                     <option value="min">minimum of</option>
                     <option value="max">maximum of</option>
+                    <option value="median">median of</option>
+                    <option value="perc95">95th percentile of</option>
+                    <option value="values">distinct values of</option>
                   </select>
                 </div>
                 <div class="field hidden" id="b-agg-field-wrap">
@@ -356,7 +371,7 @@
                   <input id="b-agg-field" class="input" type="text" list="field-names" placeholder="field">
                 </div>
                 <div class="field">
-                  <label class="label" for="b-by">Split by</label>
+                  <label class="label" for="b-by" id="b-by-label">Split by</label>
                   <input id="b-by" class="input" type="text" list="field-names" placeholder="e.g. src, user">
                 </div>
               </div>
@@ -859,7 +874,7 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
     <header class="page-head">
       <div>
         <h2 class="page-head__title">Add data</h2>
-        <p class="page-head__desc">Collect logs from your hosts with the Fluent Bit agent or an OpenTelemetry Collector, manage hosts with osquery, receive syslog from network devices, or bring in Wazuh alerts.</p>
+        <p class="page-head__desc">Collect logs from your hosts with the Fluent Bit agent or an OpenTelemetry Collector, manage hosts with osquery, receive syslog from network devices, or bring in Wazuh alerts and network sensor logs.</p>
       </div>
     </header>
     <div class="card sample-card" id="sample-card" hidden></div>
@@ -901,6 +916,26 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
           <span class="agent-os__text"><b>Wazuh</b><span>Alerts from your Wazuh manager</span></span>
           <input type="radio" name="os" value="wazuh">
         </label>
+        <label class="card agent-os__card">
+          <span class="agent-os__icon"><svg class="icon" aria-hidden="true"><use href="#i-activity"/></svg></span>
+          <span class="agent-os__text"><b>Network sensor</b><span>Zeek and Suricata: connections, DNS, web, TLS and IDS alerts</span></span>
+          <input type="radio" name="os" value="sensor">
+        </label>
+        <label class="card agent-os__card">
+          <span class="agent-os__icon"><svg class="icon" aria-hidden="true"><use href="#i-cloud"/></svg></span>
+          <span class="agent-os__text"><b>AWS CloudTrail</b><span>Sign-ins and API calls in your AWS accounts</span></span>
+          <input type="radio" name="os" value="aws">
+        </label>
+        <label class="card agent-os__card">
+          <span class="agent-os__icon"><svg class="icon" aria-hidden="true"><use href="#i-cloud"/></svg></span>
+          <span class="agent-os__text"><b>Entra ID and Azure</b><span>Microsoft sign-ins, directory changes and Azure activity</span></span>
+          <input type="radio" name="os" value="azure">
+        </label>
+        <label class="card agent-os__card">
+          <span class="agent-os__icon"><svg class="icon" aria-hidden="true"><use href="#i-cloud"/></svg></span>
+          <span class="agent-os__text"><b>Microsoft 365</b><span>Exchange, SharePoint, OneDrive and Teams activity</span></span>
+          <input type="radio" name="os" value="m365">
+        </label>
       </fieldset>
 
       <div class="card agent-setup" id="agent-setup">
@@ -932,6 +967,11 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
               </label>
               <label class="switch" title="Process, network and file events from Sysmon for Linux, for the Linux endpoint detections"><input type="checkbox" id="sysmon-linux"> Include Sysmon for Linux</label>
             </span>
+            <span id="sensor-opts" class="agent-opts hidden">
+              <label class="switch" title="Zeek logs every connection, DNS lookup, web request, TLS session and file it sees"><input type="checkbox" id="sensor-zeek" checked> Zeek</label>
+              <label class="switch" title="Suricata raises alerts from rules such as Emerging Threats Open"><input type="checkbox" id="sensor-suricata" checked> Suricata</label>
+              <label class="switch" id="sensor-protocols-opt" title="Zeek already logs connections, DNS, web and TLS; sending Suricata's too counts each one twice"><input type="checkbox" id="sensor-protocols"> Also Suricata protocol logs</label>
+            </span>
             <span id="windows-opts" class="agent-opts hidden">
               <label class="switch"><input type="checkbox" id="sysmon" checked> Include Sysmon</label>
               <label class="switch" title="PowerShell script blocks: the scripts that run, for the PowerShell detections"><input type="checkbox" id="powershell" checked> Include PowerShell</label>
@@ -939,6 +979,11 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
           </div>
         </div>
         <div class="card__body" id="agent-body">
+          <div class="tabs sensor-tabs hidden" id="sensor-tabs" role="tablist" aria-label="Your network sensor">
+            <button type="button" role="tab" class="tab" id="sensor-tab-have" aria-selected="true">I already run Zeek or Suricata</button>
+            <button type="button" role="tab" class="tab" id="sensor-tab-new" aria-selected="false" tabindex="-1">Set up a new sensor</button>
+          </div>
+          <ul class="sensor-needs sensor-new-only" id="sensor-needs" role="list" aria-label="What a new sensor needs"></ul>
           <div class="agent-addr">
             <div class="agent-addr__row">
               <label class="label" for="agent-server">Agents send to</label>
@@ -946,6 +991,54 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
             </div>
             <p id="agent-server-error" class="field-error hidden" role="alert"></p>
             <div id="agent-server-warn" class="alert hidden" data-tone="warning" role="status"></div>
+            <div id="sensor-paths" class="hidden">
+              <p id="sensor-tools-error" class="field-error hidden" role="alert"></p>
+              <div class="agent-addr__row" id="sensor-zeek-row">
+                <label class="label" for="sensor-zeek-dir">Zeek logs in</label>
+                <input id="sensor-zeek-dir" class="input input--sm mono" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="/opt/zeek/logs/current" aria-describedby="sensor-zeek-dir-error sensor-paths-help">
+              </div>
+              <p id="sensor-zeek-dir-error" class="field-error hidden" role="alert"></p>
+              <div class="agent-addr__row" id="sensor-eve-row">
+                <label class="label" for="sensor-eve-path">Suricata EVE file</label>
+                <input id="sensor-eve-path" class="input input--sm mono" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="/var/log/suricata/eve.json" aria-describedby="sensor-eve-path-error sensor-paths-help">
+              </div>
+              <p id="sensor-eve-path-error" class="field-error hidden" role="alert"></p>
+              <p id="sensor-paths-help" class="hint agent-token__help"><span>Leave empty for the usual places. Zeek built from source writes to <code>/usr/local/zeek/logs/current</code>, Security Onion to <code>/nsm/zeek/logs/current</code>.</span></p>
+            </div>
+            <div class="sensor-new-only" id="sensor-new-fields">
+              <div class="agent-addr__row">
+                <label class="label" for="sensor-iface">Capture port</label>
+                <input id="sensor-iface" class="input input--sm mono" type="text" maxlength="15" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="ens192" aria-describedby="sensor-iface-error sensor-iface-help">
+              </div>
+              <p id="sensor-iface-error" class="field-error hidden" role="alert"></p>
+              <p id="sensor-iface-help" class="hint agent-token__help">The port plugged into the mirror (SPAN) port or tap. Leave empty to choose on the sensor: the script lists its ports.</p>
+              <div class="agent-addr__row">
+                <label class="label" for="sensor-networks">Your networks</label>
+                <input id="sensor-networks" class="input input--sm mono" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, fd00::/8" aria-describedby="sensor-networks-error sensor-networks-help">
+              </div>
+              <p id="sensor-networks-error" class="field-error hidden" role="alert"></p>
+              <p id="sensor-networks-help" class="hint agent-token__help">The addresses inside your network, separated by commas. Leave empty for the private ranges shown.</p>
+              <div class="agent-addr__row">
+                <span class="label" id="sensor-layout-label">Install with</span>
+                <div class="seg seg--sm" id="sensor-layout" role="group" aria-labelledby="sensor-layout-label">
+                  <button type="button" data-layout="packages" aria-pressed="true">Packages (recommended)</button>
+                  <button type="button" data-layout="docker" aria-pressed="false">Docker</button>
+                </div>
+              </div>
+            </div>
+            <div id="aws-paths" class="hidden">
+              <div class="agent-addr__row">
+                <label class="label" for="aws-bucket">CloudTrail bucket</label>
+                <input id="aws-bucket" class="input input--sm mono" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="my-cloudtrail-bucket" aria-describedby="aws-bucket-error aws-paths-help">
+              </div>
+              <p id="aws-bucket-error" class="field-error hidden" role="alert"></p>
+              <div class="agent-addr__row">
+                <label class="label" for="aws-queue">SQS queue URL</label>
+                <input id="aws-queue" class="input input--sm mono" type="text" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://sqs.us-east-1.amazonaws.com/123456789012/signalith-cloudtrail" aria-describedby="aws-queue-error aws-paths-help">
+              </div>
+              <p id="aws-queue-error" class="field-error hidden" role="alert"></p>
+              <p id="aws-paths-help" class="hint agent-token__help"><span>The S3 bucket your trail writes to, and the queue S3 tells about each new file. The steps below make the queue; the <a href="https://github.com/jrsamsanchez/Signalith/blob/main/docs/aws-cloudtrail.md" target="_blank" rel="noopener">CloudTrail guide</a> walks through it.</span></p>
+            </div>
             <div class="agent-addr__row agent-token" id="agent-token-row">
               <label class="label" for="agent-token-name" id="agent-token-label">Token for these agents</label>
               <div class="agent-token__field">
@@ -960,6 +1053,11 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
           </div>
           <ol id="agent-steps" class="agent-steps" role="list" aria-busy="true"></ol>
           <p id="wazuh-note" class="hint hidden"><svg class="icon" aria-hidden="true"><use href="#i-info"/></svg><span>Rather not install anything on the manager? It can send alerts itself: add a <code>&lt;syslog_output&gt;</code> block with <code>&lt;format&gt;json&lt;/format&gt;</code> to its <code>ossec.conf</code>, pointed at this server’s <a href="#data" id="wazuh-syslog">syslog address</a>.</span></p>
+          <div id="sensor-note" class="hidden">
+            <p class="hint"><svg class="icon" aria-hidden="true"><use href="#i-info"/></svg><span>Suricata on pfSense or OPNsense? Send its EVE log to this server’s <a href="#data" id="sensor-syslog">syslog address</a> instead: no agent needed.</span></p>
+            <p class="hint"><svg class="icon" aria-hidden="true"><use href="#i-info"/></svg><span>Building a new sensor? <a href="#data" id="sensor-new-link">Set up a new sensor</a> installs Zeek, Suricata and the agent with one line.</span></p>
+          </div>
+          <div class="sensor-new-only" id="sensor-new" aria-busy="true"></div>
           <div id="agent-file" class="agent-file hidden">
             <div class="agent-file__bar">
               <svg class="icon" aria-hidden="true"><use href="#i-file-code"/></svg>
@@ -992,6 +1090,16 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
           </div>
           <div id="syslog-main"></div>
         </div>
+      </div>
+
+      <div class="card agent-setup hidden" id="m365-setup">
+        <div class="card__head">
+          <div>
+            <h3 class="card__title">Read the Microsoft 365 audit log</h3>
+            <p class="card__sub">Signalith reads it from Microsoft itself. Nothing to install: register an app once, then enter it in Settings.</p>
+          </div>
+        </div>
+        <div class="card__body" id="m365-body" aria-busy="true"></div>
       </div>
 
       <div class="card agent-setup hidden" id="antivirus-setup">
@@ -1043,6 +1151,21 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
     <dialog id="ep-host" class="modal ep-host" aria-labelledby="ep-host-title"></dialog>
     <dialog id="ep-settings-dialog" class="modal ep-set" aria-labelledby="ep-set-title"></dialog>
     <dialog id="ep-remove" class="modal" aria-labelledby="ep-remove-title"></dialog>
+  </section>
+
+  <!-- Compliance: framework controls, their evidence, and reports -->
+  <section id="page-compliance" class="page">
+    <div class="page-head">
+      <div>
+        <h2 class="page-head__title">Compliance</h2>
+        <p class="page-head__desc">Where your data, detections and checks give evidence for common security frameworks, what is still missing, and a report to hand your auditor.</p>
+      </div>
+      <div class="page-head__actions">
+        <button id="cp-refresh" class="btn btn--ghost btn--icon" type="button" aria-label="Check again" title="Check again"><svg class="icon" aria-hidden="true"><use href="#i-refresh-cw"/></svg></button>
+      </div>
+    </div>
+    <div id="cp-frameworks" class="cp-fws" role="tablist" aria-label="Frameworks"></div>
+    <div id="cp-body" class="cp-body" aria-live="polite"></div>
   </section>
 
   <!-- Vulnerabilities (analysts and admins): network scans with Nmap -->
@@ -1424,11 +1547,82 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
         <h2 class="page-head__title">Servers</h2>
         <p class="page-head__desc">The Signalith servers that share this OpenSearch. One of them runs the background jobs: detections, threat intel downloads and data retention.</p>
       </div>
+      <div class="page-head__actions">
+        <button class="btn btn--primary" type="button" id="sv-add" hidden><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg><span>Add a server</span></button>
+      </div>
     </div>
+    <div id="servers-join" class="sv-page"></div>
     <div id="servers" class="sv-page"></div>
+    <div id="servers-ca" class="sv-page"></div>
+    <div id="servers-life" class="sv-page"></div>
+    <div id="servers-osid" class="sv-page"></div>
+    <div id="servers-upgrade" class="sv-page"></div>
+  </section>
+
+  <!-- Scanners (admins): every server as a vulnerability scanner -->
+  <section id="page-scanners" class="page">
+    <div class="page-head">
+      <div>
+        <h2 class="page-head__title">Scanners</h2>
+        <p class="page-head__desc">The servers that scan your networks for vulnerabilities. Each network is scanned by one server: pick one that can reach it, such as a server inside a segmented network zone.</p>
+      </div>
+      <div class="page-head__actions">
+        <a class="btn btn--secondary" href="#vulns" data-page="vulns"><svg class="icon" aria-hidden="true"><use href="#i-scan-search"/></svg><span>Vulnerabilities</span></a>
+      </div>
+    </div>
+    <div id="sc-page" class="sc-page" aria-busy="true"></div>
+  </section>
+
+  <!-- Network sensors (admins): each sensor's health, what to fix, and
+       the rule tuning every sensor fetches -->
+  <section id="page-sensors" class="page">
+    <div class="page-head">
+      <div>
+        <h2 class="page-head__title">Network sensors</h2>
+        <p class="page-head__desc">The sensors that watch your network with Zeek and Suricata: whether each one is healthy, what to fix, and the rule tuning they all fetch.</p>
+      </div>
+      <div class="page-head__actions">
+        <a class="btn btn--secondary" href="#health" data-page="health"><svg class="icon" aria-hidden="true"><use href="#i-activity"/></svg><span>Health</span></a>
+        <a class="btn btn--primary" href="#data?source=sensor"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg><span>Add a sensor</span></a>
+      </div>
+    </div>
+    <div id="ns-page" class="ns-page" aria-busy="true"></div>
   </section>
 
   <!-- Help -->
+  <!-- Audit: who changed what, on every server -->
+  <section id="page-apitokens" class="page">
+    <div class="page-head">
+      <div>
+        <h2 class="page-head__title">API tokens</h2>
+        <p class="page-head__desc">Tokens that AI tools and other programs read from Signalith with, on every server. A token can only read, whatever its role.</p>
+      </div>
+    </div>
+    <div class="card tokens-card">
+      <div class="card__head tokens-card__head">
+        <div>
+          <h3 class="card__title" id="at-title">Tokens</h3>
+          <p class="card__sub">Give each tool its own token. The audit log shows what it does as api-token:&lt;name&gt;.</p>
+        </div>
+        <div class="card__actions">
+          <button class="btn btn--primary btn--sm" type="button" id="at-new"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg><span>New token</span></button>
+        </div>
+      </div>
+      <div class="tokens-card__body" id="at-body" aria-busy="true" aria-labelledby="at-title"></div>
+    </div>
+  </section>
+
+  <section id="page-audit" class="page">
+    <div class="page-head">
+      <div>
+        <h2 class="page-head__title">Audit</h2>
+        <p class="page-head__desc">Who changed what, and when, on every server that shares this OpenSearch.</p>
+      </div>
+    </div>
+    <div id="au-filters"></div>
+    <div id="au-body"></div>
+  </section>
+
   <section id="page-help" class="page">
     <article class="card guide">
       <p class="guide__lead">A query is a search followed by commands joined with <code>|</code>. The search picks events; each command reshapes the results.</p>
@@ -1451,10 +1645,17 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
 
       <h2>Commands</h2>
       <dl class="guide__ref">
-        <div><dt data-query="| stats count, dc(user) as users by src"></dt><dd>Aggregate with count, dc, sum, avg, min and max.</dd></div>
+        <div><dt data-query="| stats count, dc(user) as users by src"></dt><dd>Aggregate with count, dc, sum, avg, min, max, median, perc95 (any percentile), stdev, values, list, latest and more.</dd></div>
         <div><dt data-query="| timechart span=1h count by action"></dt><dd>A series over time.</dd></div>
         <div><dt data-query="| top limit=10 process_name"></dt><dd>The most common values, with percentages.</dd></div>
+        <div><dt data-query="| eventstats avg(bytes) as avg_bytes by src"></dt><dd>Like stats, but adds the result to every row instead of replacing the rows.</dd></div>
+        <div><dt data-query="| rare limit=10 process_name"></dt><dd>The least common values first.</dd></div>
         <div><dt data-query="| where count &gt; 20"></dt><dd>Filter rows. Uses AND and OR like most languages.</dd></div>
+        <div><dt data-query="| where len(process) &gt; 1000 OR bytes_out &gt; bytes_in * 10"></dt><dd>Functions, arithmetic and field-to-field comparisons work in <code>where</code> too.</dd></div>
+        <div><dt data-query="| eval kb=round(bytes / 1024, 1), who=lower(user)"></dt><dd>Compute fields with expressions and functions such as <code>if</code>, <code>case</code>, <code>coalesce</code>, <code>replace</code>, <code>split</code>, <code>strftime</code> and <code>cidrmatch</code>. Put field names with other characters in single quotes.</dd></div>
+        <div><dt data-query="| rex field=process &quot;-enc (?&lt;encoded&gt;\S+)&quot;"></dt><dd>Extract fields with a regular expression's named groups. Reads <code>_raw</code> unless you name a field.</dd></div>
+        <div><dt data-query="| dedup user, host"></dt><dd>Keep the first row for each combination of values. Events come newest first, so this keeps the latest.</dd></div>
+        <div><dt data-query="| fillnull value=0 bytes"></dt><dd>Fill in missing values.</dd></div>
         <div><dt data-query="| sort -count, src"></dt><dd>Sort. Put <code>-</code> before a field for descending.</dd></div>
         <div><dt data-query="| head 10"></dt><dd>Keep the first N rows.</dd></div>
         <div><dt data-query="| table _time, user, src"></dt><dd>Choose the columns.</dd></div>
@@ -1492,7 +1693,9 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
 </dialog>
 <div id="toast" class="toast hidden" role="status"></div>
 <script src="app.js"></script>
+<script src="levels.js"></script>
 <script src="antivirus.js"></script>
+<script src="m365.js"></script>
 <script src="detections.js"></script>
 <script src="risk.js"></script>
 <script src="intel.js"></script>
@@ -1507,9 +1710,20 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
 <script src="sample.js"></script>
 <script src="settings.js"></script>
 <script src="servers.js"></script>
+<script src="servers-opensearch.js"></script>
 <script src="security.js"></script>
 <script src="endpoints.js"></script>
+<script src="sensors.js"></script>
+<script src="sensor-setup.js"></script>
 <script src="vulns.js"></script>
+<script src="compliance.js"></script>
 <script src="tokens.js"></script>
+<script src="apitokens.js"></script>
+<script src="servers-ca.js"></script>
+<script src="servers-lifecycle.js"></script>
+<script src="servers-osid.js"></script>
+<script src="servers-upgrade.js"></script>
+<script src="servers-join.js"></script>
+<script src="audit.js"></script>
 </body>
 </html>

@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode/utf16"
 
@@ -173,6 +174,13 @@ var sigmaEventFields = func() map[string]map[string]string {
 		"destaddress": "dest", "destport": "dest_port", "filterrtid": "filter_rtid", "layername": "layer_name",
 		"layerrtid": "layer_rtid", "computer": "host", "computername": "host", "eventid": "signature_id",
 	}
+	// A group's member added or removed.
+	group := security(map[string]string{
+		"subjectusersid": "user_sid", "membername": "member", "membersid": "member_sid", "targetusername": "object",
+		"targetdomainname": "object_domain", "targetsid": "object_sid",
+	})
+	// A scheduled task deleted or disabled.
+	task := security(map[string]string{"subjectusersid": "user_sid", "taskname": "task_name", "taskcontent": "task_content"})
 	kerberos := map[string]string{
 		"targetusername": "user", "targetdomainname": "user_domain", "targetsid": "user_sid",
 		"servicename": "kerberos_service", "servicesid": "kerberos_service_sid", "ticketoptions": "ticket_options",
@@ -184,7 +192,9 @@ var sigmaEventFields = func() map[string]map[string]string {
 		"file_event": file, "file_delete": file,
 		"registry_add": registry, "registry_delete": registry, "registry_set": registry, "registry_event": registry,
 		"dns_query":            with(map[string]string{"queryname": "query", "queryresults": "answer"}),
+		"webserver":            ingest.WebFields,
 		"pipe_created":         with(map[string]string{"pipename": "pipe_name", "eventtype": "pipe_event_type"}),
+		"raw_access_thread":    with(map[string]string{"device": "device"}),
 		"create_stream_hash":   with(map[string]string{"targetfilename": "file_path", "hash": "file_hashes", "contents": "file_contents"}),
 		"image_load":           load,
 		"driver_load":          with(map[string]string{"imageloaded": "loaded_file_path", "hashes": "loaded_file_hash", "signed": "signed", "signature": "signature", "signaturestatus": "signature_status", "image": "", "user": "", "processid": "", "processguid": ""}),
@@ -228,11 +238,22 @@ var sigmaEventFields = func() map[string]map[string]string {
 		}),
 		"security_4720": account,
 		"security_4738": account,
-		"security_4732": security(map[string]string{
-			"subjectusersid": "user_sid", "membername": "member", "membersid": "member_sid", "targetusername": "object",
-			"targetdomainname": "object_domain", "targetsid": "object_sid",
-		}),
+		"security_4732": group,
 		"security_4794": security(map[string]string{"subjectusersid": "user_sid", "workstation": "src_host"}),
+		"security_4728": group,
+		"security_4729": group,
+		"security_4730": security(map[string]string{
+			"subjectusersid": "user_sid", "targetusername": "object", "targetdomainname": "object_domain", "targetsid": "object_sid",
+		}),
+		"security_1102":      security(map[string]string{"subjectusersid": "user_sid", "provider_name": "provider"}),
+		"security_4699":      task,
+		"security_4701":      task,
+		"security_4699_4701": task,
+		"security_4702":      security(map[string]string{"subjectusersid": "user_sid", "taskname": "task_name", "taskcontentnew": "task_content"}),
+		"security_5140": security(map[string]string{
+			"subjectusersid": "user_sid", "objecttype": "object_type", "ipaddress": "src", "ipport": "src_port",
+			"sharename": "share_name", "sharelocalpath": "share_path", "accessmask": "access_mask", "accesslist": "access_names",
+		}),
 		"security_4768": kerberos,
 		"security_4769": kerberos,
 		"security_4697": security(map[string]string{
@@ -253,6 +274,13 @@ var sigmaEventFields = func() map[string]map[string]string {
 		"system": {
 			"servicename": "service_name", "imagepath": "service_path", "servicetype": "service_type",
 			"starttype": "service_start_type", "accountname": "service_account", "provider_name": "provider",
+			"computer": "host", "computername": "host", "eventid": "signature_id",
+		},
+		// Defender's event data as its message names it (Path, Process
+		// Name, New Value).
+		"windefend": {
+			"path": "file_path", "processname": "process_path", "newvalue": "new_value", "oldvalue": "old_value",
+			"sourcename": "detection_source", "value": "setting",
 			"computer": "host", "computername": "host", "eventid": "signature_id",
 		},
 		"ps_script": {
@@ -276,6 +304,7 @@ var sigmaWindowsEvents = map[string][]string{
 	"registry_event":       {"12", "13", "14"},
 	"dns_query":            {"22"},
 	"pipe_created":         {"17", "18"},
+	"raw_access_thread":    {"9"},
 	"create_stream_hash":   {"15"},
 	"image_load":           {"7"},
 	"driver_load":          {"6"},
@@ -283,29 +312,41 @@ var sigmaWindowsEvents = map[string][]string{
 	"create_remote_thread": {"8"},
 	"ps_script":            {"4104"},
 	"system":               {"7045"},
-	"security_4624":        {"4624"},
-	"security_4625":        {"4625"},
-	"security_4648":        {"4648"},
-	"security_4656":        {"4656"},
-	"security_4657":        {"4657"},
-	"security_4661":        {"4661"},
-	"security_4662":        {"4662"},
-	"security_4663":        {"4663"},
-	"security_4656_4663":   {"4656", "4663"},
-	"security_4706":        {"4706"},
-	"security_4719":        {"4719"},
-	"security_4720":        {"4720"},
-	"security_4732":        {"4732"},
-	"security_4738":        {"4738"},
-	"security_4794":        {"4794"},
-	"security_4768":        {"4768"},
-	"security_4769":        {"4769"},
-	"security_4697":        {"4697"},
-	"security_4698":        {"4698"},
-	"security_5136":        {"5136"},
-	"security_5145":        {"5145"},
-	"security_5156":        {"5156"},
-	"security_5157":        {"5157"},
+	"windefend": {"1006", "1007", "1008", "1009", "1015", "1116", "1117", "1118", "1119", "1121", "1122", "1123", "1124",
+		"1125", "1126", "1127", "1128", "1150", "1151", "2000", "2001", "2002", "2003", "2004", "2006", "3002", "5000",
+		"5001", "5004", "5007", "5008", "5009", "5010", "5011", "5012", "5013", "5101"},
+	"security_4624":      {"4624"},
+	"security_4625":      {"4625"},
+	"security_4648":      {"4648"},
+	"security_4656":      {"4656"},
+	"security_4657":      {"4657"},
+	"security_4661":      {"4661"},
+	"security_4662":      {"4662"},
+	"security_4663":      {"4663"},
+	"security_4656_4663": {"4656", "4663"},
+	"security_4706":      {"4706"},
+	"security_4719":      {"4719"},
+	"security_4720":      {"4720"},
+	"security_4732":      {"4732"},
+	"security_4738":      {"4738"},
+	"security_4794":      {"4794"},
+	"security_4728":      {"4728"},
+	"security_4729":      {"4729"},
+	"security_4730":      {"4730"},
+	"security_1102":      {"1102"},
+	"security_4699":      {"4699"},
+	"security_4701":      {"4701"},
+	"security_4699_4701": {"4699", "4701"},
+	"security_4702":      {"4702"},
+	"security_5140":      {"5140"},
+	"security_4768":      {"4768"},
+	"security_4769":      {"4769"},
+	"security_4697":      {"4697"},
+	"security_4698":      {"4698"},
+	"security_5136":      {"5136"},
+	"security_5145":      {"5145"},
+	"security_5156":      {"5156"},
+	"security_5157":      {"5157"},
 }
 
 // sigmaSecurityModels are the Security log events Security log rules
@@ -316,7 +357,8 @@ var sigmaSecurityModels = map[string]string{
 	"4624": "Authentication", "4625": "Authentication", "4656": "", "4657": "Registry", "4661": "", "4662": "Change",
 	"4663": "", "4697": "Change", "4698": "Change", "4706": "Change", "4719": "Change", "4720": "Change", "4732": "Change",
 	"4738": "Change", "4794": "Change", "4768": "Authentication", "4769": "Authentication",
-	"4648": "Authentication", "5136": "Change", "5145": "Filesystem", "5156": "Network_Traffic", "5157": "Network_Traffic",
+	"4648": "Authentication", "4728": "Change", "4729": "Change", "4730": "Change", "1102": "Change", "4699": "Change",
+	"4701": "Change", "4699_4701": "Change", "4702": "Change", "5140": "Filesystem", "5136": "Change", "5145": "Filesystem", "5156": "Network_Traffic", "5157": "Network_Traffic",
 }
 
 // anyModel reports whether the rule's events land in more than one data
@@ -324,6 +366,13 @@ var sigmaSecurityModels = map[string]string{
 func (c *sigmaConv) anyModel() bool {
 	switch c.category {
 	case "security_4656", "security_4661", "security_4663", "security_4656_4663":
+		return true
+	case "cloudtrail":
+		// Sign-ins are Authentication events, changes Change and reads
+		// Other.
+		return true
+	case "m365":
+		// So are Microsoft 365's, and its alerts Alerts.
 		return true
 	}
 	return false
@@ -363,6 +412,21 @@ func sigmaEventIDs(det map[string]any) []string {
 	return slices.Sorted(maps.Keys(seen))
 }
 
+// modernEventIDs drops the Windows 2000 and XP event IDs (below 1000,
+// such as 517 for the log cleared) from a rule's event IDs when it also
+// names current ones: those systems' events never reach Signalith, so a
+// selection on them matches nothing either way.
+func modernEventIDs(ids []string) []string {
+	modern := slices.DeleteFunc(slices.Clone(ids), func(id string) bool {
+		n, err := strconv.Atoi(id)
+		return err == nil && n < 1000
+	})
+	if len(modern) == 0 {
+		return ids
+	}
+	return modern
+}
+
 // sigmaLevels maps Sigma levels to severities.
 var sigmaLevels = map[string]string{
 	"informational": "informational", "low": "low", "medium": "medium", "high": "high", "critical": "critical",
@@ -400,14 +464,49 @@ func ConvertSigmaWith(src []byte, opt SigmaOptions) (*SigmaResult, error) {
 	if product, _ := r.Logsource["product"].(string); category == "" && strings.EqualFold(product, "windows") {
 		switch service, _ := r.Logsource["service"].(string); strings.ToLower(service) {
 		case "system":
-			// The System log's events Signalith reads are services
-			// installed (7045).
+			// Services installed (7045), in Change; a rule about other
+			// System log events finds them in Other, by provider and
+			// event ID, with the data of the events the parser reads.
 			category = "system"
+			if ids := sigmaEventIDs(r.Detection); len(ids) > 0 && !slices.Contains(ids, "7045") {
+				category = "system_event"
+			}
+		case "windefend":
+			// Microsoft Defender Antivirus's own log, each rule naming
+			// the events it is about.
+			category = "windefend"
+		case "application":
+			// The Application log, each rule naming its provider and
+			// events, and searching their data (Data).
+			category = "application"
+		case "codeintegrity-operational":
+			// Code Integrity's log, each rule naming its events.
+			category = "code_integrity"
+		case "sysmon":
+			// Sysmon's own events, by event ID: its file blocks (27, 28,
+			// 29) are file events, the rest (a configuration change)
+			// Other.
+			category = "sysmon_event"
+			if ids := sigmaEventIDs(r.Detection); len(ids) > 0 && !slices.ContainsFunc(ids, func(id string) bool {
+				return id != "27" && id != "28" && id != "29"
+			}) {
+				category = "sysmon_file_block"
+			}
+		default:
+			// A log the parser reads by name (Windows Firewall, BITS, AppX
+			// deployment, WMI), each rule naming its events and their
+			// data.
+			if _, ok := ingest.NamedChannelServices[strings.ToLower(service)]; ok {
+				category = ingest.NamedChannelCategory(service)
+			}
 		case "security":
 			// A Security log rule's fields are its event's own, so it
 			// converts for one event, or events with the same data.
 			category = "security"
-			if ids := sigmaEventIDs(r.Detection); len(ids) > 0 {
+			if ids := modernEventIDs(sigmaEventIDs(r.Detection)); ingest.IsNamedSecurityEvents(ids...) {
+				// Events no data model holds, read by name.
+				category = "security_named"
+			} else if len(ids) > 0 {
 				if _, ok := sigmaWindowsEvents["security_"+strings.Join(ids, "_")]; ok {
 					category = "security_" + strings.Join(ids, "_")
 				}
@@ -420,6 +519,29 @@ func ConvertSigmaWith(src []byte, opt SigmaOptions) (*SigmaResult, error) {
 			// auditd names it.
 			category = "auditd"
 		}
+	}
+	if product, _ := r.Logsource["product"].(string); category == "" && strings.EqualFold(product, "aws") {
+		if service, _ := r.Logsource["service"].(string); strings.EqualFold(service, "cloudtrail") {
+			// AWS CloudTrail records, each field by CloudTrail's name.
+			category = "cloudtrail"
+		}
+	}
+	if product, _ := r.Logsource["product"].(string); category == "" && strings.EqualFold(product, "azure") {
+		if service, _ := r.Logsource["service"].(string); slices.Contains(ingest.AzureServices, strings.ToLower(service)) {
+			// Entra ID's and Azure's logs, by Sigma's service
+			// (signinlogs), each field by Microsoft Sentinel's name.
+			category = strings.ToLower(service)
+		}
+	}
+	if product, _ := r.Logsource["product"].(string); category == "" && strings.EqualFold(product, "m365") {
+		// Microsoft 365's audit log, whatever the service: each field by
+		// the record's name, or the older rules' eventSource, eventName
+		// and status.
+		category = "m365"
+	}
+	if category == "" {
+		// Zeek's own logs (product: zeek, service: dns, ...).
+		category = sigmaNetworkCategory(r.Logsource)
 	}
 	c := &sigmaConv{strict: opt.Strict, category: strings.ToLower(category)}
 	dm := c.datamodel(r.Logsource)
@@ -491,7 +613,7 @@ func ConvertSigmaWith(src []byte, opt SigmaOptions) (*SigmaResult, error) {
 	if r.Status != "" && r.Status != "stable" && r.Status != "test" {
 		c.warn("rule status is %q; review it before enabling", r.Status)
 	}
-	if dm == "" {
+	if dm == "" && !c.anyModel() {
 		c.warn("log source %v has no Signalith data model, so the rule searches all events", r.Logsource)
 	}
 	d.Defaults()
@@ -554,14 +676,49 @@ const windowsSourcetypes = "WinEventLog:*"
 // macOS rule away from Windows events, since data models such as Endpoint
 // hold events from every system and several kinds of event.
 func productScope(ls map[string]any, category string) query.Expr {
+	if scope := sigmaNetworkScope(category); scope != nil {
+		return scope
+	}
 	p, _ := ls["product"].(string)
 	switch strings.ToLower(p) {
 	case "windows":
+		switch category {
+		case "system_event":
+			return &query.Compare{Field: "sourcetype", Op: "=", Value: "WinEventLog:" + ingest.SystemChannel}
+		case "application":
+			return &query.Compare{Field: "sourcetype", Op: "=", Value: "WinEventLog:" + ingest.ApplicationChannel}
+		case "code_integrity":
+			return &query.Compare{Field: "sourcetype", Op: "=", Value: "WinEventLog:" + ingest.CodeIntegrityChannel}
+		}
+		if ch, ok := sigmaNamedChannels[category]; ok {
+			return &query.Compare{Field: "sourcetype", Op: "=", Value: "WinEventLog:" + ch}
+		}
+		if category == "security_named" {
+			return &query.Compare{Field: "sourcetype", Op: "=", Value: "WinEventLog:" + ingest.SecurityChannel}
+		}
+		if category == "sysmon_event" || category == "sysmon_file_block" {
+			return &query.Compare{Field: "sourcetype", Op: "=", Value: "WinEventLog:Microsoft-Windows-Sysmon/Operational"}
+		}
 		st := &query.Compare{Field: "sourcetype", Op: "=", Value: windowsSourcetypes}
 		if ids := sigmaWindowsEvents[category]; len(ids) > 0 {
 			return and([]query.Expr{st, &query.In{Field: "signature_id", Values: ids}})
 		}
 		return st
+	case "aws":
+		if category == "cloudtrail" {
+			return &query.Compare{Field: "sourcetype", Op: "=", Value: ingest.CloudTrailSourcetype}
+		}
+	case "m365":
+		if category == "m365" {
+			return &query.Compare{Field: "sourcetype", Op: "=", Value: ingest.O365Sourcetype}
+		}
+	case "azure":
+		if category == "activitylogs" {
+			return &query.Compare{Field: "sourcetype", Op: "=", Value: ingest.AzureActivitySourcetype}
+		}
+		if slices.Contains(ingest.AzureServices, category) {
+			return &query.Compare{Field: "sourcetype", Op: "=", Value: ingest.AzureADSourcetype}
+		}
 	case "linux", "macos":
 		if category == "auditd" {
 			return &query.Compare{Field: "sourcetype", Op: "=", Value: ingest.AuditdSourcetype}
@@ -573,6 +730,9 @@ func productScope(ls map[string]any, category string) query.Expr {
 
 func (c *sigmaConv) datamodel(ls map[string]any) string {
 	get := func(k string) string { s, _ := ls[k].(string); return strings.ToLower(s) }
+	if m, ok := sigmaNetworkModel(c.category); ok {
+		return m
+	}
 	switch c.category {
 	case "process_creation":
 		return "Endpoint"
@@ -588,15 +748,32 @@ func (c *sigmaConv) datamodel(ls map[string]any) string {
 		return "Registry"
 	case "dns_query":
 		return "Network_Resolution"
+	case "webserver":
+		return ingest.WebModel
 	case "image_load", "driver_load":
 		return "Image_Load"
-	case "process_access", "create_remote_thread", "pipe_created":
+	case "process_access", "create_remote_thread", "pipe_created", "raw_access_thread":
 		return "Endpoint"
 	case "ps_script":
 		return "Script"
 	case "system":
 		return "Change"
+	case "system_event", "application", "code_integrity", "sysmon_event", "security_named":
+		return "Other"
+	case "sysmon_file_block":
+		return "Filesystem"
 	case "auditd":
+		return "Other"
+	case "windefend":
+		return "Malware"
+	case "signinlogs":
+		return "Authentication"
+	case "auditlogs", "activitylogs":
+		return "Change"
+	case "riskdetection", "pim":
+		return "Alerts"
+	}
+	if _, ok := sigmaNamedChannels[c.category]; ok {
 		return "Other"
 	}
 	if id, ok := strings.CutPrefix(c.category, "security_"); ok {
@@ -612,6 +789,62 @@ func (c *sigmaConv) field(name string) string {
 	if c.category == "auditd" {
 		return c.auditdField(name)
 	}
+	if c.category == "cloudtrail" {
+		switch name {
+		case "requestParameters":
+			// The call's parameters as a whole: their JSON text.
+			return "request_parameters"
+		case "responseElements":
+			return "response_elements"
+		}
+		if !ingest.CloudTrailField(name) {
+			c.approx("field %s is not a CloudTrail field Signalith keeps", name)
+		}
+		return name
+	}
+	if c.category == "m365" {
+		f, ok := ingest.O365SigmaField(name)
+		if !ok {
+			c.approx("field %s is not a Microsoft 365 field Signalith keeps", name)
+			return name
+		}
+		return f
+	}
+	if slices.Contains(ingest.AzureServices, c.category) {
+		f, ok := ingest.AzureSigmaField(c.category, name)
+		if !ok {
+			c.approx("field %s has no Azure %s field Signalith keeps", name, c.category)
+			return name
+		}
+		return f
+	}
+	if c.category == "system_event" {
+		return c.systemField(name)
+	}
+	if c.category == "application" || c.category == "code_integrity" {
+		return c.eventDataField(name)
+	}
+	if ch, ok := sigmaNamedChannels[c.category]; ok {
+		return c.channelField(ch, name)
+	}
+	if c.category == "security_named" {
+		return c.channelField(ingest.SecurityChannel, name)
+	}
+	if f, ok := c.networkField(name); ok {
+		if f != "" {
+			return f
+		}
+		if _, isZeek := zeekLog(c.category); isZeek {
+			c.approx("field %s has no Signalith mapping in %s and is searched as-is", name, c.category)
+			return name
+		}
+		// A generic network category: fall through to the general names.
+	}
+	if c.category == "sysmon_file_block" {
+		if f, ok := sigmaEventFields["file_event"][strings.ToLower(name)]; ok {
+			return f
+		}
+	}
 	if m, ok := sigmaEventFields[c.category]; ok {
 		if f := m[strings.ToLower(name)]; f != "" {
 			return f
@@ -624,6 +857,72 @@ func (c *sigmaConv) field(name string) string {
 	}
 	c.approx("field %s has no Signalith mapping and is searched as-is", name)
 	return name
+}
+
+// systemField is the stored field of a System log event's field: its
+// provider, ID and host, or its data (see ingest.SystemDataField).
+func (c *sigmaConv) systemField(name string) string {
+	switch strings.ToLower(name) {
+	case "provider_name":
+		return "provider"
+	case "eventid":
+		return "signature_id"
+	case "computer", "computername":
+		return "host"
+	}
+	f, ok := ingest.SystemDataField(name)
+	if !ok {
+		c.approx("field %s is not data Signalith reads from System log events", name)
+		return name
+	}
+	return f
+}
+
+// eventDataField is the stored field of an Application or Code Integrity
+// log event's field: its provider, ID and host, or its data values
+// (Data).
+func (c *sigmaConv) eventDataField(name string) string {
+	switch strings.ToLower(name) {
+	case "provider_name":
+		return "provider"
+	case "eventid":
+		return "signature_id"
+	case "computer", "computername":
+		return "host"
+	case "data":
+		return "event_data"
+	}
+	c.approx("field %s is not data Signalith reads by name from these log events", name)
+	return name
+}
+
+// sigmaNamedChannels are the Windows logs whose events the parser reads by
+// name (ingest.ChannelDataField), by the category of their rules.
+var sigmaNamedChannels = func() map[string]string {
+	out := map[string]string{}
+	for service, channel := range ingest.NamedChannelServices {
+		out[ingest.NamedChannelCategory(service)] = channel
+	}
+	return out
+}()
+
+// channelField is the stored field of such a log's event's field: its
+// provider, ID and host, or its data (see ingest.ChannelDataField).
+func (c *sigmaConv) channelField(channel, name string) string {
+	switch strings.ToLower(name) {
+	case "provider_name":
+		return "provider"
+	case "eventid":
+		return "signature_id"
+	case "computer", "computername":
+		return "host"
+	}
+	f, ok := ingest.ChannelDataField(channel, name)
+	if !ok {
+		c.approx("field %s is not data Signalith reads from %s events", name, channel)
+		return name
+	}
+	return f
 }
 
 // auditdField is the stored field of an audit record's field (see
@@ -817,6 +1116,9 @@ func or(kids []query.Expr) query.Expr {
 // ---- selections ----
 
 func (c *sigmaConv) selection(name string, v any) (query.Expr, error) {
+	if c.category == "webserver" {
+		return c.webSelection(name, v)
+	}
 	switch s := v.(type) {
 	case map[string]any:
 		return c.fieldMap(s)
@@ -845,6 +1147,49 @@ func (c *sigmaConv) selection(name string, v any) (query.Expr, error) {
 		return &query.Text{Value: "*" + s + "*"}, nil
 	}
 	return nil, fmt.Errorf("selection %s has an unsupported shape", name)
+}
+
+// webSelection is a web server log rule's selection, whose keywords are
+// searched in the parts of a request the client chose: its target, user
+// agent and referrer (sigmacheck.WebKeywordFields).
+func (c *sigmaConv) webSelection(name string, v any) (query.Expr, error) {
+	var maps []any
+	var keywords []any
+	switch s := v.(type) {
+	case string:
+		keywords = append(keywords, s)
+	case []any:
+		for _, item := range s {
+			if _, ok := item.(map[string]any); ok {
+				maps = append(maps, item)
+			} else {
+				keywords = append(keywords, item)
+			}
+		}
+	default:
+		maps = append(maps, v)
+	}
+	var kids []query.Expr
+	for _, m := range maps {
+		e, err := c.fieldMap(m.(map[string]any))
+		if err != nil {
+			return nil, err
+		}
+		kids = append(kids, e)
+	}
+	if len(keywords) > 0 {
+		for _, f := range []string{"cs-uri-query", "cs-user-agent", "cs-referer"} {
+			e, err := c.fieldCond(f+"|contains", keywords)
+			if err != nil {
+				return nil, err
+			}
+			kids = append(kids, e)
+		}
+	}
+	if len(kids) == 0 {
+		return nil, fmt.Errorf("selection %s is empty", name)
+	}
+	return or(kids), nil
 }
 
 func (c *sigmaConv) fieldMap(m map[string]any) (query.Expr, error) {
@@ -878,6 +1223,11 @@ func (c *sigmaConv) fieldCond(key string, v any) (query.Expr, error) {
 	parts := strings.Split(key, "|")
 	sigField, mods := parts[0], parts[1:]
 	field := c.field(sigField)
+	if query.FormatValue(field) != field {
+		// A field searched as-is must be one word of the query language,
+		// or the query would say something else (a space, a quote, AND).
+		return nil, fmt.Errorf("field name %q cannot be searched", sigField)
+	}
 	var values []any
 	switch vv := v.(type) {
 	case []any:
@@ -913,6 +1263,15 @@ func (c *sigmaConv) fieldCond(key string, v any) (query.Expr, error) {
 			c.approx("%s: |cased is matched case-insensitively", key)
 		default:
 			return nil, fmt.Errorf("Sigma modifier |%s (in %s) is not supported", m, key)
+		}
+	}
+	if list := ingest.CloudTrailList(sigField); c.category == "cloudtrail" && list != "" {
+		// A field inside a list of objects: the list is kept as JSON text,
+		// which contains the value when an object's field does.
+		if how != "contains" {
+			c.approx("field %s is inside a list, which is searched as text", sigField)
+		} else {
+			field = list
 		}
 	}
 	var kids []query.Expr

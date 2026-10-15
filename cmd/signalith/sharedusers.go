@@ -29,7 +29,7 @@ import (
 // (internal/clusterauth). Until then, and on any server that is not a
 // member, they stay in this server's files and memory, as before. Which
 // one is decided at each start of the components; a change restarts them
-// in place, which signs everyone out once.
+// in place; the sessions made before carry over (carry).
 
 // sharedUsers links the shared users' documents to the components of each
 // start. Like the runtime, it belongs to the process: its session cache
@@ -135,6 +135,68 @@ func (ua *sharedUsers) start(ctx context.Context, rt *shared.Runtime, node *clus
 func (ua *sharedUsers) use(p *usersParts) {
 	ua.cur.Store(p)
 	ua.on.Store(p != nil)
+}
+
+// carry moves the sign-in sessions this server made while it kept its
+// users in its own files (legacy, for the users of people and the
+// built-in admin of c) into the shared sessions when it starts using the
+// shared users, so the switch signs out only those whom the shared
+// settings do not have as they were here (clusterauth.Sessions.Carry).
+func (p *usersParts) carry(ctx context.Context, legacy *auth.Sessions, people *users.Store, c *config.Config, log *slog.Logger) {
+	// A sign-in the old components were still finishing when the restart
+	// stopped waiting for them ends after the sessions moved: its session
+	// is carried on its own, or its browser would be signed out at once.
+	late := context.WithoutCancel(ctx) // ctx itself is replaced below
+	legacy.Forward(func(h auth.Held) {
+		ctx, cancel := context.WithTimeout(late, time.Minute)
+		defer cancel()
+		if n, _ := p.sessions.Carry(ctx, carried([]auth.Held{h}, people, c)); n == 0 {
+			log.Warn("a sign-in that finished while this server moved to the shared users could not be kept; that browser signs in again",
+				"audit", true, "user", h.User)
+		}
+	})
+	held := legacy.Take()
+	if len(held) == 0 {
+		return
+	}
+	list := carried(held, people, c)
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+	n, dropped := p.sessions.Carry(ctx, list)
+	dropped += len(held) - len(list)
+	log.Info("kept the sign-in sessions made before the users were shared", "audit", true, "kept", n, "ended", dropped)
+}
+
+// carried returns the sessions of held whose users this server has as
+// they are (the built-in admin of c, or a user of people), for Carry.
+func carried(held []auth.Held, people *users.Store, c *config.Config) []clusterauth.Carried {
+	list := make([]clusterauth.Carried, 0, len(held))
+	for _, h := range held {
+		cr := clusterauth.Carried{Held: h}
+		switch {
+		case h.Method == users.SourceBuiltin:
+			if !strings.EqualFold(h.User, c.Auth.AdminUser) {
+				continue
+			}
+			cr.Role, cr.PasswordHash = users.Admin, c.Auth.AdminPasswordHash
+		case people != nil:
+			u, ok := people.Get(h.User)
+			if !ok || u.Disabled || u.Source != h.Method {
+				continue
+			}
+			cr.Role = u.Role
+			if u.Source == users.SourceLocal {
+				cr.PasswordHash = people.PasswordVersion(u.Username)
+				if h.Version != "" && h.Version != api.PasswordStamp(cr.PasswordHash) {
+					continue
+				}
+			}
+		default:
+			continue
+		}
+		list = append(list, cr)
+	}
+	return list
 }
 
 // api is what the API needs of p.

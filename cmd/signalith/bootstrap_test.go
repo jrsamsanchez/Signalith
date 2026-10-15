@@ -31,16 +31,27 @@ import (
 // for uids 1000 and 65532. It prepares Linux container volumes, so the
 // tests using it do not run on Windows, where its read-only secrets could
 // not be cleaned up.
+// The CA's key is kept in a folder next to osDir.
 func bootstrap(t *testing.T, osDir, sigDir string) string {
+	t.Helper()
+	out, err := bootstrapWith(t, bootstrapOptions{OSDir: osDir, SigDir: sigDir, CADir: filepath.Join(filepath.Dir(osDir), "opensearch-ca")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+// bootstrapWith runs bootstrap-docker with o, as root would for uids 1000
+// and 65532, at o.Now or the current time.
+func bootstrapWith(t *testing.T, o bootstrapOptions) (string, error) {
 	t.Helper()
 	if runtime.GOOS == "windows" {
 		t.Skip("bootstrap-docker prepares Linux container volumes")
 	}
+	o.OSUID, o.SigUID = 1000, 65532
 	var out bytes.Buffer
-	if err := bootstrapDocker(&out, osDir, sigDir, 1000, 65532, time.Now()); err != nil {
-		t.Fatal(err)
-	}
-	return out.String()
+	err := bootstrapDocker(&out, o)
+	return out.String(), err
 }
 
 func readAll(t *testing.T, dir string) map[string]string {
@@ -175,16 +186,17 @@ func TestBootstrapDocker(t *testing.T) {
 	checkModes(t, filepath.Join(sigDir, "ingest-token"), 65532, 0o400)
 	checkModes(t, filepath.Join(sigDir, "opensearch-client-key.pem"), 65532, 0o400)
 
-	// A missing key means new certificates for both sides; the password
-	// and token stay.
+	// A missing key means a new node certificate under the same CA; the
+	// rest, the password and token stay.
 	os.Remove(filepath.Join(osDir, "node-key.pem"))
 	out = bootstrap(t, osDir, sigDir)
-	if !strings.Contains(out, "made new ones") || !strings.Contains(out, "restart") {
+	if !strings.Contains(out, "made a new node.pem, since node-key.pem is missing") || !strings.Contains(out, "restart") || strings.Contains(out, "admin.pem") {
 		t.Errorf("after a lost key:\n%s", out)
 	}
 	osNew, sigNew := readAll(t, osDir), readAll(t, sigDir)
-	if osNew["root-ca.pem"] == osFiles["root-ca.pem"] || sigNew["opensearch-ca.pem"] != osNew["root-ca.pem"] {
-		t.Error("certificates were not made again together")
+	if osNew["root-ca.pem"] != osFiles["root-ca.pem"] || sigNew["opensearch-ca.pem"] != osNew["root-ca.pem"] ||
+		osNew["node.pem"] == osFiles["node.pem"] || osNew["admin.pem"] != osFiles["admin.pem"] || sigNew["opensearch-client.pem"] != sigFiles["opensearch-client.pem"] {
+		t.Error("not just the node certificate was made again")
 	}
 	if sigNew["initial-admin-password"] != sigFiles["initial-admin-password"] || sigNew["ingest-token"] != sigFiles["ingest-token"] {
 		t.Error("the password or token changed")
@@ -312,7 +324,7 @@ func TestOpenSearchCerts(t *testing.T) {
 	t.Cleanup(func() { ospki.KeyBits = 3072 })
 	out := filepath.Join(t.TempDir(), "pki")
 	var msg bytes.Buffer
-	if err := writeOpenSearchCerts(&msg, out, "search1", []string{"search1.example.com", "192.0.2.7"}, time.Now()); err != nil {
+	if err := writeOpenSearchCerts(&msg, osCertsOptions{Out: out, Node: "search1", Names: []string{"search1.example.com", "192.0.2.7"}, Now: time.Now()}); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(msg.String(), "docs/opensearch-security.md") || !strings.Contains(msg.String(), "search1.example.com") {
@@ -328,6 +340,7 @@ func TestOpenSearchCerts(t *testing.T) {
 	})
 	slices.Sort(files)
 	want := []string{
+		"ca/root-ca-key.pem", "ca/root-ca.pem",
 		"opensearch/add-to-opensearch.yml",
 		"opensearch/certs/admin-key.pem", "opensearch/certs/admin.pem", "opensearch/certs/node-key.pem", "opensearch/certs/node.pem", "opensearch/certs/root-ca.pem",
 		"opensearch/opensearch-security/config.yml", "opensearch/opensearch-security/internal_users.yml",
@@ -343,6 +356,7 @@ func TestOpenSearchCerts(t *testing.T) {
 	if runtime.GOOS != "windows" {
 		checkModes(t, filepath.Join(out, "opensearch", "certs", "node-key.pem"), os.Getuid(), 0o600)
 		checkModes(t, filepath.Join(out, "signalith", "opensearch-client-key.pem"), os.Getuid(), 0o600)
+		checkModes(t, filepath.Join(out, "ca", "root-ca-key.pem"), os.Getuid(), 0o600)
 		checkModes(t, out, os.Getuid(), 0o700)
 	}
 	settings, _ := os.ReadFile(filepath.Join(out, "opensearch", "add-to-opensearch.yml"))
@@ -368,7 +382,7 @@ func TestOpenSearchCerts(t *testing.T) {
 	}
 
 	// Never over files that are there.
-	if err := writeOpenSearchCerts(&msg, out, "", nil, time.Now()); err == nil || !strings.Contains(err.Error(), "already has files") {
+	if err := writeOpenSearchCerts(&msg, osCertsOptions{Out: out, Now: time.Now()}); err == nil || !strings.Contains(err.Error(), "already has files") {
 		t.Errorf("second run: %v", err)
 	}
 }

@@ -1,7 +1,7 @@
 // Package clustercfg puts the content of the shared settings to use:
-// the threat intel feed list and its status, and the retention policies,
-// as documents of the shared configuration (internal/shared) rather than
-// each server's files. It has the adapters the intel and retention
+// the threat intel feed list and its status, the retention policies and
+// the settings of the Settings page, as documents of the shared
+// configuration (internal/shared) rather than each server's files. It has the adapters the intel and retention
 // packages use (FeedList, StatusStore, PolicyStore), the importers that
 // move the founder's files into the cluster, and the step that applies a
 // changed signalith.yaml to the shared values ("applied when changed").
@@ -27,8 +27,12 @@ const (
 // Sources of a shared value, in From.
 const (
 	FromYAML   = "yaml"
+	FromEnv    = "env"
 	FromImport = "import"
 	FromPage   = "page"
+	// FromApply is a change made with signalith cluster apply or
+	// signalith settings reset.
+	FromApply = "apply"
 )
 
 // From says where a shared value came from: the page, a server's
@@ -49,6 +53,7 @@ type Docs struct {
 	hub       *shared.Hub
 	feeds     *shared.Doc[FeedsBody]
 	retention *shared.Doc[RetentionBody]
+	settings  *shared.Doc[SettingsBody]
 	subs      map[string][]func()
 	// auth holds the users and directory sign-in documents, for their
 	// import and the settings of signalith.yaml applied to them.
@@ -60,6 +65,7 @@ const (
 	changeFeeds     = "feeds"
 	changeRetention = "retention"
 	changeIntel     = "intel"
+	changeSettings  = "settings"
 )
 
 // NewDocs returns the holder; the runtime makes the documents.
@@ -69,8 +75,10 @@ func NewDocs() *Docs { return &Docs{subs: map[string][]func(){}} }
 func (d *Docs) Track(h *shared.Hub) {
 	feeds := shared.NewDoc[FeedsBody](h, FeedsID, "feeds", 1)
 	ret := shared.NewDoc[RetentionBody](h, RetentionID, "retention", 1)
+	settings := shared.NewDoc[SettingsBody](h, SettingsID, SettingsKind, 1)
 	feeds.OnChange(func(_, _ *FeedsBody) { d.fire(changeFeeds) })
 	ret.OnChange(func(_, _ *RetentionBody) { d.fire(changeRetention) })
+	settings.OnChange(func(_, _ *SettingsBody) { d.fire(changeSettings) })
 	// Every intel write bumps watch:intel; each server then reloads its
 	// indicators.
 	h.Watch("intel", func(context.Context) error {
@@ -78,7 +86,7 @@ func (d *Docs) Track(h *shared.Hub) {
 		return nil
 	})
 	d.mu.Lock()
-	d.hub, d.feeds, d.retention = h, feeds, ret
+	d.hub, d.feeds, d.retention, d.settings = h, feeds, ret, settings
 	d.mu.Unlock()
 }
 
@@ -107,6 +115,10 @@ func (d *Docs) fire(kind string) {
 // OnRetention adds a function called after the retention policies
 // changed, here or on another server.
 func (d *Docs) OnRetention(fn func()) { d.on(changeRetention, fn) }
+
+// OnSettings adds a function called after the shared settings of the
+// Settings page changed, here or on another server.
+func (d *Docs) OnSettings(fn func()) { d.on(changeSettings, fn) }
 
 // OnIntel adds a function called when another server says it changed the
 // threat intel indicators. It must not block.
@@ -148,6 +160,14 @@ func (d *Docs) Retention() *shared.Doc[RetentionBody] {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	return d.retention
+}
+
+// Settings returns the document of the shared settings of the Settings
+// page.
+func (d *Docs) Settings() *shared.Doc[SettingsBody] {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.settings
 }
 
 // stamp is a From of source now, on node.

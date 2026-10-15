@@ -1,0 +1,9 @@
+{"rule": "88bf127c-613e-4579-99e4-c4d4b02f3840", "cases": [
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"PATCH","status":"200","url":"x /mgmt/tm/auth/user/ x"}},
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"PATCH","status":"200","url":"x /mgmt/tm/auth/user/ y"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"PATCH","status":"200"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"PATCI","status":"200","url":"x /mgmt/tm/auth/user/ x"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","status":"200","url":"x /mgmt/tm/auth/user/ x"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"PATCH","status":"201","url":"x /mgmt/tm/auth/user/ x"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"PATCH","url":"x /mgmt/tm/auth/user/ x"}}
+]}

@@ -78,9 +78,22 @@ func parseWindowsWith(r map[string]any, named map[string]string) Event {
 
 	switch {
 	case channel == "Security":
+		// The provider that wrote it: the Event Log service writes the
+		// log cleared (1102), the auditing system the rest.
+		if p := str(r, "ProviderName"); p != "" {
+			f["provider"] = p
+		}
 		parseWindowsSecurity(eventID, in, &ev)
+	case channel == ApplicationChannel || strings.EqualFold(channel, CodeIntegrityChannel):
+		parseWindowsEventData(str(r, "ProviderName"), in, &ev)
 	case channel == SystemChannel:
 		parseWindowsSystem(eventID, str(r, "ProviderName"), in, &ev)
+		if b := str(r, "Binary"); b != "" && ev.Model == "Other" {
+			// The event's binary data, which the OpenTelemetry
+			// Collector sends: for a service event, the service's name
+			// in UTF-16 hex.
+			f["system_binary"] = strings.ToLower(b)
+		}
 	case strings.EqualFold(channel, "Microsoft-Windows-Sysmon/Operational"):
 		kv := keyValues(str(r, "Message"))
 		for k, v := range named {
@@ -92,6 +105,8 @@ func parseWindowsWith(r map[string]any, named map[string]string) Event {
 			f["provider"] = p
 		}
 		parseSysmon(eventID, kv, &ev)
+	case IsNamedChannel(channel):
+		parseNamedChannel(channel, eventID, str(r, "ProviderName"), in, &ev)
 	case strings.EqualFold(channel, DefenderChannel):
 		parseDefender(eventID, str(r, "Message"), in, &ev)
 	case strings.EqualFold(channel, PowerShellChannel) && eventID == "4104":
@@ -541,6 +556,221 @@ func parseWindowsSecurity(eventID string, in []string, ev *Event) {
 		f["user_domain"] = at(in, 2)
 		f["logon_id"] = at(in, 3)
 		f["src_host"] = at(in, 4)
+	default:
+		if _, ok := namedChannelEvent(SecurityChannel, eventID); ok {
+			// An event no data model holds, read by name.
+			parseNamedChannel(SecurityChannel, eventID, "", in, ev)
+			d := map[string]string{}
+			for _, n := range securitySubject {
+				d[n], _ = ev.Fields[snakeField("security", n)].(string)
+			}
+			if d["SubjectUserName"] != "" {
+				subject(d, ev.Fields)
+			}
+			return
+		}
+		parseWindowsSecurityNamed(eventID, securityNamed(eventID, in), ev)
+	}
+}
+
+// securityNamed is a Security event's data by name, from its values in
+// schema order (windowsSchema).
+func securityNamed(eventID string, in []string) map[string]string {
+	names := windowsSchema[eventID]
+	d := make(map[string]string, len(names))
+	for i, n := range names {
+		d[n] = at(in, i)
+	}
+	return d
+}
+
+// subject sets the account that acted (the event's Subject*).
+func subject(d map[string]string, f map[string]any) {
+	f["user_sid"] = d["SubjectUserSid"]
+	f["user"] = d["SubjectUserName"]
+	f["user_domain"] = d["SubjectDomainName"]
+	f["logon_id"] = d["SubjectLogonId"]
+}
+
+// parseWindowsSecurityNamed reads the Security events parsed by their
+// data names.
+func parseWindowsSecurityNamed(eventID string, d map[string]string, ev *Event) {
+	f := ev.Fields
+	switch eventID {
+	case "4776":
+		// A domain controller (or the local SAM) checked an account's
+		// password for NTLM: Status 0x0 is success, else why it failed.
+		ev.Model = "Authentication"
+		f["app"] = "win:local"
+		f["signature"] = "The computer attempted to validate the credentials for an account"
+		f["authentication_method"] = d["PackageName"]
+		f["user"] = d["TargetUserName"]
+		f["src_host"] = d["Workstation"]
+		f["ntlm_status"] = d["Status"]
+		f["action"] = "failure"
+		if d["Status"] == "0x0" {
+			f["action"] = "success"
+		} else if reason, ok := windowsFailureReasons[strings.ToLower(d["Status"])]; ok {
+			f["reason"] = reason
+		}
+	case "4771":
+		// Kerberos pre-authentication failed: a wrong password (Status
+		// 0x18) or another Kerberos error.
+		ev.Model = "Authentication"
+		f["app"] = "win:local"
+		f["action"] = "failure"
+		f["signature"] = "Kerberos pre-authentication failed"
+		f["user"] = d["TargetUserName"]
+		f["user_sid"] = d["TargetSid"]
+		f["kerberos_service"] = d["ServiceName"]
+		f["ticket_options"] = d["TicketOptions"]
+		f["kerberos_status"] = d["Status"]
+		f["pre_auth_type"] = d["PreAuthType"]
+		f["src"] = strings.TrimPrefix(d["IpAddress"], "::ffff:")
+		f["src_port"] = atoi(d["IpPort"])
+		f["cert_issuer"] = d["CertIssuerName"]
+		f["cert_serial"] = d["CertSerialNumber"]
+		f["cert_thumbprint"] = d["CertThumbprint"]
+	case "4741", "4742":
+		// A computer account created or changed, with the attributes of
+		// a user account and its DNS name and service principal names.
+		ev.Model = "Change"
+		f["object_category"] = "computer"
+		f["action"] = map[string]string{"4741": "created", "4742": "modified"}[eventID]
+		f["signature"] = map[string]string{
+			"4741": "A computer account was created",
+			"4742": "A computer account was changed",
+		}[eventID]
+		subject(d, f)
+		f["object"] = d["TargetUserName"]
+		f["object_domain"] = d["TargetDomainName"]
+		f["object_sid"] = d["TargetSid"]
+		f["sam_account_name"] = d["SamAccountName"]
+		f["display_name"] = d["DisplayName"]
+		f["user_principal_name"] = d["UserPrincipalName"]
+		f["primary_group_id"] = d["PrimaryGroupId"]
+		f["allowed_to_delegate_to"] = d["AllowedToDelegateTo"]
+		f["old_uac_value"] = d["OldUacValue"]
+		f["new_uac_value"] = d["NewUacValue"]
+		f["user_account_control"] = strings.Join(strings.Fields(d["UserAccountControl"]), " ")
+		f["sid_history"] = d["SidHistory"]
+		f["dns_host_name"] = d["DnsHostName"]
+		f["service_principal_names"] = strings.Join(strings.Fields(d["ServicePrincipalNames"]), " ")
+	case "4781":
+		// An account renamed: object is its new name.
+		ev.Model = "Change"
+		f["action"] = "modified"
+		f["object_category"] = "user"
+		f["signature"] = "The name of an account was changed"
+		subject(d, f)
+		f["object"] = d["NewTargetUserName"]
+		f["old_object"] = d["OldTargetUserName"]
+		f["object_domain"] = d["TargetDomainName"]
+		f["object_sid"] = d["TargetSid"]
+	case "4727", "4730", "4737":
+		// A security-enabled global group created, deleted or changed.
+		ev.Model = "Change"
+		f["object_category"] = "group"
+		f["action"] = map[string]string{"4727": "created", "4730": "deleted", "4737": "modified"}[eventID]
+		f["signature"] = map[string]string{
+			"4727": "A security-enabled global group was created",
+			"4730": "A security-enabled global group was deleted",
+			"4737": "A security-enabled global group was changed",
+		}[eventID]
+		subject(d, f)
+		f["object"] = d["TargetUserName"]
+		f["object_domain"] = d["TargetDomainName"]
+		f["object_sid"] = d["TargetSid"]
+		f["sam_account_name"] = d["SamAccountName"]
+		f["sid_history"] = d["SidHistory"]
+	case "4729":
+		// A member removed from a security-enabled global group.
+		ev.Model = "Change"
+		f["action"] = "modified"
+		f["object_category"] = "group"
+		f["signature"] = "A member was removed from a security-enabled global group"
+		subject(d, f)
+		f["member"] = d["MemberName"]
+		f["member_sid"] = d["MemberSid"]
+		f["object"] = d["TargetUserName"]
+		f["object_domain"] = d["TargetDomainName"]
+		f["object_sid"] = d["TargetSid"]
+	case "4798", "4799":
+		// A user's local groups (4798) or a local group's members (4799)
+		// listed, by the process that asked.
+		ev.Model = "Change"
+		f["action"] = "read"
+		f["object_category"] = map[string]string{"4798": "user", "4799": "group"}[eventID]
+		f["signature"] = map[string]string{
+			"4798": "A user's local group membership was enumerated",
+			"4799": "A security-enabled local group membership was enumerated",
+		}[eventID]
+		subject(d, f)
+		f["object"] = d["TargetUserName"]
+		f["object_domain"] = d["TargetDomainName"]
+		f["object_sid"] = d["TargetSid"]
+		f["process_id"] = atoi(d["CallerProcessId"])
+		f["process_path"] = d["CallerProcessName"]
+		f["process_name"] = baseName(d["CallerProcessName"])
+	case "4886", "4887":
+		// A certificate requested from Certificate Services (4886) and
+		// issued (4887): who asked, and the request's attributes, such as
+		// its template and any subject alternative name.
+		ev.Model = "Change"
+		f["object_category"] = "certificate"
+		f["action"] = map[string]string{"4886": "requested", "4887": "created"}[eventID]
+		f["signature"] = map[string]string{
+			"4886": "Certificate Services received a certificate request",
+			"4887": "Certificate Services approved a certificate request and issued a certificate",
+		}[eventID]
+		f["object"] = d["RequestId"]
+		f["cert_request_id"] = d["RequestId"]
+		f["cert_requester"] = d["Requester"]
+		f["cert_attributes"] = d["Attributes"]
+		f["cert_disposition"] = d["Disposition"]
+		f["cert_subject_key_id"] = d["SubjectKeyIdentifier"]
+		f["cert_subject"] = d["Subject"]
+	case "1102":
+		// The Security log cleared.
+		ev.Model = "Change"
+		f["action"] = "deleted"
+		f["object_category"] = "audit_log"
+		f["object"] = "Security"
+		f["signature"] = "The audit log was cleared"
+		subject(d, f)
+	case "4699", "4701", "4702":
+		// A scheduled task deleted, disabled or updated: its definition
+		// (the new one for an update).
+		ev.Model = "Change"
+		f["object_category"] = "scheduled_task"
+		f["action"] = map[string]string{"4699": "deleted", "4701": "modified", "4702": "modified"}[eventID]
+		f["signature"] = map[string]string{
+			"4699": "A scheduled task was deleted",
+			"4701": "A scheduled task was disabled",
+			"4702": "A scheduled task was updated",
+		}[eventID]
+		subject(d, f)
+		content := firstOf(d["TaskContent"], d["TaskContentNew"])
+		f["object"] = d["TaskName"]
+		f["task_name"] = d["TaskName"]
+		f["task_content"] = content
+		f["task_command"] = taskElement(content, "Command")
+		f["task_arguments"] = taskElement(content, "Arguments")
+	case "5140":
+		// A network share accessed (with Audit File Share on): once per
+		// session, for the share as a whole.
+		ev.Model = "Filesystem"
+		f["signature"] = "A network share object was accessed"
+		subject(d, f)
+		f["object_type"] = d["ObjectType"]
+		f["src"] = strings.TrimPrefix(d["IpAddress"], "::ffff:")
+		f["src_port"] = atoi(d["IpPort"])
+		f["share_name"] = d["ShareName"]
+		f["share_path"] = d["ShareLocalPath"]
+		f["access_mask"] = d["AccessMask"]
+		f["access_list"] = strings.Join(strings.Fields(d["AccessList"]), " ")
+		f["access_names"] = accessNames(f["access_list"].(string))
+		f["action"] = objectAccessAction(f["access_list"].(string))
 	}
 }
 
@@ -553,15 +783,17 @@ const SystemChannel = "System"
 const ServiceControlManager = "Service Control Manager"
 
 // parseWindowsSystem reads the System log events the parser knows: a
-// service installed (7045). Event IDs belong to their provider, so only
-// the Service Control Manager's 7045 is one; a record without a provider
-// is taken as its.
+// service installed (7045), and the data of the other events
+// systemEvents lists. Event IDs belong to their provider, so only the
+// Service Control Manager's 7045 is one; a record without a provider is
+// taken as its.
 func parseWindowsSystem(eventID, provider string, in []string, ev *Event) {
 	f := ev.Fields
 	if provider != "" {
 		f["provider"] = provider
 	}
 	if eventID != "7045" || (provider != "" && !strings.EqualFold(provider, ServiceControlManager)) {
+		parseSystemEvent(eventID, provider, in, ev)
 		return
 	}
 	f["provider"] = ServiceControlManager
@@ -575,6 +807,110 @@ func parseWindowsSystem(eventID, provider string, in []string, ev *Event) {
 	f["service_type"] = at(in, 2)
 	f["service_start_type"] = at(in, 3)
 	f["service_account"] = at(in, 4)
+}
+
+// systemEvent is a System log event the parser reads the data of: what
+// it is, and the names of its data values in schema order.
+type systemEvent struct {
+	signature string
+	data      []string
+}
+
+// systemEvents are the System log events, other than a service installed
+// (7045), whose data the parser keeps, by provider (lower case) and
+// event ID. Each data value is stored as SystemDataField names it.
+var systemEvents = map[string]systemEvent{
+	"service control manager|7023": {"A service terminated with an error", []string{"param1", "param2"}},
+	"service control manager|7034": {"A service terminated unexpectedly", []string{"param1", "param2"}},
+	"service control manager|7036": {"A service changed state", []string{"param1", "param2"}},
+	"service control manager|7040": {"A service's start type changed", []string{"param1", "param2", "param3", "param4"}},
+	"microsoft-windows-eventlog|104": {"An event log was cleared",
+		[]string{"SubjectUserName", "SubjectDomainName", "Channel", "BackupPath"}},
+	"microsoft-windows-kernel-general|16": {"A registry hive's access history was cleared",
+		[]string{"HiveNameLength", "HiveName", "KeysUpdated", "DirtyPages"}},
+	"application popup|26":                   {"An application popup was shown", []string{"Caption", "Message"}},
+	"microsoft-windows-distributedcom|10001": {"A DCOM server could not start", []string{"param1", "param2", "param3"}},
+}
+
+// systemEventFor is the System log event of a provider ("" for the
+// Service Control Manager) and event ID, if the parser reads its data.
+func systemEventFor(provider, eventID string) (systemEvent, bool) {
+	if provider == "" {
+		provider = ServiceControlManager
+	}
+	e, ok := systemEvents[strings.ToLower(provider)+"|"+eventID]
+	return e, ok
+}
+
+// SystemDataField is the stored field of a System log event's data value
+// (param1 is system_param1, HiveName system_hive_name), for the values
+// of the events the parser reads and their binary data (Binary).
+func SystemDataField(name string) (string, bool) {
+	f := systemField(name)
+	return f, systemDataFields[f]
+}
+
+// systemField is system_ and a data value's name in snake case.
+func systemField(name string) string { return snakeField("system", name) }
+
+// systemDataFields are the fields SystemDataField names.
+var systemDataFields = func() map[string]bool {
+	out := map[string]bool{"system_binary": true}
+	for _, e := range systemEvents {
+		for _, n := range e.data {
+			out[systemField(n)] = true
+		}
+	}
+	return out
+}()
+
+// parseSystemEvent keeps the data of a System log event systemEvents
+// lists, by name; the event stays in Other, found by its provider and ID.
+func parseSystemEvent(eventID, provider string, in []string, ev *Event) {
+	e, ok := systemEventFor(provider, eventID)
+	if !ok {
+		return
+	}
+	f := ev.Fields
+	f["signature"] = e.signature
+	for i, n := range e.data {
+		if v := at(in, i); v != "" {
+			f[systemField(n)] = v
+		}
+	}
+	if eventID == "104" {
+		// The account that cleared the log.
+		f["user"] = at(in, 0)
+		f["user_domain"] = at(in, 1)
+	}
+}
+
+// ApplicationChannel is the Windows Application log, where programs and
+// services (SQL Server, Windows Installer, backup tools) log.
+const ApplicationChannel = "Application"
+
+// CodeIntegrityChannel is where Windows Code Integrity logs drivers and
+// images that are unsigned, revoked or blocked by policy.
+const CodeIntegrityChannel = "Microsoft-Windows-CodeIntegrity/Operational"
+
+// parseWindowsEventData reads an Application or Code Integrity log event:
+// its provider, and its data values one per line as event_data, which
+// rules search for words inside (each provider's events have their own
+// data). The event stays in Other, found by its provider and ID.
+func parseWindowsEventData(provider string, in []string, ev *Event) {
+	f := ev.Fields
+	if provider != "" {
+		f["provider"] = provider
+	}
+	var data []string
+	for _, v := range in {
+		if v = strings.TrimSpace(v); v != "" {
+			data = append(data, v)
+		}
+	}
+	if len(data) > 0 {
+		f["event_data"] = strings.Join(data, "\n")
+	}
 }
 
 // accessRightNames are the names Windows shows for the access codes of
@@ -637,6 +973,14 @@ func taskElement(task, tag string) string {
 		return ""
 	}
 	return strings.TrimSpace(html.UnescapeString(v))
+}
+
+// sysmonFileBlocks are the action and signature of Sysmon's file block
+// events.
+var sysmonFileBlocks = map[string][2]string{
+	"27": {"blocked", "Executable file creation blocked"},
+	"28": {"blocked", "File shredding blocked"},
+	"29": {"created", "Executable file detected"},
 }
 
 func parseSysmon(eventID string, kv map[string]string, ev *Event) {
@@ -747,6 +1091,22 @@ func parseSysmon(eventID string, kv map[string]string, ev *Event) {
 		if h := sysmonHash(kv["Hashes"], "SHA256"); h != "" {
 			f["file_hash"] = h
 		}
+	case "27", "28", "29":
+		// An executable file's creation blocked (FileBlockExecutable,
+		// 27), a file's deletion by a shredding tool blocked
+		// (FileBlockShredding, 28) and an executable file created
+		// (FileExecutableDetected, 29).
+		ev.Model = "Filesystem"
+		f["action"], f["signature"] = sysmonFileBlocks[eventID][0], sysmonFileBlocks[eventID][1]
+		f["file_path"] = kv["TargetFilename"]
+		f["file_name"] = baseName(kv["TargetFilename"])
+		sysmonProcess(kv, f)
+		if h := sysmonHash(kv["Hashes"], "SHA256"); h != "" {
+			f["file_hash"] = h
+		}
+	case "16":
+		ev.Model = "Other"
+		f["signature"] = "Sysmon configuration changed"
 	case "15":
 		// An alternate data stream written (FileCreateStreamHash), such as
 		// the Zone.Identifier a browser adds to a download: the stream's
@@ -764,6 +1124,18 @@ func parseSysmon(eventID string, kv map[string]string, ev *Event) {
 		}
 		f["file_hashes"] = firstOf(kv["Hash"], kv["Hashes"])
 		f["file_contents"] = kv["Contents"]
+	case "5":
+		ev.Model = "Endpoint"
+		f["action"] = "stopped"
+		f["signature"] = "Process terminated"
+		sysmonProcess(kv, f)
+	case "9":
+		// A process reading a drive directly (\Device\HarddiskVolume2),
+		// bypassing the file system.
+		ev.Model = "Endpoint"
+		f["signature"] = "RawAccessRead detected"
+		f["device"] = kv["Device"]
+		sysmonProcess(kv, f)
 	case "17", "18":
 		// A named pipe created (17) or connected to (18), by the process
 		// that did it.
@@ -896,23 +1268,36 @@ var multiLine = map[string]bool{"CommandLine": true, "ParentCommandLine": true, 
 func keyValues(msg string) map[string]string {
 	out := map[string]string{}
 	cont := "" // the multi-line key being continued
+	// The continued value is built here, not by adding to the string
+	// line by line, which takes time quadratic in its length.
+	var b strings.Builder
+	end := func() {
+		if cont != "" {
+			out[cont] = b.String()
+			cont = ""
+		}
+	}
 	for _, raw := range strings.Split(msg, "\n") {
 		line := strings.TrimSpace(raw)
 		k, v, ok := strings.Cut(line, ":")
 		isKey := ok && k != "" && !strings.ContainsAny(k, " \t") && (v == "" || v[0] == ' ' || v[0] == '\t')
 		if !isKey {
 			if cont != "" {
-				out[cont] += "\n" + strings.TrimRight(raw, "\r")
+				b.WriteString("\n")
+				b.WriteString(strings.TrimRight(raw, "\r"))
 			}
 			continue
 		}
-		cont = ""
+		end()
 		if _, exists := out[k]; !exists {
 			out[k] = strings.TrimSpace(v)
 			if multiLine[k] {
 				cont = k
+				b.Reset()
+				b.WriteString(out[k])
 			}
 		}
 	}
+	end()
 	return out
 }

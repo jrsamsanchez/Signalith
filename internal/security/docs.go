@@ -64,6 +64,7 @@ var (
 	docReadmeWindows   = DocLink{File: "README.md", Anchor: "windows"}
 	docReadmeDocker    = DocLink{File: "README.md", Anchor: "docker-evaluation"}
 	docServersIdentity = DocLink{File: "servers.md", Anchor: "identity"}
+	docServersCRL      = DocLink{File: "servers.md", Anchor: "ending-a-servers-opensearch-access-at-once"}
 	docSecSyslog       = DocLink{File: "security.md", Anchor: "syslog"}
 	docSecDisk         = DocLink{File: "security.md", Anchor: "disk-encryption"}
 	docSecOSDisk       = DocLink{File: "security.md", Anchor: "where-opensearch-keeps-events"}
@@ -79,7 +80,7 @@ func AllDocs() []DocLink {
 		docHTTPSAgents, docHTTPSTrust, docHTTPSOldToken, docOSPoint, docOSLinux, docOSCerts, docOSDocker, docOSNotLoaded, docOSRoles, docEncDocker,
 		docEncElsewhere, docEncKey, docEncChange, docEncBackup, docEncWhat, docEncNot, docEncLosing, docEncDisk,
 		docEncInUse, docEncCommands, docRetArchives, docUsersBuiltin, docUsersLocal, docUsersDirectory, docReadmeLinux,
-		docReadmeWindows, docReadmeDocker, docServersIdentity, docSecSyslog, docSecDisk, docSecOSDisk, docSecFiles, docTokensHow, docTokensReplace,
+		docReadmeWindows, docReadmeDocker, docServersIdentity, docServersCRL, docSecSyslog, docSecDisk, docSecOSDisk, docSecFiles, docTokensHow, docTokensReplace,
 		docSecNotChecked}
 }
 

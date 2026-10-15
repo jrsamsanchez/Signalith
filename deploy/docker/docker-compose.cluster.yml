@@ -1,0 +1,204 @@
+# A lab of two Signalith servers behind HAProxy, sharing one OpenSearch, to
+# try load balancing and failover on one machine. Not for production: both
+# servers run on this computer. From the folder you cloned Signalith into:
+#
+#   1. Start it:
+#        docker compose -f deploy/docker/docker-compose.cluster.yml up -d
+#   2. Show the admin password:
+#        docker compose -f deploy/docker/docker-compose.cluster.yml exec signalith-a signalith initial-password
+#   3. Open https://localhost:8443 (HAProxy, which passes each connection on
+#      to signalith-a or signalith-b) and sign in as admin. The Servers page
+#      lists both; the Health page totals what each received.
+#   4. Stop one server and keep working; agents and syslog carry on with the
+#      other:
+#        docker compose -f deploy/docker/docker-compose.cluster.yml stop signalith-b
+#
+# HAProxy (deploy/loadbalancer/haproxy.cfg) writes a PROXY protocol header
+# before each connection, so Signalith sees each browser, agent and device's
+# own address. Each server still makes its own HTTPS certificate here, so the
+# browser may ask about the certificate again when HAProxy picks the other
+# server. Signalith's image comes from GitHub; to build it from the code you
+# checked out, set SIGNALITH_IMAGE=signalith:local after
+#   docker build -f deploy/docker/Dockerfile -t signalith:local .
+# To remove the lab and its data:
+#   docker compose -f deploy/docker/docker-compose.cluster.yml down -v
+
+x-signalith: &signalith
+  image: ${SIGNALITH_IMAGE:-ghcr.io/jrsamsanchez/signalith:main}
+  restart: unless-stopped
+  depends_on:
+    setup: { condition: service_completed_successfully }
+    cluster-key: { condition: service_completed_successfully }
+    opensearch-security: { condition: service_completed_successfully }
+    opensearch: { condition: service_healthy, required: false }
+  stop_grace_period: 90s
+  read_only: true
+  tmpfs:
+    - /tmp
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+  ulimits:
+    core: 0
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "5" }
+
+services:
+  setup:
+    image: ${SIGNALITH_IMAGE:-ghcr.io/jrsamsanchez/signalith:main}
+    user: "0:0"
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER]
+    security_opt:
+      - no-new-privileges:true
+    network_mode: none
+    command: ["bootstrap-docker", "-opensearch-dir", "/opensearch-certs", "-signalith-dir", "/signalith-secrets"]
+    volumes:
+      - opensearch-certs:/opensearch-certs
+      - signalith-secrets:/signalith-secrets
+    restart: "no"
+
+  # The cluster key both servers share their settings with: 32 random bytes,
+  # made once, readable by Signalith only (docs/cluster-cli.md).
+  cluster-key:
+    image: ${SIGNALITH_IMAGE:-ghcr.io/jrsamsanchez/signalith:main}
+    user: "0:0"
+    cap_drop: [ALL]
+    cap_add: [CHOWN, FOWNER]
+    security_opt:
+      - no-new-privileges:true
+    network_mode: none
+    entrypoint: ["sh", "-c", "test -s /cluster/cluster-key || { umask 077; head -c 32 /dev/urandom | base64 > /cluster/cluster-key; }; chown 65532:65532 /cluster/cluster-key; chmod 400 /cluster/cluster-key"]
+    volumes:
+      - cluster-key:/cluster
+    restart: "no"
+
+  opensearch:
+    image: opensearchproject/opensearch:2.17.1@sha256:1193b7c29c5d63028523728243cc4da047ac49f697a8f8105e5aeee2f89bcc4c
+    restart: unless-stopped
+    depends_on:
+      setup: { condition: service_completed_successfully }
+    environment:
+      - discovery.type=single-node
+      - DISABLE_INSTALL_DEMO_CONFIG=true
+      - DISABLE_PERFORMANCE_ANALYZER_AGENT_CLI=true
+      - OPENSEARCH_JAVA_OPTS=-Xms1g -Xmx1g
+    ulimits:
+      memlock: { soft: -1, hard: -1 }
+      nofile: { soft: 65536, hard: 65536 }
+    volumes:
+      - opensearch-data:/usr/share/opensearch/data
+      - opensearch-certs:/usr/share/opensearch/config/certs:ro
+      - ./opensearch/opensearch.yml:/usr/share/opensearch/config/opensearch.yml:ro
+      - ./opensearch/security/config.yml:/usr/share/opensearch/config/opensearch-security/config.yml:ro
+      - ./opensearch/security/internal_users.yml:/usr/share/opensearch/config/opensearch-security/internal_users.yml:ro
+      - ./opensearch/security/roles.yml:/usr/share/opensearch/config/opensearch-security/roles.yml:ro
+      - ./opensearch/security/roles_mapping.yml:/usr/share/opensearch/config/opensearch-security/roles_mapping.yml:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf -o /dev/null --cacert /usr/share/opensearch/config/certs/root-ca.pem --cert /usr/share/opensearch/config/certs/admin.pem --key /usr/share/opensearch/config/certs/admin-key.pem https://localhost:9200/_cluster/health && curl -sf -o /dev/null --cacert /usr/share/opensearch/config/certs/root-ca.pem https://localhost:9200/_plugins/_security/health || exit 1"]
+      interval: 10s
+      start_period: 10m
+      retries: 30
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+
+  opensearch-security:
+    image: opensearchproject/opensearch:2.17.1
+    depends_on:
+      setup: { condition: service_completed_successfully }
+      opensearch: { condition: service_started }
+    user: "1000:1000"
+    entrypoint: ["sh", "-c", "tr -d '\\r' < /usr/share/opensearch/load-security.sh > /tmp/load-security.sh && exec sh /tmp/load-security.sh"]
+    environment:
+      - JAVA_OPTS=-Xms32m -Xmx256m
+    volumes:
+      - opensearch-certs:/usr/share/opensearch/config/certs:ro
+      - ./opensearch/load-security.sh:/usr/share/opensearch/load-security.sh:ro
+      - ./opensearch/security/config.yml:/usr/share/opensearch/config/opensearch-security/config.yml:ro
+      - ./opensearch/security/internal_users.yml:/usr/share/opensearch/config/opensearch-security/internal_users.yml:ro
+      - ./opensearch/security/roles.yml:/usr/share/opensearch/config/opensearch-security/roles.yml:ro
+      - ./opensearch/security/roles_mapping.yml:/usr/share/opensearch/config/opensearch-security/roles_mapping.yml:ro
+      - opensearch-security-loaded:/usr/share/opensearch/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    restart: "no"
+
+  signalith-a:
+    <<: *signalith
+    hostname: siem-a
+    networks:
+      default: { aliases: [siem-a] }
+    environment:
+      - SIGNALITH_ADMIN_PASSWORD_FILE=/run/signalith-secrets/initial-admin-password
+      - SIGNALITH_INGEST_TOKEN_FILE=/run/signalith-secrets/ingest-token
+      - SIGNALITH_CLUSTER_KEY_FILE=/run/signalith-cluster/cluster-key
+      - SIGNALITH_NODE_NAME=siem-a
+      - SIGNALITH_NODE_URL=https://siem-a:8080
+    volumes:
+      - ./signalith-cluster.yaml:/etc/signalith/signalith.yaml:ro
+      - signalith-a-data:/var/lib/signalith
+      - signalith-secrets:/run/signalith-secrets:ro
+      - cluster-key:/run/signalith-cluster:ro
+
+  signalith-b:
+    <<: *signalith
+    hostname: siem-b
+    networks:
+      default: { aliases: [siem-b] }
+    environment:
+      - SIGNALITH_ADMIN_PASSWORD_FILE=/run/signalith-secrets/initial-admin-password
+      - SIGNALITH_INGEST_TOKEN_FILE=/run/signalith-secrets/ingest-token
+      - SIGNALITH_CLUSTER_KEY_FILE=/run/signalith-cluster/cluster-key
+      - SIGNALITH_NODE_NAME=siem-b
+      - SIGNALITH_NODE_URL=https://siem-b:8080
+    volumes:
+      - ./signalith-cluster.yaml:/etc/signalith/signalith.yaml:ro
+      - signalith-b-data:/var/lib/signalith
+      - signalith-secrets:/run/signalith-secrets:ro
+      - cluster-key:/run/signalith-cluster:ro
+
+  # Passes the web port and syslog through to both servers with a PROXY
+  # protocol v2 header. Its address (172.30.11.10) is the one trusted proxy
+  # in signalith-cluster.yaml.
+  haproxy:
+    image: haproxy:3.0-alpine
+    restart: unless-stopped
+    depends_on:
+      signalith-a: { condition: service_started }
+      signalith-b: { condition: service_started }
+    networks:
+      default: { ipv4_address: 172.30.11.10 }
+    ports:
+      - "8443:8443"
+      - "514:514/tcp"
+      - "6514:6514"
+    volumes:
+      - ../loadbalancer/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.30.11.0/24
+
+volumes:
+  opensearch-data:
+  opensearch-certs:
+  opensearch-security-loaded:
+  signalith-secrets:
+  cluster-key:
+  signalith-a-data:
+  signalith-b-data:

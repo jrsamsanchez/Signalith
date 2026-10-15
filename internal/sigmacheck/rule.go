@@ -16,7 +16,9 @@ import (
 	"fmt"
 	"net/netip"
 	"regexp"
+	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode/utf16"
 
@@ -93,7 +95,60 @@ func Parse(src []byte) (*Rule, error) {
 		return nil, err
 	}
 	r.cond = n
+	if r.Logsource["service"] == "security" {
+		r.dropLegacyEventIDs()
+	}
+	if r.Logsource["category"] == "webserver" {
+		r.webKeywords()
+	}
 	return r, nil
+}
+
+// WebKeywordFields are where a web server log rule's keywords are
+// searched: the parts of a request the client chose (its target, user
+// agent and referrer), which is what the rules look for in a log line.
+var WebKeywordFields = []string{"cs-uri-query", "cs-user-agent", "cs-referer"}
+
+// webKeywords turns a web server log rule's keywords into searches of the
+// fields WebKeywordFields lists.
+func (r *Rule) webKeywords() {
+	for _, s := range r.sels {
+		if len(s.keywords) == 0 {
+			continue
+		}
+		var values []*string
+		for _, kw := range s.keywords {
+			values = append(values, &kw)
+		}
+		for _, f := range WebKeywordFields {
+			s.alts = append(s.alts, []*fieldCond{{field: f, mods: []string{"contains"}, values: values}})
+		}
+		s.keywords = nil
+	}
+}
+
+// dropLegacyEventIDs leaves the Windows 2000 and XP event IDs (below
+// 1000) out of an EventID list that names current ones too, so test
+// events are made as the current events: the old ones never reach
+// Signalith (EventIDs).
+func (r *Rule) dropLegacyEventIDs() {
+	legacy := func(v *string) bool {
+		if v == nil {
+			return false
+		}
+		n, err := strconv.Atoi(*v)
+		return err == nil && n < 1000
+	}
+	for _, s := range r.sels {
+		for _, alt := range s.alts {
+			for _, fc := range alt {
+				if fc.field != "EventID" || len(fc.mods) > 0 || !slices.ContainsFunc(fc.values, func(v *string) bool { return v != nil && !legacy(v) }) {
+					continue
+				}
+				fc.values = slices.DeleteFunc(fc.values, legacy)
+			}
+		}
+	}
 }
 
 // Fields returns every field name the rule's selections use.
@@ -115,7 +170,10 @@ func (r *Rule) Fields() []string {
 }
 
 // EventIDs returns the event IDs the rule's selections name (EventID
-// without modifiers), in order.
+// without modifiers), in order. Windows 2000 and XP event IDs (below
+// 1000, such as 517 for the log cleared) are left out when it also names
+// current ones, as the converter leaves them out: those systems' events
+// never reach Signalith.
 func (r *Rule) EventIDs() []string {
 	seen := map[string]bool{}
 	for _, s := range r.sels {
@@ -137,6 +195,13 @@ func (r *Rule) EventIDs() []string {
 		out = append(out, id)
 	}
 	sort.Strings(out)
+	modern := slices.DeleteFunc(slices.Clone(out), func(id string) bool {
+		n, err := strconv.Atoi(id)
+		return err == nil && n < 1000
+	})
+	if len(modern) > 0 {
+		return modern
+	}
 	return out
 }
 

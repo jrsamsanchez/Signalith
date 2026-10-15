@@ -97,6 +97,9 @@ type principal struct {
 	// breakGlass is set when the built-in admin signed in with the
 	// password signalith passwd -local wrote on this server.
 	breakGlass bool
+	// tokenID is the API token the request signed in with (Method
+	// "token"), which may only read (tokenMayUse).
+	tokenID string
 }
 
 type userKey struct{}
@@ -132,6 +135,11 @@ func (s *Server) allow(rt route, next http.Handler) http.Handler {
 			}
 			writeJSON(w, http.StatusForbidden, map[string]any{
 				"error": "Choose a new password before you continue.", "code": "password_change_required"})
+			return
+		}
+		if p.Method == "token" && !tokenMayUse(r) {
+			writeJSON(w, http.StatusForbidden, map[string]any{
+				"error": "API tokens can only read. Sign in as a user to change anything.", "code": "token_read_only"})
 			return
 		}
 		if !p.Role.AtLeast(rt.Role) {
@@ -180,9 +188,15 @@ const backgroundHeader = "X-Signalith-Background"
 
 func background(r *http.Request) bool { return r.Header.Get(backgroundHeader) == "1" }
 
-// authenticate checks the session cookie, then Basic credentials. It
-// returns nil without an error when the request is not signed in.
+// authenticate checks an API token, the session cookie, then Basic
+// credentials. It returns nil without an error when the request is not
+// signed in.
 func (s *Server) authenticate(r *http.Request) (*principal, error) {
+	if tok := bearerAPIToken(r); tok != "" {
+		// A token that is not accepted never falls back to the cookie: a
+		// program sending one wants to know it was refused.
+		return s.apiTokenPrincipal(tok), nil
+	}
 	if c, err := r.Cookie(s.cookieName(r)); err == nil {
 		if ss, ok := s.sessions().Lookup(r.Context(), c.Value, !background(r)); ok {
 			// A password changed since signing in (perhaps on another
@@ -247,11 +261,17 @@ func (s *Server) principalFor(name string) *principal {
 // holding its hash, or is "" for users without one here (the built-in
 // admin and directory users).
 func (s *Server) passwordStamp(name string) string {
-	v := s.userStore().PasswordVersion(name)
-	if v == "" {
+	return PasswordStamp(s.userStore().PasswordVersion(name))
+}
+
+// PasswordStamp is what a session made in this server's memory records
+// of the password hash h its user signed in with (auth.Session.Version):
+// "" for none.
+func PasswordStamp(h string) string {
+	if h == "" {
 		return ""
 	}
-	sum := sha256.Sum256([]byte(v))
+	sum := sha256.Sum256([]byte(h))
 	return hex.EncodeToString(sum[:16])
 }
 
@@ -704,6 +724,13 @@ func (s *Server) runDirectoryRecheck(name string, rev uint64, settingsChanged bo
 func (s *Server) revokeDirectoryUser(ctx context.Context, name, reason string) {
 	u, changed, err := s.userStore().RefuseDirectoryUser(ctx, name, reason)
 	if err != nil {
+		// The record could not be changed, as while the cluster takes
+		// the users over: the user's sessions end all the same.
+		if cur, ok := s.userStore().Get(name); ok && cur.Source == users.SourceDirectory {
+			if ended := s.sessions().EndUser(ctx, cur.Username, ""); ended > 0 {
+				s.Log.Warn("directory user lost access", "audit", true, "user", cur.Username, "reason", reason, "sessions_ended", ended, "by", "directory", "err", err)
+			}
+		}
 		return
 	}
 	ended := s.sessions().EndUser(ctx, u.Username, "")

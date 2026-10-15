@@ -10,8 +10,10 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/jrsamsanchez/signalith/internal/auth"
 	"github.com/jrsamsanchez/signalith/internal/cluster/ostest"
 	"github.com/jrsamsanchez/signalith/internal/config"
+	"github.com/jrsamsanchez/signalith/internal/users"
 )
 
 // signInAs signs in on the sign-in page with user and pass, keeps the
@@ -33,7 +35,7 @@ func (rs *running) signInAs(user, pass string) int {
 }
 
 // usersShared waits for rs to keep its users in the shared settings, and
-// signs in again: the switch signs everyone out once.
+// signs in again, for a session made in the shared settings.
 func (rs *running) usersShared() {
 	rs.t.Helper()
 	eventually(rs.t, rs.r.node.Name()+" keeps its users in the shared settings", func() bool {
@@ -160,4 +162,44 @@ func TestPasswdOnAMember(t *testing.T) {
 		t.Errorf("A's -local password on B: %d", code)
 	}
 	fos.Block(false)
+}
+
+// The switch to shared users keeps the sessions made before it: the
+// admin signed in on a new server just before it founded the cluster and
+// switched stays signed in, with the cookie of before.
+func TestSwitchKeepsSessions(t *testing.T) {
+	t.Setenv(clusterKeyFileEnv, "")
+	rs := startRunnerWith(t, runOptions{scheduler: true, server: plainHTTP})
+	if strings.Contains(rs.cookie, "=s1.") {
+		t.Skip("the server switched to shared users before the first sign-in")
+	}
+	eventually(t, "the users are shared", func() bool {
+		return rs.r.sharedContent.users.on.Load() && rs.r.sharedContent.users.cur.Load() != nil
+	})
+	if code, out, err := rs.call("", "GET", "/api/me", ""); err != nil || code != http.StatusOK || out["username"] != "admin" {
+		t.Fatalf("the session made before the switch: %d %v %v\n%s", code, out, err, rs.logs.String())
+	}
+	if l := rs.logs.String(); !strings.Contains(l, `msg="kept the sign-in sessions made before the users were shared"`) ||
+		!strings.Contains(l, "audit=true kept=1 ended=0") {
+		t.Errorf("the session was not logged as kept:\n%s", l)
+	}
+}
+
+// A sign-in the old components finish after the switch to shared users
+// moved the sessions (the restart stops waiting for requests after a
+// while) is carried on its own: its browser stays signed in.
+func TestSwitchKeepsALateSignIn(t *testing.T) {
+	t.Setenv(clusterKeyFileEnv, "")
+	rs := startRunnerWith(t, runOptions{scheduler: true, server: plainHTTP})
+	eventually(t, "the users are shared", func() bool {
+		return rs.r.sharedContent.users.on.Load() && rs.r.sharedContent.users.cur.Load() != nil
+	})
+	token := rs.r.sessions.Start(auth.NewSession{User: "admin", Method: users.SourceBuiltin})
+	if rs.r.sessions.Len() != 0 {
+		t.Error("the late session was kept in memory")
+	}
+	rs.cookie = "signalith_session=" + token
+	if code, out, err := rs.call("", "GET", "/api/me", ""); err != nil || code != http.StatusOK || out["username"] != "admin" {
+		t.Fatalf("the late session: %d %v %v\n%s", code, out, err, rs.logs.String())
+	}
 }

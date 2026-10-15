@@ -1,0 +1,4 @@
+{"rule": "1a41023f-1e70-4026-921a-4d9341a9038e", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"riskdetection","data":{"riskEventType":"unlikelyTravel"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"riskdetection","data":{}}
+]}

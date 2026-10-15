@@ -75,7 +75,7 @@ the job if not.
 
 - **A fictional organisation:** about 50 users and 40 hosts: finance, IT and
   operations workstations, a few Linux servers (web, app, database, jump host),
-  two domain controllers and a file server.
+  two domain controllers, a file server and a network sensor (`nsm-01`).
 - **A week of background activity** with a working-hours and weekday rhythm:
   sign-ins, process starts, network connections, firewall traffic and DNS
   lookups: ordinary noise for the attacks to hide in, plus a benign look-alike
@@ -85,6 +85,15 @@ the job if not.
   inside the attack stories, a trojan outbreak, failing updates and an EICAR
   test, plus one Trend Micro Apex One detection sent over syslog (standard size
   only). They fill the Malware dashboard; see [antivirus.md](antivirus.md).
+- **Network sensor events:** the sensor `nsm-01` runs Zeek and Suricata (see
+  [network-sensor.md](network-sensor.md)). Its lines go through the same parsers as
+  a real sensor's: every day, workstations browse sites over TLS, check for
+  updates over plain HTTP, use the file server and the domain controllers, and look
+  up a few names that do not exist, and Suricata raises a few low and medium alerts
+  with made-up rules (SIDs 9100001 and up). Zeek's packet loss and Suricata's
+  statistics arrive every hour, with the sensor's own status line. In the phishing story the sensor sees the implant
+  being downloaded and its beacon to the C2 (below). They fill the Network
+  dashboard.
 - **An OT flavour:** an engineering workstation, two HMIs and three PLCs, with
   the HMIs polling the PLCs over Modbus (TCP 502) and writing to a historian.
   It is all normal; no detection targets OT, it just shows the plant floor in
@@ -98,14 +107,15 @@ the job if not.
   practise on.
 
 Two sizes load the same attacks; only the volume of background activity
-differs. **Standard** is a full week, about 27,000 events. **Small** keeps two
-days of light background, a few hundred events in all.
+differs. **Standard** is a full week, about 34,000 events. **Small** keeps two
+days of light background, about 1,000 events in all.
 
 ## A guided tour of the attacks
 
-Seven stories are woven into the week. Five are intrusions designed so that
-every built-in detection that is on fires; the other two are benign activity
-that trips detections you can close as benign.
+Eleven stories are woven into the week. Six are intrusions designed so that
+every built-in detection that is on fires; the others are benign activity,
+everyday weaknesses and upkeep that trip detections you can close as benign
+or fix.
 
 Some detections raise a **finding** on the Findings page. Others only add
 **risk** to the users and hosts involved, which shows on the Risk page and
@@ -114,12 +124,15 @@ counts toward the risk findings below. The table keeps them apart.
 | Story | What happens | Raises findings | Adds risk only |
 | --- | --- | --- | --- |
 | **SSH brute force from the internet** | An external host (`203.0.113.45`) password-sprays SSH on the database server `db-01`, breaks the account `bob.okafor`, logs in as root and reads `/etc/shadow`, then drops a miner that ClamAV quarantines. | auth-brute-force, auth-password-spray, auth-brute-force-success, auth-shadow-file-access, threat-activity, malware-detected | auth-ssh-root-login, auth-sudo-failures |
-| **Phishing to credential theft and C2** | A finance workstation (`ws-fin-07`, Alice Nguyen) looks up a look-alike sign-in site, opens a malicious invoice that launches encoded PowerShell, downloads a tool with `certutil`, dumps credentials with Mimikatz, turns off Defender’s real-time protection, runs discovery, installs persistence and beacons to a C2 that is in the sample intel. | endpoint-office-child-shell, endpoint-encoded-powershell, endpoint-credential-dumping, threat-activity, malware-detected and malware-not-removed (Defender finds Mimikatz but can’t remove it), av-protection-disabled, av-rule-block (on `ws-fin-02`, where the same invoice is opened, attack surface reduction stops Word starting PowerShell) | endpoint-lolbin-download, endpoint-discovery-burst, endpoint-scheduled-task, endpoint-service-created, network-shell-port |
+| **Phishing to credential theft and C2** | A finance workstation (`ws-fin-07`, Alice Nguyen) looks up a look-alike sign-in site, opens a malicious invoice that launches encoded PowerShell, downloads a tool with `certutil`, dumps credentials with Mimikatz, turns off Defender’s real-time protection, runs discovery, installs persistence and beacons to a C2 that is in the sample intel. The network sensor sees the download over plain HTTP (the file's hash is in the sample intel), the beacon, TLS with a self-signed certificate every five minutes for an hour, a connection on port 4444 and a 1.4 GB upload, and Suricata raises a high alert on the download and the beacon. | endpoint-office-child-shell, ids-alert-high, network-http-executable-download, endpoint-encoded-powershell, endpoint-credential-dumping, threat-activity, malware-detected and malware-not-removed (Defender finds Mimikatz but can’t remove it), av-protection-disabled, av-rule-block (on `ws-fin-02`, where the same invoice is opened, attack surface reduction stops Word starting PowerShell) | endpoint-lolbin-download, endpoint-discovery-burst, endpoint-scheduled-task, endpoint-service-created, network-shell-port, network-sensor-shell-port, network-tls-untrusted-cert, network-large-outbound-transfer |
 | **Hidden admin account on the domain controller** | On `dc-01` the attacker creates `svc-helpdesk` and adds it to Domain Admins, then deletes a stale contractor account. | change-admin-group-add | change-account-created |
 | **Ransomware preparation on the file server** | Using the stolen domain-admin account, the attacker reaches `file-01` over SMB, tries to turn off Defender’s real-time protection (tamper protection blocks it), adds an antivirus exclusion for `C:\ProgramData\SyncSvc`, and deletes the volume shadow copies and recovery configuration. Defender quarantines the first copy of the ransomware; the exclusion lets the second copy run, and controlled folder access stops it changing the finance share. | endpoint-shadow-copy-delete, av-tamper-blocked, av-exclusion-added, malware-ransomware, av-rule-block | |
 | **Trojan spreads from a file share** | A fake “payroll update” (`Trojan:Win32/Fakepay.A`) on `\\file-01\public` is opened on four operations workstations within a quarter of an hour. Defender quarantines it on `ws-ops-01`, `ws-ops-03` and `ws-ops-04`, but fails to on `ws-ops-05`. | malware-detected, malware-outbreak, malware-not-removed | |
 | **Antivirus upkeep** | Definitions updates fail twice on `web-01` (ClamAV) and on `ws-ops-02` (Defender). ClamAV’s nightly scan on `app-01` finds a web shell in an upload folder but only reports it, so the file stays. IT tests Defender on `ws-it-02` with the EICAR test file. | av-definitions-failing; malware-left-clamav and malware-detected for the web shell; malware-detected for the EICAR test, a finding to close as benign | |
 | **Nightly scan finds vulnerable servers** | Signalith's own [vulnerability scan](vulnerabilities.md) of the server network finds Apache httpd 2.4.49 on `web-01` with two vulnerabilities attackers are known to use (CVE-2021-41773 and CVE-2021-42013) and a critical one (CVE-2023-25690), a critical OpenSSH flaw on `app-01` (CVE-2023-38408), and Telnet still open on the jump host `jump-01`. The results are events in Search; the **Vulnerabilities** page lists only your own scans. | vuln-known-exploited, vuln-critical, vuln-cleartext-remote-login | |
+| **DNS tunnelling and an internal scan** | Malware on the engineering workstation `eng-ws-02` tries 32 generated domain names that do not exist until one resolves, then hides its traffic in DNS (TXT lookups whose names carry 48 characters of encoded data), then scans 26 internal addresses for SMB, which Zeek also reports as an address scan. Seen only by the network sensor. | network-dns-nxdomain-burst, network-dns-tunneling, network-internal-scan, network-zeek-scan-notice | |
+| **Clear-text sign-ins and a blind spot** | An admin signs in to `jump-01` over Telnet, a user opens a printer's admin page with HTTP basic authentication and `file-01` uploads a report to a partner over FTP, all sending passwords in clear text (the parser never stores them). During the nightly backup the sensor misses 7.8% of the traffic. A test service on `web-01` answers the internet on port 8443. | network-cleartext-credentials, network-sensor-packet-loss | |
+| **Network sensors need attention** | The mirror port of the network sensor `nsm-01` goes down for 25 minutes, so Zeek and Suricata see nothing; a nightly Suricata rules update fails; and the branch office's sensor `nsm-02` stops sending, which Signalith notices itself (a *Sensor silent* event). [Settings > Network sensors](network-sensor.md#settings-network-sensors) shows real sensors only, not these. | network-sensor-unhealthy, once for each problem | |
 | **Benign activity that looks malicious** | A backup job on `file-01` runs encoded PowerShell, and IT fetches a tool with `certutil`. | endpoint-encoded-powershell on `file-01`: one finding to close as benign | endpoint-lolbin-download on `ws-it-02` |
 
 The risk that builds up then raises two more findings on its own:
@@ -127,14 +140,14 @@ The risk that builds up then raises two more findings on its own:
 - **risk-threshold-exceeded**: a user or host passed the risk threshold;
 - **risk-multiple-tactics**: risk from several ATT&CK tactics on one entity.
 
-So 33 of the 35 built-in detections fire from the sample, all of them on.
+So 46 of the 49 built-in detections fire from the sample, all of them on.
 Each detection adds its risk once per thing it found, so the totals on the
 Risk page and the dashboards are the same every time you load.
 
 ### Detections that do not fire
 
-Two built-in detections are **off by default**, so the load does not run them.
-The sample has data for both. To see them fire, turn them on on the
+Three built-in detections are **off by default**, so the load does not run them.
+The sample has data for all three. To see them fire, turn them on on the
 **Detections** page, then remove the sample data and load it again (the load
 runs the detections over the whole week; once it is loaded, a detection you
 turn on only looks at the last few minutes):
@@ -144,6 +157,9 @@ turn on only looks at the last few minutes):
 - **network-remote-admin-port**: the SMB connection the ransomware story makes
   from the workstation to the file server (port 445). It is off by default
   because it needs tuning for your own admin tools.
+- **network-new-inbound-service**: the test service on `web-01` that answers
+  the internet on port 8443. It is off by default because its first runs list
+  every service already open to the internet.
 
 ## How it stays apart from your data
 

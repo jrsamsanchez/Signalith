@@ -1,0 +1,4 @@
+{"rule": "27e4f1d6-ae72-4ea0-8a67-77a73a289c3d", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"riskdetection","data":{"riskEventType":"suspiciousInboxForwarding"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"riskdetection","data":{}}
+]}

@@ -11,9 +11,11 @@ import (
 	"regexp"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/search"
 	"github.com/jrsamsanchez/signalith/internal/sigmacheck"
@@ -302,9 +304,18 @@ func records(node string, ev map[string]string) []sigmacheck.Case {
 			m[k] = v
 		}
 	}
+	if IsSensorNode(node) {
+		return sensorRecords(node, ev)
+	}
 	switch node {
 	case AuditdNode:
 		return []sigmacheck.Case{auditdRecord(ev)}
+	case CloudTrailNode:
+		return []sigmacheck.Case{cloudTrailRecord(ev)}
+	case AzureNode:
+		return []sigmacheck.Case{azureRecord(ev)}
+	case "Web":
+		return []sigmacheck.Case{webRecord(ev)}
 	case "Processes":
 		s := map[string]string{"ProcessId": "4242", "ParentProcessId": "4000"}
 		set(s, "Image", imagePath(ev["process_path"], ev["process_name"]))
@@ -645,6 +656,19 @@ func records(node string, ev map[string]string) []sigmacheck.Case {
 		set(s, "MemberName", ev["member"])
 		set(s, "SubjectUserName", ev["user"])
 		return []sigmacheck.Case{{Channel: sigmacheck.SecurityChannel, EventID: "4732", Data: s}}
+	case "ExplicitLogon", "NtlmAuth", "KerberosPreAuth", "ComputerChanged", "AccountRenamed", "GroupChanged",
+		"LocalGroupRead", "CertRequest":
+		return []sigmacheck.Case{securityRecord(node, ev)}
+	case "ProcessTerminated", "RawAccessRead":
+		id := map[string]string{"ProcessTerminated": "5", "RawAccessRead": "9"}[node]
+		s := map[string]string{"Image": `C:\Program Files\Example\app.exe`, "ProcessId": "4242", "User": `CORP\tester`}
+		set(s, "Image", imagePath(ev["process_path"], ev["process_name"]))
+		set(s, "ProcessId", ev["process_id"])
+		if id == "9" {
+			s["Device"] = `\Device\HarddiskVolume2`
+			set(s, "Device", ev["device"])
+		}
+		return []sigmacheck.Case{{Channel: sigmacheck.SysmonChannel, EventID: id, Data: s}}
 	case "ServiceInstalled":
 		s := map[string]string{
 			"ServiceName": "ExampleUpdater", "ImagePath": `"C:\Program Files\Example\updater.exe" --service`,
@@ -658,6 +682,49 @@ func records(node string, ev map[string]string) []sigmacheck.Case {
 		return []sigmacheck.Case{{Channel: sigmacheck.SystemChannel, EventID: "7045", Data: s}}
 	}
 	return nil
+}
+
+// securityRecord makes a Security event of a node whose fields are the
+// event's own data (RawFields): the event the rule names, else the
+// node's first, with typical values for what the rule leaves open.
+func securityRecord(node string, ev map[string]string) sigmacheck.Case {
+	id := NodeEvents[node][0]
+	if c := ev[eventCode]; slices.Contains(NodeEvents[node], c) {
+		id = c
+	}
+	names := ingest.WindowsSecurityNames(id)
+	s := map[string]string{}
+	for _, n := range names {
+		s[n] = "-"
+		if v, ok := securityDefaults[n]; ok {
+			s[n] = v
+		}
+	}
+	for raw, stored := range RawFields[node] {
+		v := ev[stored]
+		if stored == "process_path" {
+			v = imagePath(v, ev["process_name"])
+		}
+		if v != "" && slices.Contains(names, raw) {
+			s[raw] = v
+		}
+	}
+	return sigmacheck.Case{Channel: sigmacheck.SecurityChannel, EventID: id, Data: s}
+}
+
+// securityDefaults are typical values of Security event data, for test
+// events.
+var securityDefaults = map[string]string{
+	"SubjectUserSid": "S-1-5-21-1000-1104", "SubjectUserName": "tester", "SubjectDomainName": "CORP", "SubjectLogonId": "0x1a2b3c",
+	"TargetUserName": "jdoe", "TargetDomainName": "CORP", "TargetSid": "S-1-5-21-1000-1201", "Status": "0x0",
+	"PackageName": "MICROSOFT_AUTHENTICATION_PACKAGE_V1_0", "Workstation": "WS2", "ServiceName": "krbtgt/CORP.EXAMPLE.COM",
+	"TicketOptions": "0x40810010", "PreAuthType": "2", "IpAddress": "192.0.2.10", "IpPort": "50123",
+	"TargetServerName": "fs1.corp.example.com", "TargetInfo": "fs1.corp.example.com", "ProcessId": "0x1092",
+	"ProcessName": `C:\Windows\System32\svchost.exe`, "SamAccountName": "jdoe", "PrimaryGroupId": "513",
+	"OldUacValue": "0x0", "NewUacValue": "0x15", "UserAccountControl": "%%2080", "DnsHostName": "ws3.corp.example.com",
+	"ServicePrincipalNames": "HOST/ws3.corp.example.com", "OldTargetUserName": "jdoe", "NewTargetUserName": "jdoe2",
+	"CallerProcessId": "0x1092", "CallerProcessName": `C:\Windows\System32\net.exe`, "RequestId": "42",
+	"Requester": `CORP\tester`, "Attributes": "CertificateTemplate:User", "Disposition": "3", "Subject": "CN=tester",
 }
 
 // taskXML is a scheduled task's definition, for test events whose rule
@@ -852,8 +919,36 @@ func auditdRecord(ev map[string]string) sigmacheck.Case {
 	return sigmacheck.Case{Channel: sigmacheck.AuditdChannel, EventID: typ, Data: data}
 }
 
+// webRecord turns a field-level event into the access log line that
+// carries it: a target from its path and query when it names no url, and
+// GET when it names no method.
+func webRecord(ev map[string]string) sigmacheck.Case {
+	data := map[string]string{}
+	for _, f := range []string{"src", "user", "http_method", "url", "status", "bytes_out", "http_referrer", "http_user_agent"} {
+		if v := ev[f]; v != "" {
+			data[f] = v
+		}
+	}
+	if data["url"] == "" && (ev["uri_path"] != "" || ev["uri_query"] != "") {
+		data["url"] = cmp.Or(ev["uri_path"], "/")
+		if q := ev["uri_query"]; q != "" {
+			data["url"] += "?" + q
+		}
+	}
+	if data["status"] != "" {
+		if n, err := strconv.Atoi(data["status"]); err != nil || n < 100 || n > 999 {
+			// Not a status a log line can hold.
+			delete(data, "status")
+		}
+	}
+	if data["http_method"] == "" && data["url"] != "" {
+		data["http_method"] = "GET"
+	}
+	return sigmacheck.Case{Channel: sigmacheck.WebChannel, EventID: "access", Data: data}
+}
+
 // NodeModel is the Signalith data model of each node ("" for any).
-var NodeModel = map[string]string{"Processes": "Endpoint", "Filesystem": "Filesystem", "Registry": "Registry", "FileStream": "Filesystem", "Pipe": "Endpoint", "PowerShell": "Script", "ImageLoad": "Image_Load", "ProcessAccess": "Endpoint", "NetworkConnection": "Network_Traffic", "All_Traffic": "Network_Traffic", "DnsQuery": "Network_Resolution", "Logon": "Authentication", "TaskCreated": "Change", "ObjectAccess": "", "ServiceInstalled": "Change", "DirectoryChange": "Change", "ShareAccess": "Filesystem", "KerberosTGT": "Authentication", "KerberosService": "Authentication", "UserChanged": "Change", "GroupMemberAdded": "Change", AuditdNode: "Other"}
+var NodeModel = map[string]string{"Processes": "Endpoint", "Filesystem": "Filesystem", "Registry": "Registry", "FileStream": "Filesystem", "Pipe": "Endpoint", "PowerShell": "Script", "ImageLoad": "Image_Load", "ProcessAccess": "Endpoint", "NetworkConnection": "Network_Traffic", "All_Traffic": "Network_Traffic", "DnsQuery": "Network_Resolution", "Logon": "Authentication", "TaskCreated": "Change", "ObjectAccess": "", "ServiceInstalled": "Change", "DirectoryChange": "Change", "ShareAccess": "Filesystem", "KerberosTGT": "Authentication", "KerberosService": "Authentication", "UserChanged": "Change", "GroupMemberAdded": "Change", AuditdNode: "Other", "ExplicitLogon": "Authentication", "NtlmAuth": "Authentication", "KerberosPreAuth": "Authentication", "ComputerChanged": "Change", "AccountRenamed": "Change", "GroupChanged": "Change", "LocalGroupRead": "Change", "CertRequest": "Change", "ProcessTerminated": "Endpoint", "RawAccessRead": "Endpoint", "Web": "Web"}
 
 // AttackDataSource marks a test event recorded in a real attack (Splunk's
 // attack_data, by internal/detect/attackgen).
@@ -866,6 +961,14 @@ func Reads(r *Rule, c sigmacheck.Case) bool {
 	if r.Node == AuditdNode {
 		// Every audit record type.
 		return c.Channel == sigmacheck.AuditdChannel && Eval(r.Where, View(doc))
+	}
+	if r.Node == CloudTrailNode {
+		// Every CloudTrail record, in any data model.
+		return c.Channel == sigmacheck.CloudTrailChannel && Eval(r.Where, View(doc))
+	}
+	if r.Node == AzureNode {
+		// Every Entra ID or Azure record, in any data model.
+		return c.Channel == sigmacheck.AzureChannel && Eval(r.Where, View(doc))
 	}
 	return InModel(r.Node, model) && slices.Contains(NodeEvents[r.Node], c.EventID) && Eval(r.Where, View(doc))
 }
@@ -894,6 +997,17 @@ var NodeEvents = map[string][]string{
 	"KerberosService":   {"4769"},
 	"UserChanged":       {"4738"},
 	"GroupMemberAdded":  {"4732"},
+	"ExplicitLogon":     {"4648"},
+	"NtlmAuth":          {"4776"},
+	"KerberosPreAuth":   {"4771"},
+	"ComputerChanged":   {"4741", "4742"},
+	"AccountRenamed":    {"4781"},
+	"GroupChanged":      {"4727", "4730", "4737"},
+	"LocalGroupRead":    {"4798", "4799"},
+	"CertRequest":       {"4886", "4887"},
+	"ProcessTerminated": {"5"},
+	"RawAccessRead":     {"9"},
+	"Web":               {"access"},
 }
 
 // InModel reports whether an event of a data model is one a node reads.
@@ -902,6 +1016,14 @@ var NodeEvents = map[string][]string{
 func InModel(node, model string) bool {
 	if node == "ObjectAccess" {
 		return model == "Filesystem" || model == "Registry"
+	}
+	if node == CloudTrailNode {
+		// Sign-ins, changes and reads.
+		return model == "Authentication" || model == "Change" || model == "Other"
+	}
+	if node == AzureNode {
+		// Sign-ins, changes, risk detections and the rest.
+		return model == "Authentication" || model == "Change" || model == "Alerts" || model == "Other"
 	}
 	return strings.EqualFold(model, NodeModel[node])
 }

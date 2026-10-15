@@ -16,7 +16,7 @@ datamodel=Authentication action=failure earliest=-24h
 
 | Syntax | Meaning |
 | --- | --- |
-| `datamodel=Authentication` | Events of one data model: Authentication, Endpoint, Network_Traffic, Change, Malware (antivirus; see [antivirus.md](antivirus.md)), Filesystem, Registry, Network_Resolution, Image_Load, Script, Inventory, Configuration_Check, Alerts, Other. `datamodel=Risk` searches risk events, which are left out otherwise |
+| `datamodel=Authentication` | Events of one data model: Authentication, Endpoint, Network_Traffic, Change, Malware (antivirus; see [antivirus.md](antivirus.md)), Filesystem, Registry, Network_Resolution, Intrusion_Detection, Web, Certificates, File_Transfers (the last four from a [network sensor](network-sensor.md)), Image_Load, Script, Inventory, Configuration_Check, Alerts, Other. `datamodel=Risk` searches risk events, which are left out otherwise |
 | `index=signalith-authentication-2026.10.*` | One pattern of Signalith's daily indices, `<prefix>-<datamodel>-YYYY.MM.DD`. It must start with the configured `opensearch.index_prefix` and `-`; `index=*` means all events, as when `index=` is left out. Lists (`a,b`), exclusions (`-x`), other indices and system indices, other clusters (`remote:x`) and date math are refused |
 | `field=value` | Exact match, case-insensitive |
 | `field=val*` | Wildcard match with `*` and `?` |
@@ -44,10 +44,16 @@ In a regular expression that means `\.` stays `\.`, and a literal backslash is
 
 | Command | Example | Notes |
 | --- | --- | --- |
-| `stats` | `stats count, dc(user) as users, avg(bytes) by src, dest` | Functions: `count`, `count(f)`, `dc(f)`, `sum(f)`, `avg(f)`, `min(f)`, `max(f)` |
+| `stats` | `stats count, dc(user) as users, perc95(bytes) by src, dest` | Functions are listed [below](#stats-functions) |
+| `eventstats` | `eventstats avg(bytes) as avg_bytes by src` | Same [functions](#stats-functions) as `stats`, but adds the results to every row instead of replacing the rows, so later commands can compare each event with its group: `\| where bytes > avg_bytes * 10` |
 | `timechart` | `timechart span=1h count by action` | One aggregation when splitting by a field; span picked automatically if omitted |
 | `top` | `top limit=10 process_name by host` | Adds `count` and `percent` |
-| `where` | `where count > 20 AND users >= 2` | AND binds tighter than OR here, as in most languages |
+| `rare` | `rare limit=10 process_name by host` | Like `top`, least common values first |
+| `where` | `where count > 20 AND users >= 2` | AND binds tighter than OR here, as in most languages. Also takes [expressions](#expressions-eval-and-where): `where len(process) > 1000`, `where bytes_out > bytes_in * 10` |
+| `eval` | `eval kb=round(bytes / 1024, 1), who=lower(user)` | Sets fields from [expressions](#expressions-eval-and-where). Separate several with commas; each sees the ones before it. A result that is null removes the field |
+| `rex` | `rex field=process "-enc(?:odedcommand)? (?<encoded>\S+)"` | Extracts a field for each named group (`(?<name>...)` or `(?P<name>...)`) of an [RE2](https://github.com/google/re2/wiki/Syntax) regular expression. Reads `_raw` unless `field=` names another. `max_match=N` keeps up to N matches as a multivalue field (`0` for all) |
+| `dedup` | `dedup user, host` | Keeps the first row for each combination of values; `dedup 3 user` keeps three. Events come newest first, so this keeps the latest. Rows missing a field are dropped unless `keepempty=true`; `consecutive=true` only drops repeats that follow each other. Sort before `dedup` to choose which row stays |
+| `fillnull` | `fillnull value=0 bytes, packets` | Sets missing values (default `0`). With no fields it fills every column |
 | `sort` | `sort -count, src` | `-` for descending |
 | `head` | `head 20` | Also `limit` |
 | `table` | `table _time, user, src` | Also `fields`; wildcards allowed |
@@ -67,6 +73,68 @@ aggregate on event fields and add intel afterwards:
 Columns produced by `stats` are referenced by name in later commands, for example
 `sort -dc(user)` or `where avg(bytes) > 1000`.
 
+### Stats functions
+
+`stats`, `eventstats` and `timechart` take these, each optionally followed by `as name`:
+
+| Function | Result |
+| --- | --- |
+| `count`, `count(f)` | Events, or events where `f` has a value |
+| `dc(f)` | Distinct values of `f` (approximate above a few thousand, as OpenSearch counts them) |
+| `sum(f)`, `avg(f)`, `min(f)`, `max(f)`, `range(f)` | Totals, average, smallest, largest, and largest minus smallest |
+| `median(f)`, `perc95(f)` | The median and any percentile from `perc1` to `perc99` (`p95` works too). OpenSearch estimates these on large data |
+| `stdev(f)`, `var(f)` | Sample standard deviation and variance |
+| `mode(f)` | The most common value |
+| `values(f)` | The distinct values, sorted, up to 100 |
+| `list(f)` | The values, newest first, up to 100 |
+| `first(f)`, `latest(f)` | The newest value; `last(f)` and `earliest(f)` give the oldest |
+
+## Expressions (eval and where)
+
+`eval` computes values with expressions, and `where` accepts the same expressions
+whenever its condition is more than a field compared with a value:
+
+```
+datamodel=Network_Traffic bytes_out>1000000
+| eval ratio=round(bytes_out / bytes_in, 1), direction=if(cidrmatch("10.0.0.0/8", dest), "internal", "external")
+| where ratio > 10 AND direction="external"
+```
+
+| Syntax | Meaning |
+| --- | --- |
+| `bytes`, `'dc(user)'` | A field's value. Put names with characters other than letters, digits, `_` and `@` in single quotes (`'event.code'`) |
+| `"text"`, `42`, `1.5e3` | A string (double quotes) or a number |
+| `+ - * / %` | Arithmetic. `+` also joins two strings. Dividing by zero gives null |
+| `.` | Joins values as text: `user . "@" . domain` |
+| `= != < <= > >=` | Compare numbers as numbers, everything else as case-sensitive text. A multivalue field equals a value when any of its values does |
+| `LIKE` | `user LIKE "adm%"`: `%` is any run of characters, `_` any one character, case-sensitive |
+| `AND`, `OR`, `XOR`, `NOT`, `( )` | Combine conditions |
+
+A comparison with a missing field is null, which `where` treats as false. Use `isnull()`,
+`isnotnull()` or `coalesce()` to handle missing values.
+
+`where` keeps its plain filter reading for conditions such as `count > 20`,
+`user=adm*` or `src IN (a, b)`: there the right side is a value, matching ignores case and
+`*` is a wildcard. As soon as the condition uses a function, arithmetic or a quoted field
+name it is read as an expression, so `where bytes_out > bytes_in` compares the text
+`bytes_in`, while `where bytes_out > bytes_in * 1` compares the two fields.
+
+| Functions | |
+| --- | --- |
+| Conditions | `if(cond, then, else)`, `case(cond1, value1, cond2, value2, ...)` (null when none is true), `coalesce(a, b, ...)` (first non-null), `nullif(a, b)`, `null()`, `true()`, `false()` |
+| Tests | `isnull(x)`, `isnotnull(x)`, `isnum(x)`, `isstr(x)`, `typeof(x)`, `in(x, v1, v2, ...)`, `like(x, "a%")`, `match(x, "regex")`, `cidrmatch("10.0.0.0/8", ip)` |
+| Text | `lower(s)`, `upper(s)`, `len(s)`, `substr(s, start[, length])` (start at 1; negative counts from the end), `replace(s, "regex", "with \1")`, `trim(s[, chars])`, `ltrim`, `rtrim`, `urldecode(s)`, `md5(s)`, `sha1(s)`, `sha256(s)` |
+| Numbers | `round(x[, digits])`, `floor(x)`, `ceil(x)`, `abs(x)`, `sqrt(x)`, `pow(x, y)`, `exp(x)`, `ln(x)`, `log(x[, base])`, `min(...)`, `max(...)` |
+| Conversion | `tonumber(s[, base])`, `tostring(x[, "hex" \| "commas" \| "duration"])` |
+| Multivalue | `split(s, ",")`, `mvcount(mv)`, `mvindex(mv, start[, end])` (from 0; negative counts from the end), `mvjoin(mv, ",")`, `mvappend(a, b, ...)`, `mvdedup(mv)`, `mvsort(mv)` |
+| Time | `now()` and `time()` (epoch seconds), `strftime(_time, "%Y-%m-%d %H:%M:%S")`, `strptime("2026-10-15", "%Y-%m-%d")` (to epoch seconds). Times are UTC; `strftime` takes epoch seconds or an event's `_time` |
+
+Regular expressions use RE2 syntax and are case-sensitive unless they start with `(?i)`.
+To keep one search from exhausting the server, a value `eval` builds can be up to 1 MB
+(a multivalue field counts all its values), expressions build at most 256 MB across all
+rows and commands of one search, a multivalue field holds up to 10,000 values, and one
+expression has at most 10,000 terms.
+
 ## Asking in plain English
 
 The box above the query editor (and `signalith ask "..."`) turns a question into a
@@ -81,8 +149,10 @@ query. It understands:
 | containing mimikatz, "quoted text" | `process=*...*` for processes, text search otherwise |
 | last 4 hours, past 7 days, today, yesterday, this week | `earliest=` and `latest=` |
 | how many, distinct users, total bytes, average bytes | `stats count`, `dc()`, `sum()`, `avg()` |
+| median bytes, 95th percentile of duration, standard deviation of bytes | `median()`, `perc95()`, `stdev()` |
 | per user, by source ip, for each host | `by ...` |
-| top 10 users, most common processes, rare processes | `top` or `stats ... \| sort \| head` |
+| top 10 users, most common processes, rare processes | `top`, `rare`, or `stats ... \| sort \| head` |
+| latest login per user, most recent process for each host | `dedup user` (events come newest first) |
 | more than 5, at least 3 hosts | `where count>5`; `stats dc(dest) as distinct_dest ... \| where distinct_dest>=3` |
 | per hour, over time, daily | `timechart` |
 | show user, src and dest | `table _time, user, src, dest` |
@@ -99,10 +169,12 @@ model is configured, questions with unknown words go to it; see
   50,000 groups, then results are marked truncated).
 - `threatmatch` becomes `terms` filters of indicator values (10,000 per clause) and
   prefix filters for networks, so matching runs inside OpenSearch too.
-- Commands after that run in the Signalith server on the aggregated rows.
+- Commands after that run in the Signalith server on the aggregated rows. So do `eval`,
+  `rex`, `dedup`, `eventstats`, and a `where` written as an expression, wherever they are.
 - An event search without `stats` returns the newest 100 events, or up to
-  `search.max_events` (at most 100,000) when later commands need to sort or filter
-  them all.
+  `search.max_events` (at most 100,000) when later commands need to sort, filter,
+  de-duplicate or aggregate them all. To work on more events, filter in the search or
+  aggregate with `stats` first.
 - Wildcard values (`*`, `?`) can be up to 1,000 characters long, and the wildcard values
   in `where` commands up to 4,096 characters together (`where` runs over every row in the
   server, so put long filters in the search before the first `|`). An `IN` list holds at

@@ -509,8 +509,9 @@ function renderList() {
   else parts.push(`${total.toLocaleString()} ${total === 1 ? info.noun : info.nouns}`);
   // Rows the sample data adds while it is loaded: not part of the list.
   if (!q && res.sample) parts.push(`${res.sample.toLocaleString()} from the sample data, which go when it is removed`);
-  // osquery hosts the list does not have yet.
-  if (!q && res.found) parts.push(`${res.found.toLocaleString()} found on the Endpoints page`);
+  // Hosts Signalith found itself (osquery, scans, the network sensor)
+  // that the list does not have yet.
+  if (!q && res.found) parts.push(`${res.found.toLocaleString()} found by Signalith (Endpoints, scans, network sensor)`);
   if (shown.length < matches.length) parts.push(`showing the first ${shown.length}`);
   if (!q && items.length < total) parts.push(`the server returns the first ${items.length.toLocaleString()}`);
   fill(foot, el('span', {}, parts.join(' · ')), el('span', { class: 'spacer' }),
@@ -591,8 +592,28 @@ $('l-form').addEventListener('submit', async (ev) => {
   btn.disabled = true;
   try {
     const text = await file.text();
-    const resp = await apiRaw('api/lookups/' + kind, { method: 'PUT', headers: { 'Content-Type': 'text/csv' }, body: text });
-    const data = await resp.json().catch(() => ({}));
+    // Shared by the servers of a cluster: the upload replaces the list as
+    // it was shown, and a list changed meanwhile is not overwritten
+    // unless the admin says so.
+    let etag = (listState.res[kind] || {}).etag || '';
+    let resp, data;
+    for (;;) {
+      const headers = { 'Content-Type': 'text/csv' };
+      if (etag) headers['If-Match'] = '"' + etag + '"';
+      resp = await apiRaw('api/lookups/' + kind, { method: 'PUT', headers, body: text });
+      data = await resp.json().catch(() => ({}));
+      if (resp.status !== 412) break;
+      const choice = await libraryStale({ data }, info.noun + ' list');
+      if (choice === 'overwrite') {
+        etag = await latestETag('api/lookups/' + kind);
+        continue;
+      }
+      if (choice === 'reload') {
+        $('l-dialog').close();
+        loadLists();
+      }
+      return;
+    }
     if (!resp.ok) {
       msg.replaceChildren(riAlert('danger', riCap(data.error || resp.statusText) + '.', riLineErrors(data.lines)));
       return;

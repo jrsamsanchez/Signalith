@@ -7,6 +7,34 @@
 // and how often inventory and checks run.
 'use strict';
 
+// sensorText words a network sensor's warnings (the codes of its status
+// line, and silent, no_status and tuning_failed): what to run on the
+// sensor to fix each. Settings > Network sensors uses it too. Logs differ
+// when the programs run in containers (layout docker).
+window.sensorText = (function () {
+  const COMPOSE = 'sudo docker compose -f /etc/signalith-sensor/docker/docker-compose.yml';
+  const logsOf = (s, unit, service) => (s.layout === 'docker' ? COMPOSE + ' logs ' + service : 'sudo journalctl -u ' + unit + ' -n 50');
+  const SENSOR_WARNING = {
+    capture_ip: () => 'The capture port has an IP address: it should only listen. Remove the address in the sensor’s network settings.',
+    capture_link: () => 'The capture port’s link is down: check its cable and the mirror port.',
+    no_traffic: () => 'No packets reached the capture port since the last check: check the mirror (SPAN) port.',
+    drops: () => 'It drops more than 5% of packets: give it more cores or memory, or mirror less traffic.',
+    rules_old: () => 'Its Suricata rules are more than 3 days old. On the sensor, run sudo systemctl start signalith-suricata-update, then see why with sudo journalctl -u signalith-suricata-update.',
+    rules_failed: () => 'The last Suricata rules update failed. On the sensor, see why with sudo journalctl -u signalith-suricata-update, then run sudo systemctl start signalith-suricata-update.',
+    zeek_stopped: (s) => 'Zeek is not running. On the sensor, see why with ' + logsOf(s, 'signalith-zeek', 'zeek') + ', or run the install line again.',
+    suricata_stopped: (s) => 'Suricata is not running. On the sensor, see why with ' + logsOf(s, 'signalith-suricata', 'suricata') + ', or run the install line again.',
+    disk_low: () => 'Less than 10% of its disk is free: give it a bigger disk.',
+    time_not_synced: () => 'Its clock is not synced, so event times may be off. On the sensor, run sudo timedatectl set-ntp true.',
+    // Why it failed is on Settings > Network sensors only: it can quote
+    // the tuning, which only admins read.
+    tuning_failed: () => 'The rule tuning from Signalith failed its test, so the sensor keeps the tuning it had. ' +
+      'An admin sees why in Settings > Network sensors, fixes the line in Rule tuning and saves; the sensor tries again within 10 minutes.',
+    silent: (s) => 'Signalith has heard nothing from it lately. Check the sensor is on and reaches Signalith, then see why its agent stopped sending with ' + logsOf(s, 'signalith-fluent-bit', 'fluent-bit') + '.',
+    no_status: () => 'It sends no status line, so only whether it sends can be checked: sensors you set up yourself send none. Install it with the line from Add data > Network sensor to see the rest.',
+  };
+  return { logsOf, warning: (w, s) => (SENSOR_WARNING[w] ? SENSOR_WARNING[w](s || {}) : w) };
+}());
+
 (function () {
   const PLATFORM = { windows: 'Windows', linux: 'Linux', darwin: 'macOS' };
   const PLATFORM_ICON = { windows: 'monitor', linux: 'square-terminal', darwin: 'laptop' };
@@ -23,6 +51,7 @@
   // Why a log agent needs a new configuration, in plain words.
   const AGENT_REASON = {
     ca: 'It trusts a different certificate authority than this server uses, so its connections fail.',
+    retired_ca: 'It trusts only a certificate authority a server retired when it took the cluster’s, so its connections fail. Give it a new configuration from Add data.',
     plain: 'It sends without encryption.',
     revoked: 'Its agent token was revoked.',
     old: 'It was set up before Signalith could tell agents apart; give it a new configuration to see its computer name.',
@@ -158,6 +187,9 @@
     if ((a.tag || '').startsWith('win')) return { os: 'windows', label: 'Windows' };
     // Agents made from the Antivirus option need its ClamAV configuration.
     if ((a.tag || '').startsWith('linux.clamav')) return { os: 'antivirus', label: 'Antivirus (ClamAV)' };
+    // Fluent Bit on a network sensor, sending Zeek's or Suricata's logs,
+    // or the status line of a sensor the install script built.
+    if (a.sensor || /^(zeek|suricata|sensor)(\.|$)/.test(a.tag || '')) return { os: 'sensor', label: 'Network sensor' };
     if ((a.tag || '').startsWith('linux') || a.tag === 'wazuh') return { os: a.tag === 'wazuh' ? 'wazuh' : 'linux', label: a.tag === 'wazuh' ? 'Wazuh manager' : 'Linux' };
     return { os: '', label: '' };
   }
@@ -170,6 +202,60 @@
       return el('span', { class: 'ep-online' }, el('span', { class: 'pulse', 'data-state': 'idle' }), 'Silent since ' + when);
     }
     return el('span', { class: 'ep-online' }, el('span', { class: 'pulse' }), 'Sending, ' + ago(a.last_seen));
+  }
+
+  // ---------- network sensors ----------
+  // A sensor the install script built sends a status line every 5
+  // minutes (a.sensor): versions, the rules' age, the capture port and
+  // its drops, and free disk.
+  // Each warning says what to run on the sensor to fix it; logs differ
+  // when the programs run in containers (layout docker).
+  const sensorWarning = window.sensorText.warning;
+
+  // rulesAge is how old the rules are, as "1 day old", or why there are none.
+  function rulesAge(s) {
+    if (s.rules_update === 'failed') return 'rules update failed';
+    const t = Date.parse(s.rules_updated || '');
+    if (!isFinite(t)) return 'no rules yet';
+    const h = Math.max(0, Math.floor(((Date.parse(s.at) || Date.now()) - t) / 3600000));
+    return 'rules ' + (h < 1 ? 'less than an hour' : h < 24 ? h + (h === 1 ? ' hour' : ' hours') : Math.floor(h / 24) + (h < 48 ? ' day' : ' days')) + ' old';
+  }
+
+  const toolText = (name, t) => (t ? [name, t.version].filter(Boolean).join(' ') + (t.running ? '' : ' stopped') : '');
+
+  // sensorLine is a sensor's row's second line: "Zeek 7.0.5, Suricata
+  // 8.0.1 · rules 1 day old · ens192 up · 0.1% dropped".
+  function sensorLine(s) {
+    const tools = [toolText('Zeek', s.zeek), toolText('Suricata', s.suricata)].filter(Boolean).join(', ');
+    return [tools, s.suricata ? rulesAge(s) : '', [s.interface, s.link].filter(Boolean).join(' '), (s.drop_percent || 0) + '% dropped'].filter(Boolean).join(' · ');
+  }
+
+  function sensorFacts(s) {
+    const fact = (k, v) => (v ? [el('dt', {}, k), el('dd', {}, v)] : []);
+    const gb = (b) => (b >= 1073741824 ? Math.round(b / 1073741824).toLocaleString() + ' GB' : Math.round(b / 1048576).toLocaleString() + ' MB');
+    const warnings = (s.warnings || []).map((w) => sensorWarning(w, s));
+    const tool = (t) => (t ? [t.version, t.running ? 'running' : 'stopped'].filter(Boolean).join(', ') : '');
+    const updated = Date.parse(s.rules_updated || '');
+    const rules = [s.rules_count ? s.rules_count.toLocaleString() + ' rules' : 'No rules yet',
+      isFinite(updated) ? 'updated ' + new Date(updated).toLocaleString() : '', s.rules_update === 'failed' ? 'the last update failed' : ''].filter(Boolean).join(', ');
+    return [
+      el('h4', { class: 'ep-h4' }, 'Network sensor', warnings.length ? el('span', { class: 'badge badge--warning' }, warnings.length === 1 ? '1 warning' : warnings.length + ' warnings') : null),
+      el('dl', { class: 'ep-facts' },
+        ...fact('Capture port', [s.interface, s.link].filter(Boolean).join(', link ')),
+        ...fact('Packets', s.packets ? s.packets.toLocaleString() + ' received, ' + (s.dropped || 0).toLocaleString() + ' dropped' : ''),
+        ...fact('Dropped lately', (s.drop_percent || 0) + '% of packets, over the last 5 minutes'),
+        ...fact('Zeek', tool(s.zeek)),
+        ...fact('Suricata', tool(s.suricata)),
+        ...fact('Suricata rules', s.suricata ? rules : ''),
+        ...fact('Agent', s.fluentbit ? 'Fluent Bit ' + s.fluentbit : ''),
+        ...fact('Installed with', [s.layout === 'docker' ? 'Docker' : s.layout === 'packages' ? 'Packages' : s.layout, s.version ? 'sensor script ' + s.version : ''].filter(Boolean).join(', ')),
+        ...fact('Disk free', (s.disk_free_percent || 0) + '%' + (s.disk_free_bytes ? ' (' + gb(s.disk_free_bytes) + ')' : '')),
+        ...fact('Disk encrypted', s.disk_encrypted ? 'Yes' : 'No'),
+        ...fact('Clock synced', s.time_synced ? 'Yes' : 'No'),
+        ...fact('Status sent', s.at ? new Date(s.at).toLocaleString() + ' (' + ago(s.at) + ')' : '')),
+      warnings.length ? el('ul', { class: 'ep-agent__why', role: 'list' }, ...warnings.map((w) => el('li', { 'data-tone': 'warning' }, icon('circle-alert'), w))) : null,
+      el('p', { class: 'ep-sensor__more', 'data-min-role': 'admin' }, el('a', { href: '#sensors', 'data-page': 'sensors' }, 'Open in Settings > Network sensors'), ' for its checklist and the rule tuning.'),
+    ];
   }
 
   // agentFacts are what a log agent's dialog says about it.
@@ -219,7 +305,7 @@
     const plat = agentPlatform(a);
     dlg.replaceChildren(
       head(a.name || a.addresses[0] || 'Log agent', a.refusing ? 'A computer that refuses this server’s certificate' : ['Log agent', plat.label].filter(Boolean).join(' · ')),
-      el('div', { class: 'modal__body ep-host__body' }, ...agentSection(a, dlg).slice(1)),
+      el('div', { class: 'modal__body ep-host__body' }, ...agentSection(a, dlg).slice(1), ...(a.sensor ? sensorFacts(a.sensor) : [])),
       el('div', { class: 'modal__foot' }, el('span', { class: 'spacer' }),
         el('button', { class: 'btn btn--secondary', type: 'button', onclick: () => dlg.close() }, 'Close')));
     if (!dlg.open) dlg.showModal();
@@ -288,7 +374,10 @@
         el('td', { 'data-label': 'Host' }, el('div', { class: 'ep-host-cell' },
           el('span', { class: 'ep-plat', title: 'Log agent' }, icon('file-text')),
           el('div', {}, el('div', { class: 'ep-name' }, label),
-            el('div', { class: 'ep-sub' }, a.refusing ? 'Refuses this server’s certificate' : ['Log agent only', plat.label].filter(Boolean).join(' · '))))),
+            el('div', { class: 'ep-sub' }, a.refusing ? 'Refuses this server’s certificate' : ['Log agent only', plat.label].filter(Boolean).join(' · ')),
+            a.sensor && !a.refusing ? el('div', { class: 'ep-sub ep-sensor' }, sensorLine(a.sensor),
+              (a.sensor.warnings || []).length ? el('span', { class: 'ep-sensor__warn', title: a.sensor.warnings.map((w) => sensorWarning(w, a.sensor)).join(' ') }, icon('triangle-alert', 'icon--xs'),
+                a.sensor.warnings.length === 1 ? '1 warning' : a.sensor.warnings.length + ' warnings') : null) : null))),
         el('td', { 'data-label': 'Status' }, agentStatus(a)),
         el('td', { 'data-label': 'Checks', class: 'ep-c-checks' }, el('span', { class: 'ep-muted' }, '—')),
         el('td', { 'data-label': 'Address', class: 'mono ep-c-addr' }, a.addresses[0] || ''),
@@ -341,6 +430,14 @@
   }
 
   // ---------- one host ----------
+  // The Compliance page opens a host that fails a check. The dialog moves
+  // out of this page's section, which is hidden while another page shows.
+  window.openEndpointHost = (id) => {
+    const dlg = $('ep-host');
+    if (dlg.parentElement !== document.body) document.body.append(dlg);
+    return openHost(id);
+  };
+
   async function openHost(id) {
     const dlg = $('ep-host');
     dlg.replaceChildren(el('div', { class: 'modal__body' }, skeleton()));
@@ -377,6 +474,7 @@
           el('a', { href: '#search', onclick: (ev) => { ev.preventDefault(); dlg.close(); searchHost(h.hostname, 'Inventory'); } }, icon('list'), 'Inventory changes'),
           can('admin') ? el('a', { href: '#', onclick: (ev) => { ev.preventDefault(); dlg.close(); S.query = { targets: [h.id], label: h.hostname }; showTab('query'); } }, icon('terminal'), 'Live query') : null),
         ...(agent ? agentSection(agent, dlg) : []),
+        ...(agent && agent.sensor ? sensorFacts(agent.sensor) : []),
         el('h4', { class: 'ep-h4' }, 'Configuration checks', failing ? el('span', { class: 'badge badge--danger' }, failing + ' failing') : null),
         checks.length ? el('ul', { class: 'ep-checks', role: 'list' }, ...checks.map(checkItem)) : el('p', { class: 'ep-muted' }, 'No checks for this platform.')),
       el('div', { class: 'modal__foot' },

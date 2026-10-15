@@ -62,6 +62,9 @@ type Sessions struct {
 
 	mu   sync.Mutex
 	byID map[[32]byte]*Session
+	// forward, when set, takes each new session instead of the store
+	// (see Forward).
+	forward func(Held)
 }
 
 // NewSessions returns a store with the given idle timeout and a 7 day
@@ -85,13 +88,19 @@ func (s *Sessions) Start(n NewSession) string {
 	}
 	token := base64.RawURLEncoding.EncodeToString(b)
 	now := s.Now()
+	ss := &Session{User: n.User, Created: now, LastSeen: now, Remember: n.Remember, Version: n.Version, Epoch: n.Epoch, Method: n.Method}
 	s.mu.Lock()
+	if f := s.forward; f != nil {
+		s.mu.Unlock()
+		f(Held{Hash: hash(token), Session: *ss})
+		return token
+	}
 	defer s.mu.Unlock()
 	s.pruneLocked(now)
 	if len(s.byID) >= s.Limit {
 		s.evictLocked(len(s.byID) - s.Limit + 1)
 	}
-	s.byID[hash(token)] = &Session{User: n.User, Created: now, LastSeen: now, Remember: n.Remember, Version: n.Version, Epoch: n.Epoch, Method: n.Method}
+	s.byID[hash(token)] = ss
 	return token
 }
 
@@ -192,6 +201,41 @@ func (s *Sessions) Users() []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// Held is a session as the store keeps it, under the SHA-256 of its
+// token.
+type Held struct {
+	Hash [32]byte
+	Session
+}
+
+// Take removes every session and returns those that have not expired:
+// for a server that moves them to another store when it starts keeping
+// its sessions elsewhere.
+func (s *Sessions) Take() []Held {
+	now := s.Now()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []Held
+	for id, ss := range s.byID {
+		if !s.expired(ss, now) {
+			out = append(out, Held{Hash: id, Session: *ss})
+		}
+	}
+	clear(s.byID)
+	return out
+}
+
+// Forward hands each session started from now on to f instead of
+// keeping it, or keeps them again when f is nil: for a server that moved
+// its sessions to another store (Take), whose sign-ins already under way
+// when it switched still finish here. Call it before Take, so every
+// session is either taken or handed to f.
+func (s *Sessions) Forward(f func(Held)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.forward = f
 }
 
 // Len reports how many sessions are stored.

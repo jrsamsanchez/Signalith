@@ -1,0 +1,3 @@
+{"rule": "e021bbb5-407f-41f5-9dc9-1864c45a7a51", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-AppXDeploymentServer/Operational","event_id":"442","data":{}}
+]}

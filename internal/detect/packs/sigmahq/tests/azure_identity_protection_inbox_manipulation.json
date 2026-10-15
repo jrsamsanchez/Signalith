@@ -1,0 +1,4 @@
+{"rule": "ceb55fd0-726e-4656-bf4e-b585b7f7d572", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"riskdetection","data":{"riskEventType":"mcasSuspiciousInboxManipulationRules"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"riskdetection","data":{}}
+]}

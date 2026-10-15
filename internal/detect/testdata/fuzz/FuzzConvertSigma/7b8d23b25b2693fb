@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("title: 0\n000000000:\n    0000000: 00000\n00000000000: 000000\ndetection:\n    000000000: \n     0000  0:\n    condition: 1 of *")

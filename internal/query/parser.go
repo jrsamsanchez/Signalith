@@ -6,10 +6,27 @@ import (
 )
 
 // Commands lists every pipe command, for autocomplete and error messages.
-var Commands = []string{"stats", "timechart", "top", "where", "sort", "head", "table", "rename", "enrich", "intel", "threatmatch"}
+var Commands = []string{"stats", "eventstats", "timechart", "top", "rare", "where", "eval", "rex", "dedup", "fillnull", "sort", "head", "table", "rename", "enrich", "intel", "threatmatch"}
 
-// AggFuncs lists the aggregation functions stats, timechart and top accept.
-var AggFuncs = []string{"count", "dc", "sum", "avg", "min", "max"}
+// AggFuncs lists the aggregation functions stats, eventstats and timechart
+// accept. perc95 stands for every percentile from perc1 to perc99.
+var AggFuncs = []string{"count", "dc", "sum", "avg", "min", "max", "median", "perc95", "stdev", "var", "range", "mode", "values", "list", "first", "last", "earliest", "latest"}
+
+// aggAliases are other names for aggregation functions.
+var aggAliases = map[string]string{"distinct_count": "dc", "mean": "avg"}
+
+// Percentile returns N for percN (perc95, or p95 written short), or 0.
+func Percentile(fn string) int {
+	digits := strings.TrimPrefix(fn, "perc")
+	if digits == fn {
+		digits = strings.TrimPrefix(fn, "p")
+	}
+	if digits == fn || !allDigits(digits) || len(digits) > 2 || digits[0] == '0' {
+		return 0
+	}
+	n, _ := strconv.Atoi(digits)
+	return n
+}
 
 type parser struct {
 	toks []token
@@ -143,13 +160,18 @@ func (p *parser) parseOrTerm(search bool) (Expr, error) {
 		return nil, err
 	}
 	children := []Expr{first}
+	all := first == nil // a bare * matches every event
 	for p.isKeyword("OR") {
 		p.next()
 		e, err := p.parseUnary(search)
 		if err != nil {
 			return nil, err
 		}
+		all = all || e == nil
 		children = append(children, e)
+	}
+	if all {
+		return nil, nil
 	}
 	if len(children) == 1 {
 		return first, nil
@@ -160,9 +182,13 @@ func (p *parser) parseOrTerm(search bool) (Expr, error) {
 func (p *parser) parseUnary(search bool) (Expr, error) {
 	if p.isKeyword("NOT") {
 		p.next()
+		at := p.peek().pos
 		e, err := p.parseUnary(search)
 		if err != nil {
 			return nil, err
+		}
+		if e == nil {
+			return nil, errorf(at, "NOT * matches nothing")
 		}
 		return &Not{Child: e}, nil
 	}
@@ -170,6 +196,7 @@ func (p *parser) parseUnary(search bool) (Expr, error) {
 	if t.kind == tokLParen {
 		p.next()
 		var terms []Expr
+		star := false // the parentheses held only *
 		for {
 			if p.peek().kind == tokRParen {
 				p.next()
@@ -186,9 +213,14 @@ func (p *parser) parseUnary(search bool) (Expr, error) {
 			if err != nil {
 				return nil, err
 			}
+			if e == nil {
+				// * inside parentheses adds nothing, as at the top level.
+				star = true
+				continue
+			}
 			terms = append(terms, e)
 		}
-		if len(terms) == 0 {
+		if len(terms) == 0 && !star {
 			return nil, errorf(t.pos, "empty parentheses")
 		}
 		return simplifyAnd(terms), nil
@@ -211,6 +243,14 @@ func (p *parser) parseAtom(search bool) (Expr, error) {
 			t.text = p.fieldSuffix(t.text)
 		}
 		nt := p.peek()
+		if search && (nt.kind == tokOp || nt.kind == tokWord && nt.text == "IN") {
+			switch t.text {
+			case "AND", "OR", "NOT", "IN":
+				// Only the first term could name such a field, so a
+				// query with it could not be written back.
+				return nil, errorf(t.pos, "%s is a keyword, not a field name", t.text)
+			}
+		}
 		if nt.kind == tokOp {
 			p.next()
 			v, err := p.value()
@@ -280,7 +320,7 @@ func (p *parser) parseCommand() (Command, error) {
 		return nil, errorf(t.pos, "expected a command after |, such as %s", strings.Join(Commands, ", "))
 	}
 	switch strings.ToLower(t.text) {
-	case "stats":
+	case "stats", "eventstats":
 		aggs, err := p.parseAggs(t.pos)
 		if err != nil {
 			return nil, err
@@ -288,6 +328,9 @@ func (p *parser) parseCommand() (Command, error) {
 		by, err := p.parseBy()
 		if err != nil {
 			return nil, err
+		}
+		if strings.EqualFold(t.text, "eventstats") {
+			return &EventStats{Aggs: aggs, By: by}, p.endCommand()
 		}
 		return &Stats{Aggs: aggs, By: by}, p.endCommand()
 	case "timechart":
@@ -324,8 +367,8 @@ func (p *parser) parseCommand() (Command, error) {
 			tc.By = by[0]
 		}
 		return tc, p.endCommand()
-	case "top":
-		top := &Top{Limit: 10}
+	case "top", "rare":
+		top := &Top{Limit: 10, Rare: strings.EqualFold(t.text, "rare")}
 		if p.isKeywordFold("limit") && p.peekAt(1).kind == tokOp {
 			p.next()
 			p.next()
@@ -334,7 +377,7 @@ func (p *parser) parseCommand() (Command, error) {
 				return nil, err
 			}
 			top.Limit = n
-		} else if n, err := strconv.Atoi(p.peek().text); err == nil && p.peek().kind == tokWord {
+		} else if n, err := strconv.Atoi(p.peek().text); err == nil && n >= 0 && p.peek().kind == tokWord {
 			p.next()
 			top.Limit = n
 		}
@@ -343,7 +386,7 @@ func (p *parser) parseCommand() (Command, error) {
 			return nil, err
 		}
 		if len(fields) == 0 {
-			return nil, errorf(t.pos, "top needs at least one field")
+			return nil, errorf(t.pos, "%s needs at least one field", strings.ToLower(t.text))
 		}
 		top.Fields = fields
 		by, err := p.parseBy()
@@ -353,15 +396,24 @@ func (p *parser) parseCommand() (Command, error) {
 		top.By = by
 		return top, p.endCommand()
 	case "where":
-		start := p.peek()
-		e, err := p.parseWhereOr()
+		raw := p.next()
+		e, err := parseWhere(raw.text, raw.pos)
 		if err != nil {
 			return nil, err
 		}
-		if e == nil {
-			return nil, errorf(start.pos, "where needs a condition, for example: where count > 10")
+		return &Where{Expr: e}, nil
+	case "eval":
+		raw := p.next()
+		if strings.TrimSpace(raw.text) == "" {
+			return nil, errorf(t.pos, "eval needs an assignment, for example: eval kb=round(bytes/1024, 1)")
 		}
-		return &Where{Expr: e}, p.endCommand()
+		return parseEvalCommand(raw.text, raw.pos)
+	case "rex":
+		return p.parseRex(t)
+	case "dedup":
+		return p.parseDedup(t)
+	case "fillnull":
+		return p.parseFillnull()
 	case "sort":
 		s := &Sort{}
 		for {
@@ -480,6 +532,9 @@ func (p *parser) int() (int, error) {
 }
 
 func isAggFunc(s string) bool {
+	if Percentile(s) > 0 {
+		return strings.HasPrefix(s, "perc")
+	}
 	for _, f := range AggFuncs {
 		if f == s {
 			return true
@@ -497,14 +552,14 @@ func (p *parser) parseAggs(cmdPos int) ([]Agg, error) {
 		}
 		p.next()
 		a := Agg{Func: strings.ToLower(t.text)}
-		if a.Func == "distinct_count" {
-			a.Func = "dc"
+		if f, ok := aggAliases[a.Func]; ok {
+			a.Func = f
 		}
-		if a.Func == "mean" {
-			a.Func = "avg"
+		if n := Percentile(a.Func); n > 0 {
+			a.Func = "perc" + strconv.Itoa(n)
 		}
 		if !isAggFunc(a.Func) {
-			return nil, errorf(t.pos, "unknown function %q; available: %s", t.text, strings.Join(AggFuncs, ", "))
+			return nil, errorf(t.pos, "unknown function %q; available: %s (and perc1 to perc99)", t.text, strings.Join(AggFuncs, ", "))
 		}
 		if p.peek().kind == tokLParen {
 			p.next()

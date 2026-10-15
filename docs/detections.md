@@ -23,6 +23,19 @@ You can edit detections in the UI or drop YAML files into the folder and restart
 `signalith validate` checks every file and reports problems with the field to fix;
 a broken file is skipped at startup and logged, so it never stops the server.
 
+### On several servers
+
+The servers of a cluster share their detections: custom ones, overrides, and the choices
+made for built-in and pack ones. Each server's detections folder is then an inbox: a
+file added or changed there is shared, and a change made on any server is written back
+into every server's folder. Removing a file changes nothing unless
+`detections.sync` is `mirror`. See
+[Shared detections, dashboards and asset lists](servers.md#shared-detections-dashboards-and-asset-lists).
+
+Saving a detection sends the version the page read (`If-Match` with the `etag` from
+`GET /api/detections/{id}`); if someone else saved it meanwhile, the save is refused
+with `412`, naming who changed it, on which server and when.
+
 ## Format
 
 ```yaml
@@ -127,7 +140,7 @@ Each object gets one risk event in the Risk data model with `risk_object`,
 `risk_message` (the rendered title), `detection_id`, `mitre` and `mitre_tactic`,
 plus the row's entity fields. Search them with `datamodel=Risk`.
 
-Ten built-in detections are risk-only. Two **risk incident** detections (tagged
+Fourteen built-in detections are risk-only. Two **risk incident** detections (tagged
 `risk-incident`) read the Risk data model and raise findings:
 
 - `risk-threshold-exceeded`: total risk of 100 or more for one object in 24 hours.
@@ -222,6 +235,79 @@ vulnerability again raises it again only after seven days.
 To see everything a scan found on a host, search
 `datamodel=Vulnerabilities dest=<host>`.
 
+## Network detections
+
+Network data from a [network sensor](network-sensor.md) (Zeek, Suricata) lights up
+these built-in detections. Those marked *risk only* add risk to the host and raise no
+finding by themselves, like Splunk's anomaly detections: they are signals that are
+common on their own and matter when they add up (see [Risk](#risk)).
+
+| ID | Severity | Fires when | Default |
+| --- | --- | --- | --- |
+| `ids-alert-high` | high | A network IDS such as Suricata raised a high or critical alert (Zeek notices are medium, so they do not count). One finding per signature, source and destination an hour, with risk on both hosts | on |
+| `threat-activity` | high | An address, domain, URL or file hash the sensor saw is in your threat intel | on |
+| `network-dns-tunneling` | medium | One host looked up 10 or more different names with a label of 40 characters or more in 30 minutes (DNS tunnelling, DNS command and control); your DNS servers are left out (see below) | on |
+| `network-dns-nxdomain-burst` | medium | One host asked for 25 or more different names that do not exist in 15 minutes (a domain generation algorithm); your DNS servers are left out (see below) | on |
+| `network-internal-scan` | medium | An internal host's TCP connections to 20 or more internal hosts, or 50 or more ports, failed in 15 minutes (connections the sensor saw only one side of do not count) | on |
+| `network-zeek-scan-notice` | medium | Zeek's scan detection reported one of your own hosts in an address, port or random scan (`Scan::*` notices); scans from the internet are left out | on |
+| `network-http-executable-download` | medium | A host that is not on the internet side downloaded a program or script over plain HTTP, whole or in ranges (status 200 or 206), from outside (Windows Update's and Google's updater addresses are left out) | on |
+| `network-cleartext-credentials` | low | A password crossed the network in clear text: HTTP basic authentication, an FTP sign-in (not anonymous) or an answered Telnet connection that did not come from the internet | on |
+| `network-sensor-packet-loss` | low | Zeek missed more than 5% of the traffic, or Suricata dropped more than 5% of packets (counted once it has received a million) | on |
+| `network-sensor-unhealthy` | medium | A network sensor reported Zeek or Suricata stopped, its capture port down or idle, rules or rule tuning failing or old, or a full disk, or Signalith found it silent. One finding per sensor and problem a day; fix it from **Settings > Network sensors** | on |
+| `network-beaconing` | low | Twelve or more short (a minute or less), small (5 KB or less out) connections from one host to one outside address and port in two hours | off, risk only |
+| `network-tls-untrusted-cert` | low | A TLS session from a host not on the internet side to an outside server with a self-signed or expired certificate | on, risk only |
+| `network-large-outbound-transfer` | medium | One host sent more than 1 GB to one outside address, in connections that started within six hours | on, risk only |
+| `network-sensor-shell-port` | medium | The sensor saw an answered connection from your network to the internet on a reverse shell port (4444, 1337, 31337, ...); the network side of `network-shell-port` | on, risk only |
+| `network-new-inbound-service` | medium | A host inside answered connections from the internet on a port it had not answered on in 30 days | off |
+
+Choices worth knowing:
+
+- **Beaconing** is approximated: the search language has no standard deviation, so
+  regular timing is not measured. Many separate small, short connections to one address
+  in two hours is the signal; update checks, telemetry, chat clients, CDNs and
+  certificate status checks look the same, and an ordinary workstation talks to several
+  of them all day. So it is off by default: run its search over a day, add exceptions on
+  `dest` for the destinations many of your hosts talk to, then turn it on (risk only,
+  10 points per destination).
+- **DNS servers are left out** of the two DNS detections. With the sensor on the
+  internet link, it sees your DNS servers (in an Active Directory network, the domain
+  controllers) ask upstream on behalf of every client, so their lookups add up the
+  whole organisation's mistyped names and browser probes, and hide which client asked.
+  A source whose asset category contains `dns` or `domain-controller` in your
+  asset list (**Assets & identities**) is not counted (the rules run `enrich src` and check
+  `src_category`), so give your resolvers one of those categories. To see which client
+  is behind a resolver's lookups, mirror the traffic between clients and the resolver
+  too, or collect the resolver's own query log.
+- **Large outbound transfers** are counted by when each connection started: Zeek writes
+  a connection only when it ends, stamped with its start time, so the rule looks back
+  six hours to catch a long upload. A single upload of more than about five and a half
+  hours is missed.
+- **New inbound service** uses its 30-day throttle as its memory of what was seen. The
+  first runs after you turn it on list every service already reachable from the
+  internet, which is why it is off by default; turn it on when you want that inventory.
+- **Direction** comes from the sensor (`direction=outbound` means from your network to
+  the internet; see [Data models](network-sensor.md#data-models)). Zeek says which ends
+  are local only in `conn.log`; for web requests, TLS sessions and DNS lookups the
+  direction comes from the addresses (private ranges count as local), so a client with
+  a public IPv6 or IPv4 address is `external`. The web and TLS detections therefore
+  count every direction except `inbound` and `internal`. If your internal addresses are
+  public addresses, tell Zeek about them in `Site::local_nets`, or the connection
+  detections see your traffic as `external`.
+- **Expired certificates** are known only from Zeek's `ssl/validate-certs` script (on by
+  default). In TLS 1.3 the certificate is encrypted, so a sensor sees it only in TLS 1.2
+  and older sessions.
+
+Every network detection is tagged with the compliance controls it is evidence for:
+`pci-dss:10.4.1` (security events reviewed), `pci-dss:11.5.1` (intrusions detected and
+alerted, PCI DSS 3.2.1's 11.4), `nist-800-53:SI-4` (system monitoring) and
+`cis-v8:13.3` (network intrusion detection); the packet loss and sensor health detections have
+`pci-dss:10.7.2` (failures of security controls) and `cis-v8:13.6` instead of 13.3.
+
+`network-shell-port` and `network-remote-admin-port` are about the process that made
+a connection, which only host data (Sysmon) has, so they leave sensor data alone;
+`network-sensor-shell-port` covers the sensor's side. If one IDS rule is noisy on your
+network, add an exception on its `signature_id`.
+
 ## What a finding contains
 
 The result row, the entities found in it (`user`, `src_user`, `src`, `src_host`,
@@ -242,11 +328,16 @@ Content packs are rule sets from other open source projects, shipped unchanged
 inside Signalith and converted when it starts. Every pack detection is **off** until
 an admin turns it on.
 
-**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,100 rules from
-[SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 1,946 Windows rules
-for these Sysmon, Security, PowerShell and System log sources, and 154 Linux rules (see
+**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,455 rules from
+[SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 2,080 Windows rules
+for these Sysmon, Security, PowerShell, System, Application, Code Integrity, Windows Firewall, BITS, AppX deployment, WMI activity, Remote Desktop session, shell, SMB client, exploit protection, DNS client, Task Scheduler, NTLM, LSA, CryptoAPI, device driver, packaged app, certificate, OpenSSH, DNS Server, IIS configuration and Defender log sources, 154 Linux rules (see
 [Linux endpoints](#linux-endpoints-sysmon-for-linux) and
-[the Linux audit log](#linux-audit-log-auditd)):
+[the Linux audit log](#linux-audit-log-auditd)), 13 web server rules (see
+[Web server access logs](#web-server-access-logs)), 45 network rules (see
+[Network rules](#network-rules-zeek-dns-proxy-and-firewall)), 38 AWS CloudTrail rules (see
+[AWS CloudTrail](#aws-cloudtrail)), 108 Microsoft Entra ID and Azure rules (see
+[Entra ID and Azure](#entra-id-and-azure)) and 17 Microsoft 365 rules (see
+[Microsoft 365](#microsoft-365)):
 
 | Sigma log source | Windows events | Data model |
 | --- | --- | --- |
@@ -259,31 +350,70 @@ for these Sysmon, Security, PowerShell and System log sources, and 154 Linux rul
 | `dns_query` | Sysmon 22 | Network_Resolution |
 | `pipe_created` | Sysmon 17 and 18 (named pipe created or connected to) | Endpoint |
 | `create_stream_hash` | Sysmon 15 (alternate data stream written, such as a download's `Zone.Identifier`) | Filesystem |
+| `raw_access_thread` | Sysmon 9 (a drive read directly; `Device` is `device`) | Endpoint |
 | `ps_script` | PowerShell 4104 | Script |
+| `webserver` | Apache and Nginx access log lines (see [Web server access logs](#web-server-access-logs)) | Web |
+| `product: aws`, `service: cloudtrail` | AWS CloudTrail records (see [AWS CloudTrail](#aws-cloudtrail)) | Authentication, Change or Other |
+| `product: azure`, `service: signinlogs` | Entra ID sign-ins (see [Entra ID and Azure](#entra-id-and-azure)) | Authentication |
+| `product: azure`, `service: auditlogs` | Entra ID audit records | Change |
+| `product: azure`, `service: riskdetection`, `pim` | Entra ID Protection risk detections | Alerts |
+| `product: azure`, `service: activitylogs` | Azure activity log records | Change |
+| `product: m365`, any service | Microsoft 365 audit records (see [Microsoft 365](#microsoft-365)) | Authentication, Change, Alerts or Other |
 | `service: system` | System 7045 (service installed) | Change |
+| `service: system` | Other System events, by provider and event ID (see below) | Other |
+| `service: application` | Application events, by provider and event ID (see below) | Other |
+| `service: codeintegrity-operational` | Code Integrity events (unsigned, revoked and blocked drivers and images), by event ID | Other |
+| `service: firewall-as` | Windows Firewall events (rules added and deleted, settings changed, reset), by event ID and data (see below) | Other |
+| `service: bits-client` | BITS events (jobs created, transfers started), by event ID and data (see below) | Other |
+| `service: appxdeployment-server` | App package (MSIX, AppX) events (deployed, downloaded, blocked), by event ID and data (see below) | Other |
+| `service: wmi` | WMI activity events (operations failed, event subscriptions registered), by event ID and data (see below) | Other |
+| `service: sysmon` | Sysmon's own events: files blocked (27, 28) and executables detected (29) in Filesystem with `action` blocked or created, a configuration change (16) in Other | Filesystem, Other |
+| `service: terminalservices-localsessionmanager` | Remote Desktop session events (logon, logoff, disconnect, reconnect), by event ID and data (see below) | Other |
+| `service: shell-core` | Shell events (app shortcuts added to the app resolver cache), by event ID and data (see below) | Other |
+| `service: smbclient-security` | SMB client security events (insecure guest logons refused), by event ID and data (see below) | Other |
+| `service: security-mitigations` | Exploit protection blocks in kernel mode (images not signed by Microsoft), by event ID and data (see below) | Other |
+| `service: dns-client` | DNS client queries (3008), by event ID and data (see below) | Other |
+| `service: taskscheduler` | Task Scheduler events (a task started a process, a task deleted or disabled), by event ID and data (see below) | Other |
+| `service: ntlm` | NTLM authentications audited (outgoing, incoming, to a domain controller), by event ID and data (see below) | Other |
+| `service: lsa-server` | The groups of a user logging on (LSA 300), by event ID and data (see below) | Other |
+| `service: capi2` | CryptoAPI events (a certificate's private key acquired), by event ID | Other |
+| `service: driver-framework` | Devices plugged in (user-mode drivers loaded, Plug and Play operations), by event ID | Other |
+| `service: appmodel-runtime` | Packaged app processes created, by event ID and data (see below) | Other |
+| `service: appxpackaging-om` | App package signing certificates read, by event ID and data (see below) | Other |
+| `service: certificateservicesclient-lifecycle-system` | Computer certificates exported, by event ID | Other |
+| `service: openssh` | OpenSSH server messages, by event ID and data (see below) | Other |
+| `service: dns-server` | DNS Server plug-in DLLs loaded and zone transfers refused, by event ID | Other |
+| `service: iis-configuration` | IIS configuration changes, by event ID and data (see below) | Other |
+| `service: windefend` | Microsoft Defender Antivirus events (threats, attack surface reduction blocks, protection turned off, settings changed; `Path` is `file_path`, `ProcessName` `process_path`, `NewValue` `new_value`, `SourceName` `detection_source`, a 5013's `Value` `setting`) | Malware |
 | `service: security` | The Security log events in the next table | See the next table |
 
 A Security log rule names its event's own fields (`TargetUserName`, `LogonType`,
 `ServiceFileName`, `ObjectName`), so each one converts for the one Security event it
-is about, or for a handle request and the access made with it (4656 and 4663), which
-carry the same data; rules about other Security events, or other sets of events, are
-left out. Windows logs each event only with its audit policy setting on:
+is about, or for events that carry the same data: a handle request and the access made
+with it (4656 and 4663), or a scheduled task deleted or disabled (4699 and 4701). Rules
+about other Security events, or other sets of events, are left out. Event IDs of Windows
+2000 and XP (below 1000, such as 517 for the log cleared) that a rule names beside
+current ones are ignored, since those systems' events never reach Signalith. Windows
+logs each event only with its audit policy setting on:
 
 | Security events | Data model | Audit policy setting |
 | --- | --- | --- |
 | 4624, 4625 (logon, failed logon), 4648 (logon with explicit credentials) | Authentication | Audit Logon |
 | 4768, 4769 (Kerberos tickets, on domain controllers) | Authentication | Audit Kerberos Authentication Service, Audit Kerberos Service Ticket Operations |
 | 4697 (service installed) | Change | Audit Security System Extension |
-| 4698 (scheduled task created) | Change | Audit Other Object Access Events |
-| 4720, 4738 (user account created or changed), 4732 (member added to a local group) | Change | Audit User Account Management, Audit Security Group Management |
+| 4698, 4699, 4701, 4702 (scheduled task created, deleted, disabled, updated) | Change | Audit Other Object Access Events |
+| 4720, 4738 (user account created or changed), 4732 (member added to a local group), 4728, 4729 (member added to or removed from a global group), 4730 (global group deleted) | Change | Audit User Account Management, Audit Security Group Management |
+| 1102 (Security log cleared) | Change | Always logged |
 | 4719 (audit policy changed) | Change | Audit Audit Policy Change |
 | 4706 (domain trust created), 4794 (DSRM password set) | Change | Audit Authentication Policy Change, Audit User Account Management |
 | 4656 (handle requested), 4663 (object access) | Filesystem for a file, Registry for a key | Audit Handle Manipulation, Audit File System or Audit Registry |
 | 4661 (handle to a SAM or directory object) | none (searched in every model) | Audit SAM |
 | 4657 (registry value modified) | Registry | Audit Registry |
 | 5145 (network share access) | Filesystem | Audit Detailed File Share |
+| 5140 (network share accessed, once per session) | Filesystem | Audit File Share |
 | 5136 (directory object changed), 4662 (operation on a directory object) | Change | Audit Directory Service Changes, Audit Directory Service Access (domain controllers) |
 | 5156, 5157 (connection allowed or blocked) | Network_Traffic | Audit Filtering Platform Connection |
+| 4611 (logon process registered), 4616 (time changed), 4649 (Kerberos replay), 4673, 4674 (privileged service called, privileged object operation), 4692 (DPAPI master key backup), 4704 (user right assigned), 4765, 4766 (SID History added or refused), 4825 (Remote Desktop denied), 4898, 4899 (certificate template loaded or changed), 5379 (Credential Manager credentials read), 5441, 5447, 5449 (filtering platform filters and provider contexts), 6416, 6423 (device recognized or blocked) | Other, by name: each value is `security_` and its name in snake case (`FilterName` is `security_filter_name`), and the account that acted is `user` | Audit Security System Extension, Audit System Integrity, Audit Sensitive Privilege Use, Audit Other Policy Change Events, Audit Authorization Policy Change, Audit User Account Management, Audit Other Logon/Logoff Events, Audit Certification Services, Audit Filtering Platform Policy Change, Audit PNP Activity |
 
 Handle requests, object accesses and registry value changes are logged only for
 objects whose auditing (SACL) asks for them. Directory object
@@ -349,6 +479,81 @@ echo '-a always,exit -F arch=b64 -S execve -k exec' | sudo tee /etc/audit/rules.
 
 The OpenTelemetry Collector runs as its own user and cannot read the audit log, so
 collect it with the Fluent Bit agent, or forward it with auditd's syslog plugin.
+
+### Web server access logs
+
+Apache and Nginx write each request to an access log. The Linux agent reads them
+(`/var/log/nginx/*access*.log`, `/var/log/apache2/*access*.log` and
+`/var/log/httpd/*access_log`), in the combined format both use by default, the common
+format, or Apache's `vhost_combined`. Each request is an event in the Web data model,
+with Splunk's Web field names:
+
+| Field | What it is |
+| --- | --- |
+| `url` | The request's target as logged: path and query (`/index.php?id=1`) |
+| `uri_path`, `uri_query` | Its path, and its query without the `?` |
+| `http_method`, `status`, `http_version` | The method, the response status (`404`) and HTTP version |
+| `src`, `user` | The client's address, and the account it logged in as, when it did |
+| `http_user_agent`, `http_referrer` | The User-Agent and Referer headers |
+| `bytes_out`, `url_length`, `http_user_agent_length` | Response size, and the lengths of `url` and `http_user_agent` |
+| `dest`, `dest_port` | The web server: the virtual host and port when the log names them, else the host |
+
+The sourcetype is `nginx:access` or `apache:access`. A line that is not a request
+(an error Apache wrote to the wrong file) stays in Other.
+
+Query strings can carry tokens and passwords. **Settings > General > Query strings in web
+addresses** (`ingest.url_query`) can hide their values or remove them as events are stored,
+in the fields and the raw line alike; rules that look at query values then see less (see
+[Query strings in web addresses](network-sensor.md#query-strings-in-web-addresses)).
+
+The 13 SigmaHQ `webserver` rules name the W3C fields: `cs-method` is
+`http_method`, `cs-uri-query` (which the rules use for the whole target) and `c-uri` are
+`url`, `cs-uri-stem` is `uri_path`, `sc-status` is `status`, `cs-user-agent` is
+`http_user_agent`, `cs-referer` is `http_referrer` and `c-ip` is `src`. Their keywords
+(`'${jndi:'`, `'=whoami'`) are searched in what the client sent: the target, the user
+agent and the referrer. 36 Splunk rules search the Web data model, for example
+exploitation attempts against SharePoint, Citrix, Ivanti, Confluence, Fortinet, F5 and
+TeamCity, and Spring4Shell.
+
+The OpenTelemetry Collector reads the same files once its user is in the `adm` group,
+as its setup steps say. On Red Hat-family systems `/var/log/httpd` is readable only by
+root, so collect it with the Fluent Bit agent there.
+
+### Network rules (Zeek, DNS, proxy and firewall)
+
+The SigmaHQ pack also holds rules for network data, which a
+[network sensor](network-sensor.md) fills with Zeek's logs:
+
+| Sigma log source | Events | Data model | Shipped |
+| --- | --- | --- | ---: |
+| `product: zeek`, `service: dns`, `http`, `x509` | Zeek's dns.log, http.log and x509.log, by Zeek's own field names (`query`, `qtype_name`, `certificate.serial`; `uri`, the path and query the client asked for, is `uri_path`) | Network_Resolution, Web, Certificates | 5 |
+| `product: zeek`, `service: smb_files`, `dce_rpc`, `kerberos`, `rdp` | Zeek logs whose own fields are kept as `zeek_<name>` (`name` is `zeek_name`), as for every Zeek log without a full mapping; the connection is `src`, `src_port`, `dest`, `dest_port` | Authentication (`kerberos`, `rdp`), Filesystem (`smb_files`), Other (`dce_rpc`) | 11 |
+| `category: dns` (`rules/network/dns`) | A DNS lookup that names who asked (`src`): Zeek's dns.log (`record_type` is `query_type`). A host's own lookups (Sysmon 22) are searched by the `dns_query` rules | Network_Resolution | 7 |
+| `category: proxy` (`rules/web/proxy_generic`) | A web request a client made: Zeek's http.log, not a web server's access log (`c-uri` is the whole address, `url`; `cs-host`, the site asked for, is `url_domain`; `c-useragent` is `http_user_agent`) | Web | 22 |
+| `category: firewall` (`rules/network/firewall`) | Any connection (`dst_port` is `dest_port`) | Network_Traffic | 0 |
+
+A Zeek rule searches only its own log (`sourcetype=zeek:dns`). A firewall rule
+searches every connection, from a sensor or a firewall, as Sigma means. A dns rule
+searches the lookups that name who asked (`src=*`), so its findings and risk are
+about that address. A proxy rule leaves out web servers' access logs
+(`NOT sourcetype IN (apache:access, nginx:access)`): those requests come in from the
+internet, and their `url` is only the path; the `webserver` rules cover them, and in
+those `cs-host` is the web server (`dest`). Their test events are Zeek log lines read by the real Zeek
+parser, so a rule ships only when it agrees with Sigma on events as a sensor logs
+them. 13 of the 58 network rules are left out: three are experimental; eight name
+a field Signalith does not keep (`c-uri-extension`, `cs-uri`, `cs-cookie`, a
+firewall's `action` of `accept` or `forward`, Zeek's DNS `Z` flag); one Zeek HTTP
+rule uses proxy field names; one searches free text. Network pack rules are titled by the
+address that sent the traffic (`from $src$`), find once a day per source and what it
+reached, and add risk to the source; a certificate rule (x509) is about the sensor
+that saw the certificate (`$host$`), which gets the risk.
+
+A few rules are converted faithfully but are unlikely to match real Zeek data, because
+Sigma's rule expects values Zeek writes differently: `zeek_smb_converted_win_atsvc_task`
+names the share as the literal `\\*\IPC$` (Zeek logs the server's name), and
+`zeek_smb_converted_win_transferring_files_with_credential_data` names whole file
+names such as `\sam`, where Zeek logs the file's path in the share. Like every pack
+rule they are off until you turn them on; test them on your own data first.
 
 ### PowerShell script blocks
 
@@ -425,14 +630,64 @@ go test ./internal/detect/
 The generator keeps each rule's Signalith ID across runs, rewrites `rules/`,
 `tests/`, `pack.yaml` and `REPORT.md`, and only lists rules whose checks pass.
 
+### AWS CloudTrail
+
+The 38 CloudTrail rules read CloudTrail's own field names (`eventName`, `eventSource`,
+`userIdentity.type`, `requestParameters.*`), which Signalith keeps as CloudTrail writes
+them, and each searches `sourcetype=aws:cloudtrail`. Rules that compare one field with
+another, or that match text inside the call's parameters in a way no test record
+exercises, are left out. The Splunk pack adds 32 CloudTrail detections (see
+[Splunk Security Content](#splunk-security-content)). To send CloudTrail records, see [AWS CloudTrail](aws-cloudtrail.md).
+
+### Entra ID and Azure
+
+SigmaHQ's Azure rules name fields as Microsoft Sentinel does (`ResultType`,
+`AuthenticationRequirement`, `DeviceDetail.trusttype`), while Signalith keeps each record's
+own names (`resultType`, `properties.authenticationRequirement`,
+`properties.deviceDetail.trustType`). The converter maps one to the other, by the rule's
+service, and a sign-in's `Status` reads `signin_status` (`Success`, or `Failure` with why).
+Older rules that name an audit record's operation `properties.message` read
+`operationName`. Rules that name a field no record has, or that search free text, are left
+out. Sign-in and audit rules search `sourcetype=azure:monitor:aad`, and activity log rules
+`sourcetype=azure:monitor:activity`.
+
+The Splunk pack adds 30 Entra ID detections (see
+[Splunk Security Content](#splunk-security-content)): admin roles assigned, MFA turned
+off, new federated domains, guest invitations, single-factor and device code sign-ins,
+password spraying and MFA fatigue. They name fields as Splunk's add-on does, which
+Signalith keeps too: a list's values by Splunk's name for them
+(`properties.targetResources{}.modifiedProperties{}.newValue`), any of which a search
+matches. After `rename properties.* as *`, a later `search` or `stats` reads the fields by
+their old names. Rules that use `eval`, `spath`, `rex`, lookups or `transaction`, and the
+Intune rules, are left out. To send Entra ID and Azure logs, see
+[Entra ID and Azure](azure.md).
+
+### Microsoft 365
+
+SigmaHQ's 17 tested Microsoft 365 rules ship. Newer ones name a record's own fields
+(`Operation`, `Workload`, `ApplicationId`), which Signalith keeps by the same names. Older
+ones name `eventSource` (the workload), `eventName` (the operation, or for the Security &
+Compliance Center an alert's name) and `status` (success or failure), which read
+`Workload`, `signature` and `status`. A sign-in's `RequestType` is one of its
+`ExtendedProperties`, so it reads `ExtendedProperties{}.Value`. Every rule searches
+`sourcetype=o365:management:activity`. To read the audit log, see
+[Microsoft 365](microsoft-365.md).
+
 ### Splunk Security Content
 
-**Splunk Security Content** (`internal/detect/packs/splunk`) holds 975 Windows and
-Linux detections from Splunk's Threat Research Team
+**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,092 Windows,
+Linux, web, network, AWS CloudTrail and Entra ID detections from Splunk's Threat Research Team
 ([security_content](https://github.com/splunk/security_content)), pinned to one
 commit. They are the production TTP and anomaly rules that search the CIM
-`Endpoint.Processes`, `Endpoint.Filesystem` and `Endpoint.Registry` nodes with
-`tstats`, plus the PowerShell script block rules. Signalith uses the same CIM field
+`Endpoint.Processes`, `Endpoint.Filesystem`, `Endpoint.Registry` and `Web` nodes with
+`tstats`, plus the PowerShell script block rules, and 5 of the 102 network detections
+(`detections/network`), the `tstats` searches that read any source of their data
+model, a [network sensor](network-sensor.md) among them: Cisco Smart Install port
+4786, ngrok tunnels, protocol on an unusual port and Tor over `Network_Traffic` or
+`Network_Resolution`, and the F5 iControl REST exploit over `Web`. The other network
+detections use lookups, `eval` or Cisco firewall searches, are experimental or hunting
+rules, or search Sysmon's DNS and network events, which is endpoint content
+(`REPORT.md`). Signalith uses the same CIM field
 names, so each rule's `where` clause becomes a Signalith filter field for field:
 
 | Splunk node | Windows events | Data model |
@@ -451,6 +706,7 @@ names, so each rule's `where` clause becomes a Signalith filter field for field:
 | `` `sysmon` EventCode=8 `` or `10` (raw search) | Sysmon 8 and 10 | Endpoint |
 | `` `sysmon` EventCode=17 `` or `18` (raw search) | Sysmon 17 and 18 (named pipe created or connected to; `PipeName` is `pipe_name`) | Endpoint |
 | `` `sysmon` EventCode=15 `` (raw search) | Sysmon 15 (alternate data stream written; `Contents` is `file_contents`) | Filesystem |
+| `` `sysmon` EventCode=5 `` or `9` (raw search) | Sysmon 5 (process terminated) and 9 (a drive read directly; `Device` is `device`) | Endpoint |
 | `` `wineventlog_security` EventCode=4624 `` or `4625` (raw search) | Security 4624 (successful logon) and 4625 (failed logon) | Authentication |
 | `` `wineventlog_security` EventCode=4698 `` (raw search) | Security 4698 (scheduled task created) | Change |
 | `` `wineventlog_security` EventCode=4663 `` (raw search) | Security 4663 (object access) | Filesystem for a file, Registry for a key |
@@ -459,9 +715,17 @@ names, so each rule's `where` clause becomes a Signalith filter field for field:
 | `` `wineventlog_security` EventCode=5145 `` (raw search) | Security 5145 (network share access) | Filesystem |
 | `` `wineventlog_security` EventCode=4768 `` or `4769` (raw search) | Security 4768 and 4769 (Kerberos tickets) | Authentication |
 | `` `wineventlog_security` EventCode=4738 `` or `4732` (raw search) | Security 4738 (user account changed) and 4732 (member added to a local group) | Change |
+| `` `wineventlog_security` EventCode=4648 ``, `4776` or `4771` (raw search) | Security 4648 (logon with explicit credentials), 4776 (NTLM credential check) and 4771 (Kerberos pre-authentication failed) | Authentication |
+| `` `wineventlog_security` EventCode=4741 ``, `4742`, `4781`, `4727`, `4730` or `4737` (raw search) | Security 4741 and 4742 (computer account created or changed), 4781 (account renamed), 4727, 4730 and 4737 (global group created, deleted or changed) | Change |
+| `` `wineventlog_security` EventCode=4798 ``, `4799`, `4886` or `4887` (raw search) | Security 4798 and 4799 (local group membership listed), 4886 and 4887 (certificate requested and issued) | Change |
 | `Endpoint.Processes` (Sysmon for Linux rules) | Sysmon for Linux 1 | Endpoint |
 | `Endpoint.Filesystem` (Sysmon for Linux rules) | Sysmon for Linux 11 and 23 | Filesystem |
 | `` `linux_auditd` `` (raw search) | Linux audit records, each field by auditd's name (see [the Linux audit log](#linux-audit-log-auditd)) | Other |
+| `Web` (`datamodel=Web` or `Web.Web`) | Apache and Nginx access log lines (see [Web server access logs](#web-server-access-logs)), and a network sensor's web requests (Zeek's http.log) | Web |
+| `` `cloudtrail` `` (raw search) | AWS CloudTrail records, by CloudTrail's field names and the CIM fields Splunk's AWS add-on gives them (`errorCode=success` reads a record with no error code; see [AWS CloudTrail](#aws-cloudtrail)) | Authentication, Change or Other |
+| `` `azure_monitor_aad` `` (raw search) | Entra ID sign-in, audit and risk records, by the record's own field names and the CIM fields Splunk's add-on for Microsoft cloud services gives them (see [Entra ID and Azure](#entra-id-and-azure)) | Authentication, Change or Alerts |
+| `Network_Traffic` (network detections) | Any connection: Zeek's conn.log, a firewall, Sysmon 3 (`app` is the protocol, Zeek's `service`) | Network_Traffic |
+| `Network_Resolution` (network detections) | A DNS lookup that names who asked (`src`), as Zeek's dns.log does (`record_type` is `query_type`); a host's own lookups (Sysmon 22) name only the host and are left to the endpoint rules | Network_Resolution |
 
 The rule files and the macros they use ship unchanged; Signalith converts them when
 it starts, reading the search the way Splunk does: `*` is the only wildcard (`?` is
@@ -519,6 +783,23 @@ the change (`SubjectUserName` is `user`), the account's `UserAccountControl` fla
 off), and the member added (`MemberSid` is `member_sid`). They are stored in Change
 with `object_category` `user` or `group`.
 
+Sign-in rules search the account (`TargetUserName` is `user`): a logon with explicit
+credentials (4648) by who used them (`SubjectUserName`, or the add-on's
+`Caller_User_Name`, is `src_user`), an NTLM credential check (4776) by the computer it
+came from (`Workstation` is `src_host`) and its result (`Status` is `ntlm_status`,
+`0xc0000064` for an account that does not exist), and a failed Kerberos
+pre-authentication (4771) by the client (`IpAddress` is `src`) and `Status`
+(`kerberos_status`, `0x18` for a wrong password).
+
+Computer account rules (4741, 4742) search the account (`TargetUserName` is `object`),
+its `UserAccountControl`, `NewUacValue` and service principal names
+(`ServicePrincipalNames` is `service_principal_names`, one space between names). A
+renamed account (4781) has its new name as `object` and its old one as `old_object`.
+Local group listing rules (4798, 4799) search the program that asked
+(`CallerProcessName` is `process_path`), and certificate rules (4886, 4887) the
+requester (`Requester` is `cert_requester`) and the request's `Attributes`
+(`cert_attributes`, such as its template and any subject alternative name).
+
 Service install rules (System 7045, from the Sigma `service: system` log source or
 Splunk's `wineventlog_system`) search the service's name (`ServiceName` is
 `service_name`), what it runs (`ImagePath` is `service_path`, a path or a whole
@@ -526,9 +807,72 @@ command line), `ServiceType` (`service_type`), `StartType` (`service_start_type`
 `AccountName` (`service_account`). They are stored in Change with `object_category`
 `service` and action `created`. The Service Control Manager logs 7045 on every
 Windows version without any audit setting, and the Windows agent collects the System
-log. Of the System log's events, Signalith reads only service installs; other System
-rules (services stopping, for example) are left out of the packs, and importing one
-says so.
+log.
+
+Rules about other System log events find them in Other by provider (`Provider_Name`
+is `provider`) and event ID. Signalith also keeps the data of these events, each value
+as `system_` and its name in snake case:
+
+| Provider and event | Data |
+|---|---|
+| Service Control Manager 7036 (service changed state), 7034 (terminated unexpectedly), 7023 (terminated with an error) | `param1` (the service's display name) and `param2` (its state, crash count or error) |
+| Service Control Manager 7040 (start type changed) | `param1` to `param4` |
+| Microsoft-Windows-Eventlog 104 (a log cleared) | `SubjectUserName`, `SubjectDomainName`, `Channel` (the log cleared) and `BackupPath`; the account is also `user` and `user_domain` |
+| Microsoft-Windows-Kernel-General 16 (a hive's access history cleared) | `HiveName` and the counts with it |
+| Application Popup 26 | `Caption` and `Message` |
+| Microsoft-Windows-DistributedCOM 10001 (a DCOM server could not start) | `param1` to `param3` |
+
+An event's binary data (`Binary`, a service's name in UTF-16 hex for service events)
+is `system_binary` when the OpenTelemetry Collector sends it; Fluent Bit does not. Rules
+about other data of System events (NTFS volume names, for example) are left out of the
+packs, and importing one says so.
+
+Application log rules (SQL Server, Windows Installer, ESENT, Windows Backup,
+ScreenConnect, application crashes) find their events in Other by provider and event ID
+and search the event's data values (`Data` is `event_data`, the values one per line).
+The Windows agent collects the Application log. A rule about the rendered message
+(`Message`) is left out of the pack.
+
+Code Integrity rules (`Microsoft-Windows-CodeIntegrity/Operational`, which the Windows
+agent collects) find their events the same way, with the event's data values as
+`event_data`; a rule about a named value (`FileNameBuffer`) is left out of the pack.
+
+Windows Firewall rules (`Microsoft-Windows-Windows Firewall With Advanced Security/Firewall`),
+BITS rules (`Microsoft-Windows-Bits-Client/Operational`), app package rules
+(`Microsoft-Windows-AppXDeploymentServer/Operational`) and WMI activity rules
+(`Microsoft-Windows-WMI-Activity/Operational`), and Remote Desktop session
+(`Microsoft-Windows-TerminalServices-LocalSessionManager/Operational`), shell
+(`Microsoft-Windows-Shell-Core/Operational`), SMB client security
+(`Microsoft-Windows-SmbClient/Security`) and exploit protection
+(`Microsoft-Windows-Security-Mitigations/KernelMode`) rules, and the rules for the logs in the
+table below, find their events in Other by
+event ID, and name their data the way Windows does: each value is the log's prefix
+(`firewall_`, `bits_`, `appx_`, `wmi_`, `rdp_`, `shell_`, `smbclient_`, `mitigation_`, or the one
+in the table) and
+its name in snake case (`ApplicationPath` is `firewall_application_path`,
+`RemoteName` `bits_remote_name`, `PackageFullName` `appx_package_full_name`, `Operation`
+`wmi_operation`). The Windows agent collects these logs, which Windows keeps by default.
+
+| Log (channel) | Prefix | Kept by default |
+|---|---|---|
+| DNS client (`Microsoft-Windows-DNS-Client/Operational`) | `dnsclient_` | No: `wevtutil sl Microsoft-Windows-DNS-Client/Operational /e:true` |
+| Task Scheduler (`Microsoft-Windows-TaskScheduler/Operational`) | `taskscheduler_` | Servers yes; on clients turn on the task history (`wevtutil sl Microsoft-Windows-TaskScheduler/Operational /e:true`) |
+| NTLM (`Microsoft-Windows-NTLM/Operational`) | `ntlm_` | Only with the "Network security: Restrict NTLM" audit policies set |
+| LSA (`Microsoft-Windows-LSA/Operational`) | `lsa_` | Yes |
+| CryptoAPI (`Microsoft-Windows-CAPI2/Operational`) | `capi2_` | No: `wevtutil sl Microsoft-Windows-CAPI2/Operational /e:true` |
+| Device drivers (`Microsoft-Windows-DriverFrameworks-UserMode/Operational`) | `driver_` | No: `wevtutil sl Microsoft-Windows-DriverFrameworks-UserMode/Operational /e:true` |
+| Packaged apps (`Microsoft-Windows-AppModel-Runtime/Admin`) | `appmodel_` | Yes |
+| App packages (`Microsoft-Windows-AppxPackaging/Operational`) | `appxpackaging_` | Yes |
+| Certificates (`Microsoft-Windows-CertificateServicesClient-Lifecycle-System/Operational`) | `certlifecycle_` | Yes |
+| OpenSSH server (`OpenSSH/Operational`) | `openssh_` | When OpenSSH Server is installed |
+| DNS Server (`DNS Server`) | `dnsserver_` | On DNS servers |
+| IIS configuration (`Microsoft-IIS-Configuration/Operational`) | `iisconfig_` | On web servers, after `wevtutil sl Microsoft-IIS-Configuration/Operational /e:true` |
+
+Fluent Bit skips the logs a computer doesn't have. The OpenTelemetry Collector stops on a log
+it can't open, so its configuration leaves out the OpenSSH, DNS Server and IIS logs; add a
+`windowseventlog` receiver for each one a server has.
+A rule that searches an event's free text (the WMI persistence rule) is left out of the
+pack.
 
 Registry values that Sysmon writes as `DWORD (0x00000001)` compare as `0x00000001`,
 the way Splunk's Sysmon add-on reads them.
@@ -735,7 +1079,7 @@ Imported rules start disabled with a 5 minute schedule and 10 minute lookback.
 | `GET /api/cases/summary` | Open cases, and open cases you own |
 | `GET /api/risk?since=24h&type=` | Risk objects by total score, with context |
 | `GET /api/risk/object?object=&type=&since=7d` | Risk events for one object |
-| `GET`, `PUT /api/lookups/assets`, `/api/lookups/identities` | List or replace a list (CSV body of up to 16 MB and 1,000,000 rows; 400 lists every bad line) |
+| `GET`, `PUT /api/lookups/assets`, `/api/lookups/identities` | List or replace a list (CSV body of up to 16 MB and 1,000,000 rows; 400 lists every bad line). On several servers the list is shared, and `PUT` honours `If-Match` (see [Servers](servers.md#shared-detections-dashboards-and-asset-lists)) |
 | `GET /api/lookups/assets.csv`, `/api/lookups/identities.csv` | Download the current CSV |
 | `GET /api/lookups/context?field=&value=` | Context for one value |
 

@@ -64,10 +64,11 @@ func LegacyTokens(c *config.Config) []agenttokens.Legacy {
 }
 
 // EnrollToken checks an osquery enroll secret: an active agent token, or
-// an accepted shared one, gives its ID.
+// an accepted shared one, gives its ID. A sensor token is refused: it is
+// for a network sensor only.
 func (s *Server) EnrollToken(secret string) (tokenID string, ok bool) {
 	id, res := s.tokens().Check(strings.TrimSpace(secret))
-	if res != agenttokens.Valid {
+	if res != agenttokens.Valid || id.Purpose == agenttokens.PurposeSensor {
 		return "", false
 	}
 	return id.ID, true
@@ -143,7 +144,11 @@ func (s *Server) tokenAccepted(r *http.Request) bool {
 // withOrigin returns the context of an agent's request with where its
 // events come from.
 func withOrigin(r *http.Request, intake string, id agenttokens.Identity) context.Context {
-	return ingest.WithOrigin(r.Context(), ingest.Origin{Intake: intake, TokenID: id.ID, TokenName: id.Name, Sender: clientaddr.Parse(r.RemoteAddr).String()})
+	o := ingest.Origin{Intake: intake, TokenID: id.ID, TokenName: id.Name, Sender: clientaddr.Parse(r.RemoteAddr).String()}
+	if !id.Legacy {
+		o.Purpose = id.Purpose
+	}
+	return ingest.WithOrigin(r.Context(), o)
 }
 
 // TokenFacts are the agent tokens for the Security page's checks.

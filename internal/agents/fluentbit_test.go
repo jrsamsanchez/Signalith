@@ -266,7 +266,7 @@ func TestAntivirusCollection(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		channels := "Security,System,Microsoft-Windows-Windows Defender/Operational"
+		channels := "Security,System,Application,Microsoft-Windows-Windows Defender/Operational,Microsoft-Windows-CodeIntegrity/Operational,Microsoft-Windows-Windows Firewall With Advanced Security/Firewall,Microsoft-Windows-Bits-Client/Operational,Microsoft-Windows-AppXDeploymentServer/Operational,Microsoft-Windows-WMI-Activity/Operational,Microsoft-Windows-TerminalServices-LocalSessionManager/Operational,Microsoft-Windows-Shell-Core/Operational,Microsoft-Windows-SmbClient/Security,Microsoft-Windows-Security-Mitigations/KernelMode,Microsoft-Windows-DNS-Client/Operational,Microsoft-Windows-TaskScheduler/Operational,Microsoft-Windows-NTLM/Operational,Microsoft-Windows-LSA/Operational,Microsoft-Windows-CAPI2/Operational,Microsoft-Windows-DriverFrameworks-UserMode/Operational,Microsoft-Windows-AppModel-Runtime/Admin,Microsoft-Windows-AppxPackaging/Operational,Microsoft-Windows-CertificateServicesClient-Lifecycle-System/Operational,OpenSSH/Operational,DNS Server,Microsoft-IIS-Configuration/Operational"
 		if sysmon {
 			channels += ",Microsoft-Windows-Sysmon/Operational"
 		}
@@ -310,6 +310,12 @@ func TestAntivirusCollection(t *testing.T) {
 	}
 	if strings.Contains(a.Config, "linux.clamav") {
 		t.Error("journal mode tails ClamAV files")
+	}
+	// Web servers' access logs, in either mode.
+	web := "[INPUT]\n" + line("Name", "tail") + line("Tag", "linux.web") +
+		line("Path", "/var/log/nginx/*access*.log,/var/log/apache2/*access*.log,/var/log/httpd/*access_log") + line("Path_Key", "file")
+	if !strings.Contains(a.Config, web) || !strings.Contains(a.Config, line("Match", "linux.web")+line("hostname_key", "hostname")) {
+		t.Errorf("journal mode lacks the web access logs:\n%s", a.Config)
 	}
 }
 
@@ -365,7 +371,7 @@ func TestFluentBitWindowsPowerShell(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(a.Config, "Channels             Security,System,Microsoft-Windows-Windows Defender/Operational,Microsoft-Windows-Sysmon/Operational,Microsoft-Windows-PowerShell/Operational") {
+	if !strings.Contains(a.Config, "Channels             Security,System,Application,Microsoft-Windows-Windows Defender/Operational,Microsoft-Windows-CodeIntegrity/Operational,Microsoft-Windows-Windows Firewall With Advanced Security/Firewall,Microsoft-Windows-Bits-Client/Operational,Microsoft-Windows-AppXDeploymentServer/Operational,Microsoft-Windows-WMI-Activity/Operational,Microsoft-Windows-TerminalServices-LocalSessionManager/Operational,Microsoft-Windows-Shell-Core/Operational,Microsoft-Windows-SmbClient/Security,Microsoft-Windows-Security-Mitigations/KernelMode,Microsoft-Windows-DNS-Client/Operational,Microsoft-Windows-TaskScheduler/Operational,Microsoft-Windows-NTLM/Operational,Microsoft-Windows-LSA/Operational,Microsoft-Windows-CAPI2/Operational,Microsoft-Windows-DriverFrameworks-UserMode/Operational,Microsoft-Windows-AppModel-Runtime/Admin,Microsoft-Windows-AppxPackaging/Operational,Microsoft-Windows-CertificateServicesClient-Lifecycle-System/Operational,OpenSSH/Operational,DNS Server,Microsoft-IIS-Configuration/Operational,Microsoft-Windows-Sysmon/Operational,Microsoft-Windows-PowerShell/Operational") {
 		t.Errorf("config:\n%s", a.Config)
 	}
 	if !strings.Contains(strings.Join(a.Steps, "\n"), `Set-ItemProperty -Path $k -Name EnableScriptBlockLogging -Value 1`) {
