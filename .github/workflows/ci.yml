@@ -396,4 +396,8 @@ jobs:
         if: failure()
         run: |
           sudo journalctl --no-pager -n 200 -u signalith-zeek -u signalith-suricata -u signalith-fluent-bit -u signalith-suricata-update || true
+          echo "== Suricata's own test of the sensor settings and rules"
+          sudo suricata -T -v -c /etc/suricata/signalith-sensor.yaml 2>&1 | tail -n 40 || true
+          sudo sh -x /usr/lib/signalith-sensor/rules-update.sh 2>&1 | tail -n 40 || true
+          sudo dmesg | tail -n 20 || true
           $COMPOSE logs --no-color signalith | tail -n 200
