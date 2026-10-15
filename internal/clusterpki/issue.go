@@ -133,12 +133,21 @@ func (o *OSCA) Issue(ctx context.Context, name, nodeID string, csrPEM []byte, no
 					next.Previous = append(next.Previous, e)
 				}
 			}
-			// None that is still valid is dropped, or a revocation would
-			// miss it: past the cap, the server gets no new certificate
-			// until the oldest expires.
-			if len(next.Previous) > MaxPrevious {
-				return fmt.Errorf("this server already holds %d OpenSearch certificates that have not expired, more than a revocation keeps track of, so it is issued no new one until one expires on %s",
-					len(next.Previous), slices.MinFunc(next.Previous, func(a, b Earlier) int { return a.NotAfter.Compare(b.NotAfter) }).NotAfter.Format(time.DateOnly))
+			// None that is still valid is forgotten, or a revocation would
+			// miss it. Past the cap, which only renewals that keep failing
+			// to install reach, the oldest (the one in use) and the newest
+			// are kept, and those between are revoked now: none of them
+			// was put to use.
+			if over := len(next.Previous) - MaxPrevious; over > 0 {
+				for _, e := range next.Previous[1 : 1+over] {
+					b.Revoked = append(b.Revoked, Revoked{Serial: e.Serial, Name: key, NodeID: nodeID, NotAfter: e.NotAfter, RevokedAt: now.UTC()})
+				}
+				next.Previous = slices.Delete(next.Previous, 1, 1+over)
+				list, err := pruneRevoked(b.Revoked, now)
+				if err != nil {
+					return err
+				}
+				b.Revoked = list
 			}
 		}
 		b.Issued[key] = next

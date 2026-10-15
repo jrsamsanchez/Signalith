@@ -274,27 +274,32 @@ func TestRevokeNodeAfterManyRenewals(t *testing.T) {
 	_, req := csr(t, "x")
 	now := time.Now()
 	var issued []string
-	refused := false
-	for range 1 + 9 {
+	for range 1 + 12 {
 		cert, _, err := o.Issue(ctx, "siem-a", "n1", req, now)
 		if err != nil {
-			refused = true
-			continue
+			t.Fatalf("renewal %d: %v", len(issued), err)
 		}
 		issued = append(issued, parse(t, cert).SerialNumber.Text(16))
 	}
-	if !refused {
-		t.Error("a ninth renewal while all eight earlier certificates are valid was issued")
+	// Past the cap, the first (in use) and the newest are kept, and those
+	// between are revoked at once.
+	b, _ := o.Get()
+	cur := b.Issued["siem-a"]
+	if len(cur.Previous) != MaxPrevious || cur.Previous[0].Serial != issued[0] || cur.Serial != issued[len(issued)-1] {
+		t.Fatalf("kept %+v", cur)
+	}
+	if early := b.RevokedSerials(now); len(early) != len(issued)-1-MaxPrevious {
+		t.Fatalf("revoked at once %v", early)
 	}
 	revoked, err := o.RevokeNode(ctx, "admin", "n1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	var got []string
-	for _, r := range revoked {
-		got = append(got, r.Serial)
+	if len(revoked) != 1+MaxPrevious {
+		t.Errorf("revoked %d now", len(revoked))
 	}
-	slices.Sort(got)
+	b, _ = o.Get()
+	got := b.RevokedSerials(now)
 	slices.Sort(issued)
 	if !slices.Equal(got, issued) {
 		t.Fatalf("revoked %v, issued %v", got, issued)
