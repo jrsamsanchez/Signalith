@@ -485,6 +485,29 @@ in place of %s, and -c /var/lib/signalith/signalith.yaml.
 			b.WriteString("\n")
 		}
 	}
+	var loose []manifestFile
+	for _, file := range m.Files {
+		if !slices.ContainsFunc(m.Folders, func(f manifestFolder) bool {
+			return file.Path == f.Path || strings.HasPrefix(file.Path, f.Path+"/")
+		}) {
+			loose = append(loose, file)
+		}
+	}
+	if len(loose) > 0 {
+		b.WriteString("Files outside those folders, one by one:\n")
+		for _, file := range loose {
+			src := filepath.Join(root, filepath.FromSlash(file.Path))
+			switch env.platform {
+			case "windows":
+				fmt.Fprintf(&b, "  Copy-Item -Path \"%s\" -Destination \"%s\" -Force\n", src, file.Dest)
+			case "docker":
+				fmt.Fprintf(&b, "  %s -> what your compose file mounts at %s\n", src, file.Dest)
+			default:
+				fmt.Fprintf(&b, "  sudo install -D -o signalith -g signalith -m 0600 \"%s\" \"%s\"\n", src, file.Dest)
+			}
+		}
+		b.WriteString("\n")
+	}
 	if env.platform == "docker" {
 		fmt.Fprintf(&b, "Then give the files to the user Signalith runs as:\n  %s run --rm --user 0 --entrypoint chown signalith -R 65532:65532 \"%s\"\n\n",
 			dockerCompose, cmp.Or(env.state, "/var/lib/signalith"))
