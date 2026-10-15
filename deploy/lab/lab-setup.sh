@@ -328,9 +328,23 @@ join() {
   out=$(sg "${args[@]}")
   line="$(jq -r .commands.linux <<<"$out") --name $name --node-url https://$name.$DOMAIN:8080"
   on "$name" "bash -c $(printf '%q' "$line")"
-  # A join through install.sh can leave node.id root's, which the
+  # The same public address as signalith-1, so the servers' settings
+  # match. A join through install.sh can leave node.id root's, which the
   # service cannot read: give the state folder to its account.
-  on "$name" 'chown -R signalith:signalith /var/lib/signalith && systemctl restart signalith'
+  script "$name" PUBLIC="$SIEM_URL" <<'EOF'
+set -euo pipefail
+python3 - /etc/signalith/signalith.yaml "$PUBLIC" <<'PY'
+import sys, yaml
+path, public = sys.argv[1:]
+with open(path) as f:
+    c = yaml.safe_load(f) or {}
+c.setdefault("server", {})["public_url"] = public
+with open(path, "w") as f:
+    yaml.safe_dump(c, f, sort_keys=False)
+PY
+chown -R signalith:signalith /var/lib/signalith
+systemctl restart signalith
+EOF
   if [ "$role" = scanner ]; then
     on "$name" 'DEBIAN_FRONTEND=noninteractive apt-get install -y -q nmap >/dev/null && systemctl restart signalith'
   fi
