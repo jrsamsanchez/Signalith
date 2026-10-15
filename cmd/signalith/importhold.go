@@ -66,17 +66,25 @@ func (h *importHolds) get(name string) *importHold {
 	return h.m[name]
 }
 
-// holdImporters makes each importer of a page's file hold it while it
-// runs (see above).
+// holdImporters makes each importer of a page's file hold it from
+// reading it until the import is recorded (see above), also when there
+// is nothing to import.
 func (ct *sharedContent) holdImporters(list []shared.Importer) []shared.Importer {
 	for i, im := range list {
 		if _, ok := movingWhat[im.Name]; !ok || im.Run == nil {
 			continue
 		}
-		run, h := im.Run, ct.holds.get(im.Name)
-		list[i].Run = func(ctx context.Context, by string) error {
+		name, run, h := im.Name, im.Run, ct.holds.get(im.Name)
+		list[i].Hold = func() func() {
 			h.mu.Lock()
-			defer h.mu.Unlock()
+			return func() {
+				if hook := importHoldHook; hook != nil {
+					hook(name)
+				}
+				h.mu.Unlock()
+			}
+		}
+		list[i].Run = func(ctx context.Context, by string) error {
 			if err := run(ctx, by); err != nil {
 				return err
 			}
@@ -84,9 +92,6 @@ func (ct *sharedContent) holdImporters(list []shared.Importer) []shared.Importer
 				if b, ok := rt.Cluster().Get(); ok {
 					h.cluster = b.ClusterID
 				}
-			}
-			if hook := importHoldHook; hook != nil {
-				hook(im.Name)
 			}
 			return nil
 		}
