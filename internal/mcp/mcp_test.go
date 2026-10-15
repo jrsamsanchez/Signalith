@@ -192,6 +192,27 @@ func TestClientOnlyReads(t *testing.T) {
 	}
 }
 
+func TestClientToken(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, _, ok := r.BasicAuth(); ok || r.Header.Get("Authorization") != "Bearer sgl_api_good" {
+			w.WriteHeader(401)
+			return
+		}
+		io.WriteString(w, `{}`)
+	}))
+	defer ts.Close()
+	u, _ := url.Parse(ts.URL)
+	c := &Client{BaseURL: u, Token: "sgl_api_good"}
+	if err := c.Get(context.Background(), "/api/me", nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	c.Token = "sgl_api_revoked"
+	err := c.Get(context.Background(), "/api/me", nil, nil)
+	if ae, ok := err.(*APIError); !ok || ae.Status != 401 || !strings.Contains(ae.Msg, "SIGNALITH_TOKEN") {
+		t.Errorf("revoked token = %v", err)
+	}
+}
+
 func TestShrink(t *testing.T) {
 	list := make([]any, maxList+5)
 	for i := range list {

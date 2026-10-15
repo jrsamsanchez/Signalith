@@ -205,6 +205,7 @@
       <div class="nav__label">Settings</div>
       <a class="nav__item" href="#settings" data-page="settings" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-sliders-horizontal"/></svg><span>Server</span></a>
       <a class="nav__item" href="#users" data-page="users" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-users"/></svg><span>Users</span></a>
+      <a class="nav__item" href="#apitokens" data-page="apitokens" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-key-round"/></svg><span>API tokens</span></a>
       <a class="nav__item" href="#notify" data-page="notify" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-bell"/></svg><span>Notifications</span></a>
       <a class="nav__item" href="#retention" data-page="retention" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-hourglass"/></svg><span>Data retention</span></a>
       <a class="nav__item" href="#security" data-page="security" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-shield-check"/></svg><span>Security</span></a>
@@ -259,6 +260,7 @@
     <div class="set-tabs__list">
       <a class="set-tab" href="#settings" data-page="settings" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-sliders-horizontal"/></svg><span>Server</span></a>
       <a class="set-tab" href="#users" data-page="users" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-users"/></svg><span>Users</span></a>
+      <a class="set-tab" href="#apitokens" data-page="apitokens" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-key-round"/></svg><span>API tokens</span></a>
       <a class="set-tab" href="#notify" data-page="notify" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-bell"/></svg><span>Notifications</span></a>
       <a class="set-tab" href="#retention" data-page="retention" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-hourglass"/></svg><span>Data retention</span></a>
       <a class="set-tab" href="#security" data-page="security" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-shield-check"/></svg><span>Security</span><span id="security-count" class="nav__count hidden" data-critical></span></a>
@@ -1435,6 +1437,27 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
 
   <!-- Help -->
   <!-- Audit: who changed what, on every server -->
+  <section id="page-apitokens" class="page">
+    <div class="page-head">
+      <div>
+        <h2 class="page-head__title">API tokens</h2>
+        <p class="page-head__desc">Tokens that AI tools and other programs read from Signalith with, on every server. A token can only read, whatever its role.</p>
+      </div>
+    </div>
+    <div class="card tokens-card">
+      <div class="card__head tokens-card__head">
+        <div>
+          <h3 class="card__title" id="at-title">Tokens</h3>
+          <p class="card__sub">Give each tool its own token. The audit log shows what it does as api-token:&lt;name&gt;.</p>
+        </div>
+        <div class="card__actions">
+          <button class="btn btn--primary btn--sm" type="button" id="at-new"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg><span>New token</span></button>
+        </div>
+      </div>
+      <div class="tokens-card__body" id="at-body" aria-busy="true" aria-labelledby="at-title"></div>
+    </div>
+  </section>
+
   <section id="page-audit" class="page">
     <div class="page-head">
       <div>
@@ -1528,6 +1551,7 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
 <script src="endpoints.js"></script>
 <script src="vulns.js"></script>
 <script src="tokens.js"></script>
+<script src="apitokens.js"></script>
 <script src="servers-ca.js"></script>
 <script src="servers-lifecycle.js"></script>
 <script src="servers-osid.js"></script>

@@ -20,7 +20,7 @@ Each role can do everything the roles above it can.
 | --- | --- | --- |
 | **Viewer** | Managers, auditors, other teams | Run searches and see dashboards, findings, investigations, detections, risk and intel. Cannot change anything. |
 | **Analyst** | SOC analysts | Also triage findings, work investigations, build dashboards, use **Ask** and add or remove intel indicators by hand. |
-| **Admin** | Whoever runs Signalith | Also create and change detections, add and change threat intel feeds and upload intel, edit asset and identity lists, set up agents and create and revoke [agent tokens](agent-tokens.md), manage users and set up directory sign-in, and change server settings. |
+| **Admin** | Whoever runs Signalith | Also create and change detections, add and change threat intel feeds and upload intel, edit asset and identity lists, set up agents and create and revoke [agent tokens](agent-tokens.md) and [API tokens](ai-tools.md#api-tokens), manage users and set up directory sign-in, and change server settings. |
 
 By area:
 
@@ -842,7 +842,9 @@ agents that send events, shown on the [Endpoints page](endpoints.md)), `GET /api
 **Admin:** `GET /api/agents/config`, `POST /api/agent-tokens`,
 `PATCH /api/agent-tokens/{id}`, `POST /api/agent-tokens/{id}/revoke`,
 `POST /api/agent-tokens/legacy/{id}/refuse`, `POST /api/agent-tokens/legacy/{id}/accept`
-(see [agent-tokens.md](agent-tokens.md#commands)), `POST /api/tls/names`, `GET /api/security`,
+(see [agent-tokens.md](agent-tokens.md#commands)), `GET /api/api-tokens`, `POST /api/api-tokens`,
+`POST /api/api-tokens/{id}/revoke` (the [API tokens](ai-tools.md#api-tokens) of the AI tools
+server, which can only read), `POST /api/tls/names`, `GET /api/security`,
 `POST /api/security/ca`, `POST /api/detections`,
 `POST /api/detections/test`, `POST /api/detections/sigma`, `POST /api/detections/enable`, `POST /api/detections/{id}/exceptions`, `DELETE /api/detections/{id}/exceptions/{exception}`, `POST /api/findings/{id}/suppress`,
 `PUT /api/detections/{id}`, `DELETE /api/detections/{id}`,

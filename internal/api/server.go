@@ -308,6 +308,7 @@ func (s *Server) Handler() http.Handler {
 	s.routeClusterServers(api)
 	s.routeClusterOSIdentity(api)
 	s.routeTokens(api)
+	s.routeAPITokens(api)
 	s.routeAgents(api)
 	if s.UI != nil {
 		api.add(route{Pattern: "GET /", Role: users.Viewer}, revalidate(s.indexPage(staticFiles(s.UI, true))))
