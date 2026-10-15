@@ -43,6 +43,9 @@ type Scanner struct {
 	Log *slog.Logger
 	// Runner runs Nmap; nil finds it.
 	Runner *Runner
+	// OpenVAS runs the deeper scans of the networks that ask for them;
+	// nil or not configured is not set up on this server.
+	OpenVAS *OpenVAS
 	// Tick is how often queued and due scans are looked for (default 10
 	// seconds).
 	Tick time.Duration
@@ -196,6 +199,12 @@ func (s *Scanner) CheckNow(ctx context.Context) *Report {
 		s.log().Debug("vulnerability scans: could not record the scanner check", "err", err)
 	}
 	return r
+}
+
+func (s *Scanner) openVAS() *OpenVAS {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.OpenVAS
 }
 
 func (s *Scanner) checker() *Checker {
@@ -481,6 +490,35 @@ func (s *Scanner) runScan(parent context.Context, sc *Scan, t Target, set Settin
 		}
 		prog = p
 	})
+	// Then OpenVAS, for a network that asks for it, while the heartbeat
+	// goes on. Its trouble never fails the scan: Nmap's results stand.
+	var deep []Finding
+	ovErr := ""
+	pmu.Lock()
+	stoppedNow := stopped
+	pmu.Unlock()
+	if err == nil && t.OpenVAS && !stoppedNow {
+		switch ov := s.openVAS(); {
+		case !ov.Configured():
+			ovErr = "OpenVAS is not set up on " + s.Server + ", so only Nmap ran. Settings > Scanners says how to set it up."
+		default:
+			s.log().Info("vulnerability scan: OpenVAS scan started", "network", t.Name, "scan", sc.ID)
+			var oerr error
+			deep, oerr = ov.Scan(ctx, t, "Signalith "+t.Name+" "+sc.ID, func(p float64) {
+				pmu.Lock()
+				prog.Task, prog.Percent, prog.ETA = "OpenVAS", p, time.Time{}
+				pmu.Unlock()
+			})
+			if oerr != nil {
+				if errors.Is(oerr, context.DeadlineExceeded) || errors.Is(oerr, context.Canceled) {
+					err = oerr
+				} else {
+					ovErr = oerr.Error()
+					s.log().Warn("vulnerability scan: OpenVAS scan failed; the Nmap results are kept", "network", t.Name, "scan", sc.ID, "err", oerr)
+				}
+			}
+		}
+	}
 	close(done)
 	pmu.Lock()
 	wasStopped := stopped
@@ -505,6 +543,10 @@ func (s *Scanner) runScan(parent context.Context, sc *Scan, t Target, set Settin
 
 	finished := time.Now().UTC()
 	hosts, counts, cveErr := s.assess(parent, sc, t, found, set.CVELookup, finished)
+	if len(deep) > 0 {
+		hosts = MergeOpenVAS(hosts, deep, t, sc.ID, finished)
+		counts = Recount(hosts)
+	}
 	if err := s.Store.SaveHosts(parent, t.ID, hosts); err != nil {
 		s.finish(parent, sc, StateFailed, "The scan finished but its results could not be saved: "+err.Error())
 		return
@@ -516,6 +558,9 @@ func (s *Scanner) runScan(parent context.Context, sc *Scan, t Target, set Settin
 	}
 	f := map[string]any{"state": StateDone, "finished_at": finished, "counts": counts,
 		"progress": Progress{Percent: 100, HostsUp: len(hosts)}}
+	if ovErr != "" {
+		f["openvas_error"] = ovErr
+	}
 	if cveErr != "" {
 		f["cve_error"] = cveErr
 	}

@@ -124,6 +124,7 @@ func (c *Config) secretRefs() []secretRef {
 	str(secretRef{field: "opensearch.password", label: "opensearch.password"}, &c.OpenSearch.Password)
 	str(secretRef{field: "assistant.api_key", label: "assistant.api_key"}, &c.Assistant.APIKey)
 	str(secretRef{field: "vulns.nvd_api_key", label: "vulns.nvd_api_key"}, &c.Vulns.NVDAPIKey)
+	str(secretRef{field: "vulns.openvas_password", label: "vulns.openvas_password"}, &c.Vulns.OpenVASPassword)
 	// A bind password from SIGNALITH_LDAP_BIND_PASSWORD replaces the one
 	// in the file, which then need not be readable.
 	if c.Auth.LDAP != nil && c.ldapBindPassword == "" {

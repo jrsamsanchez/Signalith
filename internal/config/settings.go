@@ -461,6 +461,10 @@ var Excluded = map[string]Exclusion{
 	"response.file":              {ScopeBootstrap, "The Response actions page keeps its actions there, and a page cannot move a file it depends on. Shown under About this server."},
 	"playbooks.file":             {ScopeBootstrap, "The Playbooks page keeps its playbooks there, and a page cannot move a file it depends on. Shown under About this server."},
 	"response.scripts_dir":       {ScopeServer, "It decides which programs response actions may run, so only signalith.yaml or SIGNALITH_RESPONSE_SCRIPTS_DIR can set it, never a page. Shown under About this server."},
+	"vulns.openvas_address":      {ScopeServer, "OpenVAS runs on the scanning server itself, so it is set there: signalith.yaml or SIGNALITH_OPENVAS_*. Settings > Scanners shows each server’s OpenVAS check."},
+	"vulns.openvas_username":     {ScopeServer, "OpenVAS runs on the scanning server itself, so it is set there: signalith.yaml or SIGNALITH_OPENVAS_*. Settings > Scanners shows each server’s OpenVAS check."},
+	"vulns.openvas_password":     {ScopeServer, "OpenVAS runs on the scanning server itself, so it is set there: signalith.yaml or SIGNALITH_OPENVAS_*. Settings > Scanners shows each server’s OpenVAS check. The password can be kept encrypted with signalith secrets set vulns.openvas_password."},
+	"vulns.openvas_ca_file":      {ScopeServer, "OpenVAS runs on the scanning server itself, so it is set there: signalith.yaml or SIGNALITH_OPENVAS_*. Settings > Scanners shows each server’s OpenVAS check."},
 	"cluster.node_name":          {ScopeBootstrap, "This server's name is set in signalith.yaml or with SIGNALITH_NODE_NAME, and kept in its state folder once chosen. The Servers page shows it."},
 }
 
