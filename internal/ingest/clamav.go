@@ -54,6 +54,11 @@ func parseClamAVLine(program, line string, f map[string]any) bool {
 		line = line[28:]
 	}
 	line = strings.TrimSpace(line)
+	// Before 0.101, the level of a message leaked into its text as one
+	// leading character: ^ warning, ! error, * verbose, ~ info.
+	if len(line) > 1 && strings.IndexByte("^!*~", line[0]) >= 0 && line[1] != ' ' {
+		line = line[1:]
+	}
 	line = strings.TrimPrefix(line, "ScanOnAccess: ")
 	line = strings.TrimPrefix(line, "ClamInotif: ")
 
@@ -131,7 +136,11 @@ func parseClamAVLine(program, line string, f map[string]any) bool {
 		}
 		SetValue(f, "reason", reason)
 		return health("update_failed", "Definitions update failed")
-	case strings.HasPrefix(line, "daily.") && (strings.Contains(line, " updated (version: ") || strings.Contains(line, " is up-to-date (version: ")):
+	// "daily.cld updated (version: 27421, ...)", and when nothing changed
+	// "daily.cvd database is up-to-date (version: ...)" (0.103 and later)
+	// or "daily.cld is up to date (version: ...)" (earlier).
+	case strings.HasPrefix(line, "daily.") && (strings.Contains(line, " updated (version: ") ||
+		strings.Contains(line, " is up-to-date (version: ") || strings.Contains(line, " is up to date (version: ")):
 		v := line[strings.Index(line, "(version: ")+len("(version: "):]
 		n := 0
 		for n < len(v) && n < 20 && v[n] >= '0' && v[n] <= '9' {

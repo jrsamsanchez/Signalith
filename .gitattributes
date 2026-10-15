@@ -9,6 +9,10 @@ deploy/docker/opensearch/*.sh text eol=lf
 deploy/docker/opensearch/*.yml text eol=lf
 deploy/docker/opensearch/security/*.yml text eol=lf
 
+# Test fixtures keep their bytes on every system.
+internal/syslog/testdata/** -text
+internal/ingest/testdata/** -text
+
 # Go reads a fuzz corpus file's first line as its version, which a Windows
 # line ending (CRLF) would break.
 **/testdata/fuzz/** text eol=lf

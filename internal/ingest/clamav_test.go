@@ -116,8 +116,22 @@ func TestClamAVPrefixes(t *testing.T) {
 		ev := Normalize("linux.clamav", map[string]any{"log": line, "file": "/var/log/clamav/clamonacc.log", "hostname": "db-01"}, now)
 		checkClam(t, line, ev, "Malware", map[string]any{"file_path": "/home/a/x.exe", "signature": "Win.Trojan.Agent-1"})
 	}
+	// Before 0.101 the message level leaked into the text, and the
+	// wording of an unchanged database differed.
+	ev := ParseProgram("db-01", "clamd", "", "Wed Jan 11 19:01:16 2023 -> ~/home/a/x.exe: Win.Trojan.Agent-1 FOUND", "syslog")
+	checkClam(t, "level marker", ev, "Malware", map[string]any{"file_path": "/home/a/x.exe", "signature": "Win.Trojan.Agent-1"})
+	for _, line := range []string{
+		"daily.cld is up to date (version: 25739, sigs: 2203033, f-level: 63, builder: raynman)",
+		"daily.cld database is up-to-date (version: 25739, sigs: 2076394, f-level: 90, builder: raynman)",
+	} {
+		ev = ParseProgram("db-01", "freshclam", "", line, "syslog")
+		checkClam(t, line, ev, "Malware", map[string]any{"action": "updated", "signature_version": "25739"})
+	}
+	if ev = ParseProgram("db-01", "freshclam", "", "^Your ClamAV installation is OUTDATED!", "syslog"); ev.Model != "Other" {
+		t.Errorf("engine notice is %s", ev.Model)
+	}
 	// A freshclam line in the file tail is told apart by the file name.
-	ev := Normalize("linux.clamav", map[string]any{"log": "ERROR: Update failed for database: daily", "file": "/var/log/clamav/freshclam.log", "hostname": "db-01"}, now)
+	ev = Normalize("linux.clamav", map[string]any{"log": "ERROR: Update failed for database: daily", "file": "/var/log/clamav/freshclam.log", "hostname": "db-01"}, now)
 	checkClam(t, "freshclam error", ev, "Malware", map[string]any{"action": "update_failed"})
 	ev = Normalize("linux.clamav", map[string]any{"log": "ERROR: Update failed for database: daily", "file": "/var/log/clamav/clamav.log", "hostname": "db-01"}, now)
 	checkClam(t, "clamd error", ev, "Other", nil)

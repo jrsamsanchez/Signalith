@@ -6,10 +6,14 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/xml"
 	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -391,6 +395,123 @@ func TestOTLPWindowsSysmon(t *testing.T) {
 		})
 		if m, _ := docs[0]["message"].(string); !strings.Contains(m, "nc.exe") {
 			t.Errorf("message = %q", m)
+		}
+	}
+}
+
+// defenderThreatData is Defender's threat event (1116, 1117) data, by
+// name in schema order, as the event XML carries it.
+func defenderThreatData(action string) []tKV {
+	return []tKV{{"Product Name", "Microsoft Defender Antivirus"}, {"Product Version", "4.18.24090.11"},
+		{"Detection ID", "{8E3F7C2A-1B4D-4F6E-9A0B-3C5D7E9F1A2B}"}, {"Detection Time", "2026-10-13T09:14:02.481Z"},
+		{"Unused", ""}, {"Unused2", ""}, {"Threat ID", "2147519003"}, {"Threat Name", "Virus:DOS/EICAR_Test_File"},
+		{"Severity ID", "5"}, {"Severity Name", "Severe"}, {"Category ID", "42"}, {"Category Name", "Virus"},
+		{"FWLink", "https://go.microsoft.com/fwlink/?linkid=37020&name=Virus:DOS/EICAR_Test_File&threatid=2147519003&enterprise=0"},
+		{"Status Code", "1"}, {"Status Description", ""}, {"State", "1"}, {"Source ID", "3"}, {"Source Name", "Real-Time Protection"},
+		{"Process Name", `C:\Windows\explorer.exe`}, {"Detection User", `CORP\alice`}, {"Unused3", ""},
+		{"Path", `file:_C:\Users\alice\Downloads\eicar.com`}, {"Origin ID", "4"}, {"Origin Name", "Internet"},
+		{"Execution ID", "0"}, {"Execution Name", "Unknown"}, {"Type ID", "0"}, {"Type Name", "Concrete"},
+		{"Pre Execution Status", "0"}, {"Action ID", "2"}, {"Action Name", action}, {"Unused4", ""},
+		{"Error Code", "0x00000000"}, {"Error Description", "The operation completed successfully. "}, {"Unused5", ""},
+		{"Post Clean Status", "0"}, {"Additional Actions ID", "0"}, {"Additional Actions String", "No additional actions required"},
+		{"Remediation User", ""}, {"Unused6", ""},
+		{"Security intelligence Version", "AV: 1.419.236.0, AS: 1.419.236.0, NIS: 1.419.236.0"},
+		{"Engine Version", "AM: 1.1.24090.11, NIS: 1.1.24090.11"}}
+}
+
+func TestOTLPWindowsDefender(t *testing.T) {
+	// Without rendering, the receiver has no message: the named values
+	// (map) or the inserts in order (array) are read instead.
+	for _, array := range []bool{false, true} {
+		docs := otlpDocs(t, tRes{recs: []tRec{{body: windowsBody(DefenderChannel, 1117, defenderThreatData("Quarantine"), array, "")}}})
+		expect(t, docs[0], map[string]any{
+			"datamodel": "Malware", "type": "threat", "action": "quarantined", "signature": "Virus:DOS/EICAR_Test_File",
+			"threat_id": "2147519003", "vendor_severity": "Severe", "vendor_category": "Virus", "severity": "critical",
+			"detection_source": "Real-Time Protection", "process_name": "explorer.exe", "user": `CORP\alice`,
+			"file_path": `C:\Users\alice\Downloads\eicar.com`, "file_name": "eicar.com",
+			"signature_version": "1.419.236.0", "engine_version": "1.1.24090.11", "vendor_action": "Quarantine",
+			"vendor_product": DefenderProduct, "sourcetype": "WinEventLog:" + DefenderChannel, "signature_id": "1117",
+			"host": "DC01.corp.example",
+		})
+		if array {
+			continue
+		}
+		// An attack surface reduction block, and an exclusion added.
+		asr := []tKV{{"Product Name", "Microsoft Defender Antivirus"}, {"Product Version", "4.18.24090.11"}, {"Unused", ""},
+			{"ID", "D4F940AB-401B-4EFC-AADC-AD5F3C50688A"}, {"Detection Time", "2026-10-13T09:14:02.481Z"}, {"User", `CORP\alice`},
+			{"Path", `C:\Users\alice\AppData\Local\Temp\x.exe`}, {"Process Name", `C:\Program Files\Microsoft Office\root\Office16\WINWORD.EXE`},
+			{"Target Commandline", `"C:\Users\alice\AppData\Local\Temp\x.exe"`}, {"Security intelligence Version", "1.419.236.0"},
+			{"Engine Version", "1.1.24090.11"}}
+		docs = otlpDocs(t, tRes{recs: []tRec{{body: windowsBody(DefenderChannel, 1121, asr, false, "")}}})
+		expect(t, docs[0], map[string]any{
+			"datamodel": "Malware", "type": "rule", "action": "blocked", "rule": "Office app started a child process",
+			"rule_id": "d4f940ab-401b-4efc-aadc-ad5f3c50688a", "user": `CORP\alice`, "process_name": "WINWORD.EXE",
+			"file_name": "x.exe",
+		})
+		cfg := []tKV{{"Product Name", "Microsoft Defender Antivirus"}, {"Product Version", "4.18.24090.11"},
+			{"Old Value", ""}, {"New Value", `HKLM\SOFTWARE\Microsoft\Windows Defender\Exclusions\Paths\C:\Temp = 0x0`}}
+		docs = otlpDocs(t, tRes{recs: []tRec{{body: windowsBody(DefenderChannel, 5007, cfg, false, "")}}})
+		expect(t, docs[0], map[string]any{
+			"datamodel": "Malware", "type": "health", "action": "exclusion_added", "exclusion": `C:\Temp`, "exclusion_type": "path",
+		})
+	}
+	// A rendered message wins over the named values.
+	msg := "Microsoft Defender Antivirus has detected malware or other potentially unwanted software.\r\n Name: Trojan:Win32/Wacatac.B!ml\r\n Severity: Severe\r\n Path: file:_C:\\Temp\\a.exe"
+	docs := otlpDocs(t, tRes{recs: []tRec{{body: windowsBody(DefenderChannel, 1116, defenderThreatData("Not Applicable"), false, msg)}}})
+	expect(t, docs[0], map[string]any{
+		"datamodel": "Malware", "action": "detected", "signature": "Trojan:Win32/Wacatac.B!ml", "file_path": `C:\Temp\a.exe`,
+		"user": `CORP\alice`, "category": "trojan", "message": msg,
+	})
+}
+
+// eventXML is the part of a Windows event's XML the Collector reads.
+type eventXML struct {
+	System struct {
+		EventID  int    `xml:"EventID"`
+		Channel  string `xml:"Channel"`
+		Computer string `xml:"Computer"`
+	} `xml:"System"`
+	Data []struct {
+		Name  string `xml:"Name,attr"`
+		Value string `xml:",chardata"`
+	} `xml:"EventData>Data"`
+}
+
+// TestOTLPDefenderSamples sends real Defender events (testdata/defender)
+// as the Collector's windowseventlog receiver does, without a rendered
+// message, in both event_data formats.
+func TestOTLPDefenderSamples(t *testing.T) {
+	for _, c := range []struct {
+		id   string
+		want map[string]any
+	}{
+		{"1116", map[string]any{"type": "threat", "action": "detected", "signature": "Virus:DOS/EICAR_Test_File", "severity": "critical",
+			"user": `EC2AMAZ-FKEOM7G\Administrator`, "detection_source": "User", "signature_version": "1.457.160.0", "threat_id": "2147519003"}},
+		{"1117", map[string]any{"type": "threat", "action": "quarantined", "signature": "Virus:DOS/EICAR_Test_File", "vendor_action": "Quarantine"}},
+		{"1121", map[string]any{"type": "rule", "action": "blocked", "rule": "Office app created executable content",
+			"user": `researchvmhaa\research`, "process_name": "WINWORD.EXE", "file_name": "script.vbs"}},
+		{"5007", map[string]any{"type": "health", "action": "modified", "signature": "Antivirus setting changed",
+			"old_value": `HKLM\SOFTWARE\Microsoft\Windows Defender\Features\Controls\48 = 0x1`}},
+	} {
+		b, err := os.ReadFile(filepath.Join("testdata", "defender", c.id+".xml"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var e eventXML
+		if err := xml.Unmarshal(b, &e); err != nil {
+			t.Fatal(err)
+		}
+		var data []tKV
+		for _, d := range e.Data {
+			data = append(data, tKV{d.Name, d.Value})
+		}
+		for _, array := range []bool{false, true} {
+			body := windowsBody(e.System.Channel, e.System.EventID, data, array, "")
+			body[1] = tKV{"computer", e.System.Computer}
+			docs := otlpDocs(t, tRes{recs: []tRec{{body: body}}})
+			want := map[string]any{"datamodel": "Malware", "host": e.System.Computer, "signature_id": c.id, "vendor_product": DefenderProduct}
+			maps.Copy(want, c.want)
+			t.Run(fmt.Sprintf("%s/array=%v", c.id, array), func(t *testing.T) { expect(t, docs[0], want) })
 		}
 	}
 }

@@ -15,6 +15,10 @@ import (
 )
 
 var fuzzSeeds = []string{
+	`<12>1 2026-10-13T09:14:02Z era-01 ERAServer 1 - - ...{"event_type":"Threat_Event","hostname":"ws-1","threat_name":"Win32/X","threat_handled":false,"severity":"Warning"}`,
+	`<29>1 2026-10-13T09:14:02Z ksc-01 KES - GNRL_EV_VIRUS_FOUND [event@23668 et="GNRL_EV_VIRUS_FOUND" hdn="WS-1" hip="192.0.2.27"] Detected: X\r\nPath to object: C:\a.exe`,
+	`<29>1 2026-10-13T09:14:02Z ksc-01 CEF:0|KasperskyLab|SecurityCenter|14|GNRL_EV_OBJECT_DELETED|Deleted|4|dhost=ws-1 msg=Detected: X\\r\\nObject: C:\\\\a.exe`,
+	`<13>Oct 13 09:14:02 sepm-01 SymantecServer: ws-1,Category: 2,LiveUpdate Manager,"Event Description: update failed, again",Event time: 2026-10-13`,
 	"<34>1 2003-10-11T22:14:15.003Z mymachine.example.com su - ID47 - \ufeff'su root' failed for lonvick on /dev/pts/8",
 	`<165>1 2003-08-24T05:14:15.000003-07:00 192.0.2.1 myproc 8710 - [exampleSDID@32473 iut="3" eventSource="Application"][x a="q\"\]\\"] msg`,
 	"<38>Oct 12 13:59:00 web1 sshd[811]: Failed password for root from 192.0.2.4 port 40122 ssh2",

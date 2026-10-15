@@ -19,7 +19,8 @@ const (
 
 // isEPO reports whether a message is an ePO event.
 func isEPO(app, text string) bool {
-	return strings.EqualFold(app, "EPOEvents") || strings.Contains(text[:min(len(text), 1<<10)], "<EPOevent>")
+	// The root is <EPOevent> or <EPOEvent>, depending on the product.
+	return strings.EqualFold(app, "EPOEvents") || strings.Contains(strings.ToLower(text[:min(len(text), 1<<10)]), "<epoevent>")
 }
 
 var epoUnescape = strings.NewReplacer("&lt;", "<", "&gt;", ">", "&amp;", "&", "&quot;", `"`, "&apos;", "'")
@@ -93,6 +94,9 @@ func parseEPO(text string) (string, map[string]any) {
 	}
 	f["vendor_product"] = product
 	sig := epoValue(s, "ThreatName")
+	if sig == "_" {
+		sig = "" // what Endpoint Security writes for events that name no threat
+	}
 	actionTaken := epoValue(s, "ThreatActionTaken")
 	ingest.SetValue(f, "signature_id", epoValue(s, "EventID"))
 	ingest.SetValue(f, "vendor_category", epoValue(s, "ThreatType"))
@@ -139,8 +143,10 @@ func parseEPO(text string) (string, map[string]any) {
 		f["signature"] = sig
 		f["category"] = ingest.MalwareCategory(sig, vc)
 		return ingest.MalwareModel, f
-	case strings.HasPrefix(category, "ops.update") &&
-		(strings.Contains(strings.ToLower(sig), "fail") || strings.Contains(strings.ToLower(actionTaken), "fail")):
+	// Event 1119 is a failed update; other products say so in the name
+	// or action.
+	case strings.HasPrefix(category, "ops.update") && (epoValue(s, "EventID") == "1119" ||
+		strings.Contains(strings.ToLower(sig), "fail") || strings.Contains(strings.ToLower(actionTaken), "fail")):
 		f["type"] = ingest.MalwareHealth
 		f["action"] = "update_failed"
 		f["signature"] = "Definitions update failed"

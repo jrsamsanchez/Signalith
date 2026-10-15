@@ -52,12 +52,25 @@ func sepKeyLen(s string) int {
 	return 0
 }
 
+// sepPairAt returns where the key of a pair starting at s begins: 0, or 1
+// when SEPM quoted the whole pair ("Event Description: a, b"); -1 when s
+// does not start a pair.
+func sepPairAt(s string) int {
+	if sepKeyLen(s) > 0 {
+		return 0
+	}
+	if len(s) > 1 && s[0] == '"' && sepKeyLen(s[1:]) > 0 {
+		return 1
+	}
+	return -1
+}
+
 // splitSEP returns the event name and the pairs of a SEP line.
 func splitSEP(text string) (string, []Param) {
 	text = truncate(text, sepMaxText)
 	var bounds []int // where each ",Key: " starts
 	for i := 0; i < len(text) && len(bounds) < sepMaxSegments-1; i++ {
-		if text[i] == ',' && sepKeyLen(text[i+1:]) > 0 {
+		if text[i] == ',' && sepPairAt(text[i+1:]) >= 0 {
 			bounds = append(bounds, i)
 		}
 	}
@@ -72,27 +85,41 @@ func splitSEP(text string) (string, []Param) {
 			end = bounds[n+1]
 		}
 		seg := text[b+1 : end]
+		quoted := sepPairAt(seg) == 1
+		if quoted {
+			seg = seg[1:]
+		}
 		k := sepKeyLen(seg)
-		pairs = append(pairs, Param{Name: seg[:k], Value: strings.TrimSpace(seg[k+2:])})
+		v := strings.TrimSpace(seg[k+2:])
+		if quoted {
+			// "Key: value", and anything after the closing quote.
+			if i := strings.LastIndexByte(v, '"'); i >= 0 {
+				v = strings.TrimSpace(v[:i])
+			}
+		} else if len(v) >= 2 && v[0] == '"' && v[len(v)-1] == '"' {
+			v = v[1 : len(v)-1] // File path: "C:\a,b\x.xla"
+		}
+		pairs = append(pairs, Param{Name: seg[:k], Value: v})
 	}
 	return name, pairs
 }
 
-// parseSEP maps a SEP risk event onto the Malware data model. It reports
-// false for other SEP events, which keep the plain syslog mapping.
+// parseSEP maps a SEP risk event, or a client's failed definitions update,
+// onto the Malware data model. It reports false for other SEP events,
+// which keep the plain syslog mapping.
 func parseSEP(text string) (map[string]any, bool) {
 	text = strings.TrimPrefix(text, "SymantecServer: ")
 	name, pairs := splitSEP(text)
-	switch name {
-	case "Virus found", "Security risk found", "Potential risk found":
-	default:
-		return nil, false
-	}
 	kv := map[string]string{}
 	for _, p := range pairs {
 		if _, seen := kv[p.Name]; !seen {
 			kv[p.Name] = p.Value
 		}
+	}
+	switch name {
+	case "Virus found", "Security risk found", "Potential risk found":
+	default:
+		return sepSystem(name, kv)
 	}
 	f := map[string]any{
 		"sourcetype":     "symantec:sep",
@@ -102,9 +129,19 @@ func parseSEP(text string) (map[string]any, bool) {
 	ingest.SetValue(f, "dest_ip", kv["IP Address"])
 	ingest.SetValue(f, "dest", truncate(kv["Computer name"], maxHostLen))
 	ingest.SetValue(f, "detection_source", kv["Source"])
-	ingest.SetFilePath(f, kv["File path"])
+	path := kv["File path"]
+	if _, ok := kv["File path"]; !ok {
+		// Older SEPM versions write the path with no key, after the
+		// occurrences: "Occurrences: 1,C:\x\a.exe,Description,...".
+		if _, rest, ok := strings.Cut(kv["Occurrences"], ","); ok {
+			path, _, _ = strings.Cut(rest, ",")
+			path = strings.Trim(path, `" `)
+		}
+	}
+	ingest.SetFilePath(f, path)
 	ingest.SetValue(f, "vendor_action", kv["Actual action"])
-	ingest.SetValue(f, "user", kv["User Name"])
+	// Older versions say "User" where newer ones say "User Name".
+	ingest.SetValue(f, "user", first(kv["User Name"], kv["User"]))
 	ingest.SetFileHash(f, kv["Application hash"])
 	if n, err := strconv.ParseInt(strings.TrimSpace(kv["File size (bytes)"]), 10, 64); err == nil && n >= 0 {
 		f["file_size"] = n
@@ -123,4 +160,28 @@ func parseSEP(text string) (map[string]any, bool) {
 
 func isAlnum(c byte) bool {
 	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9'
+}
+
+// sepSystem reads a client's system log line, "host,Category: 2,LiveUpdate
+// Manager,Event Description: ...", and maps a failed content update onto a
+// Malware health event about that host.
+func sepSystem(host string, kv map[string]string) (map[string]any, bool) {
+	if _, ok := kv["Category"]; !ok {
+		return nil, false
+	}
+	desc := kv["Event Description"]
+	d := strings.ToLower(desc)
+	if !strings.Contains(d, "update") || !containsAny(d, "fail", "unable") {
+		return nil, false
+	}
+	f := map[string]any{
+		"sourcetype":     "symantec:sep",
+		"vendor_product": "Symantec Endpoint Protection",
+		"type":           ingest.MalwareHealth,
+		"action":         "update_failed",
+		"signature":      "Definitions update failed",
+	}
+	ingest.SetValue(f, "dest", truncate(host, maxHostLen))
+	ingest.SetValue(f, "reason", desc)
+	return f, true
 }

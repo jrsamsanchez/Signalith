@@ -108,7 +108,7 @@ func parseWindowsWith(r map[string]any, named map[string]string) Event {
 	case IsNamedChannel(channel):
 		parseNamedChannel(channel, eventID, str(r, "ProviderName"), in, &ev)
 	case strings.EqualFold(channel, DefenderChannel):
-		parseDefender(eventID, str(r, "Message"), in, &ev)
+		parseDefender(eventID, str(r, "Message"), in, named, &ev)
 	case strings.EqualFold(channel, PowerShellChannel) && eventID == "4104":
 		parseScriptBlock(in, &ev)
 	}

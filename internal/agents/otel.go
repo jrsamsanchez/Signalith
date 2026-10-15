@@ -11,7 +11,7 @@ import (
 // rather run, an OpenTelemetry Collector than Fluent Bit. The Collector
 // sends OTLP/HTTP to /api/otlp/v1/logs with an agent token. The
 // generated config collects what the Fluent Bit setup does (Linux auth
-// logs or the journal; the Windows Security log and Sysmon), and also
+// logs or the journal; the Windows Security log, Defender and Sysmon), and also
 // listens on this host's loopback for apps and SDKs that export OTLP.
 
 // Where the Collector Contrib packages keep the config, and where the CA
@@ -81,6 +81,11 @@ func generateOTel(o Options) (*Agent, error) {
 		// The System log, where services installed are recorded.
 		b.WriteString("  windowseventlog/system:\n    channel: System\n    storage: file_storage/signalith\n")
 		receivers = append(receivers, "windowseventlog/system")
+		// Microsoft Defender, as the Fluent Bit agent always collects it.
+		// A host without Defender (Server Core with the feature removed)
+		// logs a warning instead of stopping the Collector.
+		b.WriteString("  windowseventlog/defender:\n    channel: Microsoft-Windows-Windows Defender/Operational\n    ignore_channel_errors: true\n    storage: file_storage/signalith\n")
+		receivers = append(receivers, "windowseventlog/defender")
 		// The Application log, where SQL Server, Windows Installer and
 		// other programs log.
 		b.WriteString("  windowseventlog/application:\n    channel: Application\n    storage: file_storage/signalith\n")
@@ -190,7 +195,7 @@ func generateOTel(o Options) (*Agent, error) {
 		if o.PowerShell {
 			a.Steps = append(a.Steps, scriptBlockLoggingStep)
 		}
-		a.Steps = append(a.Steps, "Install the OpenTelemetry Collector Contrib for Windows (the otelcol-contrib .msi, 0.100 or later) from https://github.com/open-telemetry/opentelemetry-collector-releases/releases")
+		a.Steps = append(a.Steps, "Install the OpenTelemetry Collector Contrib for Windows (the otelcol-contrib .msi, 0.129 or later) from https://github.com/open-telemetry/opentelemetry-collector-releases/releases")
 		files := "config.yaml"
 		if useCA {
 			a.Steps = append(a.Steps, caStep(a, "signalith-ca.pem"))

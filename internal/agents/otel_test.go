@@ -78,6 +78,8 @@ func TestOTelWindows(t *testing.T) {
 	m := otelConfig(t, a)
 	if dig(m, "receivers", "windowseventlog/security", "channel") != "Security" ||
 		dig(m, "receivers", "windowseventlog/system", "channel") != "System" ||
+		dig(m, "receivers", "windowseventlog/defender", "channel") != "Microsoft-Windows-Windows Defender/Operational" ||
+		dig(m, "receivers", "windowseventlog/defender", "ignore_channel_errors") != true ||
 		dig(m, "receivers", "windowseventlog/application", "channel") != "Application" ||
 		dig(m, "receivers", "windowseventlog/codeintegrity", "channel") != "Microsoft-Windows-CodeIntegrity/Operational" ||
 		dig(m, "receivers", "windowseventlog/firewall", "channel") != "Microsoft-Windows-Windows Firewall With Advanced Security/Firewall" ||

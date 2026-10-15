@@ -325,7 +325,7 @@ func otlpSeverityName(n int64) string {
 // "data" list of one-entry maps in schema order (array, the only format
 // in older versions). The Windows parser reads Security events by
 // position, so named values are put in schema order with windowsSchema;
-// Sysmon events are read from the named values directly.
+// Sysmon and Defender events are read from the named values directly.
 func otlpWindows(b map[string]any) Event {
 	channel := str(b, "channel")
 	var eventID string
@@ -393,7 +393,7 @@ func otlpWindows(b map[string]any) Event {
 		rec["Binary"] = binary
 	}
 	var named map[string]string
-	if strings.EqualFold(channel, "Microsoft-Windows-Sysmon/Operational") {
+	if strings.EqualFold(channel, "Microsoft-Windows-Sysmon/Operational") || strings.EqualFold(channel, DefenderChannel) {
 		named = values
 	}
 	ev := parseWindowsWith(rec, named)

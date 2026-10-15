@@ -12,15 +12,15 @@ Open **Add data**, pick **OpenTelemetry**, and choose where the Collector runs:
 
 - **Linux**: reads `/var/log/auth.log` or `/var/log/secure`, or the systemd journal,
   like the Fluent Bit agent.
-- **Windows**: reads the Security event log, Sysmon when **Include Sysmon** is on, and
-  PowerShell script blocks when **Include PowerShell** is on.
+- **Windows**: reads the Security, System and Application event logs, Code Integrity, Microsoft Defender, Sysmon when
+  **Include Sysmon** is on, and PowerShell script blocks when **Include PowerShell** is on.
 
 Either way the Collector also listens on `127.0.0.1:4317` (gRPC) and `127.0.0.1:4318`
 (HTTP) for apps on that host that export OTLP logs, and passes those on too.
 
 The page gives the steps and a complete `config.yaml` for the
 [Collector Contrib](https://github.com/open-telemetry/opentelemetry-collector-releases/releases)
-distribution (`otelcol-contrib`, 0.100 or later): it already holds this server's
+distribution (`otelcol-contrib`, 0.100 or later; 0.129 or later on Windows): it already holds this server's
 address, an [agent token](agent-tokens.md) of its own (made when you copy or download
 the configuration) and, over HTTPS, Signalith's CA certificate to check the
 server with. It keeps unsent logs and its place in each log on disk, so a restart or
@@ -62,7 +62,7 @@ agent collects them:
 
 | Receiver | Becomes |
 | --- | --- |
-| `windowseventlog` (Security log 4624, 4625, 4648, 4656, 4657, 4661, 4662, 4663, 4688, 4697, 4698, 4706, 4719, 4720, 4726, 4728, 4732, 4738, 4756, 4768, 4769, 4794, 5136, 5145, 5156, 5157; System 7045; Sysmon 1, 3, 6, 7, 8, 10, 11, 12, 13, 14, 15, 17, 18, 22, 23, 26; PowerShell 4104) | Authentication, Endpoint, Change, Network_Traffic, Image_Load, Filesystem, Registry, Network_Resolution, Script |
+| `windowseventlog` (Security log 4624, 4625, 4648, 4656, 4657, 4661, 4662, 4663, 4688, 4697, 4698, 4706, 4719, 4720, 4726, 4728, 4732, 4738, 4756, 4768, 4769, 4794, 5136, 5145, 5156, 5157; System 7045; Microsoft Defender 1006-1009, 1015, 1116-1119, 1121-1128, 1150, 1151, 2000-2004, 2006, 3002, 5000, 5001, 5004, 5007-5013, 5101; Sysmon 1, 3, 6, 7, 8, 10, 11, 12, 13, 14, 15, 17, 18, 22, 23, 26; PowerShell 4104) | Authentication, Endpoint, Change, Network_Traffic, Image_Load, Filesystem, Registry, Network_Resolution, Script, Malware |
 | `filelog` on `auth.log` or `secure` (or any syslog-format file) | Authentication and Change for sshd, sudo, su and account changes |
 | `journald` | as the agent's journal input |
 | `syslog` | as Signalith's own syslog receiver |

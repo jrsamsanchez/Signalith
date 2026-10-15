@@ -19,6 +19,15 @@ func TestSplitSEP(t *testing.T) {
 			t.Errorf("%s = %q, want %q", p.Name, p.Value, want[p.Name])
 		}
 	}
+	// SEPM quotes a whole pair, or a value, when it holds a comma.
+	_, pairs = splitSEP(`x,Category: 2,"Event Description: a, b (0x1), c: d.",Event time: 2020-12-15,File path: "C:\a,b\c.xla",Risk name: R`)
+	got := map[string]string{}
+	for _, p := range pairs {
+		got[p.Name] = p.Value
+	}
+	if got["Event Description"] != "a, b (0x1), c: d." || got["File path"] != `C:\a,b\c.xla` || got["Event time"] != "2020-12-15" {
+		t.Errorf("quoted pairs %v", pairs)
+	}
 	// A value holding ",Something: " ends there; that is the format.
 	_, pairs = splitSEP("Virus found,File path: C:\\x,Weird: y.exe,Risk name: Z")
 	if len(pairs) != 3 || pairs[0].Value != `C:\x` || pairs[2].Value != "Z" {
@@ -77,6 +86,14 @@ func TestSEPEvents(t *testing.T) {
 		// Other SEP events keep the plain syslog mapping.
 		{"<54>Oct 13 09:14:02 sepm-01 SymantecServer: Site: Site sepm-01,Server Name: sepm-01,Event Description: Policy has been edited",
 			map[string]any{"_model": "Other", "type": nil, "app": "SymantecServer", "severity": "informational"}},
+		// Older SEPM versions: the path has no key, and "User" is the user.
+		{"<54>Oct 13 09:14:02 sepm-01 SymantecServer: Virus found,Computer name: ws-1,Risk name: X,Occurrences: 1,C:\\Temp\\a.exe,,Actual action: Quarantined,User: bob",
+			map[string]any{"_model": "Malware", "file_path": `C:\Temp\a.exe`, "file_name": "a.exe", "user": "bob", "action": "quarantined"}},
+		// A client's failed content update.
+		{"<54>Oct 13 09:14:02 sepm-01 SymantecServer: ws-1,Category: 2,LiveUpdate Manager,Event Description: Virus and Spyware Definitions update failed to install.,Event time: 2026-10-13 09:14:02",
+			map[string]any{"_model": "Malware", "type": "health", "action": "update_failed", "dest": "ws-1", "category": nil}},
+		{"<54>Oct 13 09:14:02 sepm-01 SymantecServer: ws-1,Category: 2,LiveUpdate Manager,Event Description: A LiveUpdate session ran successfully.  No new updates were available.,Event time: 2026-10-13 09:14:02",
+			map[string]any{"_model": "Other"}},
 		// A BOM before the text.
 		{"<54>1 2026-10-12T13:14:02Z sepm-01 SymantecServer - - - \ufeffVirus found,Computer name: ws-1,Risk name: Y",
 			map[string]any{"_model": "Malware", "signature": "Y", "dest": "ws-1"}},
@@ -84,7 +101,7 @@ func TestSEPEvents(t *testing.T) {
 		d := doc(c.line)
 		if d["_model"] == "Malware" {
 			checkMalware(t, c.line, d)
-			check(t, c.line, d, map[string]any{"vendor_product": "Symantec Endpoint Protection", "sourcetype": "symantec:sep", "type": "threat", "host": "sepm-01"})
+			check(t, c.line, d, map[string]any{"vendor_product": "Symantec Endpoint Protection", "sourcetype": "symantec:sep", "host": "sepm-01"})
 		}
 		check(t, c.line, d, c.want)
 	}

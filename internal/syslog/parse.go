@@ -144,6 +144,14 @@ func parse5424(m *Message, s string) bool {
 	m.Time = t
 	var host, app, proc, msgid string
 	host, rest = token(rest)
+	if strings.HasPrefix(rest, "CEF:") || strings.HasPrefix(rest, "LEEF:") {
+		// Kaspersky Security Center and others put the CEF or LEEF record
+		// straight after the host name, with no app, process, message ID
+		// or structured data.
+		m.Hostname = nilValue(host)
+		m.Text = rest
+		return true
+	}
 	app, rest = token(rest)
 	proc, rest = token(rest)
 	msgid, rest = token(rest)
