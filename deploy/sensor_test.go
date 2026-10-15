@@ -419,8 +419,8 @@ func TestSensorScriptDryRun(t *testing.T) {
 			t.Errorf("signalith-sensor.yaml has no %q:\n%s", want, yaml)
 		}
 	}
-	// suricata-update tests new rules as root: its settings keep root.
-	if got := readFile(t, filepath.Join(root, "etc/suricata/signalith-sensor-test.yaml")); !strings.Contains(got, "include: signalith-sensor.yaml\nrun-as:\n  user: root\n") {
+	// suricata-update tests new rules as root: its copy has no run-as.
+	if got := readFile(t, filepath.Join(root, "etc/suricata/signalith-sensor-test.yaml")); strings.Contains(got, "run-as:") || got != strings.Replace(yaml, "run-as:\n  user: suricata\n  group: suricata\n", "", 1) {
 		t.Errorf("signalith-sensor-test.yaml:\n%s", got)
 	}
 	if strings.Contains(yaml, "- flow") || strings.Contains(yaml, "- dns") {

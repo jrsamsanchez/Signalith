@@ -455,8 +455,8 @@ the **I already run Zeek or Suricata** tab:
 4. Run `sudo suricata-update`, restart Suricata, and add a daily
    `suricata-update && suricatasc -c ruleset-reload-nonblocking` to root's crontab.
    With `run-as` set, `suricata-update`'s test of the rules drops to that user and
-   fails; give it `--suricata-conf` with a file that includes `suricata.yaml` and sets
-   `run-as` to `root`, as the script's `signalith-sensor-test.yaml` does.
+   fails; give it `--suricata-conf` with a copy of the settings without `run-as`, as the
+   script's `signalith-sensor-test.yaml` is.
 
 Done this way, `zeekctl` runs Zeek's workers as root: keep the sensor patched and give it no
 other job.

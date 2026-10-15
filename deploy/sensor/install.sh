@@ -1264,7 +1264,8 @@ include: suricata.yaml
 vars.address-groups.HOME_NET: "[$networks]"
 sensor-name: $name
 EOF
-  if [ "$layout" = packages ]; then
+  # The copy for suricata-update's test (any argument) has no run-as.
+  if [ "$layout" = packages ] && [ $# -eq 0 ]; then
     # In a container, --user does this.
     cat <<'EOF'
 run-as:
@@ -1327,18 +1328,10 @@ sensor_suricata_config() {
   [ "$layout" = packages ] || dir=/etc/signalith-sensor/docker/suricata
   suricata_yaml | put "$dir/signalith-sensor.yaml" 0644 root:root suricata
   if [ "$layout" = packages ]; then
-    # suricata-update tests the rules as root in a folder only root can
-    # write; with run-as the test would drop to the suricata user first.
-    put "$dir/signalith-sensor-test.yaml" 0644 root:root suricata <<'EOF'
-%YAML 1.1
----
-# Written by the Signalith sensor install script: the sensor's settings
-# for suricata-update's test of new rules, which runs as root.
-include: signalith-sensor.yaml
-run-as:
-  user: root
-  group: root
-EOF
+    # suricata-update tests new rules as root, in a folder only root can
+    # write: the copy it reads has no run-as, which would drop to the
+    # suricata user first.
+    suricata_yaml test | put "$dir/signalith-sensor-test.yaml" 0644 root:root suricata
   fi
   for f in disable.conf threshold.config; do
     if [ ! -f "$R$dir/$f" ]; then
