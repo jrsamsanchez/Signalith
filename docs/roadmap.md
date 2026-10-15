@@ -35,7 +35,7 @@ The first four phases are complete, and work on hardening for 1.0 has started.
 
 - Scheduled [detections](detections.md) mapped to MITRE ATT&CK, with throttling, a
   findings queue for triage, and an ATT&CK coverage map.
-- Content packs of tested community rules: 2,292 from
+- Content packs of tested community rules: 2,330 from
   [SigmaHQ](https://github.com/SigmaHQ/sigma) and 1,028 from Splunk Security Content,
   each with test events that prove it fires, and signed content updates.
 - [Sigma](https://github.com/SigmaHQ/sigma) rule import.
@@ -59,6 +59,9 @@ The first four phases are complete, and work on hardening for 1.0 has started.
   with one line on Linux, Windows or Docker, shared settings, users and detections, one
   certificate authority, rolling upgrades, draining and removing a server, and
   [OpenSearch with several nodes](opensearch-failover.md).
+- [Load balancers](load-balancers.md) in front of several servers, with PROXY protocol so
+  the real sender of each connection is kept, and sample HAProxy, nginx and keepalived
+  setups.
 - A load test with [sizing numbers](performance.md).
 
 **More data**
@@ -67,6 +70,8 @@ The first four phases are complete, and work on hardening for 1.0 has started.
   configuration checks, plus [Wazuh](wazuh.md) alerts.
 - [Antivirus](antivirus.md) logs from Defender, ClamAV and consoles that send CEF or LEEF.
 - Apache and Nginx access logs, with web rules from SigmaHQ and Splunk.
+- [AWS CloudTrail](aws-cloudtrail.md) through the OpenTelemetry Collector, with the
+  SigmaHQ CloudTrail rules.
 - A [network sensor](network-sensor.md) with Zeek and Suricata, installed with one line,
   network detections for sensor, firewall, DNS and proxy data, and a Network dashboard.
 - [Vulnerability scanning](vulnerabilities.md) with Nmap and CVE matching, a scanner for
@@ -91,13 +96,6 @@ The first four phases are complete, and work on hardening for 1.0 has started.
 **Network sensors in Settings**
 :   One page listing every network sensor with its health, where an admin can turn off a
     noisy rule on all sensors or revoke a sensor.
-
-**Load balancers**
-:   Several servers behind one address, with PROXY protocol so the real sender of each
-    connection is kept, and sample HAProxy, nginx and keepalived setups.
-
-**Cloud logs**
-:   AWS CloudTrail through the OpenTelemetry Collector, with the SigmaHQ CloudTrail rules.
 
 ## Next <span class="sg-pill sg-pill--next">Planned</span> { #next data-toc-label="Next" }
 
