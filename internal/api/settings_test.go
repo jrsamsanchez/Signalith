@@ -160,7 +160,7 @@ func TestGetSettings(t *testing.T) {
 	if strings.Contains(raw, "hunter2-secret") {
 		t.Fatal("GET /api/settings returned a secret")
 	}
-	if n := len(view["sections"].([]any)); n != 10 {
+	if n := len(view["sections"].([]any)); n != 11 {
 		t.Errorf("sections %d", n)
 	}
 	pw := field(t, view, "opensearch.password")
