@@ -775,3 +775,19 @@ func TestWindowsSecurityNamedEvents(t *testing.T) {
 		"datamodel": "Filesystem", "share_name": `\\*\ADMIN$`, "share_path": `\??\C:\Windows`, "src": "192.0.2.10", "user": "eve",
 	})
 }
+
+// TestSysmonLongMultiLineValueIsLinear: a command line continued over
+// many lines used to be added to line by line, copying it each time, so a
+// 1 MB record took minutes.
+func TestSysmonLongMultiLineValueIsLinear(t *testing.T) {
+	lines := strings.Repeat("x\r\n", 1<<18)
+	msg := "Process Create:\r\nImage: C:\\a.exe\r\nCommandLine: a.exe\r\n" + lines + "User: CORP\\bob"
+	start := time.Now()
+	kv := keyValues(msg)
+	if took := time.Since(start); took > 3*time.Second {
+		t.Fatalf("took %v", took)
+	}
+	if want := "a.exe" + strings.Repeat("\nx", 1<<18); kv["CommandLine"] != want || kv["User"] != `CORP\bob` {
+		t.Fatalf("CommandLine is %d bytes, User %q", len(kv["CommandLine"]), kv["User"])
+	}
+}
