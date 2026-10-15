@@ -834,9 +834,17 @@ func (s settingsStore) Shared() bool { return !s.files && s.r.sharedContent.sett
 // settings.yaml until release, and reports whether they moved already.
 func (s settingsStore) HoldFile() (bool, func()) {
 	ct := s.r.sharedContent
+	if hook := holdFileHook; hook != nil {
+		hook()
+	}
 	ct.ownMu.Lock()
 	return s.r.ownMoved(), ct.ownMu.Unlock
 }
+
+// holdFileHook, when set (tests), runs as HoldFile starts to wait for
+// ownMu.
+var holdFileHook func()
+
 func (s settingsStore) Writable() error { return s.r.shared.Writable() }
 func (s settingsStore) Self() string    { return s.r.node.ID() }
 func (s settingsStore) ETag() string    { return s.r.sharedContent.docs.Settings().ETag() }
