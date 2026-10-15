@@ -863,7 +863,7 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
     <header class="page-head">
       <div>
         <h2 class="page-head__title">Add data</h2>
-        <p class="page-head__desc">Collect logs from your hosts with the Fluent Bit agent or an OpenTelemetry Collector, manage hosts with osquery, receive syslog from network devices, or bring in Wazuh alerts.</p>
+        <p class="page-head__desc">Collect logs from your hosts with the Fluent Bit agent or an OpenTelemetry Collector, manage hosts with osquery, receive syslog from network devices, or bring in Wazuh alerts and network sensor logs.</p>
       </div>
     </header>
     <div class="card sample-card" id="sample-card" hidden></div>
@@ -972,7 +972,7 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
                 <input id="sensor-eve-path" class="input input--sm mono" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="/var/log/suricata/eve.json" aria-describedby="sensor-eve-path-error sensor-paths-help">
               </div>
               <p id="sensor-eve-path-error" class="field-error hidden" role="alert"></p>
-              <p id="sensor-paths-help" class="hint agent-token__help">Leave empty for the usual places. Zeek built from source writes to <code>/usr/local/zeek/logs/current</code>, Security Onion to <code>/nsm/zeek/logs/current</code>.</p>
+              <p id="sensor-paths-help" class="hint agent-token__help"><span>Leave empty for the usual places. Zeek built from source writes to <code>/usr/local/zeek/logs/current</code>, Security Onion to <code>/nsm/zeek/logs/current</code>.</span></p>
             </div>
             <div class="agent-addr__row agent-token" id="agent-token-row">
               <label class="label" for="agent-token-name" id="agent-token-label">Token for these agents</label>
