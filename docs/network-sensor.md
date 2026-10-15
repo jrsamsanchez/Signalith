@@ -451,7 +451,8 @@ the **I already run Zeek or Suricata** tab:
    `@load policy/protocols/conn/community-id-logging` to `site/local.zeek`, and run
    `zeekctl deploy`. Add `*/5 * * * * /opt/zeek/bin/zeekctl cron` to root's crontab.
 3. Install Suricata from OISF's packages; in `suricata.yaml` set the `af-packet` interface,
-   `community-id: true` under `eve-log`, and `run-as` to the `suricata` user.
+   `community-id: true` under `eve-log`, and start it with `--user suricata --group suricata`
+   (not `run-as` in `suricata.yaml`, which makes `suricata-update`'s test fail).
 4. Run `sudo suricata-update`, restart Suricata, and add a daily
    `suricata-update && suricatasc -c ruleset-reload-nonblocking` to root's crontab.
 

@@ -414,10 +414,14 @@ func TestSensorScriptDryRun(t *testing.T) {
 	}
 	yaml := readFile(t, filepath.Join(root, "etc/suricata/signalith-sensor.yaml"))
 	for _, want := range []string{"include: suricata.yaml", "  - interface: eth1\n    threads: 2\n", "community-id: true", "        - anomaly\n        - files\n",
-		`vars.address-groups.HOME_NET: "[10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fd00::/8]"`, "run-as:", "default-log-dir: /var/log/suricata/signalith/"} {
+		`vars.address-groups.HOME_NET: "[10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fd00::/8]"`, "default-log-dir: /var/log/suricata/signalith/"} {
 		if !strings.Contains(yaml, want) {
 			t.Errorf("signalith-sensor.yaml has no %q:\n%s", want, yaml)
 		}
+	}
+	// run-as would fail suricata-update's test; the unit gives --user.
+	if strings.Contains(yaml, "run-as:") {
+		t.Errorf("run-as in signalith-sensor.yaml:\n%s", yaml)
 	}
 	if strings.Contains(yaml, "- flow") || strings.Contains(yaml, "- dns") {
 		t.Errorf("with Zeek, Suricata logs no protocols:\n%s", yaml)
