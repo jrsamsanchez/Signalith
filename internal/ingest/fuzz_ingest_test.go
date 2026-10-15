@@ -565,6 +565,27 @@ func FuzzSuricataEVE(f *testing.F) {
 	})
 }
 
+func FuzzSensorStatus(f *testing.F) {
+	b, err := os.ReadFile(filepath.Join("testdata", "sensor", "status.json"))
+	if err != nil {
+		f.Fatal(err)
+	}
+	f.Add(strings.TrimSpace(string(b)))
+	f.Add(`{"kind":"signalith-sensor-status","v":1,"zeek":"x","suricata":{"running":"yes"},"rules":{"count":1e300},"interface":{"drop_percent":"NaN"},"warnings":"drops"}`)
+	f.Fuzz(func(t *testing.T, line string) {
+		ev := Normalize(SensorStatusTag, map[string]any{"log": line, "hostname": "nsm-01"}, now)
+		checkSensorEvent(t, ev)
+		if s := ev.Sensor; s != nil {
+			if s.DropPercent < 0 || s.DropPercent > 100 || len(s.Warnings) > maxSensorWarnings || len(s.Interface) > maxSensorWord {
+				t.Fatalf("sensor %+v", s)
+			}
+			if _, err := json.Marshal(s); err != nil {
+				t.Fatal(err)
+			}
+		}
+	})
+}
+
 func FuzzSuricataText(f *testing.F) {
 	b, err := os.ReadFile(filepath.Join("testdata", "suricata", "eve.json"))
 	if err != nil {
