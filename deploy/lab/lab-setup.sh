@@ -522,7 +522,10 @@ sensor() {
   out=$(api "/api/sensor/install?server=$SIEM_URL&interface=capture0")
   line=$(jq -r .linux <<<"$out")
   line=${line//"$(jq -r .token_placeholder <<<"$out")"/$token}
-  on sensor "bash -c $(printf '%q' "$line --name sensor")"
+  # Servers learn of a new token within a few seconds, and the line
+  # refuses an unknown token before it installs anything: try again.
+  retry 6 on sensor "bash -c $(printf '%q' "$line --name sensor")" ||
+    fail "The sensor did not install. Its output is above."
 }
 
 # ---- run ----
