@@ -322,6 +322,8 @@ func CommandString(c Command) string {
 		return "rename " + strings.Join(ps, ", ")
 	case *Lookup:
 		return lookupString(c)
+	case *InputLookup:
+		return inputLookupString(c)
 	case *Enrich:
 		if len(c.Fields) == 0 {
 			return "enrich"

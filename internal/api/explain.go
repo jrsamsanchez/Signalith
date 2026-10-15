@@ -13,6 +13,19 @@ import (
 // analysts can read detections and searches someone else wrote.
 func Explain(q *query.Query) []string {
 	var steps []string
+	if len(q.Commands) > 0 {
+		if c, ok := q.Commands[0].(*query.InputLookup); ok {
+			first := "Read the rows of the lookup table " + c.Table
+			if c.Max > 0 {
+				first += fmt.Sprintf(", at most %d", c.Max)
+			}
+			steps = append(steps, first+".")
+			for _, c := range q.Commands[1:] {
+				steps = append(steps, describeCommand(c))
+			}
+			return steps
+		}
+	}
 	src := "all events"
 	if q.Datamodel != "" {
 		src = q.Datamodel + " events"

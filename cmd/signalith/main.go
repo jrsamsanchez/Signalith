@@ -776,6 +776,9 @@ func cmdQuery(args []string) error {
 		if err != nil {
 			return err
 		}
+		if plan.Body == nil {
+			return nil // reads a lookup table, not OpenSearch
+		}
 		fmt.Printf("\nPOST /%s/_search\n", plan.Index)
 		return enc.Encode(plan.Body)
 	}

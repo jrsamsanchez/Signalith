@@ -467,3 +467,46 @@ func lookupString(c *Lookup) string {
 	}
 	return s
 }
+
+// InputLookup starts a search with the rows of a lookup table instead of
+// events: | inputlookup [max=N] owners.
+type InputLookup struct {
+	Table string
+	Max   int // the most rows to read; 0 means the search's event limit
+}
+
+func (*InputLookup) Name() string { return "inputlookup" }
+
+func (p *parser) parseInputLookup() (Command, error) {
+	c := &InputLookup{}
+	for p.isKeywordFold("max") && p.peekAt(1).kind == tokOp && p.peekAt(1).text == "=" {
+		p.next()
+		p.next()
+		at := p.peek().pos
+		n, err := p.int()
+		if err != nil {
+			return nil, err
+		}
+		if n < 1 {
+			return nil, errorf(at, "max must be at least 1")
+		}
+		c.Max = n
+	}
+	t := p.peek()
+	if t.kind != tokWord && t.kind != tokString {
+		return nil, errorf(t.pos, "inputlookup needs a table name, for example: | inputlookup owners")
+	}
+	p.next()
+	if !lookupTableRE.MatchString(t.text) {
+		return nil, errorf(t.pos, "%q is not a lookup table name; names use lower-case letters, digits, - and _", t.text)
+	}
+	c.Table = t.text
+	return c, p.endCommand()
+}
+
+func inputLookupString(c *InputLookup) string {
+	if c.Max > 0 {
+		return "inputlookup max=" + strconv.Itoa(c.Max) + " " + c.Table
+	}
+	return "inputlookup " + c.Table
+}

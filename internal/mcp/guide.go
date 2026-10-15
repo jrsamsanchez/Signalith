@@ -23,6 +23,7 @@ Commands:
   where count > 20 AND users >= 2
   sort -count, src       head 20       table _time, user, src       rename src as source_ip
   lookup <table> <col> [OUTPUT cols]  add columns from an uploaded lookup table (admins add them on Settings > Lookups)
+  | inputlookup [max=N] <table>  start a search with a lookup table's rows instead of events
   enrich [fields]        add asset and identity context (priority, owner, watchlist)
   threatmatch [fields]   keep events whose fields match threat intel; must come right after the search
   intel [fields]         add threat intel context to any result

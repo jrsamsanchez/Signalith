@@ -183,7 +183,7 @@ type Result struct {
 type Plan struct {
 	Index string         `json:"index"`
 	Body  map[string]any `json:"body"`
-	Mode  string         `json:"mode"` // events, stats, timechart, top
+	Mode  string         `json:"mode"` // events, stats, timechart, top, inputlookup
 
 	transform query.Command
 	post      []query.Command
@@ -250,6 +250,12 @@ func (e *Engine) IndexPattern(q *query.Query) (string, error) {
 func (e *Engine) Compile(q *query.Query) (*Plan, error) {
 	o := e.opts()
 	cmds := q.Commands
+	if len(cmds) > 0 {
+		if c, ok := cmds[0].(*query.InputLookup); ok {
+			// The rows come from a lookup table, not from OpenSearch.
+			return &Plan{Mode: "inputlookup", transform: c, post: cmds[1:]}, nil
+		}
+	}
 
 	// where commands before any transforming command filter raw events, so
 	// they run inside OpenSearch.
@@ -501,7 +507,12 @@ func (e *Engine) execute(ctx context.Context, q *query.Query) (*Result, error) {
 		return nil, err
 	}
 	defer release()
-	res, err := e.fetch(ctx, p)
+	var res *Result
+	if c, ok := p.transform.(*query.InputLookup); ok {
+		res, err = e.inputLookup(c)
+	} else {
+		res, err = e.fetch(ctx, p)
+	}
 	if err != nil {
 		return nil, err
 	}

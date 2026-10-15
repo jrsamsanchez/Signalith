@@ -9,6 +9,10 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/query"
 )
 
+func noTable(name string) error {
+	return &QueryError{Msg: fmt.Sprintf("there is no lookup table named %s; admins add them on Settings > Lookups", name)}
+}
+
 // maxLookupMatches caps how many table rows one row takes values from.
 const maxLookupMatches = 100
 
@@ -25,7 +29,7 @@ func (e *Engine) lookup(ctx context.Context, res *Result, c *query.Lookup) error
 	}
 	t, idx, err := e.Lookups.Lookup(c.Table, keys)
 	if errors.Is(err, lookuptables.ErrNotFound) {
-		return &QueryError{Msg: fmt.Sprintf("there is no lookup table named %s; admins add them on Settings > Lookups", c.Table)}
+		return noTable(c.Table)
 	}
 	if err != nil {
 		return &QueryError{Msg: err.Error()}
@@ -115,4 +119,34 @@ func (e *Engine) lookup(ctx context.Context, res *Result, c *query.Lookup) error
 		addColumn(res, o.field)
 	}
 	return nil
+}
+
+// inputLookup returns the rows of a lookup table, up to c.Max or the
+// search's event limit; a cell left empty is a missing field.
+func (e *Engine) inputLookup(c *query.InputLookup) (*Result, error) {
+	if e.Lookups == nil {
+		return nil, &QueryError{Msg: "lookup tables are not available on this server"}
+	}
+	t, ok := e.Lookups.Get(c.Table)
+	if !ok {
+		return nil, noTable(c.Table)
+	}
+	limit := e.opts().MaxEvents
+	if c.Max > 0 {
+		limit = min(limit, c.Max)
+	}
+	n := min(len(t.Rows), limit)
+	res := &Result{Kind: "table", Matched: int64(len(t.Rows)), Truncated: n < len(t.Rows) && (c.Max == 0 || c.Max > limit)}
+	res.Columns = append([]string{}, t.Columns...)
+	res.Rows = make([]Row, 0, n)
+	for _, r := range t.Rows[:n] {
+		row := make(Row, len(r))
+		for i, v := range r {
+			if v != "" {
+				row[t.Columns[i]] = v
+			}
+		}
+		res.Rows = append(res.Rows, row)
+	}
+	return res, nil
 }

@@ -6,7 +6,7 @@ import (
 )
 
 // Commands lists every pipe command, for autocomplete and error messages.
-var Commands = []string{"stats", "eventstats", "timechart", "top", "rare", "where", "eval", "rex", "dedup", "fillnull", "sort", "head", "table", "rename", "lookup", "enrich", "intel", "threatmatch"}
+var Commands = []string{"stats", "eventstats", "timechart", "top", "rare", "where", "eval", "rex", "dedup", "fillnull", "sort", "head", "table", "rename", "lookup", "inputlookup", "enrich", "intel", "threatmatch"}
 
 // AggFuncs lists the aggregation functions stats, eventstats and timechart
 // accept. perc95 stands for every percentile from perc1 to perc99.
@@ -46,9 +46,13 @@ func Parse(src string) (*Query, error) {
 	}
 	for p.peek().kind == tokPipe {
 		p.next()
+		at := p.peek().pos
 		cmd, err := p.parseCommand()
 		if err != nil {
 			return nil, err
+		}
+		if _, ok := cmd.(*InputLookup); ok && (len(q.Commands) > 0 || q.Search != nil || q.Index != "" || q.Datamodel != "" || q.Earliest != "" || q.Latest != "") {
+			return nil, errorf(at, "inputlookup reads a lookup table instead of events, so it starts the search: | inputlookup owners")
 		}
 		q.Commands = append(q.Commands, cmd)
 	}
@@ -468,6 +472,8 @@ func (p *parser) parseCommand() (Command, error) {
 		return &Table{Fields: fields}, p.endCommand()
 	case "lookup":
 		return p.parseLookup(t)
+	case "inputlookup":
+		return p.parseInputLookup()
 	case "enrich":
 		fields, err := p.fieldList(false)
 		if err != nil {

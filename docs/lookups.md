@@ -99,6 +99,21 @@ datamodel=Endpoint
 | where isnull(approved)
 ```
 
+## The inputlookup command
+
+`inputlookup` starts a search with the rows of a table instead of events, to
+check a table or report on it:
+
+```
+| inputlookup owners
+| stats count by team
+```
+
+`max=N` reads at most N rows (`| inputlookup max=50 owners`); without it a
+search reads up to the event limit (`search.max_events`, 10,000 by default).
+It must come first, with nothing before the `|`. An empty cell is a missing
+field, so `where isnull(owner)` finds rows with no owner.
+
 ## Several servers
 
 Each server keeps its tables in `tables` inside the folder of the asset and

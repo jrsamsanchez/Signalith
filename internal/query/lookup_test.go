@@ -47,3 +47,44 @@ func TestParseLookup(t *testing.T) {
 		}
 	}
 }
+
+func TestParseInputLookup(t *testing.T) {
+	for src, want := range map[string]*InputLookup{
+		`| inputlookup owners`:          {Table: "owners"},
+		`| inputlookup max=5 owners`:    {Table: "owners", Max: 5},
+		`* | INPUTLOOKUP "vpn-sites_2"`: {Table: "vpn-sites_2"},
+	} {
+		q, err := Parse(src)
+		if err != nil {
+			t.Errorf("Parse(%q): %v", src, err)
+			continue
+		}
+		if got := q.Commands[0]; !reflect.DeepEqual(got, want) {
+			t.Errorf("Parse(%q) = %+v, want %+v", src, got, want)
+		}
+		back, err := Parse(q.String())
+		if err != nil || !reflect.DeepEqual(back.Commands, q.Commands) {
+			t.Errorf("%q printed as %q, which reads back as %+v (%v)", src, q.String(), back, err)
+		}
+	}
+	q := mustParse(t, `| inputlookup max=5 owners | where team="Web" | stats count by owner`)
+	if len(q.Commands) != 3 || q.Search != nil {
+		t.Errorf("commands = %+v", q.Commands)
+	}
+	for src, want := range map[string]string{
+		`| inputlookup`:                        "table name",
+		`| inputlookup Owners`:                 "not a lookup table name",
+		`| inputlookup max=0 owners`:           "at least 1",
+		`| inputlookup owners extra`:           "unexpected",
+		`host=a | inputlookup owners`:          "starts the search",
+		`datamodel=Web | inputlookup owners`:   "starts the search",
+		`earliest=-1h | inputlookup owners`:    "starts the search",
+		`* | head 1 | inputlookup owners`:      "starts the search",
+		`| inputlookup a | inputlookup owners`: "starts the search",
+	} {
+		_, err := Parse(src)
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("Parse(%q) = %v, want an error with %q", src, err, want)
+		}
+	}
+}

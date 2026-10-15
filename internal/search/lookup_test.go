@@ -114,3 +114,53 @@ func TestLookupErrors(t *testing.T) {
 		t.Errorf("no store err = %v", err)
 	}
 }
+
+func TestInputLookup(t *testing.T) {
+	e := lookupEngine(t)
+	res, err := e.Run(context.Background(), `| inputlookup owners | stats count by team | sort team`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Row{{"team": "Data", "count": int64(2)}, {"team": "Web", "count": int64(1)}}
+	if !reflect.DeepEqual(res.Rows, want) {
+		t.Errorf("rows = %v", res.Rows)
+	}
+	res, err = e.Run(context.Background(), `| inputlookup max=2 owners | lookup hosts user OUTPUT site`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Rows) != 2 || res.Truncated || res.Matched != 3 || !reflect.DeepEqual(res.Columns[:3], []string{"user", "owner", "team"}) {
+		t.Errorf("res = %+v", res)
+	}
+	if res.Rows[0]["site"] == nil || res.Rows[1]["site"] != nil {
+		t.Errorf("rows = %v", res.Rows)
+	}
+	if fs := e.Store.(*fakeStore); len(fs.bodies) != 0 {
+		t.Errorf("inputlookup asked OpenSearch: %v", fs.bodies)
+	}
+	e.Opt.MaxEvents = 1
+	if res, err = e.Run(context.Background(), `| inputlookup owners`); err != nil || len(res.Rows) != 1 || !res.Truncated {
+		t.Errorf("res = %+v, %v", res, err)
+	}
+	var qe *QueryError
+	if _, err := e.Run(context.Background(), `| inputlookup nope`); !errors.As(err, &qe) || !strings.Contains(err.Error(), "no lookup table named nope") {
+		t.Errorf("err = %v", err)
+	}
+	if _, err := (&Engine{}).Run(context.Background(), `| inputlookup owners`); !errors.As(err, &qe) {
+		t.Errorf("err = %v", err)
+	}
+}
+
+func TestInputLookupSkipsEmptyCells(t *testing.T) {
+	st, _ := lookuptables.Open("")
+	if _, err := st.Put("t", []byte("a,b\n1,\n,2\n")); err != nil {
+		t.Fatal(err)
+	}
+	res, err := (&Engine{Lookups: st}).Run(context.Background(), `| inputlookup t | where isnull(a)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(res.Rows, []Row{{"b": "2"}}) {
+		t.Errorf("rows = %v", res.Rows)
+	}
+}
