@@ -268,6 +268,12 @@ it and let that server scan it:
 2. Install Nmap on it, as above.
 3. On **Vulnerabilities > Networks**, edit the network and pick that server under
    **Scanned by**. The list shows each server's state: ready, needs setup, or offline.
+   Once a scanner exists, a new network is scanned by it unless you pick another.
+
+With more than one server, **Vulnerabilities > Networks** starts with a **Scanners** list:
+each server, whether it is ready, the networks it scans, and **Scan now** to scan them all,
+or **Add a network** for a scanner with none yet. A server that no network uses shows
+**Not needed**: it does not need Nmap until you pick it to scan something.
 
 Networks that name no scanner are scanned by the server that runs the background jobs.
 Every server runs the scans of its own networks and writes the results to the shared

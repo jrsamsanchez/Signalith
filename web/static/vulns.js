@@ -63,6 +63,69 @@
   const multi = () => servers().length > 1;
   const jobServer = () => servers().find((sv) => sv.runs_jobs);
   const serverOf = (n) => (n.scanner ? servers().find((sv) => sv.id === n.scanner) : jobServer());
+  // dedicated is the servers added as scanners.
+  const dedicated = () => servers().filter((sv) => sv.scanner && sv.state !== 'removed');
+  // idleServer is a server no network uses while a scanner exists: its
+  // missing setup is information, not an error.
+  const idleServer = (sv) => !!sv && dedicated().length > 0 && !sv.networks.length && sv.online && sv.state !== 'removed' && sv.ready === false;
+  // firstScanner is the scanner a new network is scanned by unless the
+  // admin picks another: a ready one if any.
+  const firstScanner = () => {
+    const list = dedicated();
+    return (list.find((sv) => sv.online && sv.ready) || list[0] || {}).id || '';
+  };
+
+  // scannersCard lists every server that can scan, with its state and
+  // networks: Scan now for one that has networks, Add a network for one
+  // that has none.
+  function scannersCard() {
+    const list = [...servers()].filter((sv) => sv.state !== 'removed' || sv.networks.length)
+      .sort((a, b) => (!!b.scanner - !!a.scanner) || ((b.networks.length > 0) - (a.networks.length > 0)) || (!!b.runs_jobs - !!a.runs_jobs) || a.name.localeCompare(b.name));
+    const row = (sv) => {
+      const st = idleServer(sv) ? { label: 'Not needed', tone: '' } : scannerState(sv);
+      const nets = sv.networks;
+      const what = nets.length ? 'Scans ' + nets.map((n) => n.name + (n.enabled ? '' : ' (paused)')).join(', ')
+        : sv.scanner ? 'No network uses it yet. Add one to scan from it.' : sv.runs_jobs ? 'Scans the networks that name no scanner; none do now.' : 'No network uses it.';
+      const acts = [];
+      if (can('admin') && sv.state !== 'removed') {
+        if (nets.length) {
+          const targets = S.data.targets.filter((t) => nets.some((n) => n.id === t.id));
+          const busy = targets.some((t) => t.active);
+          acts.push(el('button', { class: 'btn btn--secondary btn--sm', type: 'button', ...(busy ? { disabled: '', title: 'A scan is already running or waiting' } : {}),
+            onclick: (ev) => scanAll(sv, targets, ev.currentTarget) }, icon('play'), busy ? 'Scanning' : 'Scan now'));
+        } else if (sv.scanner || !dedicated().length) {
+          acts.push(el('button', { class: 'btn ' + (sv.scanner ? 'btn--primary' : 'btn--secondary') + ' btn--sm', type: 'button', onclick: () => editNetwork(null, sv.runs_jobs && !sv.scanner ? '' : sv.id) }, icon('plus'), 'Add a network'));
+        }
+      }
+      return el('li', { class: 'vs-scanner', 'data-state': st.tone || 'none' },
+        el('span', { class: 'vs-scanner__icon' }, icon(sv.scanner ? 'radar' : 'server')),
+        el('div', { class: 'vs-scanner__text' },
+          el('div', { class: 'vs-scanner__name' }, el('b', {}, sv.name),
+            sv.scanner ? el('span', { class: 'badge badge--accent' }, 'Scanner') : null,
+            sv.self ? el('span', { class: 'badge' }, 'This server') : null,
+            el('span', { class: 'badge' + (st.tone ? ' badge--' + st.tone : '') }, st.label)),
+          el('span', { class: 'vs-muted' }, what)),
+        el('div', { class: 'vs-scanner__acts' }, ...acts));
+    };
+    return el('div', { class: 'card vs-scanners' }, el('div', { class: 'card__body' },
+      el('div', { class: 'vs-setup__head' }, el('div', {},
+        el('h3', { class: 'vs-setup__title' }, 'Scanners'),
+        el('p', { class: 'vs-muted' }, 'Each network is scanned by the server picked under Scanned by. ',
+          can('admin') ? el('a', { href: '#scanners', 'data-page': 'scanners' }, 'Settings > Scanners') : null, can('admin') ? ' shows what each one needs.' : null))),
+      el('ul', { class: 'vs-scanners__list', role: 'list' }, ...list.map(row))));
+  }
+
+  async function scanAll(sv, targets, btn) {
+    btn.disabled = true;
+    try {
+      for (const t of targets) await api('api/vulns/networks/' + encodeURIComponent(t.id) + '/scan', {});
+      toast((targets.length === 1 ? targets[0].name : targets.length + ' networks') + ' will be scanned by ' + sv.name + ' in a few seconds.', null, { title: 'Scan started' });
+      await load();
+    } catch (e) {
+      btn.disabled = false;
+      toast(e.message, null, { tone: 'danger', title: 'Couldn’t start the scan' });
+    }
+  }
 
   // scannerState is a server's state as a scanner, for a badge.
   function scannerState(sv) {
@@ -163,6 +226,25 @@
     }
     const rep = S.setup && S.setup.report;
     const ready = rep && rep.ready;
+    if (dedicated().length) {
+      const pick = firstScanner();
+      const sv = servers().find((x) => x.id === pick);
+      return el('div', { class: 'vs-start' },
+        el('div', { class: 'card vs-start__intro' }, el('div', { class: 'card__body' },
+          el('span', { class: 'vs-start__icon' }, icon('scan-search')),
+          el('div', {},
+            el('h3', { class: 'vs-start__title' }, 'Find vulnerable software on your networks'),
+            el('p', { class: 'vs-start__text' }, 'Your scanners run Nmap on the networks you give them, on a schedule. They find the hosts that are up, their open ports and the software on each, ' +
+              'then match the versions to known vulnerabilities (CVEs). Findings for the worst ones go to the Findings queue.'),
+            el('ol', { class: 'vs-steps' },
+              el('li', {}, el('b', {}, 'Pick a scanner. '), 'Below: the servers that can scan and whether each is ready.'),
+              el('li', {}, el('b', {}, 'Add a network for it. '), 'Name it, list its addresses, pick when to scan. Scanned by is set to the scanner.'),
+              el('li', {}, el('b', {}, 'Scan. '), 'Click Scan now, or wait for the schedule.'))))),
+        scannersCard(),
+        el('div', { class: 'vs-start__cta' },
+          el('button', { class: 'btn btn--primary', type: 'button', onclick: () => editNetwork(null, pick) }, icon('plus'), 'Add a network' + (sv ? ' for ' + sv.name : '')),
+          sv && !sv.ready ? el('span', { class: 'hint' }, icon('info'), 'You can add networks now; scans start once ' + sv.name + ' is ready.') : null));
+    }
     return el('div', { class: 'vs-start' },
       el('div', { class: 'card vs-start__intro' }, el('div', { class: 'card__body' },
         el('span', { class: 'vs-start__icon' }, icon('scan-search')),
@@ -216,8 +298,15 @@
         box.replaceChildren(el('div', { class: 'card__body' }, head));
         return;
       }
+      // With a scanner added and no network left for this server, its
+      // checks are information only.
+      const idle = !rep.ready && idleServer(jobServer());
+      if (idle) {
+        head.querySelector('.vs-setup__title').textContent = 'Not needed on ' + where;
+        head.querySelector('.vs-muted').textContent = 'No network uses ' + where + ', so scanning does not need it. Its checks matter only if you pick it to scan a network. Checked ' + ago(rep.at) + '.';
+      }
       box.replaceChildren(el('div', { class: 'card__body' }, head,
-        el('ul', { class: 'vs-checks', role: 'list' }, ...rep.checks.map((c) => checkRow(c, draw)))));
+        el('ul', { class: 'vs-checks', role: 'list' }, ...rep.checks.map((c) => checkRow(c, draw, idle, idle)))));
     };
     draw();
     return box;
@@ -285,7 +374,7 @@
         el('h3', { class: 'modal__title', id: 'vs-setup-title' }, 'Scanner setup'),
         el('p', { class: 'modal__desc' }, 'What scanning needs on the scanning server, why, and how to fix anything missing.')),
       el('button', { class: 'btn btn--ghost btn--icon btn--sm modal__close', type: 'button', 'aria-label': 'Close', onclick: () => dlg.close() }, icon('x'))),
-      el('div', { class: 'modal__body vs-setup__body' }, setupCard(false),
+      el('div', { class: 'modal__body vs-setup__body' }, dedicated().length ? scannersCard() : null, setupCard(false),
         multi() ? el('p', { class: 'hint vs-setup__more' }, icon('radar'), el('span', {}, 'This checks the server that runs the background jobs. ',
           el('a', { href: '#scanners', 'data-page': 'scanners', onclick: () => dlg.close() }, 'Settings > Scanners'), ' checks every server that scans a network.')) : null),
       el('div', { class: 'modal__foot' }, el('button', { class: 'btn btn--secondary', type: 'button', onclick: () => dlg.close() }, 'Close')));
@@ -558,8 +647,8 @@
 
   function renderNetworks() {
     const d = S.data;
-    panels.networks.replaceChildren(el('div', { class: 'vs-nets' }, ...d.targets.map(networkCard)),
-      el('p', { class: 'hint' }, icon('clock'), 'Times are in the scanning server’s time zone.'));
+    panels.networks.replaceChildren(...[multi() ? scannersCard() : null, el('div', { class: 'vs-nets' }, ...d.targets.map(networkCard)),
+      el('p', { class: 'hint' }, icon('clock'), 'Times are in the scanning server’s time zone.')].filter(Boolean));
   }
 
   function networkCard(n) {
@@ -658,10 +747,13 @@
     return 'n-' + Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
   }
 
-  function editNetwork(n) {
+  // scanner, for a new network, is the server to scan it from; left out,
+  // a dedicated scanner if there is one.
+  function editNetwork(n, scanner) {
     const dlg = $('vs-net-dialog');
     const isNew = !n;
-    const t = n || { id: newID(), name: '', networks: [], exclude: [], ports: 'top1000', gentle: false, enabled: true, schedule: { every: 'daily', hour: 1, weekday: 0 } };
+    const t = n || { id: newID(), name: '', networks: [], exclude: [], ports: 'top1000', gentle: false, enabled: true, schedule: { every: 'daily', hour: 1, weekday: 0 },
+      scanner: scanner === undefined ? firstScanner() : scanner };
     const name = el('input', { class: 'input', id: 'vs-name', maxlength: '80', placeholder: 'Office LAN', autocomplete: 'off', required: '' });
     name.value = t.name;
     const addrs = el('textarea', { class: 'textarea mono', id: 'vs-addrs', rows: '4', spellcheck: 'false', placeholder: '192.168.1.0/24\n10.0.5.10-50\nfileserver.corp.example' });
@@ -687,14 +779,14 @@
     const syncEvery = () => { day.hidden = every.value !== 'weekly'; hour.hidden = every.value === 'manual'; };
     every.addEventListener('change', syncEvery);
     syncEvery();
-    let scanner = null;
+    let scannerSel = null;
     if (multi() || t.scanner) {
       const j = jobServer();
       const opt = (value, label, sv) => el('option', { value }, label + (sv ? ' · ' + scannerState(sv).label : ''));
-      scanner = el('select', { class: 'select select--block', id: 'vs-scanner' },
+      scannerSel = el('select', { class: 'select select--block', id: 'vs-scanner' },
         opt('', 'Whichever server runs the background jobs' + (j ? ' (now ' + j.name + ')' : ''), null),
         ...servers().map((sv) => opt(sv.id, sv.name + (sv.self ? ' (this server)' : sv.scanner ? ' (scanner)' : ''), sv)));
-      scanner.value = t.scanner || '';
+      scannerSel.value = t.scanner || '';
     }
     const gentle = el('input', { type: 'checkbox' });
     gentle.checked = t.gentle;
@@ -725,7 +817,7 @@
         el('details', { class: 'vs-more', ...(t.exclude && t.exclude.length ? { open: '' } : {}) }, el('summary', {}, 'Addresses to skip'),
           el('div', { class: 'field' }, skip, el('p', { class: 'hint' }, 'Hosts that must never be scanned, such as fragile devices or ones you have no permission for.'))),
         el('div', { class: 'field' }, el('label', { class: 'label', for: 'vs-ports' }, 'Ports'), ports), customWrap,
-        scanner ? el('div', { class: 'field' }, el('label', { class: 'label', for: 'vs-scanner' }, 'Scanned by'), scanner,
+        scannerSel ? el('div', { class: 'field' }, el('label', { class: 'label', for: 'vs-scanner' }, 'Scanned by'), scannerSel,
           el('p', { class: 'hint' }, el('span', {}, 'Pick a server that can reach these addresses, such as one inside this network’s zone. ',
             el('a', { href: '#scanners', 'data-page': 'scanners', onclick: () => dlg.close() }, 'Settings > Scanners'), ' shows what each server needs.'))) :
           el('p', { class: 'hint vs-zone-hint' }, icon('network'), el('span', {}, 'Network in a separate zone that this server cannot reach? ',
@@ -760,7 +852,7 @@
         ports: ports.value === 'custom' ? custom.value.replace(/\s+/g, '') : ports.value, gentle: gentle.checked, openvas: deep.checked, enabled: isNew ? true : enabled.checked,
         schedule: { every: every.value, hour: +hour.value, weekday: +day.value },
       };
-      if (scanner) next.scanner = scanner.value;
+      if (scannerSel) next.scanner = scannerSel.value;
       const targets = S.data.settings.targets.filter((x) => x.id !== t.id);
       const at = S.data.settings.targets.findIndex((x) => x.id === t.id);
       targets.splice(at < 0 ? targets.length : at, 0, next);
