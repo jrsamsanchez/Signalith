@@ -35,8 +35,8 @@ The first four phases are complete, and work on hardening for 1.0 has started.
 
 - Scheduled [detections](detections.md) mapped to MITRE ATT&CK, with throttling, a
   findings queue for triage, and an ATT&CK coverage map.
-- Content packs of tested community rules: 2,292 from
-  [SigmaHQ](https://github.com/SigmaHQ/sigma) and 1,028 from Splunk Security Content,
+- Content packs of tested community rules: 2,330 from
+  [SigmaHQ](https://github.com/SigmaHQ/sigma) and 1,062 from Splunk Security Content,
   each with test events that prove it fires, and signed content updates.
 - [Sigma](https://github.com/SigmaHQ/sigma) rule import.
 
@@ -97,7 +97,9 @@ The first four phases are complete, and work on hardening for 1.0 has started.
     connection is kept, and sample HAProxy, nginx and keepalived setups.
 
 **Cloud logs**
-:   AWS CloudTrail through the OpenTelemetry Collector, with the SigmaHQ CloudTrail rules.
+:   AWS CloudTrail through the OpenTelemetry Collector is available, with 38 SigmaHQ and 32
+    Splunk CloudTrail rules ([AWS CloudTrail](aws-cloudtrail.md)). Microsoft Entra ID and
+    Microsoft 365 audit logs are next.
 
 ## Next <span class="sg-pill sg-pill--next">Planned</span> { #next data-toc-label="Next" }
 

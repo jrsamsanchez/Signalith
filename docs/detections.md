@@ -623,12 +623,13 @@ The 38 CloudTrail rules read CloudTrail's own field names (`eventName`, `eventSo
 `userIdentity.type`, `requestParameters.*`), which Signalith keeps as CloudTrail writes
 them, and each searches `sourcetype=aws:cloudtrail`. Rules that compare one field with
 another, or that match text inside the call's parameters in a way no test record
-exercises, are left out. To send CloudTrail records, see [AWS CloudTrail](aws-cloudtrail.md).
+exercises, are left out. The Splunk pack adds 32 CloudTrail detections (see
+[Splunk Security Content](#splunk-security-content)). To send CloudTrail records, see [AWS CloudTrail](aws-cloudtrail.md).
 
 ### Splunk Security Content
 
-**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,028 Windows,
-Linux, web and network detections from Splunk's Threat Research Team
+**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,062 Windows,
+Linux, web, network and AWS CloudTrail detections from Splunk's Threat Research Team
 ([security_content](https://github.com/splunk/security_content)), pinned to one
 commit. They are the production TTP and anomaly rules that search the CIM
 `Endpoint.Processes`, `Endpoint.Filesystem`, `Endpoint.Registry` and `Web` nodes with
@@ -674,6 +675,7 @@ names, so each rule's `where` clause becomes a Signalith filter field for field:
 | `Endpoint.Filesystem` (Sysmon for Linux rules) | Sysmon for Linux 11 and 23 | Filesystem |
 | `` `linux_auditd` `` (raw search) | Linux audit records, each field by auditd's name (see [the Linux audit log](#linux-audit-log-auditd)) | Other |
 | `Web` (`datamodel=Web` or `Web.Web`) | Apache and Nginx access log lines (see [Web server access logs](#web-server-access-logs)), and a network sensor's web requests (Zeek's http.log) | Web |
+| `` `cloudtrail` `` (raw search) | AWS CloudTrail records, by CloudTrail's field names and the CIM fields Splunk's AWS add-on gives them (`errorCode=success` reads a record with no error code; see [AWS CloudTrail](#aws-cloudtrail)) | Authentication, Change or Other |
 | `Network_Traffic` (network detections) | Any connection: Zeek's conn.log, a firewall, Sysmon 3 (`app` is the protocol, Zeek's `service`) | Network_Traffic |
 | `Network_Resolution` (network detections) | A DNS lookup that names who asked (`src`), as Zeek's dns.log does (`record_type` is `query_type`); a host's own lookups (Sysmon 22) name only the host and are left to the endpoint rules | Network_Resolution |
 
