@@ -301,7 +301,10 @@
         item('server', 'A small Linux computer or VM', 'Ubuntu, Debian, Rocky Linux or AlmaLinux, near the network to watch.'),
         item('network', 'A port that sees the traffic', 'A second network port connected to a switch’s mirror (SPAN) port or a network tap.'),
         item('globe', 'HTTPS to this server', 'It sends to Signalith over HTTPS, so nothing has to reach the sensor.')),
-      h('div', { class: 'sj-make' }, go)];
+      // Settings > Network sensors lists the sensors already set up, on
+      // versions that have it.
+      h('div', { class: 'sj-make' }, go, $('page-sensors')
+        ? h('a', { class: 'btn btn--ghost', href: '#sensors', 'data-page': 'sensors', onclick: () => $('sj-dialog').close() }, icon('router'), 'See your sensors') : null)];
   }
 
   function alertBox(tone, title, text) {
