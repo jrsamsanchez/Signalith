@@ -116,7 +116,7 @@ func compareQuery(c *query.Compare) (map[string]any, error) {
 // script block, searched for words inside it.
 var WildcardFields = map[string]bool{
 	"script_block_text": true, "task_content": true, "ad_value": true, "file_contents": true,
-	"service_principal_names": true, "cert_attributes": true, "system_message": true, "event_data": true,
+	"service_principal_names": true, "cert_attributes": true, "system_message": true, "event_data": true, "security_template_content": true, "security_new_template_content": true, "security_old_template_content": true, "security_conditions": true,
 	"auditd_execve_command": true, "auditd_proctitle": true, "auditd_data": true,
 }
 

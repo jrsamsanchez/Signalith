@@ -495,7 +495,10 @@ func ConvertSigmaWith(src []byte, opt SigmaOptions) (*SigmaResult, error) {
 			// A Security log rule's fields are its event's own, so it
 			// converts for one event, or events with the same data.
 			category = "security"
-			if ids := modernEventIDs(sigmaEventIDs(r.Detection)); len(ids) > 0 {
+			if ids := modernEventIDs(sigmaEventIDs(r.Detection)); ingest.IsNamedSecurityEvents(ids...) {
+				// Events no data model holds, read by name.
+				category = "security_named"
+			} else if len(ids) > 0 {
 				if _, ok := sigmaWindowsEvents["security_"+strings.Join(ids, "_")]; ok {
 					category = "security_" + strings.Join(ids, "_")
 				}
@@ -656,6 +659,9 @@ func productScope(ls map[string]any, category string) query.Expr {
 		if ch, ok := sigmaNamedChannels[category]; ok {
 			return &query.Compare{Field: "sourcetype", Op: "=", Value: "WinEventLog:" + ch}
 		}
+		if category == "security_named" {
+			return &query.Compare{Field: "sourcetype", Op: "=", Value: "WinEventLog:" + ingest.SecurityChannel}
+		}
 		if category == "sysmon_event" || category == "sysmon_file_block" {
 			return &query.Compare{Field: "sourcetype", Op: "=", Value: "WinEventLog:Microsoft-Windows-Sysmon/Operational"}
 		}
@@ -698,7 +704,7 @@ func (c *sigmaConv) datamodel(ls map[string]any) string {
 		return "Script"
 	case "system":
 		return "Change"
-	case "system_event", "application", "code_integrity", "sysmon_event":
+	case "system_event", "application", "code_integrity", "sysmon_event", "security_named":
 		return "Other"
 	case "sysmon_file_block":
 		return "Filesystem"
@@ -731,6 +737,9 @@ func (c *sigmaConv) field(name string) string {
 	}
 	if ch, ok := sigmaNamedChannels[c.category]; ok {
 		return c.channelField(ch, name)
+	}
+	if c.category == "security_named" {
+		return c.channelField(ingest.SecurityChannel, name)
 	}
 	if c.category == "sysmon_file_block" {
 		if f, ok := sigmaEventFields["file_event"][strings.ToLower(name)]; ok {
