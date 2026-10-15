@@ -1,6 +1,11 @@
 // Servers page: Add a server, and servers waiting for approval.
 //
-// Add a server opens a dialog that first checks what a new server needs
+// Add a server opens a dialog that first asks what is being added: a
+// cluster server, which shares the work; a vulnerability scanner, a
+// server that joins the same way but only scans the networks picked for
+// it (its join token gives it cluster.role scanner); or a network sensor,
+// which is not a Signalith server and is set up on Add data instead.
+// For a server, it then checks what the new one needs
 // from this one (api/cluster/join/prepare): an OpenSearch it can reach
 // with TLS and a sign-in, the ports, the version. When OpenSearch isn't
 // ready, Prepare OpenSearch says what to change and why, for Docker, Linux
@@ -22,10 +27,27 @@
     { id: 'windows', label: 'Windows', icon: 'monitor' },
     { id: 'docker', label: 'Docker', icon: 'box' },
   ];
+  // KINDS are what Add a server can add. A scanner joins like a cluster
+  // server, with the role in its token; a sensor is set up on Add data.
+  const KINDS = [
+    { id: 'server', icon: 'server', title: 'Cluster server',
+      text: 'Shares the work: takes events from agents, answers searches and takes over the background jobs if another server stops.',
+      desc: 'Install Signalith on another computer and join it to these servers. It shares this OpenSearch and every setting, user and detection.',
+      guide: 'https://signalith.io/docs/multi-server/' },
+    { id: 'scanner', icon: 'radar', title: 'Vulnerability scanner',
+      text: 'Sits inside a network zone, such as a plant floor or a lab, and scans it with Nmap. Never runs the background jobs.',
+      desc: 'Install Signalith on a computer inside the network zone to scan. It joins these servers as a scanner: it scans only the networks you pick for it, and its results land here.',
+      guide: 'https://signalith.io/docs/vulnerabilities/#scanning-each-network-zone-from-inside-it' },
+    { id: 'sensor', icon: 'activity', title: 'Network sensor',
+      text: 'Watches traffic on a mirror or SPAN port with Zeek and Suricata, and sends what it sees. Not a Signalith server.',
+      desc: 'A network sensor sends what it sees on your network to Signalith. It is set up on Add data, with one line to run on the sensor.',
+      guide: 'https://signalith.io/docs/network-sensor/' },
+  ];
+  const kindOf = (id) => KINDS.find((k) => k.id === id);
   // S.pending is the last api/cluster's pending servers; D is the open
-  // dialog's state.
+  // dialog's state, and D.kind what it adds ('' until picked).
   const S = { pending: [], at: 0, busy: false, ticker: null, seq: 0, prepOK: null };
-  const D = { prep: null, failed: null, platform: '', prepTab: '', addr: '', token: null, made: null, used: null, check: null, watch: null, making: false };
+  const D = { kind: '', prep: null, failed: null, platform: '', prepTab: '', addr: '', token: null, made: null, used: null, check: null, watch: null, making: false };
 
   // h is el without the attributes that are null or false, so an
   // attribute such as disabled can be left out by its value.
@@ -57,7 +79,7 @@
     const btn = $('sv-add');
     if (!btn || btn.dataset.wired) return;
     btn.dataset.wired = '1';
-    btn.addEventListener('click', openDialog);
+    btn.addEventListener('click', () => openDialog(''));
     try {
       D.prep = await api('api/cluster/join/prepare');
       btn.hidden = false;
@@ -138,9 +160,16 @@
     match.focus();
   }
 
+  // openAddServer opens Add a server from another page, such as Settings
+  // > Scanners, with what to add already picked (server or scanner).
+  window.openAddServer = (kind) => {
+    showPage('servers');
+    if (currentPage === 'servers') openDialog(kind || '');
+  };
+
   // ---------- the dialog ----------
-  async function openDialog() {
-    Object.assign(D, { failed: null, token: null, made: null, used: null, check: null, making: false });
+  async function openDialog(kind) {
+    Object.assign(D, { kind: kindOf(kind) ? kind : '', failed: null, token: null, made: null, used: null, check: null, making: false, tokenErr: '' });
     stopWatch();
     const d = modalDialog('sj-dialog');
     d.classList.add('sj-dialog');
@@ -196,18 +225,27 @@
       body.append(h('p', { class: 'sr-only' }, 'Checking what a new server needs…'), bar('60%'), bar('90%'), bar('75%'));
     } else if (!prep) {
       body.append(alertBox('danger', 'Couldn’t check this server', sentence(D.failed.message)));
+    } else if (D.kind === 'sensor') {
+      body.append(h('ol', { class: 'sj-steps', role: 'list' },
+        step(1, 'What are you adding?', kindPicker()),
+        step(2, 'Set it up on Add data', sensorPanel())));
+    } else if (!D.kind) {
+      body.append(h('ol', { class: 'sj-steps', role: 'list' }, step(1, 'What are you adding?', kindPicker())));
     } else {
       const problems = (prep.opensearch && prep.opensearch.problems) || [];
+      const what = D.kind === 'scanner' ? 'scanner' : 'server';
       body.append(h('ol', { class: 'sj-steps', role: 'list' },
-        step(1, 'Check what the new server needs', checks(prep, problems)),
-        step(2, 'Choose where it runs', platformPicker(problems, prep)),
-        D.made ? step(3, 'Run this on the new computer', line(prep)) : null,
-        D.made ? step(4, 'Watch it join', watchLine()) : null));
+        step(1, 'What are you adding?', kindPicker()),
+        step(2, `Check what the new ${what} needs`, checks(prep, problems)),
+        step(3, 'Choose where it runs', platformPicker(problems, prep)),
+        D.made ? step(4, 'Run this on the new computer', line(prep)) : null,
+        D.made ? step(5, 'Watch it join', watchLine()) : null));
     }
-    fill(d, modalHead('sj-dialog', 'Add a server', 'Install Signalith on another computer and join it to these servers. It shares this OpenSearch and every setting, user and detection.', () => d.close()),
+    const kind = kindOf(D.kind) || KINDS[0];
+    fill(d, modalHead('sj-dialog', 'Add a server', D.kind ? kind.desc : 'Add another computer to Signalith: a server that shares the work, a scanner for a network zone, or a network sensor.', () => d.close()),
       body,
       h('div', { class: 'modal__foot' },
-        h('a', { class: 'btn btn--ghost sj-docs', href: 'https://signalith.io/docs/multi-server/', target: '_blank', rel: 'noopener' }, icon('book-open'), 'Guide'),
+        h('a', { class: 'btn btn--ghost sj-docs', href: kind.guide, target: '_blank', rel: 'noopener' }, icon('book-open'), 'Guide'),
         h('span', { class: 'spacer' }),
         h('button', { type: 'button', class: 'btn ' + (D.used && D.check && D.check.result === 'ready' ? 'btn--primary' : 'btn--ghost'), 'data-focus': 'close', onclick: () => d.close() }, D.used ? 'Done' : 'Close')));
     const f = keep && d.querySelector(`[data-focus="${keep}"]`);
@@ -217,6 +255,53 @@
   function step(n, title, ...kids) {
     return h('li', { class: 'sj-step' }, h('span', { class: 'sj-step__num' }, n),
       h('div', { class: 'sj-step__body' }, h('h3', { class: 'sj-step__title' }, title), ...kids.flat().filter(Boolean)));
+  }
+
+  // ---------- step 1: what is being added ----------
+  // Cards with real radios, as on Add data. Once the line is made, the
+  // token holds the role, so the choice is locked.
+  function kindPicker() {
+    const locked = !!D.made;
+    const cards = KINDS.map((k) => {
+      const radio = h('input', { type: 'radio', name: 'sj-kind', value: k.id, 'data-focus': 'kind-' + k.id,
+        checked: D.kind === k.id ? '' : null, disabled: locked && D.kind !== k.id ? '' : null });
+      radio.addEventListener('change', () => {
+        if (!radio.checked) return;
+        D.kind = k.id;
+        D.tokenErr = '';
+        draw();
+      });
+      return h('label', { class: 'sj-kind', 'data-kind': k.id },
+        h('span', { class: 'sj-kind__icon' }, icon(k.icon)),
+        h('span', { class: 'sj-kind__text' }, h('b', {}, k.title), h('span', {}, k.text)),
+        radio);
+    });
+    return [h('fieldset', { class: 'sj-kinds' }, h('legend', { class: 'sr-only' }, 'What are you adding?'), ...cards),
+      locked ? h('p', { class: 'sj-muted' }, 'The line below adds a ' + (D.kind === 'scanner' ? 'scanner' : 'cluster server') + '. To add something else, close this and start again.') : null];
+  }
+
+  // sensorPanel says what a sensor is and takes the admin to its setup on
+  // Add data > Network sensor > Set up a new sensor.
+  function sensorPanel() {
+    const go = h('button', { type: 'button', class: 'btn btn--primary', 'data-focus': 'sensor-go' }, icon('activity'), h('span', {}, 'Set up a sensor'));
+    go.addEventListener('click', () => {
+      const d = $('sj-dialog');
+      if (d) d.close();
+      if (typeof openSensorSetup === 'function') openSensorSetup();
+      else showPage('data');
+      const tab = $('sensor-tab-new');
+      if (tab && tab.getAttribute('aria-selected') !== 'true') tab.click();
+      const card = $('agent-setup');
+      if (card) requestAnimationFrame(() => card.scrollIntoView({ block: 'start' }));
+    });
+    const item = (ic, title, why) => h('li', { class: 'sj-check', 'data-ok': 'info' }, icon(ic), h('div', {}, h('b', {}, title), h('p', {}, why)));
+    return [
+      h('p', {}, 'A sensor doesn’t join these servers and isn’t listed here: it sends events, like an agent. Add data makes the one line that installs it.'),
+      h('ul', { class: 'sj-checks', role: 'list' },
+        item('server', 'A small Linux computer or VM', 'Ubuntu, Debian, Rocky Linux or AlmaLinux, near the network to watch.'),
+        item('network', 'A port that sees the traffic', 'A second network port connected to a switch’s mirror (SPAN) port or a network tap.'),
+        item('globe', 'HTTPS to this server', 'It sends to Signalith over HTTPS, so nothing has to reach the sensor.')),
+      h('div', { class: 'sj-make' }, go)];
   }
 
   function alertBox(tone, title, text) {
@@ -241,9 +326,17 @@
     const toOS = ports.filter((p) => p.where === 'opensearch');
     const onNew = ports.filter((p) => p.where === 'new');
     const portText = (p) => `${p.proto.toUpperCase()} ${p.port} (${p.what})`;
+    const scanner = D.kind === 'scanner';
+    // A scanner takes no events: only its web port must be open, for the
+    // other servers to check it.
+    const web = onNew[0];
     items.push(item('info', 'Ports',
-      (toOS.length ? `The new server connects to OpenSearch on TCP ${toOS[0].port}. ` : '') +
-      (onNew.length ? `On the new server, allow ${onNew.map(portText).join(', ')}: the other servers check it on its web port, and agents and devices send to it.` : '')));
+      (toOS.length ? `The new ${scanner ? 'scanner' : 'server'} connects to OpenSearch on TCP ${toOS[0].port}. ` : '') +
+      (scanner ? (web ? `On the scanner, allow TCP ${web.port} from the other servers: they check it on its web port. Agents and devices don’t send to it.` : '')
+        : onNew.length ? `On the new server, allow ${onNew.map(portText).join(', ')}: the other servers check it on its web port, and agents and devices send to it.` : '')));
+    if (scanner) {
+      items.push(item('info', 'Nmap', 'The scanner runs Nmap 7.80 or later. The Docker image has it, and the Linux packages install it when they can. On Windows, install it from nmap.org. Settings > Scanners checks it once the scanner joins.'));
+    }
     items.push(item('info', `Signalith ${prep.version}`, 'Every server runs the same version. The line installs it, or checks the one already installed.'));
     if (!prep.pinnable) items.push(item(false, 'A token can’t name this server’s certificate', prep.pin_problem || ''));
     const list = h('ul', { class: 'sj-checks', role: 'list' }, ...items);
@@ -389,7 +482,7 @@
     D.tokenErr = '';
     draw();
     try {
-      const r = await api('api/cluster/tokens', { platform: D.platform, ttl_minutes: 60 }, 'POST');
+      const r = await api('api/cluster/tokens', { platform: D.platform, ttl_minutes: 60, role: D.kind === 'scanner' ? 'scanner' : '' }, 'POST');
       D.made = r;
       D.token = r.id;
       D.used = null;
@@ -483,13 +576,20 @@
   function watchLine() {
     const live = (state, title, text) => h('div', { class: 'sj-live', 'data-state': state, role: 'status' },
       state === 'wait' ? h('span', { class: 'pulse', 'aria-hidden': 'true' }) : icon(state === 'ok' ? 'circle-check' : 'triangle-alert'),
-      h('div', {}, h('b', {}, title), text ? h('p', {}, text) : null));
-    if (!D.used) return live('wait', 'Waiting for the new server to use the line…', 'This updates by itself once it has.');
+      h('div', {}, h('b', {}, title), text ? h('p', {}, ...[].concat(text)) : null));
+    if (!D.used) return live('wait', `Waiting for the new ${D.kind === 'scanner' ? 'scanner' : 'server'} to use the line…`, 'This updates by itself once it has.');
     const name = D.used.name || 'The new server';
     const c = D.check;
     if (!c) return live('wait', `${name} used the token`, 'Waiting for it to start…');
     switch (c.result) {
-      case 'ready': return live('ok', `${name} joined${c.version ? ' (' + c.version + ')' : ''} and is ready`, 'It is in the list of servers. Add it to your load balancer, or point agents at it.');
+      case 'ready':
+        if (D.kind === 'scanner') {
+          return live('ok', `${name} joined as a scanner${c.version ? ' (' + c.version + ')' : ''} and is ready`,
+            ['Next, pick it for the zone’s networks: on ', h('a', { href: '#vulns', 'data-page': 'vulns', onclick: () => $('sj-dialog').close() }, 'Vulnerabilities'),
+              ' > Networks, edit a network and choose it under Scanned by. ', h('a', { href: '#scanners', 'data-page': 'scanners', onclick: () => $('sj-dialog').close() }, 'Settings > Scanners'),
+              ' shows whether it has what scanning needs.']);
+        }
+        return live('ok', `${name} joined${c.version ? ' (' + c.version + ')' : ''} and is ready`, 'It is in the list of servers. Add it to your load balancer, or point agents at it.');
       case 'not_ready': return live('wait', `${name} is starting`, c.detail);
       case 'no_address': return live('warn', `${name} joined, but the other servers can’t check it`, c.detail + ' Set its address on its Settings page (Server > Address for other servers).');
       case 'certificate': return live('warn', `${name} answers with another certificate`, c.detail);

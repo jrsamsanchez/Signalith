@@ -1024,6 +1024,11 @@ type Cluster struct {
 	// on by default. SIGNALITH_LEADER_ELIGIBLE overrides both. See
 	// Config.LeaderEligible.
 	LeaderEligible *bool `yaml:"leader_eligible,omitempty"`
+	// Role is what this server is for: "" (RoleServer) shares the work of
+	// the cluster; RoleScanner only scans the networks picked for it on
+	// the Vulnerabilities page, and never runs the background jobs. Add a
+	// server sets it when the server joins. See Config.LeaderEligible.
+	Role string `yaml:"role,omitempty"`
 	// Name is the name of the servers that share one OpenSearch. They keep
 	// it in OpenSearch; this is only the value the Settings page saves
 	// there.
@@ -1034,10 +1039,25 @@ type Cluster struct {
 	OpenSearchURL string `yaml:"opensearch_url,omitempty"`
 }
 
+// Server roles (cluster.role).
+const (
+	RoleServer  = ""
+	RoleScanner = "scanner"
+)
+
+// ValidRole reports whether r is a server role.
+func ValidRole(r string) bool { return r == RoleServer || r == RoleScanner }
+
+// Scanner reports whether this server is a scanner (cluster.role).
+func (c *Config) Scanner() bool { return c.Cluster.Role == RoleScanner }
+
 // LeaderEligible reports whether this server may run the background jobs:
-// cluster.leader_eligible, or detections.scheduler, its old name, when
-// only that is set.
+// never on a scanner; otherwise cluster.leader_eligible, or
+// detections.scheduler, its old name, when only that is set.
 func (c *Config) LeaderEligible() bool {
+	if c.Scanner() {
+		return false
+	}
 	if c.Cluster.LeaderEligible != nil {
 		return *c.Cluster.LeaderEligible
 	}
@@ -2198,6 +2218,9 @@ func (c *Config) Validate() error {
 		if pu, err := url.Parse(u); err != nil || (pu.Scheme != "http" && pu.Scheme != "https") || pu.Host == "" || pu.User != nil {
 			p = append(p, fmt.Sprintf("cluster.opensearch_url %q must be http(s)://host:port, without a username or password", redact.URL(u)))
 		}
+	}
+	if !ValidRole(c.Cluster.Role) {
+		p = append(p, fmt.Sprintf("cluster.role %q must be empty (a cluster server) or scanner", c.Cluster.Role))
 	}
 	if n := c.Cluster.NodeName; n != "" && !ValidNodeName(n) {
 		p = append(p, fmt.Sprintf("cluster.node_name %q must be 1 to 63 letters, digits, dots, dashes or underscores, starting with a letter or digit", n))

@@ -482,7 +482,7 @@ func (d *Deps) bundle(ctx context.Context, req *Request, p Parsed, cb *shared.Cl
 		OpenSearch: OpenSearch{URL: view.URL, URLs: view.URLs, CAPEM: cr.CAPEM, Username: cr.Username, Password: cr.Password,
 			ClientCertPEM: cr.ClientCertPEM, ClientKeyPEM: cr.ClientKeyPEM, Managed: cr.Managed, Shared: cr.Shared},
 		KID: k.ID(), ClusterKey: raw, PublicURL: view.PublicURL, NodeName: req.Name, Listen: view.Listen,
-		IssuerVersion: d.Version, Level: cb.Level}
+		IssuerVersion: d.Version, Level: cb.Level, Role: c.Body.Role}
 	if req.CopySyslog {
 		s := view.Syslog
 		b.Syslog = &s

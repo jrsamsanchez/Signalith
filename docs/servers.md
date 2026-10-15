@@ -132,7 +132,9 @@ their settings it is called **May run background jobs** (`cluster.leader_eligibl
 or `SIGNALITH_LEADER_ELIGIBLE`), one of each server's own settings. Leave it on: the
 servers take turns by themselves. Turn it off only on a server that should never
 run the jobs, for example one that only receives data. A change applies at the
-server's next restart.
+server's next restart. A server added as a **scanner** (its **Server role**,
+`cluster.role: scanner`) never runs them, whatever this setting says; see
+[Cluster servers and scanners](multi-server.md#cluster-servers-and-scanners).
 
 **Changing retention and feeds.** Once the servers are a cluster (see
 [Shared feeds and retention policies](#shared-feeds-and-retention-policies)), the Data retention
