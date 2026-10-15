@@ -723,6 +723,17 @@ func (h *Hub) Snapshot() CacheData {
 	return d
 }
 
+// KeepFloors records revs, by document id, as applied, so an older
+// revision is refused from now on: the revisions of a cache.enc too old
+// to use.
+func (h *Hub) KeepFloors(revs map[string]int64) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for id, r := range revs {
+		h.floors[id] = max(h.floors[id], r)
+	}
+}
+
 // Restore applies the documents of a cache.enc, checked as if read from
 // OpenSearch, as a provisional configuration until OpenSearch answers;
 // its revisions count as applied, so an older copy is refused later.

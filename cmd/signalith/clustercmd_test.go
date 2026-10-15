@@ -163,9 +163,11 @@ func TestClusterCommands(t *testing.T) {
 	if out, _ := run("", "export"); strings.Contains(out, "verified: no") {
 		t.Errorf("export after reset-key:\n%s", out)
 	}
-	// The other server's key is the old one now.
+	// The other server's key is the old one now. It keeps that key, so it
+	// does not fall back to its own files (legacy b), even with no copy of
+	// the shared settings: it is told to import the current key.
 	t.Setenv("SIGNALITH_STATE_DIR", stateB)
-	if out, _ := run("", "status"); !strings.Contains(out, "legacy_b") {
+	if out, _ := run("", "status"); !strings.Contains(out, "key_missing") || !strings.Contains(out, "import-key") {
 		t.Errorf("status of a server with the old key:\n%s", out)
 	}
 }
