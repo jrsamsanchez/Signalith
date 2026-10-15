@@ -25,7 +25,12 @@ import (
 // servers of one cluster do.
 func twoServers(t *testing.T) ([2]*httptest.Server, *findings.OpenSearch, *cases.OpenSearch) {
 	t.Helper()
-	fake := ostest.New(t)
+	return twoServersOn(t, ostest.New(t))
+}
+
+// twoServersOn is twoServers on the fake OpenSearch given.
+func twoServersOn(t *testing.T, fake *ostest.Server) ([2]*httptest.Server, *findings.OpenSearch, *cases.OpenSearch) {
+	t.Helper()
 	var out [2]*httptest.Server
 	var fs *findings.OpenSearch
 	var cs *cases.OpenSearch
@@ -251,5 +256,82 @@ func TestFindingIDCollisionGetsANewID(t *testing.T) {
 	code, out := do(t, ts, "POST", "/api/findings", `{"title":"Odd logon"}`, true)
 	if code != 201 || len(st.tried) != 2 || st.tried[0] == st.tried[1] || out["id"] != st.tried[1] {
 		t.Fatalf("create = %d %v, tried %v", code, out, st.tried)
+	}
+}
+
+// TestCaseNotesDoNotQueue: ten analysts on two servers write notes at
+// once, in a case someone is changing the status of and in another case,
+// while OpenSearch takes its time to make writes searchable. No note
+// waits for a refresh or for a change to the other case, and none is lost.
+func TestCaseNotesDoNotQueue(t *testing.T) {
+	ctx := context.Background()
+	const refresh = 2 * time.Second
+	fake := ostest.New(t)
+	srv, _, cs := twoServersOn(t, fake)
+	cl := [2]*http.Client{signedIn(t, srv[0]), signedIn(t, srv[1])}
+	var ids [2]string
+	for i := range ids {
+		code, out := do(t, srv[0], "POST", "/api/cases", fmt.Sprintf(`{"title":"Case %d"}`, i), true)
+		if code != 201 {
+			t.Fatalf("create case = %d %v", code, out)
+		}
+		ids[i] = out["case"].(map[string]any)["id"].(string)
+	}
+	fake.SetRefreshWait(refresh)
+
+	// A status change, which the cases list shows, waits for the refresh
+	// while holding case 0 on server 0.
+	statusDone := make(chan struct{})
+	go func() {
+		defer close(statusDone)
+		if code, out := callAsync(t, cl[0], srv[0], "PATCH", "/api/cases/"+ids[0], `{"status":"in_progress"}`); code != 200 {
+			t.Errorf("status = %d %v", code, out)
+		}
+	}()
+	for written := false; !written; {
+		for _, r := range fake.Requests() {
+			written = written || strings.HasPrefix(r, "PUT /sig_cases/_doc/"+ids[0]+"?if_seq_no")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	const n = 10
+	var wg sync.WaitGroup
+	slow := make(chan string, n)
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			// Server 0 writes in the other case; server 1 in both.
+			id := ids[1]
+			if i%4 == 1 {
+				id = ids[0]
+			}
+			start := time.Now()
+			code, out := callAsync(t, cl[i%2], srv[i%2], "POST", "/api/cases/"+id+"/entries", fmt.Sprintf(`{"kind":"note","text":"note %d"}`, i))
+			if code != 201 {
+				t.Errorf("note %d = %d %v", i, code, out)
+			}
+			if d := time.Since(start); d >= refresh {
+				slow <- fmt.Sprintf("note %d took %v", i, d)
+			}
+		}()
+	}
+	wg.Wait()
+	<-statusDone
+	close(slow)
+	for s := range slow {
+		t.Error(s)
+	}
+	total := 0
+	for _, id := range ids {
+		c, err := cs.Get(ctx, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		total += len(c.Entries)
+	}
+	if total != n {
+		t.Errorf("the cases kept %d notes, want %d", total, n)
 	}
 }

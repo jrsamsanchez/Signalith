@@ -103,11 +103,11 @@ describes.
   before it answers, the agent sends the batch again to whichever server it reaches. A
   batch resent unchanged to any server is recognised and not stored again; the load test
   counts any duplicate that still gets through.
-- **Notes on one case are written one at a time.** Each server adds notes and
-  comments to a case in turn and waits until each can be searched, so when many people
-  write in the same case at once their notes queue: with 10 analysts each adding a note
-  every 2 s to one case, a note took about 5 s to save in the nightly run. Different
-  cases do not wait for each other.
+- **The cases list can lag a note by a second.** A note, pinned event or saved search
+  is saved without waiting for OpenSearch to make it searchable, so many people can
+  write in one case at once (10 analysts on two servers: notes save in well under a
+  second). The case itself shows the note at once; only the list's order by last update
+  can be a second behind.
 - **Agents do not move by themselves.** An agent sends to one address. With several
   servers, put a load balancer in front of them; DNS round robin alone leaves an agent
   sending to a server that is down until its DNS answer changes.
