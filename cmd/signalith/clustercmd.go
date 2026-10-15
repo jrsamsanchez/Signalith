@@ -37,6 +37,8 @@ const clusterUsage = `usage:
   signalith cluster found          [-c file] [-force] [-name n]   make the servers sharing this OpenSearch a cluster, from this server's files
   signalith cluster export         [-c file] [-o file]        the shared settings as YAML (stored passwords stay encrypted)
   signalith cluster export -settings [-c file] [-o file] [-server s]   the settings the servers share, as a file cluster apply takes
+  signalith cluster export --to-files <dir> [-c file] [-server s]   the shared settings as the files of a server on its own, for a downgrade
+  signalith cluster export -retire [--to-files <dir>] [-c file] [-yes]   with every server stopped, put the shared settings aside for a downgrade
   signalith cluster apply          [-c file] -f file [-yes]   change the settings the servers share to those of a file
   signalith cluster import         [-c file] -from-cache      write this server's copy of the shared settings back to OpenSearch
   signalith cluster export-key     [-c file] [-o file]        the cluster key, encrypted with a passphrase, for another server
@@ -94,6 +96,8 @@ type clusterCLI struct {
 	reports *clustercfg.Reports
 	// osca holds OpenSearch's certificate authority of the same runtime.
 	osca *clusterpki.OSCA
+	// shared is every collection of shared documents of the same runtime.
+	shared sharedDocs
 }
 
 // runCluster is cmdCluster with its input and output.
@@ -112,7 +116,9 @@ func runCluster(args []string, in *os.File, out, errOut io.Writer) error {
 	fromCache := flags.Bool("from-cache", false, "write this server's copy of the shared settings (cache.enc) back")
 	yes := flags.Bool("yes", false, "do it without asking")
 	settingsOnly := flags.Bool("settings", false, "export the settings the servers share, as a file signalith cluster apply takes")
-	server := flags.String("server", "", "with -settings, only this server's own settings (a name or node id)")
+	server := flags.String("server", "", "with -settings, only this server's own settings; with --to-files, whose own settings to write (a name or node id)")
+	toFiles := flags.String("to-files", "", "export: write the shared settings as the files of a server on its own, in this new folder")
+	retire := flags.Bool("retire", false, "export: with every server stopped, put the shared settings aside for a downgrade")
 	file := flags.String("f", "", "the file of settings to apply")
 	var tok tokenOptions
 	flags.StringVar(&tok.platform, "platform", "", "token: the new server's platform, linux, windows or docker")
@@ -159,6 +165,9 @@ func runCluster(args []string, in *os.File, out, errOut io.Writer) error {
 	case "found":
 		return x.found(ctx, *force, *name)
 	case "export":
+		if *toFiles != "" || *retire {
+			return x.exportToFiles(ctx, *toFiles, *server, *retire, *yes)
+		}
 		if *settingsOnly {
 			return x.exportSettings(ctx, *outFile, *server)
 		}
@@ -241,7 +250,7 @@ func (x *clusterCLI) keyStore() shared.KeyStore {
 // readOnly writes nothing to OpenSearch or the state folder.
 func (x *clusterCLI) runtime(readOnly bool, name string) *shared.Runtime {
 	d := newSharedDocs(clusterauth.NewDocs())
-	x.docs, x.auth, x.tls, x.osca, x.join, x.reports = d.docs, d.auth, d.tls, d.osca, d.join, d.reports
+	x.docs, x.auth, x.tls, x.osca, x.join, x.reports, x.shared = d.docs, d.auth, d.tls, d.osca, d.join, d.reports, d
 	files := x.files()
 	var made atomic.Pointer[shared.Runtime]
 	files.NodeCfg = func() *shared.Doc[shared.NodeCfg] {

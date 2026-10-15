@@ -22,6 +22,7 @@
 //     only deletes change anything);
 //   - POST /_bulk with create, index and delete actions;
 //   - GET /<pattern>/_count (every document, whatever the query);
+//   - GET /_cat/indices/<pattern> (the names, as format=json lists them);
 //   - GET /_nodes/_local/settings (path.home and path.data, see Paths);
 //   - GET /_plugins/_security/authinfo, once Secure turns sign-in on
 //     (before that, as without the security plugin, it is not found).
@@ -555,6 +556,15 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request, p string, body [
 			return
 		}
 		writeJSON(w, 200, map[string]any{parts[0]: map[string]any{"settings": map[string]any{"index": flat}}})
+	case strings.HasPrefix(p, "/_cat/indices/"):
+		// The index names that match, as format=json lists them.
+		s.mu.Lock()
+		out := []any{}
+		for _, ix := range s.match(strings.TrimPrefix(p, "/_cat/indices/")) {
+			out = append(out, map[string]any{"index": ix.name})
+		}
+		s.mu.Unlock()
+		writeJSON(w, 200, out)
 	case strings.HasPrefix(p, "/_cat/"):
 		writeJSON(w, 200, []any{})
 	case p == "/_plugins/_security/authinfo":
