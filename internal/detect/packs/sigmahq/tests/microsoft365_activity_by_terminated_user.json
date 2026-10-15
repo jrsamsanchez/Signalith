@@ -1,0 +1,6 @@
+{"rule": "2e669ed8-742e-4fe5-b3c4-5a59b486c2ee", "cases": [
+  {"expect":true,"source":"synthesized","channel":"o365","event_id":"audit","data":{"eventName":"Activity performed by terminated user","eventSource":"SecurityComplianceCenter","status":"success"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"audit","data":{"eventSource":"SecurityComplianceCenter","status":"success"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"audit","data":{"eventName":"Activity performed by terminated user","status":"success"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"audit","data":{"eventName":"Activity performed by terminated user","eventSource":"SecurityComplianceCenter"}}
+]}

@@ -208,6 +208,7 @@ var Sections = []Section{
 	{ID: "assistant", Title: "AI assistant", Help: "An optional AI model. Ask sends it only the question and field names, never events. Investigate with AI sends a finding's events, and is off until you turn it on below."},
 	{ID: "intel", Title: "Threat intel", Help: "Where threat intel feeds may be downloaded from."},
 	{ID: "vulns", Title: "Vulnerability scans", Help: "How scans on the Vulnerabilities page look up the known vulnerabilities (CVEs) of the software they find. Only product names are sent, never addresses."},
+	{ID: "m365", Title: "Microsoft 365", Help: "Read Microsoft 365's audit log (Entra ID sign-ins and changes, Exchange, SharePoint, OneDrive, Teams and security alerts) with an app registered in Entra ID. One server reads it every 5 minutes. See the Microsoft 365 guide in the docs for how to register the app."},
 }
 
 // Registry lists every setting on the page, in page order.
@@ -449,6 +450,21 @@ var Registry = []Setting{
 		Help:        "Only for a copy of the NVD's CVE API 2.0 on your own network.",
 		Placeholder: DefaultNVDURL, EmptyMeans: "the National Vulnerability Database", Env: "SIGNALITH_NVD_URL",
 		check: noSecretIn("put the key in NVD API key above")},
+
+	{Key: "m365.tenant_id", Scope: ScopeCluster, Section: "m365", Label: "Tenant ID", Type: TypeText,
+		Help:        "Your Microsoft 365 tenant's ID (Directory (tenant) ID on the app's Overview page in Entra ID).",
+		Placeholder: "11111111-2222-3333-4444-555555555555", EmptyMeans: "off", check: m365ID("tenant ID")},
+	{Key: "m365.client_id", Scope: ScopeCluster, Section: "m365", Label: "Application (client) ID", Type: TypeText,
+		Help:        "The ID of the app registered in Entra ID, which has the Office 365 Management APIs permission ActivityFeed.Read.",
+		Placeholder: "11111111-2222-3333-4444-555555555555", EmptyMeans: "off", check: m365ID("application ID")},
+	{Key: "m365.client_secret", Scope: ScopeCluster, Section: "m365", Label: "Client secret", Type: TypeSecret,
+		Help: "A client secret of that app (its Value, not its ID). Only sent to Microsoft's sign-in service, for the tenant and app it was entered for.",
+		Env:  "SIGNALITH_M365_CLIENT_SECRET", SentWith: []string{"m365.cloud", "m365.tenant_id", "m365.client_id"},
+		sentTo: func(c *Config) string { return c.M365TokenURL() + "#" + c.M365.ClientID }},
+	{Key: "m365.cloud", Scope: ScopeCluster, Section: "m365", Label: "Microsoft cloud", Type: TypeChoice,
+		Help:       "Which Microsoft cloud the tenant is in. Most are in the commercial cloud; US government tenants are in GCC, GCC High or DoD.",
+		Choices:    []Choice{{"commercial", "Commercial"}, {"gcc", "GCC"}, {"gcc_high", "GCC High"}, {"dod", "DoD"}},
+		EmptyMeans: "Commercial"},
 }
 
 // Exclusion is a setting of Config that is not on the Settings page.
@@ -1024,6 +1040,56 @@ func deref(p *int, d int) int {
 	}
 	return *p
 }
+
+// m365ID checks a Microsoft 365 tenant or application ID: a GUID, or for
+// a tenant its domain (contoso.onmicrosoft.com).
+func m365ID(what string) func(any) error {
+	return func(v any) error {
+		s, _ := v.(string)
+		if s == "" || m365IDRe.MatchString(s) || what == "tenant ID" && m365DomainRe.MatchString(s) {
+			return nil
+		}
+		if what == "tenant ID" {
+			return fmt.Errorf("the %s is a GUID such as 11111111-2222-3333-4444-555555555555, or the tenant's domain such as contoso.onmicrosoft.com", what)
+		}
+		return fmt.Errorf("the %s is a GUID such as 11111111-2222-3333-4444-555555555555", what)
+	}
+}
+
+var (
+	m365IDRe     = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+	m365DomainRe = regexp.MustCompile(`^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$`)
+)
+
+// M365On reports whether Microsoft 365's audit log is read: the tenant,
+// the app and its secret are set.
+func (c *Config) M365On() bool {
+	return c.M365.TenantID != "" && c.M365.ClientID != "" && c.M365.ClientSecret != ""
+}
+
+// m365Clouds are each Microsoft cloud's sign-in service and Management
+// Activity API.
+var m365Clouds = map[string][2]string{
+	"commercial": {"https://login.microsoftonline.com", "https://manage.office.com"},
+	"gcc":        {"https://login.microsoftonline.com", "https://manage-gcc.office.com"},
+	"gcc_high":   {"https://login.microsoftonline.us", "https://manage.office365.us"},
+	"dod":        {"https://login.microsoftonline.us", "https://manage.protection.apps.mil"},
+}
+
+func (c *Config) m365Cloud() [2]string {
+	if v, ok := m365Clouds[c.M365.Cloud]; ok {
+		return v
+	}
+	return m365Clouds["commercial"]
+}
+
+// M365TokenURL is where the app signs in for the tenant.
+func (c *Config) M365TokenURL() string {
+	return c.m365Cloud()[0] + "/" + url.PathEscape(c.M365.TenantID) + "/oauth2/v2.0/token"
+}
+
+// M365APIURL is the Management Activity API of the tenant's cloud.
+func (c *Config) M365APIURL() string { return c.m365Cloud()[1] }
 
 // DefaultNVDURL is the NVD's CVE API 2.0.
 const DefaultNVDURL = "https://services.nvd.nist.gov/rest/json/cves/2.0"

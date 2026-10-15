@@ -127,6 +127,9 @@ var cloudCategories = map[string][2]string{
 	"activitylogs":  {"azure", "rules/cloud/azure/activity_logs"},
 	"riskdetection": {"azure", "rules/cloud/azure/identity_protection"},
 	"pim":           {"azure", "rules/cloud/azure/privileged_identity_management"},
+	// Microsoft 365's rules are in a folder per service, all of them one
+	// audit log.
+	"m365": {"m365", "rules/cloud/m365"},
 }
 
 // networkCategories are the network log sources, and the folders their
@@ -239,7 +242,7 @@ func main() {
 			cases = sigmacheck.AuditdCases
 		}
 		files, _ := filepath.Glob(filepath.Join(*sigmaDir, src.dir, "*.yml"))
-		if cat == "security" || cat == "auditd" || cat == "system" || cat == "application" {
+		if cat == "security" || cat == "auditd" || cat == "system" || cat == "application" || cat == "m365" {
 			more, _ := filepath.Glob(filepath.Join(*sigmaDir, src.dir, "*", "*.yml"))
 			files = append(files, more...)
 		}
@@ -272,6 +275,9 @@ func main() {
 			}
 			if _, ok := cloudCategories[cat]; ok {
 				want["category"], want["service"] = "", cat
+			}
+			if cat == "m365" {
+				want["service"] = rule.Logsource["service"]
 			}
 			if cat == "code_integrity" {
 				want["category"], want["service"] = "", "codeintegrity-operational"

@@ -137,3 +137,57 @@ func TestOTLPCloudTrail(t *testing.T) {
 	docs = otlpDocs(t, tRes{recs: []tRec{{body: strings.ReplaceAll(cloudTrailCreateUser, "\n", "")}}})
 	expect(t, docs[0], map[string]any{"datamodel": "Change", "eventName": "CreateAccessKey", "requestParameters.userName": "backdoor"})
 }
+
+// A caller's own keys (tags, environment variables) can't use up the
+// day's field names, and the fields rules read are kept however many
+// names others used.
+func TestCloudTrailCallerKeys(t *testing.T) {
+	var b strings.Builder
+	b.WriteString(`{"eventVersion": "1.08", "eventSource": "lambda.amazonaws.com", "eventName": "TagResource", "requestParameters": {"resource": "arn:aws:lambda:f", "tags": {`)
+	for i := range 50 {
+		if i > 0 {
+			b.WriteString(",")
+		}
+		fmt.Fprintf(&b, `"t%03d": "v"`, i)
+	}
+	b.WriteString(`}, "environment": {"variables": {"SECRET_NAME": "x"}}}}`)
+	ev := Normalize(CloudTrailTag, decode(t, b.String()), now)
+	for k := range ev.Fields {
+		if strings.HasPrefix(k, "requestParameters.tags.") || strings.HasPrefix(k, "requestParameters.environment.") {
+			t.Errorf("caller's key became a field: %s", k)
+		}
+	}
+	if s, _ := ev.Fields["requestParameters.tags"].(string); !strings.Contains(s, `"t049":"v"`) {
+		t.Errorf("tags = %v", ev.Fields["requestParameters.tags"])
+	}
+
+	var budget fieldBudget
+	junk := map[string]any{}
+	for i := range maxNewNamesPerIndex {
+		junk[fmt.Sprintf("requestParameters.j%04d", i)] = "v"
+	}
+	for len(junk) > 0 {
+		chunk := map[string]any{}
+		for k, v := range junk {
+			chunk[k] = v
+			delete(junk, k)
+			if len(chunk) == maxFieldsPerEvent-10 {
+				break
+			}
+		}
+		budget.limit("change", "2026.10.15", "2026.10.15", chunk)
+	}
+	f := map[string]any{"requestParameters.attribute": "launchPermission", "responseElements.publiclyAccessible": true,
+		"properties.activityDisplayName": "Add member to role", "requestParameters.other": "x", "properties.status": "Succeeded"}
+	budget.limit("change", "2026.10.15", "2026.10.15", f)
+	if f["requestParameters.attribute"] == nil || f["responseElements.publiclyAccessible"] == nil || f["properties.activityDisplayName"] == nil {
+		t.Errorf("a rule's field was dropped: %v", f)
+	}
+	if f["requestParameters.other"] != nil {
+		t.Error("the budget was not used up")
+	}
+	// properties.status is an object (properties.status.errorCode).
+	if f["properties.status"] != nil {
+		t.Error("a value took the name of a mapped object")
+	}
+}

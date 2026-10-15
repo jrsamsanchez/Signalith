@@ -1,0 +1,6 @@
+{"rule": "6c220477-0b5b-4b25-bb90-66183b4089e8", "cases": [
+  {"expect":true,"source":"synthesized","channel":"o365","event_id":"audit","data":{"eventName":"Suspicious inbox forwarding","eventSource":"SecurityComplianceCenter","status":"success"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"audit","data":{"eventSource":"SecurityComplianceCenter","status":"success"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"audit","data":{"eventName":"Suspicious inbox forwarding","status":"success"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"audit","data":{"eventName":"Suspicious inbox forwarding","eventSource":"SecurityComplianceCenter"}}
+]}

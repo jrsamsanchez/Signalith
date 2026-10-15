@@ -68,6 +68,29 @@ var cloudTrailMapped = []string{
 	"userIdentity.type", "userIdentity.arn", "userIdentity.principalId", "userIdentity.accountId", "userIdentity.userName",
 }
 
+// cloudTrailLists are lists of objects in calls' parameters that rules
+// name fields inside (requestParameters.containerDefinitions.command). A
+// list is kept as JSON text under its own name, so a rule's field
+// inside one reads the list's text.
+var cloudTrailLists = []string{"requestParameters.containerDefinitions"}
+
+// CloudTrailList returns the list of objects a field name passes through
+// (cloudTrailLists), or "".
+func CloudTrailList(name string) string {
+	for _, l := range cloudTrailLists {
+		if strings.HasPrefix(name, l+".") {
+			return l
+		}
+	}
+	return ""
+}
+
+// cloudTrailCallerKeyed are the objects in a call's parameters and
+// response whose keys the caller chooses: tags, Lambda's and ECS's
+// environment, SSM's and CloudFormation's parameters, Glue's
+// defaultArguments.
+var cloudTrailCallerKeyed = map[string]bool{"tags": true, "parameters": true, "defaultarguments": true, "environment": true}
+
 // cloudTrailObjects are a record's objects whose fields are kept, each as
 // its own field (requestParameters.bucketName), as far as cloudTrailMaxLeaves.
 var cloudTrailObjects = []string{"requestParameters", "responseElements", "additionalEventData", "serviceEventDetails"}
@@ -243,6 +266,15 @@ func flattenCloudTrail(prefix string, v any, out map[string]any) {
 			name := k
 			if prefix != "" {
 				name = prefix + "." + k
+			}
+			if _, keyed := e.(map[string]any); keyed && prefix != "" && cloudTrailCallerKeyed[strings.ToLower(k)] {
+				// Its keys are the caller's own (a resource's tags, a
+				// function's environment variables): kept as one field of
+				// JSON text, so they can't use up the index's field names.
+				if b, err := json.Marshal(e); err == nil {
+					out[name] = CapValue(string(b))
+				}
+				continue
 			}
 			flattenCloudTrail(name, e, out)
 		}
@@ -439,7 +471,17 @@ func CloudTrailRecord(host string, t time.Time, data map[string]string) map[stri
 	for _, k := range keys {
 		parts := strings.Split(k, ".")
 		m := r
-		for _, p := range parts[:len(parts)-1] {
+		for i, p := range parts[:len(parts)-1] {
+			if list := strings.Join(parts[:i+1], "."); slices.Contains(cloudTrailLists, list) {
+				// A list of objects: the fields go in its first one.
+				l, _ := m[p].([]any)
+				if len(l) == 0 {
+					l = []any{map[string]any{}}
+					m[p] = l
+				}
+				m = l[0].(map[string]any)
+				continue
+			}
 			next, ok := m[p].(map[string]any)
 			if !ok {
 				next = map[string]any{}
