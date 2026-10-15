@@ -1264,6 +1264,14 @@ include: suricata.yaml
 vars.address-groups.HOME_NET: "[$networks]"
 sensor-name: $name
 EOF
+  if [ "$layout" = packages ]; then
+    # In a container, --user does this.
+    cat <<'EOF'
+run-as:
+  user: suricata
+  group: suricata
+EOF
+  fi
   cat <<EOF
 default-log-dir: $logdir
 default-rule-path: $rulesdir
@@ -1521,9 +1529,8 @@ UNIT
       cat <<'UNIT'
 # Written by the Signalith sensor install script (deploy/sensor/install.sh).
 # Suricata starts as root to open the capture port, then runs as the
-# suricata user (--user; run-as in the settings would also drop to it in
-# suricata-update's test, which then cannot write its test folder). Until
-# then it needs CAP_DAC_OVERRIDE and CAP_CHOWN (it opens its log, in a folder
+# suricata user (run-as in /etc/suricata/signalith-sensor.yaml). Until then
+# it needs CAP_DAC_OVERRIDE and CAP_CHOWN (it opens its log, in a folder
 # that is the suricata user's, and hands it over) and CAP_SETPCAP (to drop
 # the rest); it keeps only the capture rights after. It writes only its
 # logs and /var/lib/suricata; the rules, in
@@ -1538,7 +1545,7 @@ Requires=signalith-sensor-capture.service
 [Service]
 Type=simple
 ExecStartPre=+/bin/chown suricata:suricata /run/suricata
-ExecStart=suricata -c /etc/suricata/signalith-sensor.yaml --af-packet --user suricata --group suricata --pidfile /run/suricata/suricata.pid
+ExecStart=suricata -c /etc/suricata/signalith-sensor.yaml --af-packet --pidfile /run/suricata/suricata.pid
 ExecReload=/bin/kill -USR2 $MAINPID
 Restart=on-failure
 RestartSec=10
