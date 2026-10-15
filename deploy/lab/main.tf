@@ -18,16 +18,17 @@ locals {
   lb_ip  = "10.0.1.5"
   domain = "lab.internal"
 
+  # Sized to fit a new Hetzner account's limits (20 shared cores, 10
+  # public addresses): 9 machines, 20 cores, 9 addresses.
   all_machines = {
     "signalith-1"  = { role = "signalith", type = "cx23", ip = "10.0.1.11", minimal = true }
     "signalith-2"  = { role = "signalith", type = "cx23", ip = "10.0.1.12", minimal = false }
-    "opensearch-1" = { role = "opensearch", type = "cx33", ip = "10.0.1.21", minimal = true }
-    "opensearch-2" = { role = "opensearch", type = "cx33", ip = "10.0.1.22", minimal = false }
-    "opensearch-3" = { role = "opensearch", type = "cx33", ip = "10.0.1.23", minimal = false }
+    "opensearch-1" = { role = "opensearch", type = "cx23", ip = "10.0.1.21", minimal = true }
+    "opensearch-2" = { role = "opensearch", type = "cx23", ip = "10.0.1.22", minimal = false }
+    "opensearch-3" = { role = "opensearch", type = "cx23", ip = "10.0.1.23", minimal = false }
     "scanner"      = { role = "scanner", type = "cx33", ip = "10.0.1.31", minimal = false }
-    "sensor"       = { role = "sensor", type = "cx33", ip = "10.0.1.41", minimal = false }
+    "sensor"       = { role = "sensor", type = "cx23", ip = "10.0.1.41", minimal = false }
     "linux-1"      = { role = "linux", type = "cx23", ip = "10.0.1.51", minimal = true }
-    "linux-2"      = { role = "linux", type = "cx23", ip = "10.0.1.52", minimal = false }
   }
   linux_machines = { for k, v in local.all_machines : k => v if var.size == "full" || v.minimal }
   windows        = var.windows && var.size == "full"
@@ -146,7 +147,7 @@ resource "hcloud_server" "linux" {
 resource "hcloud_server" "windows" {
   count        = local.windows ? 1 : 0
   name         = "windows-1"
-  server_type  = "cx33"
+  server_type  = "cx23"
   image        = var.windows_image != "" ? var.windows_image : "ubuntu-24.04"
   location     = var.location
   ssh_keys     = [hcloud_ssh_key.you.id]

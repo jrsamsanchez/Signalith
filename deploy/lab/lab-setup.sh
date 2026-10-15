@@ -213,10 +213,10 @@ $DISCOVERY
 YML
 cat /root/opensearch-pki/add-to-opensearch.yml >>/etc/opensearch/opensearch.yml
 # Half the memory for the heap.
-heap=$(( $(awk '/MemTotal/ { print int($2 / 1024 / 1024 / 2) }' /proc/meminfo) ))
-[ "$heap" -ge 1 ] || heap=1
+heap=$(awk '/MemTotal/ { print int($2 / 1024 / 2) }' /proc/meminfo)
+[ "$heap" -ge 512 ] || heap=512
 mkdir -p /etc/opensearch/jvm.options.d
-printf -- '-Xms%sg\n-Xmx%sg\n' "$heap" "$heap" >/etc/opensearch/jvm.options.d/lab-heap.options
+printf -- '-Xms%sm\n-Xmx%sm\n' "$heap" "$heap" >/etc/opensearch/jvm.options.d/lab-heap.options
 sysctl -q -w vm.max_map_count=262144
 echo vm.max_map_count=262144 >/etc/sysctl.d/90-opensearch.conf
 rm -rf /root/opensearch-pki

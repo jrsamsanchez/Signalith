@@ -2,7 +2,7 @@
 # variable, never from a file in this folder.
 
 variable "size" {
-  description = "full: every machine (about $0.14 an hour). minimal: one Signalith server, one OpenSearch node and one Linux endpoint (about $0.03 an hour)."
+  description = "full: every machine (about $0.10 an hour). minimal: one Signalith server, one OpenSearch node and one Linux endpoint (about $0.03 an hour)."
   type        = string
   default     = "full"
   validation {

@@ -17,8 +17,8 @@ delete the lab when you are done, and build it again next time.
 
 | Lab | Machines | Per hour | Per month, if never deleted |
 | --- | --- | --- | --- |
-| `full` (the default) | 10 machines and a load balancer | about $0.14 | about $99 |
-| `minimal` | signalith-1, opensearch-1, linux-1 | about $0.03 | about $23 |
+| `full` (the default) | 9 machines and a load balancer | about $0.10 | about $74 |
+| `minimal` | signalith-1, opensearch-1, linux-1 | about $0.03 | about $21 |
 
 Prices from Hetzner's price list of 15 June 2026, in Nuremberg, Falkenstein or Helsinki
 (the cheaper CX machines are only offered there), before tax.
@@ -29,12 +29,16 @@ Prices from Hetzner's price list of 15 June 2026, in Nuremberg, Falkenstein or H
 | --- | --- | --- |
 | signalith-1 | 2 cores, 4 GB | The first Signalith server. It also runs the setup. |
 | signalith-2 | 2 cores, 4 GB | A second server, added with a join token |
-| opensearch-1, -2, -3 | 4 cores, 8 GB | OpenSearch 2.17, one cluster, with certificates of its own CA |
+| opensearch-1, -2, -3 | 2 cores, 4 GB | OpenSearch 2.17, one cluster, with certificates of its own CA |
 | scanner | 4 cores, 8 GB | A scanner-only server with Nmap and OpenVAS |
-| sensor | 4 cores, 8 GB | A network sensor with Zeek and Suricata |
-| linux-1, linux-2 | 2 cores, 4 GB | Ubuntu endpoints with Fluent Bit |
-| windows-1 | 4 cores, 8 GB | A machine you install Windows Server on (see [Windows](#windows)) |
+| sensor | 2 cores, 4 GB | A network sensor with Zeek and Suricata |
+| linux-1 | 2 cores, 4 GB | An Ubuntu endpoint with Fluent Bit |
+| windows-1 | 2 cores, 4 GB | A machine you install Windows Server on (see [Windows](#windows)) |
 | Load balancer | LB11 | In front of signalith-1 and -2 on the private network, with PROXY protocol |
+
+The sizes fit a new Hetzner account's first limits. The sensor gets less than the 4 cores
+and 8 GB its install script asks for, which is enough for the lab's little traffic (the
+script warns about it and carries on).
 
 The machines talk over a private network (`10.0.1.0/24`) and know each other by name
 (`signalith-1.lab.internal` and so on). Agents and the sensor send to
@@ -52,7 +56,8 @@ minutes, including `testmynids.org`, which Suricata's rules flag.
 
 - A Hetzner Cloud account, a project in it, and an API token with **Read & Write**
   (Console > your project > **Security** > **API tokens**). New accounts are limited in
-  how many servers and public IP addresses they can have (the full lab needs 10 of each);
+  how many servers and public IP addresses they can have (the full lab needs 9 servers, 9 addresses and 20 shared cores, which fits the
+  usual first limits of 20 cores and 10 addresses);
   if `terraform apply` stops with `Primary IP limit exceeded` or a server limit, ask
   Hetzner to raise it (Console > your name > **Limits**), then run `terraform apply` again.
 - [Terraform](https://developer.hashicorp.com/terraform/install) 1.5 or later. On Windows:
