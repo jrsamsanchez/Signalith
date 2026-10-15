@@ -1,0 +1,4 @@
+{"rule": "d443095b-a221-4957-a2c4-cd1756c9b747", "cases": [
+  {"expect":true,"source":"synthesized","channel":"zeek:http","event_id":"proxy","data":{"c-useragent":"QXBwbGVXZWJLaX"}},
+  {"expect":false,"source":"synthesized","channel":"zeek:http","event_id":"proxy","data":{}}
+]}

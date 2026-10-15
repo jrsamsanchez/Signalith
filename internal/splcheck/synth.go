@@ -304,6 +304,9 @@ func records(node string, ev map[string]string) []sigmacheck.Case {
 			m[k] = v
 		}
 	}
+	if IsSensorNode(node) {
+		return sensorRecords(node, ev)
+	}
 	switch node {
 	case AuditdNode:
 		return []sigmacheck.Case{auditdRecord(ev)}

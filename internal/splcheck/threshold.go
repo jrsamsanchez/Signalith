@@ -225,7 +225,7 @@ func (t *Threshold) Fields() []string {
 // clause, over node's fields.
 func tstatsThreshold(node, head, by string, limits []Limit) (*Threshold, error) {
 	field := func(f string) (string, error) {
-		name, ok := strings.CutPrefix(f, node+".")
+		name, ok := strings.CutPrefix(f, nodePrefix(node)+".")
 		if !ok || !slices.Contains(Nodes[node], name) && name != "dest" {
 			return "", fmt.Errorf("field %s has no Signalith mapping", f)
 		}

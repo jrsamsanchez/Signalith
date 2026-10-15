@@ -1,0 +1,4 @@
+{"rule": "c42a3073-30fb-48ae-8c99-c23ada84b103", "cases": [
+  {"expect":true,"source":"synthesized","channel":"zeek:http","event_id":"proxy","data":{"c-useragent":"masscan"}},
+  {"expect":false,"source":"synthesized","channel":"zeek:http","event_id":"proxy","data":{}}
+]}

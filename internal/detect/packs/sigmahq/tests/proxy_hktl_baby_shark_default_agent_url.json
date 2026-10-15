@@ -1,0 +1,4 @@
+{"rule": "304810ed-8853-437f-9e36-c4975c3dfd7e", "cases": [
+  {"expect":true,"source":"synthesized","channel":"zeek:http","event_id":"proxy","data":{"c-uri":"http://downloads.example.com/momyshark?key=","cs-host":"downloads.example.com"}},
+  {"expect":false,"source":"synthesized","channel":"zeek:http","event_id":"proxy","data":{}}
+]}

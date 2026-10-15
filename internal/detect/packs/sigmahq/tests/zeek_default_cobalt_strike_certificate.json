@@ -1,0 +1,4 @@
+{"rule": "7100f7e3-92ce-4584-b7b7-01b40d3d4118", "cases": [
+  {"expect":true,"source":"synthesized","channel":"zeek:x509","event_id":"","data":{"certificate.serial":"8BB00EE"}},
+  {"expect":false,"source":"synthesized","channel":"zeek:x509","event_id":"","data":{}}
+]}

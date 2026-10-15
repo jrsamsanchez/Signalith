@@ -381,6 +381,21 @@ func PackDetection(p *Pack, r PackRule, src []byte) (*Detection, error) {
 	if l := strings.ToLower(meta.Level); l == "low" || l == "informational" {
 		d.Risk.Only = true
 	}
+	if ncat := sigmaNetworkCategory(map[string]any{
+		"product": meta.Logsource.Product, "category": meta.Logsource.Category, "service": meta.Logsource.Service,
+	}); ncat != "" {
+		// A network rule: about the address that sent the traffic, not
+		// the sensor ($host$) that saw it.
+		d.Title = strings.TrimSpace(meta.Title) + " from $src$"
+		d.Throttle.Fields = packNetworkThrottle(ncat, q.Datamodel)
+		d.Risk.Objects = []RiskObject{{Field: "src", Type: "system"}, {Field: "user", Type: "user"}}
+		if ncat == zeekCategoryPrefix+"x509" {
+			// A certificate has no client or account: it is about the
+			// sensor that saw it.
+			d.Title = strings.TrimSpace(meta.Title) + " seen by $host$"
+			d.Risk.Objects = []RiskObject{{Field: "host", Type: "system"}}
+		}
+	}
 	tags := []string{"sigma", p.Name}
 	if meta.Logsource.Product != "" {
 		tags = append(tags, strings.ToLower(meta.Logsource.Product))

@@ -513,6 +513,10 @@ func ConvertSigmaWith(src []byte, opt SigmaOptions) (*SigmaResult, error) {
 			category = "auditd"
 		}
 	}
+	if category == "" {
+		// Zeek's own logs (product: zeek, service: dns, ...).
+		category = sigmaNetworkCategory(r.Logsource)
+	}
 	c := &sigmaConv{strict: opt.Strict, category: strings.ToLower(category)}
 	dm := c.datamodel(r.Logsource)
 	if c.category == "security" {
@@ -646,6 +650,9 @@ const windowsSourcetypes = "WinEventLog:*"
 // macOS rule away from Windows events, since data models such as Endpoint
 // hold events from every system and several kinds of event.
 func productScope(ls map[string]any, category string) query.Expr {
+	if scope := sigmaNetworkScope(category); scope != nil {
+		return scope
+	}
 	p, _ := ls["product"].(string)
 	switch strings.ToLower(p) {
 	case "windows":
@@ -682,6 +689,9 @@ func productScope(ls map[string]any, category string) query.Expr {
 
 func (c *sigmaConv) datamodel(ls map[string]any) string {
 	get := func(k string) string { s, _ := ls[k].(string); return strings.ToLower(s) }
+	if m, ok := sigmaNetworkModel(c.category); ok {
+		return m
+	}
 	switch c.category {
 	case "process_creation":
 		return "Endpoint"
@@ -743,6 +753,16 @@ func (c *sigmaConv) field(name string) string {
 	}
 	if c.category == "security_named" {
 		return c.channelField(ingest.SecurityChannel, name)
+	}
+	if f, ok := c.networkField(name); ok {
+		if f != "" {
+			return f
+		}
+		if _, isZeek := zeekLog(c.category); isZeek {
+			c.approx("field %s has no Signalith mapping in %s and is searched as-is", name, c.category)
+			return name
+		}
+		// A generic network category: fall through to the general names.
 	}
 	if c.category == "sysmon_file_block" {
 		if f, ok := sigmaEventFields["file_event"][strings.ToLower(name)]; ok {
