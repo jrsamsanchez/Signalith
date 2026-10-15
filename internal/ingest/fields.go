@@ -303,7 +303,7 @@ var knownFields = func() map[string]string {
 		"user_name": kw, "request_parameters": "wildcard", "response_elements": "wildcard",
 	}
 	// And the record's own fields, by CloudTrail's names.
-	for _, k := range cloudTrailFields {
+	for _, k := range cloudTrailMapped {
 		m[k] = kw
 	}
 	add := func(fs []datamodel.Field) {

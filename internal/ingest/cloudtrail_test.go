@@ -39,8 +39,8 @@ func TestCloudTrailChange(t *testing.T) {
 		t.Errorf("message = %v", ev.Fields["message"])
 	}
 	for k := range ev.Fields {
-		if !KnownField(k) && !strings.HasPrefix(k, "requestParameters.") && !strings.HasPrefix(k, "responseElements.") {
-			t.Errorf("field %s is not mapped in the index template", k)
+		if !KnownField(k) && !CloudTrailField(k) {
+			t.Errorf("field %s is neither mapped in the index template nor a CloudTrail field", k)
 		}
 	}
 }

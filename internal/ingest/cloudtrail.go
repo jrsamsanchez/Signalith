@@ -40,9 +40,8 @@ const CloudTrailChannel = "aws:cloudtrail"
 const cloudTrailMaxLeaves = 120
 
 // cloudTrailFields are the record's fields kept by name when set: its
-// top-level fields and its caller's identity. They are mapped in the index
-// template (see knownFields); the fields of a call's parameters and
-// response are not, and depend on the call.
+// top-level fields and its caller's identity. The fields of a call's
+// parameters and response depend on the call.
 var cloudTrailFields = []string{
 	"eventVersion", "eventSource", "eventName", "eventType", "eventCategory", "eventID", "awsRegion",
 	"sourceIPAddress", "userAgent", "errorCode", "errorMessage", "requestID", "recipientAccountId",
@@ -56,6 +55,17 @@ var cloudTrailFields = []string{
 	"userIdentity.sessionContext.sessionIssuer.principalId", "userIdentity.sessionContext.sessionIssuer.accountId",
 	"userIdentity.sessionContext.sessionIssuer.userName",
 	"tlsDetails.tlsVersion", "tlsDetails.cipherSuite", "tlsDetails.clientProvidedHostHeader",
+}
+
+// cloudTrailMapped are the fields of cloudTrailFields the index template
+// maps (see knownFields): what a CloudTrail search reads first, which an
+// event keeps even when its index's mapping is full. The rest are mapped
+// as they come, like any other name, so that they do not take room in
+// every index.
+var cloudTrailMapped = []string{
+	"eventSource", "eventName", "eventType", "eventID", "awsRegion", "sourceIPAddress", "userAgent",
+	"errorCode", "errorMessage", "recipientAccountId",
+	"userIdentity.type", "userIdentity.arn", "userIdentity.principalId", "userIdentity.accountId", "userIdentity.userName",
 }
 
 // cloudTrailObjects are a record's objects whose fields are kept, each as
