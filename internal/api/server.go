@@ -327,6 +327,7 @@ func (s *Server) Handler() http.Handler {
 	s.routeClusterUpgrade(api)
 	s.routeClusterOSIdentity(api)
 	s.routeClusterInstall(mux, api)
+	s.routeSensor(mux, api)
 	s.routeTokens(api)
 	s.routeAPITokens(api)
 	s.routeAgents(api)
@@ -967,25 +968,7 @@ func (s *Server) handleAgentConfig(w http.ResponseWriter, r *http.Request) {
 		EVEPath:           strings.TrimSpace(v.Get("eve_path")),
 		SuricataProtocols: v.Get("suricata_protocols") == "true",
 	}
-	if certs != nil {
-		// While a new certificate authority is prepared, agents get both,
-		// so they keep sending after the switch.
-		opts.CA = string(certs.AgentCAPEM())
-		opts.CAUnknown = opts.CA == "" && !certs.PublicCA()
-		opts.OwnCA = certs.LocalCA()
-		if leaf := certs.Leaf(); leaf != nil {
-			opts.CertNames = leaf.DNSNames
-		}
-		// The pins name the CAs the agent gets: the current one, and the
-		// next one too while a switch is prepared, so the Endpoints page
-		// still counts the agent as fine after the switch.
-		if opts.CA != "" {
-			opts.CAPin = agentinv.Pin(certs.Fingerprint())
-			if next := certs.Next(); next != nil && certs.LocalCA() {
-				opts.NextCAPin = agentinv.Pin(next.Fingerprint)
-			}
-		}
-	}
+	agentTLS(&opts, certs)
 	a, err := agents.Generate(opts)
 	if errors.Is(err, agents.ErrNoNameToCheck) {
 		fieldError(err)
@@ -1008,6 +991,31 @@ func (s *Server) handleAgentConfig(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// agentTLS fills in how an agent checks the server's certificate, made
+// by certs (nil when Signalith does not serve HTTPS itself).
+func agentTLS(opts *agents.Options, certs *tlsauto.Manager) {
+	if certs == nil {
+		return
+	}
+	// While a new certificate authority is prepared, agents get both,
+	// so they keep sending after the switch.
+	opts.CA = string(certs.AgentCAPEM())
+	opts.CAUnknown = opts.CA == "" && !certs.PublicCA()
+	opts.OwnCA = certs.LocalCA()
+	if leaf := certs.Leaf(); leaf != nil {
+		opts.CertNames = leaf.DNSNames
+	}
+	// The pins name the CAs the agent gets: the current one, and the
+	// next one too while a switch is prepared, so the Endpoints page
+	// still counts the agent as fine after the switch.
+	if opts.CA != "" {
+		opts.CAPin = agentinv.Pin(certs.Fingerprint())
+		if next := certs.Next(); next != nil && certs.LocalCA() {
+			opts.NextCAPin = agentinv.Pin(next.Fingerprint)
+		}
+	}
 }
 
 // agentConfig is the answer to GET api/agents/config. AddName is the

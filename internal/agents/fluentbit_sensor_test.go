@@ -161,3 +161,66 @@ func TestGenerateSensorLeavesOtherSourcesAlone(t *testing.T) {
 		}
 	}
 }
+
+// A sensor the install script builds: its own folders, the status line,
+// the token read from the unit's environment, the name --name gave, and
+// no steps (the script is the steps).
+func TestGenerateSensorLayouts(t *testing.T) {
+	for _, c := range []struct {
+		layout                           string
+		ca, buffer, db, zeek, eve, state string
+		path                             string
+	}{
+		{SensorPackages, "/etc/signalith-sensor/ca.pem", "/var/lib/signalith-sensor/agent/buffer", "/var/lib/signalith-sensor/agent/signalith-zeek.db",
+			"/opt/zeek/logs/current/*.log", "/var/log/suricata/signalith/eve.json", "/var/log/signalith-sensor/status.json", "/etc/signalith-sensor/fluent-bit.conf"},
+		{SensorDocker, "/config/ca.pem", "/buffer/signalith-buffer", "/buffer/signalith-zeek.db",
+			"/logs/zeek/current/*.log", "/logs/suricata/eve.json", "/logs/status/status.json", "/etc/signalith-sensor/docker/fluent-bit.conf"},
+	} {
+		a, err := Generate(Options{OS: "linux", LinuxSource: "sensor", SensorLayout: c.layout, Heartbeat: true, Zeek: true, Suricata: true,
+			ServerURL: "https://siem.example.com:8080", Token: EnvToken, CA: "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range []string{
+			line("storage.path", c.buffer), line("DB", c.db), line("Path", c.zeek), line("Path", c.eve),
+			line("Tag", SensorStatusTag) + line("Path", c.state), line("tls.ca_file", c.ca),
+			line("Header", "Authorization Bearer ${SIGNALITH_TOKEN}"),
+			line("Match", "sensor.*") + line("Record", "hostname ${HOSTNAME}"),
+			line("Match", "zeek.*") + line("Record", "hostname ${HOSTNAME}"),
+			line("storage.total_limit_size", "4G"),
+		} {
+			if !strings.Contains(a.Config, want) {
+				t.Errorf("%s: config missing %q:\n%s", c.layout, want, a.Config)
+			}
+		}
+		if strings.Contains(a.Config, "sysinfo") || strings.Contains(a.Config, "/var/lib/fluent-bit") {
+			t.Errorf("%s: config has the existing box's layout:\n%s", c.layout, a.Config)
+		}
+		if a.Steps != nil || a.ConfigStep != 0 || a.CAStep != 0 || a.ConfigPath != c.path || a.CAPath != c.ca {
+			t.Errorf("%s: steps %v, config %q, ca %q", c.layout, a.Steps, a.ConfigPath, a.CAPath)
+		}
+	}
+
+	// Without the heartbeat, no status input; the existing box's layout
+	// is unchanged.
+	a := sensorConfig(t, Options{Zeek: true, Suricata: true})
+	if strings.Contains(a.Config, "sensor.status") || strings.Contains(a.Config, "record_modifier") || !strings.Contains(a.Config, line("storage.path", "/var/lib/fluent-bit/signalith-buffer")) {
+		t.Errorf("existing box:\n%s", a.Config)
+	}
+
+	if _, err := Generate(Options{OS: "linux", LinuxSource: "sensor", SensorLayout: "rpm", Zeek: true, ServerURL: "https://siem.example.com", Token: "t"}); err == nil {
+		t.Error("an unknown layout was accepted")
+	}
+}
+
+// The only variable a token may be is ${SIGNALITH_TOKEN}: any other $
+// would have Fluent Bit read another variable into the header.
+func TestGenerateEnvToken(t *testing.T) {
+	for tok, ok := range map[string]bool{EnvToken: true, "sgl_abc": true, TokenPlaceholder: true,
+		"${HOME}": false, "$SIGNALITH_TOKEN": false, "a${SIGNALITH_TOKEN}": false, "sgl_a b": false, "sgl_a\nHeader x": false} {
+		_, err := Generate(Options{OS: "linux", LinuxSource: "sensor", Zeek: true, ServerURL: "https://siem.example.com", Token: tok})
+		if (err == nil) != ok {
+			t.Errorf("%q: %v", tok, err)
+		}
+	}
+}

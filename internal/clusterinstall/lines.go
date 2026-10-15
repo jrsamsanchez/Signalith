@@ -48,15 +48,25 @@ var (
 // an image and downloads on GitHub (not a development build).
 func Released(v string) bool { return releaseText.MatchString(v) }
 
-// check refuses anything that would need quoting in a shell or
-// PowerShell, since it is pasted into one.
-func (l Line) check() error {
-	u, err := url.Parse(l.URL)
+// checkURL refuses a server address that is not https://host:port, or
+// that holds anything that would need quoting in a shell or PowerShell,
+// since it is pasted into one.
+func checkURL(raw string) error {
+	u, err := url.Parse(raw)
 	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" {
 		return errors.New("the server's address must be https://host:port")
 	}
-	if strings.ContainsAny(l.URL, "'\"` $;&|<>\\") {
+	if strings.ContainsAny(raw, "'\"` $;&|<>\\") {
 		return errors.New("the server's address has characters a pasted line cannot carry")
+	}
+	return nil
+}
+
+// check refuses anything that would need quoting in a shell or
+// PowerShell, since it is pasted into one.
+func (l Line) check() error {
+	if err := checkURL(l.URL); err != nil {
+		return err
 	}
 	if !tokenText.MatchString(l.Token) {
 		return errors.New("not a join token")
