@@ -377,6 +377,9 @@ upgraded), when a server is offline, and when an older server does not say how f
 applied the shared settings. It suggests which server to upgrade next: the ones that
 do not run the jobs first, then the one that does, so the jobs move once, to the new
 version.
+The Servers page shows the same check as a checklist, **Upgrade the servers**, with
+Drain, Upgrade, Ready and Resume for each server (see
+[Upgrading servers you set up by hand](servers.md#upgrading-servers-you-set-up-by-hand)).
 
 | Exit code | Meaning |
 | --- | --- |
@@ -574,3 +577,45 @@ same. OpenSearch hears of it through the revocation list (see
 
 `opensearch-ca crl` prints that revocation list, or writes it to the file `-o` names, to
 copy to OpenSearch nodes that no Signalith server keeps it for.
+
+## export --to-files
+
+```
+signalith cluster export --to-files <dir> [-c file] [-server s]
+signalith cluster export -retire [--to-files <dir>] [-c file] [-yes]
+```
+
+`export --to-files` writes the shared settings as the files a server on its own keeps,
+for going back to a version from before the cluster's level rose (see
+[Going back to the previous version](servers.md#going-back-to-the-previous-version)).
+`<dir>` must be a new or empty folder outside this server's folders. It holds:
+
+- the feeds (`intel_feeds.yaml`, the feeds of signalith.yaml included) and their status
+  (`intel_feeds.json`), the retention policies (`retention.yaml`) and history
+  (`retention_history.json`), the users (`users.json`, with their password hashes),
+  the directory sign-in settings (`directory.json`), the settings of the Settings page
+  (`settings.yaml`: the shared ones and this server's own, or those of the server
+  `-server` names), the detections and their state, the dashboards, the asset and
+  identity lists, and the cluster's certificate authority (`ca.pem` and `ca.key` in the
+  state folder's `tls` folder);
+- each laid out as on this server (`config/`, `state/`, `detections/`, `dashboards/`),
+  with `MANIFEST.json`, which lists every file and where it goes, and `README.txt`,
+  with the commands that copy them on Linux, Windows and Docker.
+
+Passwords and keys are sealed again with this server's master key, as its own files
+keep them, so an export is for the server it ran on: run it on each server. One that
+cannot be opened with this server's cluster keys is left out, and the log says which.
+Not written, and listed as skipped in `MANIFEST.json`: the archive manifests (they are
+files in the archive folder already), API tokens, join tokens, the reports of servers
+that joined with `-merge`, the keyring, sign-in sessions and OpenSearch's certificate
+authority. The built-in admin stays as signalith.yaml and `signalith passwd` set it.
+
+`-retire` runs with every server stopped: it watches the heartbeats first and refuses
+while any server runs, and this server must be stopped too. On the first server it
+needs `--to-files`: it writes the files, copies the `<prefix>_config` index into
+`<prefix>_config_retired_<UTC time>`, checks that the copy holds as many documents,
+and deletes `<prefix>_config`. On every server it moves this server's copy of the
+shared settings (`cache.enc`) and its cluster keys into `retired-<UTC time>` in the
+state folder; `node.id` and `node.key` stay. On the other servers, run it without
+`--to-files`. It asks first unless `-yes` is given. The retired copy is kept, so going
+forward again is possible. Both are audited.
