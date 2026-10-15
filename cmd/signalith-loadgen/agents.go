@@ -228,11 +228,13 @@ func (f *Fleet) deliver(a *simAgent, b *agentBatch) {
 			f.m.Add("agent_events_undelivered", b.events())
 			return
 		}
+		target := a.target
 		status, ans, err := f.send(a, b)
 		switch {
 		case err == nil && status/100 == 2:
 			stored := b.events() - int64(ans.Rejected)
 			f.stored.Add(stored)
+			f.m.Add(targetCounter(target), stored)
 			f.m.Add("agent_events_stored", stored)
 			if ans.Rejected > 0 {
 				f.rejected.Add(int64(ans.Rejected))
@@ -313,6 +315,10 @@ func (f *Fleet) Close() {
 	f.mu.Unlock()
 	f.wg.Wait()
 }
+
+// targetCounter names the counter of events the target with this index
+// said it stored, for ingest_share_min.
+func targetCounter(i int) string { return "agent_events_stored_target_" + strconv.Itoa(i+1) }
 
 // Acked is every agent's stored sequence numbers, by agent.
 func (f *Fleet) Acked() map[int][]seqRange {

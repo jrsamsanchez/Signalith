@@ -159,6 +159,8 @@
     if ((a.tag || '').startsWith('win')) return { os: 'windows', label: 'Windows' };
     // Agents made from the Antivirus option need its ClamAV configuration.
     if ((a.tag || '').startsWith('linux.clamav')) return { os: 'antivirus', label: 'Antivirus (ClamAV)' };
+    // Fluent Bit on a network sensor, sending Zeek's or Suricata's logs.
+    if (/^(zeek|suricata)(\.|$)/.test(a.tag || '')) return { os: 'sensor', label: 'Network sensor' };
     if ((a.tag || '').startsWith('linux') || a.tag === 'wazuh') return { os: a.tag === 'wazuh' ? 'wazuh' : 'linux', label: a.tag === 'wazuh' ? 'Wazuh manager' : 'Linux' };
     return { os: '', label: '' };
   }

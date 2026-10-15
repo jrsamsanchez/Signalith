@@ -191,6 +191,8 @@ type serverOptions struct {
 	yaml string
 	// opensearch is the OpenSearch address in place of the harness's.
 	opensearch string
+	// env is added to the server's environment.
+	env []string
 }
 
 // add makes a server's folder and config, without starting it.
@@ -293,7 +295,7 @@ func (s *testServer) env() []string {
 	if !s.opts.noKey {
 		env = append(env, "SIGNALITH_CLUSTER_KEY_FILE="+s.h.keyFile)
 	}
-	return env
+	return append(env, s.opts.env...)
 }
 
 // httpsClient is a client that trusts the certificate authority in the

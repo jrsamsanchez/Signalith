@@ -1,0 +1,39 @@
+# OpenSearch settings for each node of the three-node cluster in
+# docker-compose.opensearch3.yml. It is opensearch.yml with the settings a
+# cluster needs; NODE_NAME and NODE_CERT come from each node's environment.
+
+cluster.name: docker-cluster
+network.host: 0.0.0.0
+node.name: ${NODE_NAME}
+
+# The nodes find each other by these names. All three are eligible to be
+# cluster manager, and OpenSearch needs a majority of them (two) to work,
+# so any one node can stop.
+discovery.seed_hosts: ["opensearch", "opensearch-2", "opensearch-3"]
+# Read only the very first time the cluster starts, with no data yet.
+cluster.initial_cluster_manager_nodes: ["opensearch", "opensearch-2", "opensearch-3"]
+
+# Do not depend on the host's vm.max_map_count, which Docker Desktop
+# resets on every restart.
+node.store.allow_mmap: false
+
+# Each node has its own certificate from Signalith's OpenSearch CA, made by
+# the setup service with -nodes 3: node.pem for the first node, node-2.pem
+# and node-3.pem for the others.
+plugins.security.ssl.transport.pemcert_filepath: certs/${NODE_CERT}.pem
+plugins.security.ssl.transport.pemkey_filepath: certs/${NODE_CERT}-key.pem
+plugins.security.ssl.transport.pemtrustedcas_filepath: certs/root-ca.pem
+plugins.security.ssl.transport.enforce_hostname_verification: false
+plugins.security.ssl.transport.enabled_protocols: ["TLSv1.3", "TLSv1.2"]
+plugins.security.ssl.http.enabled: true
+plugins.security.ssl.http.pemcert_filepath: certs/${NODE_CERT}.pem
+plugins.security.ssl.http.pemkey_filepath: certs/${NODE_CERT}-key.pem
+plugins.security.ssl.http.pemtrustedcas_filepath: certs/root-ca.pem
+plugins.security.ssl.http.clientauth_mode: OPTIONAL
+plugins.security.ssl.http.enabled_protocols: ["TLSv1.3", "TLSv1.2"]
+plugins.security.authcz.admin_dn: ["CN=signalith-admin,O=Signalith"]
+# Every node's certificate name: a node whose name is not here cannot join.
+plugins.security.nodes_dn: ["CN=opensearch,O=Signalith", "CN=opensearch-2,O=Signalith", "CN=opensearch-3,O=Signalith"]
+plugins.security.allow_default_init_securityindex: true
+plugins.security.allow_unsafe_democertificates: false
+plugins.security.audit.type: noop

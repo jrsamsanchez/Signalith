@@ -70,7 +70,8 @@ func LookupImporters(d *Docs, f Files) []shared.Importer {
 // server reads it. Only a file that changed since this server last saw
 // it is uploaded, so a stale assets.csv left on one server never reverts
 // another server's upload, and the files a server has when it starts to
-// share the lists are only its starting point.
+// share the lists are only its starting point, as are the files of a
+// new folder when the lookups folder is changed in the settings.
 
 // LookupsSeenFileName is the record of the lists' files, in the state
 // folder.
@@ -95,8 +96,10 @@ type ListInbox struct {
 
 	mu   sync.Mutex
 	seen map[string]string
-	kick chan struct{}
-	kmu  sync.Mutex
+	// seenDir is the folder the files were last seen in.
+	seenDir string
+	kick    chan struct{}
+	kmu     sync.Mutex
 }
 
 // Kick asks for a look at the folder and the shared lists soon.
@@ -147,6 +150,13 @@ func (in *ListInbox) Sync(ctx context.Context) error {
 		return err
 	}
 	dir := dirOf(in.Files.LookupsDir)
+	if !baseline && in.seenDir != "" && in.seenDir != dir {
+		// The folder was changed in the settings: a stale list in the new
+		// one is a starting point, and the shared list is written back.
+		in.Files.log().Warn("the lookups folder changed; the files in it are a starting point and the shared lists are written back into it", "was", in.seenDir, "now", dir)
+		baseline = true
+	}
+	in.seenDir = dir
 	writable := in.Lookups.Writable == nil || in.Lookups.Writable() == nil
 	var errs []error
 	for _, kind := range LookupNames {
@@ -219,16 +229,18 @@ func (in *ListInbox) loadSeen() (bool, error) {
 	}
 	var s struct {
 		Files map[string]string `json:"files"`
+		Dir   string            `json:"dir"`
 	}
 	if json.Unmarshal(data, &s) != nil || s.Files == nil {
 		return true, nil
 	}
 	in.seen = s.Files
+	in.seenDir = s.Dir
 	return false, nil
 }
 
 func (in *ListInbox) saveSeen() error {
-	data, err := json.MarshalIndent(map[string]any{"version": 1, "files": in.seen}, "", "  ")
+	data, err := json.MarshalIndent(map[string]any{"version": 1, "files": in.seen, "dir": in.seenDir}, "", "  ")
 	if err != nil {
 		return err
 	}

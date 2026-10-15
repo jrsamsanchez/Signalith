@@ -34,6 +34,9 @@ var movingWhat = map[string]string{
 	clustercfg.ImportRetention: "retention policies",
 	shared.ImportUsers:         "users",
 	shared.ImportDirectory:     "directory sign-in settings",
+	shared.ImportDetections:    "detections",
+	shared.ImportDashboards:    "dashboards",
+	shared.ImportLookups:       "asset and identity lists",
 }
 
 // importHold is the hold of one importer's files.

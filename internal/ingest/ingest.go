@@ -37,6 +37,11 @@ type Event struct {
 	// whose batches mix devices. It is recorded in the event's
 	// signalith_* fields.
 	Origin Origin
+	// ID is the event's document ID, "" to let the request's position
+	// (IngestBody) or OpenSearch pick one. Parsers set it when the raw
+	// line identifies the event (network sensors, see sensorDocID), so the
+	// same line sent again, even in another batch, is stored once.
+	ID string
 }
 
 // DefaultMaxEventAge is how old an event's own time may be and still be
@@ -351,8 +356,8 @@ func (p *Pipeline) write(ctx context.Context, events []Event, ids []string) (*Re
 			ev.Fields["dropped_fields"] = int64(n)
 			res.FieldsDropped += n
 		}
-		doc := store.IndexedDoc{Index: index, Doc: ev.Document()}
-		if i < len(ids) {
+		doc := store.IndexedDoc{Index: index, Doc: ev.Document(), ID: ev.ID}
+		if doc.ID == "" && i < len(ids) {
 			doc.ID = ids[i]
 		}
 		docs = append(docs, doc)
@@ -607,6 +612,10 @@ func Normalize(tag string, r map[string]any, now time.Time) Event {
 	switch {
 	case isWazuhTag(tag) || IsWazuhAlert(r):
 		ev = parseWazuhRecord(r)
+	case isZeekTag(tag) || (!isSuricataTag(tag) && IsZeekRecord(r)):
+		ev = parseZeekRecord(tag, r)
+	case isSuricataTag(tag) || IsSuricataEVE(r):
+		ev = parseSuricataRecord(r)
 	case isWindowsRecord(tag, r):
 		ev = parseWindows(r)
 	case strings.HasPrefix(tag, "linux.clamav"):

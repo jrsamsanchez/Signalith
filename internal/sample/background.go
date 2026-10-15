@@ -61,8 +61,8 @@ var benignDomains = []string{
 }
 
 // background fills the six-day window with normal sign-ins, process starts,
-// network connections, firewall traffic, DNS, antivirus definition updates
-// and a little OT traffic, with
+// network connections, firewall traffic, DNS, antivirus definition updates,
+// what the network sensor sees and a little OT traffic, with
 // a working-hours and weekday rhythm. Nothing here fires a detection.
 func (g *gen) background() {
 	it := g.intensity()
@@ -126,6 +126,7 @@ func (g *gen) background() {
 			}
 		}
 		g.otTraffic(day)
+		g.networkBackground(day)
 
 		// Firewall allowed and blocked traffic (CEF) and DNS lookups.
 		for k := 0; k < it.fwPerDay; k++ {

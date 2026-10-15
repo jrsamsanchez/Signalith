@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("host\n\"0\r\r\n0\"")

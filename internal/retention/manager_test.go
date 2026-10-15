@@ -515,7 +515,7 @@ func TestOverview(t *testing.T) {
 		cats[c.ID] = c
 	}
 	// No "other" events yet, so that row is left out.
-	if !slices.Equal(ids, []string{"authentication", "endpoint", "network_traffic", "change", "malware", "filesystem", "registry", "network_resolution", "web", "image_load", "script", "inventory", "configuration_check", "alerts", "vulnerabilities", "risk", Findings, Cases, Intel}) {
+	if !slices.Equal(ids, []string{"authentication", "endpoint", "network_traffic", "change", "malware", "filesystem", "registry", "network_resolution", "intrusion_detection", "web", "certificates", "file_transfers", "image_load", "script", "inventory", "configuration_check", "alerts", "vulnerabilities", "risk", Findings, Cases, Intel}) {
 		t.Errorf("categories = %v", ids)
 	}
 	ep := cats["endpoint"]

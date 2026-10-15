@@ -356,8 +356,16 @@ func (s *Server) runtimeFacts(now time.Time, inContainer bool) *security.Runtime
 		rt.SyslogNATed = plain > 0 && natted == plain
 	}
 	rt.LegacyProxies = s.legacyProxies.since(since)
-	if s.Cluster != nil && len(s.Cluster.Status().Servers) > 1 {
-		rt.ClusterServer = s.serverName()
+	if s.Cluster != nil {
+		servers := s.Cluster.Status().Servers
+		if len(servers) > 1 {
+			rt.ClusterServer = s.serverName()
+		}
+		for _, sv := range servers {
+			if sv.Self && sv.Detail != nil && sv.Detail.OSIdentity != nil && sv.Detail.OSIdentity.CRL != nil {
+				rt.CRLProblem = sv.Detail.OSIdentity.CRL.Problem
+			}
+		}
 	}
 	return rt
 }
@@ -490,7 +498,9 @@ func (s *Server) handleSecurityCA(w http.ResponseWriter, r *http.Request) {
 		case tlsauto.ScopeStandard, tlsauto.ScopeStrict:
 			if scope != s.conf().Server.CAScope() {
 				if status, err := s.saveSetting(r, "server.tls.ca_scope", scope); err != nil {
-					writeError(w, status, err)
+					if !sharedError(w, err) {
+						writeError(w, status, err)
+					}
 					return
 				}
 			}
@@ -559,6 +569,21 @@ func (s *Server) saveSetting(r *http.Request, key string, value any) (int, error
 	if s.Config.Path() == "" {
 		return http.StatusConflict, errNoConfigFile
 	}
+	if s.settingsShared() {
+		return s.saveSettingShared(r, key, value)
+	}
+	if s.Settings != nil {
+		// As on the Settings page (handlePutSettings): a save made while
+		// this server's own settings move into the shared settings waits
+		// for the move, and goes to the shared settings once they are
+		// there, rather than to a settings.yaml no longer read.
+		moved, release := s.Settings.HoldFile()
+		if moved {
+			release()
+			return s.saveSettingShared(r, key, value)
+		}
+		defer release()
+	}
 	s.settingsMu.Lock()
 	defer s.settingsMu.Unlock()
 	pages := s.pages()
@@ -594,6 +619,70 @@ func (s *Server) saveSetting(r *http.Request, key string, value any) (int, error
 	}
 	s.audit(r, "settings saved", "changes", describeChanges(res), "applied_now", strings.Join(applied, ","),
 		"after_restart", strings.Join(restart, ","), "file", res.Config.SettingsFile())
+	return http.StatusOK, nil
+}
+
+// saveSettingShared saves one of this server's own settings, or a shared
+// one, to the shared settings the way the Settings page does
+// (handlePutSharedSettings), audited as a settings change, and puts it
+// into use when it applies at once.
+func (s *Server) saveSettingShared(r *http.Request, key string, value any) (int, error) {
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	s.settingsMu.Lock()
+	defer s.settingsMu.Unlock()
+	saved, sh, _, err := s.savedShared(ctx)
+	if err != nil {
+		return http.StatusInternalServerError, err
+	}
+	scope := config.ScopeOf(key)
+	edit := config.Edit{Values: map[string]any{key: value}, By: userOf(r), At: time.Now()}
+	if scope != config.ScopeBootstrap {
+		if err := s.Settings.Writable(); err != nil {
+			return http.StatusServiceUnavailable, err
+		}
+	}
+	res, err := config.CheckEditShared(s.Config.Path(), sh, scope, edit)
+	switch {
+	case errors.Is(err, config.ErrPageFile):
+		return http.StatusConflict, errors.New("Nothing was saved, because the settings file cannot be read. Fix it on the server, or start a new one.")
+	case err != nil:
+		return http.StatusInternalServerError, err
+	}
+	if len(res.Fields) > 0 || len(res.Problems) > 0 {
+		var why []string
+		for _, p := range res.Fields {
+			why = append(why, p)
+		}
+		why = append(why, res.Problems...)
+		sort.Strings(why)
+		return http.StatusBadRequest, errors.New("Nothing was saved: " + strings.Join(why, " "))
+	}
+	if len(res.Touched) == 0 && res.Page == nil {
+		return http.StatusOK, nil
+	}
+	if scope == config.ScopeBootstrap {
+		err = s.pages().Write(res.Page)
+	} else {
+		_, err = s.Settings.Save(ctx, userOf(r), s.Settings.Self(), sh, res, nil)
+	}
+	if err != nil {
+		// The caller answers a change paused or moving (sharedError).
+		return http.StatusInternalServerError, err
+	}
+	var applied, restart []string
+	if after, _, _, err := s.savedShared(ctx); err == nil && after.Problems == nil {
+		applied = s.applyLive(saved.Config, after.Config)
+		running := s.conf()
+		for _, k := range res.Changed {
+			if !slices.Contains(applied, k) && !config.SameValue(running, after.Config, k) {
+				restart = append(restart, k)
+			}
+		}
+	}
+	self, _ := s.serverNamed("")
+	s.audit(r, "settings saved", "scope", string(scope), "server", self.Name, "changes", describeChanges(&res.EditResult),
+		"applied_now", strings.Join(applied, ","), "after_restart", strings.Join(restart, ","))
 	return http.StatusOK, nil
 }
 

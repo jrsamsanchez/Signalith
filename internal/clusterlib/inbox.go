@@ -6,8 +6,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
+	"maps"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -31,7 +34,11 @@ import (
 // reverts a change made on another; the files a server has when it
 // starts to share the library are only its starting point. A file
 // removed from the folder removes the shared item only when Mirror says
-// so (detections.sync: mirror).
+// so (detections.sync: mirror). A folder that is missing or cannot be
+// read is not taken for an empty one: nothing is pushed until it is
+// back. When a folder is changed in the settings, what the new one holds
+// is a starting point too, as the record names files by ID and not by
+// folder.
 
 // SeenFileName is the inbox's record of the files, in the state folder.
 const SeenFileName = "library-seen.json"
@@ -60,6 +67,8 @@ type Inbox struct {
 type seenFile struct {
 	Version int                   `json:"version"`
 	Files   map[string]*seenEntry `json:"files"`
+	// Dirs is the folder the files of each area were read from.
+	Dirs map[string]string `json:"dirs,omitempty"`
 }
 
 // seenEntry is what the inbox last saw of one file: its hash, and
@@ -137,10 +146,22 @@ func (in *Inbox) Sync(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	files, err := in.scan()
+	dirs := in.dirs()
+	// A record of other folders says nothing of these: the folders were
+	// changed in the settings, and what the new ones hold is a starting
+	// point, not the removal of every file of the old ones. A record
+	// written before the folders were kept in it takes them as they are.
+	moved := !baseline && seen.Dirs != nil && !maps.Equal(seen.Dirs, dirs)
+	files, err := in.scan(seen, baseline || moved)
 	if err != nil {
 		return err
 	}
+	if moved {
+		in.Files.log().Warn("the detections or dashboards folder changed; the files in it are a starting point and the shared library is written back into it", "was", seen.Dirs, "now", dirs)
+		seen.Files = map[string]*seenEntry{}
+		baseline = true
+	}
+	seen.Dirs = dirs
 	var errs []error
 	if baseline {
 		// What a server has when it starts to share the library is its
@@ -197,10 +218,25 @@ func (in *Inbox) saveSeen(s *seenFile) error {
 	return securefile.WriteFile(in.SeenFile, data)
 }
 
-// scan reads the files of the folders.
-func (in *Inbox) scan() (map[string]*file, error) {
+// dirs returns the folders in use now, by area.
+func (in *Inbox) dirs() map[string]string {
+	return map[string]string{areaDetections: dirOf(in.Files.DetectionsDir), areaDashboards: dirOf(in.Files.DashboardsDir)}
+}
+
+// scan reads the files of the folders. A folder that cannot be read
+// fails the scan, and so does a missing one the record holds files of
+// (unless fresh: the record is started again), as taking it for empty
+// would remove them all with Mirror.
+func (in *Inbox) scan(seen *seenFile, fresh bool) (map[string]*file, error) {
 	out := map[string]*file{}
-	add := func(name string, paths []string) error {
+	add := func(name, dir string) error {
+		paths, err := readYAMLDir(dir)
+		if errors.Is(err, fs.ErrNotExist) && (fresh || !recorded(seen, name)) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("the folder %s cannot be read, so nothing is pushed from it: %w", dir, err)
+		}
 		for _, p := range paths {
 			data, err := os.ReadFile(p)
 			if errors.Is(err, fs.ErrNotExist) {
@@ -214,19 +250,46 @@ func (in *Inbox) scan() (map[string]*file, error) {
 		return nil
 	}
 	if dir := dirOf(in.Files.DetectionsDir); dir != "" {
-		if err := add(areaDetections, yamlFiles(dir)); err != nil {
+		if err := add(areaDetections, dir); err != nil {
 			return nil, err
 		}
-		if err := add(areaDetections+"/"+detect.StateDir, yamlFiles(filepath.Join(dir, detect.StateDir))); err != nil {
+		if err := add(areaDetections+"/"+detect.StateDir, filepath.Join(dir, detect.StateDir)); err != nil {
 			return nil, err
 		}
 	}
 	if dir := dirOf(in.Files.DashboardsDir); dir != "" {
-		if err := add(areaDashboards, yamlFiles(dir)); err != nil {
+		if err := add(areaDashboards, dir); err != nil {
 			return nil, err
 		}
 	}
 	return out, nil
+}
+
+// readYAMLDir lists the *.yaml files in dir, sorted, and fails when dir
+// cannot be read.
+func readYAMLDir(dir string) ([]string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".yaml") {
+			out = append(out, filepath.Join(dir, e.Name()))
+		}
+	}
+	return out, nil
+}
+
+// recorded reports whether the record holds a file of the folder area
+// (detections, detections/state or dashboards).
+func recorded(seen *seenFile, area string) bool {
+	for name := range seen.Files {
+		if path.Dir(name) == area {
+			return true
+		}
+	}
+	return false
 }
 
 // kindOf says what a file of the record holds: a detection, a state or
@@ -458,14 +521,19 @@ func (in *Inbox) wanted() map[string]want {
 	return out
 }
 
-// pathOf returns where the file of the record name is.
-func (in *Inbox) pathOf(name string) string {
+// pathOf returns where the file of the record name is, and refuses a
+// name that is not a file under its folder.
+func (in *Inbox) pathOf(name string) (string, error) {
 	area, rest, _ := strings.Cut(name, "/")
 	dir := dirOf(in.Files.DetectionsDir)
 	if area == areaDashboards {
 		dir = dirOf(in.Files.DashboardsDir)
 	}
-	return filepath.Join(dir, filepath.FromSlash(rest))
+	p := filepath.Join(dir, filepath.FromSlash(rest))
+	if rel, err := filepath.Rel(dir, p); dir == "" || err != nil || rel == "." || !filepath.IsLocal(rel) {
+		return "", fmt.Errorf("the file %q is not under the folder %s", name, dir)
+	}
+	return p, nil
 }
 
 // writeBack writes the shared library into the folders: a file that is
@@ -486,7 +554,11 @@ func (in *Inbox) writeBack(seen *seenFile, files map[string]*file) error {
 			// Changed here, and not pushed yet.
 			continue
 		}
-		p := in.pathOf(name)
+		p, err := in.pathOf(name)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
 		if err := os.MkdirAll(filepath.Dir(p), 0o750); err != nil {
 			errs = append(errs, err)
 			continue

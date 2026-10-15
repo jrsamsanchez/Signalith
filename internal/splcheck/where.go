@@ -157,6 +157,9 @@ func lex(s string, macros map[string]*Macro, depth int) ([]token, error) {
 		case c == '=':
 			out = append(out, token{'o', "="})
 			i++
+		case c == '!':
+			// Not a word either: the loop below would never move on.
+			return nil, errors.New(`"!" without "=" is not supported`)
 		case c == '<' || c == '>':
 			return nil, errors.New("comparisons with < or > are not supported")
 		default:

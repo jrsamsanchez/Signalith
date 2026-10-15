@@ -75,7 +75,7 @@ the job if not.
 
 - **A fictional organisation:** about 50 users and 40 hosts: finance, IT and
   operations workstations, a few Linux servers (web, app, database, jump host),
-  two domain controllers and a file server.
+  two domain controllers, a file server and a network sensor (`nsm-01`).
 - **A week of background activity** with a working-hours and weekday rhythm:
   sign-ins, process starts, network connections, firewall traffic and DNS
   lookups: ordinary noise for the attacks to hide in, plus a benign look-alike
@@ -85,6 +85,15 @@ the job if not.
   inside the attack stories, a trojan outbreak, failing updates and an EICAR
   test, plus one Trend Micro Apex One detection sent over syslog (standard size
   only). They fill the Malware dashboard; see [antivirus.md](antivirus.md).
+- **Network sensor events:** the sensor `nsm-01` runs Zeek and Suricata (see
+  [network-sensor.md](network-sensor.md)). Its lines go through the same parsers as
+  a real sensor's: every day, workstations browse sites over TLS, check for
+  updates over plain HTTP, use the file server and the domain controllers, and look
+  up a few names that do not exist, and Suricata raises a few low and medium alerts
+  with made-up rules (SIDs 9100001 and up). Zeek's packet loss and Suricata's
+  statistics arrive every hour. In the phishing story the sensor sees the implant
+  being downloaded and its beacon to the C2 (below). They fill the Network
+  dashboard.
 - **An OT flavour:** an engineering workstation, two HMIs and three PLCs, with
   the HMIs polling the PLCs over Modbus (TCP 502) and writing to a historian.
   It is all normal; no detection targets OT, it just shows the plant floor in
@@ -98,8 +107,8 @@ the job if not.
   practise on.
 
 Two sizes load the same attacks; only the volume of background activity
-differs. **Standard** is a full week, about 27,000 events. **Small** keeps two
-days of light background, a few hundred events in all.
+differs. **Standard** is a full week, about 34,000 events. **Small** keeps two
+days of light background, about 1,000 events in all.
 
 ## A guided tour of the attacks
 
@@ -114,7 +123,7 @@ counts toward the risk findings below. The table keeps them apart.
 | Story | What happens | Raises findings | Adds risk only |
 | --- | --- | --- | --- |
 | **SSH brute force from the internet** | An external host (`203.0.113.45`) password-sprays SSH on the database server `db-01`, breaks the account `bob.okafor`, logs in as root and reads `/etc/shadow`, then drops a miner that ClamAV quarantines. | auth-brute-force, auth-password-spray, auth-brute-force-success, auth-shadow-file-access, threat-activity, malware-detected | auth-ssh-root-login, auth-sudo-failures |
-| **Phishing to credential theft and C2** | A finance workstation (`ws-fin-07`, Alice Nguyen) looks up a look-alike sign-in site, opens a malicious invoice that launches encoded PowerShell, downloads a tool with `certutil`, dumps credentials with Mimikatz, turns off Defender’s real-time protection, runs discovery, installs persistence and beacons to a C2 that is in the sample intel. | endpoint-office-child-shell, endpoint-encoded-powershell, endpoint-credential-dumping, threat-activity, malware-detected and malware-not-removed (Defender finds Mimikatz but can’t remove it), av-protection-disabled, av-rule-block (on `ws-fin-02`, where the same invoice is opened, attack surface reduction stops Word starting PowerShell) | endpoint-lolbin-download, endpoint-discovery-burst, endpoint-scheduled-task, endpoint-service-created, network-shell-port |
+| **Phishing to credential theft and C2** | A finance workstation (`ws-fin-07`, Alice Nguyen) looks up a look-alike sign-in site, opens a malicious invoice that launches encoded PowerShell, downloads a tool with `certutil`, dumps credentials with Mimikatz, turns off Defender’s real-time protection, runs discovery, installs persistence and beacons to a C2 that is in the sample intel. The network sensor sees the download over plain HTTP (the file's hash is in the sample intel) and the beacon, TLS with a self-signed certificate every ten minutes for an hour, and Suricata raises a high alert on each. | endpoint-office-child-shell, ids-alert-high, endpoint-encoded-powershell, endpoint-credential-dumping, threat-activity, malware-detected and malware-not-removed (Defender finds Mimikatz but can’t remove it), av-protection-disabled, av-rule-block (on `ws-fin-02`, where the same invoice is opened, attack surface reduction stops Word starting PowerShell) | endpoint-lolbin-download, endpoint-discovery-burst, endpoint-scheduled-task, endpoint-service-created, network-shell-port |
 | **Hidden admin account on the domain controller** | On `dc-01` the attacker creates `svc-helpdesk` and adds it to Domain Admins, then deletes a stale contractor account. | change-admin-group-add | change-account-created |
 | **Ransomware preparation on the file server** | Using the stolen domain-admin account, the attacker reaches `file-01` over SMB, tries to turn off Defender’s real-time protection (tamper protection blocks it), adds an antivirus exclusion for `C:\ProgramData\SyncSvc`, and deletes the volume shadow copies and recovery configuration. Defender quarantines the first copy of the ransomware; the exclusion lets the second copy run, and controlled folder access stops it changing the finance share. | endpoint-shadow-copy-delete, av-tamper-blocked, av-exclusion-added, malware-ransomware, av-rule-block | |
 | **Trojan spreads from a file share** | A fake “payroll update” (`Trojan:Win32/Fakepay.A`) on `\\file-01\public` is opened on four operations workstations within a quarter of an hour. Defender quarantines it on `ws-ops-01`, `ws-ops-03` and `ws-ops-04`, but fails to on `ws-ops-05`. | malware-detected, malware-outbreak, malware-not-removed | |
@@ -127,7 +136,7 @@ The risk that builds up then raises two more findings on its own:
 - **risk-threshold-exceeded**: a user or host passed the risk threshold;
 - **risk-multiple-tactics**: risk from several ATT&CK tactics on one entity.
 
-So 33 of the 35 built-in detections fire from the sample, all of them on.
+So 34 of the 36 built-in detections fire from the sample, all of them on.
 Each detection adds its risk once per thing it found, so the totals on the
 Risk page and the dashboards are the same every time you load.
 

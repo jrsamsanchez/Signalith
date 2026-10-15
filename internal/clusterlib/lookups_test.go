@@ -212,3 +212,24 @@ func TestLookupImporterIsIdempotent(t *testing.T) {
 		t.Fatal("identities not imported")
 	}
 }
+
+func TestListInboxNewFolderIsAStartingPoint(t *testing.T) {
+	_, a, b := pair(t)
+	if _, err := a.lists.SetIf(ctx, "alice", assets.KindAssets, assetsCSV("web1"), ""); err != nil {
+		t.Fatal(err)
+	}
+	b.cycle()
+	if err := b.listInbox().Sync(ctx); err != nil {
+		t.Fatal(err)
+	}
+	// lookups.dir now names another folder, with a stale assets.csv.
+	b.lkDir = filepath.Join(t.TempDir(), "lookups")
+	writeFile(t, filepath.Join(b.lkDir, assets.AssetsFile), assetsCSV("stale"))
+	if err := b.listInbox().Sync(ctx); err != nil {
+		t.Fatal(err)
+	}
+	a.cycle()
+	if h := a.lk.Head(assets.KindAssets); h.From.Node != "siem-a" {
+		t.Fatalf("the stale file in the new folder was uploaded: %+v", h.From)
+	}
+}

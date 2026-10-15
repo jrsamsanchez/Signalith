@@ -86,13 +86,19 @@
       return;
     }
     const servers = (rep && rep.servers) || [];
+    // OpenSearch refuses every certificate while the revocation list it
+    // checks is missing or expired, so that comes first, whatever else.
+    const crlAlerts = servers.filter((s) => live(s) && s.identity && s.identity.crl && s.identity.crl.problem)
+      .map((s) => alertBox('danger', 'OpenSearch’s revocation list on ' + s.name + ' needs attention', el('p', {}, s.identity.crl.problem)));
     // A server of its own, with nothing handed over, has nothing to show.
     if (!rep || rep.alone || (!rep.ca && servers.length < 2)) {
-      box.replaceChildren();
+      if (rep && crlAlerts.length) fill(box, card('OpenSearch sign-in', 'OpenSearch checks client certificates against a revocation list.', [el('div', { class: 'ca-alerts' }, ...crlAlerts)]));
+      else box.replaceChildren();
       return;
     }
     if (!rep.ca) {
       fill(box, card('OpenSearch sign-in', 'These servers share one OpenSearch credential.', [
+        crlAlerts.length ? el('div', { class: 'ca-alerts' }, ...crlAlerts) : null,
         el('p', { class: 'ca-text' }, 'Removing a server means changing that credential on every other one. When Signalith made OpenSearch’s certificates, hand their certificate authority to the cluster, and each server gets a certificate of its own that it renews itself:'),
         cmd(COMPOSE + ' run --rm setup bootstrap-docker -export-ca-key'),
         el('p', { class: 'ca-muted' }, 'Without Docker: signalith cluster opensearch-ca import /path/to/ca/root-ca-key.pem on any server.'),
@@ -103,7 +109,7 @@
     const up = servers.filter(live);
     const sharedLeft = up.filter((s) => s.identity && s.identity.shared);
     const own = up.filter((s) => s.identity && s.identity.managed);
-    const alerts = [];
+    const alerts = crlAlerts.slice();
     for (const s of up) {
       const id = s.identity;
       if (id && id.problem) alerts.push(alertBox('warning', s.name + ' keeps its current OpenSearch sign-in for now', el('p', {}, id.problem)));
@@ -111,7 +117,7 @@
         alerts.push(alertBox('warning', s.name + '’s OpenSearch certificate expires on ' + dayText(id.not_after), el('p', {}, 'It should have renewed it by now. Its log says why not.')));
       }
     }
-    if (sharedLeft.length && !alerts.length) {
+    if (sharedLeft.length && alerts.length === crlAlerts.length) {
       alerts.push(alertBox('info', listWords(sharedLeft.map((s) => s.name)) + (sharedLeft.length === 1 ? ' still signs' : ' still sign') + ' in with a shared credential',
         el('p', {}, 'A server that signs in with the shared certificate switches to its own within a minute. One that signs in with a password, or a certificate from another certificate authority, keeps it.')));
     }
@@ -132,10 +138,21 @@
     fill(box, card('OpenSearch sign-in', `${own.length} of ${up.length} running ${up.length === 1 ? 'server signs' : 'servers sign'} in with a certificate of ${up.length === 1 ? 'its' : 'their'} own.`, [
       el('dl', { class: 'ca-facts' },
         el('div', { class: 'ca-fact' }, el('dt', {}, 'Certificate authority'), el('dd', {}, el('span', { class: 'mono ca-fp', title: ca.ca_sha256 }, short(ca.ca_sha256)), ' · OpenSearch’s, kept by the cluster')),
-        el('div', { class: 'ca-fact' }, el('dt', {}, 'Handed over'), el('dd', {}, `by ${ca.imported_by}${ca.imported_on ? ' on ' + ca.imported_on : ''}, ${dayText(ca.imported_at)}`))),
+        el('div', { class: 'ca-fact' }, el('dt', {}, 'Handed over'), el('dd', {}, `by ${ca.imported_by}${ca.imported_on ? ' on ' + ca.imported_on : ''}, ${dayText(ca.imported_at)}`)),
+        el('div', { class: 'ca-fact' }, el('dt', {}, 'Revoked'), el('dd', {}, revokedText(ca, up)))),
       alerts.length ? el('div', { class: 'ca-alerts' }, ...alerts) : null,
       el('ul', { class: 'ca-list osid-list', role: 'list' }, ...rows),
     ]));
+  }
+
+  // revokedText says how many certificates are revoked, and whether
+  // OpenSearch hears of it at once.
+  function revokedText(ca, up) {
+    const n = ca.revoked || 0;
+    const lists = up.filter((s) => s.identity && s.identity.crl).length;
+    const count = n === 0 ? 'No certificate' : n + (n === 1 ? ' certificate' : ' certificates');
+    if (!lists) return count + ' · no server keeps a revocation list for OpenSearch, so a removed server keeps its access until its certificate expires';
+    return count + ' · OpenSearch hears of a revocation at once';
   }
 
   function card(title, sub, body) {
@@ -159,6 +176,8 @@
     const kids = [el('p', { class: 'sv-panel__text' }, who(id) + '.')];
     if (id.not_after) kids.push(el('p', { class: 'sv-panel__text' }, (id.managed ? 'It renews it itself; this one is valid until ' : 'Valid until ') + dayText(id.not_after) + '.'));
     if (id.problem) kids.push(el('p', { class: 'sv-panel__text sv-warn' }, id.problem));
+    if (id.crl) kids.push(el('p', { class: 'sv-panel__text' + (id.crl.problem ? ' sv-warn' : '') },
+      id.crl.problem || 'Keeps OpenSearch’s revocation list, ' + id.crl.file + (id.crl.revoked ? ', which names ' + id.crl.revoked + (id.crl.revoked === 1 ? ' certificate.' : ' certificates.') : '.')));
     return part('OpenSearch sign-in', ...kids);
   });
 })();

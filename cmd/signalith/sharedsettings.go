@@ -609,13 +609,36 @@ func (rr *remoteRestart) end(res *api.RestartResult) {
 // restart under way to end before it fails.
 var restartWait = 5 * time.Minute
 
-// serverHandlers run the requests that name this server.
+// serverHandlers run the requests that name this server. A new feature
+// with requests of its own for one server appends its handlers to the
+// list, each with its own request types.
 func (r *runner) serverHandlers() map[string]shared.Handler {
-	return map[string]shared.Handler{
-		clustercfg.RequestRestart:       r.handleRestartRequest,
-		clustercfg.RequestSettingsCheck: r.handleSettingsCheck,
-		clustertls.RequestPublish:       r.sharedContent.tls.handler(r.sharedContent.cfg.Load, r.node.Name(), r.log),
+	return mergeHandlers(
+		map[string]shared.Handler{
+			clustercfg.RequestRestart:       r.handleRestartRequest,
+			clustercfg.RequestSettingsCheck: r.handleSettingsCheck,
+			clustertls.RequestPublish:       r.sharedContent.tls.handler(r.sharedContent.cfg.Load, r.node.Name(), r.log),
+		},
+		// Drain and resume (clusterlifecycle.go).
+		r.lifecycleServerHandlers(),
+		// Append a new feature's handlers here.
+	)
+}
+
+// mergeHandlers puts lists of request handlers together. Two features
+// naming one request type would leave one of them silently unrun, so
+// that panics.
+func mergeHandlers(lists ...map[string]shared.Handler) map[string]shared.Handler {
+	out := map[string]shared.Handler{}
+	for _, hs := range lists {
+		for k := range hs {
+			if _, dup := out[k]; dup {
+				panic("shared request type " + k + " has two handlers")
+			}
+		}
+		maps.Copy(out, hs)
 	}
+	return out
 }
 
 // handleRestartRequest restarts this server as part of a restart request,

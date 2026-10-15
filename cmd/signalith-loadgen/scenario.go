@@ -62,10 +62,20 @@ type Scenario struct {
 	Drain Duration `yaml:"drain"`
 	// Settle is how long verify waits for stored counts to stop
 	// changing; default 1m.
-	Settle   Duration    `yaml:"settle"`
-	Phases   []Phase     `yaml:"phases"`
-	Faults   []Fault     `yaml:"faults"`
+	Settle Duration `yaml:"settle"`
+	Phases []Phase  `yaml:"phases"`
+	Faults []Fault  `yaml:"faults"`
+	// Checks are commands run once the load has ended; each one that
+	// exits non-zero counts toward check_failures.
+	Checks   []Check     `yaml:"checks"`
 	Criteria []Criterion `yaml:"criteria"`
+}
+
+// Check is a command run after the phases, for what only the lab can
+// look at, such as who wrote the files on an archive share.
+type Check struct {
+	Name string `yaml:"name"`
+	Cmd  string `yaml:"cmd"`
 }
 
 // SyslogTargets are the syslog listeners by protocol.
@@ -90,11 +100,14 @@ type Credentials struct {
 // OpenSearch is where verify and the request counts read from. It is
 // only ever read.
 type OpenSearch struct {
-	URL      string `yaml:"url"`
-	CA       string `yaml:"ca"`
-	Cert     string `yaml:"cert"`
-	Key      string `yaml:"key"`
-	UserFile string `yaml:"user_file"`
+	URL string `yaml:"url"`
+	// URLs are further nodes of the same OpenSearch, tried in turn when
+	// the one in use does not answer (a node is stopped on purpose in S9).
+	URLs     []string `yaml:"urls"`
+	CA       string   `yaml:"ca"`
+	Cert     string   `yaml:"cert"`
+	Key      string   `yaml:"key"`
+	UserFile string   `yaml:"user_file"`
 	// Prefix is the servers' opensearch.index_prefix; default signalith.
 	Prefix string `yaml:"index_prefix"`
 }
@@ -196,9 +209,12 @@ type CookieFlood struct {
 type Fault struct {
 	// At is from the start of the first phase.
 	At Duration `yaml:"at"`
-	// Kind is kill9, stop, cut_opensearch, clock, fill_disk or cmd.
+	// Kind is kill9, stop, cut_opensearch, clock, fill_disk, cmd or
+	// upgrade. An upgrade takes every server in turn, as the upgrade
+	// check says (upgradeAll), and runs Cmd for each.
 	Kind string `yaml:"kind"`
-	// Target is leader, standby, or a server name.
+	// Target is leader, standby, windows (a Windows server), or a
+	// server name. An upgrade has none: it takes every server.
 	Target string `yaml:"target"`
 	// For, when set, runs Undo that long after Cmd.
 	For Duration `yaml:"for"`
@@ -206,6 +222,13 @@ type Fault struct {
 	// name.
 	Cmd  string `yaml:"cmd"`
 	Undo string `yaml:"undo"`
+	// WindowsCmd and WindowsUndo replace Cmd and Undo when the target
+	// is a Windows server, which needs other commands to stop.
+	WindowsCmd  string `yaml:"windows_cmd"`
+	WindowsUndo string `yaml:"windows_undo"`
+	// Version is the version an upgrade installs; when empty, any version
+	// other than the one a server ran before counts.
+	Version string `yaml:"version"`
 }
 
 // Criterion is one pass condition. With neither Max nor Min the value is
@@ -218,37 +241,55 @@ type Criterion struct {
 	Phase string `yaml:"phase"`
 	// Baseline is the phase compared against, for os_ops_per_random_cookie.
 	Baseline string `yaml:"baseline"`
+	// MinByServers is the minimum by the number of servers in the run,
+	// for ingest_scaling: {2: 1.7, 3: 2.4}.
+	MinByServers map[int]float64 `yaml:"min_by_servers"`
 }
 
 // criteria are the criterion names a scenario may use, and what each
 // measures.
 var criteria = map[string]string{
-	"events_lost":                  "events the agents had stored (2xx) that are not in OpenSearch",
-	"events_duplicated":            "events stored more than once",
-	"events_undelivered":           "events still unsent when the run ended",
-	"ingest_error_rate":            "share of agent requests answered other than 2xx",
-	"ingest_p99_ms":                "99th percentile agent request time",
-	"syslog_send_errors":           "syslog messages that could not be written",
-	"page_p95_ms":                  "95th percentile page request time for users",
-	"search_p95_ms":                "95th percentile search time for users",
-	"write_p95_ms":                 "95th percentile triage write time for users",
-	"unexpected_signouts":          "users sent back to sign in mid-session",
-	"write_conflicts":              "triage writes refused as busy (409)",
-	"takeover_seconds":             "time until another server ran the jobs after a fault",
-	"leaders_at_once":              "most servers that ran the jobs at the same moment",
-	"os_ops_per_server_per_second": "OpenSearch operations per second, per server",
-	"os_ops_per_random_cookie":     "OpenSearch operations caused by each made-up session cookie",
-	"brute_checked_per_account":    "most wrong passwords one account had checked (not refused early)",
-	"brute_lockouts":               "sign-ins refused by the limits (429)",
-	"settings_converge_seconds":    "longest time until every server used a changed setting",
-	"generator_lag_ms":             "how far the load generator fell behind its own schedule",
+	"events_lost":                    "events the agents had stored (2xx) that are not in OpenSearch",
+	"events_duplicated":              "events stored more than once",
+	"events_undelivered":             "events still unsent when the run ended",
+	"ingest_error_rate":              "share of agent requests answered other than 2xx",
+	"ingest_p99_ms":                  "99th percentile agent request time",
+	"syslog_send_errors":             "syslog messages that could not be written",
+	"page_p95_ms":                    "95th percentile page request time for users",
+	"search_p95_ms":                  "95th percentile search time for users",
+	"write_p95_ms":                   "95th percentile triage write time for users",
+	"unexpected_signouts":            "users sent back to sign in mid-session",
+	"write_conflicts":                "triage writes refused as busy (409)",
+	"takeover_seconds":               "time until another server ran the jobs after a fault",
+	"leaders_at_once":                "most servers that ran the jobs at the same moment",
+	"os_ops_per_server_per_second":   "OpenSearch operations per second, per server",
+	"os_ops_per_random_cookie":       "OpenSearch operations caused by each made-up session cookie",
+	"brute_checked_per_account":      "most wrong passwords one account had checked (not refused early)",
+	"brute_lockouts":                 "sign-ins refused by the limits (429)",
+	"settings_converge_seconds":      "longest time until every server used a changed setting",
+	"generator_lag_ms":               "how far the load generator fell behind its own schedule",
+	"ingest_events_per_second":       "events the servers said they stored, per second",
+	"ingest_scaling":                 "events per second stored, divided by the baseline run's (-baseline)",
+	"ingest_share_min":               "smallest share of stored events one target took, times the number of targets (1 is even)",
+	"servers_ready":                  "servers ready at the end of the run",
+	"windows_servers_ready":          "Windows servers ready at the end of the run",
+	"windows_led_seconds":            "seconds a Windows server ran the jobs",
+	"opensearch_red_samples":         "samples in which the servers' OpenSearch indices were red",
+	"opensearch_unreachable_samples": "samples in which no OpenSearch node answered",
+	"server_cpu_cores":               "CPU cores the busiest server used, on average over the phase",
+	"server_memory_mb":               "largest resident memory of any server",
+	"check_failures":                 "checks (commands run after the load) that failed",
+	"servers_not_upgraded":           "servers an upgrade fault did not bring to the new version",
+	"upgrade_server_seconds":         "longest time one server took to upgrade, from drain to resumed",
+	"jobs_moves":                     "times the background jobs moved to another server",
+	"page_reloads_per_user":          "most times one user's open page reloaded because a server of another version answered",
 }
 
 // clusterOnly are criteria that need several servers; against one server
 // they are skipped, never failed.
-var clusterOnly = map[string]bool{"takeover_seconds": true, "leaders_at_once": true}
+var clusterOnly = map[string]bool{"takeover_seconds": true, "leaders_at_once": true, "windows_led_seconds": true, "jobs_moves": true}
 
-var faultKinds = []string{"kill9", "stop", "cut_opensearch", "clock", "fill_disk", "cmd"}
+var faultKinds = []string{"kill9", "stop", "cut_opensearch", "clock", "fill_disk", "cmd", "upgrade"}
 
 // signalFaults need Unix signals, so they are skipped on Windows.
 var signalFaults = map[string]bool{"kill9": true, "stop": true}
@@ -353,6 +394,12 @@ func (s *Scenario) validate() error {
 		if f.Target == "" && (f.Kind == "kill9" || f.Kind == "stop") {
 			bad("%s: target is required", where)
 		}
+		if f.Kind == "upgrade" && (f.Target != "" || f.For > 0 || f.Undo != "" || f.WindowsUndo != "") {
+			bad("%s: an upgrade takes every server in turn, so it has no target, for or undo", where)
+		}
+		if f.Version != "" && f.Kind != "upgrade" {
+			bad("%s: version is for an upgrade", where)
+		}
 		if f.At.D() >= total && total > 0 {
 			bad("%s: at %s is after the last phase ends (%s)", where, f.At.D(), total)
 		}
@@ -370,6 +417,19 @@ func (s *Scenario) validate() error {
 		}
 		if c.Name == "os_ops_per_random_cookie" && (c.Phase == "" || c.Baseline == "") {
 			bad("%s: os_ops_per_random_cookie needs phase and baseline", where)
+		}
+		if len(c.MinByServers) > 0 && c.Name != "ingest_scaling" {
+			bad("%s: min_by_servers is only for ingest_scaling", where)
+		}
+		for n := range c.MinByServers {
+			if n < 1 {
+				bad("%s: min_by_servers: %d is not a number of servers", where, n)
+			}
+		}
+	}
+	for i, ch := range s.Checks {
+		if ch.Name == "" || ch.Cmd == "" {
+			bad("check %d: name and cmd are required", i+1)
 		}
 	}
 	for i, st := range s.Seed {

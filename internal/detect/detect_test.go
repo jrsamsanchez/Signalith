@@ -23,8 +23,8 @@ func TestBuiltinsCompile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(ds) != 35 {
-		t.Fatalf("%d built-in detections, want 35", len(ds))
+	if len(ds) != 36 {
+		t.Fatalf("%d built-in detections, want 36", len(ds))
 	}
 	eng := &search.Engine{Intel: intel.NewStore(intel.NewMemory())}
 	for _, d := range ds {
@@ -36,9 +36,12 @@ func TestBuiltinsCompile(t *testing.T) {
 		if _, err := eng.Compile(q); err != nil {
 			t.Errorf("%s: compile: %v", d.ID, err)
 		}
-		// Risk incidents, intel matches and exposures a vulnerability scan
-		// found (such as an open Telnet port) need not name a technique.
-		if len(d.MITRE) == 0 && !slices.Contains(d.Tags, "risk-incident") && !slices.Contains(d.Tags, "threat-intel") && !slices.Contains(d.Tags, "vulnerability") {
+		// Risk incidents, intel matches, exposures a vulnerability scan
+		// found (such as an open Telnet port) and IDS alerts (each rule
+		// names its own technique, in the event's mitre field) need not
+		// name a technique.
+		if len(d.MITRE) == 0 && !slices.Contains(d.Tags, "risk-incident") && !slices.Contains(d.Tags, "threat-intel") && !slices.Contains(d.Tags, "vulnerability") &&
+			!slices.Contains(d.Tags, "intrusion-detection") {
 			t.Errorf("%s has no ATT&CK mapping", d.ID)
 		}
 		// A transforming query only returns the columns it names, so
@@ -412,6 +415,20 @@ func TestConvertSigmaUnsupported(t *testing.T) {
 	}
 	if !strings.Contains(res.Detection.Query, "signature_id=4625") || !strings.Contains(res.Detection.Query, `"*bad stuff*"`) {
 		t.Errorf("query = %s", res.Detection.Query)
+	}
+}
+
+// A Sigma field searched as-is must be one word of the query language:
+// FuzzConvertSigma found "a b" stored as the term a and the field b.
+func TestConvertSigmaFieldNameNotAWord(t *testing.T) {
+	for _, field := range []string{"a b", `a"b`, "a=b", "AND", "a(b)"} {
+		rule := "title: x\ndetection:\n  sel:\n    '" + field + "': 1\n  condition: sel\n"
+		if res, err := ConvertSigma([]byte(rule)); err == nil {
+			t.Errorf("field %q converted to %s", field, res.Detection.Query)
+		}
+	}
+	if _, err := ConvertSigma([]byte("title: x\ndetection:\n  sel:\n    My_Field-1.x: 1\n  condition: sel\n")); err != nil {
+		t.Errorf("a one-word field: %v", err)
 	}
 }
 

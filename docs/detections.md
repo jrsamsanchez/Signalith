@@ -235,6 +235,20 @@ vulnerability again raises it again only after seven days.
 To see everything a scan found on a host, search
 `datamodel=Vulnerabilities dest=<host>`.
 
+## Network detections
+
+Network data from a [network sensor](network-sensor.md) (Zeek, Suricata) lights up
+these built-in detections:
+
+| ID | Severity | Fires when |
+| --- | --- | --- |
+| `ids-alert-high` | high | A network IDS such as Suricata raised a high or critical alert (Zeek notices are medium, so they do not count). One finding per signature, source and destination an hour, with risk on both hosts. On by default |
+| `threat-activity` | high | An address, domain, URL or file hash the sensor saw is in your threat intel |
+
+`network-shell-port` and `network-remote-admin-port` are about the process that made
+a connection, which only host data (Sysmon) has, so they leave sensor data alone. If
+one IDS rule is noisy on your network, add an exception on its `signature_id`.
+
 ## What a finding contains
 
 The result row, the entities found in it (`user`, `src_user`, `src`, `src_host`,

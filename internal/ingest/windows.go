@@ -1268,23 +1268,36 @@ var multiLine = map[string]bool{"CommandLine": true, "ParentCommandLine": true, 
 func keyValues(msg string) map[string]string {
 	out := map[string]string{}
 	cont := "" // the multi-line key being continued
+	// The continued value is built here, not by adding to the string
+	// line by line, which takes time quadratic in its length.
+	var b strings.Builder
+	end := func() {
+		if cont != "" {
+			out[cont] = b.String()
+			cont = ""
+		}
+	}
 	for _, raw := range strings.Split(msg, "\n") {
 		line := strings.TrimSpace(raw)
 		k, v, ok := strings.Cut(line, ":")
 		isKey := ok && k != "" && !strings.ContainsAny(k, " \t") && (v == "" || v[0] == ' ' || v[0] == '\t')
 		if !isKey {
 			if cont != "" {
-				out[cont] += "\n" + strings.TrimRight(raw, "\r")
+				b.WriteString("\n")
+				b.WriteString(strings.TrimRight(raw, "\r"))
 			}
 			continue
 		}
-		cont = ""
+		end()
 		if _, exists := out[k]; !exists {
 			out[k] = strings.TrimSpace(v)
 			if multiLine[k] {
 				cont = k
+				b.Reset()
+				b.WriteString(out[k])
 			}
 		}
 	}
+	end()
 	return out
 }

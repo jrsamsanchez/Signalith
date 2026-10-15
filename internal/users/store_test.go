@@ -209,3 +209,31 @@ func TestHoldRefusesChanges(t *testing.T) {
 		t.Errorf("directory: %v", err)
 	}
 }
+
+// The changes the directory recheck makes to a directory user are held
+// like the changes made on the Users page.
+func TestHoldRefusesDirectoryChanges(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "users.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if _, err := s.SeeDirectoryUser(ctx, DirectoryUser{Username: "bob", Role: Viewer}); err != nil {
+		t.Fatal(err)
+	}
+	refused := errors.New("moving")
+	held := 0
+	s.Hold = func() (func(), error) {
+		held++
+		return nil, refused
+	}
+	if _, _, err := s.RefreshDirectoryUser(ctx, "bob", DirectoryUser{Username: "bob", Role: Admin}); !errors.Is(err, refused) {
+		t.Errorf("refresh: %v", err)
+	}
+	if _, _, err := s.RefuseDirectoryUser(ctx, "bob", "gone"); !errors.Is(err, refused) {
+		t.Errorf("refuse: %v", err)
+	}
+	if u, _ := s.Get("bob"); held != 2 || u.Role != Viewer || u.Refused != "" {
+		t.Errorf("held %d times; bob %+v", held, u)
+	}
+}

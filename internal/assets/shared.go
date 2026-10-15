@@ -76,6 +76,12 @@ func (s *Store) SetIf(ctx context.Context, by, kind string, data []byte, etag st
 		if err := b.Put(ctx, by, kind, data, etag); err != nil {
 			return 0, err
 		}
+	} else if s.Hold != nil {
+		release, err := s.Hold()
+		if err != nil {
+			return 0, err
+		}
+		defer release()
 	}
 	if kind == KindAssets {
 		return s.SetAssets(data)

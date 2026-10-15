@@ -1328,6 +1328,31 @@ func TestOpenSearchRole(t *testing.T) {
 	})
 }
 
+func TestOpenSearchCRL(t *testing.T) {
+	later := func(f *Facts) time.Time { return f.Now.Add(5 * 365 * 24 * time.Hour) }
+	runCases(t, "accounts.opensearch_crl", []checkCase{
+		{name: "not set", state: ""},
+		{name: "good", set: func(f *Facts) { f.CRL = &CRLFacts{File: "/crl/crl.pem", NextUpdate: later(f)} }, state: Good,
+			line: "OpenSearch checks client certificates against a revocation list Signalith keeps, so a removed server's certificate stops working at once."},
+		{name: "names some", set: func(f *Facts) { f.CRL = &CRLFacts{File: "/crl/crl.pem", Revoked: 2, NextUpdate: later(f)} }, state: Good,
+			line: "OpenSearch checks client certificates against a revocation list Signalith keeps, so a removed server's certificate stops working at once. It names 2 certificates."},
+		{name: "missing", set: func(f *Facts) { f.CRL = &CRLFacts{File: "/crl/crl.pem", Missing: true} }, state: Risk,
+			line: "OpenSearch's revocation list /crl/crl.pem is missing. While OpenSearch checks it, it refuses every certificate sign-in, Signalith's included.",
+			fix: func(t *testing.T, c *Check) {
+				if c.Fix.Setting != "opensearch.crl_file" || c.Fix.Docs.Anchor != "ending-a-servers-opensearch-access-at-once" || !strings.Contains(c.Fix.Steps[0], "up -d") {
+					t.Errorf("%+v", c.Fix)
+				}
+			}},
+		{name: "expired", set: func(f *Facts) { f.CRL = &CRLFacts{File: "/crl/crl.pem", Err: "it expired on 2026-01-01"} }, state: Risk,
+			line: "OpenSearch's revocation list /crl/crl.pem cannot be used: it expired on 2026-01-01. While OpenSearch checks it, it refuses every certificate sign-in, Signalith's included."},
+		{name: "expires soon", set: func(f *Facts) { f.CRL = &CRLFacts{File: "/crl/crl.pem", NextUpdate: f.Now.Add(10 * 24 * time.Hour)} }, state: Attention},
+		{name: "behind", set: func(f *Facts) {
+			f.CRL = &CRLFacts{File: "/crl/crl.pem", NextUpdate: later(f)}
+			f.Runtime = &RuntimeFacts{CRLProblem: "OpenSearch's revocation list /crl/crl.pem does not name 1 revoked certificate yet, so it still opens OpenSearch."}
+		}, state: Risk, line: "OpenSearch's revocation list /crl/crl.pem does not name 1 revoked certificate yet, so it still opens OpenSearch."},
+	})
+}
+
 func TestAccount(t *testing.T) {
 	runCases(t, "host.account", []checkCase{
 		{name: "own account", state: Good, line: "Signalith runs as its own account (signalith), not as root."},

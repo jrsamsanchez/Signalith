@@ -43,6 +43,11 @@ const (
 	// MaxIssued caps the servers Body.Issued records; those whose
 	// certificate expired longest ago go first.
 	MaxIssued = 256
+	// MaxRevoked caps Body.Revoked and Body.RevokedNodes; the oldest go
+	// first.
+	MaxRevoked = 1024
+	// MaxPrevious caps Issued.Previous.
+	MaxPrevious = 8
 )
 
 // systemUser writes the changes Signalith makes by itself.
@@ -70,7 +75,13 @@ type Body struct {
 	ImportedAt time.Time `json:"imported_at"`
 	// Issued is the last certificate issued to each server, by the name
 	// in its common name (Norm).
-	Issued       map[string]Issued `json:"issued,omitempty"`
+	Issued map[string]Issued `json:"issued,omitempty"`
+	// Revoked are the certificates revoked before they expired (RevokeNode),
+	// which the revocation list names, until they expire.
+	Revoked []Revoked `json:"revoked,omitempty"`
+	// RevokedNodes are the servers whose certificates were revoked, by
+	// node id, and when: they are never issued one again.
+	RevokedNodes map[string]time.Time `json:"revoked_nodes,omitempty"`
 	shared.Extra `json:"-"`
 }
 
@@ -83,6 +94,24 @@ type Issued struct {
 	// the name while it is valid.
 	NodeID   string    `json:"node_id"`
 	IssuedAt time.Time `json:"issued_at"`
+	// Previous are the server's earlier certificates that have not
+	// expired yet, which a revocation must name too.
+	Previous []Earlier `json:"previous,omitempty"`
+}
+
+// Earlier is a certificate a renewal replaced.
+type Earlier struct {
+	Serial   string    `json:"serial"`
+	NotAfter time.Time `json:"not_after"`
+}
+
+// Revoked is a certificate revoked before it expired.
+type Revoked struct {
+	Serial    string    `json:"serial"`
+	Name      string    `json:"name"`
+	NodeID    string    `json:"node_id"`
+	NotAfter  time.Time `json:"not_after"`
+	RevokedAt time.Time `json:"revoked_at"`
 }
 
 // keyField binds the sealed key to the certificate's fingerprint.
@@ -118,6 +147,9 @@ func validate(b *Body) error {
 	}
 	if len(b.Issued) > MaxIssued {
 		return fmt.Errorf("the osca document lists %d servers, more than %d", len(b.Issued), MaxIssued)
+	}
+	if len(b.Revoked) > MaxRevoked || len(b.RevokedNodes) > MaxRevoked {
+		return fmt.Errorf("the osca document lists more than %d revoked certificates or servers", MaxRevoked)
 	}
 	return nil
 }
@@ -268,7 +300,7 @@ func (o *OSCA) Replace(ctx context.Context, by, node string, certPEM, keyPEM []b
 		}
 		b.CACertPEM, b.CAKey, b.CASHA256 = string(ca.CertPEM()), sealed, fp
 		b.ImportedBy, b.ImportedOn, b.ImportedAt = by, node, time.Now().UTC()
-		b.Issued = nil
+		b.Issued, b.Revoked = nil, nil
 		return nil
 	})
 	if errors.Is(err, errUnchanged) {
@@ -328,14 +360,20 @@ func opener(keys *shared.KeySet) secrets.Opener {
 }
 
 // pruneIssued drops the entries over MaxIssued whose certificates
-// expired longest ago.
-func pruneIssued(m map[string]Issued) {
+// expired longest ago. One whose certificate has not expired is never
+// dropped, or a revocation would miss it: past the cap with none
+// expired, it refuses.
+func pruneIssued(m map[string]Issued, now time.Time) error {
 	if len(m) <= MaxIssued {
-		return
+		return nil
 	}
 	names := slices.Collect(maps.Keys(m))
 	slices.SortFunc(names, func(a, b string) int { return m[a].NotAfter.Compare(m[b].NotAfter) })
 	for _, n := range names[:len(m)-MaxIssued] {
+		if now.Before(m[n].NotAfter) {
+			return fmt.Errorf("%d servers hold OpenSearch certificates that have not expired, the most the cluster keeps track of, so no other server is issued one until one expires", MaxIssued)
+		}
 		delete(m, n)
 	}
+	return nil
 }

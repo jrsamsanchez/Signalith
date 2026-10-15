@@ -22,7 +22,8 @@ var readOnlyPosts = map[string]bool{
 	"/api/parse":  true,
 }
 
-// Client reads from a Signalith server's API as one Signalith user. It
+// Client reads from a Signalith server's API as one Signalith user, or
+// with an API token. It
 // sends GET requests, and POST requests only to readOnlyPosts, so nothing
 // it does can change Signalith, whatever the user's role allows.
 type Client struct {
@@ -30,7 +31,10 @@ type Client struct {
 	BaseURL  *url.URL
 	User     string
 	Password string
-	HTTP     *http.Client
+	// Token is an API token (Settings > API tokens) to read with instead
+	// of User and Password.
+	Token string
+	HTTP  *http.Client
 	// UserAgent names the client in the server's logs.
 	UserAgent string
 }
@@ -76,7 +80,11 @@ func (c *Client) do(ctx context.Context, method, path string, q url.Values, body
 	if err != nil {
 		return err
 	}
-	req.SetBasicAuth(c.User, c.Password)
+	if c.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.Token)
+	} else {
+		req.SetBasicAuth(c.User, c.Password)
+	}
 	req.Header.Set("Accept", "application/json")
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
@@ -101,7 +109,7 @@ func (c *Client) do(ctx context.Context, method, path string, q url.Values, body
 		return errors.New("Signalith's answer is too large; narrow the request")
 	}
 	if resp.StatusCode/100 != 2 {
-		return apiError(resp.StatusCode, data)
+		return apiError(resp.StatusCode, data, c.Token != "")
 	}
 	if out == nil {
 		return nil
@@ -115,7 +123,7 @@ func (c *Client) do(ctx context.Context, method, path string, q url.Values, body
 	return nil
 }
 
-func apiError(status int, data []byte) error {
+func apiError(status int, data []byte, token bool) error {
 	var e struct {
 		Error string `json:"error"`
 		Code  string `json:"code"`
@@ -123,6 +131,8 @@ func apiError(status int, data []byte) error {
 	_ = json.Unmarshal(data, &e)
 	msg := e.Error
 	switch {
+	case status == http.StatusUnauthorized && token:
+		msg = "Signalith did not accept the API token set for the MCP server (SIGNALITH_TOKEN). It may have been revoked: make a new one on Settings > API tokens."
 	case status == http.StatusUnauthorized:
 		msg = "Signalith did not accept the username and password set for the MCP server (SIGNALITH_USER and SIGNALITH_PASSWORD)."
 	case e.Code == "password_change_required":

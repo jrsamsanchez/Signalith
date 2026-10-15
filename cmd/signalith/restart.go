@@ -512,6 +512,8 @@ func (r *runner) run(ctx context.Context, c *config.Config) error {
 		// The restart and check requests that name this server; it runs
 		// them only while it is a member.
 		go r.shared.RunServerRequests(ctx, r.serverHandlers())
+		// A drain kept in this server's nodecfg holds across restarts.
+		go r.followDrain(ctx)
 	}
 	logListening(r.log, c, ln.Addr().String())
 	var retry <-chan time.Time
@@ -702,7 +704,8 @@ func usable(c *config.Config, keys []string) []string {
 
 // openSearchKeys are the settings of the OpenSearch connection.
 var openSearchKeys = []string{"opensearch.url", "opensearch.username", "opensearch.password", "opensearch.ca_file",
-	"opensearch.cert_file", "opensearch.key_file", "opensearch.proxy", "opensearch.allow_insecure_http", "opensearch.tls_skip_verify"}
+	"opensearch.cert_file", "opensearch.key_file", "opensearch.proxy", "opensearch.allow_insecure_http", "opensearch.tls_skip_verify",
+	"opensearch.urls"}
 
 // checkPageOpenSearch checks, at startup, an OpenSearch connection set on
 // the Settings page that no restart has checked: one saved with no
@@ -1103,9 +1106,11 @@ func (r *runner) recover(ctx context.Context) bool {
 		}
 		r.cur, r.good = in, c
 		r.web.certs.Store(in.certs)
-		r.front.resume(in.handler, in.plain)
 		r.log.Info("Signalith started again", "audit", true)
+		// The result is in place before the requests held back go through,
+		// as after a restart (done).
 		r.finish(&api.RestartResult{At: time.Now().UTC(), By: "Signalith", OK: true, Keys: []string{}}, nil)
+		r.front.resume(in.handler, in.plain)
 		return true
 	}
 	// The saved settings, unless they move the web page: that is checked

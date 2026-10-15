@@ -100,10 +100,17 @@ const (
 	// FeatureIndexedAt: the heartbeat says when the server last stored an
 	// event (IndexedAt), so one without it has stored none.
 	FeatureIndexedAt = "indexed_at"
+	// FeatureDrain: the server runs drain, resume and the other requests
+	// of adding and removing servers, so the Servers page offers them.
+	FeatureDrain = "drain"
+	// FeatureYieldNewer: the server running the background jobs hands
+	// them to a server that runs a newer version once it is ready (see
+	// maybeYield), so upgrade-check need not ask for the leader last.
+	FeatureYieldNewer = "yield_newer"
 )
 
 // features are this version's, as its heartbeats list them.
-var features = []string{FeatureSampleData, FeatureIndexedAt}
+var features = []string{FeatureSampleData, FeatureIndexedAt, FeatureDrain, FeatureYieldNewer}
 
 // Server states in heartbeats.
 const (
@@ -130,6 +137,10 @@ const (
 	// page, while OpenSearch answers but turns it away (OSInfo.Problem
 	// says how).
 	StateRefused = "refused"
+	// StateDraining is a server an admin drained: it tells load
+	// balancers it wants no traffic (/readyz answers 503), gave the
+	// background jobs up and takes none until it is resumed.
+	StateDraining = "draining"
 )
 
 // Heartbeat is a server's document in the runtime index, node:<node_id>,
@@ -221,9 +232,27 @@ type Heartbeat struct {
 	// TLS is the certificate authority the server's HTTPS certificate
 	// comes from, nil from versions before it was reported.
 	TLS *TLSStatus `json:"tls_ca,omitempty"`
+	// KeyIDs are the ids of the cluster keys the server has and accepts,
+	// so a key rotation knows who picked the new key up; nil from
+	// versions before rotations.
+	KeyIDs []string `json:"key_ids,omitempty"`
 	// OSIdentity is who the server signs in to OpenSearch as, nil from
 	// versions before it was reported.
 	OSIdentity *OSIdentityStatus `json:"os_identity,omitempty"`
+	// Upgrade is what the server says of rolling upgrades, nil when it
+	// has nothing to say or its version predates it.
+	Upgrade *UpgradeStatus `json:"upgrade,omitempty"`
+}
+
+// UpgradeStatus is what a server's heartbeat says of rolling upgrades.
+type UpgradeStatus struct {
+	// Busy names a step of the background jobs that must not be cut
+	// short, such as "retention run", while one runs.
+	Busy string `json:"busy,omitempty"`
+	// YieldedTo is the server this one last handed the background jobs
+	// to because it runs a newer version, at YieldedAt.
+	YieldedTo string     `json:"yielded_to,omitempty"`
+	YieldedAt *time.Time `json:"yielded_at,omitempty"`
 }
 
 // OSIdentityStatus is who a server signs in to OpenSearch as, as its
@@ -244,6 +273,21 @@ type OSIdentityStatus struct {
 	CASHA256 string `json:"ca_sha256,omitempty"`
 	// Problem says why it could not hand over the certificate authority
 	// or get, or renew, its own certificate, "" when nothing went wrong.
+	Problem string `json:"problem,omitempty"`
+	// CRL is the revocation list OpenSearch checks client certificates
+	// against (opensearch.crl_file), nil when none is set.
+	CRL *CRLStatus `json:"crl,omitempty"`
+}
+
+// CRLStatus is the revocation list a server keeps for OpenSearch.
+type CRLStatus struct {
+	File string `json:"file"`
+	// Revoked is how many certificates it names, and NextUpdate when it
+	// expires.
+	Revoked    int        `json:"revoked"`
+	NextUpdate *time.Time `json:"next_update,omitempty"`
+	// Problem says what is wrong with it: OpenSearch refuses every
+	// certificate sign-in while the list it checks is missing or expired.
 	Problem string `json:"problem,omitempty"`
 }
 

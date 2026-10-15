@@ -1127,6 +1127,11 @@ func (c *sigmaConv) fieldCond(key string, v any) (query.Expr, error) {
 	parts := strings.Split(key, "|")
 	sigField, mods := parts[0], parts[1:]
 	field := c.field(sigField)
+	if query.FormatValue(field) != field {
+		// A field searched as-is must be one word of the query language,
+		// or the query would say something else (a space, a quote, AND).
+		return nil, fmt.Errorf("field name %q cannot be searched", sigField)
+	}
 	var values []any
 	switch vv := v.(type) {
 	case []any:

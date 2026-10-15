@@ -41,7 +41,7 @@ const (
 // these servers, one at a time), so it is raised the same way.
 const (
 	LevelMin = 1
-	LevelMax = LevelSharedLookups
+	LevelMax = LevelAPITokens
 )
 
 // LevelSharedUsers is the level from which users are kept in the shared
@@ -141,7 +141,16 @@ type ClusterBody struct {
 	// Migrations holds, per migration run once for the cluster, when it
 	// ran.
 	Migrations map[string]string `json:"migrations,omitempty"`
-	Extra      `json:"-"`
+	// Removed lists the servers removed from the cluster, newest last:
+	// such a server is never given the cluster key again, and does not add
+	// itself back to the keyring.
+	Removed []RemovedServer `json:"removed,omitempty"`
+	// LevelVersions holds, per level (as a decimal string), the version
+	// of the server that raised the cluster to it, so an older version
+	// that refuses to start can name the version to install. Versions
+	// before it keep it through Extra.
+	LevelVersions map[string]string `json:"level_versions,omitempty"`
+	Extra         `json:"-"`
 }
 
 // ErrClusterExists is a founding that found a cluster already there.
@@ -150,12 +159,21 @@ var ErrClusterExists = errors.New("the servers sharing this OpenSearch are a clu
 // LevelError is a cluster whose stored formats this version cannot use.
 type LevelError struct {
 	Level int
+	// Since is the version of the server that raised the cluster to
+	// Level, "" when the cluster document does not say; Version is this
+	// server's.
+	Since   string
+	Version string
 	// max is the highest level this version reads, LevelMax when 0.
 	max int
 }
 
 func (e *LevelError) Error() string {
 	top := cmp.Or(e.max, LevelMax)
+	if e.Level > top && e.Since != "" {
+		return fmt.Sprintf("This server runs %s; the cluster uses a newer format since %s was installed. Install %s or newer.",
+			cmp.Or(e.Version, "an older version"), e.Since, e.Since)
+	}
 	if e.Level > top {
 		return fmt.Sprintf("the shared settings in OpenSearch are at level %d, which a newer version of Signalith wrote; this version reads up to level %d. "+
 			"Install the version the other servers run, or a newer one", e.Level, top)

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"io"
@@ -285,7 +286,7 @@ func TestDockerCompose(t *testing.T) {
 	}
 	// A fixed host name for the certificate and its CA, not the
 	// container's ID.
-	if s.Hostname != "signalith" {
+	if s.Hostname != "${SIGNALITH_NODE_NAME:-signalith}" {
 		t.Errorf("signalith hostname %q", s.Hostname)
 	}
 }
@@ -616,4 +617,57 @@ func anyStrings(v any) []string {
 		}
 	}
 	return out
+}
+
+// Every OpenSearch node of the three-node overlay checks client
+// certificates against the revocation list, as the quick start's single
+// node does: a node that skipped it would still let a revoked server in.
+func TestComposeEveryOpenSearchNodeChecksTheCRL(t *testing.T) {
+	type node struct {
+		Image      string   `yaml:"image"`
+		Entrypoint []string `yaml:"entrypoint"`
+		Volumes    []string `yaml:"volumes"`
+	}
+	read := func(name string) map[string]node {
+		raw, err := os.ReadFile(filepath.Join(dockerDir, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var f struct {
+			Services map[string]node `yaml:"services"`
+		}
+		if err := yaml.Unmarshal(raw, &f); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		return f.Services
+	}
+	base := read("docker-compose.yml")
+	overlay := read("docker-compose.opensearch3.yml")
+	const mount = "opensearch-crl:/usr/share/opensearch/config/crl:ro"
+	want := base["opensearch"].Entrypoint
+	if !slices.Contains(base["opensearch"].Volumes, mount) || !strings.Contains(strings.Join(want, " "), "plugins.security.ssl.http.crl.validate=true") {
+		t.Fatalf("docker-compose.yml opensearch does not check the revocation list: %v %v", want, base["opensearch"].Volumes)
+	}
+	nodes := 0
+	for name, o := range overlay {
+		b := base[name]
+		image := cmp.Or(o.Image, b.Image)
+		if !strings.HasPrefix(image, "opensearchproject/opensearch:") {
+			continue
+		}
+		nodes++
+		e := o.Entrypoint
+		if e == nil {
+			e = b.Entrypoint
+		}
+		if !slices.Equal(e, want) {
+			t.Errorf("%s does not start with the revocation list check: %v", name, e)
+		}
+		if !slices.Contains(o.Volumes, mount) && !slices.Contains(b.Volumes, mount) {
+			t.Errorf("%s does not mount the revocation list (%s)", name, mount)
+		}
+	}
+	if nodes != 3 {
+		t.Errorf("docker-compose.opensearch3.yml has %d OpenSearch nodes, want 3", nodes)
+	}
 }
