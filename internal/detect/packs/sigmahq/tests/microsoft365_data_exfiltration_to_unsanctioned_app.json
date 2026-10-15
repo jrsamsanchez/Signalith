@@ -1,0 +1,6 @@
+{"rule": "2b669496-d215-47d8-bd9a-f4a45bf07cda", "cases": [
+  {"expect":true,"source":"synthesized","channel":"o365","event_id":"audit","data":{"eventName":"Data exfiltration to unsanctioned apps","eventSource":"SecurityComplianceCenter","status":"success"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"audit","data":{"eventSource":"SecurityComplianceCenter","status":"success"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"audit","data":{"eventName":"Data exfiltration to unsanctioned apps","status":"success"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"audit","data":{"eventName":"Data exfiltration to unsanctioned apps","eventSource":"SecurityComplianceCenter"}}
+]}

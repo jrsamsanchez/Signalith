@@ -44,8 +44,9 @@ jobs:
           go-version-file: go.mod
       # The same tests with the data race detector on. It needs cgo, which
       # the Linux runner has. It is slow: internal/api alone takes about 6
-      # minutes, so the 10 minute default limit is raised.
-      - run: go test -race -timeout 20m ./...
+      # minutes on a fast machine and close to 20 on the runner, so the 10
+      # minute default limit is raised.
+      - run: go test -race -timeout 30m ./...
 
   vulncheck:
     runs-on: ubuntu-latest

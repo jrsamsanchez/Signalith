@@ -1,0 +1,6 @@
+{"rule": "42127bdd-9133-474f-a6f1-97b6c08a4339", "cases": [
+  {"expect":true,"source":"synthesized","channel":"o365","event_id":"audit","data":{"eventName":"Add-FederatedDomain","eventSource":"Exchange","status":"success"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"audit","data":{"eventSource":"Exchange","status":"success"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"audit","data":{"eventName":"Add-FederatedDomain","status":"success"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"audit","data":{"eventName":"Add-FederatedDomain","eventSource":"Exchange"}}
+]}
