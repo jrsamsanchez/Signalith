@@ -212,6 +212,12 @@ type Importer struct {
 	Source func() (string, error)
 	// Run imports it, by the user by.
 	Run func(ctx context.Context, by string) error
+	// Hold, when set, holds the source from before it is read until the
+	// import is recorded, and returns the release. A change of the source
+	// made meanwhile waits for it, and then finds the source moved; one
+	// made after the read would otherwise be lost, also when there was
+	// nothing to import and Run never ran.
+	Hold func() (release func())
 	// MinLevel is the cluster level the importer needs (0 for any): one
 	// whose content a server of a version that reads only lower levels
 	// would ignore waits until the level is raised, and then runs as a
@@ -250,6 +256,9 @@ func (rt *Runtime) importOne(ctx context.Context, by string, im Importer, check 
 	}
 	if im.MinLevel > body.Level {
 		return nil
+	}
+	if im.Hold != nil {
+		defer im.Hold()()
 	}
 	hash := importNone
 	if im.Source != nil {
