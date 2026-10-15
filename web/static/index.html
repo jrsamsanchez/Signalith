@@ -361,6 +361,9 @@
                     <option value="avg">average of</option>
                     <option value="min">minimum of</option>
                     <option value="max">maximum of</option>
+                    <option value="median">median of</option>
+                    <option value="perc95">95th percentile of</option>
+                    <option value="values">distinct values of</option>
                   </select>
                 </div>
                 <div class="field hidden" id="b-agg-field-wrap">
@@ -1627,7 +1630,7 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
 
       <h2>Commands</h2>
       <dl class="guide__ref">
-        <div><dt data-query="| stats count, dc(user) as users by src"></dt><dd>Aggregate with count, dc, sum, avg, min and max.</dd></div>
+        <div><dt data-query="| stats count, dc(user) as users by src"></dt><dd>Aggregate with count, dc, sum, avg, min, max, median, perc95 (any percentile), stdev, values, list, latest and more.</dd></div>
         <div><dt data-query="| timechart span=1h count by action"></dt><dd>A series over time.</dd></div>
         <div><dt data-query="| top limit=10 process_name"></dt><dd>The most common values, with percentages.</dd></div>
         <div><dt data-query="| eventstats avg(bytes) as avg_bytes by src"></dt><dd>Like stats, but adds the result to every row instead of replacing the rows.</dd></div>
