@@ -73,10 +73,12 @@ func pbEach(b []byte, fn func(f pbField) error) error {
 
 // walkOTLPProto calls fn for each log record of a protobuf
 // ExportLogsServiceRequest, with the size of its encoding. Without build,
-// it only checks the request (fn gets a nil record): every message must
-// decode, no record may be over MaxRecordBytes, and no value may nest
-// more than MaxDepth levels.
-func walkOTLPProto(body []byte, build bool, fn func(*otlpLog, int) error) error {
+// it only checks the request (fn gets a nil record). A record that is over
+// MaxRecordBytes, nests a value more than MaxDepth levels or doesn't
+// decode is passed with a nil record and why (bad), so the caller can
+// reject that record alone; an error in the rest of the request is
+// returned.
+func walkOTLPProto(body []byte, build bool, fn func(l *otlpLog, size int, bad *BodyError) error) error {
 	n := 0
 	return pbEach(body, func(f pbField) error {
 		if f.num != 1 || f.wire != wireBytes { // resource_logs
@@ -126,16 +128,16 @@ func walkOTLPProto(body []byte, build bool, fn func(*otlpLog, int) error) error 
 				}
 				n++
 				if len(f.data) > MaxRecordBytes {
-					return tooLarge("log record %d is %d bytes; the limit is %d bytes (1 MB) per record", n, len(f.data), MaxRecordBytes)
+					return fn(nil, len(f.data), tooLarge("log record %d is %d bytes; the limit is %d bytes (1 MB) per record", n, len(f.data), MaxRecordBytes))
 				}
 				var l *otlpLog
 				if build {
 					l = &otlpLog{resource: resource, scope: scope}
 				}
 				if err := pbLogRecord(f.data, l); err != nil {
-					return err
+					return fn(nil, len(f.data), recordError(n, err))
 				}
-				return fn(l, len(f.data))
+				return fn(l, len(f.data), nil)
 			})
 		})
 	})
