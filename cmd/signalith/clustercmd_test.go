@@ -75,23 +75,18 @@ func TestClusterCommands(t *testing.T) {
 	// itself.
 	hb := cluster.Heartbeat{Kind: "node", NodeID: "n_other", Name: "siem-z", State: cluster.StateReady, LeaderEligible: true, HeartbeatAt: time.Now().UTC()}
 	fake.Put("cc_runtime", "node:n_other", asMap(t, hb))
-	beating := make(chan struct{})
-	beat := make(chan struct{})
-	go func() {
-		defer close(beat)
-		for {
-			select {
-			case <-beating:
-				return
-			case <-time.After(2 * time.Millisecond):
-			}
+	// siem-z beats between the command's two reads of the heartbeats:
+	// every read of them finds a newer one. Beating on a timer instead
+	// races the watch window, which Windows timers (about 15ms) can skip.
+	fake.SetFault(func(method, uri string) *ostest.Fault {
+		if strings.Contains(uri, "cc_runtime") && strings.Contains(uri, "_search") {
 			hb.HeartbeatAt = time.Now().UTC()
 			fake.Put("cc_runtime", "node:n_other", asMap(t, hb))
 		}
-	}()
+		return nil
+	})
 	out, err = run("", "found")
-	close(beating)
-	<-beat
+	fake.SetFault(nil)
 	if err == nil || !strings.Contains(err.Error(), "siem-z is up") {
 		t.Fatalf("found with a live scheduler server: %v\n%s", err, out)
 	}
