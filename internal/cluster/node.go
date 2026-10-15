@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -52,6 +53,13 @@ type Settings struct {
 	// heartbeat, and why it may not run the background jobs because of
 	// it; nil has none. It must not call the node.
 	Shared func() SharedStatus
+	// HolderFingerprints, when set, returns the fingerprints fp of the
+	// files of the job holder (or the server that released the jobs) as
+	// this server compares them with its own for the fingerprint guard:
+	// it may put the shared sentinel in place of the parts the holder
+	// moved into the shared settings itself but still reads from its own
+	// files until it switches to them. It must not call the node.
+	HolderFingerprints func(holder string, fp Fingerprints) Fingerprints
 	// Housekeep runs with the node's housekeeping, every 10 minutes on
 	// the server that runs the background jobs (old tombstones and
 	// finished requests); nil for none.
@@ -257,6 +265,7 @@ func New(o Options) *Node {
 		Target:        n.leaseTarget,
 		Eligible:      n.mayTake,
 		Fingerprints:  n.fingerprints,
+		Holder:        n.holderPrints,
 		Defer:         n.leaveJobs,
 		WritesRefused: n.refusingWrites,
 		OnChange:      n.poke,
@@ -1264,6 +1273,28 @@ func refusal(oe *store.Error, index string) string {
 	return out + " on " + index
 }
 
+// holderPrints returns the lease document doc with the fingerprints of
+// its holder as this server compares them with its own
+// (Settings.HolderFingerprints).
+func (n *Node) holderPrints(doc LeaseDoc) LeaseDoc {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return n.holderPrintsLocked(doc)
+}
+
+// holderPrintsLocked is holderPrints; the caller holds n.mu.
+func (n *Node) holderPrintsLocked(doc LeaseDoc) LeaseDoc {
+	f := n.settings.HolderFingerprints
+	if f == nil || doc.Fingerprint == "" || doc.Fingerprints == (Fingerprints{}) {
+		return doc
+	}
+	fp := f(cmp.Or(doc.Holder, doc.ReleasedBy), doc.Fingerprints)
+	if fp != doc.Fingerprints {
+		doc.Fingerprints, doc.Fingerprint = fp, fp.Combined()
+	}
+	return doc
+}
+
 // mayTake is eligible, for the lease: a process on probation also waits.
 func (n *Node) mayTake() (bool, string) {
 	n.mu.Lock()
@@ -1731,7 +1762,7 @@ func (n *Node) Status() Status {
 		// guard, its files differing from those of the server that ran
 		// them last. Every server's page shows it: the others' are read
 		// from their heartbeats.
-		d := view.Doc
+		d := n.holderPrintsLocked(view.Doc)
 		guarded := view.Found && d.Fingerprint != "" && s.NodeID != d.Holder && !(d.Holder == "" && s.NodeID == d.ReleasedBy)
 		switch {
 		case s.Self && view.CannotTake != "":

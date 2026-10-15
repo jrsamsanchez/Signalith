@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/jrsamsanchez/signalith/internal/store"
 )
 
 // OpenTelemetry logs arrive over OTLP/HTTP (POST /api/otlp/v1/logs) as an
@@ -49,14 +51,17 @@ type otlpLog struct {
 
 // IngestOTLP writes the log records of an OTLP/HTTP logs request body:
 // protobuf, or JSON when isJSON. The whole body is checked first, as in
-// IngestBody, so a refused request (a *BodyError) writes nothing.
+// IngestBody, so a refused request (a *BodyError) writes nothing. A record
+// that is too large, nests too deeply or doesn't decode is rejected on its
+// own (Result.Rejected, which the handler reports as OTLP partialSuccess),
+// so it doesn't make the sender drop the rest of its batch.
 func (p *Pipeline) IngestOTLP(ctx context.Context, body []byte, isJSON bool) (*Result, error) {
 	walk := walkOTLPProto
 	if isJSON {
 		walk = walkOTLPJSON
 	}
 	n := 0
-	if err := walk(body, false, func(*otlpLog, int) error {
+	if err := walk(body, false, func(*otlpLog, int, *BodyError) error {
 		n++
 		if n > MaxRecords {
 			return tooLarge("the request has more than %d log records; send smaller batches (send_batch_max_size in the Collector's batch processor)", MaxRecords)
@@ -85,7 +90,13 @@ func (p *Pipeline) IngestOTLP(ctx context.Context, body []byte, isJSON bool) (*R
 		total.add(res)
 		return nil
 	}
-	err := walk(body, true, func(l *otlpLog, rawSize int) error {
+	err := walk(body, true, func(l *otlpLog, rawSize int, bad *BodyError) error {
+		if bad != nil {
+			done++
+			p.stats.Failed.Add(1)
+			total.add(&Result{Rejected: 1, Errors: []store.BulkItemError{{Reason: bad.Msg}}})
+			return nil
+		}
 		evs := otlpEvents(l, p.now())
 		if extra := len(evs) - 1; extra > 0 {
 			// An Event Hub message's records count as received one by one.
@@ -93,13 +104,19 @@ func (p *Pipeline) IngestOTLP(ctx context.Context, body []byte, isJSON bool) (*R
 			total.Received += extra
 			p.stats.Received.Add(int64(extra))
 		}
+		// Each event takes its share of the record's size, and the batch
+		// is written as soon as it is full, so a message split into many
+		// records can't make an oversized bulk request.
+		share := max(rawSize/max(len(evs), 1), 1)
 		for _, ev := range evs {
 			batch = append(batch, ev)
 			total.noteHost(&batch[len(batch)-1])
-		}
-		size += rawSize
-		if len(batch) >= batchEvents || size >= batchBytes {
-			return flush()
+			size += share
+			if len(batch) >= batchEvents || size >= batchBytes {
+				if err := flush(); err != nil {
+					return err
+				}
+			}
 		}
 		return nil
 	})

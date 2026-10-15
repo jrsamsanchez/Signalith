@@ -340,7 +340,7 @@ func QueryReference() string {
 - Search terms: datamodel=Name, field=value (case-insensitive exact), field=val* (wildcards * ?), field!=value, field>10 (also >= < <=), field IN (a, b), bare words or "quoted phrases" (text anywhere in the raw event), NOT term, ( ... ), a OR b (OR binds tighter than the implicit AND).
 - Time: earliest=-24h latest=now. Units s m h d w mon y; snap with @d @h @w, e.g. earliest=-1d@d latest=@d for yesterday. Leave time out unless the question names a period.
 - Commands: ` + strings.Join(query.Commands, ", ") + `.
-  stats <aggs> [by f1, f2]   aggs: ` + strings.Join(query.AggFuncs, ", ") + ` as count, count(f), dc(f), sum(f), avg(f), min(f), max(f), each optionally "as name"
+  stats <aggs> [by f1, f2]   aggs: ` + strings.Join(query.AggFuncs, ", ") + ` as count, count(f), dc(f), sum(f), avg(f), min(f), max(f), median(f), perc95(f) (any perc1 to perc99), stdev(f), var(f), range(f), mode(f), values(f) (distinct values), list(f), first(f)/latest(f) (newest value), last(f)/earliest(f) (oldest value), each optionally "as name"
   timechart [span=1h] <agg> [by field]
   eventstats <aggs> [by f1, f2]   like stats, but adds the aggregate columns to every row instead of replacing the rows
   top [limit=N] field [by field]
