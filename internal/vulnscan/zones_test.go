@@ -2,6 +2,7 @@ package vulnscan
 
 import (
 	"context"
+	"io"
 	"net/netip"
 	"strings"
 	"sync/atomic"
@@ -241,5 +242,67 @@ func TestProbeAddr(t *testing.T) {
 	}
 	if r := LocalRoute(context.Background(), "127.0.0.1"); !r.Direct {
 		t.Errorf("loopback = %+v", r)
+	}
+}
+
+// A scan cut short because its server restarts in place, or stops, goes
+// back in the queue and runs again on the server's next scanner.
+func TestRestartRequeuesScan(t *testing.T) {
+	a, b, _, bArgs, _ := zoneScanners(t)
+	ctx := context.Background()
+	plant := target("10.20.0.0/24")
+	plant.ID, plant.Name, plant.Scanner, plant.Schedule = "plant", "Plant floor", "n_bbbb", Schedule{Every: Manual}
+	set, err := a.Store.SaveSettings(ctx, Settings{Targets: []Target{plant}}, store.Version{}, "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sc, _ := a.Store.NewScan(ctx, set.Targets[0], TriggerManual, "alice")
+	started := make(chan struct{})
+	b.Runner = &Runner{Path: "/usr/bin/nmap", Exec: func(ctx context.Context, path string, a []string) (io.ReadCloser, func() ([]byte, error), error) {
+		close(started)
+		<-ctx.Done()
+		return nil, nil, ctx.Err()
+	}}
+	runCtx, restart := context.WithCancel(ctx)
+	done := make(chan error, 1)
+	go func() { done <- b.Step(runCtx) }()
+	<-started
+	restart()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	got, _, _ := a.Store.Scan(ctx, sc.ID)
+	if got.State != StateQueued || got.ScannerID != "" || got.Scanner != "" || !got.StartedAt.IsZero() {
+		t.Fatalf("scan after the restart = %+v", got)
+	}
+	// The scanner that comes back runs it.
+	again := &Scanner{Store: b.Store, NVD: b.NVD, Events: b.Events, Server: "siem-b", NodeID: "n_bbbb", Leader: b.Leader,
+		Runner: fakeNmap(nmapXML, bArgs), Loc: time.UTC, Checker: b.Checker}
+	if err := again.Step(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got, _, _ = a.Store.Scan(ctx, sc.ID); got.State != StateDone || got.ScannerID != "n_bbbb" {
+		t.Errorf("scan after it ran again = %+v", got)
+	}
+}
+
+func TestRequeueOnlyOwnRunningScan(t *testing.T) {
+	a, b, _, _, _ := zoneScanners(t)
+	ctx := context.Background()
+	sc, _ := a.Store.NewScan(ctx, target("192.0.2.1"), TriggerManual, "alice")
+	if ok, _ := a.Store.RequeueScan(ctx, sc.ID, "n_aaaa"); ok {
+		t.Fatal("a queued scan was requeued")
+	}
+	if !a.claim(ctx, sc) {
+		t.Fatal("claim refused")
+	}
+	if ok, _ := b.Store.RequeueScan(ctx, sc.ID, "n_bbbb"); ok {
+		t.Fatal("another server's scan was requeued")
+	}
+	if err := a.Store.UpdateScan(ctx, sc.ID, map[string]any{"stop": true}); err != nil {
+		t.Fatal(err)
+	}
+	if ok, _ := a.Store.RequeueScan(ctx, sc.ID, "n_aaaa"); ok {
+		t.Fatal("a stopped scan was requeued")
 	}
 }

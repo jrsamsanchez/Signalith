@@ -230,6 +230,12 @@ var Registry = []Setting{
 	{Key: "ingest.max_event_age", Scope: ScopeCluster, Section: "general", Label: "Oldest event time", Type: TypeDuration,
 		Help:        "Events from agents and syslog that say they are older than this are filed under the time they arrived, with their own time kept in device_time. Raise it to load old logs.",
 		Placeholder: "30d", EmptyMeans: "7d, or the shortest retention period when that is shorter"},
+	{Key: "ingest.url_query", Scope: ScopeCluster, Section: "general", Label: "Query strings in web addresses", Type: TypeChoice,
+		Help: "The part of a web address after the ? can carry tokens, session IDs and passwords. As web requests are stored (from a network sensor, a web server's log or an IDS alert), " +
+			"Hide values keeps the parameter names (?user=REDACTED&token=REDACTED), and Remove keeps only the address up to the ?, in the url, uri_query and http_referrer fields and the raw event. " +
+			"Detections that look at query values (web attacks such as SQL injection) then no longer see them. Events stored before a change keep what they had.",
+		Choices:    []Choice{{"keep", "Keep them"}, {"redact", "Hide values"}, {"drop", "Remove them"}},
+		EmptyMeans: "Keep them"},
 
 	{Key: "server.listen", Scope: ScopeServer, Section: "web", Label: "Listen address", Type: TypeAddress, Restart: true,
 		Help:        "The address and port the web page and API listen on. 0.0.0.0 accepts other computers; 127.0.0.1 only this one.",

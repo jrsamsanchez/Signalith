@@ -842,6 +842,21 @@ type Ingest struct {
 	// shortest retention period when that is shorter. Raise it to load old
 	// logs.
 	MaxEventAge string `yaml:"max_event_age,omitempty"`
+	// URLQuery is what happens to the query strings of web addresses
+	// (the part after ?, which can carry tokens and passwords) as
+	// events are stored: keep (the default), redact (keep the parameter
+	// names, hide their values) or drop. See URLQueryMode.
+	URLQuery string `yaml:"url_query,omitempty"`
+}
+
+// URLQueryMode returns ingest.url_query: keep, redact or drop, keep when
+// unset.
+func (c *Config) URLQueryMode() string {
+	switch m := strings.ToLower(strings.TrimSpace(c.Ingest.URLQuery)); m {
+	case "redact", "drop":
+		return m
+	}
+	return "keep"
 }
 
 // MaxEventAge returns ingest.max_event_age as a duration: the setting, or
@@ -2399,6 +2414,11 @@ func (c *Config) Validate() error {
 		if d, err := detect.ParseDuration(c.Ingest.MaxEventAge); err != nil || d < time.Hour || d > 3650*24*time.Hour {
 			p = append(p, fmt.Sprintf("ingest.max_event_age %q must be a duration from 1h to 3650d, for example 7d or 30d (empty: 7 days)", c.Ingest.MaxEventAge))
 		}
+	}
+	switch strings.ToLower(strings.TrimSpace(c.Ingest.URLQuery)) {
+	case "", "keep", "redact", "drop":
+	default:
+		p = append(p, fmt.Sprintf("ingest.url_query %q must be keep, redact or drop (empty: keep)", c.Ingest.URLQuery))
 	}
 	p = append(p, c.Syslog.problems(c.Server)...)
 	if len(p) > 0 {

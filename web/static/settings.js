@@ -591,10 +591,13 @@
     if (f.type === 'choice') {
       n = el('select', { id, class: 'select select--block' });
       const choices = (f.choices || []).slice();
-      if (!choices.some((c) => c.value === value)) choices.push({ value, label: value });
+      // Unset, a choice that is what empty means shows as chosen.
+      const shown = (value === '' || value == null) && choices.find((c) => c.label === f.empty_means);
+      const pick = shown ? shown.value : value;
+      if (!choices.some((c) => c.value === pick)) choices.push({ value: pick, label: pick });
       for (const c of choices) {
         const o = el('option', { value: c.value }, c.label);
-        if (c.value === value) o.selected = true;
+        if (c.value === pick) o.selected = true;
         n.append(o);
       }
       n.addEventListener('change', () => edited(f, n.value));
