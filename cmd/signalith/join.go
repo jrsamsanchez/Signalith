@@ -85,6 +85,11 @@ type joinEnv struct {
 	goos     string
 	// admin is true when running as root or Administrator.
 	admin bool
+	// root is true when join may give files to the service's account
+	// and write its systemd drop-ins: running as root. A join without it
+	// (--no-start, as the Docker image runs it as its own user) writes
+	// only files this user can, and changes no owner.
+	root bool
 	// serviceEnv applies the service's folders and master key settings.
 	serviceEnv func(configPath string)
 	// serviceActive reports whether the signalith service runs here.
@@ -113,7 +118,7 @@ func defaultJoinEnv() *joinEnv {
 	e := &joinEnv{
 		out: os.Stdout, errOut: os.Stderr, in: os.Stdin,
 		terminal: term.IsTerminal(int(os.Stdin.Fd())),
-		getenv:   os.Getenv, goos: runtime.GOOS, admin: runningAsAdmin() || joinAnyUser,
+		getenv:   os.Getenv, goos: runtime.GOOS, admin: runningAsAdmin() || joinAnyUser, root: runningAsAdmin(),
 		serviceEnv: func(path string) { useServiceEnv(path, os.Stdout) },
 		check:      opensearchcheck.Check,
 		listenFree: func(addr string) error {
@@ -191,8 +196,8 @@ func parseJoinArgs(args []string, errOut io.Writer, getenv func(string) string) 
 	o := &joinOptions{}
 	fs.StringVar(&o.config, "c", defaultConfigPath(), "config file")
 	fs.StringVar(&o.name, "name", "", "this server's name (default: SIGNALITH_NODE_NAME, else the one it has, else this computer's name)")
-	fs.StringVar(&o.listen, "listen", "", "address the web page and API listen on (default: the answering server's)")
-	fs.StringVar(&o.nodeURL, "node-url", "", "address the other servers reach this one at (server.node_url)")
+	fs.StringVar(&o.listen, "listen", "", "address the web page and API listen on (default: SIGNALITH_LISTEN, else the answering server's)")
+	fs.StringVar(&o.nodeURL, "node-url", "", "address the other servers reach this one at (server.node_url; default: SIGNALITH_NODE_URL)")
 	fs.BoolVar(&o.copySyslog, "copy-syslog", false, "receive syslog on the same addresses as the answering server")
 	fs.BoolVar(&o.noStart, "no-start", false, "write everything, but do not start the service")
 	fs.BoolVar(&o.merge, "merge", false, "keep this server's own users, detections and dashboards, adding those the cluster lacks")
@@ -206,6 +211,14 @@ func parseJoinArgs(args []string, errOut io.Writer, getenv func(string) string) 
 	pos, err := parseInterspersed(fs, args)
 	if err != nil {
 		return nil, err
+	}
+	// As the server reads them: the Docker image passes its listen
+	// address and the address the other servers reach it at this way.
+	if o.listen == "" {
+		o.listen = strings.TrimSpace(getenv("SIGNALITH_LISTEN"))
+	}
+	if o.nodeURL == "" {
+		o.nodeURL = strings.TrimSpace(getenv("SIGNALITH_NODE_URL"))
 	}
 	switch {
 	case len(pos) == 1:
@@ -299,8 +312,12 @@ func (j *joiner) run(ctx context.Context) error {
 	}
 	j.tok = tok
 	defer j.tok.Clear()
-	if !j.env.admin {
-		return failf(joinExitFailed, "Run signalith join as root (sudo) or as an Administrator: it writes the service's files and starts it.")
+	// Starting the service needs root or Administrator; with --no-start
+	// (the Docker image, which runs as its own user) join only writes
+	// files this user can write.
+	if !j.env.admin && !j.o.noStart {
+		return failf(joinExitFailed, "Run signalith join as root (sudo) or as an Administrator: it writes the service's files and starts it. "+
+			"To only write this user's own files (as in a container), add --no-start.")
 	}
 
 	// 2. This machine: its config, and not in a cluster yet. Nothing is
@@ -901,11 +918,9 @@ func (j *joiner) writeConfig(path string) error {
 	c.Server.Listen = firstSet(j.listen, c.Server.Listen)
 	c.Server.TLS = &config.ServerTLS{Mode: config.TLSAuto, PlaintextIngest: "deny"}
 	c.Syslog.UDP, c.Syslog.TCP, c.Syslog.TLS = "", "", ""
-	h, err := config.HashPassword(config.RandomToken(18))
-	if err != nil {
-		return err
-	}
-	c.Auth.AdminPasswordHash = h
+	// No built-in admin password: a joined server's users are the
+	// cluster's, and signalith passwd -local adds a break-glass one.
+	c.Auth.AdminPasswordHash = ""
 	if err := c.Save(path); err != nil {
 		return err
 	}
@@ -984,7 +999,7 @@ func (j *joiner) writeSettings(path string, files osFiles, now time.Time) error 
 // a folder it only wrote in (giveTree), and a signalith.yaml it made is
 // root's, readable by the service's group.
 func (j *joiner) giveOwners() error {
-	if j.env.goos != "linux" || j.c == nil {
+	if j.env.goos != "linux" || j.c == nil || !j.env.root {
 		return nil
 	}
 	uid, gid, ok := j.env.owner()
@@ -1012,7 +1027,7 @@ func (j *joiner) giveOwners() error {
 // archiveDropIn lets the service write an archive folder outside
 // /var/lib/signalith: systemd's unit allows writes there only.
 func (j *joiner) archiveDropIn(path string, u *undoList) error {
-	if j.env.goos != "linux" || j.env.dropInDir == "" {
+	if j.env.goos != "linux" || j.env.dropInDir == "" || !j.env.root {
 		return nil
 	}
 	c, err := config.Load(path)
@@ -1056,6 +1071,11 @@ func (j *joiner) start() error {
 			port = "8080"
 		}
 		where = "https://" + net.JoinHostPort(host, port)
+	}
+	if j.o.noStart && !j.env.root && j.env.goos == "linux" {
+		j.printf("%s joined %s. Start Signalith with %s (signalith serve -c %s). Then add it to your load balancer: %s\n",
+			j.id.Name, j.clusterName(), j.o.config, j.o.config, where)
+		return nil
 	}
 	if j.o.noStart {
 		j.printf("%s joined %s. Start it with: sudo systemctl enable --now signalith (Windows: Start-Service Signalith). Then add it to your load balancer: %s\n",

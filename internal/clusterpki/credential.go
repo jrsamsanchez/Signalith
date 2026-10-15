@@ -42,3 +42,14 @@ func (o *OSCA) JoinCredential(ctx context.Context, name, nodeID string, csrPEM [
 	}
 	return Credential{ClientCertPEM: cert, CAPEM: []byte(b.CACertPEM), Managed: true}, nil
 }
+
+// Readmit lets the server nodeID, approved to join the cluster anew (a
+// server removed before, keeping its node id), be issued certificates
+// again, as JoinCredential does for a server that joins with a token.
+// Without an osca document there is nothing to readmit.
+func (o *OSCA) Readmit(ctx context.Context, nodeID string) error {
+	if _, ok := o.Get(); !ok {
+		return nil
+	}
+	return o.readmit(ctx, nodeID)
+}

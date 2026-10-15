@@ -17,6 +17,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/clusterjoin"
 	"github.com/jrsamsanchez/signalith/internal/clusterpki"
 	"github.com/jrsamsanchez/signalith/internal/config"
+	"github.com/jrsamsanchez/signalith/internal/ospki"
 	"github.com/jrsamsanchez/signalith/internal/shared"
 )
 
@@ -156,5 +157,102 @@ func TestJoinCredentialWithoutOSCAIsShared(t *testing.T) {
 				t.Errorf("%s, csr %t: %+v %v", name, csr != nil, cr, err)
 			}
 		}
+	}
+}
+
+// A server removed from the cluster has its OpenSearch certificates
+// revoked; it keeps its node id, and joining again with a token (or being
+// approved again) gets it a new certificate rather than a refusal.
+func TestRejoinAfterRemoveGetsACertificate(t *testing.T) {
+	t.Setenv(clusterKeyFileEnv, "")
+	a := startRunnerWith(t, runOptions{scheduler: true, name: "siem-a"})
+	eventually(t, "A founds the cluster", func() bool {
+		m, _ := a.r.shared.Mode()
+		return m == shared.ModeMember
+	})
+	srv := a.r.srv.Load()
+	j := *srv.Join.(*joinAPI)
+	if j.osca == nil {
+		t.Fatal("the join API has no osca")
+	}
+	c := *j.c
+	caFile := filepath.Join(t.TempDir(), "os-ca.pem")
+	if err := os.WriteFile(caFile, []byte("-----BEGIN CERTIFICATE-----\nOS\n-----END CERTIFICATE-----\n"), 0o666); err != nil {
+		t.Fatal(err)
+	}
+	c.OpenSearch.URL, c.OpenSearch.Username, c.OpenSearch.Password, c.OpenSearch.CAFile = "https://os.example.com:9200", "signalith", "pw", caFile
+	_, port, _ := net.SplitHostPort(a.addr)
+	c.Server.NodeURL = "https://siem-a.example.com:" + port
+	j.c = &c
+	ctx := context.Background()
+	ca, err := ospki.NewCA(time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := j.osca.Import(ctx, "admin", "siem-a", ca.CertPEM(), ca.KeyPEM()); err != nil {
+		t.Fatal(err)
+	}
+	block, _ := pem.Decode(a.ownCA())
+	nk, _ := shared.NewNodeKey()
+	join := func(what string) *clusterjoin.Bundle {
+		t.Helper()
+		is, err := j.Issue(ctx, "admin", api.JoinTokenRequest{Platform: "linux", CADER: block.Bytes})
+		if err != nil {
+			t.Fatal(err)
+		}
+		req, _ := clusterjoin.NewRequest(is.Token, "n_siem-c", nk.Public())
+		req.Name, req.Version, req.LevelMax, req.OS, req.Arch = "siem-c", version, shared.LevelMax, "linux", "amd64"
+		_, csr, err := ospki.NewClientRequest("siem-c")
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.OSCSRPEM = string(csr)
+		sealed, err := j.Answer(ctx, req)
+		if err != nil {
+			t.Fatalf("%s: %s", what, clusterjoin.Reason(err))
+		}
+		b, err := clusterjoin.Open(nk, "n_siem-c", is.Token.ID, is.Token.Secret, sealed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !b.OpenSearch.Managed || b.OpenSearch.ClientCertPEM == "" || b.OpenSearch.Shared || b.OpenSearch.Password != "" {
+			t.Fatalf("%s: OpenSearch credential %+v", what, b.OpenSearch)
+		}
+		return b
+	}
+	join("first join")
+
+	if _, err := removeServer(ctx, a.r.shared, j.osca, "n_siem-c", "siem-c", "admin", false); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := j.osca.Get(); b.RevokedNodes["n_siem-c"].IsZero() {
+		t.Fatal("removing the server revoked nothing")
+	}
+	eventually(t, "the keyring drops siem-c", func() bool {
+		kr, _ := j.rt.Keyring().Get()
+		_, there := kr.Members["n_siem-c"]
+		return !there
+	})
+
+	// Joining again with the same node id: a new certificate.
+	join("rejoin")
+	if b, _ := j.osca.Get(); !b.RevokedNodes["n_siem-c"].IsZero() {
+		t.Error("the rejoined server is still listed as revoked")
+	}
+
+	// Approval readmits too.
+	if _, err := removeServer(ctx, a.r.shared, j.osca, "n_siem-c", "siem-c", "admin", false); err != nil {
+		t.Fatal(err)
+	}
+	ap := j.approver()
+	if ap.Readmit == nil {
+		t.Fatal("the approver does not readmit")
+	}
+	if err := ap.Readmit(ctx, "n_siem-c"); err != nil {
+		t.Fatal(err)
+	}
+	_, csr, _ := ospki.NewClientRequest("siem-c")
+	if _, _, err := j.osca.Issue(ctx, "siem-c", "n_siem-c", csr, time.Now()); err != nil {
+		t.Errorf("issue after approval: %v", err)
 	}
 }

@@ -483,14 +483,24 @@ start under that other name. The answering server refuses a name another server 
 the cluster has, and a server that has a member's identity with another key (a state
 folder copied from that server).
 
+A joined server has no built-in admin password of its own: the cluster's users sign
+in, and join never writes one. For a password that works on this server while
+OpenSearch is down, run `signalith passwd -local` on it.
+
+Without root, join runs only with `--no-start`: it then writes only files this user
+can write and changes no owner. The Docker image joins this way on its first start, as
+its own user, with `-c /var/lib/signalith/signalith.yaml`: join makes that file and
+keeps its state next to it, taking the listen address, name and node URL from
+`SIGNALITH_LISTEN`, `SIGNALITH_NODE_NAME` and `SIGNALITH_NODE_URL`.
+
 | Flag | What it does |
 | --- | --- |
 | `-c <file>` | Another configuration file; one is made, as `signalith init` makes it, when there is none |
 | `--name` | This server's name (default: `SIGNALITH_NODE_NAME`, the name it has, or the computer's name) |
-| `--listen` | The address the web page and API listen on (default: the answering server's) |
-| `--node-url` | The address the other servers reach this one at (`server.node_url`) |
+| `--listen` | The address the web page and API listen on (default: `SIGNALITH_LISTEN`, else the answering server's) |
+| `--node-url` | The address the other servers reach this one at (`server.node_url`; default: `SIGNALITH_NODE_URL`) |
 | `--copy-syslog` | Receive syslog on the same addresses as the answering server |
-| `--no-start` | Write everything but do not start the service |
+| `--no-start` | Write everything but do not start the service; needed to run join without root |
 | `--merge` | For a server that kept its own files: adds its users, feeds, retention policies and settings that the cluster lacks (see below) |
 | `--yes` | Do not ask before joining |
 | `--allow-version-skew` | Join a cluster whose servers run another version (the cluster level must still allow it) |

@@ -38,11 +38,6 @@ type ClusterJoin interface {
 	Approve(ctx context.Context, nodeID, fingerprint, by string) (*shared.PendingDoc, error)
 	// Answer answers a new server's join (clusterjoin.Answer).
 	Answer(ctx context.Context, req *clusterjoin.Request) (string, error)
-	// Install returns the install script for os ("sh" or "ps1") and its
-	// SHA-256, and Binary the path of this program for goos and arch and
-	// its SHA-256; both are empty where the server has none to hand out.
-	Install(os string) (script []byte, sha256 string)
-	Binary(goos, arch string) (path, sha256 string)
 	// Waiting is what the sign-in page of a server waiting for approval
 	// says, "" otherwise.
 	Waiting() string
@@ -280,12 +275,9 @@ func (s *Server) handleJoinTokenNew(w http.ResponseWriter, r *http.Request) {
 	defer is.Token.Clear()
 	s.audit(r, "join token made", "token", is.Token.ID, "platform", req.Platform, "expires_at", is.ExpiresAt, "note", req.Note)
 	text := is.Token.String()
+	// The install scripts and their SHA-256 come from
+	// internal/clusterinstall; until it is wired install_sha256 is empty.
 	out := joinTokenAnswer{ID: is.Token.ID, Token: text, ExpiresAt: is.ExpiresAt, Commands: commandsFor(text), InstallSHA256: map[string]string{}}
-	for _, os := range []string{"sh", "ps1"} {
-		if _, sum := s.Join.Install(os); sum != "" {
-			out.InstallSHA256[os] = sum
-		}
-	}
 	writeJSON(w, http.StatusCreated, out)
 }
 

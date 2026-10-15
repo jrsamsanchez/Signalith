@@ -3,6 +3,7 @@ package clusterjoin
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -108,10 +109,25 @@ func TestApprove(t *testing.T) {
 		t.Error("a server outside the cluster approved")
 	}
 
+	// A server removed before is readmitted to OpenSearch's
+	// certificates on approval; when that fails no approval is written.
+	ap.Readmit = func(context.Context, string) error { return errors.New("down") }
+	if _, err := ap.Approve(ctx, "n_siem-b", fp, "sam"); err == nil || !strings.Contains(err.Error(), "readmitted") {
+		t.Fatalf("readmit failed: %v", err)
+	}
+	if ok, _ := a.Approved(ctx); ok["n_siem-b"] {
+		t.Fatal("approved although the readmit failed")
+	}
+	var readmitted []string
+	ap.Readmit = func(_ context.Context, id string) error { readmitted = append(readmitted, id); return nil }
+
 	// Fingerprints are compared without case or dashes.
 	p, err := ap.Approve(ctx, "n_siem-b", " "+lowerNoDash(fp)+" ", "sam")
 	if err != nil {
 		t.Fatal(err)
+	}
+	if len(readmitted) != 1 || readmitted[0] != "n_siem-b" {
+		t.Errorf("readmitted %v", readmitted)
 	}
 	if p.Name != "siem-b" {
 		t.Errorf("approved %+v", p)

@@ -159,7 +159,11 @@ func (j *joinAPI) Revoke(ctx context.Context, by, id string) error {
 func (j *joinAPI) Tokens() []clusterjoin.TokenInfo { return j.tokens.List() }
 
 func (j *joinAPI) approver() *clusterjoin.Approver {
-	return &clusterjoin.Approver{RT: j.rt, Secured: j.view().Secured, Log: j.log}
+	a := &clusterjoin.Approver{RT: j.rt, Secured: j.view().Secured, Log: j.log}
+	if j.osca != nil {
+		a.Readmit = j.osca.Readmit
+	}
+	return a
 }
 
 func (j *joinAPI) Pending(ctx context.Context) ([]shared.PendingDoc, error) {
@@ -198,11 +202,6 @@ func joinCredential(view func() clusterjoin.View, osca *clusterpki.OSCA) cluster
 		return clusterjoin.OSCredential{ClientCertPEM: string(cr.ClientCertPEM), CAPEM: string(cr.CAPEM), Managed: true}, nil
 	}
 }
-
-// Install and Binary hand out nothing yet: a new server installs
-// Signalith from a package, the .msi or the Docker image first.
-func (j *joinAPI) Install(string) ([]byte, string)        { return nil, "" }
-func (j *joinAPI) Binary(string, string) (string, string) { return "", "" }
 
 func (j *joinAPI) Waiting() string { return j.rt.Waiting() }
 

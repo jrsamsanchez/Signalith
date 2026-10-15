@@ -13,6 +13,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
+	"io/fs"
 	"maps"
 	"math/big"
 	"net/http"
@@ -26,6 +28,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jrsamsanchez/signalith/internal/cluster"
 	"github.com/jrsamsanchez/signalith/internal/cluster/ostest"
 	"github.com/jrsamsanchez/signalith/internal/clusterjoin"
 	"github.com/jrsamsanchez/signalith/internal/config"
@@ -186,7 +189,7 @@ func newJoinMachine(t *testing.T) *joinMachine {
 	var mu sync.Mutex
 	m.env = &joinEnv{
 		out: &m.out, errOut: &m.out, in: strings.NewReader(""),
-		getenv: func(string) string { return "" }, goos: "linux", admin: true,
+		getenv: func(string) string { return "" }, goos: "linux", admin: true, root: true,
 		serviceEnv:    func(string) {},
 		serviceActive: func() bool { return false },
 		startService:  func() error { m.started++; return nil },
@@ -704,5 +707,72 @@ func TestWithin(t *testing.T) {
 		if within(filepath.FromSlash(c.p), filepath.FromSlash(c.dir)) != c.want {
 			t.Errorf("within(%s, %s)", c.p, c.dir)
 		}
+	}
+}
+
+// The Docker image's first start: signalith join --no-start as its own
+// user (not root), with no signalith.yaml yet, the listen address, name
+// and node URL from the environment. Join makes the config as signalith
+// init does, keeps its state next to it, changes no owner, writes no
+// built-in admin password, and the result loads.
+func TestJoinInDockerAsItsOwnUser(t *testing.T) {
+	f := newJoinFixture(t)
+	m := newJoinMachine(t)
+	t.Setenv("SIGNALITH_STATE_DIR", "")
+	t.Setenv("SIGNALITH_ADMIN_PASSWORD", "")
+	t.Setenv("SIGNALITH_ADMIN_PASSWORD_FILE", "")
+	varLib := filepath.Join(m.dir, "var", "lib", "signalith")
+	if err := os.MkdirAll(varLib, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := filepath.Join(varLib, "signalith.yaml")
+	env := map[string]string{"SIGNALITH_LISTEN": "0.0.0.0:9443", "SIGNALITH_NODE_NAME": "siem-docker", "SIGNALITH_NODE_URL": "https://siem-docker.internal:9443"}
+	m.env.getenv = func(k string) string { return env[k] }
+	m.env.admin, m.env.root = false, false
+	m.env.owner = func() (int, int, bool) { t.Error("looked up the service's account"); return 0, 0, false }
+
+	// Not root, the service cannot be started: refused before anything.
+	if code := runJoin(context.Background(), m.env, []string{f.tok.String(), "-c", cfg, "--yes"}); code != joinExitFailed || f.joins() != 0 {
+		t.Fatalf("not root without --no-start: %d %s", code, m.out.String())
+	}
+	m.out.Reset()
+	if code := runJoin(context.Background(), m.env, []string{f.tok.String(), "--no-start", "-c", cfg, "--yes"}); code != joinExitOK {
+		t.Fatalf("exit %d: %s", code, m.out.String())
+	}
+	if m.started != 0 || len(m.chowned) != 0 || len(m.systemctl) != 0 {
+		t.Errorf("started %d, chowned %v, systemctl %v", m.started, m.chowned, m.systemctl)
+	}
+	if _, err := os.Stat(m.dropIn); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("wrote a systemd drop-in: %v", err)
+	}
+	reqs := f.requests
+	if len(reqs) != 1 || reqs[0].Name != "siem-docker" || reqs[0].NodeURL != "https://siem-docker.internal:9443" {
+		t.Fatalf("requests %+v", reqs)
+	}
+	raw, err := os.ReadFile(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "$2") {
+		t.Errorf("signalith.yaml holds an admin password hash:\n%s", raw)
+	}
+	c, err := config.Load(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.StateDir() != varLib || len(shared.ClusterKeyFiles(varLib)) != 1 {
+		t.Errorf("state folder %s, keys %v", c.StateDir(), shared.ClusterKeyFiles(varLib))
+	}
+	if c.Auth.AdminPasswordHash != "" {
+		t.Error("join set a built-in admin password")
+	}
+	if _, err := os.Stat(config.AdminLocalHashFileIn(varLib)); err == nil {
+		t.Error("join wrote a local admin password")
+	}
+	if c.Server.Listen != "0.0.0.0:9443" || c.Server.NodeURL != "https://siem-docker.internal:9443" {
+		t.Errorf("listen %s, node url %s", c.Server.Listen, c.Server.NodeURL)
+	}
+	if id, err := cluster.ReadIdentity(varLib); err != nil || id.Name != "siem-docker" {
+		t.Errorf("identity %+v %v", id, err)
 	}
 }

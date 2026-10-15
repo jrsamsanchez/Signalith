@@ -2013,6 +2013,14 @@ func (e *ValidationError) Error() string {
 	return "invalid configuration:\n  - " + strings.Join(e.Problems, "\n  - ")
 }
 
+// JoinedCluster reports whether this server is a member of a cluster: it
+// has a cluster key in its state folder (keys/cluster-*.key), as
+// signalith join, an approval and signalith cluster init write it.
+func (c *Config) JoinedCluster() bool {
+	m, _ := filepath.Glob(filepath.Join(c.StateDir(), "keys", "cluster-*.key"))
+	return len(m) > 0
+}
+
 // Validate checks the config and fills derived defaults.
 func (c *Config) Validate() error {
 	var p []string
@@ -2095,7 +2103,12 @@ func (c *Config) Validate() error {
 		p = append(p, "auth.admin_user is required")
 	}
 	if c.Auth.AdminPasswordHash == "" {
-		p = append(p, "auth.admin_password_hash is empty; run signalith passwd, or set SIGNALITH_ADMIN_PASSWORD")
+		// A server that joined a cluster has no built-in admin password
+		// of its own: the cluster's users sign in (signalith passwd
+		// -local adds a break-glass one).
+		if !c.JoinedCluster() {
+			p = append(p, "auth.admin_password_hash is empty; run signalith passwd, or set SIGNALITH_ADMIN_PASSWORD")
+		}
 	} else if _, err := bcrypt.Cost([]byte(c.Auth.AdminPasswordHash)); err != nil {
 		p = append(p, "auth.admin_password_hash is not a bcrypt hash; generate one with signalith passwd")
 	}

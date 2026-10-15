@@ -30,6 +30,10 @@ type Approver struct {
 	Log     *slog.Logger
 	// Now is the clock; nil is time.Now.
 	Now func() time.Time
+	// Readmit lets a server removed before (whose OpenSearch
+	// certificates were revoked) be issued certificates again once it is
+	// approved; nil skips it.
+	Readmit func(ctx context.Context, nodeID string) error
 }
 
 func (a *Approver) log() *slog.Logger {
@@ -150,6 +154,13 @@ func (a *Approver) Approve(ctx context.Context, nodeID, fingerprint, by string) 
 			a.log().Warn("cluster.approve refused: the server would take another member's place", "audit", true, "node_id", nodeID, "name", p.Name, "user", by, "reason", ce.Error())
 		}
 		return nil, err
+	}
+	// A server removed before keeps its node id: it may be issued its
+	// own OpenSearch certificate again before it takes the key.
+	if a.Readmit != nil {
+		if err := a.Readmit(ctx, nodeID); err != nil {
+			return nil, fmt.Errorf("%s could not be readmitted to OpenSearch's certificates: %w", p.Name, err)
+		}
 	}
 	if err := a.RT.WriteApproval(ctx, shared.ApprovalDoc{NodeID: nodeID, KID: k.ID(), Sealed: sealed, By: by, At: now}); err != nil {
 		return nil, err

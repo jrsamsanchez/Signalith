@@ -93,9 +93,7 @@ func (f *fakeJoin) Answer(_ context.Context, req *clusterjoin.Request) (string, 
 	return f.answer(req)
 }
 
-func (f *fakeJoin) Install(string) ([]byte, string)        { return nil, "" }
-func (f *fakeJoin) Binary(string, string) (string, string) { return "", "" }
-func (f *fakeJoin) Waiting() string                        { return f.waiting }
+func (f *fakeJoin) Waiting() string { return f.waiting }
 
 func newJoinServer(t *testing.T, j *fakeJoin, withTLS bool) (*httptest.Server, *Server) {
 	t.Helper()
