@@ -304,6 +304,9 @@ osquery's management server and the hosts appear on the **Endpoints** page (see
 [docs/endpoints.md](docs/endpoints.md)).
 If you run Wazuh, pick **Wazuh** to send the alerts your Wazuh manager raises, through
 Fluent Bit on the manager or its own syslog output (see [docs/wazuh.md](docs/wazuh.md)).
+If you run Zeek or Suricata on a network sensor, pick **Network sensor** to send
+their connections, DNS lookups, web requests, certificates, files and IDS alerts (see
+[docs/network-sensor.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/network-sensor.md)).
 
 Agents on other machines must send to an address they can reach, such as
 `https://192.168.1.20:8080`, not `localhost`. Enter it under **Agents send to** on that page
@@ -329,6 +332,7 @@ Supported sources in Phase 1:
 | OpenTelemetry Collector or SDK logs over OTLP/HTTP ([docs/opentelemetry.md](docs/opentelemetry.md)) | the same models for Windows, Linux and syslog records; Other for app logs |
 | osquery ([docs/endpoints.md](docs/endpoints.md)): file changes, software, accounts, ports, services, startup items, configuration checks | Filesystem, Inventory, Configuration_Check |
 | Wazuh alerts from a Wazuh manager ([docs/wazuh.md](docs/wazuh.md)) | Authentication, Filesystem, Registry, Configuration_Check, Endpoint, Change or Alerts |
+| Zeek and Suricata on a network sensor, or Suricata EVE over syslog from pfSense and OPNsense ([docs/network-sensor.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/network-sensor.md)) | Network_Traffic, Network_Resolution, Web, Certificates, File_Transfers, Intrusion_Detection or Other |
 | Anything else | Other (searchable by text and fields) |
 
 Antivirus: see [docs/antivirus.md](docs/antivirus.md).
@@ -1058,6 +1062,9 @@ to 30 days) and, if you like, auto-refresh. It shows:
   last run, which enabled ones matched nothing in 30 days, and which hosts stopped
   sending (quiet for `dashboards.stale_after`).
 
+Built-in **Malware**, **Network** and **Vulnerabilities** dashboards show antivirus
+events, what a network sensor saw, and vulnerability scans.
+
 **Custom dashboards** are panels of queries shown as a single value (optionally with
 the change from the previous period), a table, bars, or a line or area chart. Build
 one with **New dashboard**, then **Add panel**: ask a question in plain English and
@@ -1204,9 +1211,9 @@ syslog devices ─UDP/TCP/TLS▶ query compiler,
 | `cmd/signalith` | CLI and server entry point, Windows service |
 | `internal/query` | Query language lexer, parser, canonical printer, builder model |
 | `internal/search` | Compiles queries to OpenSearch DSL and runs remaining commands in memory |
-| `internal/ingest` | Fluent Bit and OTLP record parsing for Windows and Linux, index template |
+| `internal/ingest` | Fluent Bit and OTLP record parsing for Windows, Linux, Wazuh, Zeek and Suricata, index template |
 | `internal/syslog` | Syslog receiver (UDP, TCP, TLS), RFC 5424, RFC 3164 and CEF parsing |
-| `internal/datamodel` | Authentication, Endpoint, Network_Traffic, Change, Malware, Filesystem, Registry, Network_Resolution, Image_Load, Script, Inventory, Configuration_Check, Alerts, Risk, Other |
+| `internal/datamodel` | Authentication, Endpoint, Network_Traffic, Change, Malware, Filesystem, Registry, Network_Resolution, Intrusion_Detection, Web, Certificates, File_Transfers, Image_Load, Script, Inventory, Configuration_Check, Alerts, Risk, Other |
 | `internal/agents` | Fluent Bit and OpenTelemetry Collector configuration generator |
 | `internal/detect` | Detection format, built-in content, scheduler, Sigma converter, ATT&CK catalog |
 | `internal/findings` | Findings model and its OpenSearch store |

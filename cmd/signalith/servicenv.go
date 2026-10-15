@@ -38,6 +38,7 @@ var serviceVars = map[string]bool{
 	"SIGNALITH_RESPONSE_FILE": true, "SIGNALITH_RESPONSE_SCRIPTS_DIR": true, "SIGNALITH_PLAYBOOKS_FILE": true,
 	"SIGNALITH_MASTER_KEY_FILE": true, "SIGNALITH_MASTER_KEY": true,
 	"SIGNALITH_NODE_NAME": true, "SIGNALITH_NODE_URL": true, "SIGNALITH_OPENSEARCH_CRL_FILE": true,
+	"SIGNALITH_OPENVAS_CA_FILE": true,
 	// systemd sets it from the unit's StateDirectory= (see
 	// parseSystemctlShow): the state folder falls back to it.
 	"STATE_DIRECTORY": true,
