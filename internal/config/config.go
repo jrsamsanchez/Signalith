@@ -26,6 +26,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/jrsamsanchez/signalith/internal/agents"
+	"github.com/jrsamsanchez/signalith/internal/assistant"
 	"github.com/jrsamsanchez/signalith/internal/detect"
 	"github.com/jrsamsanchez/signalith/internal/intel"
 	"github.com/jrsamsanchez/signalith/internal/redact"
@@ -1058,10 +1059,57 @@ type Assistant struct {
 	// which sends the finding's events and the results of read-only
 	// searches to the model. Off unless an admin turns it on.
 	Investigate bool `yaml:"investigate,omitempty"`
-	// MaskFields are fields whose values are replaced with "[masked]"
-	// before Investigate with AI sends anything, wherever the value
-	// appears; _raw leaves out the original event text. Wildcards * work.
+	// MaskFields are fields whose values are replaced with stand-ins such
+	// as masked-user-1 before Investigate with AI sends anything, wherever
+	// the value appears; _raw leaves out the original event text.
+	// Wildcards * work.
 	MaskFields []string `yaml:"mask_fields,omitempty"`
+	// RequestTimeout is how long one answer from the model may take, such
+	// as 3m (the default). A model on a CPU without a GPU may need 15m.
+	RequestTimeout string `yaml:"request_timeout,omitempty"`
+	// InvestigateTimeout is how long one Investigate with AI may take,
+	// every model turn and search included, such as 6m (the default).
+	InvestigateTimeout string `yaml:"investigate_timeout,omitempty"`
+}
+
+// The AI model's time limits: their defaults and the range allowed.
+const (
+	DefaultAssistantRequestTimeout     = 3 * time.Minute
+	DefaultAssistantInvestigateTimeout = 6 * time.Minute
+	MinAssistantTimeout                = 30 * time.Second
+	MaxAssistantRequestTimeout         = time.Hour
+	MaxAssistantInvestigateTimeout     = 2 * time.Hour
+)
+
+// assistantTimeout reads one of the AI model's time limits: def when it
+// is unset or invalid (Validate reports invalid values).
+func assistantTimeout(v string, def, max time.Duration) time.Duration {
+	if d, err := detect.ParseDuration(strings.TrimSpace(v)); err == nil && d >= MinAssistantTimeout && d <= max {
+		return d
+	}
+	return def
+}
+
+// AssistantRequestTimeout returns assistant.request_timeout as a duration.
+func (c *Config) AssistantRequestTimeout() time.Duration {
+	return assistantTimeout(c.Assistant.RequestTimeout, DefaultAssistantRequestTimeout, MaxAssistantRequestTimeout)
+}
+
+// AssistantInvestigateTimeout returns assistant.investigate_timeout as a
+// duration.
+func (c *Config) AssistantInvestigateTimeout() time.Duration {
+	return assistantTimeout(c.Assistant.InvestigateTimeout, DefaultAssistantInvestigateTimeout, MaxAssistantInvestigateTimeout)
+}
+
+// AssistantClient returns the AI model client the settings describe, with
+// its time limit for one answer, or nil when no provider is set.
+func (c *Config) AssistantClient() *assistant.Client {
+	a := c.Assistant
+	cl := assistant.New(a.Provider, a.URL, a.Model, a.APIKey)
+	if cl != nil {
+		cl.HTTP.Timeout = c.AssistantRequestTimeout()
+	}
+	return cl
 }
 
 // Vulns configures the CVE lookups of vulnerability scans (the
@@ -2180,6 +2228,17 @@ func (c *Config) Validate() error {
 	if v := strings.TrimSpace(c.Detections.CatchUp); v != "" && v != "0" {
 		if d, err := detect.ParseDuration(v); err != nil || d < 0 || d > detect.MaxCatchUp {
 			p = append(p, fmt.Sprintf("detections.catch_up %q must be 0 (off) or a duration up to 168h (7d), for example 6h", c.Detections.CatchUp))
+		}
+	}
+	for _, t := range []struct {
+		key, v string
+		max    time.Duration
+	}{{"assistant.request_timeout", c.Assistant.RequestTimeout, MaxAssistantRequestTimeout},
+		{"assistant.investigate_timeout", c.Assistant.InvestigateTimeout, MaxAssistantInvestigateTimeout}} {
+		if v := strings.TrimSpace(t.v); v != "" {
+			if d, err := detect.ParseDuration(v); err != nil || d < MinAssistantTimeout || d > t.max {
+				p = append(p, fmt.Sprintf("%s %q must be a duration from 30s to %s, for example 15m", t.key, t.v, strings.TrimSuffix(t.max.String(), "0m0s")))
+			}
 		}
 	}
 	switch c.Detections.ContentUpdates {
