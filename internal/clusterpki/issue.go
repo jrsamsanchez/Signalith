@@ -5,6 +5,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -132,13 +133,16 @@ func (o *OSCA) Issue(ctx context.Context, name, nodeID string, csrPEM []byte, no
 					next.Previous = append(next.Previous, e)
 				}
 			}
+			// None that is still valid is dropped, or a revocation would
+			// miss it: past the cap, the server gets no new certificate
+			// until the oldest expires.
 			if len(next.Previous) > MaxPrevious {
-				next.Previous = next.Previous[len(next.Previous)-MaxPrevious:]
+				return fmt.Errorf("this server already holds %d OpenSearch certificates that have not expired, more than a revocation keeps track of, so it is issued no new one until one expires on %s",
+					len(next.Previous), slices.MinFunc(next.Previous, func(a, b Earlier) int { return a.NotAfter.Compare(b.NotAfter) }).NotAfter.Format(time.DateOnly))
 			}
 		}
 		b.Issued[key] = next
-		pruneIssued(b.Issued)
-		return nil
+		return pruneIssued(b.Issued, now)
 	})
 	if err != nil {
 		return nil, time.Time{}, err

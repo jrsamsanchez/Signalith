@@ -311,6 +311,26 @@ func TestBootstrapExportCAKey(t *testing.T) {
 	}
 }
 
+// A link planted as the import folder is refused, not followed.
+func TestBootstrapExportCAKeyLink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symbolic links need privileges on Windows")
+	}
+	o := caVolumes(t)
+	o.ExportCAKey = true
+	os.MkdirAll(filepath.Join(o.StateDir, "keys"), 0o700)
+	elsewhere := t.TempDir()
+	if err := os.Symlink(elsewhere, filepath.Join(o.StateDir, ospki.ImportDir)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := bootstrapWith(t, o); err == nil || !strings.Contains(err.Error(), "is not a folder") {
+		t.Errorf("through a link: %v", err)
+	}
+	if entries, _ := os.ReadDir(elsewhere); len(entries) != 0 {
+		t.Errorf("written through the link: %v", entries)
+	}
+}
+
 func TestBootstrapApplySecurity(t *testing.T) {
 	o := caVolumes(t)
 	os.MkdirAll(o.LoadedDir, 0o700)

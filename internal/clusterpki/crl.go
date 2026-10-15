@@ -46,17 +46,26 @@ func (i *Identity) syncCRL() *cluster.CRLStatus {
 	}
 	var wrote error
 	if b, ok := i.o.OSCA.Get(); ok {
-		if ca, err := b.Cert(); err == nil && Trusted(conn.CAFile, ca) == nil && i.o.OSCA.Opens() == nil {
+		if ca, err := b.Cert(); err == nil {
 			want := b.RevokedSerials(now)
-			cur, err := ospki.ReadCRL(path, ca, now)
-			if err != nil || !slices.Equal(ospki.CRLSerials(cur), want) || cur.NextUpdate.Before(ca.NotAfter) {
-				wrote = i.writeCRL(path, now, len(want))
+			if Trusted(conn.CAFile, ca) == nil && i.o.OSCA.Opens() == nil {
+				// A list that already names every revoked certificate is
+				// kept, even when it names more: a server whose copy of
+				// the osca document is behind must not take any off.
+				// Certificates leave the list only once they expire.
+				cur, err := ospki.ReadCRL(path, ca, now)
+				if err != nil || countIn(want, ospki.CRLSerials(cur)) < len(want) || cur.NextUpdate.Before(ca.NotAfter) {
+					wrote = i.writeCRL(path, now, len(want))
+				}
 			}
-			if wrote == nil {
-				if cur, err := ospki.ReadCRL(path, ca, now); err == nil {
-					if missing := len(want) - countIn(want, ospki.CRLSerials(cur)); missing > 0 {
-						st.Problem = fmt.Sprintf("OpenSearch's revocation list %s does not name %d revoked %s yet, so %s still %s OpenSearch.",
-							path, missing, plural(missing, "certificate", "certificates"), plural(missing, "it", "they"), plural(missing, "opens", "open"))
+			// Checked whether or not this server can write it: a list
+			// another server or bootstrap-docker wrote may be behind too.
+			if cur, err := readCRLAgainst(path, cas, now); err == nil {
+				if missing := len(want) - countIn(want, ospki.CRLSerials(cur)); missing > 0 {
+					st.Problem = fmt.Sprintf("OpenSearch's revocation list %s does not name %d revoked %s yet, so %s still %s OpenSearch.",
+						path, missing, plural(missing, "certificate", "certificates"), plural(missing, "it", "they"), plural(missing, "opens", "open"))
+					if wrote != nil {
+						st.Problem += " This server could not update it: " + wrote.Error()
 					}
 				}
 			}

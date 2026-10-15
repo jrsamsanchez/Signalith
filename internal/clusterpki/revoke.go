@@ -3,6 +3,7 @@ package clusterpki
 import (
 	"context"
 	"errors"
+	"fmt"
 	"maps"
 	"math/big"
 	"slices"
@@ -50,7 +51,11 @@ func (o *OSCA) RevokeNode(ctx context.Context, by, nodeID string) ([]Revoked, er
 		if len(out) == 0 && known {
 			return errUnchanged
 		}
-		b.Revoked = pruneRevoked(append(b.Revoked, out...), now)
+		list, err := pruneRevoked(append(b.Revoked, out...), now)
+		if err != nil {
+			return err
+		}
+		b.Revoked = list
 		if b.RevokedNodes == nil {
 			b.RevokedNodes = map[string]time.Time{}
 		}
@@ -97,15 +102,15 @@ func hasKey(m map[string]time.Time, k string) bool {
 	return ok
 }
 
-// pruneRevoked drops the revoked certificates that expired anyway, and
-// those over MaxRevoked that expire first.
-func pruneRevoked(list []Revoked, now time.Time) []Revoked {
+// pruneRevoked drops the revoked certificates that expired anyway. One
+// that has not expired is never dropped, since that would let it in
+// again: past MaxRevoked, it refuses.
+func pruneRevoked(list []Revoked, now time.Time) ([]Revoked, error) {
 	list = slices.DeleteFunc(list, func(r Revoked) bool { return !now.Before(r.NotAfter) })
 	if len(list) > MaxRevoked {
-		slices.SortStableFunc(list, func(a, b Revoked) int { return a.NotAfter.Compare(b.NotAfter) })
-		list = list[len(list)-MaxRevoked:]
+		return nil, fmt.Errorf("the revocation list would name %d certificates that have not expired, more than the %d it holds, so this server's are not revoked; make OpenSearch's certificates again from a new certificate authority to end its access (bootstrap-docker -new-ca in Docker)", len(list), MaxRevoked)
 	}
-	return list
+	return list, nil
 }
 
 // pruneRevokedNodes drops the servers over MaxRevoked revoked longest

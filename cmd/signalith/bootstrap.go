@@ -444,6 +444,15 @@ func exportCAKey(out io.Writer, o bootstrapOptions, chown bool) error {
 		return errors.New("Signalith has not started yet. Start it first (docker compose -f deploy/docker/docker-compose.yml up -d), then run this again")
 	}
 	dir := filepath.Join(o.StateDir, ospki.ImportDir)
+	// This runs as root in a folder Signalith's account owns, so the
+	// import folder must be a real folder: through a link planted there,
+	// the key would be written, and an owner and mode set, wherever it
+	// points.
+	if fi, err := os.Lstat(dir); err == nil && !fi.IsDir() {
+		return fmt.Errorf("%s is not a folder (a link, say), so the OpenSearch CA's key is not written there; remove it and run this again", dir)
+	} else if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
 	if anyExist(dir, []string{ospki.ExportCAFile}) && anyExist(dir, []string{ospki.ExportCAKeyFile}) {
 		fmt.Fprintf(out, "The OpenSearch CA is already waiting for Signalith in %s; left as it is.\n", dir)
 		return nil

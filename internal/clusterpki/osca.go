@@ -360,14 +360,20 @@ func opener(keys *shared.KeySet) secrets.Opener {
 }
 
 // pruneIssued drops the entries over MaxIssued whose certificates
-// expired longest ago.
-func pruneIssued(m map[string]Issued) {
+// expired longest ago. One whose certificate has not expired is never
+// dropped, or a revocation would miss it: past the cap with none
+// expired, it refuses.
+func pruneIssued(m map[string]Issued, now time.Time) error {
 	if len(m) <= MaxIssued {
-		return
+		return nil
 	}
 	names := slices.Collect(maps.Keys(m))
 	slices.SortFunc(names, func(a, b string) int { return m[a].NotAfter.Compare(m[b].NotAfter) })
 	for _, n := range names[:len(m)-MaxIssued] {
+		if now.Before(m[n].NotAfter) {
+			return fmt.Errorf("%d servers hold OpenSearch certificates that have not expired, the most the cluster keeps track of, so no other server is issued one until one expires", MaxIssued)
+		}
 		delete(m, n)
 	}
+	return nil
 }
