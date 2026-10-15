@@ -1,0 +1,105 @@
+# Signalith network sensor in containers: Zeek, Suricata and the Fluent Bit
+# agent, written by the sensor install script with --docker
+# (deploy/sensor/install.sh) to /etc/signalith-sensor/docker/. Run the
+# script again rather than editing this file: it is replaced.
+#
+# The images come from their publishers (Docker Hub), pinned by version and
+# digest in .env next to this file; Signalith does not rebuild or ship them.
+# Linux hosts only: Docker Desktop cannot listen on a physical port.
+#
+# The host prepares the capture port and runs two timers: the status line
+# every 5 minutes, and the daily Suricata rules update (it runs the
+# suricata-update service below, then has Suricata load the new rules).
+name: signalith-sensor
+
+x-hardened: &hardened
+  network_mode: host
+  restart: unless-stopped
+  read_only: true
+  security_opt:
+    - no-new-privileges:true
+  tmpfs:
+    - /tmp
+    - /run
+
+services:
+  zeek:
+    <<: *hardened
+    image: ${SIGNALITH_IMAGE_ZEEK}
+    # One Zeek process (no zeekctl): fine up to roughly 200 Mbit/s. Bigger
+    # links use the package install, which runs Zeek workers per core.
+    working_dir: /logs/zeek/current
+    entrypoint: ["zeek"]
+    command: ["-C", "-i", "af_packet::${SIGNALITH_INTERFACE}", "local", "/config/signalith.zeek"]
+    cap_drop: [ALL]
+    cap_add: [NET_RAW, NET_ADMIN]
+    volumes:
+      - zeek-logs:/logs/zeek
+      - /etc/signalith-sensor/docker/zeek/signalith.zeek:/config/signalith.zeek:ro
+
+  suricata:
+    <<: *hardened
+    image: ${SIGNALITH_IMAGE_SURICATA}
+    # Starts as root to open the capture port, then runs as the image's
+    # suricata user (--user), keeping only the capture rights. Until then
+    # it needs DAC_OVERRIDE (the image's suricata.yaml and log folder are
+    # that user's alone), and CHOWN and SETPCAP to hand over and drop the
+    # rest.
+    entrypoint: ["suricata"]
+    command: ["-c", "/etc/suricata/signalith-sensor.yaml", "--af-packet", "--user", "suricata", "--group", "suricata"]
+    cap_drop: [ALL]
+    cap_add: [NET_RAW, NET_ADMIN, SETUID, SETGID, SYS_NICE, DAC_OVERRIDE, CHOWN, SETPCAP]
+    volumes:
+      - suricata-logs:/var/log/suricata
+      - suricata-rules:/var/lib/suricata
+      - /etc/signalith-sensor/docker/suricata/signalith-sensor.yaml:/etc/suricata/signalith-sensor.yaml:ro
+      - /etc/signalith-sensor/docker/suricata/disable.conf:/etc/suricata/disable.conf:ro
+      - /etc/signalith-sensor/docker/suricata/threshold.config:/etc/suricata/threshold.config:ro
+
+  # The daily rules update, not started with the others: the host's timer
+  # runs it, and Suricata loads the new rules once they passed its test.
+  suricata-update:
+    image: ${SIGNALITH_IMAGE_SURICATA}
+    profiles: [update]
+    # As the suricata user, who owns the rules folder.
+    user: suricata
+    network_mode: host
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    # Suricata's test of the new rules opens its logs: they go nowhere.
+    tmpfs:
+      - /tmp
+      - /var/log/suricata
+    entrypoint: ["suricata-update"]
+    command: ["--etopen", "--suricata-conf", "/etc/suricata/signalith-sensor.yaml", "--disable-conf", "/etc/suricata/disable.conf",
+      "--local", "/etc/suricata/local.rules", "--no-reload", "--fail"]
+    cap_drop: [ALL]
+    volumes:
+      - suricata-rules:/var/lib/suricata
+      - /etc/signalith-sensor/docker/suricata/signalith-sensor.yaml:/etc/suricata/signalith-sensor.yaml:ro
+      - /etc/signalith-sensor/docker/suricata/disable.conf:/etc/suricata/disable.conf:ro
+      - /etc/signalith-sensor/docker/suricata/local.rules:/etc/suricata/local.rules:ro
+
+  fluent-bit:
+    <<: *hardened
+    image: ${SIGNALITH_IMAGE_FLUENTBIT}
+    command: ["/fluent-bit/bin/fluent-bit", "-c", "/config/fluent-bit.conf"]
+    # The token (SIGNALITH_TOKEN) and the sensor's name (HOSTNAME). The
+    # image has no shell to read a Docker secret into a variable, so the
+    # token comes from this file, which only root reads.
+    env_file: /etc/signalith-sensor/token.env
+    cap_drop: [ALL]
+    volumes:
+      - zeek-logs:/logs/zeek:ro
+      - suricata-logs:/logs/suricata:ro
+      - /var/log/signalith-sensor:/logs/status:ro
+      - buffer:/buffer
+      - /etc/signalith-sensor/docker/fluent-bit.conf:/config/fluent-bit.conf:ro
+      - /etc/signalith-sensor/ca.pem:/config/ca.pem:ro
+
+volumes:
+  zeek-logs:
+  suricata-logs:
+  suricata-rules:
+  buffer:

@@ -1,0 +1,39 @@
+# Written by the Signalith sensor install script (deploy/sensor/install.sh).
+# Suricata starts as root to open the capture port, then runs as the
+# suricata user (run-as in /etc/suricata/signalith-sensor.yaml). It writes
+# only its logs and its rules folder.
+[Unit]
+Description=Signalith sensor: Suricata
+Documentation=https://github.com/jrsamsanchez/Signalith/blob/main/docs/network-sensor.md
+Wants=network-online.target
+After=network-online.target signalith-sensor-capture.service
+Requires=signalith-sensor-capture.service
+
+[Service]
+Type=simple
+ExecStartPre=+/bin/chown suricata:suricata /run/suricata
+ExecStart=suricata -c /etc/suricata/signalith-sensor.yaml --af-packet --pidfile /run/suricata/suricata.pid
+ExecReload=/bin/kill -USR2 $MAINPID
+Restart=on-failure
+RestartSec=10
+RuntimeDirectory=suricata
+RuntimeDirectoryMode=0750
+# Logs readable by the suricata group, which the agent is in.
+UMask=0027
+CapabilityBoundingSet=CAP_NET_RAW CAP_NET_ADMIN CAP_SETUID CAP_SETGID CAP_SYS_NICE CAP_IPC_LOCK
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/var/log/suricata /var/lib/suricata
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+RestrictRealtime=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_PACKET AF_NETLINK
+
+[Install]
+WantedBy=multi-user.target
