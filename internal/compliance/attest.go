@@ -1,10 +1,12 @@
 package compliance
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -21,6 +23,9 @@ type Attestation struct {
 	By     string    `json:"by"`
 	At     time.Time `json:"at"`
 }
+
+// NotesFile keeps a server's notes in its state folder.
+const NotesFile = "compliance-notes.json"
 
 // MaxNote is the longest note, in characters.
 const MaxNote = 2000
@@ -87,34 +92,48 @@ type InputError struct{ Msg string }
 
 func (e *InputError) Error() string { return e.Msg }
 
-// Set saves a note on a control, or removes it when status is empty.
-func (n *Notes) Set(framework, control string, status Status, note, by string, now time.Time) (*Attestation, error) {
+// NoteStore keeps the admins' notes on controls: Notes in a file on this
+// server, or the shared settings of a cluster (internal/clustercomp).
+type NoteStore interface {
+	// All returns every note, keyed by Key.
+	All() map[string]Attestation
+	// Err is why the notes could not be read, if they could not.
+	Err() error
+	// Set saves a note on a control, or removes it when status is empty.
+	Set(ctx context.Context, framework, control string, status Status, note, by string, now time.Time) (*Attestation, error)
+}
+
+// CheckNote checks a note an admin asks to save and returns its text
+// trimmed: the control must be one Signalith maps, and a note needs words.
+func CheckNote(framework, control string, status Status, note string) (string, error) {
 	f, ok := FrameworkByID(framework)
 	if !ok {
-		return nil, &InputError{"There is no framework " + framework + "."}
+		return "", &InputError{"There is no framework " + framework + "."}
 	}
-	found := false
-	for _, c := range f.Controls {
-		if c.ID == control {
-			found = true
-			break
-		}
-	}
-	if !found {
-		return nil, &InputError{fmt.Sprintf("%s has no control %s that Signalith maps.", f.Name, control)}
+	if !slices.ContainsFunc(f.Controls, func(c Control) bool { return c.ID == control }) {
+		return "", &InputError{fmt.Sprintf("%s has no control %s that Signalith maps.", f.Name, control)}
 	}
 	note = strings.TrimSpace(note)
 	switch status {
 	case "":
 	case External, NotApplicable:
 		if note == "" {
-			return nil, &InputError{"Say how the control is handled, or why it does not apply, so an auditor can follow it."}
+			return "", &InputError{"Say how the control is handled, or why it does not apply, so an auditor can follow it."}
 		}
 		if utf8.RuneCountInString(note) > MaxNote {
-			return nil, &InputError{fmt.Sprintf("The note can be at most %d characters.", MaxNote)}
+			return "", &InputError{fmt.Sprintf("The note can be at most %d characters.", MaxNote)}
 		}
 	default:
-		return nil, &InputError{`status must be "external", "na" or empty`}
+		return "", &InputError{`status must be "external", "na" or empty`}
+	}
+	return note, nil
+}
+
+// Set saves a note on a control, or removes it when status is empty.
+func (n *Notes) Set(_ context.Context, framework, control string, status Status, note, by string, now time.Time) (*Attestation, error) {
+	note, err := CheckNote(framework, control, status, note)
+	if err != nil {
+		return nil, err
 	}
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -134,14 +153,20 @@ func (n *Notes) Set(framework, control string, status Status, note, by string, n
 		next[k] = *a
 	}
 	if n.path != "" {
-		b, err := json.MarshalIndent(notesFile{Notes: next}, "", "  ")
-		if err != nil {
-			return nil, err
-		}
-		if err := securefile.WriteFile(n.path, append(b, '\n')); err != nil {
+		if err := WriteNotesFile(n.path, next); err != nil {
 			return nil, err
 		}
 	}
 	n.m = next
 	return a, nil
+}
+
+// WriteNotesFile writes notes, keyed by Key, as a server keeps them in
+// its state folder (NotesFile).
+func WriteNotesFile(path string, notes map[string]Attestation) error {
+	b, err := json.MarshalIndent(notesFile{Notes: notes}, "", "  ")
+	if err != nil {
+		return err
+	}
+	return securefile.WriteFile(path, append(b, '\n'))
 }
