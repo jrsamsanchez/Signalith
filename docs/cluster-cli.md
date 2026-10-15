@@ -28,6 +28,10 @@ others may run while Signalith runs on the same computer.
 | [`accept-restore`](#accept-restore) | Accepts the shared settings after an OpenSearch snapshot was restored |
 | [`tls`](#tls) | The cluster's certificate authority and each server's; `tls choose` keeps one for the whole cluster |
 
+`signalith join` and `signalith opensearch-check`, which are not `cluster` commands,
+add a server with a join token and check an OpenSearch for several servers; see
+[join](#join) and [opensearch-check](#opensearch-check).
+
 `signalith passwd`, which is not a `cluster` command, changes the built-in admin's
 password for every server of a cluster that shares its users; see
 [The built-in admin's password](#the-built-in-admins-password).
@@ -331,3 +335,58 @@ With `-json` it prints `safe`, `servers` (each with `name`, `version`, `state`, 
 `cluster_level`, `blockers` and `warnings` (each with a `code`, the `server` and the
 `text`) and `next`. A server that is the only one using its OpenSearch prints that
 it can simply be stopped, upgraded and started, and exits 0.
+
+## join
+
+`signalith join '<token>'` adds the computer it runs on to a cluster, with a join
+token made on **Servers → Add a server** of a server of the cluster. Run it as root
+(`sudo`) or as an Administrator, after installing Signalith from a package, the
+`.msi` or the Docker image:
+
+```
+sudo signalith join 'SJ1.eyJ1Ijoi...' --name siem-c --node-url https://siem-c.example.com:8080
+```
+
+It checks the server the token names by the certificate the token pins, asks it for
+what a new server needs (sealed so only this computer can read it), and checks from
+here that it can use the cluster's OpenSearch: OpenSearch answers, its certificate is
+trusted, it takes the sign-in, its security plugin is on, the cluster's settings in it
+check out with the key received, the listen address is free and the clocks agree
+within 2 seconds. Only then does it write the cluster key, the OpenSearch settings
+(as Settings page entries, so environment variables still win), OpenSearch's
+certificate files under `<state>/opensearch/`, and the HTTPS certificate from the
+cluster's certificate authority. If anything fails to be written, what was written is
+undone. On Linux the files go to the `signalith` account, an archive folder outside
+`/var/lib/signalith` is added to the unit's `ReadWritePaths=`, and the service is
+enabled and restarted.
+
+| Flag | What it does |
+| --- | --- |
+| `-c <file>` | Another configuration file; one is made, as `signalith init` makes it, when there is none |
+| `--name` | This server's name (default: `SIGNALITH_NODE_NAME`, the name it has, or the computer's name) |
+| `--listen` | The address the web page and API listen on (default: the answering server's) |
+| `--node-url` | The address the other servers reach this one at (`server.node_url`) |
+| `--copy-syslog` | Receive syslog on the same addresses as the answering server |
+| `--no-start` | Write everything but do not start the service |
+| `--merge` | Not in this version yet: refused |
+| `--yes` | Do not ask before joining |
+| `--allow-version-skew` | Join a cluster whose servers run another version (the cluster level must still allow it) |
+
+| Exit code | Meaning |
+| --- | --- |
+| 0 | Joined |
+| 1 | It cannot run here (not root, already in a cluster, a bad name) or the server did not answer |
+| 2 | The token was refused (wrong, used or expired) |
+| 3 | The server is not the one the token names: someone may be intercepting the connection |
+| 4 | This computer cannot use the cluster's OpenSearch; nothing was written, and the token is used |
+| 5 | Writing failed and was undone |
+| 6 | Everything was written, but the service did not start |
+
+A token works once. After exit 2, 4 or 5, make a new one.
+
+## opensearch-check
+
+`signalith opensearch-check <url> [--ca file] [--cert file --key file] [--user name]`
+runs the OpenSearch checks of `join` on their own, from the computer it runs on, and
+says what to fix for each that fails. The password of `--user` is read from
+`SIGNALITH_OPENSEARCH_PASSWORD`, or asked for. It exits 1 when a check fails.

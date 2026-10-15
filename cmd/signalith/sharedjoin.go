@@ -83,10 +83,32 @@ func (r *runner) sharedJoin(c *config.Config, certs *tlsauto.Manager) api.Cluste
 	return j
 }
 
-// joinLeaf is the joining server's HTTPS certificate from the cluster's
-// certificate authority, once the cluster keeps one (filled in with the
-// TLS seed).
-func (r *runner) joinLeaf(*tlsauto.Manager) clusterjoin.LeafFunc { return nil }
+// joinLeaf signs the joining server's HTTPS certificate from the
+// cluster's certificate authority (tlsauto.SignCSR), when the cluster has
+// published one; without one (files mode, a choice of certificate
+// authority still to make, a cluster below that level) the joining server
+// gets none and makes its own certificate authority, as before.
+func (r *runner) joinLeaf(*tlsauto.Manager) clusterjoin.LeafFunc {
+	if r.sharedContent == nil || r.sharedContent.tls == nil {
+		return nil
+	}
+	ct := r.sharedContent.tls.tls
+	return func(csrPEM []byte, names []string) ([]byte, []byte, error) {
+		b, ok := ct.Get()
+		if !ok || b.CACertPEM == "" {
+			return nil, nil, nil
+		}
+		ca, key, err := ct.Store().Load()
+		if err != nil || ca == nil || key == nil {
+			return nil, nil, err
+		}
+		leaf, err := tlsauto.SignCSR(ca, key, csrPEM, names, time.Now())
+		if err != nil {
+			return nil, nil, err
+		}
+		return []byte(b.CACertPEM), leaf, nil
+	}
+}
 
 func (j *joinAPI) view() clusterjoin.View { return clusterjoin.ViewOf(j.c) }
 
