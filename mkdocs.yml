@@ -148,6 +148,7 @@ nav:
       - signalith cluster: cluster-cli.md
       - Load balancers: load-balancers.md
       - OpenSearch with several nodes: opensearch-failover.md
+      - Cloud test lab: cloud-lab.md
       - Performance and sizing: performance.md
       - Data retention: retention.md
       - Audit: audit.md

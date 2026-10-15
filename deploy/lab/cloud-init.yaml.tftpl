@@ -1,0 +1,53 @@
+#cloud-config
+# Every Linux machine of the lab. signalith-1 also gets the setup script,
+# which installs the rest from there (see lab-setup.sh).
+hostname: ${name}
+fqdn: ${name}.lab.internal
+# The lab's names are added to /etc/hosts below; keep cloud-init from
+# writing the file again over them.
+manage_etc_hosts: false
+package_update: true
+packages:
+  - curl
+  - git
+  - jq
+  - python3-yaml
+write_files:
+  - path: /etc/hosts
+    append: true
+    encoding: b64
+    content: ${base64encode("\n# Signalith lab\n${hosts}\n")}
+  - path: /root/.ssh/authorized_keys
+    append: true
+    encoding: b64
+    content: ${base64encode("${trimspace(lab_key)} signalith-lab-setup\n")}
+%{ if conductor ~}
+  - path: /root/lab/id_lab
+    permissions: "0600"
+    encoding: b64
+    content: ${base64encode(private_key)}
+  - path: /root/lab/lab.json
+    permissions: "0600"
+    encoding: b64
+    content: ${base64encode(lab_json)}
+  - path: /usr/local/sbin/lab-setup
+    permissions: "0755"
+    encoding: gz+b64
+    content: ${setup}
+  - path: /etc/systemd/system/lab-setup.service
+    content: |
+      [Unit]
+      Description=Signalith lab setup
+      After=network-online.target cloud-final.service
+      Wants=network-online.target
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/sbin/lab-setup
+      StandardOutput=append:/var/log/lab-setup.log
+      StandardError=append:/var/log/lab-setup.log
+      TimeoutStartSec=infinity
+runcmd:
+  - systemctl daemon-reload
+  - systemctl start --no-block lab-setup.service
+%{ endif ~}

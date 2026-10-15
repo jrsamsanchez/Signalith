@@ -313,6 +313,24 @@ jobs:
     needs: test
     uses: ./.github/workflows/packages.yml
 
+  # The cloud test lab (deploy/lab): shellcheck of the setup script, and
+  # Terraform's format and validate. Not a required check.
+  lab:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Shellcheck the setup script
+        run: shellcheck -s bash deploy/lab/lab-setup.sh
+      - name: Terraform format and validate
+        working-directory: deploy/lab
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/terraform.zip" https://releases.hashicorp.com/terraform/1.9.8/terraform_1.9.8_linux_amd64.zip
+          unzip -q "$RUNNER_TEMP/terraform.zip" -d "$RUNNER_TEMP/tf"
+          "$RUNNER_TEMP/tf/terraform" fmt -check -diff
+          "$RUNNER_TEMP/tf/terraform" init -backend=false -input=false
+          "$RUNNER_TEMP/tf/terraform" validate
+
   # The network sensor install script (deploy/sensor): shellcheck, the
   # systemd units, the repository keys it pins against what each publisher
   # serves, and its dry runs on every system it supports. Not a required
