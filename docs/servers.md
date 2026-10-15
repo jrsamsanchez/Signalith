@@ -460,7 +460,11 @@ longer used for them. A server switches to the shared ones by itself, with a qui
 in place, when it founds or joins the cluster. While the founder is still moving its files
 into OpenSearch, the other servers keep using their own and the Servers page says they wait
 for it; if that takes more than 30 minutes, it turns red: the founder finishes only while
-it runs the background jobs.
+it runs the background jobs. Between moving a page's files and the restart that switches
+to the shared ones (usually a few seconds), a server refuses changes on its Threat intel,
+Data retention and Users pages with "This server is moving its … into the cluster; try
+again in a moment" (`503` with `Retry-After` from the API), so a change is never saved to
+a file that is no longer read; saved again, it goes to the shared settings.
 
 **When the servers' policies differed.** If another server that ran in the last 7 days had
 retention policies of its own that differ from the founder's, the shared policies wait to be

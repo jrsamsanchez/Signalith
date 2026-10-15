@@ -1074,6 +1074,8 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	archiveCrypto(ret.Archive, c, r.clusterKey)
 	if sharedOn {
 		r.sharedContent.sharedRetention(ret)
+	} else {
+		r.sharedContent.holdRetention(ret)
 	}
 	r.useAudit(ctx, in, c, cl, ret)
 	maxAge := c.MaxEventAge(retentionKeepDays(ret))
@@ -1145,6 +1147,8 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	feeds := newFeeds(c, indicators, log)
 	if sharedOn {
 		r.sharedContent.sharedFeeds(ctx, feeds, indicators, cl, c.OpenSearch.IndexPrefix, &in.jobs)
+	} else {
+		r.sharedContent.holdFeeds(feeds)
 	}
 	if err := feeds.Load(); err != nil {
 		if sharedOn {
@@ -1891,6 +1895,7 @@ func (r *runner) openUsers(c *config.Config) (*users.Store, *users.Directory, er
 		if err != nil {
 			return nil, nil, err
 		}
+		people.Hold = r.sharedContent.holdFile(shared.ImportUsers)
 		r.people = people
 	}
 	if r.people.BuiltinAdmin != c.Auth.AdminUser {
@@ -1904,6 +1909,7 @@ func (r *runner) openUsers(c *config.Config) (*users.Store, *users.Directory, er
 	if err != nil {
 		return nil, nil, err
 	}
+	dir.Hold = r.sharedContent.holdFile(shared.ImportDirectory)
 	return r.people, dir, nil
 }
 

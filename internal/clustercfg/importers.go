@@ -101,6 +101,13 @@ func hashOf(files []string, values ...any) (string, error) {
 	return "sha256:" + hex.EncodeToString(h.Sum(nil)), nil
 }
 
+// The names of the importers of the feed list and of the retention
+// policies (Importers).
+const (
+	ImportFeeds     = "feeds"
+	ImportRetention = "retention"
+)
+
 // Importers returns the importers of the shared settings: the feed list
 // (the feeds added on the page and intel.feeds in signalith.yaml), the
 // feeds' status (so downloads stay on their schedules) and the retention
@@ -112,7 +119,7 @@ func hashOf(files []string, values ...any) (string, error) {
 // Settings page there, those every server shares.
 func Importers(d *Docs, f Files) []shared.Importer {
 	out := []shared.Importer{
-		{Name: "feeds", Source: func() (string, error) {
+		{Name: ImportFeeds, Source: func() (string, error) {
 			c := f.Config()
 			return hashOf([]string{c.IntelFeedsFile()}, c.Intel.Feeds)
 		}, Run: func(ctx context.Context, by string) error { return importFeeds(ctx, d, f, by) }},
@@ -123,7 +130,7 @@ func Importers(d *Docs, f Files) []shared.Importer {
 			}
 			return hashOf([]string{p})
 		}, Run: func(ctx context.Context, _ string) error { return importFeedStatus(ctx, f) }},
-		{Name: "retention", Source: func() (string, error) {
+		{Name: ImportRetention, Source: func() (string, error) {
 			c := f.Config()
 			return hashOf([]string{RetentionFile(c)}, c.RetentionPolicies())
 		}, Run: func(ctx context.Context, by string) error { return importRetention(ctx, d, f, by) }},
