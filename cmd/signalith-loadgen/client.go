@@ -243,7 +243,29 @@ type clusterView struct {
 		State   string `json:"state"`
 		Jobs    string `json:"jobs"`
 		NodeURL string `json:"node_url"`
+		OS      string `json:"os"`
 	} `json:"servers"`
+}
+
+// windows lists the ready servers that run on Windows.
+func (v clusterView) windows() []string {
+	var out []string
+	for _, s := range v.Servers {
+		if s.State == "ready" && s.OS == "windows" {
+			out = append(out, s.Name)
+		}
+	}
+	return out
+}
+
+// isWindows says whether the named server runs on Windows.
+func (v clusterView) isWindows(name string) bool {
+	for _, s := range v.Servers {
+		if s.Name == name {
+			return s.OS == "windows"
+		}
+	}
+	return false
 }
 
 // selfName is the name of the server that answered.

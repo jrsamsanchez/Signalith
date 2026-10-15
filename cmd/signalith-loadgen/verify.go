@@ -9,9 +9,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -19,7 +21,10 @@ import (
 // verify, and the operation counters, for the request rates. It never
 // writes.
 type osReader struct {
-	url    string
+	// urls are the nodes; cur is the one in use, and a node that does
+	// not answer moves the reader on to the next.
+	urls   []string
+	cur    atomic.Int64
 	prefix string
 	client *http.Client
 	user   string
@@ -45,8 +50,13 @@ func newOSReader(o OpenSearch) (*osReader, error) {
 		}
 		tc.Certificates = []tls.Certificate{pair}
 	}
-	r := &osReader{url: strings.TrimRight(o.URL, "/"), prefix: o.Prefix,
-		client: &http.Client{Timeout: time.Minute, Transport: newTransport(tc, nil)}}
+	r := &osReader{prefix: o.Prefix,
+		client: &http.Client{Transport: newTransport(tc, nil)}}
+	for _, u := range append([]string{o.URL}, o.URLs...) {
+		if u = strings.TrimRight(u, "/"); u != "" && !slices.Contains(r.urls, u) {
+			r.urls = append(r.urls, u)
+		}
+	}
 	if r.prefix == "" {
 		r.prefix = "signalith"
 	}
@@ -58,20 +68,45 @@ func newOSReader(o OpenSearch) (*osReader, error) {
 	return r, nil
 }
 
+// do sends one read request, to the node in use or, when that one does
+// not answer, to the next.
 func (r *osReader) do(ctx context.Context, method, path string, in, out any) error {
-	var body io.Reader
+	var payload []byte
 	if in != nil {
 		b, err := json.Marshal(in)
 		if err != nil {
 			return err
 		}
-		body = bytes.NewReader(b)
+		payload = b
 	}
-	req, err := http.NewRequestWithContext(ctx, method, r.url+path, body)
+	var err error
+	start := r.cur.Load()
+	for i := range int64(len(r.urls)) {
+		n := (start + i) % int64(len(r.urls))
+		err = r.doAt(ctx, r.urls[n], method, path, payload, out)
+		var ae *apiError
+		if err == nil || ctx.Err() != nil || (errors.As(err, &ae) && ae.Status != http.StatusServiceUnavailable) {
+			if err == nil && n != start {
+				r.cur.Store(n)
+			}
+			return err
+		}
+	}
+	return err
+}
+
+func (r *osReader) doAt(ctx context.Context, base, method, path string, payload []byte, out any) error {
+	var body io.Reader
+	if payload != nil {
+		body = bytes.NewReader(payload)
+	}
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, method, base+path, body)
 	if err != nil {
 		return err
 	}
-	if in != nil {
+	if payload != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
 	if r.user != "" {
@@ -192,6 +227,64 @@ func (r *osReader) opsTotal(ctx context.Context) (int64, error) {
 		n += i.Indexing.IndexTotal + i.Indexing.DeleteTotal + i.Search.QueryTotal + i.Get.Total
 	}
 	return n, nil
+}
+
+// opsByIndex is opsTotal for each index, hidden ones included, so a
+// report can say which indices an idle cost goes to.
+func (r *osReader) opsByIndex(ctx context.Context) (map[string]int64, error) {
+	type ops struct {
+		Indexing struct {
+			IndexTotal  int64 `json:"index_total"`
+			DeleteTotal int64 `json:"delete_total"`
+		} `json:"indexing"`
+		Search struct {
+			QueryTotal int64 `json:"query_total"`
+		} `json:"search"`
+		Get struct {
+			Total int64 `json:"total"`
+		} `json:"get"`
+	}
+	var resp struct {
+		Indices map[string]struct {
+			Total ops `json:"total"`
+		} `json:"indices"`
+	}
+	if err := r.do(ctx, http.MethodGet, "/_stats/indexing,search,get?level=indices&expand_wildcards=all", nil, &resp); err != nil {
+		return nil, err
+	}
+	out := make(map[string]int64, len(resp.Indices))
+	for name, ix := range resp.Indices {
+		t := ix.Total
+		out[name] = t.Indexing.IndexTotal + t.Indexing.DeleteTotal + t.Search.QueryTotal + t.Get.Total
+	}
+	return out, nil
+}
+
+// busiestIndices is the n indices with the most operations between two
+// opsByIndex readings, with their counts. A dated index's date is kept,
+// so each day's events index shows on its own.
+func busiestIndices(before, after map[string]int64, n int) map[string]int64 {
+	type ix struct {
+		name string
+		ops  int64
+	}
+	var all []ix
+	for name, v := range after {
+		if d := v - before[name]; d > 0 {
+			all = append(all, ix{name, d})
+		}
+	}
+	sort.Slice(all, func(i, j int) bool {
+		if all[i].ops != all[j].ops {
+			return all[i].ops > all[j].ops
+		}
+		return all[i].name < all[j].name
+	})
+	out := map[string]int64{}
+	for _, x := range all[:min(n, len(all))] {
+		out[x.name] = x.ops
+	}
+	return out
 }
 
 // Verdict is what verify found.
