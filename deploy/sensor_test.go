@@ -243,6 +243,10 @@ case "$*" in
 esac
 `, 0o755)
 	mustWrite(t, filepath.Join(bin, "nproc"), "#!/bin/sh\necho \"${STUB_CORES:-4}\"\n", 0o755)
+	// The fake machine runs Ubuntu, whatever the test runs on (CI runs
+	// these tests in Rocky and Alma containers too): --uninstall picks
+	// apt-get when it is there.
+	mustWrite(t, filepath.Join(bin, "apt-get"), "#!/bin/sh\nexit 0\n", 0o755)
 	m.path = bin + string(os.PathListSeparator) + os.Getenv("PATH")
 	return m
 }

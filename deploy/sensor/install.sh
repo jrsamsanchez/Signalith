@@ -376,12 +376,18 @@ manifest_has() {
 }
 
 changed=''
+# same_file is true when files $1 and $2 hold the same bytes (cmp is not
+# on every minimal system).
+same_file() {
+  [ "$(sha256sum <"$1")" = "$(sha256sum <"$2")" ]
+}
+
 # put_file writes file $1 (mode $2, owner $3) from $4 when it differs from
 # what is there, and notes group $5 as changed (its service restarts). The
 # file it replaces is kept once as <file>.signalith-orig when $6 is orig.
 put_file() {
   dest=$R$1
-  if [ -f "$dest" ] && cmp -s "$4" "$dest"; then
+  if [ -f "$dest" ] && same_file "$4" "$dest"; then
     set_owner "$dest" "$2" "$3"
     return 0
   fi
@@ -471,7 +477,7 @@ common_machine() {
   esac
   ok "processor: $arch"
   common_os
-  for tool in curl sha256sum base64 sed awk cmp; do
+  for tool in curl sha256sum base64 sed awk; do
     command -v "$tool" >/dev/null 2>&1 || fail "This script needs $tool, which this machine does not have." "sudo apt-get install curl coreutils (or sudo dnf install curl coreutils), then run the line again."
   done
 }
