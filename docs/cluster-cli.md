@@ -331,3 +331,22 @@ With `-json` it prints `safe`, `servers` (each with `name`, `version`, `state`, 
 `cluster_level`, `blockers` and `warnings` (each with a `code`, the `server` and the
 `text`) and `next`. A server that is the only one using its OpenSearch prints that
 it can simply be stopped, upgraded and started, and exits 0.
+
+## opensearch-ca
+
+```
+signalith cluster opensearch-ca        [-c file] [-json]
+signalith cluster opensearch-ca import [-c file] [-cert root-ca.pem] <root-ca-key.pem>
+```
+
+`opensearch-ca` shows OpenSearch's certificate authority, if the cluster keeps one, and
+who each server signs in to OpenSearch as: its own certificate, the shared one or a user
+name, when that expires, and why it could not get or renew its own. `-json` prints the
+same as JSON, without the CA's key.
+
+`opensearch-ca import` hands OpenSearch's certificate authority to the cluster, so each
+server gets its own OpenSearch certificate (see
+[Each server's own OpenSearch certificate](servers.md#each-servers-own-opensearch-certificate)).
+Give it the CA's key; its certificate is `root-ca.pem` next to it unless `-cert` names
+another file. It refuses a CA that is not the one in `opensearch.ca_file`, and one other
+than the cluster keeps already. In Docker, use `bootstrap-docker -export-ca-key` instead.

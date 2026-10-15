@@ -66,6 +66,9 @@ type Settings struct {
 	// certificate comes from, for its heartbeat; nil has none. It must not
 	// call the node.
 	TLS func() *TLSStatus
+	// OSIdentity says who this server signs in to OpenSearch as, for its
+	// heartbeat; nil has none. It must not call the node.
+	OSIdentity func() *OSIdentityStatus
 }
 
 // SharedStatus is how a server uses the shared configuration in
@@ -798,6 +801,9 @@ func (n *Node) heartbeatDoc(state string) Heartbeat {
 	hb.Restart, hb.RestartNeeded, hb.SettingsRefused = restart, restartNeeded, refused
 	if f := n.settings.TLS; f != nil {
 		hb.TLS = f()
+	}
+	if f := n.settings.OSIdentity; f != nil {
+		hb.OSIdentity = f()
 	}
 	return hb
 }

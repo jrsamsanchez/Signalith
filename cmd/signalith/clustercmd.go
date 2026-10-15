@@ -24,6 +24,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/cluster"
 	"github.com/jrsamsanchez/signalith/internal/clusterauth"
 	"github.com/jrsamsanchez/signalith/internal/clustercfg"
+	"github.com/jrsamsanchez/signalith/internal/clusterpki"
 	"github.com/jrsamsanchez/signalith/internal/config"
 	"github.com/jrsamsanchez/signalith/internal/securefile"
 	"github.com/jrsamsanchez/signalith/internal/shared"
@@ -44,6 +45,8 @@ const clusterUsage = `usage:
   signalith cluster tls            [-c file] [-json]          the cluster's certificate authority and each server's
   signalith cluster tls choose     [-c file] [-yes] <server|fingerprint>   keep that certificate authority for the whole cluster
   signalith cluster upgrade-check  [-c file] [-json]          whether it is safe to upgrade the next server
+  signalith cluster opensearch-ca  [-c file] [-json]          OpenSearch's certificate authority, which gives each server its own certificate
+  signalith cluster opensearch-ca import [-c file] [-cert file] <root-ca-key.pem>   hand OpenSearch's certificate authority to the cluster
 
 The servers that share one OpenSearch keep the settings they share in it
 (the <prefix>_config index), signed with the cluster key that each of them
@@ -74,6 +77,8 @@ type clusterCLI struct {
 	docs *clustercfg.Docs
 	// tls holds the cluster's certificate authority of the same runtime.
 	tls *sharedTLS
+	// osca holds OpenSearch's certificate authority of the same runtime.
+	osca *clusterpki.OSCA
 }
 
 // runCluster is cmdCluster with its input and output.
@@ -94,9 +99,10 @@ func runCluster(args []string, in *os.File, out, errOut io.Writer) error {
 	settingsOnly := flags.Bool("settings", false, "export the settings the servers share, as a file signalith cluster apply takes")
 	server := flags.String("server", "", "with -settings, only this server's own settings (a name or node id)")
 	file := flags.String("f", "", "the file of settings to apply")
+	caCert := flags.String("cert", "", "with opensearch-ca import, the certificate authority's certificate (default root-ca.pem next to the key)")
 	pos := parseInterleaved(flags, args)
 	switch sub {
-	case "status", "found", "export", "import", "export-key", "import-key", "reset-key", "accept-restore", "apply", "tls", "upgrade-check":
+	case "status", "found", "export", "import", "export-key", "import-key", "reset-key", "accept-restore", "apply", "tls", "upgrade-check", "opensearch-ca":
 	default:
 		return fmt.Errorf("unknown cluster command %q\n\n%s", sub, clusterUsage)
 	}
@@ -153,6 +159,8 @@ func runCluster(args []string, in *os.File, out, errOut io.Writer) error {
 		return x.tlsCommand(ctx, pos, *asJSON, *yes)
 	case "upgrade-check":
 		return upgradeExit(x.upgradeCheck(ctx, *asJSON))
+	case "opensearch-ca":
+		return x.osCACommand(ctx, pos, *caCert, *asJSON)
 	}
 	return nil
 }
@@ -182,7 +190,7 @@ func (x *clusterCLI) keyStore() shared.KeyStore {
 // readOnly writes nothing to OpenSearch or the state folder.
 func (x *clusterCLI) runtime(readOnly bool, name string) *shared.Runtime {
 	d := newSharedDocs(clusterauth.NewDocs())
-	x.docs, x.auth, x.tls = d.docs, d.auth, d.tls
+	x.docs, x.auth, x.tls, x.osca = d.docs, d.auth, d.tls, d.osca
 	files := x.files()
 	var made atomic.Pointer[shared.Runtime]
 	files.NodeCfg = func() *shared.Doc[shared.NodeCfg] {

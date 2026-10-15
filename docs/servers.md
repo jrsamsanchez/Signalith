@@ -448,6 +448,59 @@ holding that CA to share it and answers `202` with a `request_id` that
 no server seen in the last day uses that CA, `503` when the shared settings can't be
 changed now or no server holding that CA runs (each candidate's `up` says). Each choice is written to the audit log.
 
+## Each server's own OpenSearch certificate
+
+When Signalith made OpenSearch's certificates (the Docker quick start, or `signalith
+opensearch-certs`), every server first signs in to OpenSearch with the same client
+certificate, `CN=signalith`. Hand OpenSearch's certificate authority to the cluster once,
+and each server signs in with a certificate of its own instead,
+`CN=signalith-server-<name>`, which `roles_mapping.yml` gives the same `signalith_server`
+role:
+
+- **Docker:** `docker compose -f deploy/docker/docker-compose.yml run --rm setup bootstrap-docker -export-ca-key`
+  (see [Handing the CA key to Signalith](opensearch-security.md#handing-the-ca-key-to-signalith)).
+- **Without Docker:** `signalith cluster opensearch-ca import /path/to/ca/root-ca-key.pem`
+  on any server, with the `ca` folder `signalith opensearch-certs` wrote. Keep that folder
+  offline afterwards.
+
+Signalith checks that the CA is the one in `opensearch.ca_file`, keeps it in the shared
+settings with its key encrypted with the cluster key, and deletes the handed-over key
+file. Then each server that signs in with a certificate from that CA:
+
+1. makes a new key, which never leaves it, and issues itself a certificate that lasts 90
+   days;
+2. checks that OpenSearch lets the new certificate in with the `signalith_server` role;
+3. only then uses it, without a restart. It is kept in the `opensearch` folder of its
+   state folder, and used in place of `opensearch.cert_file` while it is valid.
+
+Each server renews its own certificate 30 days before it expires. A server that no
+longer has the cluster key can't renew, so its access to OpenSearch ends when its
+certificate expires. A server that signs in with a user name and password, or with a
+certificate from another CA, is left as it is.
+
+If OpenSearch's security settings predate `signalith-server-*` in `roles_mapping.yml`,
+step 2 fails and the server keeps the shared certificate. Load them again with
+`bootstrap-docker -apply-security` and `up -d` (see
+[Loading changed security settings](opensearch-security.md#loading-changed-security-settings));
+it tries again every 10 minutes.
+
+The **OpenSearch sign-in** card on the Servers page shows who each server signs in as.
+Once none uses `CN=signalith`, it suggests removing `"signalith"` from the
+`signalith_server` users in `roles_mapping.yml` (in Docker,
+`deploy/docker/opensearch/security/roles_mapping.yml`), then loading the security
+settings again, so the shared certificate opens nothing any more.
+
+Anyone who holds the cluster key can open this CA and so sign any certificate OpenSearch
+trusts, the admin one included. Signalith only ever signs `signalith-server-<name>`
+certificates, but keep the cluster key as safe as OpenSearch's admin certificate.
+
+`signalith cluster opensearch-ca` prints the CA and each server's sign-in (see
+[cluster-cli.md](cluster-cli.md#opensearch-ca)). From a script, as an admin:
+`GET /api/cluster/opensearch-identity` answers what the card shows: `ca` (the
+fingerprint, who handed it over and when; `null` when the cluster keeps none) and
+`servers`, each with its `identity` (`cn` or `user`, `not_after`, `managed`, `shared`
+and `problem`).
+
 ## Shared feeds and retention policies
 
 On the servers of the cluster, the threat intel feeds and the retention policies are

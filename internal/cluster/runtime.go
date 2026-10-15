@@ -221,6 +221,30 @@ type Heartbeat struct {
 	// TLS is the certificate authority the server's HTTPS certificate
 	// comes from, nil from versions before it was reported.
 	TLS *TLSStatus `json:"tls_ca,omitempty"`
+	// OSIdentity is who the server signs in to OpenSearch as, nil from
+	// versions before it was reported.
+	OSIdentity *OSIdentityStatus `json:"os_identity,omitempty"`
+}
+
+// OSIdentityStatus is who a server signs in to OpenSearch as, as its
+// heartbeat carries it (internal/clusterpki).
+type OSIdentityStatus struct {
+	// CN is its client certificate's common name and NotAfter when that
+	// expires; User the user name it signs in with instead, if any.
+	CN       string     `json:"cn,omitempty"`
+	NotAfter *time.Time `json:"not_after,omitempty"`
+	User     string     `json:"user,omitempty"`
+	// Managed is true when the certificate is its own, issued by the
+	// cluster; Shared when it signs in as other servers may (the shared
+	// CN=signalith certificate, or a user name and password).
+	Managed bool `json:"managed,omitempty"`
+	Shared  bool `json:"shared,omitempty"`
+	// CASHA256 is the fingerprint of the OpenSearch certificate authority
+	// the cluster keeps, "" when it keeps none.
+	CASHA256 string `json:"ca_sha256,omitempty"`
+	// Problem says why it could not hand over the certificate authority
+	// or get, or renew, its own certificate, "" when nothing went wrong.
+	Problem string `json:"problem,omitempty"`
 }
 
 // TLSStatus is the certificate authority a server's HTTPS certificate

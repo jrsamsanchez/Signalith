@@ -4863,6 +4863,10 @@ details[open] > summary .inv-exact__chev { transform: rotate(90deg); }
 #page-servers .ca-warn { color: var(--warning); }
 #page-servers .ca-bad { display: flex; align-items: flex-start; gap: 5px; color: var(--danger); font-size: var(--fs-sm); line-height: 1.4; }
 #page-servers .ca-bad .icon { margin-top: 1px; flex: none; }
+/* OpenSearch sign-in card (servers-osid.js) */
+#page-servers .osid-cmd { margin: 6px 0 0; padding: 10px 12px; overflow-x: auto; border-radius: var(--r-md); background: var(--raised); box-shadow: inset 0 0 0 1px var(--line); font: 400 var(--fs-sm)/20px var(--font-mono); color: var(--text); white-space: pre; scrollbar-width: thin; }
+#page-servers .osid-cmd:focus-visible { outline-offset: -2px; }
+#page-servers .osid-list li b { font-weight: 500; color: var(--text); }
 #page-servers .ca-breaks summary { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; color: var(--text-2); font-size: var(--fs-sm); list-style: none; }
 #page-servers .ca-breaks summary::-webkit-details-marker { display: none; }
 #page-servers .ca-breaks[open] .ca-chev { transform: rotate(90deg); }

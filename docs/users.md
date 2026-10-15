@@ -862,7 +862,9 @@ agents that send events, shown on the [Endpoints page](endpoints.md)), `GET /api
 `GET /api/cluster` (the Servers page; see [servers.md](servers.md)), `POST /api/cluster/restart`
 (restart servers one at a time to apply the shared settings), `GET /api/cluster/tls`,
 `POST /api/cluster/tls/choose` (the cluster's one certificate authority; see
-[servers.md](servers.md#one-certificate-authority)), `GET /api/requests/{id}`
+[servers.md](servers.md#one-certificate-authority)), `GET /api/cluster/opensearch-identity`
+(who each server signs in to OpenSearch as; see
+[servers.md](servers.md#each-servers-own-opensearch-certificate)), `GET /api/requests/{id}`
 (work asked of the server that runs the background jobs, such as a feed download or a retention
 run; see [servers.md](servers.md#shared-feeds-and-retention-policies)), every
 `/api/notify` route (the Notifications page; see [notifications.md](notifications.md)), every
