@@ -261,6 +261,7 @@ func (x *clusterCLI) runtime(readOnly bool, name string) *shared.Runtime {
 		// retention policies and users, as the server's own would.
 		Content:   d.track,
 		Importers: sharedImporters(d, files),
+		Version:   version,
 	})
 	made.Store(rt)
 	x.auth.Cluster = rt.Cluster
@@ -334,7 +335,7 @@ func (x *clusterCLI) peers(ctx context.Context, watch time.Duration) ([]shared.P
 			live = live && time.Since(hb.HeartbeatAt) < cliHeartbeatAge
 		}
 		p := shared.Peer{NodeID: hb.NodeID, Name: hb.Name, Live: live, Eligible: hb.LeaderEligible,
-			Leader: hb.Leader, MaxRev: hb.MaxRev, LevelMax: hb.LevelMax, Users: hb.FilesFingerprint.Users}
+			Leader: hb.Leader, MaxRev: hb.MaxRev, LevelMax: hb.LevelMax, Users: hb.FilesFingerprint.Users, Version: hb.Version}
 		if !live {
 			p.SeenAgo = max(time.Since(hb.HeartbeatAt), 0)
 		}
