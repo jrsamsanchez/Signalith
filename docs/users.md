@@ -1,13 +1,14 @@
 # Users and sign-in
 
 Everyone who signs in to Signalith has one of three roles. People can sign in in
-three ways:
+four ways:
 
 | Account | Where it lives | Managed on |
 | --- | --- | --- |
 | The **built-in admin** | `auth.admin_user` and `auth.admin_password_hash` in `signalith.yaml` | The server, with `signalith passwd` |
 | **Local users** | `users.json` in the lookups folder | The **Users** page |
 | **Directory users** | Your Active Directory or LDAP server; Signalith keeps a record after their first sign-in | The directory; on the **Users** page you can only disable or delete them |
+| **Single sign-on users** | Your OpenID Connect identity provider (Entra ID, Okta, Google, Keycloak); Signalith keeps a record after their first sign-in | The provider; on the **Users** page you can only disable or delete them. See [sso.md](sso.md) |
 
 Servers that share one OpenSearch keep all of this in OpenSearch instead, once every
 one of them runs this version: see [Users on several servers](#users-on-several-servers).
@@ -454,6 +455,13 @@ The keys are the same in `signalith.yaml` and the API.
 | `admin_groups`, `analyst_groups`, `viewer_groups` | none | Group DNs whose members get each role; the highest wins. Compared the way the directory compares DNs (case and spacing do not matter) |
 | `default_role` | `none` | Role for users in no mapped group: `none` refuses them, `viewer` lets them in as viewers |
 
+## Sign in with single sign-on
+
+People can also sign in with an OpenID Connect identity provider, such as Microsoft Entra ID,
+Okta, Google or Keycloak, from a button on the sign-in page. Their role comes from their groups
+at the provider, at every sign-in, and they show on the Users page with the source
+**Single sign-on**. Set it up on **Settings > Single sign-on**; see [sso.md](sso.md).
+
 ## Troubleshooting
 
 Start with **Test connection** and **Test a user**; their messages name the problem.
@@ -807,7 +815,10 @@ program, which a new server downloads before it can sign in; see [multi-server.m
 routes that script calls with the sensor's own agent token, `GET /api/sensor/config` (the
 sensor's Fluent Bit configuration) and `GET /api/sensor/seen` (whether the sensor's data
 arrives); both take only a token made for a sensor (see
-[network-sensor.md](network-sensor.md#building-a-new-sensor)). Requests from a browser that change something must come from the Signalith
+[network-sensor.md](network-sensor.md#building-a-new-sensor)).
+The two single sign-on routes are public too: `GET /api/auth/oidc/start` sends the browser to
+the identity provider, and `GET /api/auth/oidc/callback` is where it comes back (see
+[sso.md](sso.md#how-it-works)). Requests from a browser that change something must come from the Signalith
 page itself.
 
 Every answer carries the server's version in `X-Signalith-Version`. Answers to
@@ -900,7 +911,8 @@ run; see [servers.md](servers.md#shared-feeds-and-retention-policies)), every
 `/api/notify` route (the Notifications page; see [notifications.md](notifications.md)), every
 `/api/retention` route (see [retention.md](retention.md)), `GET /api/audit` and
 `GET /api/audit/servers` (the [Audit page](audit.md)), every
-`/api/users` and `/api/auth/directory` route below, and every `/api/settings` route
+`/api/users`, `/api/auth/directory` and `/api/auth/oidc` route below (the last two are
+`GET /api/auth/oidc` and `POST /api/auth/oidc/test`; see [sso.md](sso.md#api)), and every `/api/settings` route
 (`GET` and `PUT /api/settings`, `POST /api/settings/test/opensearch`,
 `POST /api/settings/test/assistant`, `POST /api/settings/assistant/models`, `POST /api/settings/restart`,
 `GET /api/settings/export`; see [settings.md](settings.md#api)).
@@ -908,8 +920,8 @@ run; see [servers.md](servers.md#shared-feeds-and-retention-policies)), every
 A route added without a role is admin-only, and a test fails until it gets one. That
 includes routes registered outside the role table, straight on the server's outer
 router: any `/api/` route there other than the public ones (sign-in, sign-out, agent
-ingest, the CA certificate, `GET /api/tls/ca.pem`, the two join routes and the three install
-downloads) is admin-only.
+ingest, the CA certificate, `GET /api/tls/ca.pem`, the two join routes, the three install
+downloads and the two single sign-on routes) is admin-only.
 
 A refused request:
 

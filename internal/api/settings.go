@@ -423,6 +423,10 @@ func (s *Server) settingsView() (map[string]any, error) {
 	onShared := saved.SharedSettings()
 	sections := make([]settingsSection, 0, len(config.Sections))
 	for _, sec := range config.Sections {
+		if sec.Tab != "" {
+			// A tab of its own shows it.
+			continue
+		}
 		out := settingsSection{ID: sec.ID, Title: sec.Title, Help: sec.Help, Fields: []settingField{}}
 		for i := range config.Registry {
 			set := &config.Registry[i]

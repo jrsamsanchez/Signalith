@@ -17,6 +17,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/jrsamsanchez/signalith/internal/assistant"
+	"github.com/jrsamsanchez/signalith/internal/oidc"
 	"github.com/jrsamsanchez/signalith/internal/redact"
 	"github.com/jrsamsanchez/signalith/internal/secrets"
 )
@@ -63,6 +64,9 @@ type Section struct {
 	ID    string
 	Title string
 	Help  string
+	// Tab, when set, is the Settings tab (a page of its own) that shows
+	// the section, in place of the Server tab.
+	Tab string
 }
 
 // Choice is one value a choice setting can take.
@@ -207,6 +211,7 @@ var Sections = []Section{
 	{ID: "detections", Title: "Detections", Help: "Whether detections run by themselves, and how many findings one run can raise."},
 	{ID: "assistant", Title: "AI assistant", Help: "An optional AI model. Ask sends it only the question and field names, never events. Investigate with AI sends a finding's events, and is off until you turn it on below."},
 	{ID: "intel", Title: "Threat intel", Help: "Where threat intel feeds may be downloaded from."},
+	{ID: "sso", Title: "Single sign-on", Tab: "sso", Help: "Sign in with an OpenID Connect identity provider such as Microsoft Entra ID, Okta, Google or Keycloak, alongside local users and directory sign-in."},
 	{ID: "vulns", Title: "Vulnerability scans", Help: "How scans on the Vulnerabilities page look up the known vulnerabilities (CVEs) of the software they find. Only product names are sent, never addresses."},
 }
 
@@ -431,6 +436,49 @@ var Registry = []Setting{
 		Help: "How long one Investigate with AI may take in all, every model turn and search included. " +
 			"The model may take up to 4 turns, so with a slow local model allow about 3 times the answer time limit, such as 45m. From 30s to 2h.",
 		Placeholder: "45m", EmptyMeans: "6m"},
+
+	{Key: "auth.oidc.enabled", Scope: ScopeCluster, Section: "sso", Label: "Single sign-on", Type: TypeBool,
+		Help: "Shows a sign-in button for the identity provider on the sign-in page. Local users, directory sign-in and the built-in admin keep working."},
+	{Key: "auth.oidc.provider", Scope: ScopeCluster, Section: "sso", Label: "Identity provider", Type: TypeChoice,
+		Help: "Picks the usual claims and scopes of the provider. Other works with any OpenID Connect provider.",
+		Choices: []Choice{{"", "Not chosen"}, {oidc.Entra, "Microsoft Entra ID"}, {oidc.Okta, "Okta"}, {oidc.Google, "Google"},
+			{oidc.Keycloak, "Keycloak"}, {oidc.Other, "Other OpenID Connect provider"}}},
+	{Key: "auth.oidc.issuer", Scope: ScopeCluster, Section: "sso", Label: "Issuer", Type: TypeURL,
+		Help:        "The provider's issuer address, exactly as its discovery document names it.",
+		Placeholder: "https://login.microsoftonline.com/<tenant ID>/v2.0", EmptyMeans: "Google's, https://accounts.google.com, with Google",
+		check: noSecretIn("put the client secret in its own field")},
+	{Key: "auth.oidc.client_id", Scope: ScopeCluster, Section: "sso", Label: "Client ID", Type: TypeText,
+		Help: "The client (application) ID the identity provider gave Signalith."},
+	{Key: "auth.oidc.client_secret", Scope: ScopeCluster, Section: "sso", Label: "Client secret", Type: TypeSecret,
+		Help: "Kept encrypted, and only sent to the issuer it was entered for. Leave it empty for a public client that uses PKCE alone.",
+		Env:  "SIGNALITH_OIDC_CLIENT_SECRET", SentWith: []string{"auth.oidc.provider", "auth.oidc.issuer"},
+		sentTo: func(c *Config) string { return c.OIDCIssuer() }},
+	{Key: "auth.oidc.scopes", Scope: ScopeCluster, Section: "sso", Label: "Scopes", Type: TypeList,
+		Help:        "Asked for besides openid.",
+		Placeholder: "email", EmptyMeans: "the provider's usual ones, such as profile and email"},
+	{Key: "auth.oidc.username_claim", Scope: ScopeCluster, Section: "sso", Label: "Username claim", Type: TypeText,
+		Help:        "The claim that becomes the Signalith username.",
+		Placeholder: "preferred_username", EmptyMeans: "preferred_username, or email with Google"},
+	{Key: "auth.oidc.groups_claim", Scope: ScopeCluster, Section: "sso", Label: "Groups claim", Type: TypeText,
+		Help:        "The claim listing the user's groups or roles. A dotted name, such as realm_access.roles, looks inside nested claims.",
+		Placeholder: "groups", EmptyMeans: "groups (Google sends none)"},
+	{Key: "auth.oidc.admin_groups", Scope: ScopeCluster, Section: "sso", Label: "Admins", Type: TypeList,
+		Help: "Groups whose members are admins, as the groups claim names them. A verified email address works too. Someone in several lists gets the highest role."},
+	{Key: "auth.oidc.analyst_groups", Scope: ScopeCluster, Section: "sso", Label: "Analysts", Type: TypeList,
+		Help: "Groups whose members are analysts."},
+	{Key: "auth.oidc.viewer_groups", Scope: ScopeCluster, Section: "sso", Label: "Viewers", Type: TypeList,
+		Help: "Groups whose members are viewers."},
+	{Key: "auth.oidc.default_role", Scope: ScopeCluster, Section: "sso", Label: "Anyone else", Type: TypeChoice,
+		Help:    "What people in none of the groups above get.",
+		Choices: []Choice{{"none", "Not let in"}, {"viewer", "Viewer"}}, EmptyMeans: "none"},
+	{Key: "auth.oidc.allowed_domains", Scope: ScopeCluster, Section: "sso", Label: "Allowed email domains", Type: TypeList,
+		Help:        "Lets in only people whose verified email address is in one of these domains. Needed with Google when anyone else is a viewer.",
+		Placeholder: "example.com", EmptyMeans: "any"},
+	{Key: "auth.oidc.create_users", Scope: ScopeCluster, Section: "sso", Label: "Add users at first sign-in", Type: TypeBool,
+		Help: "Adds people to Users the first time they sign in. Turned off, only people who signed in before can."},
+	{Key: "auth.oidc.button_label", Scope: ScopeCluster, Section: "sso", Label: "Button label", Type: TypeText,
+		Help:        "The sign-in page's button.",
+		Placeholder: "Sign in with Okta", EmptyMeans: "Sign in with and the provider's name"},
 
 	{Key: "intel.allow_loopback_feeds", Scope: ScopeCluster, Section: "intel", Label: "Allow feeds from this computer", Type: TypeBool, Restart: true,
 		Help:    "Lets feeds download from 127.0.0.1 or ::1, for a feed server on this computer.",
