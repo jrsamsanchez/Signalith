@@ -406,9 +406,12 @@ detections written for it (all on by default except the last):
   on in 30 days.
 
 See [Network detections](detections.md#network-detections) for each one's rule and
-threshold. The SigmaHQ and Splunk content packs also have network rules for this data
-(Zeek, DNS, firewall and proxy rules), off until you turn them on; see
-[Content packs](detections.md#content-packs).
+threshold. The content packs also have rules for this data, off until you turn them
+on: 45 SigmaHQ rules (Zeek SMB, DCE-RPC, Kerberos, RDP and certificate rules, DNS
+rules such as mining pools and Cobalt Strike names, and web proxy rules such as
+malicious user agents and paste sites) and 12 Splunk rules (see
+[Network rules](detections.md#network-rules-zeek-dns-proxy-and-firewall) and
+[Content packs](detections.md#content-packs)).
 
 The [sample data](sample-data.md) includes a DNS tunnelling story and a clear-text
 sign-in story seen only by the sensor, so you can see these fire before your own sensor

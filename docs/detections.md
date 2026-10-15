@@ -307,11 +307,12 @@ Content packs are rule sets from other open source projects, shipped unchanged
 inside Signalith and converted when it starts. Every pack detection is **off** until
 an admin turns it on.
 
-**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,234 rules from
+**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,279 rules from
 [SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 2,080 Windows rules
-for these Sysmon, Security, PowerShell, System, Application, Code Integrity, Windows Firewall, BITS, AppX deployment, WMI activity, Remote Desktop session, shell, SMB client, exploit protection, DNS client, Task Scheduler, NTLM, LSA, CryptoAPI, device driver, packaged app, certificate, OpenSSH, DNS Server, IIS configuration and Defender log sources, and 154 Linux rules (see
+for these Sysmon, Security, PowerShell, System, Application, Code Integrity, Windows Firewall, BITS, AppX deployment, WMI activity, Remote Desktop session, shell, SMB client, exploit protection, DNS client, Task Scheduler, NTLM, LSA, CryptoAPI, device driver, packaged app, certificate, OpenSSH, DNS Server, IIS configuration and Defender log sources, 154 Linux rules (see
 [Linux endpoints](#linux-endpoints-sysmon-for-linux) and
-[the Linux audit log](#linux-audit-log-auditd)):
+[the Linux audit log](#linux-audit-log-auditd)), and 45 network rules (see
+[Network rules](#network-rules-zeek-dns-proxy-and-firewall)):
 
 | Sigma log source | Windows events | Data model |
 | --- | --- | --- |
@@ -447,6 +448,30 @@ echo '-a always,exit -F arch=b64 -S execve -k exec' | sudo tee /etc/audit/rules.
 The OpenTelemetry Collector runs as its own user and cannot read the audit log, so
 collect it with the Fluent Bit agent, or forward it with auditd's syslog plugin.
 
+### Network rules (Zeek, DNS, proxy and firewall)
+
+The SigmaHQ pack also holds rules for network data, which a
+[network sensor](network-sensor.md) fills with Zeek's logs:
+
+| Sigma log source | Events | Data model | Shipped |
+| --- | --- | --- | ---: |
+| `product: zeek`, `service: dns`, `http`, `x509` | Zeek's dns.log, http.log and x509.log, by Zeek's own field names (`query`, `qtype_name`, `uri`, `certificate.serial`) | Network_Resolution, Web, Certificates | 5 |
+| `product: zeek`, `service: smb_files`, `dce_rpc`, `kerberos`, `rdp` | Zeek logs without a mapping of their own, whose fields are kept as `zeek_<name>` (`name` is `zeek_name`); the connection is `src`, `src_port`, `dest`, `dest_port` | Other | 11 |
+| `category: dns` (`rules/network/dns`) | Any DNS lookup: Zeek's dns.log, Sysmon 22 (`record_type` is `query_type`) | Network_Resolution | 7 |
+| `category: proxy` (`rules/web/proxy_generic`) | Any web request: Zeek's http.log (`c-uri` is the whole address, `url`; `cs-host` is `url_domain`; `c-useragent` is `http_user_agent`) | Web | 22 |
+| `category: firewall` (`rules/network/firewall`) | Any connection (`dst_port` is `dest_port`) | Network_Traffic | 0 |
+
+A Zeek rule searches only its own log (`sourcetype=zeek:dns`); a dns, proxy or
+firewall rule searches every event of its data model, from a sensor, a firewall or
+a host, as Sigma means. Their test events are Zeek log lines read by the real Zeek
+parser, so a rule ships only when it agrees with Sigma on events as a sensor logs
+them. 13 of the 58 network rules are left out: three are experimental; eight name
+a field Signalith does not keep (`c-uri-extension`, `cs-uri`, `cs-cookie`, a
+firewall's `action` of `accept` or `forward`, Zeek's DNS `Z` flag); one Zeek HTTP
+rule uses proxy field names; one searches free text. Network pack rules are titled by the
+address that sent the traffic (`from $src$`), find once a day per source and what it
+reached, and add risk to the source.
+
 ### PowerShell script blocks
 
 The `ps_script` rules read event 4104, which Windows PowerShell writes for each script
@@ -524,12 +549,18 @@ The generator keeps each rule's Signalith ID across runs, rewrites `rules/`,
 
 ### Splunk Security Content
 
-**Splunk Security Content** (`internal/detect/packs/splunk`) holds 988 Windows and
-Linux detections from Splunk's Threat Research Team
+**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,000 Windows,
+Linux and network detections from Splunk's Threat Research Team
 ([security_content](https://github.com/splunk/security_content)), pinned to one
 commit. They are the production TTP and anomaly rules that search the CIM
 `Endpoint.Processes`, `Endpoint.Filesystem` and `Endpoint.Registry` nodes with
-`tstats`, plus the PowerShell script block rules. Signalith uses the same CIM field
+`tstats`, plus the PowerShell script block rules, and 12 of the 102 network
+detections (`detections/network`): six Sysmon DNS rules, and six `tstats` searches
+over `Network_Traffic`, `Network_Resolution` or `Web` that read any source of the
+data model, a [network sensor](network-sensor.md) among them (Cisco Smart Install
+port 4786, the F5 iControl REST exploit, ngrok tunnels, protocol on an unusual port,
+Tor). The other network detections use lookups, `eval` or Cisco firewall searches,
+or are experimental or hunting rules (`REPORT.md`). Signalith uses the same CIM field
 names, so each rule's `where` clause becomes a Signalith filter field for field:
 
 | Splunk node | Windows events | Data model |
@@ -563,6 +594,9 @@ names, so each rule's `where` clause becomes a Signalith filter field for field:
 | `Endpoint.Processes` (Sysmon for Linux rules) | Sysmon for Linux 1 | Endpoint |
 | `Endpoint.Filesystem` (Sysmon for Linux rules) | Sysmon for Linux 11 and 23 | Filesystem |
 | `` `linux_auditd` `` (raw search) | Linux audit records, each field by auditd's name (see [the Linux audit log](#linux-audit-log-auditd)) | Other |
+| `Network_Traffic` (network detections) | Any connection: Zeek's conn.log, a firewall, Sysmon 3 (`app` is the protocol, Zeek's `service`) | Network_Traffic |
+| `Network_Resolution` (network detections) | Any DNS lookup: Zeek's dns.log, Sysmon 22 (`record_type` is `query_type`) | Network_Resolution |
+| `Web` (network detections) | Any web request: Zeek's http.log (`site` is `url_domain`) | Web |
 
 The rule files and the macros they use ship unchanged; Signalith converts them when
 it starts, reading the search the way Splunk does: `*` is the only wildcard (`?` is
