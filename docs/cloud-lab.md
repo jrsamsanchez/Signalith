@@ -82,13 +82,14 @@ On Linux or macOS, use `export HCLOUD_TOKEN=...` instead of the `$env:` line.
 `terraform apply` lists what it will make and asks you to type `yes`. The machines
 are ready in a minute or two. signalith-1 then sets up everything else by itself,
 which takes about 30 minutes (OpenVAS downloads its feeds for an hour or more after
-that). Watch it with the line `terraform apply` prints as `watch_setup`:
+that). To watch it, print the line to run with:
 
 ```powershell
-ssh root@<signalith-1 address> tail -f /var/log/lab-setup.log
+terraform output -raw watch_setup
 ```
 
-It ends with `Lab ready.` Press Ctrl+C to stop watching. Then:
+It prints `ssh root@<signalith-1 address> tail -f /var/log/lab-setup.log`: copy it and run it
+(the first time, ssh asks whether to continue connecting: type `yes`). It ends with `Lab ready.` Press Ctrl+C to stop watching. Then:
 
 1. Open the `signalith` address it printed, such as `https://203.0.113.10:8080`.
 2. Sign in as `admin`, with the password from the `admin_password` line:
