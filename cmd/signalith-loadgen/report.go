@@ -155,6 +155,16 @@ func (r *Report) WriteText(w io.Writer) {
 			fmt.Fprintf(w, "; %s took over after %.1fs", orNone(f.NewLeader), *f.TakeoverSeconds)
 		}
 		fmt.Fprintln(w)
+		for _, u := range f.Upgrades {
+			fmt.Fprintf(w, "  %s: %s to %s in %.0fs", u.Server, orNone(u.From), orNone(u.To), u.Seconds)
+			if !u.Drained {
+				fmt.Fprint(w, ", not drained")
+			}
+			if u.Error != "" {
+				fmt.Fprintf(w, ": %s", u.Error)
+			}
+			fmt.Fprintln(w)
+		}
 	}
 	for _, c := range r.Checks {
 		status := "passed"

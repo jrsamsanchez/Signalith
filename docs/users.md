@@ -683,7 +683,7 @@ When a server cannot reach OpenSearch, or OpenSearch refuses writes because its 
 full:
 
 - Sessions it has already checked keep working for 5 minutes after it last confirmed
-  them with OpenSearch.
+  them with OpenSearch, even one signed out on another server meanwhile.
 - Only admins can sign in, with a session or with HTTP Basic credentials: the
   built-in admin (with the password this server last read, or the one
   `signalith passwd -local` set), and local admins when this server's copy of the users
