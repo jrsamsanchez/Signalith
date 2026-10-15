@@ -316,13 +316,14 @@ func eventHitsIntel(e ingest.Event, indicators map[string]bool) bool {
 	return false
 }
 
-// TestStories: the four intrusion stories, the benign story and the two
-// antivirus stories are present, and the sample investigation has the phishing story's host and
+// TestStories: the four intrusion stories, the benign story, the two
+// antivirus stories, the vulnerability scan, the network stories and the
+// sensor upkeep are present, and the sample investigation has the phishing story's host and
 // user to gather its findings by.
 func TestStories(t *testing.T) {
 	d := genData(t, SizeSmall)
 	want := []string{"linux-ssh-intrusion", "phishing-to-c2", "ransomware-prep", "domain-persistence", "benign-lookalikes",
-		"malware-outbreak", "antivirus-housekeeping", "vulnerability-scan", "dns-tunnel-and-scan", "network-hygiene"}
+		"malware-outbreak", "antivirus-housekeeping", "vulnerability-scan", "dns-tunnel-and-scan", "network-hygiene", "sensor-upkeep"}
 	if len(d.Stories) != len(want) {
 		t.Errorf("%d stories, want %d", len(d.Stories), len(want))
 	}

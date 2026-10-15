@@ -101,17 +101,20 @@ names:
 | `properties.status.errorCode`, `properties.authenticationRequirement` | `0`, `singleFactorAuthentication` |
 | `properties.initiatedBy.user.userPrincipalName` | `admin@example.com` |
 | `properties.targetResources` | the changed objects, as JSON text |
+| `properties.targetResources{}.type`, `properties.authenticationDetails{}.succeeded` | each value in a list, as Splunk's add-on names it: `User`, `true` |
 
 Entra ID's logs have `sourcetype=azure:monitor:aad` and the activity log
-`sourcetype=azure:monitor:activity`. A sign-in also gets `signin_status`, `Success` or
-`Failure` with why (`Failure: MFA denied; user declined the authentication`), as Microsoft
-Sentinel shows it. Each event also gets the data model fields of what it is:
+`sourcetype=azure:monitor:activity`. A search for a list's value
+(`properties.targetResources{}.modifiedProperties{}.newValue="*Global Administrator*"`)
+matches a record when any value in the list does, as in Splunk. A sign-in also gets
+`signin_status`, `Success` or `Failure` with why (`Failure: MFA denied; user declined the
+authentication`), as Microsoft Sentinel shows it. Each event also gets the data model fields of what it is:
 
 - A **sign-in** is an **Authentication** event, with `action` success or failure, `user`,
   `app`, `src`, `dest` (the resource signed in to) and `reason`.
 - An **audit record** is a **Change** event, with `action` (created, deleted, modified),
-  `command` (the operation), `status`, `user` (who made the change), `object` (what they
-  changed) and `object_category`.
+  `command` (the operation), `status`, `user` and `src_user` (who made the change),
+  `object` (what they changed) and `object_category`.
 - An **activity log** change (category `Administrative`) is a **Change** event too, with
   `object` (the resource), `object_category` (its type, such as
   `microsoft.keyvault/vaults`), `user`, `src`, `status` and `vendor_account` (the
@@ -133,8 +136,11 @@ sourcetype=azure:monitor:activity action=deleted | stats count by user, object_c
 The SigmaHQ pack has 108 Azure rules (see [Detections](detections.md)): sign-ins,
 directory changes, Privileged Identity Management, Identity Protection risk detections and
 activity log changes to firewalls, key vaults, Kubernetes clusters and virtual networks.
-Each searches the sourcetype its log has. Turn them on from the pack's page like any other
-rules.
+The Splunk Security Content pack has 30 Entra ID rules: Global Administrator and other
+admin roles assigned, MFA turned off, new federated or custom domains, guest users
+invited, single-factor, PowerShell and device code sign-ins, and counts that catch
+password spraying, MFA fatigue and sign-ins from many addresses. Each searches the
+sourcetype its log has. Turn them on from the pack's page like any other rules.
 
 ## When nothing arrives
 

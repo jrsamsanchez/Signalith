@@ -362,15 +362,25 @@ func KnownField(name string) bool {
 // validFieldName reports whether a sender-chosen name can become a field:
 // at most maxFieldNameLen bytes of letters, digits and _ - @ : /, parts
 // separated by single dots, at most maxFieldDepth parts, and not starting
-// with _ (OpenSearch reserves those names) or another symbol.
+// with _ (OpenSearch reserves those names) or another symbol. A part may
+// end in {}, as Splunk names the values in a list (targetResources{}.type).
 func validFieldName(name string) bool {
 	if name == "" || len(name) > maxFieldNameLen || !utf8.ValidString(name) {
 		return false
 	}
 	depth := 1
 	partStart := true
-	for _, r := range name {
+	for i, r := range name {
 		switch {
+		case r == '{':
+			// {} after a part's name, then the part's end or another {}.
+			if partStart || !strings.HasPrefix(name[i:], "{}") || i+2 < len(name) && name[i+2] != '.' && name[i+2] != '{' {
+				return false
+			}
+		case r == '}':
+			if i == 0 || name[i-1] != '{' {
+				return false
+			}
 		case r == '.':
 			if partStart {
 				return false // leading dot or two in a row

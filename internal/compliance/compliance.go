@@ -214,7 +214,18 @@ type CheckStat struct {
 	ID, Title, Platform            string
 	Refs                           []string
 	Pass, Fail, NA, Error, Pending int
+	// Failing lists the hosts it fails on, by name.
+	Failing []HostRef
 }
+
+// HostRef names a host that runs osquery.
+type HostRef struct {
+	ID       string `json:"id"`
+	Hostname string `json:"hostname"`
+}
+
+// MaxHosts is how many failing hosts a check lists; the rest are counted.
+const MaxHosts = 25
 
 // Vulns is the state of vulnerability scanning.
 type Vulns struct {
@@ -345,6 +356,8 @@ type CheckRef struct {
 	Title    string `json:"title"`
 	Platform string `json:"platform"`
 	Hosts    int    `json:"hosts"`
+	// Failing names the hosts it fails on, up to MaxHosts, by name.
+	Failing []HostRef `json:"failing"`
 }
 
 // DetectionRef names an enabled detection that supports a control.

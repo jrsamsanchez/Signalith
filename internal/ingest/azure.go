@@ -220,7 +220,10 @@ func azureAudit(props map[string]any, f map[string]any, set func(k, v string)) {
 	if by, ok := props["initiatedBy"].(map[string]any); ok {
 		u, _ := by["user"].(map[string]any)
 		app, _ := by["app"].(map[string]any)
-		set("user", cmp.Or(str(u, "userPrincipalName"), str(u, "displayName"), str(app, "displayName"), str(app, "servicePrincipalName")))
+		who := cmp.Or(str(u, "userPrincipalName"), str(u, "displayName"), str(app, "displayName"), str(app, "servicePrincipalName"))
+		set("user", who)
+		// Also where Splunk's add-on keeps who made the change.
+		set("src_user", who)
 		set("src", str(u, "ipAddress"))
 		if app != nil && u == nil {
 			set("src_user_type", "servicePrincipal")
@@ -287,7 +290,8 @@ func azureActivity(r map[string]any, f map[string]any, set func(k, v string)) {
 // (properties.deviceDetail.trustType): strings, booleans and numbers
 // (whole numbers as integers) as themselves, and lists, and objects nested
 // past the deepest field name, as JSON text. Empty strings are left out,
-// as Signalith keeps no empty values; an empty list is kept, as [].
+// as Signalith keeps no empty values; an empty list is kept, as []. A
+// list's values are also kept by Splunk's names (azureListValue).
 func flattenAzure(prefix string, v any, out map[string]any) {
 	depth := strings.Count(prefix, ".") + 1
 	switch x := v.(type) {
@@ -307,6 +311,9 @@ func flattenAzure(prefix string, v any, out map[string]any) {
 	case []any:
 		if b, err := json.Marshal(x); err == nil {
 			out[prefix] = CapValue(string(b))
+		}
+		for _, e := range x {
+			azureListValue(prefix+"{}", e, out)
 		}
 	case string:
 		if x != "" {
@@ -330,6 +337,53 @@ func flattenAzure(prefix string, v any, out map[string]any) {
 		out[prefix] = x
 	case int:
 		out[prefix] = int64(x)
+	}
+}
+
+// azureMaxListValues caps the values one list field keeps.
+const azureMaxListValues = 64
+
+// azureListValue adds a value in a list to the list field Splunk's add-on
+// names it by: each changed property's new value in a record's
+// targetResources is one of properties.targetResources{}.modifiedProperties{}.newValue.
+// A search for one value then matches the record, as in Splunk. Every
+// value is kept as text, so each list field has one type.
+func azureListValue(name string, v any, out map[string]any) {
+	if strings.Count(name, ".") >= maxFieldDepth {
+		return
+	}
+	var s string
+	switch x := v.(type) {
+	case map[string]any:
+		for k, e := range x {
+			if k != "" && !strings.ContainsAny(k, ".{}") {
+				azureListValue(name+"."+k, e, out)
+			}
+		}
+		return
+	case []any:
+		for _, e := range x {
+			azureListValue(name+"{}", e, out)
+		}
+		return
+	case string:
+		s = x
+	case bool:
+		s = strconv.FormatBool(x)
+	case json.Number:
+		s = x.String()
+	case float64:
+		s = strconv.FormatFloat(x, 'f', -1, 64)
+	case int64:
+		s = strconv.FormatInt(x, 10)
+	case int:
+		s = strconv.Itoa(x)
+	}
+	if s == "" {
+		return
+	}
+	if l, _ := out[name].([]any); len(l) < azureMaxListValues {
+		out[name] = append(l, CapValue(s))
 	}
 }
 
@@ -463,6 +517,17 @@ func AzureSigmaField(service, name string) (string, bool) {
 	return "", false
 }
 
+// AzureField reports whether an Azure record's event keeps a field by the
+// name Splunk's add-on gives it: a top-level field (operationName), one
+// under properties or identity (properties.status.errorCode), or a
+// list's values (properties.targetResources{}.type).
+func AzureField(name string) bool {
+	if slices.Contains(azureTop, name) {
+		return name != "identity"
+	}
+	return (strings.HasPrefix(name, "properties.") || strings.HasPrefix(name, "identity.")) && validFieldName(name)
+}
+
 // AzureRecord is an Azure record of a Sigma service (signinlogs) with the
 // fields a Sigma rule names (ResultType, properties.message), for test
 // events (Normalize with AzureTag), as host sent it.
@@ -492,6 +557,21 @@ func AzureRecord(host string, t time.Time, service string, data map[string]strin
 		parts := strings.Split(path, ".")
 		m := r
 		for _, p := range parts[:len(parts)-1] {
+			if name, ok := strings.CutSuffix(p, "{}"); ok {
+				// A list of objects (targetResources{}.type): its first.
+				l, _ := m[name].([]any)
+				if len(l) == 0 {
+					l = []any{map[string]any{}}
+					m[name] = l
+				}
+				next, ok := l[0].(map[string]any)
+				if !ok {
+					next = map[string]any{}
+					l[0] = next
+				}
+				m = next
+				continue
+			}
 			next, ok := m[p].(map[string]any)
 			if !ok {
 				next = map[string]any{}
@@ -499,7 +579,13 @@ func AzureRecord(host string, t time.Time, service string, data map[string]strin
 			}
 			m = next
 		}
-		m[parts[len(parts)-1]] = v
+		last := parts[len(parts)-1]
+		if name, ok := strings.CutSuffix(last, "{}"); ok {
+			l, _ := m[name].([]any)
+			m[name] = append(l, v)
+			return
+		}
+		m[last] = v
 	}
 	for _, k := range slices.Sorted(maps.Keys(data)) {
 		v := data[k]
@@ -520,6 +606,11 @@ func AzureRecord(host string, t time.Time, service string, data map[string]strin
 		case "resultType":
 			if _, err := strconv.ParseInt(v, 10, 64); err == nil && service == "signinlogs" {
 				put("properties.status.errorCode", json.Number(v))
+			}
+		case "properties.status.errorCode":
+			if _, err := strconv.ParseInt(v, 10, 64); err == nil {
+				put(f, json.Number(v))
+				continue
 			}
 		case "properties.networkLocationDetails", "properties.targetResources":
 			// A list, written as JSON: kept as its text.

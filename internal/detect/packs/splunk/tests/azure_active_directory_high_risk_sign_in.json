@@ -1,0 +1,9 @@
+{"rule": "1ecff169-26d7-4161-9a7b-2ac4c8e61bea", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"riskdetection","data":{"category":"UserRiskEvents","properties.ipAddress":"203.0.113.7","properties.riskLevel":"high","properties.userPrincipalName":"tester@example.com"}},
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"riskdetection","data":{"category":"UserRiskEvents","properties.ipAddress":"203.0.113.7","properties.riskLevel":"high","properties.userPrincipalName":"tester@example.com"}},
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"riskdetection","data":{"category":"UserRiskEvents","properties.ipAddress":"203.0.113.7","properties.riskLevel":"high","properties.userPrincipalName":"tester@example.com"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"category":"UserRiskEventt","properties.initiatedBy.user.userPrincipalName":"admin@example.com","properties.result":"success","properties.riskLevel":"high","properties.targetResources{}.displayName":"Tester App"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"properties.initiatedBy.user.userPrincipalName":"admin@example.com","properties.result":"success","properties.riskLevel":"high","properties.targetResources{}.displayName":"Tester App"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"riskdetection","data":{"category":"UserRiskEvents","properties.ipAddress":"203.0.113.7","properties.riskLevel":"higi","properties.userPrincipalName":"tester@example.com"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"riskdetection","data":{"category":"UserRiskEvents","properties.ipAddress":"203.0.113.7","properties.userPrincipalName":"tester@example.com"}}
+]}
