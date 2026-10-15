@@ -900,9 +900,15 @@ const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
 // (#query-hl), so the analyst types plain text and still sees commands,
 // functions, keywords and values apart. The Query guide uses the same
 // colouring for its examples.
-const lang = { commands: ['stats', 'timechart', 'top', 'where', 'sort', 'head', 'table', 'rename', 'enrich', 'threatmatch', 'intel'], functions: ['count', 'dc', 'sum', 'avg', 'min', 'max'] };
-const QL_KEYWORDS = new Set(['and', 'or', 'not', 'in', 'as', 'by', 'over']);
+const lang = {
+  commands: ['stats', 'eventstats', 'timechart', 'top', 'rare', 'where', 'eval', 'rex', 'dedup', 'fillnull', 'sort', 'head', 'table', 'rename', 'enrich', 'threatmatch', 'intel'],
+  functions: ['count', 'dc', 'sum', 'avg', 'min', 'max'],
+  // eval and where expression functions (query.EvalFuncs).
+  evalFunctions: ['abs', 'case', 'ceil', 'ceiling', 'cidrmatch', 'coalesce', 'exp', 'false', 'floor', 'if', 'in', 'isnotnull', 'isnull', 'isnum', 'isstr', 'len', 'like', 'ln', 'log', 'lower', 'ltrim', 'match', 'max', 'md5', 'min', 'mvappend', 'mvcount', 'mvdedup', 'mvindex', 'mvjoin', 'mvsort', 'now', 'null', 'nullif', 'pow', 'replace', 'round', 'rtrim', 'sha1', 'sha256', 'split', 'sqrt', 'strftime', 'strptime', 'substr', 'time', 'tonumber', 'tostring', 'trim', 'true', 'typeof', 'upper', 'urldecode'],
+};
+const QL_KEYWORDS = new Set(['and', 'or', 'not', 'in', 'as', 'by', 'over', 'xor', 'like']);
 const QL_FUNCS = new Set(lang.functions);
+const QL_EVAL_FUNCS = new Set(lang.evalFunctions);
 const QL_KEYS = new Set(['datamodel', 'index', 'earliest', 'latest']);
 
 // tokenizeQuery splits query text into [text, class] pieces.
@@ -939,7 +945,8 @@ function tokenizeQuery(text) {
       const lw = w.toLowerCase();
       const next = (text.slice(j).match(/^\s*(\S)/) || [])[1];
       if (afterPipe) { cls = 'tok-cmd'; cmd = lw; } else if (QL_KEYWORDS.has(lw) && (cmd || w === w.toUpperCase())) cls = 'tok-kw';
-      else if (QL_FUNCS.has(lw) && (next === '(' || (lw === 'count' && (cmd === 'stats' || cmd === 'timechart')))) cls = 'tok-fn';
+      else if (QL_FUNCS.has(lw) && (next === '(' || (lw === 'count' && ['stats', 'eventstats', 'timechart'].includes(cmd)))) cls = 'tok-fn';
+      else if (QL_EVAL_FUNCS.has(lw) && next === '(' && (cmd === 'eval' || cmd === 'where')) cls = 'tok-fn';
       else if (!cmd && QL_KEYS.has(lw) && next === '=') cls = 'tok-cmd';
       else if (afterOp) cls = 'tok-str';
       afterPipe = false;
@@ -1124,6 +1131,8 @@ function updateSuggestions() {
   } else if (word.length > 0 && !/[=<>]\s*$/.test(before)) {
     const inSearch = !before.includes('|');
     items = fields.map((f) => ({ text: f.name + (inSearch ? '=' : ''), kind: f.type }));
+    // eval and where take functions too: len(, lower(, if( ...
+    if (/\|\s*(eval|where)\b[^|]*$/i.test(before)) items.push(...lang.evalFunctions.map((f) => ({ text: f + '(', kind: 'function' })));
     if (inSearch) items.push({ text: 'datamodel=', kind: 'source' }, { text: 'earliest=', kind: 'time' });
   } else if (/datamodel=$/i.test(before)) {
     items = ['Authentication', 'Endpoint', 'Network_Traffic', 'Change', 'Malware', 'Filesystem', 'Registry', 'Network_Resolution', 'Intrusion_Detection', 'Web', 'Certificates', 'File_Transfers', 'Image_Load', 'Script', 'Inventory', 'Configuration_Check', 'Alerts', 'Other'].map((m) => ({ text: m + ' ', kind: 'model' }));
@@ -1250,7 +1259,10 @@ function readSpec() {
 function updateBuilderVisibility() {
   const mode = $('b-mode').value;
   $('b-agg-group').classList.toggle('hidden', mode === 'events');
-  $('b-agg-field-wrap').classList.toggle('hidden', $('b-agg').value === 'count');
+  // "The latest event for each" only needs the fields (dedup).
+  $('b-agg-func-wrap').classList.toggle('hidden', mode === 'latest');
+  $('b-agg-field-wrap').classList.toggle('hidden', mode === 'latest' || $('b-agg').value === 'count');
+  $('b-by-label').textContent = mode === 'latest' ? 'Fields' : 'Split by';
 }
 let buildTimer = null;
 function builderChanged() {
@@ -1822,7 +1834,7 @@ function exportResults() {
 // ---------- histogram ----------
 // Events over time for the search part of the query, as a strip of bars
 // above the results. Skipped when a command before any summary drops
-// events (where, threatmatch, head), since the bars would overcount.
+// events (where, threatmatch, head, dedup), since the bars would overcount.
 const HIST_SPAN = { '-15m': '30s', '-1h': '1m', '-4h': '5m', '-24h': '30m', '-7d': '3h', '-30d': '12h' };
 function hideHistogram() {
   const box = $('histogram');
@@ -1833,7 +1845,7 @@ function hideHistogram() {
 async function loadHistogram(seq, query, earliest) {
   const box = $('histogram');
   const segs = pipeSegments(query);
-  if (['where', 'threatmatch', 'head'].includes(commandOf(segs[1]))) { hideHistogram(); return; }
+  if (['where', 'threatmatch', 'head', 'dedup'].includes(commandOf(segs[1]))) { hideHistogram(); return; }
   const search = segs[0].trim() || '*';
   const ownTime = /\b(earliest|latest)\s*=/i.test(search);
   const fetchHist = (span) => api('api/search', { query: search + '\n| timechart ' + (span ? 'span=' + span + ' ' : '') + 'count', earliest });
@@ -2195,6 +2207,9 @@ const starters = [
   ['Successful logon after failures (password spraying)', 'datamodel=Authentication\n| stats count by src, action\n| sort src'],
   ['New local accounts created', 'datamodel=Change object_category=user action=created\n| table _time, host, user, object'],
   ['Encoded PowerShell commands (T1059.001)', 'datamodel=Endpoint process_name=powershell.exe process="*-enc*"\n| table _time, host, user, process'],
+  ['Latest logon for each user', 'datamodel=Authentication action=success\n| dedup user\n| table _time, user, src, dest'],
+  ['Uploads much larger than downloads (exfiltration)', 'datamodel=Network_Traffic bytes_out>1000000\n| eval ratio=round(bytes_out / bytes_in, 1)\n| where ratio > 10\n| table _time, src, dest, dest_port, bytes_out, bytes_in, ratio'],
+  ['Long command lines (T1027)', 'datamodel=Endpoint\n| where len(process) > 1000\n| table _time, host, user, process_name, process'],
   ['Rare processes across hosts', 'datamodel=Endpoint\n| stats dc(host) as hosts, count by process_name\n| where hosts < 2\n| sort count'],
   ['sudo to root by user', 'datamodel=Authentication app=sudo action=success\n| top limit=20 src_user'],
   ['Connections to uncommon ports', 'datamodel=Network_Traffic dest_port>1024\n| stats count by dest, dest_port, process_name\n| sort -count'],

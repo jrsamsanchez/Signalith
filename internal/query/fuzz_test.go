@@ -26,6 +26,12 @@ var fuzzSeeds = []string{
 	`a==b c<=d e>f g!=h`,
 	`(a=1`, `a="x`, `a=1 | bogus`, `a=1 | head 5 6`, `a ! b`,
 	"\xff\xfe(\x00",
+	"* | eval kb=round(bytes/1024, 2), u=lower(user) . \"@\" . domain, x=if(a>1 AND NOT b=\"x\", -5, -(3))\n| where len(process) > 100 OR like(user, \"adm%\")",
+	`* | rex field=process max_match=0 "(?<flag>-\w+)" | dedup 2 user, host keepempty=true consecutive=true | fillnull value=none a, b`,
+	`* | eventstats avg(bytes) as ab by src | rare limit=5 process_name by host`,
+	`* | where 'my field' = other_field | eval 'a b'=case(x=1, "one", x=2, "two"), y=coalesce(a, b, "d") XOR c LIKE "a_%"`,
+	`x | where name=O'Brien | where (a) = 1 | eval n=-x * 2 - -3 % 4, s=substr(cmd, -5, 2), t=strftime(_time, "%Y-%m-%d")`,
+	`* | eval a=`, `* | rex "(?<x"`, `* | dedup`, `* | where NOT`, `* | eval 'x|y'=1 | head 2`,
 }
 
 // FuzzParse checks that Parse never panics, that its errors carry a
