@@ -14,7 +14,7 @@ import (
 
 func TestBuiltinMalware(t *testing.T) {
 	bs := Builtin()
-	if len(bs) != 2 || bs[0].ID != MalwareID || bs[0].Title != "Malware" || bs[1].ID != VulnerabilitiesID {
+	if len(bs) != 3 || bs[0].ID != MalwareID || bs[0].Title != "Malware" || bs[1].ID != NetworkID || bs[2].ID != VulnerabilitiesID {
 		t.Fatalf("built-ins = %+v", bs)
 	}
 	d, ok := GetBuiltin(MalwareID)
@@ -45,6 +45,64 @@ func TestBuiltinVulnerabilities(t *testing.T) {
 		t.Errorf("check: %v", err)
 	}
 	checkPanels(t, d, "Vulnerabilities")
+}
+
+func TestBuiltinNetwork(t *testing.T) {
+	d, ok := GetBuiltin(NetworkID)
+	if !ok || d.Title != "Network" || d.TimeRange != "24h" || d.Description == "" || len(d.Panels) != 16 {
+		t.Fatalf("network = %+v", d)
+	}
+	if err := d.check(); err != nil {
+		t.Errorf("check: %v", err)
+	}
+	// The panels read several network data models (and the sensor health
+	// events, which have none), so each panel is checked against the model
+	// it names.
+	eng := &search.Engine{Intel: intel.NewStore(intel.NewMemory())}
+	models := map[string]bool{}
+	titles := map[string]bool{}
+	for _, p := range d.Panels {
+		if titles[p.Title] {
+			t.Errorf("title %q twice", p.Title)
+		}
+		titles[p.Title] = true
+		q, err := query.Parse(p.Query)
+		if err != nil {
+			t.Errorf("%s: %v", p.Title, err)
+			continue
+		}
+		if _, err := eng.Compile(q); err != nil {
+			t.Errorf("%s: compile: %v", p.Title, err)
+		}
+		if q.Datamodel == "" {
+			// Sensor health: fields the ingest registry knows.
+			for _, f := range panelFields(q) {
+				if f != "sourcetype" && f != "capture_loss_percent" && f != "drop_percent" {
+					t.Errorf("%s: field %s", p.Title, f)
+				}
+			}
+			continue
+		}
+		models[q.Datamodel] = true
+		known := map[string]bool{}
+		for _, f := range datamodel.FieldsFor(q.Datamodel) {
+			known[f.Name] = true
+		}
+		for _, f := range panelFields(q) {
+			if !known[f] {
+				t.Errorf("%s: field %s is not in the %s data model", p.Title, f, q.Datamodel)
+			}
+		}
+	}
+	for _, m := range []string{"Intrusion_Detection", "Network_Traffic", "Network_Resolution", "Web", "File_Transfers", "Certificates"} {
+		if !models[m] {
+			t.Errorf("no panel reads %s", m)
+		}
+	}
+	last := d.Panels[len(d.Panels)-1]
+	if q, _ := query.Parse(last.Query); q == nil || len(q.Commands) != 1 || len(q.Commands[0].(*query.Timechart).Aggs) != 2 {
+		t.Errorf("packet loss panel = %q", last.Query)
+	}
 }
 
 // checkPanels checks that every panel of d compiles, reads data model

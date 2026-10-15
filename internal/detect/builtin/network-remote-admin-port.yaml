@@ -3,7 +3,7 @@ title: $process_name$ on $src$ connected to $dest$ on remote admin port $dest_po
 name: Unusual process on a remote admin port
 description: A process other than the usual clients opened a connection on SMB, RDP, WinRM or SSH ports.
 query: |
-  datamodel=Network_Traffic dest_port IN (22, 445, 3389, 5985, 5986)
+  datamodel=Network_Traffic dest_port IN (22, 445, 3389, 5985, 5986) process_name=*
   NOT process_name IN (mstsc.exe, ssh.exe, putty.exe, svchost.exe, system, lsass.exe, explorer.exe)
   | stats count by src, dest, dest_port, process_name
 schedule: 15m

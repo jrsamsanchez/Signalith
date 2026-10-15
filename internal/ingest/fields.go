@@ -35,7 +35,7 @@ const (
 	// beyond the known fields, for all servers together: each server that
 	// stored events in the last 10 minutes gets an equal share, and at
 	// least minNamesPerServer (see Pipeline.Servers). With the known
-	// fields it stays well under the template's limit of 2000, which
+	// fields it stays well under the template's limit (totalFieldsLimit), which
 	// leaves room for names added before a restart.
 	maxNewNamesPerIndex = 1000
 	// minNamesPerServer is the smallest share of maxNewNamesPerIndex one
@@ -273,6 +273,29 @@ var knownFields = func() map[string]string {
 		// Vulnerability scans: a CVSS score has a decimal (9.8), which a
 		// long would cut to 9 in sorts, charts and stats.
 		"cvss": double,
+		// A connection's length in seconds (Zeek, Suricata): 0.4 s would
+		// be 0 as a long.
+		"duration": double,
+
+		// Network sensors (zeek.go, suricata.go): the fixed extras each
+		// log type keeps besides its data model fields, so sensor data
+		// never uses a day's field budget.
+		"zeek_history": kw, "zeek_missed_bytes": long, "zeek_local_orig": kw, "zeek_local_resp": kw,
+		"zeek_trans_depth": long, "zeek_note": kw, "zeek_sub": kw, "zeek_fuid": kw, "zeek_source": kw,
+		"zeek_analyzers": kw, "zeek_rejected": kw, "zeek_qclass_name": kw, "zeek_rtt": double,
+		"zeek_established": kw, "zeek_resumed": kw, "zeek_curve": kw, "zeek_next_protocol": kw,
+		"zeek_cert_chain_fps": kw, "zeek_is_orig": kw, "zeek_seen_bytes": long, "zeek_missing_bytes": long,
+		"zeek_peer":    kw,
+		"suricata_gid": long, "suricata_rev": long, "suricata_flow_state": kw, "suricata_flow_reason": kw,
+		"suricata_alerted": kw, "suricata_in_iface": kw, "suricata_tx_id": long, "suricata_app_proto": kw,
+		"suricata_file_state": kw, "suricata_file_stored": kw, "suricata_payload_printable": "text",
+		"suricata_event_type": kw, "suricata_anomaly_type": kw, "suricata_anomaly_event": kw,
+		// A Suricata event type no mapping knows: its own object as JSON
+		// text, one field however many keys it has.
+		"suricata_detail": "text",
+		// Sensor health: Zeek capture_loss and stats, Suricata stats.
+		"capture_loss_percent": double, "packets_received": long, "packets_dropped": long,
+		"drop_percent": double, "uptime_seconds": long, "sensor_interface": kw,
 	}
 	add := func(fs []datamodel.Field) {
 		for _, f := range fs {

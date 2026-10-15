@@ -960,6 +960,12 @@ func (s *Server) handleAgentConfig(w http.ResponseWriter, r *http.Request) {
 		CollectorOS: v.Get("collector"),
 		Platform:    v.Get("platform"),
 		Version:     s.Version,
+		// A network sensor: both tools unless the page says otherwise.
+		Zeek:              v.Get("zeek") != "false",
+		Suricata:          v.Get("suricata") != "false",
+		ZeekDir:           strings.TrimSpace(v.Get("zeek_dir")),
+		EVEPath:           strings.TrimSpace(v.Get("eve_path")),
+		SuricataProtocols: v.Get("suricata_protocols") == "true",
 	}
 	if certs != nil {
 		// While a new certificate authority is prepared, agents get both,
@@ -983,6 +989,11 @@ func (s *Server) handleAgentConfig(w http.ResponseWriter, r *http.Request) {
 	a, err := agents.Generate(opts)
 	if errors.Is(err, agents.ErrNoNameToCheck) {
 		fieldError(err)
+		return
+	}
+	var fe *agents.FieldError
+	if errors.As(err, &fe) {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": fe.Error(), "field": fe.Field})
 		return
 	}
 	if err != nil {

@@ -76,10 +76,10 @@ func (m *mappedIndices) Bulk(_ context.Context, docs []store.IndexedDoc) ([]stor
 				}
 			}
 		}
-		if len(ix)+n > 2000 {
+		if len(ix)+n > totalFieldsLimit {
 			m.refused++
 			errs = append(errs, store.BulkItemError{Index: d.Index, Pos: i, Status: 400, Type: "illegal_argument_exception",
-				Reason: "Limit of total fields [2000] has been exceeded"})
+				Reason: fmt.Sprintf("Limit of total fields [%d] has been exceeded", totalFieldsLimit)})
 			continue
 		}
 		for p := range trial {
@@ -126,7 +126,7 @@ func namesFrom(m *mappedIndices, who string) int {
 	return n
 }
 
-func TestTwoServersIngestingNewFieldNamesNeverPass2000FieldsPerIndex(t *testing.T) {
+func TestTwoServersIngestingNewFieldNamesNeverPassTheFieldLimit(t *testing.T) {
 	m := &mappedIndices{}
 	var ps []*Pipeline
 	for range 2 {
@@ -140,7 +140,7 @@ func TestTwoServersIngestingNewFieldNamesNeverPass2000FieldsPerIndex(t *testing.
 		wg.Go(func() { newNames(t, p, fmt.Sprintf("s%d", i), 20, 50) })
 	}
 	wg.Wait()
-	if m.refused > 0 || m.max > 2000 {
+	if m.refused > 0 || m.max > totalFieldsLimit {
 		t.Errorf("refused %d, most fields %d", m.refused, m.max)
 	}
 	for i := range ps {
@@ -167,9 +167,9 @@ func TestManyServersStopAtTheMappingGuard(t *testing.T) {
 		wg.Go(func() { newNames(t, p, fmt.Sprintf("s%02d", i), 4, 30) })
 	}
 	wg.Wait()
-	// 20 shares of 100 and the known fields would pass 2,000: the guard
-	// stops new names soon after 1,600.
-	if m.refused > 0 || m.max > 2000 || m.max < mappingStop {
+	// 20 shares of 100 and the known fields would pass the limit: the
+	// guard stops new names soon after mappingStop.
+	if m.refused > 0 || m.max > totalFieldsLimit || m.max < mappingStop {
 		t.Errorf("refused %d, most fields %d", m.refused, m.max)
 	}
 }
@@ -266,5 +266,17 @@ func TestAFailedFieldCountIsNotKept(t *testing.T) {
 	}
 	if calls != 2 {
 		t.Errorf("fetched %d times", calls)
+	}
+}
+
+// A server alone must always get its whole budget of new names: the known
+// fields and that budget stay under mappingStop, which leaves room under
+// the template's field limit for a burst from several servers.
+func TestMappingStopLeavesRoomForTheBudget(t *testing.T) {
+	if n := len(knownFields) + maxNewNamesPerIndex; n >= mappingStop {
+		t.Errorf("known fields (%d) and the budget (%d) reach mappingStop (%d)", len(knownFields), maxNewNamesPerIndex, mappingStop)
+	}
+	if mappingStop > totalFieldsLimit-400 {
+		t.Errorf("mappingStop %d leaves too little room under %d", mappingStop, totalFieldsLimit)
 	}
 }

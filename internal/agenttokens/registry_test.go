@@ -486,3 +486,17 @@ func TestLoadRacingRevoke(t *testing.T) {
 		t.Fatalf("after load: %v", res)
 	}
 }
+
+func TestSensorPurpose(t *testing.T) {
+	if !ValidPurpose(PurposeSensor) || ValidPurpose("Sensor") {
+		t.Error("sensor purpose")
+	}
+	fake := ostest.New(t)
+	r := newReg(t, fake.URL, "n1")
+	if tok, _, err := r.Create(context.Background(), "Network sensor nsm-01", PurposeSensor, "sam"); err != nil || tok.Purpose != "sensor" {
+		t.Errorf("sensor token: %+v %v", tok, err)
+	}
+	if err := errPurposeInvalid(); !strings.Contains(err.Msg, "sensor") {
+		t.Errorf("message: %s", err.Msg)
+	}
+}

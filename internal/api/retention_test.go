@@ -44,8 +44,8 @@ func newRetentionServer(t *testing.T, cfg retention.Config) (*retention.Manager,
 func idle(t *testing.T, call func(method, path, body string) (int, map[string]any)) map[string]any {
 	t.Helper()
 	// A run archives and deletes about a hundred days; slow CI runners
-	// (Windows especially) can take well over five seconds.
-	for deadline := time.Now().Add(30 * time.Second); time.Now().Before(deadline); {
+	// (Windows especially) can take over thirty seconds.
+	for deadline := time.Now().Add(2 * time.Minute); time.Now().Before(deadline); {
 		_, out := call("GET", "/api/retention", "")
 		if sch := out["schedule"].(map[string]any); sch["running"] == false {
 			return out

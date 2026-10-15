@@ -865,7 +865,7 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
     <header class="page-head">
       <div>
         <h2 class="page-head__title">Add data</h2>
-        <p class="page-head__desc">Collect logs from your hosts with the Fluent Bit agent or an OpenTelemetry Collector, manage hosts with osquery, receive syslog from network devices, or bring in Wazuh alerts.</p>
+        <p class="page-head__desc">Collect logs from your hosts with the Fluent Bit agent or an OpenTelemetry Collector, manage hosts with osquery, receive syslog from network devices, or bring in Wazuh alerts and network sensor logs.</p>
       </div>
     </header>
     <div class="card sample-card" id="sample-card" hidden></div>
@@ -907,6 +907,11 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
           <span class="agent-os__text"><b>Wazuh</b><span>Alerts from your Wazuh manager</span></span>
           <input type="radio" name="os" value="wazuh">
         </label>
+        <label class="card agent-os__card">
+          <span class="agent-os__icon"><svg class="icon" aria-hidden="true"><use href="#i-activity"/></svg></span>
+          <span class="agent-os__text"><b>Network sensor</b><span>Zeek and Suricata: connections, DNS, web, TLS and IDS alerts</span></span>
+          <input type="radio" name="os" value="sensor">
+        </label>
       </fieldset>
 
       <div class="card agent-setup" id="agent-setup">
@@ -938,6 +943,11 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
               </label>
               <label class="switch" title="Process, network and file events from Sysmon for Linux, for the Linux endpoint detections"><input type="checkbox" id="sysmon-linux"> Include Sysmon for Linux</label>
             </span>
+            <span id="sensor-opts" class="agent-opts hidden">
+              <label class="switch" title="Zeek logs every connection, DNS lookup, web request, TLS session and file it sees"><input type="checkbox" id="sensor-zeek" checked> Zeek</label>
+              <label class="switch" title="Suricata raises alerts from rules such as Emerging Threats Open"><input type="checkbox" id="sensor-suricata" checked> Suricata</label>
+              <label class="switch" id="sensor-protocols-opt" title="Zeek already logs connections, DNS, web and TLS; sending Suricata's too counts each one twice"><input type="checkbox" id="sensor-protocols"> Also Suricata protocol logs</label>
+            </span>
             <span id="windows-opts" class="agent-opts hidden">
               <label class="switch"><input type="checkbox" id="sysmon" checked> Include Sysmon</label>
               <label class="switch" title="PowerShell script blocks: the scripts that run, for the PowerShell detections"><input type="checkbox" id="powershell" checked> Include PowerShell</label>
@@ -952,6 +962,20 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
             </div>
             <p id="agent-server-error" class="field-error hidden" role="alert"></p>
             <div id="agent-server-warn" class="alert hidden" data-tone="warning" role="status"></div>
+            <div id="sensor-paths" class="hidden">
+              <p id="sensor-tools-error" class="field-error hidden" role="alert"></p>
+              <div class="agent-addr__row" id="sensor-zeek-row">
+                <label class="label" for="sensor-zeek-dir">Zeek logs in</label>
+                <input id="sensor-zeek-dir" class="input input--sm mono" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="/opt/zeek/logs/current" aria-describedby="sensor-zeek-dir-error sensor-paths-help">
+              </div>
+              <p id="sensor-zeek-dir-error" class="field-error hidden" role="alert"></p>
+              <div class="agent-addr__row" id="sensor-eve-row">
+                <label class="label" for="sensor-eve-path">Suricata EVE file</label>
+                <input id="sensor-eve-path" class="input input--sm mono" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="/var/log/suricata/eve.json" aria-describedby="sensor-eve-path-error sensor-paths-help">
+              </div>
+              <p id="sensor-eve-path-error" class="field-error hidden" role="alert"></p>
+              <p id="sensor-paths-help" class="hint agent-token__help"><span>Leave empty for the usual places. Zeek built from source writes to <code>/usr/local/zeek/logs/current</code>, Security Onion to <code>/nsm/zeek/logs/current</code>.</span></p>
+            </div>
             <div class="agent-addr__row agent-token" id="agent-token-row">
               <label class="label" for="agent-token-name" id="agent-token-label">Token for these agents</label>
               <div class="agent-token__field">
@@ -966,6 +990,10 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
           </div>
           <ol id="agent-steps" class="agent-steps" role="list" aria-busy="true"></ol>
           <p id="wazuh-note" class="hint hidden"><svg class="icon" aria-hidden="true"><use href="#i-info"/></svg><span>Rather not install anything on the manager? It can send alerts itself: add a <code>&lt;syslog_output&gt;</code> block with <code>&lt;format&gt;json&lt;/format&gt;</code> to its <code>ossec.conf</code>, pointed at this server’s <a href="#data" id="wazuh-syslog">syslog address</a>.</span></p>
+          <div id="sensor-note" class="hidden">
+            <p class="hint"><svg class="icon" aria-hidden="true"><use href="#i-info"/></svg><span>Suricata on pfSense or OPNsense? Send its EVE log to this server’s <a href="#data" id="sensor-syslog">syslog address</a> instead: no agent needed.</span></p>
+            <p class="hint"><svg class="icon" aria-hidden="true"><use href="#i-info"/></svg><span>Building a new sensor? See the <a href="https://github.com/jrsamsanchez/Signalith/blob/main/docs/network-sensor.md" target="_blank" rel="noopener">network sensor guide</a>.</span></p>
+          </div>
           <div id="agent-file" class="agent-file hidden">
             <div class="agent-file__bar">
               <svg class="icon" aria-hidden="true"><use href="#i-file-code"/></svg>

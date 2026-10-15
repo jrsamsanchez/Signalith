@@ -96,9 +96,9 @@ The first three phases are complete, and the fourth has started.
 ## Later <span class="sg-pill sg-pill--later">Exploring</span> { #later data-toc-label="Later" }
 
 **Network sensor**
-:   An optional sensor role running [Zeek](https://zeek.org) and
-    [Suricata](https://suricata.io) with the free Emerging Threats Open rules, feeding
-    network events and alerts into Signalith.
+:   Zeek and Suricata logs are read today ([Network sensor](network-sensor.md)); still to
+    come: a one-line sensor install, sensor health in Settings and network detection
+    packs.
 
 **Vulnerability scanning: more**
 :   Scanning with [Nmap](https://nmap.org) and CVE matching is built

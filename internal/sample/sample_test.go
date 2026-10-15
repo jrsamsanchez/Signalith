@@ -598,3 +598,79 @@ func TestVulnerabilityScanStory(t *testing.T) {
 	want("critical", critical, "web-01 CVE-2023-25690", "app-01 CVE-2023-38408")
 	want("telnet", telnet, "jump-01")
 }
+
+// TestSampleNetwork: the network sensor's events fill the six network data
+// models from nsm-01, use only reserved addresses and names, carry the
+// parsers' document IDs, and include what the Network dashboard and the
+// phishing story need: outbound traffic, failed lookups, self-signed
+// certificates, sensor health, high alerts and the implant's download.
+func TestSampleNetwork(t *testing.T) {
+	d := genData(t, SizeSmall)
+	models := map[string]int{}
+	ids := map[string]bool{}
+	var outbound, nx, selfSigned, loss, drops, highAlerts, implant bool
+	for i, e := range d.Events {
+		vp, _ := e.Fields["vendor_product"].(string)
+		if vp != ingest.ZeekVendor && vp != ingest.SuricataVendor {
+			continue
+		}
+		if e.Fields["host"] != "nsm-01" || e.Fields["dvc"] != "nsm-01" {
+			t.Fatalf("event %d: host %v", i, e.Fields["host"])
+		}
+		if e.ID == "" || ids[e.ID] {
+			t.Fatalf("event %d: ID %q missing or repeated", i, e.ID)
+		}
+		ids[e.ID] = true
+		models[e.Model]++
+		for _, f := range []string{"src", "dest", "dest_ip"} {
+			if s, ok := e.Fields[f].(string); ok && !okAddr(s) {
+				t.Errorf("event %d: %s %q is not a reserved address", i, f, s)
+			}
+		}
+		for _, f := range []string{"query", "dest_host", "ssl_server_name", "url_domain"} {
+			s, ok := e.Fields[f].(string)
+			if !ok || okAddr(s) {
+				continue
+			}
+			if !strings.HasSuffix(s, ".example") && !strings.HasSuffix(s, ".test") {
+				t.Errorf("event %d: %s %q is not a reserved name", i, f, s)
+			}
+		}
+		switch {
+		case e.Model == "Network_Traffic" && e.Fields["direction"] == "outbound":
+			outbound = true
+		case e.Model == "Network_Resolution" && e.Fields["reply_code"] == "NXDomain":
+			nx = true
+		case e.Model == "Certificates" && e.Fields["ssl_self_signed"] == "true":
+			selfSigned = true
+		case e.Fields["sourcetype"] == "zeek:capture_loss" && e.Fields["capture_loss_percent"] != nil:
+			loss = true
+		case e.Fields["sourcetype"] == "suricata:stats" && e.Fields["drop_percent"] != nil:
+			drops = true
+		case e.Model == "Intrusion_Detection" && e.Fields["severity"] == "high":
+			highAlerts = true
+		case e.Model == "File_Transfers" && e.Fields["file_hash"] == hashBeacon:
+			implant = true
+		}
+	}
+	for _, m := range []string{"Network_Traffic", "Network_Resolution", "Web", "Certificates", "File_Transfers", "Intrusion_Detection"} {
+		if models[m] == 0 {
+			t.Errorf("no %s events from the sensor", m)
+		}
+	}
+	if !outbound || !nx || !selfSigned || !loss || !drops || !highAlerts || !implant {
+		t.Errorf("outbound %v, NXDomain %v, self-signed %v, capture loss %v, drops %v, high alerts %v, implant download %v",
+			outbound, nx, selfSigned, loss, drops, highAlerts, implant)
+	}
+	found := false
+	for _, ind := range d.Indicators {
+		found = found || ind.Value == hashBeacon
+	}
+	if !found {
+		t.Error("the implant's hash is not a sample indicator")
+	}
+	// The sensor is a known asset.
+	if h := buildOrg().host("nsm-01"); h.OS != "linux" || !Internal(h.IP) {
+		t.Errorf("nsm-01 = %+v", h)
+	}
+}

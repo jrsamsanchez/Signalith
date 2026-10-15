@@ -59,6 +59,9 @@ const (
 	PurposeWindows = "windows"
 	PurposeOTel    = "otel"
 	PurposeOsquery = "osquery"
+	// PurposeSensor is a network sensor: Fluent Bit sending Zeek's and
+	// Suricata's logs.
+	PurposeSensor = "sensor"
 )
 
 var b32 = base32.StdEncoding.WithPadding(base32.NoPadding)
@@ -121,7 +124,7 @@ const OldExampleName = "Old example token"
 // ValidPurpose reports whether p is a purpose a token may have.
 func ValidPurpose(p string) bool {
 	switch p {
-	case "", PurposeLinux, PurposeWindows, PurposeOTel, PurposeOsquery:
+	case "", PurposeLinux, PurposeWindows, PurposeOTel, PurposeOsquery, PurposeSensor:
 		return true
 	}
 	return false
@@ -192,7 +195,7 @@ func errNameInvalid() *Error {
 
 func errPurposeInvalid() *Error {
 	return &Error{Status: http.StatusBadRequest, Code: CodePurposeInvalid, Field: "purpose",
-		Msg: "The purpose must be linux, windows, otel, osquery or empty."}
+		Msg: "The purpose must be linux, windows, otel, osquery, sensor or empty."}
 }
 
 func errNotFound() *Error {

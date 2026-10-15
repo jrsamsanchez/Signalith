@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"net/netip"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -485,5 +487,102 @@ func FuzzOTLPProto(f *testing.F) {
 	f.Add([]byte{})
 	f.Fuzz(func(t *testing.T, body []byte) {
 		fuzzOTLP(t, body, false)
+	})
+}
+
+// checkSensorEvent checks an event a network sensor line became: it
+// encodes, its time is in the window once written, and unless the line
+// was not a sensor line at all (sourcetype *:unknown, which goes through
+// the field budget as any JSON does) every field name is one Signalith
+// knows or a valid name, and there are at most maxFieldsPerEvent.
+func checkSensorEvent(t *testing.T, ev Event) {
+	t.Helper()
+	if ev.Model == "" || ev.Fields == nil || ev.Fields["message"] == nil {
+		t.Fatalf("model %q fields %v", ev.Model, ev.Fields)
+	}
+	doc := ev.Document()
+	if _, err := json.Marshal(doc); err != nil {
+		t.Fatal(err)
+	}
+	if st, _ := ev.Fields["sourcetype"].(string); strings.HasSuffix(st, ":unknown") {
+		return
+	}
+	if len(ev.Fields) > maxFieldsPerEvent {
+		t.Fatalf("%d fields", len(ev.Fields))
+	}
+	for k := range ev.Fields {
+		if !KnownField(k) && !validFieldName(k) || strings.Contains(k, ".") {
+			t.Fatalf("field name %q", k)
+		}
+	}
+	if ev.ID != "" && (len(ev.ID) != 32 || strings.Trim(ev.ID, "0123456789abcdef") != "") {
+		t.Fatalf("ID %q", ev.ID)
+	}
+}
+
+func FuzzZeekRecord(f *testing.F) {
+	for _, log := range []string{"conn", "dns", "http", "ssl", "x509", "files", "notice", "capture_loss", "stats", "smb_mapping"} {
+		b, err := os.ReadFile(filepath.Join("testdata", "zeek", log+".json"))
+		if err != nil {
+			f.Fatal(err)
+		}
+		for _, l := range strings.Split(string(b), "\n") {
+			if l != "" {
+				f.Add(log, l)
+			}
+		}
+	}
+	f.Add("weird", `{"ts":"x","uid":7,"id.orig_h":{"a":1},"answers":[[[1]]],"TTLs":"x","duration":"NaN","percent_lost":1e309}`)
+	f.Add("conn", `{"ts":1e30,"id.orig_h":"::ffff:1.2.3.4","conn_state":"OTH","resp_bytes":-1,"service":","}`)
+	f.Fuzz(func(t *testing.T, log, line string) {
+		ev := Normalize("zeek.opt.zeek.logs.current."+log+".log", map[string]any{"log": line, "hostname": "nsm-01"}, now)
+		checkSensorEvent(t, ev)
+		if r, ok := decodeSensorLine(line); ok {
+			checkSensorEvent(t, Normalize("zeek", r, now))
+			checkSensorEvent(t, ParseZeek(log, r, ""))
+		}
+	})
+}
+
+func FuzzSuricataEVE(f *testing.F) {
+	b, err := os.ReadFile(filepath.Join("testdata", "suricata", "eve.json"))
+	if err != nil {
+		f.Fatal(err)
+	}
+	for _, l := range strings.Split(string(b), "\n") {
+		if l != "" {
+			f.Add(l)
+		}
+	}
+	f.Add(`{"timestamp":"2026-10-11T12:00:00Z","event_type":"dns","src_ip":"192.0.2.1","src_port":53,"dns":{"answers":[1,{"rdata":{}}],"grouped":{"A":[[]]},"queries":"x"}}`)
+	f.Add(`{"timestamp":"2026-10-11T12:00:00Z","event_type":"alert","src_ip":1,"alert":{"severity":"x","metadata":[]},"http":"x","flow_id":-1}`)
+	f.Add(`{"timestamp":"2026-10-11T12:00:00Z","event_type":"weird.type-$","src_ip":"192.0.2.1","weird.type-$":{"a":[1,2]}}`)
+	f.Fuzz(func(t *testing.T, line string) {
+		checkSensorEvent(t, Normalize("suricata.eve", map[string]any{"log": line, "hostname": "nsm-01"}, now))
+		if r, ok := decodeSensorLine(line); ok && IsSuricataEVE(r) {
+			checkSensorEvent(t, Normalize("", r, now))
+		}
+	})
+}
+
+func FuzzSuricataText(f *testing.F) {
+	b, err := os.ReadFile(filepath.Join("testdata", "suricata", "eve.json"))
+	if err != nil {
+		f.Fatal(err)
+	}
+	for _, l := range strings.Split(string(b), "\n") {
+		if l != "" {
+			f.Add("suricata[1234]: " + l)
+		}
+	}
+	f.Add(`{"event_type":"alert"}`)
+	f.Add(strings.Repeat(" ", 300) + `{"event_type":"alert","timestamp":"x","src_ip":"1"}`)
+	f.Fuzz(func(t *testing.T, text string) {
+		if ev, ok := ParseSuricataText(text); ok {
+			checkSensorEvent(t, ev)
+			if ev.ID == "" {
+				t.Fatal("no ID")
+			}
+		}
 	})
 }
