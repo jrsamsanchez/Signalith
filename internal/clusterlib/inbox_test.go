@@ -220,3 +220,96 @@ func TestInboxIgnoresInvalidFilesUntilChanged(t *testing.T) {
 		t.Fatal("the fixed file was not shared")
 	}
 }
+
+func TestInboxMissingFolderRemovesNothing(t *testing.T) {
+	_, a, b := pair(t)
+	if err := a.lib.PutIf(ctx, "alice", custom("my-rule", "Shared"), ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.boards.PutIf(ctx, "alice", board("ops", "Ops"), ""); err != nil {
+		t.Fatal(err)
+	}
+	b.cycle()
+	in := b.inbox(true)
+	for range 2 {
+		if err := in.Sync(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(b.detDir, "my-rule.yaml")); err != nil {
+		t.Fatalf("the shared rule was not written back: %v", err)
+	}
+	// The folders are gone (a volume that did not mount): that is not
+	// the removal of every file, even with mirror.
+	if err := os.RemoveAll(b.detDir); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(b.dbDir); err != nil {
+		t.Fatal(err)
+	}
+	if err := in.Sync(ctx); err == nil {
+		t.Fatal("a missing folder was taken for an empty one")
+	}
+	if err := b.inbox(true).Sync(ctx); err == nil {
+		t.Fatal("a missing folder was taken for an empty one after a restart")
+	}
+	a.cycle()
+	if _, err := a.lib.Get("my-rule"); err != nil {
+		t.Fatalf("a missing folder removed the shared rule: %v", err)
+	}
+	if !a.boards.Exists("ops") {
+		t.Fatal("a missing folder removed the shared dashboard")
+	}
+}
+
+func TestInboxNewFolderIsAStartingPoint(t *testing.T) {
+	_, a, b := pair(t)
+	if err := a.lib.PutIf(ctx, "alice", custom("my-rule", "Shared"), ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.lib.PutIf(ctx, "alice", custom("other-rule", "Other"), ""); err != nil {
+		t.Fatal(err)
+	}
+	b.cycle()
+	if err := b.inbox(true).Sync(ctx); err != nil {
+		t.Fatal(err)
+	}
+	// detections.dir now names another folder, which holds a stale copy
+	// of one rule and not the other.
+	b.detDir = filepath.Join(t.TempDir(), "detections")
+	writeFile(t, filepath.Join(b.detDir, "my-rule.yaml"), encodeDet(t, custom("my-rule", "Stale")))
+	if err := b.inbox(true).Sync(ctx); err != nil {
+		t.Fatal(err)
+	}
+	a.cycle()
+	if d, err := a.lib.Get("other-rule"); err != nil || d == nil {
+		t.Fatalf("a new folder removed the shared rule it did not hold: %v", err)
+	}
+	if d, _ := a.lib.Get("my-rule"); d == nil || d.Title != "Shared" {
+		t.Fatalf("a stale file in a new folder reverted the shared rule: %+v", d)
+	}
+	for id, title := range map[string]string{"my-rule": "Shared", "other-rule": "Other"} {
+		data, _ := os.ReadFile(filepath.Join(b.detDir, id+".yaml"))
+		if !strings.Contains(string(data), title) {
+			t.Fatalf("the shared rule %s was not written into the new folder:\n%s", id, data)
+		}
+	}
+}
+
+func TestItemNamesStayInTheFolders(t *testing.T) {
+	_, a, _ := pair(t)
+	on := true
+	if _, err := a.docs.Detections().Create(ctx, "alice", "../../escape", &DetectionBody{State: &detect.State{Enabled: &on}}); err == nil {
+		t.Fatal("a state-only detection with a name that is not an id was accepted")
+	}
+	if _, err := a.docs.Dashboards().Create(ctx, "alice", "../escape", &DashboardBody{}); err == nil {
+		t.Fatal("a dashboard with a name that is not an id was accepted")
+	}
+	in := a.inbox(false)
+	if p, err := in.pathOf("detections/state/../../../escape.yaml"); err == nil {
+		t.Fatalf("a file outside the folder was allowed: %s", p)
+	}
+	if p, err := in.pathOf("detections/state/my-rule.yaml"); err != nil || p != filepath.Join(a.detDir, detect.StateDir, "my-rule.yaml") {
+		t.Fatalf("pathOf: %q %v", p, err)
+	}
+}

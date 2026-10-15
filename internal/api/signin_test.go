@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -408,5 +409,21 @@ func TestOnlyTheAuthorOrAnAdminRemovesCaseEntries(t *testing.T) {
 	b, _ := json.Marshal(body)
 	if code != 200 || !strings.Contains(string(b), andys2) || strings.Contains(string(b), `"`+amys+`"`) {
 		t.Errorf("case = %d %s", code, b)
+	}
+}
+
+// While the user records cannot change (the cluster takes them over), a
+// directory refusal still ends the person's sessions.
+func TestRefusalEndsSessionsWhileUsersAreHeld(t *testing.T) {
+	srv, ts, s := startAD(t, nil)
+	code, _, c := login(t, ts, "alice", ldaptest.Password)
+	if code != 200 {
+		t.Fatalf("alice = %d", code)
+	}
+	s.userStore().Hold = func() (func(), error) { return nil, errors.New("the users are moving") }
+	srv.Add(ldaptest.ADITLeads, map[string][]string{"objectClass": {"top", "group"}, "member": {ldaptest.ADBobDN}})
+	login(t, ts, "alice", ldaptest.Password)
+	if code, _, _ := call(t, ts, "GET", "/api/me", "", "", "", c); code != 401 {
+		t.Errorf("alice's old session = %d", code)
 	}
 }
