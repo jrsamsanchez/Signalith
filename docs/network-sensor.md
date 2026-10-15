@@ -39,14 +39,21 @@ everywhere else, sends both programs' logs to Signalith over HTTPS.
 ## What you need
 
 - **A copy of the traffic**: a switch port set to mirror the uplink, or a network tap. Most
-  managed switches can mirror a port, even inexpensive ones; so can the virtual switches in
-  Hyper-V, VMware and Proxmox.
+  managed switches can mirror a port, even inexpensive ones.
 - **A machine with two network ports**: one plugged into the mirror port (it only listens and
   has no IP address), and one for normal network access, to reach Signalith and get updates.
 - **Linux**: Ubuntu Server 24.04 LTS is the easiest choice; Debian 12 and Rocky, Alma or Red
-  Hat Enterprise Linux 9 work too. Zeek does not run on Windows. If you only have Windows
-  servers, run the sensor as a small Ubuntu virtual machine in Hyper-V with port mirroring
-  turned on for its virtual network card, or on a spare mini PC.
+  Hat Enterprise Linux 9 work too. Zeek does not run on Windows. The simplest sensor is a
+  spare mini PC with two network ports.
+
+  If you only have Windows servers, the sensor can be a small Ubuntu virtual machine in
+  Hyper-V, but Hyper-V's own port mirroring only copies traffic between virtual machines on
+  the same virtual switch: it does not see your office network or internet link. To see the
+  real network, the Hyper-V host needs a spare physical network port cabled to the switch's
+  mirror port, given to the sensor virtual machine through an external virtual switch of its
+  own (with **Allow management operating system to share this network adapter** turned off),
+  and Hyper-V must be set to pass that port's mirrored traffic on to the virtual machine,
+  which takes extra PowerShell settings. A mini PC is usually simpler.
 - **Outbound HTTPS** from the sensor to Signalith (port 8080 by default), and to the package
   repositories and the rules site for updates. Nothing needs to reach the sensor: it opens no
   ports.
@@ -79,9 +86,11 @@ On Signalith, open **Add data** and pick **Network sensor**:
 3. Follow the steps on the page, on the sensor: install Fluent Bit, turn on Zeek's JSON logs,
    save Signalith's CA certificate and the configuration, and restart Fluent Bit.
 
-The page makes a token of its own for this sensor (purpose `sensor`) when you copy or download
-the configuration. To stop a sensor sending, revoke its token on **Settings > Agent tokens**
-(see [Agent tokens](agent-tokens.md)).
+The page makes a token (purpose `sensor`) when you copy or download the configuration, named
+after the **Token for these agents** field. Every copy made under the same name uses the same
+token, so before copying, change the name to the sensor's own (such as `nsm-01`): each sensor
+then has its own token. To stop a sensor sending, revoke its token on **Settings > Agent
+tokens** (see [Agent tokens](agent-tokens.md)).
 
 ### Zeek's JSON logs
 
@@ -91,8 +100,13 @@ packages) and apply it:
 
 ```sh
 echo '@load policy/tuning/json-logs' | sudo tee -a /opt/zeek/share/zeek/site/local.zeek
-sudo zeekctl deploy
+sudo /opt/zeek/bin/zeekctl deploy
 ```
+
+`zeekctl` is in Zeek's own `bin` folder, which is not on the usual search path: use the full
+path (`/usr/local/zeek/bin/zeekctl` when Zeek was built from source). Security Onion's Zeek
+already writes JSON and has Community ID on, so on Security Onion skip this and the next
+section.
 
 Suricata's `eve.json` is always JSON, so it needs nothing.
 
@@ -104,9 +118,9 @@ short code that is the same in both tools. With it, a search like
 connection, DNS lookup, web request and files of the same flow.
 
 - Zeek: add `@load policy/protocols/conn/community-id-logging` to `local.zeek`, then run
-  `sudo zeekctl deploy`.
+  `sudo /opt/zeek/bin/zeekctl deploy`.
 - Suricata: in `suricata.yaml`, under the `eve-log` output, set `community-id: true`, then
-  restart Suricata.
+  restart Suricata (`sudo systemctl restart suricata`).
 
 ### When both tools run
 
@@ -178,25 +192,38 @@ A one-line sensor install is coming. Until then, these are the steps on a fresh
 **Ubuntu Server 24.04** machine with two network ports. In the commands, `ens192` is the
 capture port (the one on the mirror port); use your own port's name (`ip link` lists them).
 
-1. **Leave the capture port without an IP address.** In the installer, or in
-   `/etc/netplan/`, give the capture port no address (no DHCP); keep the address on the other
-   port. Then bring the capture port up so it listens to everything:
+1. **Leave the capture port without an IP address.** Keep the address on the other port. Tell
+   Ubuntu to bring the capture port up at every start with no address, in a new file
+   `/etc/netplan/90-capture.yaml`:
 
-    ```sh
-    sudo ip link set ens192 up promisc on
+    ```yaml
+    network:
+      version: 2
+      ethernets:
+        ens192:
+          dhcp4: false
+          dhcp6: false
+          link-local: []
+          optional: true
     ```
+
+    Then apply it: `sudo chmod 600 /etc/netplan/90-capture.yaml && sudo netplan apply`. Zeek
+    and Suricata switch the port to promiscuous mode themselves, so it hears all the copied
+    traffic.
 
 2. **Install Zeek** from Zeek's signed packages (the openSUSE Build Service repository Zeek
    documents at <https://docs.zeek.org/en/current/install.html>):
 
     ```sh
-    echo 'deb http://download.opensuse.org/repositories/security:/zeek/xUbuntu_24.04/ /' | sudo tee /etc/apt/sources.list.d/security:zeek.list
-    curl -fsSL https://download.opensuse.org/repositories/security:zeek/xUbuntu_24.04/Release.key | gpg --dearmor | sudo tee /etc/apt/trusted.gpg.d/security_zeek.gpg > /dev/null
+    sudo install -d -m 755 /etc/apt/keyrings
+    curl -fsSL https://download.opensuse.org/repositories/security:zeek/xUbuntu_24.04/Release.key | gpg --dearmor | sudo tee /etc/apt/keyrings/security_zeek.gpg > /dev/null
+    echo 'deb [signed-by=/etc/apt/keyrings/security_zeek.gpg] http://download.opensuse.org/repositories/security:/zeek/xUbuntu_24.04/ /' | sudo tee /etc/apt/sources.list.d/security:zeek.list
     sudo apt update && sudo apt install zeek
     ```
 
     The repository is signed, so the plain `http` address is safe: apt checks every package
-    against the key.
+    against the key. The key is trusted for Zeek's repository only (`signed-by`), not for
+    every package on the machine.
 
 3. **Point Zeek at the capture port**: in `/opt/zeek/etc/node.cfg` set `interface=ens192`.
    In `/opt/zeek/etc/networks.cfg` list your own networks (by default the private ranges),
@@ -220,7 +247,18 @@ capture port (the one on the mirror port); use your own port's name (`ip link` l
     ```
 
     In `/etc/suricata/suricata.yaml`, set the `af-packet` interface to `ens192` and, under
-    `eve-log`, `community-id: true`.
+    `eve-log`, `community-id: true`. Suricata reads traffic from attackers, so let it drop
+    root once it has opened the port: in the same file set
+
+    ```yaml
+    run-as:
+      user: suricata
+      group: suricata
+    ```
+
+    The package creates that user; if `id suricata` says it does not exist, add it with
+    `sudo useradd --system --no-create-home --shell /usr/sbin/nologin suricata`, and let it
+    write its logs: `sudo chown -R suricata:suricata /var/log/suricata /var/lib/suricata`.
 
 5. **Get the rules and keep them up to date.** `suricata-update` (it comes with Suricata)
    downloads the Emerging Threats Open rules from Proofpoint, checks that Suricata accepts
@@ -228,14 +266,23 @@ capture port (the one on the mirror port); use your own port's name (`ip link` l
 
     ```sh
     sudo suricata-update
-    sudo systemctl enable --now suricata
+    sudo systemctl enable suricata && sudo systemctl restart suricata
     ```
+
+    `restart` (not just `enable --now`) makes sure Suricata loads the settings from step 4
+    and the new rules, even if the package had already started it.
 
     Add a daily update to root's crontab, at a minute of your choice:
     `17 3 * * * suricata-update && suricatasc -c ruleset-reload-nonblocking`.
 
 6. **Send the logs**: on Signalith, open **Add data**, pick **Network sensor** and follow the
    steps, as above.
+
+**Zeek runs as root in these steps.** `zeekctl` starts Zeek's workers as root, so a bug in
+Zeek's parsing of hostile traffic would run as root on the sensor. The one-line sensor
+install will run Zeek as its own `zeek` user with only the rights to capture packets. Until
+then, keep the sensor patched (`sudo apt upgrade`), give it no other job, and let only
+administrators sign in to it.
 
 When the logs arrive, the **Endpoints** page lists the sensor as **Network sensor**, and the
 **Network** dashboard fills in.
@@ -255,7 +302,7 @@ Sysmon too).
 | `http` | `http` | Web | `http_method`, `url`, `url_domain`, `uri_path`, `uri_query`, `status`, `http_user_agent`, `http_referrer`, `http_content_type`, `bytes_in`, `bytes_out`, `user` |
 | `ssl`, `x509` | `tls` | Certificates | `ssl_server_name`, `ssl_version`, `ssl_cipher`, `ssl_subject`, `ssl_issuer` and their common names, `ssl_serial`, `ssl_hash`, `ssl_start_time`, `ssl_end_time`, `ssl_validation_status`, `ssl_self_signed`, `ja3`, `ja3s`, `ja4` |
 | `files` | `fileinfo` | File_Transfers | `file_name`, `file_size`, `file_hash` (SHA-256), `file_md5`, `file_sha1`, `file_sha256`, `mime_type`, `app`, `src` (sender), `dest` (receiver), `url` |
-| `notice` | `alert` | Intrusion_Detection | `signature`, `signature_id`, `category`, `severity`, `severity_id`, `action`, `mitre`, `dest_host`, `url`, `reason` |
+| `notice` | `alert` | Intrusion_Detection | `signature`, `signature_id`, `category`, `severity`, `severity_id`, `action`, `mitre`, `dest_host`, `url`, `reason`, `local_host` |
 
 Every sensor event also has:
 
@@ -283,7 +330,13 @@ Some details worth knowing:
   packet.
 - **DNS**: on sensor events `src` is the computer that asked. On Sysmon events `dest` is
   the host that looked up, as before, so search `src` for "who looked this up" on network
-  data.
+  data. Suricata logs each lookup twice, the question and the answer; only the answer (which
+  holds the question too) is in Network_Resolution, so lookups are not counted twice. The
+  question is kept in Other with `signature="DNS request"`.
+- **IPv6 addresses** are stored in their short form (`2001:db8::10`), whichever tool saw
+  them, so one search finds a host in both.
+- **Alerts** also have `local_host`, your network's end of the traffic (see
+  [The Network dashboard](#the-network-dashboard)).
 - **Web status** is text (`status=404`), as elsewhere in Signalith.
 - **Other Zeek logs** (ssh, rdp, smb, kerberos, dhcp, weird and the rest) go to Other with
   `sourcetype=zeek:<log>`, `src`, `src_port`, `dest`, `dest_port`, and up to 64 of their
@@ -303,8 +356,15 @@ Some details worth knowing:
 high alerts, connections, data sent to the internet, alerts over time by severity, the top
 alert signatures, the hosts with the most alerts, the top talkers and destinations on the
 internet, the top DNS lookups and the hosts with the most failed lookups, web requests by
-status, the top user agents, files by type, self-signed certificates, and the sensor's
-packet loss. See [Dashboards](dashboards.md).
+status, the top user agents, files by type, servers with self-signed certificates, and the
+sensor's packet loss. See [Dashboards](dashboards.md).
+
+The alert panels count `local_host`: your network's end of each alert. Suricata keeps the
+direction of the packet that matched, so for most malware and command and control rules your
+computer is `src` and the outside server `dest`; `local_host` is `src` for traffic that went
+out, `dest` for traffic that came in, and both for traffic that stayed inside. The panels
+about connections, DNS, web and files count only Zeek and Suricata events, so Sysmon or
+firewall data does not mix in.
 
 ### Threat intel matches
 
@@ -342,23 +402,29 @@ rules from a file: `suricata-update --local /path/to/rules`.
 - **Only outbound HTTPS.** The sensor sends to Signalith over HTTPS and checks Signalith's
   certificate with the CA saved on it (or your own certificate's root), like every agent. It
   opens no ports and needs nothing from Signalith except the address.
-- **One token per sensor.** The token is made for this sensor alone (purpose `sensor`), shown
-  once, stored on Signalith only as a hash, and can be revoked on its own. On the sensor it
+- **One token per sensor.** Name the token after the sensor on the Add data page and each
+  sensor gets its own (purpose `sensor`), shown once, stored on Signalith only as a hash, and
+  revocable on its own. On the sensor it
   is in `/etc/fluent-bit/fluent-bit.conf`, which only root can read (the install step sets
   mode 600).
 - **A sensor is not a server.** It is an agent, not a member of Signalith's servers: it holds
   no OpenSearch password, no CA key and no settings, only its token and the CA certificate,
   which is public.
 - **Never stored.** Signalith never stores fields named `password` (Zeek logs HTTP and FTP
-  passwords if someone turns that on), nor Suricata's `payload` and `packet` (copies of the
-  traffic) or HTTP bodies. Suricata's `payload_printable`, when turned on, is cut to 2 KB.
+  passwords if someone turns that on), the password of an FTP `PASS` command in Suricata's
+  ftp events (it becomes `(hidden)`), the challenge and response of a VNC sign-in in its rfb
+  events (from which a password can be cracked), nor Suricata's `payload` and `packet`
+  (copies of the traffic) or HTTP bodies. Suricata's `payload_printable`, when turned on, is cut to 2 KB.
   They are removed from `_raw` too. Better still, keep them off on the sensor: in
   `suricata.yaml` leave `payload`, `packet` and `http-body` set to `no` (the default).
 - **The capture port has no IP address.** It only listens. A capture port with an address
   would let traffic on the mirrored network reach the sensor itself.
 - **Hostile input.** The traffic a sensor sees can come from attackers, and so can parts of
-  its logs. Signalith refuses lines over 1 MB or nested more than 32 levels deep, maps only
-  known fields, and every parser is fuzz tested.
+  its logs. Signalith refuses lines over 1 MB or nested more than 32 levels deep, and every
+  parser is fuzz tested. It maps known fields; a Zeek log it has no mapping for keeps at most
+  64 `zeek_*` fields per event, within the daily budget of new field names. On the sensor,
+  Fluent Bit skips lines over 500 KB, and keeps at most 4 GB waiting on disk while Signalith
+  cannot be reached (the oldest is dropped after that).
 - **At rest.** On Signalith, sensor events are stored and encrypted like all other events
   (see [Encryption](encryption.md)) and kept as long as the [retention](retention.md)
   settings say. On the sensor, turn on full-disk encryption when you install Linux (in the

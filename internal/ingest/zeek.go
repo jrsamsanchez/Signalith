@@ -177,7 +177,13 @@ func ParseZeek(lt string, r map[string]any, raw string) Event {
 		"vendor_product": ZeekVendor,
 		"message":        raw,
 	}
-	if h := sensorHost(r); h != "" {
+	h := sensorHost(r)
+	if lt == "ntlm" {
+		// ntlm.log's hostname is the workstation name the client sent,
+		// which anyone on the wire chooses: never the sensor's name.
+		h = firstHost(r, "_node_name", "peer")
+	}
+	if h != "" {
 		f["host"], f["dvc"] = h, h
 	}
 	setStr(f, "session_id", r["uid"])
@@ -221,6 +227,9 @@ func ParseZeek(lt string, r map[string]any, raw string) Event {
 		zeekStats(r, f)
 	default:
 		zeekGeneric(lt, r, f)
+	}
+	if model == "Intrusion_Detection" {
+		setLocalHost(f)
 	}
 	ev := Event{Model: model, Fields: f, ID: sensorDocID("zeek:"+lt, raw)}
 	if t, ok := zeekTime(r["ts"]); ok {
@@ -537,7 +546,8 @@ func zeekGeneric(lt string, r, f map[string]any) {
 	f["signature"] = "Zeek " + lt
 	keys := make([]string, 0, len(r))
 	for k := range r {
-		if !zeekSkip[k] {
+		// ntlm.log's hostname is the client's, kept as zeek_hostname.
+		if !zeekSkip[k] || (k == "hostname" && lt == "ntlm") {
 			keys = append(keys, k)
 		}
 	}

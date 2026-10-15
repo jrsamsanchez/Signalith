@@ -304,7 +304,7 @@ osquery's management server and the hosts appear on the **Endpoints** page (see
 [docs/endpoints.md](docs/endpoints.md)).
 If you run Wazuh, pick **Wazuh** to send the alerts your Wazuh manager raises, through
 Fluent Bit on the manager or its own syslog output (see [docs/wazuh.md](docs/wazuh.md)).
-If you run Zeek or Suricata on a network sensor, pick **Network sensor (Zeek, Suricata)** to send
+If you run Zeek or Suricata on a network sensor, pick **Network sensor** to send
 their connections, DNS lookups, web requests, certificates, files and IDS alerts (see
 [docs/network-sensor.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/network-sensor.md)).
 

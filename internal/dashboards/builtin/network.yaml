@@ -9,7 +9,7 @@ panels:
     width: half
     compare: true
   - title: Hosts with high alerts
-    query: datamodel=Intrusion_Detection severity IN (high, critical) | stats dc(dest) as hosts
+    query: datamodel=Intrusion_Detection severity IN (high, critical) | stats dc(local_host) as hosts
     viz: single
     width: half
     compare: true
@@ -19,7 +19,7 @@ panels:
     width: half
     compare: true
   - title: Sent to the internet
-    query: datamodel=Network_Traffic direction=outbound | stats sum(bytes_out) as bytes
+    query: datamodel=Network_Traffic vendor_product IN (Zeek, Suricata) direction=outbound | stats sum(bytes_out) as bytes
     viz: single
     width: half
     compare: true
@@ -31,24 +31,27 @@ panels:
     query: datamodel=Intrusion_Detection | stats count, dc(src) as sources by signature, severity | sort -count | head 10
     viz: table
     width: half
+  # local_host is your network's end of each alert: src when the
+  # traffic went out (most malware and command-and-control rules), dest
+  # when it came in.
   - title: Hosts with the most alerts
-    query: datamodel=Intrusion_Detection | stats count by dest | sort -count | head 10
+    query: datamodel=Intrusion_Detection | stats count by local_host | sort -count | head 10
     viz: bar
     width: half
   - title: Top talkers to the internet
-    query: datamodel=Network_Traffic direction=outbound | stats sum(bytes_out) as bytes by src | sort -bytes | head 10
+    query: datamodel=Network_Traffic vendor_product IN (Zeek, Suricata) direction=outbound | stats sum(bytes_out) as bytes by src | sort -bytes | head 10
     viz: bar
     width: half
   - title: Top external destinations
-    query: datamodel=Network_Traffic direction=outbound | stats count, sum(bytes_out) as bytes by dest, dest_port | sort -count | head 10
+    query: datamodel=Network_Traffic vendor_product IN (Zeek, Suricata) direction=outbound | stats count, sum(bytes_out) as bytes by dest, dest_port | sort -count | head 10
     viz: table
     width: half
   - title: Top DNS lookups
-    query: datamodel=Network_Resolution | stats count, dc(src) as hosts by query | sort -count | head 10
+    query: datamodel=Network_Resolution vendor_product IN (Zeek, Suricata) | stats count, dc(src) as hosts by query | sort -count | head 10
     viz: table
     width: half
   - title: Hosts with the most failed lookups
-    query: datamodel=Network_Resolution reply_code=NXDomain | stats count by src | sort -count | head 10
+    query: datamodel=Network_Resolution vendor_product IN (Zeek, Suricata) reply_code=NXDomain | stats count by src | sort -count | head 10
     viz: bar
     width: half
   - title: Web requests by status
@@ -63,8 +66,11 @@ panels:
     query: datamodel=File_Transfers | stats count by mime_type | sort -count | head 10
     viz: bar
     width: third
-  - title: Self-signed certificates
-    query: datamodel=Certificates ssl_self_signed=true | stats count by ssl_server_name, dest, ssl_subject | sort -count | head 20
+  # Grouped by server address only: a stats by several fields leaves out
+  # events missing any of them, such as a server reached by address with
+  # no server name.
+  - title: Servers with self-signed certificates
+    query: datamodel=Certificates ssl_self_signed=true | stats count, dc(ssl_server_name) as server_names, dc(src) as clients by dest | sort -count | head 20
     viz: table
     width: full
   - title: Sensor packet loss (percent)

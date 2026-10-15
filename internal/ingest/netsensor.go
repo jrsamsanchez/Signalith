@@ -60,6 +60,36 @@ func netDirection(src, dest string, localOrig, localResp string) string {
 	return "external"
 }
 
+// canonIP writes an IP address in its usual short form (IPv6 with "::"
+// and no leading zeros, IPv4-mapped IPv6 as IPv4), so one host has one
+// spelling whichever sensor saw it. Anything else is returned unchanged.
+func canonIP(s string) string {
+	a, err := netip.ParseAddr(strings.TrimSpace(s))
+	if err != nil {
+		return s
+	}
+	return a.Unmap().String()
+}
+
+// setLocalHost sets local_host on an alert: the end of the traffic that is
+// inside your network, from its direction (src when outbound, dest when
+// inbound, both when internal). It stays unset when neither end is.
+func setLocalHost(f map[string]any) {
+	src, dest := wstr(f["src"]), wstr(f["dest"])
+	switch f["direction"] {
+	case "outbound":
+		setStr(f, "local_host", src)
+	case "inbound":
+		setStr(f, "local_host", dest)
+	case "internal":
+		if src == dest {
+			setStr(f, "local_host", src)
+		} else {
+			f["local_host"] = []string{src, dest}
+		}
+	}
+}
+
 // zeekBool reads a Zeek boolean: T or F in its TSV logs, true or false in
 // JSON.
 func zeekBool(s string) (bool, bool) {
@@ -153,6 +183,24 @@ func scrubSensitive(r map[string]any) bool {
 		}
 	}
 	walk(r, 0)
+	// Suricata's ftp records log the argument of every command, the
+	// password of PASS included.
+	if ftp, ok := r["ftp"].(map[string]any); ok && strings.EqualFold(strings.TrimSpace(wstr(ftp["command"])), "PASS") {
+		if _, ok := ftp["command_data"]; ok {
+			ftp["command_data"] = "(hidden)"
+			changed = true
+		}
+	}
+	// Its rfb (VNC) records log the challenge and response of a sign-in,
+	// from which the password can be cracked offline.
+	if vnc, ok := wget(r, "rfb", "authentication", "vnc").(map[string]any); ok {
+		for _, k := range []string{"challenge", "response"} {
+			if _, ok := vnc[k]; ok {
+				delete(vnc, k)
+				changed = true
+			}
+		}
+	}
 	if p, ok := r["payload_printable"].(string); ok && len(p) > maxPayloadPrintable {
 		r["payload_printable"] = cutUTF8(p, maxPayloadPrintable)
 		changed = true
@@ -184,12 +232,16 @@ func sensorDocID(logType, raw string) string {
 // Bit's sysinfo filter), Suricata's "host" (its sensor-name), or Zeek's
 // "_node_name" or "peer"; "" lets the event's origin decide.
 func sensorHost(r map[string]any) string {
-	keys := []string{"hostname", "_node_name", "peer"}
 	if _, eve := r["event_type"]; eve {
 		// Only Suricata's "host" is the sensor: Zeek's http.log has one
 		// that is the web server's name.
-		keys = []string{"hostname", "host"}
+		return firstHost(r, "hostname", "host")
 	}
+	return firstHost(r, "hostname", "_node_name", "peer")
+}
+
+// firstHost returns the first of r's keys that holds a usable host name.
+func firstHost(r map[string]any, keys ...string) string {
 	for _, k := range keys {
 		if s := strings.TrimSpace(wstr(r[k])); s != "" && len(s) <= 255 {
 			return s

@@ -2385,7 +2385,7 @@ agentServerEl.addEventListener('change', async () => {
 // in storage; changing the name or the source drops it, so the next copy
 // makes a new token. "Use a token I already have" takes a pasted token
 // instead (checked here only).
-const AGENT_TOKEN_DEFAULTS = { linux: 'Linux servers', windows: 'Windows servers', otel: 'OpenTelemetry Collector', osquery: 'osquery hosts', wazuh: 'Wazuh manager', sensor: 'Network sensors' };
+const AGENT_TOKEN_DEFAULTS = { linux: 'Linux servers', windows: 'Windows servers', otel: 'OpenTelemetry Collector', osquery: 'osquery hosts', wazuh: 'Wazuh manager', sensor: 'Network sensor' };
 // AGENT_TOKEN_PURPOSES is the token purpose of a source whose agent is
 // another's: Fluent Bit on the Wazuh manager is a Linux agent.
 const AGENT_TOKEN_PURPOSES = { wazuh: 'linux' };

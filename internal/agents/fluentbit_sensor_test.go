@@ -32,7 +32,8 @@ func TestGenerateSensor(t *testing.T) {
 		line("Tag", "suricata.eve"),
 		line("Path", "/var/log/suricata/eve.json"),
 		line("DB", "/var/lib/fluent-bit/signalith-suricata.db"),
-		line("Buffer_Max_Size", "1M"),
+		line("Buffer_Max_Size", "500k"),
+		line("storage.total_limit_size", "4G"),
 		line("Skip_Long_Lines", "On"),
 		line("Mem_Buf_Limit", "50MB"),
 		line("Rotate_Wait", "30"),
@@ -56,8 +57,8 @@ func TestGenerateSensor(t *testing.T) {
 		}
 	}
 	steps := strings.Join(a.Steps, "\n")
-	for _, want := range []string{"json-logs", "echo '@load policy/tuning/json-logs' | sudo tee -a /opt/zeek/share/zeek/site/local.zeek && sudo zeekctl deploy",
-		"community-id to true", "community-id-logging", "vendor_product=Zeek or vendor_product=Suricata", "only new log lines"} {
+	for _, want := range []string{"json-logs", "echo '@load policy/tuning/json-logs' | sudo tee -a /opt/zeek/share/zeek/site/local.zeek && sudo /opt/zeek/bin/zeekctl deploy",
+		"community-id to true", "community-id-logging", "run sudo /opt/zeek/bin/zeekctl deploy", "search vendor_product IN (Zeek, Suricata))", "only new log lines"} {
 		if !strings.Contains(steps, want) {
 			t.Errorf("steps missing %q:\n%s", want, steps)
 		}
@@ -91,11 +92,21 @@ func TestGenerateSensor(t *testing.T) {
 			t.Errorf("config missing %q", want)
 		}
 	}
-	if !strings.Contains(strings.Join(c.Steps, "\n"), "/nsm/zeek/share/zeek/site/local.zeek") {
-		t.Error("local.zeek path not from the log folder")
+	// Security Onion's Zeek and Suricata already write JSON with
+	// Community ID: no steps to change them, and no zeekctl.
+	cs := strings.Join(c.Steps, "\n")
+	if !strings.Contains(cs, "already writes JSON") || strings.Contains(cs, "zeekctl") || strings.Contains(cs, "Community ID") {
+		t.Errorf("Security Onion steps:\n%s", cs)
+	}
+	src := sensorConfig(t, Options{Zeek: true, ZeekDir: "/usr/local/zeek/logs/current"})
+	if ss := strings.Join(src.Steps, "\n"); !strings.Contains(ss, "/usr/local/zeek/share/zeek/site/local.zeek && sudo /usr/local/zeek/bin/zeekctl deploy") {
+		t.Errorf("source install steps:\n%s", ss)
+	}
+	if !strings.Contains(sensorConfig(t, Options{Zeek: true}).Steps[len(sensorConfig(t, Options{Zeek: true}).Steps)-1], "vendor_product IN (Zeek))") {
+		t.Error("Zeek only search")
 	}
 	u := sensorConfig(t, Options{Zeek: true, ZeekDir: "/data/zeek-logs"})
-	if !strings.Contains(strings.Join(u.Steps, "\n"), "in Zeek's install folder") {
+	if us := strings.Join(u.Steps, "\n"); !strings.Contains(us, "in Zeek's install folder") || strings.Contains(us, "sudo zeekctl") {
 		t.Error("local.zeek step for an unusual folder")
 	}
 }

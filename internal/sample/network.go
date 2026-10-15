@@ -395,7 +395,7 @@ func (g *gen) sensorDownload(ws Host, t time.Time) {
 	g.b.eve(t.Add(500*time.Millisecond), map[string]any{
 		"flow_id": g.flowID(), "in_iface": "ens192", "event_type": "fileinfo",
 		"src_ip": ipPhishHost, "src_port": 80, "dest_ip": ws.IP, "dest_port": fl.srcPort, "proto": "TCP",
-		"community_id": fl.cid, "app_proto": "http", "direction": "to_client",
+		"community_id": fl.cid, "app_proto": "http",
 		"http": map[string]any{"hostname": ipPhishHost, "url": "/update.exe", "http_method": "GET", "status": 200},
 		"fileinfo": map[string]any{"filename": "/update.exe", "magic": "PE32+ executable (GUI) x86-64, for MS Windows",
 			"gaps": false, "state": "CLOSED", "sha256": hashBeacon, "stored": false, "size": 73802, "tx_id": 0},

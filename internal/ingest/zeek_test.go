@@ -159,7 +159,22 @@ func TestZeekNotice(t *testing.T) {
 		t.Errorf("message is not the raw line: %v", d[0]["message"])
 	}
 	expect(t, d[1], map[string]any{"dest_host": "c2.badcorp.example", "src": "192.168.10.21", "dest": "203.0.113.66",
-		"dest_port": int64(8443), "direction": "outbound", "transport": "tcp"})
+		"dest_port": int64(8443), "direction": "outbound", "transport": "tcp", "local_host": "192.168.10.21"})
+	expect(t, d[0], map[string]any{"local_host": "192.168.10.5"})
+}
+
+func TestZeekNTLMHostnameIsNotTheSensor(t *testing.T) {
+	// ntlm.log's hostname is the name the client sent; a record decoded
+	// before it reached Signalith must not take it as the sensor's name.
+	r := map[string]any{"ts": 1791720000.0, "uid": "Cntlm", "id.orig_h": "192.168.10.21", "id.resp_h": "192.168.10.5",
+		"hostname": "DC01", "username": "bob", "domainname": "CORP", "_node_name": "nsm-01"}
+	d := Normalize("zeek.opt.zeek.logs.current.ntlm.log", r, now).Document()
+	expect(t, d, map[string]any{"host": "nsm-01", "dvc": "nsm-01", "zeek_hostname": "DC01"})
+	// Without another name, the event's origin decides.
+	delete(r, "_node_name")
+	if h := ParseZeek("ntlm", r, "").Fields["host"]; h != nil {
+		t.Errorf("host = %v", h)
+	}
 }
 
 func TestZeekHealth(t *testing.T) {

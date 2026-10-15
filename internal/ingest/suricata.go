@@ -166,7 +166,9 @@ func ParseSuricataEVE(r map[string]any, raw string) Event {
 	}
 	setStr(f, "session_id", r["flow_id"])
 	setStr(f, "community_id", r["community_id"])
-	src, dest := wstr(r["src_ip"]), wstr(r["dest_ip"])
+	// Suricata writes IPv6 addresses in full (2001:0db8:0000:...); the
+	// short form matches Zeek, threat intel and what people type.
+	src, dest := canonIP(wstr(r["src_ip"])), canonIP(wstr(r["dest_ip"]))
 	setStr(f, "src", src)
 	setInt(f, "src_port", r["src_port"])
 	setStr(f, "dest", dest)
@@ -192,8 +194,14 @@ func ParseSuricataEVE(r map[string]any, raw string) Event {
 		model = "Network_Traffic"
 		eveFlow(r, f)
 	case "dns":
-		model = "Network_Resolution"
-		eveDNS(r, f)
+		// Suricata logs a lookup twice: the question and the answer. The
+		// answer carries both, so only it counts as a lookup; the
+		// question is kept as a "DNS request" outside the data model.
+		if eveDNS(r, f) {
+			model = "Network_Resolution"
+		} else {
+			f["signature"] = "DNS request"
+		}
 	case "http":
 		model = "Web"
 		eveHTTP(r, f)
@@ -207,6 +215,9 @@ func ParseSuricataEVE(r map[string]any, raw string) Event {
 		eveStats(r, f)
 	default:
 		eveGeneric(t, r, f)
+	}
+	if model == "Intrusion_Detection" {
+		setLocalHost(f)
 	}
 	ev := Event{Model: model, Fields: f, ID: id}
 	if ts, ok := suricataTime(wstr(r["timestamp"])); ok {
@@ -303,13 +314,19 @@ func eveFlow(r, f map[string]any) {
 // eveDNS maps a DNS record onto Network_Resolution, in Suricata 7's
 // format (one query or answer per record: dns.type, rrname, rrtype,
 // rcode, answers) and Suricata 8's (dns.queries, dns.answers). src is the
-// host that asked and dest_ip the resolver; dest stays unset.
-func eveDNS(r, f map[string]any) {
+// host that asked and dest_ip the resolver; dest stays unset. It reports
+// whether the record is an answer (or carries no type), not the question.
+func eveDNS(r, f map[string]any) bool {
 	f["signature"] = "DNS query"
 	d, _ := r["dns"].(map[string]any)
-	// An answer can be logged from the server's side: the asker is the
-	// end that is not on port 53.
-	if p, _ := intOf(r["src_port"]); p == 53 || p == 853 || p == 5353 {
+	// Suricata writes both records in the flow's direction, asker first.
+	// Only a record that plainly came from the server's side (a DNS port
+	// to a port that is not one, as some older builds and relays write
+	// it) is turned round; mDNS (5353 to 5353) and a resolver asking
+	// upstream from port 53 stay as they are.
+	sp, _ := intOf(r["src_port"])
+	dp, _ := intOf(r["dest_port"])
+	if dnsPort(sp) && !dnsPort(dp) {
 		f["src"], f["dest"] = f["dest"], f["src"]
 		f["src_port"], f["dest_port"] = f["dest_port"], f["src_port"]
 		for _, k := range []string{"src", "dest", "src_port", "dest_port"} {
@@ -332,6 +349,11 @@ func eveDNS(r, f map[string]any) {
 	}
 	setStr(f, "query", q)
 	setStr(f, "query_type", qt)
+	answer := true
+	switch strings.ToLower(wstr(d["type"])) {
+	case "query", "request":
+		answer = false
+	}
 	if rc := wstr(d["rcode"]); rc != "" {
 		f["reply_code"] = replyCode(rc)
 		if id, ok := rcodeIDs[strings.ToUpper(rc)]; ok {
@@ -343,7 +365,7 @@ func eveDNS(r, f map[string]any) {
 	if l, ok := d["answers"].([]any); ok {
 		for _, e := range l {
 			m, _ := e.(map[string]any)
-			if s := wstr(m["rdata"]); s != "" && len(answers) < maxSensorList {
+			if s := canonIP(wstr(m["rdata"])); s != "" && len(answers) < maxSensorList {
 				answers = append(answers, s)
 			}
 			if ttl == nil {
@@ -354,7 +376,7 @@ func eveDNS(r, f map[string]any) {
 		for _, k := range sortedKeys(g) {
 			for _, s := range sensorList(g[k]) {
 				if len(answers) < maxSensorList {
-					answers = append(answers, s)
+					answers = append(answers, canonIP(s))
 				}
 			}
 		}
@@ -363,6 +385,31 @@ func eveDNS(r, f map[string]any) {
 		f["answer"] = answers
 	}
 	setInt(f, "ttl", ttl)
+	return answer
+}
+
+// fileServerPort is the web server's port of a fileinfo event. Its
+// addresses follow the file (a download comes from the server), so the
+// server is the end on the lower port unless the record says otherwise.
+func fileServerPort(r map[string]any) any {
+	if p := wget(r, "http", "http_port"); p != nil {
+		return p
+	}
+	if _, ok := r["direction"]; ok {
+		return eveServerPort(r)
+	}
+	sp, okS := intOf(r["src_port"])
+	dp, okD := intOf(r["dest_port"])
+	if okS && okD && sp < dp {
+		return sp
+	}
+	return r["dest_port"]
+}
+
+// dnsPort reports whether p is a DNS port: 53, 853 (DNS over TLS) or
+// 5353 (mDNS).
+func dnsPort(p int64) bool {
+	return p == 53 || p == 853 || p == 5353
 }
 
 // eveServerPort is the web server's port of an event: the one its HTTP
@@ -469,21 +516,11 @@ func eveFileinfo(r, f map[string]any) {
 	setStr(f, "mime_type", fi["magic"])
 	if h, ok := r["http"].(map[string]any); ok {
 		if host := wstr(h["hostname"]); host != "" {
-			f["url"] = webURL("http", host, wstr(h["url"]), eveServerPort(r))
-		}
-		if wstr(r["direction"]) != "to_server" {
-			f["src"], f["dest"] = f["dest"], f["src"]
-			f["src_port"], f["dest_port"] = f["dest_port"], f["src_port"]
-			for _, k := range []string{"src", "dest", "src_port", "dest_port"} {
-				if f[k] == nil {
-					delete(f, k)
-				}
-			}
-			if s, d := wstr(f["src"]), wstr(f["dest"]); s != "" && d != "" {
-				f["direction"] = netDirection(s, d, "", "")
-			}
+			f["url"] = webURL("http", host, wstr(h["url"]), fileServerPort(r))
 		}
 	}
+	// Suricata already writes a file's addresses in the file's own
+	// direction: for a download src is the server that sent it.
 	setStr(f, "suricata_file_state", fi["state"])
 	setStr(f, "suricata_file_stored", fi["stored"])
 }

@@ -74,6 +74,20 @@ func TestScrubSensitive(t *testing.T) {
 	if p := r["payload_printable"].(string); len(p) != maxPayloadPrintable-1 || r["keep"] != 1 {
 		t.Errorf("payload_printable %d bytes", len(p))
 	}
+	// Suricata's ftp PASS argument and VNC challenge and response.
+	r = map[string]any{
+		"ftp": map[string]any{"command": "PASS", "command_data": "s3cret"},
+		"rfb": map[string]any{"authentication": map[string]any{"vnc": map[string]any{"challenge": "c", "response": "r"}, "security_type": 2}},
+	}
+	if !scrubSensitive(r) {
+		t.Fatal("ftp and rfb: nothing changed")
+	}
+	if b, _ := json.Marshal(r); strings.Contains(string(b), "s3cret") || strings.Contains(string(b), "challenge") || strings.Contains(string(b), "response") {
+		t.Errorf("ftp or rfb secret left: %s", b)
+	}
+	if scrubSensitive(map[string]any{"ftp": map[string]any{"command": "USER", "command_data": "anonymous"}}) {
+		t.Error("changed an ftp USER record")
+	}
 	if scrubSensitive(map[string]any{"a": 1, "payload_printable": "short"}) {
 		t.Error("changed a record with nothing to drop")
 	}
@@ -98,6 +112,14 @@ func TestSensorHelpers(t *testing.T) {
 	} {
 		if got := sensorHost(c.r); got != c.want {
 			t.Errorf("sensorHost(%v) = %q", c.r, got)
+		}
+	}
+	for in, want := range map[string]string{
+		"2001:0db8:0000:0000:0000:0000:0000:0010": "2001:db8::10", "::ffff:192.0.2.1": "192.0.2.1",
+		"192.0.2.1": "192.0.2.1", "not an ip": "not an ip", "": "",
+	} {
+		if got := canonIP(in); got != want {
+			t.Errorf("canonIP(%q) = %q", in, got)
 		}
 	}
 	if lowerHash(" AA:bb:0C ") != "aabb0c" {

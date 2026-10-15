@@ -256,6 +256,7 @@ var Models = []Model{
 			{Name: "src_port", Type: "number", Description: "Source port"},
 			{Name: "dest", Type: "ip", Description: "Destination address", Examples: []string{"192.0.2.10"}},
 			{Name: "dest_port", Type: "number", Description: "Destination port", Examples: []string{"443"}},
+			{Name: "local_host", Type: "ip", Description: "Your network's end of the traffic: src when it went out, dest when it came in, both when it stayed inside; unset when neither end is inside", Examples: []string{"192.0.2.10"}},
 			{Name: "dest_host", Type: "string", Description: "Host name in the traffic: web host, TLS server name or DNS name", Examples: []string{"updates.example.net"}},
 			{Name: "transport", Type: "string", Description: "Protocol", Examples: []string{"tcp", "udp"}},
 			{Name: "app", Type: "string", Description: "Application protocol of the traffic", Examples: []string{"http", "tls", "dns"}},

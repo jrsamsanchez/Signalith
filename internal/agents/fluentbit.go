@@ -158,7 +158,10 @@ func sensorOptions(o *Options) error {
 
 // sensorInput is a tail input for a network sensor's JSON log: each line
 // is sent as it is and Signalith decodes it, so no parsers file is
-// needed. Lines up to 1 MB are read and longer ones skipped.
+// needed. Lines up to 500 KB are read and longer ones skipped: each line
+// travels as a JSON string, where escaping can double its size, and
+// Signalith refuses a whole request holding a record over 1 MB, which
+// Fluent Bit would then retry for ever.
 func sensorInput(tag, path, db string, extra ...[2]string) string {
 	kv := [][2]string{{"Name", "tail"}, {"Tag", tag}, {"Path", path}}
 	kv = append(kv, extra...)
@@ -167,7 +170,7 @@ func sensorInput(tag, path, db string, extra ...[2]string) string {
 		{"Refresh_Interval", "10"},
 		{"Rotate_Wait", "30"},
 		{"Buffer_Chunk_Size", "64k"},
-		{"Buffer_Max_Size", "1M"},
+		{"Buffer_Max_Size", "500k"},
 		{"Skip_Long_Lines", "On"},
 		{"Mem_Buf_Limit", "50MB"},
 		{"storage.type", "filesystem"},
@@ -176,13 +179,21 @@ func sensorInput(tag, path, db string, extra ...[2]string) string {
 }
 
 // zeekSite is where a Zeek installed above the folder its logs are in
-// keeps local.zeek, and true; or how to find it, and false, when the logs
-// are elsewhere.
-func zeekSite(logDir string) (string, bool) {
+// keeps local.zeek and zeekctl, and true; or how to find them, and false,
+// when the logs are elsewhere. zeekctl is in Zeek's own bin folder, which
+// is on neither PATH nor sudo's search path.
+func zeekSite(logDir string) (site, zeekctl string, ok bool) {
 	if base, ok := strings.CutSuffix(logDir, "/logs/current"); ok && base != "" {
-		return base + "/share/zeek/site/local.zeek", true
+		return base + "/share/zeek/site/local.zeek", base + "/bin/zeekctl", true
 	}
-	return "share/zeek/site/local.zeek in Zeek's install folder (such as /opt/zeek)", false
+	return "share/zeek/site/local.zeek in Zeek's install folder (such as /opt/zeek)", "bin/zeekctl in Zeek's install folder (such as /opt/zeek/bin/zeekctl)", false
+}
+
+// securityOnion reports whether a log path is Security Onion's (/nsm/...),
+// whose Zeek and Suricata run in containers it manages and already write
+// JSON with Community ID.
+func securityOnion(path string) bool {
+	return strings.HasPrefix(path, "/nsm/")
 }
 
 // ConfigHeader is the value of the X-Signalith-Config header for a
@@ -528,24 +539,35 @@ func Generate(o Options) (*Agent, error) {
 		}
 		if sensor {
 			a.Steps = []string{"On the machine that runs Zeek or Suricata, install Fluent Bit (3.1 or later) from its signed package repository: " + fluentBitLinuxInstall}
-			if o.Zeek {
-				if site, ok := zeekSite(o.ZeekDir); ok {
-					a.Steps = append(a.Steps, "Turn on JSON logs in Zeek (without them Zeek writes tab-separated logs, which arrive only as plain text under sourcetype=zeek:unknown). "+
-						"This adds the line @load policy/tuning/json-logs to "+site+" and applies it: "+
-						"echo '@load policy/tuning/json-logs' | sudo tee -a "+site+" && sudo zeekctl deploy")
-				} else {
-					a.Steps = append(a.Steps, "Turn on JSON logs in Zeek (without them Zeek writes tab-separated logs, which arrive only as plain text under sourcetype=zeek:unknown). "+
-						"Add the line @load policy/tuning/json-logs to "+site+", then run sudo zeekctl deploy.")
-				}
+			site, zeekctl, siteKnown := zeekSite(o.ZeekDir)
+			soZeek := o.Zeek && securityOnion(o.ZeekDir)
+			soSuricata := o.Suricata && securityOnion(o.EVEPath)
+			switch {
+			case !o.Zeek:
+			case soZeek:
+				a.Steps = append(a.Steps, "Zeek on Security Onion already writes JSON logs: nothing to change in Zeek.")
+			case siteKnown:
+				a.Steps = append(a.Steps, "Turn on JSON logs in Zeek (without them Zeek writes tab-separated logs, which arrive only as plain text under sourcetype=zeek:unknown). "+
+					"This adds the line @load policy/tuning/json-logs to "+site+" and applies it: "+
+					"echo '@load policy/tuning/json-logs' | sudo tee -a "+site+" && sudo "+zeekctl+" deploy")
+			default:
+				a.Steps = append(a.Steps, "Turn on JSON logs in Zeek (without them Zeek writes tab-separated logs, which arrive only as plain text under sourcetype=zeek:unknown). "+
+					"Add the line @load policy/tuning/json-logs to "+site+", then run zeekctl deploy with sudo, using "+zeekctl+".")
 			}
 			var cid []string
-			if o.Zeek {
-				cid = append(cid, "in Zeek, add @load policy/protocols/conn/community-id-logging to local.zeek and run sudo zeekctl deploy")
+			if o.Zeek && !soZeek {
+				run := "sudo " + zeekctl + " deploy"
+				if !siteKnown {
+					run = "zeekctl deploy with sudo"
+				}
+				cid = append(cid, "in Zeek, add @load policy/protocols/conn/community-id-logging to local.zeek and run "+run)
 			}
-			if o.Suricata {
-				cid = append(cid, "in Suricata, set community-id to true under the eve-log output in /etc/suricata/suricata.yaml and restart Suricata")
+			if o.Suricata && !soSuricata {
+				cid = append(cid, "in Suricata, set community-id to true under the eve-log output in /etc/suricata/suricata.yaml and restart Suricata (sudo systemctl restart suricata)")
 			}
-			a.Steps = append(a.Steps, "Recommended. Turn on Community ID, which lets you jump from an alert to the connection, lookups and files of the same flow; "+strings.Join(cid, ", and ")+".")
+			if len(cid) > 0 {
+				a.Steps = append(a.Steps, "Recommended. Turn on Community ID, which lets you jump from an alert to the connection, lookups and files of the same flow; "+strings.Join(cid, ", and ")+".")
+			}
 			var dirs []string
 			if o.Zeek {
 				dirs = append(dirs, o.ZeekDir)
@@ -575,12 +597,12 @@ func Generate(o Options) (*Agent, error) {
 		if sensor {
 			var vp []string
 			if o.Zeek {
-				vp = append(vp, "vendor_product=Zeek")
+				vp = append(vp, "Zeek")
 			}
 			if o.Suricata {
-				vp = append(vp, "vendor_product=Suricata")
+				vp = append(vp, "Suricata")
 			}
-			done = "Network events appear in Search within a minute (search " + strings.Join(vp, " or ") + "); only new log lines are sent. The Endpoints page lists the sensor as Network sensor. Check the Health page if nothing arrives."
+			done = "Network events appear in Search within a minute (search vendor_product IN (" + strings.Join(vp, ", ") + ")); only new log lines are sent. The Endpoints page lists the sensor as Network sensor. Check the Health page if nothing arrives."
 		}
 		if o.LinuxSource == "wazuh" {
 			done = "New Wazuh alerts appear in Search within a minute (search sourcetype=wazuh:alerts); alerts raised before Fluent Bit started are not sent. Check the Health page if nothing arrives."
@@ -697,6 +719,12 @@ func Generate(o Options) (*Agent, error) {
 		if name := verifyName(host, o); name != "" {
 			out = append(out, [2]string{"tls.vhost", name}, [2]string{"tls.verify_hostname", "On"})
 		}
+	}
+	if sensor {
+		// A sensor sends far more than a host. While Signalith cannot be
+		// reached its buffer grows on disk; past 4 GB the oldest data is
+		// dropped rather than filling the disk Zeek and Suricata log to.
+		out = append(out, [2]string{"storage.total_limit_size", "4G"})
 	}
 	out = append(out, [2]string{"Retry_Limit", "False"})
 	b.WriteString(section("OUTPUT", out))

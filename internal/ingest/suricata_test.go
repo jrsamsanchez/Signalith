@@ -1,6 +1,7 @@
 package ingest
 
 import (
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -81,12 +82,13 @@ func TestSuricataFlow(t *testing.T) {
 
 func TestSuricataDNS(t *testing.T) {
 	evs := eveDocs(t)
-	// Suricata 7: a query.
+	// Suricata 7: a query (kept outside the data model; see
+	// TestSuricataDNSDirectionAndDuplicates).
 	expect(t, evs[7].Document(), map[string]any{
-		"datamodel": "Network_Resolution", "query": "updates.example.net", "query_type": "A", "src": "192.168.10.21",
+		"datamodel": "Other", "query": "updates.example.net", "query_type": "A", "src": "192.168.10.21",
 		"src_port": int64(53211), "dest_ip": "192.168.10.2", "dest_port": int64(53), "dest": nil, "reply_code": nil,
 	})
-	// Suricata 7: an answer logged from the server's side.
+	// Suricata 7: an answer, written asker first like the question.
 	expect(t, evs[8].Document(), map[string]any{"query": "nothere.example", "reply_code": "NXDomain", "reply_code_id": int64(3),
 		"src": "192.168.10.21", "src_port": int64(53211), "dest_ip": "192.168.10.2", "dest_port": int64(53), "dest": nil})
 	// Suricata 8.
@@ -94,6 +96,61 @@ func TestSuricataDNS(t *testing.T) {
 	expect(t, d, map[string]any{"query": "www.example.com", "query_type": "AAAA", "reply_code": "NoError", "reply_code_id": int64(0), "ttl": int64(120)})
 	if a := d["answer"]; !reflect.DeepEqual(a, []string{"2001:db8::10", "2001:db8::11"}) {
 		t.Errorf("answer = %#v", a)
+	}
+}
+
+func TestSuricataDNSDirectionAndDuplicates(t *testing.T) {
+	evs := eveDocs(t)
+	// The question is kept outside Network_Resolution, so a lookup
+	// counts once (its answer).
+	q := evs[7].Document()
+	expect(t, q, map[string]any{"datamodel": "Other", "signature": "DNS request", "query": "updates.example.net"})
+	if evs[7].Model != "Other" || evs[8].Model != "Network_Resolution" {
+		t.Errorf("models %s %s", evs[7].Model, evs[8].Model)
+	}
+	// mDNS: 5353 to 5353 keeps its asker.
+	expect(t, evs[16].Document(), map[string]any{"datamodel": "Network_Resolution", "src": "192.168.10.30",
+		"dest_ip": "224.0.0.251", "query": "printer.local"})
+	// IPv6 in Suricata's full form is stored in the short form.
+	expect(t, evs[17].Document(), map[string]any{"datamodel": "Other", "signature": "DNS request",
+		"src": "2001:db8::10", "dest_ip": "2001:db8::53"})
+	d := evs[18].Document()
+	expect(t, d, map[string]any{"datamodel": "Network_Resolution", "src": "2001:db8::10", "dest_ip": "2001:db8::53"})
+	if a := d["answer"]; !reflect.DeepEqual(a, []string{"2001:db8::11"}) {
+		t.Errorf("answer = %#v", a)
+	}
+	// A record that plainly came from the server's side (DNS port to a
+	// port that is not one) is still turned round.
+	r := decode(t, `{"event_type":"dns","src_ip":"192.0.2.53","src_port":53,"dest_ip":"192.0.2.10","dest_port":40000,"proto":"UDP","dns":{"type":"answer","rrname":"a.example","rrtype":"A","rcode":"NOERROR"}}`)
+	expect(t, ParseSuricataEVE(r, "").Document(), map[string]any{"src": "192.0.2.10", "src_port": int64(40000),
+		"dest_ip": "192.0.2.53", "dest_port": int64(53)})
+}
+
+func TestSuricataAlertWithoutPortsAndLocalHost(t *testing.T) {
+	evs := eveDocs(t)
+	expect(t, evs[19].Document(), map[string]any{"datamodel": "Intrusion_Detection", "severity": "high",
+		"src": "192.168.10.21", "dest": "203.0.113.66", "dest_port": nil, "direction": "outbound", "local_host": "192.168.10.21"})
+	// Inbound: the local end is dest.
+	expect(t, evs[0].Document(), map[string]any{"direction": "inbound", "local_host": "192.168.10.21"})
+	// Internal: both ends.
+	if lh := evs[2].Document()["local_host"]; !reflect.DeepEqual(lh, []string{"192.168.10.21", "192.168.10.2"}) {
+		t.Errorf("internal local_host = %#v", lh)
+	}
+}
+
+func TestSuricataFTPAndVNCSecretsDropped(t *testing.T) {
+	evs := eveDocs(t)
+	for _, i := range []int{20, 21} {
+		d := evs[i].Document()
+		all := fmt.Sprint(d)
+		for _, secret := range []string{"Hunter2-ftp-secret", "0805b790b58e967f2b350a0c99de3881", "aecb26faeaaa62179636a5934bac1078"} {
+			if strings.Contains(all, secret) {
+				t.Errorf("event %d keeps a secret: %s", i, all)
+			}
+		}
+	}
+	if d, _ := evs[20].Document()["suricata_detail"].(string); !strings.Contains(d, "(hidden)") {
+		t.Errorf("ftp detail = %q", d)
 	}
 }
 
