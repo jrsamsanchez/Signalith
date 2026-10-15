@@ -6,7 +6,7 @@
 # The Servers page's "Add a server" dialog gives one line that downloads
 # this script from a server of the cluster, checks it, and runs it:
 #
-#   echo 'SJ1....' | sudo sh install.sh --from https://siem-a:8080 \
+#   echo 'SJ1....' | sudo sh install.sh --from https://siem-a:9000 \
 #     --version 1.5.0 --sha256 <program's SHA-256> --join -
 #
 # "--join -" reads the token from the standard input, so it is never on a
@@ -55,10 +55,10 @@ fail() {
 }
 usage() {
   cat <<'USAGE'
-Usage: sudo sh install.sh [--join - --from https://<server>:8080]
+Usage: sudo sh install.sh [--join - --from https://<server>:9000]
                           [--version <v>] [--sha256 <hex>] [--binary <file>]
                           [--name <server name>] [--listen <addr:port>]
-                          [--node-url https://<this server>:8080]
+                          [--node-url https://<this server>:9000]
 
   --join      The token from Servers > Add a server, or - to read it from
               the standard input. Without it this machine becomes a first
@@ -387,8 +387,10 @@ systemctl enable --now signalith >/dev/null 2>&1 || fail "Signalith is installed
 say "Signalith is installed and its service is running."
 cat <<'MSG'
 
-  Sign in:   https://<this server>:8080 as admin
+  Sign in:   https://<this server>:9000 as admin
   Password:  sudo signalith initial-password
+  Agents:    send to port 7779 (Add data sets them up). Open 9000 and 7779
+             in this server's firewall for other machines.
   OpenSearch: Signalith expects it at http://127.0.0.1:9200. To use another
              one, change it on the Settings page (OpenSearch > Address).
 

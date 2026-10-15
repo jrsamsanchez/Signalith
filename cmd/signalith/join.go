@@ -187,6 +187,7 @@ func runJoinCommand(args []string) int {
 // joinOptions are signalith join's flags.
 type joinOptions struct {
 	token, config, name, listen, nodeURL       string
+	agentListen                                string
 	copySyslog, noStart, merge, yes, allowSkew bool
 }
 
@@ -197,6 +198,7 @@ func parseJoinArgs(args []string, errOut io.Writer, getenv func(string) string) 
 	fs.StringVar(&o.config, "c", defaultConfigPath(), "config file")
 	fs.StringVar(&o.name, "name", "", "this server's name (default: SIGNALITH_NODE_NAME, else the one it has, else this computer's name)")
 	fs.StringVar(&o.listen, "listen", "", "address the web page and API listen on (default: SIGNALITH_LISTEN, else the answering server's)")
+	fs.StringVar(&o.agentListen, "agent-listen", "", "address agents send to (server.agent_listen; default: SIGNALITH_AGENT_LISTEN, else the answering server's)")
 	fs.StringVar(&o.nodeURL, "node-url", "", "address the other servers reach this one at (server.node_url; default: SIGNALITH_NODE_URL)")
 	fs.BoolVar(&o.copySyslog, "copy-syslog", false, "receive syslog on the same addresses as the answering server")
 	fs.BoolVar(&o.noStart, "no-start", false, "write everything, but do not start the service")
@@ -204,7 +206,7 @@ func parseJoinArgs(args []string, errOut io.Writer, getenv func(string) string) 
 	fs.BoolVar(&o.yes, "yes", false, "do not ask before joining")
 	fs.BoolVar(&o.allowSkew, "allow-version-skew", false, "join a cluster whose servers run another version")
 	fs.Usage = func() {
-		fmt.Fprintln(errOut, "usage: signalith join '<token>' [-c file] [--name name] [--listen addr] [--node-url url] [--copy-syslog] [--no-start] [--merge] [--yes]")
+		fmt.Fprintln(errOut, "usage: signalith join '<token>' [-c file] [--name name] [--listen addr] [--agent-listen addr] [--node-url url] [--copy-syslog] [--no-start] [--merge] [--yes]")
 		fmt.Fprintln(errOut, "The token may be - to read it from the standard input, or left out to be asked for it without showing it.")
 		fs.PrintDefaults()
 	}
@@ -219,6 +221,9 @@ func parseJoinArgs(args []string, errOut io.Writer, getenv func(string) string) 
 	}
 	if o.nodeURL == "" {
 		o.nodeURL = strings.TrimSpace(getenv("SIGNALITH_NODE_URL"))
+	}
+	if o.agentListen == "" {
+		o.agentListen = strings.TrimSpace(getenv("SIGNALITH_AGENT_LISTEN"))
 	}
 	switch {
 	case len(pos) == 1:
@@ -281,6 +286,8 @@ type joiner struct {
 	bundle *clusterjoin.Bundle
 	key    *shared.ClusterKey
 	listen string
+	// agentListen is server.agent_listen to write, "" for none.
+	agentListen string
 	// name is the name this server joins with, "" for the one it has or
 	// this computer's.
 	name string
@@ -692,6 +699,7 @@ func (j *joiner) join(ctx context.Context) error {
 		j.printf("This server joins as a scanner: it scans the networks picked for it and never runs the background jobs.\n")
 	}
 	j.listen = firstSet(j.o.listen, b.Listen, j.c.Server.Listen)
+	j.agentListen = firstSet(j.o.agentListen, b.AgentListen)
 	return nil
 }
 
@@ -945,6 +953,7 @@ func (j *joiner) mergeAfterWrite(ctx context.Context) error {
 func (j *joiner) writeConfig(path string) error {
 	c := config.Default()
 	c.Server.Listen = firstSet(j.listen, c.Server.Listen)
+	c.Server.AgentListen = j.agentListen
 	c.Server.TLS = &config.ServerTLS{Mode: config.TLSAuto, PlaintextIngest: "deny"}
 	c.Syslog.UDP, c.Syslog.TCP, c.Syslog.TLS = "", "", ""
 	// No built-in admin password: a joined server's users are the
@@ -1005,6 +1014,11 @@ func (j *joiner) writeSettings(path string, files osFiles, now time.Time) error 
 	}
 	if j.listen != "" {
 		if err := set("server.listen", j.listen); err != nil {
+			return err
+		}
+	}
+	if j.agentListen != "" {
+		if err := set("server.agent_listen", j.agentListen); err != nil {
 			return err
 		}
 	}
@@ -1102,7 +1116,7 @@ func (j *joiner) start() error {
 		host := j.id.Name
 		_, port, err := net.SplitHostPort(j.listen)
 		if err != nil || port == "" {
-			port = "8080"
+			port = "9000"
 		}
 		where = "https://" + net.JoinHostPort(host, port)
 	}

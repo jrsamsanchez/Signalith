@@ -27,7 +27,7 @@ func TestInitSaveLoadRoundTrip(t *testing.T) {
 	if !got.CheckPassword("admin", "correct horse") || got.CheckPassword("admin", "wrong") {
 		t.Error("password check failed")
 	}
-	if got.Server.PublicURL != "https://127.0.0.1:8080" {
+	if got.Server.PublicURL != "https://127.0.0.1:9000" {
 		t.Errorf("public url = %s", got.Server.PublicURL)
 	}
 }

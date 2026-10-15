@@ -36,6 +36,9 @@ func TestMain(m *testing.M) {
 		"STATE_DIRECTORY"} {
 		os.Unsetenv(k)
 	}
+	// Agents send to the web port, so servers started side by side do not
+	// share the default agent port; agentport_test.go turns it on.
+	os.Setenv("SIGNALITH_AGENT_LISTEN", "off")
 	os.Exit(m.Run())
 }
 

@@ -254,6 +254,7 @@ type Server struct {
 	badTuningMu sync.Mutex
 	badTuning   string
 	blockedLog  logOnce // blocked osquery hosts that tried to enroll
+	webAgentLog logOnce // agents that send to the web port
 	tokensOnce  sync.Once
 	tokenRate   tokenRate         // agent token creation
 	sensorCache sensorHealthCache // the Health page's network sensor counts
@@ -298,9 +299,11 @@ func (s *Server) Handler() http.Handler {
 	s.sessions()
 	s.tokens()
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /api/ingest", s.handleIngest)
-	mux.HandleFunc(otlpLogsRoute, s.handleOTLPLogs)
-	s.routeOsquery(mux)
+	intake := http.NewServeMux()
+	s.routeAgentIntake(intake)
+	for _, p := range agentRoutes {
+		mux.Handle(p, s.webPortAgents(intake))
+	}
 
 	api := &router{s: s, mux: http.NewServeMux()}
 	api.viewer("GET /api/health", s.handleHealth)
@@ -972,6 +975,10 @@ func (s *Server) handleAgentConfig(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		server, otherServer = dest, other
+	} else {
+		// This server's address, typed or public: agents send to its
+		// agent port.
+		server = s.agentURL(server)
 	}
 	u, err := agents.ParseServerURL(server)
 	if err != nil {

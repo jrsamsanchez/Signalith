@@ -53,7 +53,7 @@ skipping OpenSearch's certificate check, turning the detection scheduler off, an
 allowing threat intel feeds from this computer. The server checks the changes
 first, so you are only asked about changes that can be saved. When the listen
 port or HTTPS changes and the public address still names the old one, the same
-question offers to change the public address too, since agents send there. A
+question offers to change the public address too, since agents send to its host. A
 listen address on `127.0.0.1` chosen from another computer says plainly that you
 could not open the page again from there.
 
@@ -62,6 +62,14 @@ address, and the page shows what it works out to. When it is set and does not
 match how Signalith answers (`http://` while it serves HTTPS, or another port),
 the page warns and offers the matching address with one click. That is right
 only behind a proxy or a port forward.
+
+**Agent address**, in the **Web server** card, is where agents send events
+(`server.agent_listen`, 7779 by default): Fluent Bit, the OpenTelemetry Collector,
+osquery and network sensors. It is a port of its own, apart from the web page, with the
+same certificate; **off** sends agents to the web port, as before 0.3. Add data gives
+agents the public address's host on this port. A change applies after a restart, and
+agents that send to the old port stop until you set them up again from **Add data**.
+See [The agent port](sending-data.md#the-agent-port).
 
 **Proxies and gateways**, in the **Web server** card, lists addresses that stand for
 many people, such as a NAT gateway or Docker Desktop's port forwarding. Such an
@@ -330,10 +338,10 @@ mounted read-only, and the page keeps its changes in the `signalith-data` volume
   OpenSearch somewhere else: the quick start's own OpenSearch is set up for the
   client certificate in `signalith.yaml`.
 - A port Signalith listens on inside the container only reaches it when the
-  compose file publishes it under `ports:`. The quick start publishes 8080 (web),
-  514 to the container's 5514 (syslog over UDP and TCP) and 6514 (syslog over
-  TLS). If you change the listen port or a syslog address on the page, add the
-  port to `ports:` too (and for syslog set **Port devices send to** to the port on
+  compose file publishes it under `ports:`. The quick start publishes 9000 (web),
+  7779 (agents), 514 to the container's 5514 (syslog over UDP and TCP) and 6514 (syslog over
+  TLS). If you change the listen port, the agent address or a syslog address on the
+  page, add the port to `ports:` too (and for syslog set **Port devices send to** to the port on
   the host). The page reminds you on those settings when it runs in a container.
 - To undo a change from the command line:
 
@@ -661,7 +669,7 @@ A save with problems saves nothing and answers 400 with each problem by setting:
 
 ```json
 {"error": "Nothing was saved. Fix the settings marked below.",
- "fields": {"server.listen": "Must be host:port, for example 0.0.0.0:8080",
+ "fields": {"server.listen": "Must be host:port, for example 0.0.0.0:9000",
             "server.tls_cert": "Enter the full path of your certificate file."},
  "problems": []}
 ```

@@ -2,10 +2,14 @@
 # service in docker-compose.yml makes them, and they reach Signalith as
 # files in /run/signalith-secrets.
 server:
-  listen: 0.0.0.0:8080
+  # The web page and API.
+  listen: 0.0.0.0:9000
+  # Agents send here, apart from the web page, with the same certificate.
+  agent_listen: 0.0.0.0:7779
   # Agents on other machines need this computer's address instead; set
   # SIGNALITH_PUBLIC_URL in docker-compose.yml or use the Add data page.
-  public_url: https://localhost:8080
+  # Agents are given the same host on the agent port (7779).
+  public_url: https://localhost:9000
   tls:
     # HTTPS with a certificate Signalith makes for itself and keeps in the
     # signalith-data volume. See docs/https.md to stop browser warnings.

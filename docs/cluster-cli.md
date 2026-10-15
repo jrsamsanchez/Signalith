@@ -460,7 +460,7 @@ token made on **Servers → Add a server** of a server of the cluster. Run it as
 `.msi` or the Docker image:
 
 ```
-sudo signalith join 'SJ1.eyJ1Ijoi...' --name siem-c --node-url https://siem-c.example.com:8080
+sudo signalith join 'SJ1.eyJ1Ijoi...' --name siem-c --node-url https://siem-c.example.com:9000
 ```
 
 The token may also come from the standard input (`signalith join -`), or be left out

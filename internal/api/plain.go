@@ -132,9 +132,20 @@ func plaintextIngest(r *http.Request) bool {
 //   - A trusted reverse proxy that says the browser used HTTPS is served
 //     as usual.
 func (s *Server) PlainHandler(secure http.Handler) http.Handler {
+	return s.plainHandler(secure, true)
+}
+
+// plainHandler is PlainHandler; web is true on the web port, where
+// agents may send only while the configuration allows it.
+func (s *Server) plainHandler(secure http.Handler, web bool) http.Handler {
 	ingestOnly := map[string]http.Handler{
 		"POST /api/ingest": limitBodies(s.securityHeaders(http.HandlerFunc(s.handleIngest))),
 		otlpLogsRoute:      limitBodies(s.securityHeaders(http.HandlerFunc(s.handleOTLPLogs))),
+	}
+	if web {
+		for k, h := range ingestOnly {
+			ingestOnly[k] = s.webPortAgents(h)
+		}
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if s.viaTrustedProxy(r) {

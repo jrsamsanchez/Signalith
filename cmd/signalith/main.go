@@ -91,7 +91,7 @@ Usage:
   signalith content   status|install|remove [-c file] ...  content pack updates (newer tested rules)
   signalith security  [-c file] [-json]   print the security report (exit 2 when something is at risk)
   signalith cluster   status|found|export|import|export-key|import-key|reset-key|accept-restore|token|approve [-c file] ...  the settings the servers share in OpenSearch
-  signalith join      '<token>' [-c file] [--name] [--listen] [--node-url] [--copy-syslog] [--no-start] [--merge] [--yes]   add this server to a cluster
+  signalith join      '<token>' [-c file] [--name] [--listen] [--agent-listen] [--node-url] [--copy-syslog] [--no-start] [--merge] [--yes]   add this server to a cluster
   signalith opensearch-check <url> [--ca file] [--cert file --key file] [--user u]   check OpenSearch is ready for several servers
   signalith service   install|uninstall|start|stop     manage the Windows service
   signalith opensearch-certs [-ca-dir DIR] -node NAME [-san ...] [-peer ...] -out DIR   certificates to secure your own OpenSearch
@@ -195,7 +195,8 @@ func configFlag(fs *flag.FlagSet) *string {
 func cmdInit(args []string) error {
 	fs := flag.NewFlagSet("init", flag.ExitOnError)
 	path := configFlag(fs)
-	listen := fs.String("listen", "0.0.0.0:8080", "address to listen on")
+	listen := fs.String("listen", "0.0.0.0:9000", "address the web page and API listen on")
+	agentListen := fs.String("agent-listen", "0.0.0.0:"+config.DefaultAgentPort, "address agents send to (off: the web port)")
 	publicURL := fs.String("public-url", "", "URL agents use to reach this server (default: derived from -listen)")
 	osURL := fs.String("opensearch", "http://127.0.0.1:9200", "OpenSearch URL")
 	osUser := fs.String("opensearch-user", "", "OpenSearch username")
@@ -216,6 +217,8 @@ func cmdInit(args []string) error {
 	useServiceEnv(*path, os.Stdout)
 	c := config.Default()
 	c.Server.Listen = *listen
+	// Set, so the web port takes no agent traffic.
+	c.Server.AgentListen = *agentListen
 	c.Server.PublicURL = *publicURL
 	// HTTPS with a certificate the server makes for itself, and no
 	// agents over plain HTTP.
@@ -257,6 +260,7 @@ func cmdInit(args []string) error {
 	}
 	fmt.Printf("Wrote %s\n\n", *path)
 	fmt.Printf("  Web UI:      %s\n", c.Server.PublicURL)
+	fmt.Printf("  Agents:      %s\n", c.AgentURL(c.Server.PublicURL))
 	fmt.Printf("  HTTPS:       the server makes its own certificate when it starts; browsers warn\n")
 	fmt.Printf("               until you trust it (see docs/https.md)\n")
 	fmt.Printf("  User:        %s\n", c.Auth.AdminUser)
@@ -346,10 +350,23 @@ func printSyslogPorts(c *config.Config) {
 	}
 }
 
+// printWebPorts prints the web port, and the agent port when agents send
+// to one of their own, one per line ("web 9000", "agents 7779"), for the
+// installers' firewall rules.
+func printWebPorts(c *config.Config) {
+	if _, port, err := net.SplitHostPort(c.Server.Listen); err == nil {
+		fmt.Println("web", port)
+	}
+	if _, port, err := net.SplitHostPort(c.Server.AgentAddr()); err == nil {
+		fmt.Println("agents", port)
+	}
+}
+
 func cmdValidate(args []string) error {
 	fs := flag.NewFlagSet("validate", flag.ExitOnError)
 	path := configFlag(fs)
 	ports := fs.Bool("syslog-ports", false, "only print the syslog listeners, one per line: protocol, port, and the allowed senders (any, or a comma-separated list); for installers")
+	webPorts := fs.Bool("web-ports", false, "only print the web port and the agent port, one per line (web 9000, agents 7779); for installers")
 	fileFlag := settingsFileFlag(fs)
 	fs.Parse(args)
 	// -file first: the service's settings below do not replace it.
@@ -357,9 +374,9 @@ func cmdValidate(args []string) error {
 		return err
 	}
 	// The service's folders and master key, so this checks what it uses.
-	// Installers read the -syslog-ports output, so nothing else is
-	// printed then.
-	if *ports {
+	// Installers read the -syslog-ports and -web-ports output, so
+	// nothing else is printed then.
+	if *ports || *webPorts {
 		applyServiceEnv(*path)
 	} else {
 		useServiceEnv(*path, os.Stdout)
@@ -370,6 +387,10 @@ func cmdValidate(args []string) error {
 	}
 	if *ports {
 		printSyslogPorts(c)
+		return nil
+	}
+	if *webPorts {
+		printWebPorts(c)
 		return nil
 	}
 	fmt.Printf("%s is valid.\n", *path)
@@ -985,6 +1006,8 @@ type instance struct {
 	certs    *tlsauto.Manager
 	certKey  string
 	receiver *syslog.Receiver
+	// agents is the agent port; nil when agents send to the web port.
+	agents *agentServer
 	// retention is the retention manager.
 	retention *retention.Manager
 	// jobsList are the background jobs, which run only while this server
@@ -1003,6 +1026,10 @@ type instance struct {
 // waits for them, so the next instance does not run them twice. The job
 // lease is kept: the next instance runs its jobs under the same epoch.
 func (in *instance) stop() {
+	if in.agents != nil {
+		// Agents send again after the restart.
+		in.agents.close(drainWait)
+	}
 	if in.node != nil {
 		in.node.SetJobs(nil)
 	}
@@ -1709,6 +1736,9 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	tokenSrv.Store(srv)
 	in.srv, in.handler = srv, srv.Handler()
 	r.srv.Store(srv)
+	if in.agents, err = r.serveAgents(c, srv, certs); err != nil {
+		return nil, err
+	}
 	// The example ingest token of an older Docker quick start: decide
 	// whether this one was upgraded if that is still open, and end it for
 	// good once agents on plain HTTP are refused.
@@ -1724,7 +1754,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		// Last, once everything started: the node points at this
 		// OpenSearch, and runs these jobs while it holds the job lease.
 		settings := cluster.Settings{
-			Eligible: c.LeaderEligible(), Role: c.Cluster.Role, NodeURL: nodeURL(c), Listen: c.Server.Listen,
+			Eligible: c.LeaderEligible(), Role: c.Cluster.Role, NodeURL: nodeURL(c), Listen: c.Server.Listen, AgentListen: c.Server.AgentAddr(),
 			Syslog: cluster.Syslog{UDP: c.Syslog.UDP, TCP: c.Syslog.TCP, TLS: c.Syslog.TLS},
 			Fingerprints: func() cluster.Fingerprints {
 				fp := filesFingerprints(c, ret, feeds, notes, pbooks)

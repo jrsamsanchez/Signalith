@@ -41,7 +41,10 @@ type Settings struct {
 	Role    string
 	NodeURL string
 	Listen  string
-	Syslog  Syslog
+	// AgentListen is server.agent_listen, "" when agents send to the web
+	// port.
+	AgentListen string
+	Syslog      Syslog
 	// Fingerprints works out the files fingerprints; nil has none.
 	Fingerprints func() Fingerprints
 	// Indexed returns the last time this server stored an event (zero
@@ -871,7 +874,7 @@ func (n *Node) heartbeatDoc(state string) Heartbeat {
 	hb := Heartbeat{Kind: "node", NodeID: n.ID(), Name: n.Name(), BootID: n.local.BootID, PrevBoot: n.local.LastBoot, State: state,
 		Version: n.opts.Version, OS: runtime.GOOS, Arch: runtime.GOARCH, Deployment: n.opts.Deployment,
 		StartedAt: n.started, HeartbeatAt: n.clock.Now().UTC(), NodeURL: n.settings.NodeURL, Listen: n.settings.Listen,
-		Syslog: n.settings.Syslog, Role: n.settings.Role, LeaderEligible: eligible, NotEligible: why, Leader: view.Mine && view.Valid,
+		AgentListen: n.settings.AgentListen, Syslog: n.settings.Syslog, Role: n.settings.Role, LeaderEligible: eligible, NotEligible: why, Leader: view.Mine && view.Valid,
 		Frozen: view.State == frozen.String(), FilesFingerprint: n.fp, MachineMoved: n.local.Moved, Problems: []string{},
 		OpenSearch: OSInfo{OK: n.contacted && n.lastErr == "", Endpoint: n.endpoint, LatencyMS: n.osLatency.Milliseconds()},
 		Features:   features}

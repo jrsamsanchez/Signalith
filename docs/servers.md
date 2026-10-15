@@ -966,9 +966,13 @@ backend signalith
     balance source
     option httpchk GET /readyz
     http-check expect status 200
-    server siem-a 10.0.0.11:8080 check
-    server siem-b 10.0.0.12:8080 check
+    server siem-a 10.0.0.11:9000 check
+    server siem-b 10.0.0.12:9000 check
 ```
+
+Agents send to the [agent port](sending-data.md#the-agent-port) (7779 by default), so
+balance it the same way, with a backend of its own whose `server` lines use port 7779.
+The agent port answers `/readyz` and `/livez` too.
 
 **Seeing who really connected.** A load balancer that passes connections through
 (TCP mode, the usual choice, so HTTPS and syslog over TLS end at Signalith) hides the
@@ -990,9 +994,9 @@ Kubernetes container:
 
 ```yaml
 readinessProbe:
-  httpGet: { path: /readyz, port: 8080, scheme: HTTPS }
+  httpGet: { path: /readyz, port: 9000, scheme: HTTPS }
 livenessProbe:
-  httpGet: { path: /livez, port: 8080, scheme: HTTPS }
+  httpGet: { path: /livez, port: 9000, scheme: HTTPS }
 ```
 
 Kubernetes does not check the certificate of a probe, and without `scheme: HTTPS`
@@ -1052,7 +1056,8 @@ paths (`/app.js` and so on) keep working, for pages of earlier versions.
 
 **Where agents send.** With several servers, Add data asks **Where do agents send?**:
 the shared address (the public address, which should be the load balancer's or a DNS
-name over every server) or one server's own address. It looks the shared address up
+name over every server) or one server's own address, each on its agent port (each server reports its own; see
+[The agent port](sending-data.md#the-agent-port)). It looks the shared address up
 and says which servers it reaches, and warns when it is just one server's address:
 agents sent there wait while that server is down. Agents keep their events while they
 wait, and send them once a server answers. Configurations made while several servers

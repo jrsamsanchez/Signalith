@@ -1206,11 +1206,18 @@ func (r *runner) check(ctx context.Context, old, next *config.Config) (*plan, er
 		}
 		return nil, err
 	}
+	// A new agent port must be free; the one in use is freed by the
+	// switch.
+	if a := next.Server.AgentAddr(); a != "" && !overlaps(old.Server.AgentAddr(), a) {
+		if err := tryListen("tcp", a); err != nil {
+			return fail(keyed(refuse("Signalith cannot listen for agents on %s (%v). Choose another address or port.", a, opError(err)), "server.agent_listen"))
+		}
+	}
 	// New syslog addresses must be free; one that takes a port Signalith
 	// holds now, with the same protocol, is freed by the switch. Another
 	// program may hold the same port number with the other protocol.
 	type listener struct{ network, addr string }
-	inUse := []listener{{"udp", old.Syslog.UDP}, {"tcp", old.Syslog.TCP}, {"tcp", old.Syslog.TLS}, {"tcp", old.Server.Listen}}
+	inUse := []listener{{"udp", old.Syslog.UDP}, {"tcp", old.Syslog.TCP}, {"tcp", old.Syslog.TLS}, {"tcp", old.Server.Listen}, {"tcp", old.Server.AgentAddr()}}
 	for _, l := range []struct{ setting, network, addr string }{
 		{"syslog.udp", "udp", next.Syslog.UDP}, {"syslog.tcp", "tcp", next.Syslog.TCP}, {"syslog.tls", "tcp", next.Syslog.TLS},
 	} {

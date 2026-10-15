@@ -195,7 +195,7 @@
       <button role="tab" id="t-servers" aria-controls="p-tour" aria-selected="false" tabindex="-1" data-shot="servers" data-cap="Several servers share one OpenSearch: one runs the background jobs, the others take over if it stops, and one certificate authority covers them all.">Servers</button>
     </div>
     <figure class="frame" id="p-tour" role="tabpanel" aria-labelledby="t-findings">
-      <div class="frame__bar" aria-hidden="true"><i></i><i></i><i></i><span>https://signalith.corp.example:8080</span></div>
+      <div class="frame__bar" aria-hidden="true"><i></i><i></i><i></i><span>https://signalith.corp.example:9000</span></div>
       <img class="frame__img" src="assets/shots/findings.webp" srcset="assets/shots/findings-720.webp 720w, assets/shots/findings.webp 1440w" sizes="(max-width: 1200px) 100vw, 1140px" width="1440" height="900" alt="The Signalith Findings page: a queue of findings with severity, status and owner, and an inspector panel for the selected finding." data-tour-img>
       <figcaption data-tour-cap>A triage queue for findings, ranked by urgency, with triage guidance, evidence, ATT&amp;CK techniques and Investigate with AI next to each one.</figcaption>
     </figure>
@@ -439,7 +439,7 @@ cd signalith</code></pre><button class="copy" type="button" aria-label="Copy"><s
 <div class="code"><pre><code>docker compose -f deploy/docker/docker-compose.yml up -d</code></pre><button class="copy" type="button" aria-label="Copy"><svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg></button></div></li>
           <li><p>Show the admin password:</p>
 <div class="code"><pre><code>docker compose -f deploy/docker/docker-compose.yml exec signalith signalith initial-password</code></pre><button class="copy" type="button" aria-label="Copy"><svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg></button></div></li>
-          <li><p>Open <code>https://localhost:8080</code> and sign in as <code>admin</code>. Then go to <b>Add data</b> and choose <b>Load sample data</b> to see it in action.</p></li>
+          <li><p>Open <code>https://localhost:9000</code> and sign in as <code>admin</code>. Then go to <b>Add data</b> and choose <b>Load sample data</b> to see it in action.</p></li>
         </ol>
       </div>
 
@@ -453,7 +453,7 @@ sudo apt update &amp;&amp; sudo apt install signalith</code></pre><button class=
           <li><p>Or on Red Hat, Rocky, Alma or Fedora. Either way Signalith starts as a systemd service:</p>
 <div class="code"><pre><code>sudo curl -fsSL -o /etc/yum.repos.d/signalith.repo https://signalith.io/rpm/signalith.repo
 sudo dnf install signalith</code></pre><button class="copy" type="button" aria-label="Copy"><svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg></button></div></li>
-          <li><p>Show the admin password, then open <code>https://&lt;server&gt;:8080</code> and sign in as <code>admin</code>.</p>
+          <li><p>Show the admin password, then open <code>https://&lt;server&gt;:9000</code> and sign in as <code>admin</code>.</p>
 <div class="code"><pre><code>sudo signalith initial-password</code></pre><button class="copy" type="button" aria-label="Copy"><svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg></button></div></li>
         </ol>
       </div>
@@ -462,7 +462,7 @@ sudo dnf install signalith</code></pre><button class="copy" type="button" aria-l
         <ol class="steps">
           <li><p>Install <a href="https://opensearch.org/docs/latest/install-and-configure/install-opensearch/windows/">OpenSearch 2.x for Windows</a>, then download <code>signalith-&lt;version&gt;-x64.msi</code> from the <a href="https://github.com/jrsamsanchez/Signalith/releases/latest">latest release</a>.</p></li>
           <li><p>Double-click it and follow the steps. It installs and starts the <b>Signalith</b> service under its own account.</p></li>
-          <li><p>In PowerShell as Administrator, show the admin password, then open <code>https://localhost:8080</code> and sign in as <code>admin</code>.</p>
+          <li><p>In PowerShell as Administrator, show the admin password, then open <code>https://localhost:9000</code> and sign in as <code>admin</code>.</p>
 <div class="code"><pre><code>signalith initial-password</code></pre><button class="copy" type="button" aria-label="Copy"><svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg></button></div></li>
         </ol>
       </div>

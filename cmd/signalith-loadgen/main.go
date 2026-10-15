@@ -250,7 +250,7 @@ func runCommand(ctx context.Context, cmd string, args []string, stdout, stderr i
 	}
 	if cmd == "syslog" && len(s.Targets) == 0 {
 		// Syslog alone needs no web address.
-		s.Targets = []string{"https://localhost:8080"}
+		s.Targets = []string{"https://localhost:9000"}
 	}
 	opts := runOptions{RunID: c.runID, Keep: c.keep, Log: stderr}
 	if c.quiet {

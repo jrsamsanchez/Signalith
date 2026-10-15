@@ -551,7 +551,7 @@ func TestExportSettings(t *testing.T) {
 	// for one, turn on a second job runner; shared ones are not. The
 	// public address is marked too: another server set up on its own has
 	// its own.
-	for _, want := range []string{"syslog:\n", "  udp: 0.0.0.0:514  # this server's own address\n", "  allow: [10.0.0.0/8]\n", "  # password: left out; set it here or with SIGNALITH_OPENSEARCH_PASSWORD\n", "  listen: 127.0.0.1:8080  # this server's own address\n",
+	for _, want := range []string{"syslog:\n", "  udp: 0.0.0.0:514  # this server's own address\n", "  allow: [10.0.0.0/8]\n", "  # password: left out; set it here or with SIGNALITH_OPENSEARCH_PASSWORD\n", "  listen: 127.0.0.1:9000  # this server's own address\n", "  agent_listen: \"\"  # this server's own address\n",
 		"  public_url: \"\"  # this server's own address\n", "  scheduler: true  # this server only\n", "  ca_file: \"\"  # a file on this server\n", "  max_events: 10000\n",
 		"    mode: auto  # this server only\n", "  trusted_proxies: []\n"} {
 		if !strings.Contains(text, want) {

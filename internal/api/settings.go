@@ -445,6 +445,9 @@ func (s *Server) settingsView() (map[string]any, error) {
 			if set.Key == "server.public_url" && saved.PublicURLDerived() {
 				f.EmptyMeans = saved.Server.PublicURL + ", worked out from the listen address"
 			}
+			if set.Key == "server.agent_listen" && saved.AgentListenDerived() {
+				f.EmptyMeans = saved.Server.AgentListen + ", worked out from the listen address; the web port also accepts agents set up before 0.3"
+			}
 			// A file from before HTTPS was the default believes a proxy on
 			// this computer or a private network until one is listed.
 			if set.Key == "server.trusted_proxies" && saved.Server.LegacyProxy(netip.IPv6Loopback()) {

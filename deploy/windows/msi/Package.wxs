@@ -66,7 +66,7 @@
 
     <StandardDirectory Id="ProgramMenuFolder">
       <Component Id="StartMenu" Guid="7C1D9E52-3F4B-4E8A-B1C6-0A9F2D7E5B13">
-        <util:InternetShortcut Id="OpenSignalith" Name="Signalith" Target="https://localhost:8080/" Type="url" />
+        <util:InternetShortcut Id="OpenSignalith" Name="Signalith" Target="https://localhost:9000/" Type="url" />
         <RegistryValue Root="HKLM" Key="Software\Signalith" Name="StartMenu" Type="integer" Value="1" KeyPath="yes" />
       </Component>
     </StandardDirectory>
@@ -82,7 +82,7 @@
                   ExeCommand="&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;[INSTALLFOLDER]msi-setup.ps1&quot; -OpenSearchUrl &quot;[OPENSEARCHURL]&quot;" />
     <!-- On uninstall (not an upgrade), the firewall rules install.ps1 made. -->
     <CustomAction Id="RemoveFirewallRules" Directory="INSTALLFOLDER" Execute="deferred" Impersonate="no" Return="ignore"
-                  ExeCommand="&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -Command &quot;Remove-NetFirewallRule -DisplayName 'Signalith','Signalith syslog *' -ErrorAction SilentlyContinue&quot;" />
+                  ExeCommand="&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -Command &quot;Remove-NetFirewallRule -DisplayName 'Signalith','Signalith agents','Signalith syslog *' -ErrorAction SilentlyContinue&quot;" />
     <InstallExecuteSequence>
       <Custom Action="SetUpSignalith" Before="InstallFinalize" Condition="NOT REMOVE" />
       <Custom Action="RemoveFirewallRules" Before="RemoveFiles" Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
@@ -93,7 +93,7 @@
     <WixVariable Id="WixUILicenseRtf" Value="$(var.LicenseRtf)" />
     <WixVariable Id="WixUIBannerBmp" Value="banner.bmp" />
     <WixVariable Id="WixUIDialogBmp" Value="dialog.bmp" />
-    <Property Id="WIXUI_EXITDIALOGOPTIONALTEXT" Value="Signalith is running. Open https://localhost:8080 (Start menu: Signalith) and sign in as admin. To see the first admin password, run this in PowerShell as Administrator:  signalith initial-password" />
+    <Property Id="WIXUI_EXITDIALOGOPTIONALTEXT" Value="Signalith is running. Open https://localhost:9000 (Start menu: Signalith) and sign in as admin. To see the first admin password, run this in PowerShell as Administrator:  signalith initial-password" />
     <ui:WixUI Id="WixUI_Minimal" />
   </Package>
 </Wix>

@@ -2357,7 +2357,8 @@ function renderGuide() {
 // as "Do this: command" shows the command in a copyable well, and the step
 // that saves the config file carries the file itself.
 //
-// "Agents send to" is the address written into the config. It starts as
+// "Agents send to" is the address written into the config, on the agent
+// port (the server puts an address of this server on it). It starts as
 // the server's public_url; when that is localhost but this browser reached
 // Signalith by another name, the browser's address is the better guess. An
 // address typed here is remembered in this browser.
@@ -2746,9 +2747,15 @@ async function agentSetupLoad() {
     agentServerError('');
     sensorFieldError('');
     awsFieldError('');
+    let shown = server;
+    if (!agentDest.to && server && a.server_url && a.server_url !== server && agentSameHost(server, a.server_url)) {
+      // An address of this server, such as the web page's: agents send to
+      // it on the agent port, which the field shows.
+      shown = agentServerEl.value = agentServerSent = a.server_url;
+    }
     try {
       if (agentDest.to) { /* one server's own address: not remembered */ }
-      else if (server && server !== agentServerGuess) localStorage.setItem(agentServerKey, server);
+      else if (shown && shown !== agentServerGuess) localStorage.setItem(agentServerKey, shown);
       else localStorage.removeItem(agentServerKey);
     } catch (_) { /* storage may be blocked */ }
     agentSetupRender(a);
@@ -2805,12 +2812,33 @@ function awsFieldError(field, msg) {
   }
 }
 
+// agentSameHost reports whether two addresses differ in their port alone.
+function agentSameHost(a, b) {
+  try {
+    const x = new URL(a);
+    const y = new URL(b);
+    return x.protocol === y.protocol && x.hostname === y.hostname;
+  } catch (_) {
+    return false;
+  }
+}
+
 // agentServerFirst takes the server's own address as the guess and fills
 // the empty field with it. It returns true when the browser's address is
 // the better guess, so the config must be built again.
 function agentServerFirst(a) {
   const own = a.server_url || '';
-  agentServerGuess = a.server_loopback && !agentLoopbackHost(location.hostname) ? location.origin : own;
+  agentServerGuess = own;
+  if (a.server_loopback && !agentLoopbackHost(location.hostname)) {
+    // This browser's address, on the port agents send to (server_url's).
+    try {
+      const u = new URL(own);
+      u.hostname = location.hostname;
+      agentServerGuess = u.origin;
+    } catch (_) {
+      agentServerGuess = location.origin;
+    }
+  }
   agentServerEl.placeholder = agentServerGuess;
   if (!agentServerEl.value.trim()) agentServerEl.value = agentServerGuess;
   return agentServerGuess !== own;
@@ -2842,8 +2870,8 @@ function agentServerWarn(a) {
   if (w.dataset.url === a.server_url) return; // unchanged: don't announce it again
   w.dataset.url = a.server_url;
   let host = 'localhost';
-  let example = 'https://192.168.1.20:8080';
-  let port = '8080';
+  let example = 'https://192.168.1.20:7779';
+  let port = '7779';
   try {
     const u = new URL(a.server_url);
     host = u.hostname;

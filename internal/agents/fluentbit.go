@@ -326,7 +326,7 @@ var hostLabel = regexp.MustCompile(`^[A-Za-z0-9_]([A-Za-z0-9_-]{0,61}[A-Za-z0-9_
 // because the host and port are written into a config file.
 func ParseServerURL(raw string) (*url.URL, error) {
 	if raw == "" {
-		return nil, errors.New("address is empty; use one such as https://192.168.1.20:8080")
+		return nil, errors.New("address is empty; use one such as https://192.168.1.20:7779")
 	}
 	if len(raw) > 300 {
 		return nil, errors.New("address is too long")
@@ -344,13 +344,13 @@ func ParseServerURL(raw string) (*url.URL, error) {
 	}
 	u, err := url.Parse(raw)
 	if err != nil {
-		return nil, errors.New("address is not valid; use one such as https://192.168.1.20:8080")
+		return nil, errors.New("address is not valid; use one such as https://192.168.1.20:7779")
 	}
 	if u.User != nil {
 		return nil, errors.New("address must not include a user name or password")
 	}
 	if u.Host == "" {
-		return nil, errors.New("address needs a host name or IP address, such as https://192.168.1.20:8080")
+		return nil, errors.New("address needs a host name or IP address, such as https://192.168.1.20:7779")
 	}
 	if u.Path != "" && u.Path != "/" {
 		return nil, errors.New("address must not include a path; agents always send to /api/ingest")
