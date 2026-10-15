@@ -167,7 +167,7 @@ func (c Case) Record(host string, t time.Time) (string, map[string]any) {
 		return "linux.audit", ingest.AuditdRecordFor(ingest.AuditdLine(c.EventID, t, c.Data), host)
 	}
 	if c.Channel == CloudTrailChannel {
-		return ingest.CloudTrailTag, ingest.CloudTrailRecord(t, c.Data)
+		return ingest.CloudTrailTag, ingest.CloudTrailRecord(host, t, c.Data)
 	}
 	if c.Channel == WebChannel {
 		return ingest.WebTag, ingest.WebRecord(ingest.AccessLine(t, c.Data), "/var/log/nginx/access.log", host, t)

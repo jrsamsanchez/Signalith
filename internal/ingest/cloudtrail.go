@@ -129,6 +129,11 @@ func ParseCloudTrail(r map[string]any) Event {
 	set("app", source)
 	set("dest", source)
 	set("user", user)
+	// The machine that sent the record, when it says (CloudTrail itself
+	// has no host).
+	if h, ok := r["hostname"].(string); ok {
+		set("host", h)
+	}
 	set("user_name", user)
 	set("src", wstr(f["sourceIPAddress"]))
 	set("user_agent", wstr(f["userAgent"]))
@@ -414,9 +419,9 @@ func CloudTrailField(name string) bool {
 
 // CloudTrailRecord is a CloudTrail record with fields by their dotted
 // names (userIdentity.type), for test events (Normalize with
-// CloudTrailTag).
-func CloudTrailRecord(t time.Time, data map[string]string) map[string]any {
-	r := map[string]any{"eventVersion": "1.09", "eventTime": t.UTC().Format(time.RFC3339)}
+// CloudTrailTag), as host sent it.
+func CloudTrailRecord(host string, t time.Time, data map[string]string) map[string]any {
+	r := map[string]any{"eventVersion": "1.09", "eventTime": t.UTC().Format(time.RFC3339), "hostname": host}
 	keys := slices.Sorted(maps.Keys(data))
 	for _, k := range keys {
 		parts := strings.Split(k, ".")

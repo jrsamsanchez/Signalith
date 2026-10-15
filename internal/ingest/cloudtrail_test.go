@@ -71,6 +71,11 @@ func TestCloudTrailSignInAndReads(t *testing.T) {
 	}
 }
 
+func TestCloudTrailTestRecord(t *testing.T) {
+	ev := Normalize(CloudTrailTag, CloudTrailRecord("case-1", now, map[string]string{"eventName": "StopLogging", "eventSource": "cloudtrail.amazonaws.com", "userIdentity.type": "Root"}), now)
+	expect(t, ev.Document(), map[string]any{"host": "case-1", "eventName": "StopLogging", "userIdentity.type": "Root", "user": "root"})
+}
+
 func TestCloudTrailCapsFields(t *testing.T) {
 	var b strings.Builder
 	b.WriteString(`{"eventVersion": "1.08", "eventSource": "ec2.amazonaws.com", "eventName": "RunInstances", "requestParameters": {`)
