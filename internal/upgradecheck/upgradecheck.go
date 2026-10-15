@@ -163,10 +163,14 @@ func RunningTasks(ctx context.Context, cl *store.Client, prefix string) ([]strin
 }
 
 // RetentionBusy reports whether a retention step that deletes data is
-// running: the leader holds the jobs in delete-only mode, or OpenSearch runs a delete, reindex or snapshot of the cluster's
+// running: the leader holds the jobs in delete-only mode or says it runs
+// one, or OpenSearch runs a delete, reindex or snapshot of the cluster's
 // indices.
 func RetentionBusy(leader *cluster.Heartbeat, tasks []string) bool {
-	return (leader != nil && leader.Frozen) || len(tasks) > 0
+	if leader != nil && (leader.Frozen || (leader.Upgrade != nil && leader.Upgrade.Busy != "")) {
+		return true
+	}
+	return len(tasks) > 0
 }
 
 // Judge says whether one more server may be upgraded now. A field an
@@ -268,6 +272,9 @@ func Judge(in Inputs) Verdict {
 		case leader != nil && leader.Frozen:
 			name = leader.Name
 			text = fmt.Sprintf("%s runs the jobs in delete-only mode because OpenSearch refuses writes: wait until OpenSearch takes writes again.", leader.Name)
+		case leader != nil && leader.Upgrade != nil && leader.Upgrade.Busy != "":
+			name = leader.Name
+			text = fmt.Sprintf("%s is in the middle of a %s: wait until it ends.", leader.Name, leader.Upgrade.Busy)
 		}
 		block("retention_busy", name, text)
 	}
@@ -334,6 +341,10 @@ func Next(live []cluster.Heartbeat, leader *cluster.Heartbeat, levels map[string
 	switch {
 	case leader != nil && n.NodeID == leader.NodeID:
 		return fmt.Sprintf("Upgrade %s next: it runs the jobs, so they move once, to the new version.", n.Name)
+	case leader != nil && (len(levels) < 2 || leader.Version != top) && slices.Contains(leader.Features, cluster.FeatureYieldNewer):
+		// The leader runs the older version and hands the jobs to the
+		// first server upgraded.
+		return fmt.Sprintf("Upgrade %s next. %s hands the jobs to it once it is ready, then upgrade %s.", n.Name, leader.Name, leader.Name)
 	case leader != nil:
 		return fmt.Sprintf("Upgrade %s next: it does not run the jobs. Upgrade %s, which runs them, last.", n.Name, leader.Name)
 	}

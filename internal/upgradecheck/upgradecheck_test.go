@@ -159,3 +159,38 @@ func TestJudgeServerDetails(t *testing.T) {
 		t.Errorf("one version: newest %q", one.Newest)
 	}
 }
+
+func TestJudgeHandOverAndBusy(t *testing.T) {
+	now := time.Date(2026, 10, 14, 12, 0, 0, 0, time.UTC)
+	member := shared.Status{Mode: shared.ModeMember, Level: 3}
+	hb := func(id, version string, leader bool) cluster.Heartbeat {
+		return cluster.Heartbeat{NodeID: "n_" + id, Name: "siem-" + id, State: cluster.StateReady, Version: version, HeartbeatAt: now,
+			LeaderEligible: true, Leader: leader, Mode: string(shared.ModeMember), MaxRev: 10, LevelMax: 3}
+	}
+	a, b := hb("a", "1.5.0", true), hb("b", "1.5.0", false)
+	a.Features = []string{cluster.FeatureYieldNewer}
+	v := judge(now, "n_a", []cluster.Heartbeat{a, b}, nil, member, 10, nil, true)
+	if want := "Upgrade siem-b next. siem-a hands the jobs to it once it is ready, then upgrade siem-a."; v.Next != want {
+		t.Errorf("next %q, want %q", v.Next, want)
+	}
+	a.Upgrade = &cluster.UpgradeStatus{Busy: "retention run"}
+	v = judge(now, "n_a", []cluster.Heartbeat{a, b}, nil, member, 10, nil, true)
+	if v.Safe || len(v.Blockers) != 1 || v.Blockers[0].Code != "retention_busy" || v.Blockers[0].Server != "siem-a" ||
+		!strings.Contains(v.Blockers[0].Text, "retention run") {
+		t.Errorf("busy leader: %+v", v.Blockers)
+	}
+	if !RetentionBusy(&a, nil) || RetentionBusy(&b, nil) || !RetentionBusy(nil, []string{"x"}) || RetentionBusy(nil, nil) {
+		t.Error("RetentionBusy")
+	}
+}
+
+func TestNextAfterTheHandOver(t *testing.T) {
+	// siem-b runs the new version and the jobs already: siem-a is next,
+	// and nothing is handed over any more.
+	b := cluster.Heartbeat{NodeID: "n_b", Name: "siem-b", Version: "1.6.0", Leader: true, Features: []string{cluster.FeatureYieldNewer}}
+	a := cluster.Heartbeat{NodeID: "n_a", Name: "siem-a", Version: "1.5.0"}
+	got := Next([]cluster.Heartbeat{a, b}, &b, map[string]int{"1.5.0": 3, "1.6.0": 3})
+	if strings.Contains(got, "hands the jobs") || !strings.HasPrefix(got, "Upgrade siem-a next") {
+		t.Errorf("next %q", got)
+	}
+}

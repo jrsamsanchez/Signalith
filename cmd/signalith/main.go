@@ -1668,6 +1668,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			Indexed:    pipeline.LastIndexed,
 			TLS:        tlsStatus,
 			OSIdentity: osIdentity,
+			Busy:       jobsBusy(ret),
 		}
 		if rt := r.shared; rt != nil {
 			settings.Shared = func() cluster.SharedStatus { return sharedStatus(rt, r.sharedContent) }
@@ -1893,7 +1894,7 @@ func openNode(c *config.Config, log *slog.Logger) (*cluster.Node, *slog.Logger, 
 		log.Warn(w)
 	}
 	log.Info("this server's identity", "node_id", local.Identity.NodeID, "state_dir", local.Dir)
-	node := cluster.New(cluster.Options{Local: local, Version: version, Deployment: deployment(), Log: log})
+	node := cluster.New(cluster.Options{Local: local, Version: version, Deployment: deployment(), Log: log, Timing: nodeTiming()})
 	return node, log, nil
 }
 
