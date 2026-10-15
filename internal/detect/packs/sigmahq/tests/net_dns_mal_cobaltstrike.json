@@ -1,0 +1,5 @@
+{"rule": "2975af79-28c4-4d2f-a951-9095f229df29", "cases": [
+  {"expect":true,"source":"synthesized","channel":"zeek:dns","event_id":"dns","data":{"query":"post.1"}},
+  {"expect":true,"source":"synthesized","channel":"zeek:dns","event_id":"dns","data":{"query":".stage.123456."}},
+  {"expect":false,"source":"synthesized","channel":"zeek:dns","event_id":"dns","data":{}}
+]}

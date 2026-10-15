@@ -179,10 +179,27 @@ func TestPackDetections(t *testing.T) {
 				t.Errorf("%s: technique %s is not in ATT&CK %s", d.ID, id, ATTACK().Version)
 			}
 		}
-		// Each rule reads only its own system's events.
+		// Each rule reads only its own system's events: a network rule
+		// its Zeek log's, or its data model's (a DNS lookup, a web request
+		// or a connection from any source).
+		if strings.Contains(d.Query, "sourcetype=zeek:") || networkPackRule(d) {
+			continue
+		}
 		if !strings.Contains(d.Query, "sourcetype=WinEventLog:") && !strings.Contains(d.Query, `sourcetype="WinEventLog:`) &&
 			!strings.Contains(d.Query, "sourcetype=sysmon:linux") && !strings.Contains(d.Query, "sourcetype=linux:audit") {
 			t.Errorf("%s: not limited to Windows, Sysmon for Linux or Linux audit events: %s", d.ID, d.Query)
 		}
 	}
+}
+
+// networkPackRule reports whether a pack rule is a generic network one
+// (Sigma's dns, proxy or firewall category), limited to its data model.
+func networkPackRule(d *Detection) bool {
+	models := map[string]string{"dns": "Network_Resolution", "proxy": "Web", "firewall": "Network_Traffic"}
+	for _, t := range d.Tags {
+		if m, ok := models[t]; ok && strings.HasPrefix(d.Query, "datamodel="+m+" ") {
+			return true
+		}
+	}
+	return false
 }

@@ -63,6 +63,9 @@ var security4688 = map[string]string{
 // the event's channel has no Sigma view here.
 func (c Case) SigmaView() (map[string]string, bool) {
 	switch {
+	case strings.HasPrefix(c.Channel, ZeekChannelPrefix):
+		// A network event: Zeek's keys, or Sigma's taxonomy.
+		return maps.Clone(c.Data), true
 	case c.Channel == AuditdChannel:
 		// A recorded line's fields, or the fields a line is built from.
 		fields := c.Data
@@ -137,6 +140,9 @@ func (c Case) SigmaView() (map[string]string, bool) {
 // Record is a case's event as the agent sends it, with its Fluent Bit tag:
 // a journal record for Sysmon for Linux, else a Windows event record.
 func (c Case) Record(host string, t time.Time) (string, map[string]any) {
+	if strings.HasPrefix(c.Channel, ZeekChannelPrefix) {
+		return c.zeekRecord(host, t)
+	}
 	if strings.EqualFold(c.Channel, LinuxSysmonChannel) {
 		return "linux.journal", ingest.LinuxSysmonRecord(c.EventID, host, t, c.Data)
 	}

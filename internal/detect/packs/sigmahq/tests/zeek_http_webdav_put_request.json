@@ -1,0 +1,6 @@
+{"rule": "705072a5-bb6f-4ced-95b6-ecfa6602090b", "cases": [
+  {"expect":true,"source":"synthesized","channel":"zeek:http","event_id":"","data":{"method":"PUT","user_agent":"WebDAV"}},
+  {"expect":false,"source":"synthesized","channel":"zeek:http","event_id":"","data":{"id.resp_h":"10.0.0.1","method":"PUT","user_agent":"WebDAV"}},
+  {"expect":false,"source":"synthesized","channel":"zeek:http","event_id":"","data":{"user_agent":"WebDAV"}},
+  {"expect":false,"source":"synthesized","channel":"zeek:http","event_id":"","data":{"method":"PUT"}}
+]}

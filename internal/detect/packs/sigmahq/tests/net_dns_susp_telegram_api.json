@@ -1,0 +1,4 @@
+{"rule": "c64c5175-5189-431b-a55e-6d9882158251", "cases": [
+  {"expect":true,"source":"synthesized","channel":"zeek:dns","event_id":"dns","data":{"query":"api.telegram.org"}},
+  {"expect":false,"source":"synthesized","channel":"zeek:dns","event_id":"dns","data":{}}
+]}

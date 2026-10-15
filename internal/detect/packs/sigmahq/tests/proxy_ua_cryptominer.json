@@ -1,0 +1,4 @@
+{"rule": "fa935401-513b-467b-81f4-f9e77aa0dd78", "cases": [
+  {"expect":true,"source":"synthesized","channel":"zeek:http","event_id":"proxy","data":{"c-useragent":"ccminer"}},
+  {"expect":false,"source":"synthesized","channel":"zeek:http","event_id":"proxy","data":{}}
+]}

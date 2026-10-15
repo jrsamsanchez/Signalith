@@ -1,0 +1,5 @@
+{"rule": "4922a5dd-6743-4fc2-8e81-144374280997", "cases": [
+  {"expect":true,"source":"synthesized","channel":"zeek:http","event_id":"proxy","data":{"c-uri":"http://downloads.example.com/flash_install.php","cs-host":"downloads.example.com"}},
+  {"expect":false,"source":"synthesized","channel":"zeek:http","event_id":"proxy","data":{"c-uri":"http://.adobe.com/flash_install.php","cs-host":".adobe.com"}},
+  {"expect":false,"source":"synthesized","channel":"zeek:http","event_id":"proxy","data":{}}
+]}

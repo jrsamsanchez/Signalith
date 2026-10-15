@@ -111,6 +111,33 @@ var linuxCategories = map[string]string{
 	"auditd": "rules/linux/auditd",
 }
 
+// networkCategories are the network log sources, and the folders their
+// rules live in: Zeek's own logs (product: zeek, one category per
+// service, zeek_dns), and the generic dns, firewall and proxy categories,
+// whose events a network sensor's Zeek logs carry. Their test events are
+// Zeek log lines (sigmacheck.NetworkCases).
+var networkCategories = map[string]string{
+	"zeek":     "rules/network/zeek",
+	"dns":      "rules/network/dns",
+	"firewall": "rules/network/firewall",
+	"proxy":    "rules/web/proxy_generic",
+}
+
+// networkCategory is the category a network rule's test events are made
+// for, or "" when its log source is not the plain one of its folder.
+func networkCategory(ls map[string]string, cat string) string {
+	if cat == "zeek" {
+		if ls["product"] != "zeek" || ls["category"] != "" || ls["service"] == "" {
+			return ""
+		}
+		return sigmacheck.ZeekCategoryPrefix + strings.ToLower(ls["service"])
+	}
+	if ls["category"] != cat || ls["service"] != "" || (ls["product"] != "" && ls["product"] != "zeek") {
+		return ""
+	}
+	return cat
+}
+
 // maxWildcardTerms keeps a rule's searches under
 // OpenSearch's default limit of 1,024 clauses in one search (see
 // search.WildcardFieldTerms and search.Clauses).
@@ -144,7 +171,7 @@ func main() {
 	pack := &detect.Pack{
 		Name:  "sigmahq",
 		Title: "SigmaHQ community rules",
-		Description: "Windows rules for Sysmon, Security and System events (processes, network connections, files, registry, DNS, DLL loads, process access, logons, scheduled tasks and services installed), and Linux rules for Sysmon for Linux and the Linux audit log, from the SigmaHQ project, converted to Signalith detections. " +
+		Description: "Windows rules for Sysmon, Security and System events (processes, network connections, files, registry, DNS, DLL loads, process access, logons, scheduled tasks and services installed), Linux rules for Sysmon for Linux and the Linux audit log, and network rules for Zeek's logs and for DNS, web proxy and firewall data, from the SigmaHQ project, converted to Signalith detections. " +
 			"Each rule shipped here fires on its test events and stays quiet on its exclusions, checked in CI.",
 		Source:     "https://github.com/SigmaHQ/sigma",
 		Version:    commit,
@@ -173,6 +200,9 @@ func main() {
 	}
 	for c, dir := range linuxCategories {
 		sources = append(sources, source{"linux", c, dir})
+	}
+	for c, dir := range networkCategories {
+		sources = append(sources, source{"network", c, dir})
 	}
 	sort.Slice(sources, func(i, j int) bool { return sources[i].dir < sources[j].dir })
 	for _, src := range sources {
@@ -212,45 +242,53 @@ func main() {
 				skip("level informational", rel)
 				continue
 			}
-			want := map[string]string{"product": product, "category": cat, "service": ""}
-			if cat == "system" || cat == "security" || cat == "auditd" || cat == "windefend" || cat == "application" {
-				want["category"], want["service"] = "", cat
-			}
-			if cat == "code_integrity" {
-				want["category"], want["service"] = "", "codeintegrity-operational"
-			}
-			if cat == "sysmon_service" {
-				want["category"], want["service"] = "", "sysmon"
-			}
-			for service := range ingest.NamedChannelServices {
-				if cat == ingest.NamedChannelCategory(service) {
-					want["category"], want["service"] = "", service
-				}
-			}
-			if rule.Logsource["product"] != want["product"] || rule.Logsource["category"] != want["category"] || rule.Logsource["service"] != want["service"] {
-				skip("log source is not plain "+product+" "+cat, rel)
-				continue
-			}
 			rcat, rbases := cat, bases
-			if cat == "system" {
-				rcat = sigmacheck.SystemCategory(rule.EventIDs()...)
-				rbases = sigmacheck.Bases[rcat]
-			}
-			if cat == "sysmon_service" {
-				rcat = sigmacheck.SysmonServiceCategory(rule.EventIDs()...)
-				rbases = sigmacheck.Bases[rcat]
-			}
-			if cat == "security" {
-				ids := rule.EventIDs()
-				rcat = sigmacheck.SecurityCategory(ids...)
-				if ingest.IsNamedSecurityEvents(ids...) {
-					rcat = "security_named"
-				}
-				if _, ok := sigmacheck.SysmonEventID(rcat); !ok || len(ids) == 0 {
-					skip("not about one Security event Signalith reads", rel)
+			if product == "network" {
+				if rcat = networkCategory(rule.Logsource, cat); rcat == "" {
+					skip("log source is not plain "+cat, rel)
 					continue
 				}
-				rbases = sigmacheck.Bases[rcat]
+				rbases = sigmacheck.NetworkBase(rcat)
+			} else {
+				want := map[string]string{"product": product, "category": cat, "service": ""}
+				if cat == "system" || cat == "security" || cat == "auditd" || cat == "windefend" || cat == "application" {
+					want["category"], want["service"] = "", cat
+				}
+				if cat == "code_integrity" {
+					want["category"], want["service"] = "", "codeintegrity-operational"
+				}
+				if cat == "sysmon_service" {
+					want["category"], want["service"] = "", "sysmon"
+				}
+				for service := range ingest.NamedChannelServices {
+					if cat == ingest.NamedChannelCategory(service) {
+						want["category"], want["service"] = "", service
+					}
+				}
+				if rule.Logsource["product"] != want["product"] || rule.Logsource["category"] != want["category"] || rule.Logsource["service"] != want["service"] {
+					skip("log source is not plain "+product+" "+cat, rel)
+					continue
+				}
+				if cat == "system" {
+					rcat = sigmacheck.SystemCategory(rule.EventIDs()...)
+					rbases = sigmacheck.Bases[rcat]
+				}
+				if cat == "sysmon_service" {
+					rcat = sigmacheck.SysmonServiceCategory(rule.EventIDs()...)
+					rbases = sigmacheck.Bases[rcat]
+				}
+				if cat == "security" {
+					ids := rule.EventIDs()
+					rcat = sigmacheck.SecurityCategory(ids...)
+					if ingest.IsNamedSecurityEvents(ids...) {
+						rcat = "security_named"
+					}
+					if _, ok := sigmacheck.SysmonEventID(rcat); !ok || len(ids) == 0 {
+						skip("not about one Security event Signalith reads", rel)
+						continue
+					}
+					rbases = sigmacheck.Bases[rcat]
+				}
 			}
 			stem := strings.TrimSuffix(filepath.Base(f), ".yml")
 			id := old[rule.ID]
@@ -283,7 +321,16 @@ func main() {
 				skip("no test events: "+short(err), rel)
 				continue
 			}
-			tf := &sigmacheck.TestFile{Rule: rule.ID, Cases: cases(rcat, syn, rule.Fields())}
+			tf := &sigmacheck.TestFile{Rule: rule.ID}
+			if product == "network" {
+				tf.Cases = sigmacheck.NetworkCases(rule, rcat, syn)
+				if !slices.ContainsFunc(tf.Cases, func(c sigmacheck.Case) bool { return c.Expect }) {
+					skip("no test event the rule matches as a sensor logs it", rel)
+					continue
+				}
+			} else {
+				tf.Cases = cases(rcat, syn, rule.Fields())
+			}
 			if product == "windows" {
 				tf.Cases = append(tf.Cases, regression(*sigmaDir, rel, rule, rcat)...)
 			}
@@ -357,6 +404,10 @@ var prefixes = []struct{ from, to string }{
 	{"proc_access_win_", "sigma-access-"},
 	{"create_remote_thread_win_", "sigma-thread-"},
 	{"posh_ps_", "sigma-ps-"},
+	{"zeek_", "sigma-zeek-"},
+	{"net_dns_", "sigma-net-dns-"},
+	{"net_firewall_", "sigma-firewall-"},
+	{"proxy_", "sigma-proxy-"},
 }
 
 var nonID = regexp.MustCompile(`[^a-z0-9]+`)
@@ -466,7 +517,7 @@ func writeReport(p *detect.Pack, skipped map[string][]string) {
 		n += len(v)
 	}
 	fmt.Fprintf(&b, "# SigmaHQ pack report\n\nGenerated by `go run ./internal/detect/packgen` from SigmaHQ commit `%s` on %s.\n\n", p.Version, p.Date)
-	fmt.Fprintf(&b, "%d rules shipped. %d Windows and Linux rules for these log sources were left out:\n\n", len(p.Rules), n)
+	fmt.Fprintf(&b, "%d rules shipped. %d Windows, Linux and network rules for these log sources were left out:\n\n", len(p.Rules), n)
 	reasons := make([]string, 0, len(skipped))
 	for r := range skipped {
 		reasons = append(reasons, r)
