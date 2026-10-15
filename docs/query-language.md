@@ -44,8 +44,8 @@ In a regular expression that means `\.` stays `\.`, and a literal backslash is
 
 | Command | Example | Notes |
 | --- | --- | --- |
-| `stats` | `stats count, dc(user) as users, avg(bytes) by src, dest` | Functions: `count`, `count(f)`, `dc(f)`, `sum(f)`, `avg(f)`, `min(f)`, `max(f)` |
-| `eventstats` | `eventstats avg(bytes) as avg_bytes by src` | Same functions as `stats`, but adds the results to every row instead of replacing the rows, so later commands can compare each event with its group: `\| where bytes > avg_bytes * 10` |
+| `stats` | `stats count, dc(user) as users, perc95(bytes) by src, dest` | Functions are listed [below](#stats-functions) |
+| `eventstats` | `eventstats avg(bytes) as avg_bytes by src` | Same [functions](#stats-functions) as `stats`, but adds the results to every row instead of replacing the rows, so later commands can compare each event with its group: `\| where bytes > avg_bytes * 10` |
 | `timechart` | `timechart span=1h count by action` | One aggregation when splitting by a field; span picked automatically if omitted |
 | `top` | `top limit=10 process_name by host` | Adds `count` and `percent` |
 | `rare` | `rare limit=10 process_name by host` | Like `top`, least common values first |
@@ -72,6 +72,22 @@ aggregate on event fields and add intel afterwards:
 
 Columns produced by `stats` are referenced by name in later commands, for example
 `sort -dc(user)` or `where avg(bytes) > 1000`.
+
+### Stats functions
+
+`stats`, `eventstats` and `timechart` take these, each optionally followed by `as name`:
+
+| Function | Result |
+| --- | --- |
+| `count`, `count(f)` | Events, or events where `f` has a value |
+| `dc(f)` | Distinct values of `f` (approximate above a few thousand, as OpenSearch counts them) |
+| `sum(f)`, `avg(f)`, `min(f)`, `max(f)`, `range(f)` | Totals, average, smallest, largest, and largest minus smallest |
+| `median(f)`, `perc95(f)` | The median and any percentile from `perc1` to `perc99` (`p95` works too). OpenSearch estimates these on large data |
+| `stdev(f)`, `var(f)` | Sample standard deviation and variance |
+| `mode(f)` | The most common value |
+| `values(f)` | The distinct values, sorted, up to 100 |
+| `list(f)` | The values, newest first, up to 100 |
+| `first(f)`, `latest(f)` | The newest value; `last(f)` and `earliest(f)` give the oldest |
 
 ## Expressions (eval and where)
 
@@ -133,6 +149,7 @@ query. It understands:
 | containing mimikatz, "quoted text" | `process=*...*` for processes, text search otherwise |
 | last 4 hours, past 7 days, today, yesterday, this week | `earliest=` and `latest=` |
 | how many, distinct users, total bytes, average bytes | `stats count`, `dc()`, `sum()`, `avg()` |
+| median bytes, 95th percentile of duration, standard deviation of bytes | `median()`, `perc95()`, `stdev()` |
 | per user, by source ip, for each host | `by ...` |
 | top 10 users, most common processes, rare processes | `top`, `rare`, or `stats ... \| sort \| head` |
 | latest login per user, most recent process for each host | `dedup user` (events come newest first) |

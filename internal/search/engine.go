@@ -430,24 +430,13 @@ func leadingHead(cmds []query.Command) (int, bool) {
 func metricAggs(aggs []query.Agg) (map[string]any, error) {
 	out := map[string]any{}
 	for i, a := range aggs {
-		if a.Field == "_time" {
-			a.Field = TimeField
+		m, err := metricAgg(a)
+		if err != nil {
+			return nil, err
 		}
-		var m map[string]any
-		switch a.Func {
-		case "count":
-			if a.Field == "" {
-				continue // doc_count
-			}
-			m = map[string]any{"value_count": map[string]any{"field": a.Field}}
-		case "dc":
-			m = map[string]any{"cardinality": map[string]any{"field": a.Field}}
-		case "sum", "avg", "min", "max":
-			m = map[string]any{a.Func: map[string]any{"field": a.Field}}
-		default:
-			return nil, fmt.Errorf("unsupported function %q", a.Func)
+		if m != nil {
+			out[fmt.Sprintf("m%d", i)] = m
 		}
-		out[fmt.Sprintf("m%d", i)] = m
 	}
 	return out, nil
 }
@@ -561,7 +550,7 @@ func (e *Engine) fetch(ctx context.Context, p *Plan) (*Result, error) {
 				if a.Func == "count" && a.Field == "" {
 					row[a.Column()] = res.Matched
 				} else {
-					row[a.Column()] = metricValue(aggs, fmt.Sprintf("m%d", i))
+					row[a.Column()] = aggValue(a, aggs, fmt.Sprintf("m%d", i))
 				}
 			}
 			res.Rows = []Row{row}
@@ -578,7 +567,7 @@ func (e *Engine) fetch(ctx context.Context, p *Plan) (*Result, error) {
 				if a.Func == "count" && a.Field == "" {
 					row[a.Column()] = toNumber(b["doc_count"])
 				} else {
-					row[a.Column()] = metricValue(b, fmt.Sprintf("m%d", i))
+					row[a.Column()] = aggValue(a, b, fmt.Sprintf("m%d", i))
 				}
 			}
 			res.Rows = append(res.Rows, row)
@@ -797,7 +786,7 @@ func timechartRows(resp map[string]any, tc *query.Timechart) ([]Row, []string) {
 				if a.Func == "count" && a.Field == "" {
 					row[a.Column()] = toNumber(bm["doc_count"])
 				} else {
-					row[a.Column()] = metricValue(bm, fmt.Sprintf("m%d", i))
+					row[a.Column()] = aggValue(a, bm, fmt.Sprintf("m%d", i))
 				}
 			}
 			rows = append(rows, row)
@@ -819,7 +808,7 @@ func timechartRows(resp map[string]any, tc *query.Timechart) ([]Row, []string) {
 			if a.Func == "count" && a.Field == "" {
 				val = toNumber(vm["doc_count"])
 			} else {
-				val = metricValue(vm, "m0")
+				val = aggValue(a, vm, "m0")
 			}
 			row[name] = val
 			if f, ok := asFloat(val); ok {

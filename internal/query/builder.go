@@ -15,7 +15,7 @@ type Spec struct {
 	// for each value of By), "stats" (a table) or "timechart" (a series
 	// over time).
 	Mode     string   `json:"mode,omitempty"`
-	AggFunc  string   `json:"agg_func,omitempty"`  // count, dc, sum, avg, min, max
+	AggFunc  string   `json:"agg_func,omitempty"`  // one of BuilderAggFuncs
 	AggField string   `json:"agg_field,omitempty"` // required unless AggFunc is count
 	By       []string `json:"by,omitempty"`
 	Span     string   `json:"span,omitempty"` // timechart only
@@ -90,6 +90,18 @@ func Build(s Spec) *Query {
 	return q
 }
 
+// BuilderAggFuncs lists the functions the builder's Calculate menu offers.
+var BuilderAggFuncs = []string{"count", "dc", "sum", "avg", "min", "max", "median", "perc95", "values"}
+
+func builderAgg(f string) bool {
+	for _, b := range BuilderAggFuncs {
+		if b == f {
+			return true
+		}
+	}
+	return false
+}
+
 // FromQuery converts a query back to a Spec. ok is false when the query uses
 // anything the builder cannot show (OR, NOT, where, several aggregations...),
 // in which case the UI keeps the text editor as the source of truth.
@@ -126,13 +138,13 @@ func FromQuery(q *Query) (s Spec, ok bool) {
 	if len(cmds) > 0 {
 		switch c := cmds[0].(type) {
 		case *Stats:
-			if len(c.Aggs) != 1 || c.Aggs[0].Alias != "" {
+			if len(c.Aggs) != 1 || c.Aggs[0].Alias != "" || !builderAgg(c.Aggs[0].Func) {
 				return s, false
 			}
 			s.Mode, s.AggFunc, s.AggField, s.By = "stats", c.Aggs[0].Func, c.Aggs[0].Field, c.By
 			cmds = cmds[1:]
 		case *Timechart:
-			if len(c.Aggs) != 1 || c.Aggs[0].Alias != "" {
+			if len(c.Aggs) != 1 || c.Aggs[0].Alias != "" || !builderAgg(c.Aggs[0].Func) {
 				return s, false
 			}
 			s.Mode, s.AggFunc, s.AggField, s.Span = "timechart", c.Aggs[0].Func, c.Aggs[0].Field, c.Span
