@@ -154,6 +154,11 @@ var (
 // rename fields, format times and apply the rule's own (empty) filter
 // macro is understood; anything else is an error that says what.
 func Parse(src []byte, macros map[string]*Macro) (*Rule, error) {
+	return ParseWith(src, macros, ParseOptions{})
+}
+
+// ParseWith is Parse with options.
+func ParseWith(src []byte, macros map[string]*Macro, opt ParseOptions) (*Rule, error) {
 	var r Rule
 	if err := yaml.Unmarshal(src, &r); err != nil {
 		return nil, err
@@ -178,6 +183,13 @@ func Parse(src []byte, macros map[string]*Macro) (*Rule, error) {
 	}
 	first := summariesRe.ReplaceAllString("| "+stages[0], "")
 	m := tstatsRe.FindStringSubmatch(first)
+	if opt.Network {
+		if _, nm, ok := sensorNode(first); ok {
+			m = nm
+		} else if m == nil {
+			return nil, errors.New("search is not a tstats search of Network_Traffic, Network_Resolution or Web")
+		}
+	}
 	if m == nil {
 		return nil, errors.New("search is not a tstats search of Endpoint.Processes, Filesystem, Registry or Web")
 	}
@@ -187,7 +199,10 @@ func Parse(src []byte, macros map[string]*Macro) (*Rule, error) {
 		r.Node = "Web"
 	}
 	fields, ok := Nodes[r.Node]
-	if !ok || (m[2] == "Network_Traffic") != (r.Node == "All_Traffic") || strings.EqualFold(m[2], "Web") != (r.Node == "Web") {
+	if !opt.Network && IsSensorNode(r.Node) {
+		ok = false
+	}
+	if !ok || !IsSensorNode(r.Node) && ((m[2] == "Network_Traffic") != (r.Node == "All_Traffic") || strings.EqualFold(m[2], "Web") != (r.Node == "Web")) {
 		return nil, fmt.Errorf("data model node %s.%s is not supported", m[2], r.Node)
 	}
 	var present []Expr
@@ -240,7 +255,7 @@ func Parse(src []byte, macros map[string]*Macro) (*Rule, error) {
 // the node, and each node's fields map to the Signalith fields they are
 // stored as. The code stays in the clause as signature_id.
 var (
-	rawRe = regexp.MustCompile("(?s)^`(powershell|sysmon|wineventlog_security|wineventlog_system|linux_auditd)`\\s+(.*)$")
+	rawRe = regexp.MustCompile("(?s)^`(powershell|sysmon|wineventlog_security|wineventlog_system|linux_auditd|cloudtrail)`\\s+(.*)$")
 	// rawNodes are the nodes of each source by event code.
 	rawNodes = map[string]map[string]string{
 		"powershell": {"4104": "PowerShell"},
@@ -263,6 +278,8 @@ var (
 		// Linux audit records: every record type is one node, whose
 		// fields are auditd's own (AuditdNode).
 		"linux_auditd": {},
+		// CloudTrail records: one node (CloudTrailNode).
+		"cloudtrail": {},
 	}
 	// RawFields are the event fields a raw search may name on each node,
 	// with the Signalith field each is stored as.
@@ -474,7 +491,13 @@ func resolveRaw(e Expr, node string) error {
 	case *Not:
 		return resolveRaw(x.Kid, node)
 	case *Cmp:
-		if name, ok := strings.CutPrefix(x.Field, rawFieldPrefix); ok && node == AuditdNode {
+		if name, ok := strings.CutPrefix(x.Field, rawFieldPrefix); ok && node == CloudTrailNode {
+			f, ok := cloudTrailField(name)
+			if !ok {
+				return fmt.Errorf("field %s is not a field of %s events", name, node)
+			}
+			x.Field = f
+		} else if ok && node == AuditdNode {
 			f, ok := ingest.AuditdField(name)
 			if !ok {
 				return fmt.Errorf("field %s is not a field of %s events", name, node)
@@ -591,8 +614,11 @@ func parseRaw(r *Rule, source, terms string, later []string, macros map[string]*
 		where = top[0]
 	}
 	var code *Cmp
-	if source == "linux_auditd" {
+	switch source {
+	case "linux_auditd":
 		r.Node = AuditdNode
+	case "cloudtrail":
+		r.Node = CloudTrailNode
 	}
 	for _, k := range top {
 		if c, ok := k.(*Cmp); ok && c.Field == eventCode {
@@ -602,7 +628,7 @@ func parseRaw(r *Rule, source, terms string, later []string, macros map[string]*
 			code = c
 		}
 	}
-	if r.Node == AuditdNode {
+	if r.Node == AuditdNode || r.Node == CloudTrailNode {
 		if countField(where, eventCode) != 0 {
 			return nil, fmt.Errorf("a %s search names no event code", source)
 		}
@@ -642,7 +668,7 @@ func parseRaw(r *Rule, source, terms string, later []string, macros map[string]*
 		top = append(top, e)
 	}
 	top = append(top, regexes...)
-	if len(top) < 2 && r.Node != AuditdNode {
+	if len(top) < 2 && r.Node != AuditdNode && r.Node != CloudTrailNode {
 		return nil, fmt.Errorf("a %s search must name a field besides its event code", source)
 	}
 	where = &And{Kids: top}
@@ -651,6 +677,11 @@ func parseRaw(r *Rule, source, terms string, later []string, macros map[string]*
 	}
 	if err := resolveRaw(where, r.Node); err != nil {
 		return nil, err
+	}
+	if r.Node == CloudTrailNode {
+		if where, err = cloudTrailSuccess(where); err != nil {
+			return nil, err
+		}
 	}
 	if err := fieldsOf(where, r.Node, xml); err != nil {
 		return nil, err
@@ -697,7 +728,7 @@ func fieldsOf(e Expr, node string, xml bool) error {
 	case *Not:
 		return fieldsOf(x.Kid, node, xml)
 	case *Cmp:
-		if x.Field == eventCode || node == AuditdNode && strings.HasPrefix(x.Field, "auditd_") {
+		if x.Field == eventCode || node == AuditdNode && strings.HasPrefix(x.Field, "auditd_") || node == CloudTrailNode {
 			return nil
 		}
 		for _, f := range RawFields[node] {

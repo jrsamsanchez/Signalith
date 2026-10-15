@@ -142,6 +142,14 @@ var Models = []Model{
 			{Name: "object_category", Type: "string", Description: "Kind of object", Examples: []string{"user", "group"}},
 			{Name: "user", Type: "string", Description: "Account that made the change"},
 			{Name: "dest", Type: "string", Description: "System where the change happened"},
+			{Name: "src", Type: "string", Description: "Where the change was made from, for a cloud API call", Examples: []string{"203.0.113.7"}},
+			{Name: "status", Type: "string", Description: "Whether the change went through", Examples: []string{"success", "failure"}},
+			{Name: "command", Type: "string", Description: "Cloud API call that made the change", Examples: []string{"CreateUser", "PutBucketPolicy"}},
+			{Name: "change_type", Type: "string", Description: "Kind of change", Examples: []string{"AWS API Call"}},
+			{Name: "user_agent", Type: "string", Description: "Program the change was made with, for a cloud API call", Examples: []string{"aws-cli/2.15.0"}},
+			{Name: "vendor_account", Type: "string", Description: "Cloud account the change was made in", Examples: []string{"123456789012"}},
+			{Name: "vendor_region", Type: "string", Description: "Cloud region the change was made in", Examples: []string{"us-east-1"}},
+			{Name: "reason", Type: "string", Description: "Why a change failed"},
 		},
 	},
 	{
@@ -471,6 +479,9 @@ var Models = []Model{
 		Description: "Events no parser recognized yet; still searchable by text",
 		Fields: []Field{
 			{Name: "app", Type: "string", Description: "Program that logged the event"},
+			{Name: "capture_loss_percent", Type: "number", Description: "Network sensor health (Zeek capture_loss): share of the traffic Zeek missed, in percent", Examples: []string{"0.12", "7.8"}},
+			{Name: "drop_percent", Type: "number", Description: "Network sensor health (Suricata stats): share of packets the capture dropped since Suricata started, in percent", Examples: []string{"0", "2.5"}},
+			{Name: "packets_received", Type: "number", Description: "Network sensor health (Suricata or Zeek stats): packets the capture received, since Suricata started or in Zeek's interval", Examples: []string{"18342211"}},
 		},
 	},
 }

@@ -1,0 +1,2 @@
+go test fuzz v1
+string("{\"kind\":\"signalith-sensor-status\",\"v\":1,\"interface\":{\"name\":{\"a\":1},\"rx_packets\":-5,\"drop_percent\":-1},\"disk\":{\"free_percent\":1e400}}")

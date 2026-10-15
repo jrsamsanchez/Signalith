@@ -438,7 +438,7 @@ kbd {
   display: inline-flex; align-items: center; gap: 6px; transition: background var(--t-fast), color var(--t-fast);
 }
 .seg button:hover { color: var(--text); }
-.seg button[aria-pressed="true"] { color: var(--text); background: var(--raised); box-shadow: 0 0 0 1px var(--ring), var(--shadow-xs); }
+.seg button[aria-pressed="true"], .seg button[aria-checked="true"] { color: var(--text); background: var(--raised); box-shadow: 0 0 0 1px var(--ring), var(--shadow-xs); }
 .seg button .icon { width: 14px; height: 14px; }
 .seg--sm { height: var(--h-sm); } .seg--sm button { height: 24px; padding: 0 8px; }
 
@@ -2454,6 +2454,9 @@ body:has(.page.active .inspector:not([hidden], .hidden)) #toast { bottom: 88px; 
 #page-data .agent-addr { display: grid; gap: var(--sp-2); padding-bottom: var(--sp-4); box-shadow: inset 0 -1px 0 var(--line-subtle); }
 #page-data .agent-addr__row { display: flex; align-items: center; gap: 12px; }
 #page-data .agent-addr__row .label { flex: none; }
+#page-data .agent-dest { display: grid; gap: var(--sp-2); }
+#page-data .agent-dest__seg { flex-wrap: wrap; height: auto; min-height: var(--h-md); }
+#page-data .agent-dest .alert { margin-top: 0; }
 #page-data #agent-server { max-width: 340px; font-family: var(--font-mono); }
 #page-data .agent-addr .alert { margin-top: var(--sp-1); overflow-wrap: anywhere; }
 #page-data .agent-addr .alert code { font-size: var(--fs-sm); color: var(--text); }
@@ -2511,6 +2514,25 @@ body:has(.page.active .inspector:not([hidden], .hidden)) #toast { bottom: 88px; 
 #page-data .agent-s { color: var(--code-cmd); font-weight: 500; }
 #page-data .agent-k { color: var(--text-2); }
 #page-data .agent-c { color: var(--text-3); }
+
+/* network sensor: two tabs, the new-sensor tab's needs, fields and line */
+#page-data .sensor-tabs { margin-top: -8px; }
+#page-data .sensor-tabs.hidden { display: none; }
+#page-data #agent-setup:not([data-sensor-tab="new"]) .sensor-new-only { display: none; }
+#page-data .agent-setup[data-sensor-tab="new"] :is(#agent-steps, #agent-file, #sensor-paths, #sensor-note) { display: none; }
+#page-data .sensor-needs { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px 20px; }
+#page-data .sensor-needs li { display: flex; align-items: flex-start; gap: 10px; min-width: 0; font-size: var(--fs-sm); line-height: 1.45; color: var(--text-2); }
+#page-data .sensor-needs li > .icon { flex: none; margin-top: 2px; color: var(--text-3); }
+#page-data .sensor-needs b { display: block; font-weight: 600; color: var(--text); }
+#page-data #sensor-new-fields { display: grid; gap: var(--sp-2); }
+#page-data #sensor-iface { max-width: 160px; }
+#page-data #sensor-networks { max-width: 420px; flex: 1 1 auto; min-width: 0; }
+#page-data #sensor-new { display: grid; gap: var(--sp-3); min-width: 0; }
+#page-data #sensor-new:empty { display: none; }
+#page-data .sensor-line__text { margin: 0; padding: 10px 12px; font: var(--fs-sm)/20px var(--font-mono); color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-all; box-shadow: inset 0 1px 0 var(--line-subtle); }
+#page-data .sensor-line__text:focus-visible { outline-offset: -2px; }
+#page-data #sensor-new .hint code { font-size: var(--fs-sm); }
+#page-data #sensor-new .hint a .icon { margin-left: 3px; vertical-align: -1px; }
 
 /* syslog: the host field carries the ports devices use as badges */
 #page-data #syslog-host { max-width: 260px; font-family: var(--font-mono); }
@@ -2894,6 +2916,7 @@ body:has(.page.active .inspector:not([hidden], .hidden)) #toast { bottom: 88px; 
 #page-servers .sv-table [data-col="version"] { width: 120px; }
 #page-servers .sv-server { display: flex; align-items: center; gap: 12px; min-width: 0; }
 #page-servers .sv-server__icon { width: 32px; height: 32px; flex: none; display: grid; place-items: center; border-radius: var(--r-md); color: var(--text-2); background: var(--hover); }
+#page-servers .sv-server__icon[data-role="scanner"] { color: var(--accent); background: var(--accent-soft); }
 #page-servers .sv-server__text { min-width: 0; }
 #page-servers .sv-server__name { display: flex; align-items: center; gap: 8px; min-width: 0; font-weight: 500; color: var(--text); }
 #page-servers .sv-server__name > :first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -4477,6 +4500,8 @@ dialog.modal.rp-dialog[open] { display: flex; flex-direction: column; max-height
 .ep-plat--sm .icon { width: 13px; height: 13px; }
 .ep-name { font-weight: 500; overflow-wrap: anywhere; }
 .ep-sub { font-size: var(--fs-xs); color: var(--text-3); }
+.ep-sensor { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; }
+.ep-sensor__warn { display: inline-flex; align-items: center; gap: 3px; color: var(--warning); }
 .ep-online { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; color: var(--text-2); }
 .ep-table td.ep-c-ver, .ep-table td.ep-c-addr { white-space: nowrap; }
 .ep-table td.ep-c-agent { white-space: nowrap; }
@@ -4872,6 +4897,11 @@ details[open] > summary .inv-exact__chev { transform: rotate(90deg); }
   .inv-dialog .modal__foot .spacer { display: none; }
 }
 
+/* Health: totals for every server behind one address */
+#page-health .hp-cluster .num { text-align: right; font-variant-numeric: tabular-nums; }
+#page-health .hp-cluster .hp-total th, #page-health .hp-cluster .hp-total td { font-weight: 600; box-shadow: inset 0 1px 0 var(--line-subtle); }
+#page-health .hp-cluster__table { min-width: 560px; }
+#page-health .hp-cluster .table-wrap { overflow-x: auto; }
 /* Servers page: the OpenSearch part of this server's side panel */
 .sv-os { display: grid; gap: 12px; }
 .sv-os__sum { color: var(--text-2); }
@@ -4966,6 +4996,32 @@ dialog.modal.sj-dialog[open] { display: flex; flex-direction: column; max-height
 .sj-step__body > p { margin: 0; line-height: 1.5; color: var(--text); overflow-wrap: anywhere; }
 .sj-step__body code { padding: 1px 5px; border-radius: var(--r-xs); font-size: var(--fs-sm); background: var(--sunken); box-shadow: inset 0 0 0 1px var(--line-subtle); }
 
+/* step 1: what is being added, as selectable cards with the real radio
+   drawn at the right (as on Add data). One column on a phone. */
+.sj-kinds { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.sj-kind { position: relative; display: flex; align-items: flex-start; gap: 10px; padding: 12px; border-radius: var(--r-lg); cursor: pointer;
+  background: var(--raised); box-shadow: inset 0 0 0 1px var(--line); transition: box-shadow var(--t-fast); }
+.sj-kind:hover { box-shadow: inset 0 0 0 1px var(--line-strong), var(--shadow-sm); }
+.sj-kind:has(input:checked) { box-shadow: inset 0 0 0 1.5px var(--accent), var(--shadow-sm); }
+.sj-kind:has(input:focus-visible) { box-shadow: 0 0 0 2px var(--sheet), 0 0 0 4px var(--accent); }
+.sj-kind:has(input:disabled) { opacity: .5; cursor: default; }
+.sj-kind__icon { width: 32px; height: 32px; flex: none; display: grid; place-items: center; border-radius: var(--r-md); color: var(--text-2); background: var(--hover);
+  transition: background var(--t-fast), color var(--t-fast); }
+.sj-kind:has(input:checked) .sj-kind__icon { color: var(--accent); background: var(--accent-soft-2); }
+.sj-kind__text { display: grid; gap: 2px; flex: 1; min-width: 0; }
+.sj-kind__text b { font-weight: 600; color: var(--text); line-height: 20px; padding-right: 26px; }
+.sj-kind__text span { font-size: var(--fs-sm); color: var(--text-3); line-height: 1.45; }
+.sj-kind input {
+  position: absolute; top: 14px; right: 12px; appearance: none; -webkit-appearance: none; width: 16px; height: 16px; margin: 0; border-radius: 50%; cursor: pointer;
+  background: var(--field); box-shadow: inset 0 0 0 1px var(--line-strong); transition: box-shadow var(--t-fast);
+}
+.sj-kind input:checked { background: var(--text-on-accent); box-shadow: inset 0 0 0 5px var(--accent-fill); }
+.sj-kind input:focus-visible { outline: none; }
+.sj-kind input:disabled { cursor: default; }
+@media (max-width: 640px) {
+  .sj-kinds { grid-template-columns: minmax(0, 1fr); }
+  .sj-kind__text span { font-size: var(--fs-sm); }
+}
 .sj-checks { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; }
 .sj-check { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 10px; line-height: 1.45; }
 .sj-check > .icon { margin-top: 2px; color: var(--success); }

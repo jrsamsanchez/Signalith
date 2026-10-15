@@ -282,6 +282,10 @@ const (
 type Identity struct {
 	ID   string
 	Name string
+	// Purpose is what an agent token was made for (PurposeLinux,
+	// PurposeSensor, ...), "" for a shared token or one made before
+	// tokens had a purpose.
+	Purpose string
 	// Legacy is true for a shared token from the configuration, and
 	// Public for the example token of an older docker-compose.yml.
 	Legacy, Public bool
@@ -309,7 +313,7 @@ func (r *Registry) Check(secret string) (Identity, Result) {
 		if d == nil || subtle.ConstantTimeCompare([]byte(h), []byte(d.Hash)) != 1 {
 			return Identity{}, Unknown
 		}
-		id := Identity{ID: d.ID, Name: d.Name}
+		id := Identity{ID: d.ID, Name: d.Name, Purpose: d.Purpose}
 		if !isActive(d) {
 			return id, Revoked
 		}

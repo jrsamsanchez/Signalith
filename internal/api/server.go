@@ -235,7 +235,8 @@ type Server struct {
 	caMu          sync.Mutex // one change of certificate authority at a time
 	blockedLog    logOnce    // blocked osquery hosts that tried to enroll
 	tokensOnce    sync.Once
-	tokenRate     tokenRate // agent token creation
+	tokenRate     tokenRate         // agent token creation
+	sensorCache   sensorHealthCache // the Health page's network sensor counts
 }
 
 // EventAge is what keeps the age of events the server accepts in step
@@ -295,6 +296,7 @@ func (s *Server) Handler() http.Handler {
 	// Agent configs hold a placeholder the page fills with a new agent
 	// token (POST /api/agent-tokens).
 	api.admin("GET /api/agents/config", s.handleAgentConfig)
+	api.admin("GET /api/agents/destinations", s.handleAgentDestinations)
 	// Adds the address agents or syslog devices send to to the HTTPS
 	// certificate.
 	api.admin("POST /api/tls/names", s.handleTLSName)
@@ -327,6 +329,7 @@ func (s *Server) Handler() http.Handler {
 	s.routeClusterUpgrade(api)
 	s.routeClusterOSIdentity(api)
 	s.routeClusterInstall(mux, api)
+	s.routeSensor(mux, api)
 	s.routeTokens(api)
 	s.routeAPITokens(api)
 	s.routeAgents(api)
@@ -460,7 +463,14 @@ func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 	res, err = s.Pipeline.IngestBody(withOrigin(r, ingest.IntakeAgent, who), tag, body)
 	if res != nil {
 		s.tokens().Note(who.ID, from.String(), res.Indexed+res.Duplicates)
-		s.noteAgent(r, ingest.IntakeAgent, tag, who, res.Indexed+res.Duplicates, nil)
+		// Only a token made for a sensor speaks for a sensor's health:
+		// any other agent token could otherwise keep a stopped sensor
+		// looking healthy, or add sensors that are not there.
+		sensor := res.Sensor
+		if who.Legacy || who.Purpose != agenttokens.PurposeSensor {
+			sensor = nil
+		}
+		s.noteAgent(r, ingest.IntakeAgent, tag, who, res.Indexed+res.Duplicates, nil, sensor)
 	}
 	if err != nil {
 		var bad *ingest.BodyError
@@ -924,6 +934,15 @@ func (s *Server) handleAgentConfig(w http.ResponseWriter, r *http.Request) {
 		}
 		server = o
 	}
+	otherServer := false
+	if to := v.Get("to"); to != "" && v.Get("server") == "" {
+		dest, other, err := s.agentDestination(to)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error(), "field": "to"})
+			return
+		}
+		server, otherServer = dest, other
+	}
 	u, err := agents.ParseServerURL(server)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, fmt.Errorf("server.public_url: %w", err))
@@ -939,7 +958,7 @@ func (s *Server) handleAgentConfig(w http.ResponseWriter, r *http.Request) {
 	// the certificate (POST api/tls/names) once it is entered, not while
 	// it is being typed. Here it only checks that it can.
 	addName := ""
-	if u.Scheme == "https" && certs != nil {
+	if u.Scheme == "https" && certs != nil && !otherServer {
 		if err := certs.CanCover(u.Hostname()); err != nil {
 			fieldError(err)
 			return
@@ -960,32 +979,18 @@ func (s *Server) handleAgentConfig(w http.ResponseWriter, r *http.Request) {
 		CollectorOS: v.Get("collector"),
 		Platform:    v.Get("platform"),
 		Version:     s.Version,
+		Recycle:     s.agentRecycleFor(),
 		// A network sensor: both tools unless the page says otherwise.
 		Zeek:              v.Get("zeek") != "false",
 		Suricata:          v.Get("suricata") != "false",
 		ZeekDir:           strings.TrimSpace(v.Get("zeek_dir")),
 		EVEPath:           strings.TrimSpace(v.Get("eve_path")),
 		SuricataProtocols: v.Get("suricata_protocols") == "true",
+		// AWS CloudTrail: the bucket and queue the Collector reads.
+		AWSBucket:   v.Get("aws_bucket"),
+		AWSQueueURL: v.Get("aws_queue"),
 	}
-	if certs != nil {
-		// While a new certificate authority is prepared, agents get both,
-		// so they keep sending after the switch.
-		opts.CA = string(certs.AgentCAPEM())
-		opts.CAUnknown = opts.CA == "" && !certs.PublicCA()
-		opts.OwnCA = certs.LocalCA()
-		if leaf := certs.Leaf(); leaf != nil {
-			opts.CertNames = leaf.DNSNames
-		}
-		// The pins name the CAs the agent gets: the current one, and the
-		// next one too while a switch is prepared, so the Endpoints page
-		// still counts the agent as fine after the switch.
-		if opts.CA != "" {
-			opts.CAPin = agentinv.Pin(certs.Fingerprint())
-			if next := certs.Next(); next != nil && certs.LocalCA() {
-				opts.NextCAPin = agentinv.Pin(next.Fingerprint)
-			}
-		}
-	}
+	agentTLS(&opts, certs)
 	a, err := agents.Generate(opts)
 	if errors.Is(err, agents.ErrNoNameToCheck) {
 		fieldError(err)
@@ -1008,6 +1013,31 @@ func (s *Server) handleAgentConfig(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// agentTLS fills in how an agent checks the server's certificate, made
+// by certs (nil when Signalith does not serve HTTPS itself).
+func agentTLS(opts *agents.Options, certs *tlsauto.Manager) {
+	if certs == nil {
+		return
+	}
+	// While a new certificate authority is prepared, agents get both,
+	// so they keep sending after the switch.
+	opts.CA = string(certs.AgentCAPEM())
+	opts.CAUnknown = opts.CA == "" && !certs.PublicCA()
+	opts.OwnCA = certs.LocalCA()
+	if leaf := certs.Leaf(); leaf != nil {
+		opts.CertNames = leaf.DNSNames
+	}
+	// The pins name the CAs the agent gets: the current one, and the
+	// next one too while a switch is prepared, so the Endpoints page
+	// still counts the agent as fine after the switch.
+	if opts.CA != "" {
+		opts.CAPin = agentinv.Pin(certs.Fingerprint())
+		if next := certs.Next(); next != nil && certs.LocalCA() {
+			opts.NextCAPin = agentinv.Pin(next.Fingerprint)
+		}
+	}
 }
 
 // agentConfig is the answer to GET api/agents/config. AddName is the
@@ -1060,6 +1090,10 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		if b := s.Cluster.Banners(); len(b) > 0 {
 			out["cluster_banners"] = b
 		}
+	}
+	s.addClusterHealth(r, out)
+	if sensors := s.sensorHealth(ctx); sensors != nil {
+		out["sensors"] = sensors
 	}
 	// Everyone signed in sees whether things work. Where they run (file
 	// paths, addresses, the OpenSearch URL and its errors) and the setup
@@ -1119,6 +1153,9 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	}
 	warnings = append(warnings, s.behindWarnings(time.Now())...)
 	warnings = append(warnings, s.notifyWarnings(ctx)...)
+	if s.Cluster != nil {
+		warnings = append(warnings, agentTrafficWarnings(s.Cluster.Status())...)
+	}
 	if len(warnings) > 0 {
 		out["warnings"] = warnings
 	}

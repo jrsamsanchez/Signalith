@@ -1,0 +1,4 @@
+{"rule": "b593fd50-7335-4682-a36c-4edcb68e4641", "cases": [
+  {"expect":true,"source":"synthesized","channel":"zeek:dns","event_id":"dns","data":{"dst_ip":"192.0.2.53","dst_port":"53","query":"mine.c3pool.com","src_ip":"192.0.2.10","src_port":"53124"}},
+  {"expect":false,"source":"synthesized","channel":"zeek:dns","event_id":"dns","data":{"dst_ip":"192.0.2.53","dst_port":"53","src_ip":"192.0.2.10","src_port":"53124"}}
+]}

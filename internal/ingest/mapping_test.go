@@ -162,9 +162,17 @@ func TestManyServersStopAtTheMappingGuard(t *testing.T) {
 	if namesBudget(20) != 100 {
 		t.Fatalf("share of 20 servers: %d", namesBudget(20))
 	}
+	// Each server checks the count, then writes, so all 20 may write one
+	// batch after a count just under mappingStop: 20 batches of 20 new
+	// names fit the 400 fields between mappingStop and the limit. Larger
+	// batches could pass it whenever the writes line up.
+	const per = 20
+	if len(ps)*per > totalFieldsLimit-mappingStop {
+		t.Fatalf("%d servers writing %d new names each pass the limit", len(ps), per)
+	}
 	var wg sync.WaitGroup
 	for i, p := range ps {
-		wg.Go(func() { newNames(t, p, fmt.Sprintf("s%02d", i), 4, 30) })
+		wg.Go(func() { newNames(t, p, fmt.Sprintf("s%02d", i), 6, per) })
 	}
 	wg.Wait()
 	// 20 shares of 100 and the known fields would pass the limit: the

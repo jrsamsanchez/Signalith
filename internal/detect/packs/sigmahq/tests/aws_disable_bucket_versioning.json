@@ -1,0 +1,6 @@
+{"rule": "a136ac98-b2bc-4189-a14d-f0d0388e57a7", "cases": [
+  {"expect":true,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"eventName":"PutBucketVersioning","eventSource":"s3.amazonaws.com","requestParameters":"Suspended"}},
+  {"expect":false,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"eventSource":"s3.amazonaws.com","requestParameters":"Suspended"}},
+  {"expect":false,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"eventName":"PutBucketVersioning","requestParameters":"Suspended"}},
+  {"expect":false,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"eventName":"PutBucketVersioning","eventSource":"s3.amazonaws.com"}}
+]}

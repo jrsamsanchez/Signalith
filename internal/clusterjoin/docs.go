@@ -35,6 +35,19 @@ const (
 // Platforms a token is made for (the dialog's tab); "" says none.
 var Platforms = []string{"linux", "windows", "docker"}
 
+// RoleScanner is the role of a server that joins as a scanner: it only
+// scans the networks picked for it and never runs the background jobs
+// (cluster.role). "" joins a cluster server.
+const RoleScanner = "scanner"
+
+// checkRole checks the role a token gives the server that uses it.
+func checkRole(r string) error {
+	if r != "" && r != RoleScanner {
+		return fmt.Errorf("the role is empty (a cluster server) or scanner, not %q", r)
+	}
+	return nil
+}
+
 // systemUser writes the changes Signalith makes by itself.
 const systemUser = "signalith"
 
@@ -60,6 +73,9 @@ type JoinTokenBody struct {
 	Platform string `json:"platform,omitempty"`
 	Note     string `json:"note,omitempty"`
 	NodeURL  string `json:"node_url,omitempty"`
+	// Role is the role the new server takes: "" a cluster server, or
+	// RoleScanner.
+	Role string `json:"role,omitempty"`
 	// CreatedBy is the user who made it, CreatedOn the server.
 	CreatedBy string `json:"created_by"`
 	CreatedOn string `json:"created_on"`
@@ -89,6 +105,9 @@ func validate(b *JoinTokenBody) error {
 		return errors.New("a join token is used once")
 	case b.UsedBy == nil && b.UsesLeft == 0:
 		return errors.New("a used join token does not say who used it")
+	}
+	if err := checkRole(b.Role); err != nil {
+		return err
 	}
 	return nil
 }
@@ -167,6 +186,8 @@ type IssueArgs struct {
 	Platform string
 	Note     string
 	NodeURL  string
+	// Role is the role the new server takes ("" or RoleScanner).
+	Role string
 }
 
 // Issued is a token Issue made. Token holds the secret: show it once and
@@ -202,6 +223,9 @@ func (t *Tokens) Issue(ctx context.Context, a IssueArgs) (*Issued, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := checkRole(a.Role); err != nil {
+		return nil, err
+	}
 	if a.NodeURL != "" {
 		if err := checkNodeURL(a.NodeURL); err != nil {
 			return nil, err
@@ -233,7 +257,7 @@ func (t *Tokens) Issue(ctx context.Context, a IssueArgs) (*Issued, error) {
 	}
 	exp := t.now().Add(ttl)
 	body := &JoinTokenBody{Secret: sealed, ExpiresAt: exp, UsesLeft: 1, Platform: a.Platform, Note: note,
-		NodeURL: a.NodeURL, CreatedBy: a.By, CreatedOn: a.Node}
+		NodeURL: a.NodeURL, Role: a.Role, CreatedBy: a.By, CreatedOn: a.Node}
 	if _, err := c.Create(ctx, a.By, id, body); err != nil {
 		clear(secret)
 		return nil, err
@@ -390,6 +414,7 @@ type TokenInfo struct {
 	Platform  string    `json:"platform,omitempty"`
 	Note      string    `json:"note,omitempty"`
 	NodeURL   string    `json:"node_url,omitempty"`
+	Role      string    `json:"role,omitempty"`
 	CreatedBy string    `json:"created_by"`
 	CreatedOn string    `json:"created_on"`
 	UsedBy    *UsedBy   `json:"used_by,omitempty"`
@@ -417,7 +442,7 @@ func (t *Tokens) List() []TokenInfo {
 		case !now.Before(b.ExpiresAt):
 			state = "expired"
 		}
-		out = append(out, TokenInfo{ID: it.Name, ExpiresAt: b.ExpiresAt, Platform: b.Platform, Note: b.Note, NodeURL: b.NodeURL,
+		out = append(out, TokenInfo{ID: it.Name, ExpiresAt: b.ExpiresAt, Platform: b.Platform, Note: b.Note, NodeURL: b.NodeURL, Role: b.Role,
 			CreatedBy: b.CreatedBy, CreatedOn: b.CreatedOn, UsedBy: b.UsedBy, State: state})
 	}
 	// Newest first (the one that expires last), the ids breaking ties.

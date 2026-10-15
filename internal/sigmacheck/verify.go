@@ -33,6 +33,9 @@ const (
 	// WebChannel is web server access log lines, whose data are the
 	// request's Web data model fields (url, http_method, status).
 	WebChannel = ingest.WebChannel
+	// CloudTrailChannel is AWS CloudTrail records, whose data are the
+	// record's fields by their dotted names (userIdentity.type).
+	CloudTrailChannel = ingest.CloudTrailChannel
 )
 
 // TestFile holds a shipped rule's test events.
@@ -66,6 +69,9 @@ var security4688 = map[string]string{
 // the event's channel has no Sigma view here.
 func (c Case) SigmaView() (map[string]string, bool) {
 	switch {
+	case strings.HasPrefix(c.Channel, ZeekChannelPrefix):
+		// A network event: Zeek's keys, or Sigma's taxonomy.
+		return maps.Clone(c.Data), true
 	case c.Channel == WebChannel:
 		// The request's fields by their W3C names; the path is the
 		// target's part before the query.
@@ -79,6 +85,9 @@ func (c Case) SigmaView() (map[string]string, bool) {
 			out["cs-uri-stem"], _, _ = strings.Cut(u, "?")
 		}
 		return out, true
+	case c.Channel == CloudTrailChannel:
+		// Sigma's CloudTrail rules name the record's own fields.
+		return maps.Clone(c.Data), true
 	case c.Channel == AuditdChannel:
 		// A recorded line's fields, or the fields a line is built from.
 		fields := c.Data
@@ -154,11 +163,17 @@ func (c Case) SigmaView() (map[string]string, bool) {
 // a journal record for Sysmon for Linux, an audit or access log line, else
 // a Windows event record.
 func (c Case) Record(host string, t time.Time) (string, map[string]any) {
+	if strings.HasPrefix(c.Channel, ZeekChannelPrefix) {
+		return c.zeekRecord(host, t)
+	}
 	if strings.EqualFold(c.Channel, LinuxSysmonChannel) {
 		return "linux.journal", ingest.LinuxSysmonRecord(c.EventID, host, t, c.Data)
 	}
 	if c.Channel == AuditdChannel {
 		return "linux.audit", ingest.AuditdRecordFor(ingest.AuditdLine(c.EventID, t, c.Data), host)
+	}
+	if c.Channel == CloudTrailChannel {
+		return ingest.CloudTrailTag, ingest.CloudTrailRecord(host, t, c.Data)
 	}
 	if c.Channel == WebChannel {
 		return ingest.WebTag, ingest.WebRecord(ingest.AccessLine(t, c.Data), "/var/log/nginx/access.log", host, t)
@@ -287,6 +302,9 @@ func init() {
 	// A web request's fields are the rule's own.
 	Bases["webserver"] = map[string]string{}
 	sysmonEvents["webserver"] = "access"
+	// So are a CloudTrail record's.
+	Bases["cloudtrail"] = map[string]string{}
+	sysmonEvents["cloudtrail"] = "AwsApiCall"
 	Bases["sysmon_event"] = map[string]string{}
 	Bases["security_named"] = map[string]string{}
 	Bases["sysmon_file_block"] = Bases["file_event"]
@@ -318,6 +336,8 @@ func Channel(category string) string {
 		return DefenderChannel
 	case "webserver":
 		return WebChannel
+	case "cloudtrail":
+		return CloudTrailChannel
 	}
 	for service, channel := range ingest.NamedChannelServices {
 		if category == ingest.NamedChannelCategory(service) {

@@ -26,8 +26,9 @@ func installServer(t *testing.T, exe string, change func(*Server)) *httptest.Ser
 	t.Helper()
 	ts, _ := newTestServerWith(t, func(s *Server) {
 		s.Install = &ClusterInstall{
-			Files: &clusterinstall.Files{Exe: exe, GOOS: "linux", GOARCH: "amd64"},
-			Gate:  &clusterinstall.Gate{PerHour: 2},
+			Files:      &clusterinstall.Files{Exe: exe, GOOS: "linux", GOARCH: "amd64"},
+			Gate:       &clusterinstall.Gate{PerHour: 2},
+			ScriptGate: &clusterinstall.Gate{PerHour: 4},
 		}
 		if change != nil {
 			change(s)
@@ -81,6 +82,13 @@ func TestInstallFilesArePublic(t *testing.T) {
 	fetch(t, ts.URL+"/api/cluster/join/binary?os=linux&arch=amd64")
 	if resp, _ := fetch(t, ts.URL+"/api/cluster/join/binary?os=linux&arch=amd64"); resp.StatusCode != http.StatusTooManyRequests {
 		t.Errorf("third download in an hour: %d", resp.StatusCode)
+	}
+	// The scripts have a limit of their own (PerHour: 4 here), shared by
+	// Add a server's and the sensor's: two were taken above.
+	fetch(t, ts.URL+"/api/sensor/install.sh")
+	fetch(t, ts.URL+"/api/cluster/join/install.sh")
+	if resp, _ := fetch(t, ts.URL+"/api/sensor/install.sh"); resp.StatusCode != http.StatusTooManyRequests || resp.Header.Get("Retry-After") == "" {
+		t.Errorf("fifth script download in an hour: %d", resp.StatusCode)
 	}
 }
 

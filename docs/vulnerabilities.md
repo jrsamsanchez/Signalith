@@ -195,8 +195,11 @@ A scan only sees the hosts and ports its server can reach. For a network behind 
 firewall, such as a plant floor, a lab or a guest network, run a Signalith server inside
 it and let that server scan it:
 
-1. Add a server inside the zone: **Settings > Servers > Add a server** (see
-   [servers.md](servers.md)). It only needs to reach OpenSearch and the network it scans.
+1. Add a scanner inside the zone: **Settings > Servers > Add a server**, and pick
+   **Vulnerability scanner** (see [Adding servers](multi-server.md#cluster-servers-and-scanners)).
+   It only needs to reach OpenSearch and the network it scans. A scanner never runs the
+   background jobs, and the Servers page and Settings > Scanners show it with a **Scanner**
+   badge.
 2. Install Nmap on it, as above.
 3. On **Vulnerabilities > Networks**, edit the network and pick that server under
    **Scanned by**. The list shows each server's state: ready, needs setup, or offline.

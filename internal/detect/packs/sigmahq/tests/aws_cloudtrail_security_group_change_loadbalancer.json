@@ -1,0 +1,5 @@
+{"rule": "7a4409fc-f8ca-45f6-8006-127d779eaad9", "cases": [
+  {"expect":true,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"eventName":"ApplySecurityGroupsToLoadBalancer","eventSource":"elasticloadbalancing.amazonaws.com"}},
+  {"expect":false,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"eventSource":"elasticloadbalancing.amazonaws.com"}},
+  {"expect":false,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"eventName":"ApplySecurityGroupsToLoadBalancer"}}
+]}

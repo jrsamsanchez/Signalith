@@ -1,0 +1,5 @@
+{"rule": "a607e1fe-74bf-4440-a3ec-b059b9103157", "cases": [
+  {"expect":true,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"eventName":"BatchUpdateFindings","eventSource":"securityhub.amazonaws.com"}},
+  {"expect":false,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"eventSource":"securityhub.amazonaws.com"}},
+  {"expect":false,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"eventName":"BatchUpdateFindings"}}
+]}

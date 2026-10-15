@@ -140,7 +140,7 @@ Each object gets one risk event in the Risk data model with `risk_object`,
 `risk_message` (the rendered title), `detection_id`, `mitre` and `mitre_tactic`,
 plus the row's entity fields. Search them with `datamodel=Risk`.
 
-Ten built-in detections are risk-only. Two **risk incident** detections (tagged
+Fourteen built-in detections are risk-only. Two **risk incident** detections (tagged
 `risk-incident`) read the Risk data model and raise findings:
 
 - `risk-threshold-exceeded`: total risk of 100 or more for one object in 24 hours.
@@ -238,16 +238,74 @@ To see everything a scan found on a host, search
 ## Network detections
 
 Network data from a [network sensor](network-sensor.md) (Zeek, Suricata) lights up
-these built-in detections:
+these built-in detections. Those marked *risk only* add risk to the host and raise no
+finding by themselves, like Splunk's anomaly detections: they are signals that are
+common on their own and matter when they add up (see [Risk](#risk)).
 
-| ID | Severity | Fires when |
-| --- | --- | --- |
-| `ids-alert-high` | high | A network IDS such as Suricata raised a high or critical alert (Zeek notices are medium, so they do not count). One finding per signature, source and destination an hour, with risk on both hosts. On by default |
-| `threat-activity` | high | An address, domain, URL or file hash the sensor saw is in your threat intel |
+| ID | Severity | Fires when | Default |
+| --- | --- | --- | --- |
+| `ids-alert-high` | high | A network IDS such as Suricata raised a high or critical alert (Zeek notices are medium, so they do not count). One finding per signature, source and destination an hour, with risk on both hosts | on |
+| `threat-activity` | high | An address, domain, URL or file hash the sensor saw is in your threat intel | on |
+| `network-dns-tunneling` | medium | One host looked up 10 or more different names with a label of 40 characters or more in 30 minutes (DNS tunnelling, DNS command and control); your DNS servers are left out (see below) | on |
+| `network-dns-nxdomain-burst` | medium | One host asked for 25 or more different names that do not exist in 15 minutes (a domain generation algorithm); your DNS servers are left out (see below) | on |
+| `network-internal-scan` | medium | An internal host's TCP connections to 20 or more internal hosts, or 50 or more ports, failed in 15 minutes (connections the sensor saw only one side of do not count) | on |
+| `network-zeek-scan-notice` | medium | Zeek's scan detection reported one of your own hosts in an address, port or random scan (`Scan::*` notices); scans from the internet are left out | on |
+| `network-http-executable-download` | medium | A host that is not on the internet side downloaded a program or script over plain HTTP, whole or in ranges (status 200 or 206), from outside (Windows Update's and Google's updater addresses are left out) | on |
+| `network-cleartext-credentials` | low | A password crossed the network in clear text: HTTP basic authentication, an FTP sign-in (not anonymous) or an answered Telnet connection that did not come from the internet | on |
+| `network-sensor-packet-loss` | low | Zeek missed more than 5% of the traffic, or Suricata dropped more than 5% of packets (counted once it has received a million) | on |
+| `network-beaconing` | low | Twelve or more short (a minute or less), small (5 KB or less out) connections from one host to one outside address and port in two hours | off, risk only |
+| `network-tls-untrusted-cert` | low | A TLS session from a host not on the internet side to an outside server with a self-signed or expired certificate | on, risk only |
+| `network-large-outbound-transfer` | medium | One host sent more than 1 GB to one outside address, in connections that started within six hours | on, risk only |
+| `network-sensor-shell-port` | medium | The sensor saw an answered connection from your network to the internet on a reverse shell port (4444, 1337, 31337, ...); the network side of `network-shell-port` | on, risk only |
+| `network-new-inbound-service` | medium | A host inside answered connections from the internet on a port it had not answered on in 30 days | off |
+
+Choices worth knowing:
+
+- **Beaconing** is approximated: the search language has no standard deviation, so
+  regular timing is not measured. Many separate small, short connections to one address
+  in two hours is the signal; update checks, telemetry, chat clients, CDNs and
+  certificate status checks look the same, and an ordinary workstation talks to several
+  of them all day. So it is off by default: run its search over a day, add exceptions on
+  `dest` for the destinations many of your hosts talk to, then turn it on (risk only,
+  10 points per destination).
+- **DNS servers are left out** of the two DNS detections. With the sensor on the
+  internet link, it sees your DNS servers (in an Active Directory network, the domain
+  controllers) ask upstream on behalf of every client, so their lookups add up the
+  whole organisation's mistyped names and browser probes, and hide which client asked.
+  A source whose asset category contains `dns` or `domain-controller` in your
+  asset list (**Assets & identities**) is not counted (the rules run `enrich src` and check
+  `src_category`), so give your resolvers one of those categories. To see which client
+  is behind a resolver's lookups, mirror the traffic between clients and the resolver
+  too, or collect the resolver's own query log.
+- **Large outbound transfers** are counted by when each connection started: Zeek writes
+  a connection only when it ends, stamped with its start time, so the rule looks back
+  six hours to catch a long upload. A single upload of more than about five and a half
+  hours is missed.
+- **New inbound service** uses its 30-day throttle as its memory of what was seen. The
+  first runs after you turn it on list every service already reachable from the
+  internet, which is why it is off by default; turn it on when you want that inventory.
+- **Direction** comes from the sensor (`direction=outbound` means from your network to
+  the internet; see [Data models](network-sensor.md#data-models)). Zeek says which ends
+  are local only in `conn.log`; for web requests, TLS sessions and DNS lookups the
+  direction comes from the addresses (private ranges count as local), so a client with
+  a public IPv6 or IPv4 address is `external`. The web and TLS detections therefore
+  count every direction except `inbound` and `internal`. If your internal addresses are
+  public addresses, tell Zeek about them in `Site::local_nets`, or the connection
+  detections see your traffic as `external`.
+- **Expired certificates** are known only from Zeek's `ssl/validate-certs` script (on by
+  default). In TLS 1.3 the certificate is encrypted, so a sensor sees it only in TLS 1.2
+  and older sessions.
+
+Every network detection is tagged with the compliance controls it is evidence for:
+`pci-dss:10.4.1` (security events reviewed), `pci-dss:11.5.1` (intrusions detected and
+alerted, PCI DSS 3.2.1's 11.4), `nist-800-53:SI-4` (system monitoring) and
+`cis-v8:13.3` (network intrusion detection); the packet loss detection has
+`pci-dss:10.7.2` (failures of security controls) and `cis-v8:13.6` instead of 13.3.
 
 `network-shell-port` and `network-remote-admin-port` are about the process that made
-a connection, which only host data (Sysmon) has, so they leave sensor data alone. If
-one IDS rule is noisy on your network, add an exception on its `signature_id`.
+a connection, which only host data (Sysmon) has, so they leave sensor data alone;
+`network-sensor-shell-port` covers the sensor's side. If one IDS rule is noisy on your
+network, add an exception on its `signature_id`.
 
 ## What a finding contains
 
@@ -269,12 +327,14 @@ Content packs are rule sets from other open source projects, shipped unchanged
 inside Signalith and converted when it starts. Every pack detection is **off** until
 an admin turns it on.
 
-**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,247 rules from
+**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,330 rules from
 [SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 2,080 Windows rules
 for these Sysmon, Security, PowerShell, System, Application, Code Integrity, Windows Firewall, BITS, AppX deployment, WMI activity, Remote Desktop session, shell, SMB client, exploit protection, DNS client, Task Scheduler, NTLM, LSA, CryptoAPI, device driver, packaged app, certificate, OpenSSH, DNS Server, IIS configuration and Defender log sources, 154 Linux rules (see
 [Linux endpoints](#linux-endpoints-sysmon-for-linux) and
-[the Linux audit log](#linux-audit-log-auditd)), and 13 web server rules (see
-[Web server access logs](#web-server-access-logs)):
+[the Linux audit log](#linux-audit-log-auditd)), 13 web server rules (see
+[Web server access logs](#web-server-access-logs)), 45 network rules (see
+[Network rules](#network-rules-zeek-dns-proxy-and-firewall)) and 38 AWS CloudTrail rules (see
+[AWS CloudTrail](#aws-cloudtrail)):
 
 | Sigma log source | Windows events | Data model |
 | --- | --- | --- |
@@ -290,6 +350,7 @@ for these Sysmon, Security, PowerShell, System, Application, Code Integrity, Win
 | `raw_access_thread` | Sysmon 9 (a drive read directly; `Device` is `device`) | Endpoint |
 | `ps_script` | PowerShell 4104 | Script |
 | `webserver` | Apache and Nginx access log lines (see [Web server access logs](#web-server-access-logs)) | Web |
+| `product: aws`, `service: cloudtrail` | AWS CloudTrail records (see [AWS CloudTrail](#aws-cloudtrail)) | Authentication, Change or Other |
 | `service: system` | System 7045 (service installed) | Change |
 | `service: system` | Other System events, by provider and event ID (see below) | Other |
 | `service: application` | Application events, by provider and event ID (see below) | Other |
@@ -445,6 +506,42 @@ The OpenTelemetry Collector reads the same files once its user is in the `adm` g
 as its setup steps say. On Red Hat-family systems `/var/log/httpd` is readable only by
 root, so collect it with the Fluent Bit agent there.
 
+### Network rules (Zeek, DNS, proxy and firewall)
+
+The SigmaHQ pack also holds rules for network data, which a
+[network sensor](network-sensor.md) fills with Zeek's logs:
+
+| Sigma log source | Events | Data model | Shipped |
+| --- | --- | --- | ---: |
+| `product: zeek`, `service: dns`, `http`, `x509` | Zeek's dns.log, http.log and x509.log, by Zeek's own field names (`query`, `qtype_name`, `certificate.serial`; `uri`, the path and query the client asked for, is `uri_path`) | Network_Resolution, Web, Certificates | 5 |
+| `product: zeek`, `service: smb_files`, `dce_rpc`, `kerberos`, `rdp` | Zeek logs without a mapping of their own, whose fields are kept as `zeek_<name>` (`name` is `zeek_name`); the connection is `src`, `src_port`, `dest`, `dest_port` | Other | 11 |
+| `category: dns` (`rules/network/dns`) | A DNS lookup that names who asked (`src`): Zeek's dns.log (`record_type` is `query_type`). A host's own lookups (Sysmon 22) are searched by the `dns_query` rules | Network_Resolution | 7 |
+| `category: proxy` (`rules/web/proxy_generic`) | A web request a client made: Zeek's http.log, not a web server's access log (`c-uri` is the whole address, `url`; `cs-host`, the site asked for, is `url_domain`; `c-useragent` is `http_user_agent`) | Web | 22 |
+| `category: firewall` (`rules/network/firewall`) | Any connection (`dst_port` is `dest_port`) | Network_Traffic | 0 |
+
+A Zeek rule searches only its own log (`sourcetype=zeek:dns`). A firewall rule
+searches every connection, from a sensor or a firewall, as Sigma means. A dns rule
+searches the lookups that name who asked (`src=*`), so its findings and risk are
+about that address. A proxy rule leaves out web servers' access logs
+(`NOT sourcetype IN (apache:access, nginx:access)`): those requests come in from the
+internet, and their `url` is only the path; the `webserver` rules cover them, and in
+those `cs-host` is the web server (`dest`). Their test events are Zeek log lines read by the real Zeek
+parser, so a rule ships only when it agrees with Sigma on events as a sensor logs
+them. 13 of the 58 network rules are left out: three are experimental; eight name
+a field Signalith does not keep (`c-uri-extension`, `cs-uri`, `cs-cookie`, a
+firewall's `action` of `accept` or `forward`, Zeek's DNS `Z` flag); one Zeek HTTP
+rule uses proxy field names; one searches free text. Network pack rules are titled by the
+address that sent the traffic (`from $src$`), find once a day per source and what it
+reached, and add risk to the source; a certificate rule (x509) is about the sensor
+that saw the certificate (`$host$`), which gets the risk.
+
+A few rules are converted faithfully but are unlikely to match real Zeek data, because
+Sigma's rule expects values Zeek writes differently: `zeek_smb_converted_win_atsvc_task`
+names the share as the literal `\\*\IPC$` (Zeek logs the server's name), and
+`zeek_smb_converted_win_transferring_files_with_credential_data` names whole file
+names such as `\sam`, where Zeek logs the file's path in the share. Like every pack
+rule they are off until you turn them on; test them on your own data first.
+
 ### PowerShell script blocks
 
 The `ps_script` rules read event 4104, which Windows PowerShell writes for each script
@@ -520,14 +617,30 @@ go test ./internal/detect/
 The generator keeps each rule's Signalith ID across runs, rewrites `rules/`,
 `tests/`, `pack.yaml` and `REPORT.md`, and only lists rules whose checks pass.
 
+### AWS CloudTrail
+
+The 38 CloudTrail rules read CloudTrail's own field names (`eventName`, `eventSource`,
+`userIdentity.type`, `requestParameters.*`), which Signalith keeps as CloudTrail writes
+them, and each searches `sourcetype=aws:cloudtrail`. Rules that compare one field with
+another, or that match text inside the call's parameters in a way no test record
+exercises, are left out. The Splunk pack adds 32 CloudTrail detections (see
+[Splunk Security Content](#splunk-security-content)). To send CloudTrail records, see [AWS CloudTrail](aws-cloudtrail.md).
+
 ### Splunk Security Content
 
-**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,024 Windows,
-Linux and web detections from Splunk's Threat Research Team
+**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,062 Windows,
+Linux, web, network and AWS CloudTrail detections from Splunk's Threat Research Team
 ([security_content](https://github.com/splunk/security_content)), pinned to one
 commit. They are the production TTP and anomaly rules that search the CIM
 `Endpoint.Processes`, `Endpoint.Filesystem`, `Endpoint.Registry` and `Web` nodes with
-`tstats`, plus the PowerShell script block rules. Signalith uses the same CIM field
+`tstats`, plus the PowerShell script block rules, and 5 of the 102 network detections
+(`detections/network`), the `tstats` searches that read any source of their data
+model, a [network sensor](network-sensor.md) among them: Cisco Smart Install port
+4786, ngrok tunnels, protocol on an unusual port and Tor over `Network_Traffic` or
+`Network_Resolution`, and the F5 iControl REST exploit over `Web`. The other network
+detections use lookups, `eval` or Cisco firewall searches, are experimental or hunting
+rules, or search Sysmon's DNS and network events, which is endpoint content
+(`REPORT.md`). Signalith uses the same CIM field
 names, so each rule's `where` clause becomes a Signalith filter field for field:
 
 | Splunk node | Windows events | Data model |
@@ -561,7 +674,10 @@ names, so each rule's `where` clause becomes a Signalith filter field for field:
 | `Endpoint.Processes` (Sysmon for Linux rules) | Sysmon for Linux 1 | Endpoint |
 | `Endpoint.Filesystem` (Sysmon for Linux rules) | Sysmon for Linux 11 and 23 | Filesystem |
 | `` `linux_auditd` `` (raw search) | Linux audit records, each field by auditd's name (see [the Linux audit log](#linux-audit-log-auditd)) | Other |
-| `Web` (`datamodel=Web` or `Web.Web`) | Apache and Nginx access log lines (see [Web server access logs](#web-server-access-logs)) | Web |
+| `Web` (`datamodel=Web` or `Web.Web`) | Apache and Nginx access log lines (see [Web server access logs](#web-server-access-logs)), and a network sensor's web requests (Zeek's http.log) | Web |
+| `` `cloudtrail` `` (raw search) | AWS CloudTrail records, by CloudTrail's field names and the CIM fields Splunk's AWS add-on gives them (`errorCode=success` reads a record with no error code; see [AWS CloudTrail](#aws-cloudtrail)) | Authentication, Change or Other |
+| `Network_Traffic` (network detections) | Any connection: Zeek's conn.log, a firewall, Sysmon 3 (`app` is the protocol, Zeek's `service`) | Network_Traffic |
+| `Network_Resolution` (network detections) | A DNS lookup that names who asked (`src`), as Zeek's dns.log does (`record_type` is `query_type`); a host's own lookups (Sysmon 22) name only the host and are left to the endpoint rules | Network_Resolution |
 
 The rule files and the macros they use ship unchanged; Signalith converts them when
 it starts, reading the search the way Splunk does: `*` is the only wildcard (`?` is

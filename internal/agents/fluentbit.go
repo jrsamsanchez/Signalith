@@ -34,7 +34,7 @@ const TokenPlaceholder = "@@AGENT_TOKEN@@"
 
 // Options select what an agent collects.
 type Options struct {
-	OS        string // "linux", "windows", "otel" (an OpenTelemetry Collector) or "osquery"
+	OS        string // "linux", "windows", "otel" (an OpenTelemetry Collector), "aws" (a Collector reading AWS CloudTrail) or "osquery"
 	ServerURL string // Signalith public URL
 	Token     string // agent token (TokenPlaceholder for the Add data page)
 	// LinuxSource is "file" (tail /var/log/auth.log and /var/log/secure),
@@ -80,6 +80,12 @@ type Options struct {
 	Version   string
 	CAPin     string
 	NextCAPin string
+	// Recycle, when above zero, closes each kept-alive connection to the
+	// server after that many batches (Fluent Bit's
+	// net.keepalive_max_recycle), so agents behind a load balancer spread
+	// over the servers again after one comes back. Set only with several
+	// servers; zero leaves the configuration as before.
+	Recycle int
 	// For LinuxSource "sensor": which tools run on the host and where
 	// they write (SensorZeekDir and SensorEVEPath when empty). At least
 	// one of Zeek and Suricata.
@@ -89,6 +95,57 @@ type Options struct {
 	// events when Zeek runs too (off: Zeek covers them, and sending both
 	// would count each connection twice).
 	SuricataProtocols bool
+	// For OS "aws" (an OpenTelemetry Collector that reads AWS CloudTrail):
+	// the S3 bucket CloudTrail writes to and the URL of the SQS queue S3
+	// tells about each new file. Examples stand in for them until given.
+	AWSBucket, AWSQueueURL string
+	// SensorLayout is how a sensor built by the sensor install script
+	// (deploy/sensor/install.sh) lays out its files: SensorPackages or
+	// SensorDocker. "" is a box the admin set up (Add data's "I already
+	// run Zeek or Suricata"), whose agent is Fluent Bit's own package.
+	// With a layout the script is the steps, so the Agent has none.
+	SensorLayout string
+	// Heartbeat also sends the sensor's status line, written every 5
+	// minutes by the install script's timer (tag SensorStatusTag).
+	Heartbeat bool
+}
+
+// Sensor layouts (Options.SensorLayout).
+const (
+	SensorPackages = "packages"
+	SensorDocker   = "docker"
+)
+
+// EnvToken is the agent token as the sensor install script's Fluent Bit
+// reads it: from its systemd EnvironmentFile (or Docker's env_file), so
+// the configuration itself holds no secret.
+const EnvToken = "${SIGNALITH_TOKEN}"
+
+// SensorStatusTag is the tag of a sensor's status line (its heartbeat).
+const SensorStatusTag = "sensor.status"
+
+// sensorFiles are where a sensor keeps what Fluent Bit reads and writes.
+type sensorFiles struct {
+	ca, storage, db, zeekDir, eve, status string
+}
+
+// layoutFiles returns the files of a sensor layout: the install script's
+// (packages), the same inside the Fluent Bit container (docker), or
+// Fluent Bit's own package's on a box the admin set up ("").
+func layoutFiles(layout string) sensorFiles {
+	switch layout {
+	case SensorPackages:
+		// Suricata writes in a folder of its own there, which only the
+		// script's log rotation handles (the package's own rotates
+		// /var/log/suricata/*.json).
+		return sensorFiles{ca: "/etc/signalith-sensor/ca.pem", storage: "/var/lib/signalith-sensor/agent/buffer", db: "/var/lib/signalith-sensor/agent",
+			zeekDir: SensorZeekDir, eve: "/var/log/suricata/signalith/eve.json", status: "/var/log/signalith-sensor/status.json"}
+	case SensorDocker:
+		return sensorFiles{ca: "/config/ca.pem", storage: "/buffer/signalith-buffer", db: "/buffer",
+			zeekDir: "/logs/zeek/current", eve: "/logs/suricata/eve.json", status: "/logs/status/status.json"}
+	}
+	return sensorFiles{ca: LinuxCAPath, storage: "/var/lib/fluent-bit/signalith-buffer", db: "/var/lib/fluent-bit",
+		zeekDir: SensorZeekDir, eve: SensorEVEPath, status: "/var/log/signalith-sensor/status.json"}
 }
 
 // SensorZeekDir and SensorEVEPath are where Zeek's packages and Suricata
@@ -140,11 +197,17 @@ func sensorOptions(o *Options) error {
 	if !o.Zeek && !o.Suricata {
 		return &FieldError{Field: "tools", Err: errors.New("pick Zeek, Suricata or both: the tools that run on the sensor")}
 	}
+	switch o.SensorLayout {
+	case "", SensorPackages, SensorDocker:
+	default:
+		return &FieldError{Field: "layout", Err: fmt.Errorf("unknown sensor layout %q; use packages or docker", o.SensorLayout)}
+	}
+	files := layoutFiles(o.SensorLayout)
 	if o.ZeekDir == "" {
-		o.ZeekDir = SensorZeekDir
+		o.ZeekDir = files.zeekDir
 	}
 	if o.EVEPath == "" {
-		o.EVEPath = SensorEVEPath
+		o.EVEPath = files.eve
 	}
 	o.ZeekDir = strings.TrimSuffix(o.ZeekDir, "/")
 	if o.Zeek {
@@ -341,7 +404,7 @@ func IsLoopback(u *url.URL) bool {
 // Generate returns a Fluent Bit config and install steps.
 func Generate(o Options) (*Agent, error) {
 	switch o.OS {
-	case "otel":
+	case "otel", "aws":
 		return generateOTel(o)
 	case "osquery":
 		return generateOsquery(o)
@@ -358,6 +421,11 @@ func Generate(o Options) (*Agent, error) {
 	}
 	if o.Token == "" {
 		return nil, errors.New("no agent token given")
+	}
+	// The one variable a configuration may read its token from; anything
+	// else with a $ would be read by Fluent Bit as another variable.
+	if strings.Contains(o.Token, "$") && o.Token != EnvToken || strings.ContainsFunc(o.Token, unicode.IsSpace) {
+		return nil, fmt.Errorf("the agent token must be a token or %s", EnvToken)
 	}
 	host := u.Hostname()
 	port := u.Port()
@@ -399,9 +467,13 @@ func Generate(o Options) (*Agent, error) {
 		} else {
 			b.WriteString("# Signalith agent for Linux, generated by Signalith.\n")
 		}
+		files := layoutFiles("")
+		if sensor {
+			files = layoutFiles(o.SensorLayout)
+		}
 		b.WriteString(section("SERVICE", [][2]string{
 			{"Flush", "5"}, {"Log_Level", "info"},
-			{"storage.path", "/var/lib/fluent-bit/signalith-buffer"},
+			{"storage.path", files.storage},
 			{"storage.sync", "normal"},
 		}))
 		if sensor {
@@ -410,11 +482,26 @@ func Generate(o Options) (*Agent, error) {
 			// current.conn.log), which tells Signalith the log type. Its
 			// own housekeeping logs say nothing about the network.
 			if o.Zeek {
-				b.WriteString(sensorInput("zeek.*", o.ZeekDir+"/*.log", "/var/lib/fluent-bit/signalith-zeek.db",
+				b.WriteString(sensorInput("zeek.*", o.ZeekDir+"/*.log", files.db+"/signalith-zeek.db",
 					[2]string{"Exclude_Path", "*loaded_scripts.log,*packet_filter.log,*stderr.log,*stdout.log,*print.log"}))
 			}
 			if o.Suricata {
-				b.WriteString(sensorInput("suricata.eve", o.EVEPath, "/var/lib/fluent-bit/signalith-suricata.db"))
+				b.WriteString(sensorInput("suricata.eve", o.EVEPath, files.db+"/signalith-suricata.db"))
+			}
+			// The status line every 5 minutes: one short line, so small
+			// buffers do.
+			if o.Heartbeat {
+				b.WriteString(section("INPUT", [][2]string{
+					{"Name", "tail"}, {"Tag", SensorStatusTag}, {"Path", files.status},
+					{"DB", files.db + "/signalith-status.db"},
+					{"Refresh_Interval", "10"},
+					{"Rotate_Wait", "30"},
+					{"Buffer_Chunk_Size", "16k"},
+					{"Buffer_Max_Size", "64k"},
+					{"Skip_Long_Lines", "On"},
+					{"Mem_Buf_Limit", "1MB"},
+					{"storage.type", "filesystem"},
+				}))
 			}
 			// With Zeek there too, Suricata sends only what Zeek does not
 			// log (alerts, anomalies, files, stats), so each connection is
@@ -426,9 +513,19 @@ func Generate(o Options) (*Agent, error) {
 				}))
 			}
 			// The lines carry no host name (Suricata's only when its
-			// sensor-name is set), so the sensor's is added.
-			for _, m := range []string{"zeek.*", "suricata.*"} {
-				if m == "zeek.*" && !o.Zeek || m == "suricata.*" && !o.Suricata {
+			// sensor-name is set), so the sensor's is added. A sensor the
+			// install script built is named by --name, which its unit (or
+			// container) gives Fluent Bit as HOSTNAME; elsewhere it is the
+			// computer's name.
+			for _, m := range []string{"zeek.*", "suricata.*", "sensor.*"} {
+				if m == "zeek.*" && !o.Zeek || m == "suricata.*" && !o.Suricata || m == "sensor.*" && !o.Heartbeat {
+					continue
+				}
+				if o.SensorLayout != "" {
+					b.WriteString(section("FILTER", [][2]string{
+						{"Name", "record_modifier"}, {"Match", m},
+						{"Record", "hostname ${HOSTNAME}"},
+					}))
 					continue
 				}
 				b.WriteString(section("FILTER", [][2]string{
@@ -603,7 +700,7 @@ func Generate(o Options) (*Agent, error) {
 			a.Steps = append(a.Steps, "Install Sysmon for Linux (open source, github.com/Sysinternals/SysmonForLinux) and start it with a configuration (sudo sysmon -accepteula -i config.xml), so process, network and file events are recorded")
 		}
 		if useCA {
-			a.CAPath = LinuxCAPath
+			a.CAPath = files.ca
 			a.Steps = append(a.Steps, caStep(a, "signalith-ca.pem"))
 		}
 		a.Steps = append(a.Steps, "Save the configuration below as fluent-bit.conf.")
@@ -634,6 +731,15 @@ func Generate(o Options) (*Agent, error) {
 			done)
 		if o.LinuxSource != "wazuh" && !sensor {
 			a.Steps = append(a.Steps, auditdStep)
+		}
+		// The install script writes the files and starts the agent
+		// itself.
+		if sensor && o.SensorLayout != "" {
+			a.ConfigPath = "/etc/signalith-sensor/fluent-bit.conf"
+			if o.SensorLayout == SensorDocker {
+				a.ConfigPath = "/etc/signalith-sensor/docker/fluent-bit.conf"
+			}
+			a.Steps, a.ConfigStep, a.CAStep = nil, 0, 0
 		}
 	case "windows":
 		a.ConfigPath = `C:\Program Files\fluent-bit\conf\fluent-bit.conf`
@@ -741,6 +847,9 @@ func Generate(o Options) (*Agent, error) {
 		if name := verifyName(host, o); name != "" {
 			out = append(out, [2]string{"tls.vhost", name}, [2]string{"tls.verify_hostname", "On"})
 		}
+	}
+	if o.Recycle > 0 {
+		out = append(out, [2]string{"net.keepalive_max_recycle", strconv.Itoa(o.Recycle)})
 	}
 	if sensor {
 		// A sensor sends far more than a host. While Signalith cannot be
