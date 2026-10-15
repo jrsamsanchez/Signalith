@@ -56,11 +56,14 @@ type Scanner struct {
 	async     bool
 }
 
+// heartbeat is how often a running scan is marked alive; a var so tests
+// can shorten it.
+var heartbeat = 15 * time.Second
+
 // Timings.
 const (
 	reportEvery   = 2 * time.Minute
 	reportRetry   = 30 * time.Second
-	heartbeat     = 15 * time.Second
 	staleAfter    = 3 * time.Minute
 	cveFresh      = 24 * time.Hour
 	cveStale      = 30 * 24 * time.Hour
@@ -427,8 +430,8 @@ func (s *Scanner) finish(ctx context.Context, sc *Scan, state, msg string) {
 	}
 }
 
-// requeue gives back a scan cut short because this server is stopping or
-// restarting in place: it goes back in the queue and runs again from the
+// requeue gives back a scan cut short because this server is stopping,
+// restarting in place or handing the jobs to another server: it goes back in the queue and runs again from the
 // start, here once the server is back or on whichever server takes the
 // network. A scan someone stopped is recorded as stopped.
 func (s *Scanner) requeue(parent context.Context, sc *Scan, t Target, stopped bool) {
@@ -441,9 +444,9 @@ func (s *Scanner) requeue(parent context.Context, sc *Scan, t Target, stopped bo
 	ok, err := s.Store.RequeueScan(ctx, sc.ID, s.NodeID)
 	switch {
 	case err != nil:
-		s.log().Warn("vulnerability scans: could not put back a scan cut short by a restart; it is marked interrupted shortly", "scan", sc.ID, "err", err)
+		s.log().Warn("vulnerability scans: could not put back a scan this server stopped running; it is marked interrupted shortly", "scan", sc.ID, "err", err)
 	case ok:
-		s.log().Info("vulnerability scan put back in the queue: this server is stopping or restarting", "network", t.Name, "scan", sc.ID)
+		s.log().Info("vulnerability scan put back in the queue: this server stopped running it", "network", t.Name, "scan", sc.ID)
 	}
 }
 
@@ -477,9 +480,11 @@ func (s *Scanner) runScan(parent context.Context, sc *Scan, t Target, set Settin
 	var pmu sync.Mutex
 	prog := Progress{}
 	stopped := false
+	handedOff := false // this server stopped running the jobs mid-scan
 	done := make(chan struct{})
+	beat := heartbeat
 	go func() {
-		tk := time.NewTicker(heartbeat)
+		tk := time.NewTicker(beat)
 		defer tk.Stop()
 		for {
 			select {
@@ -492,9 +497,10 @@ func (s *Scanner) runScan(parent context.Context, sc *Scan, t Target, set Settin
 			pmu.Unlock()
 			_ = s.Store.UpdateScan(ctx, sc.ID, map[string]any{"heartbeat": time.Now().UTC(), "progress": p})
 			cur, _, err := s.Store.Scan(ctx, sc.ID)
-			if (err == nil && cur.Stop) || errors.Is(err, ErrNotFound) || !keep() {
+			gone := (err == nil && cur.Stop) || errors.Is(err, ErrNotFound)
+			if gone || !keep() {
 				pmu.Lock()
-				stopped = true
+				stopped, handedOff = true, !gone
 				pmu.Unlock()
 				cancel()
 				return
@@ -541,13 +547,14 @@ func (s *Scanner) runScan(parent context.Context, sc *Scan, t Target, set Settin
 	}
 	close(done)
 	pmu.Lock()
-	wasStopped := stopped
+	wasStopped, wasHandedOff := stopped, handedOff
 	pmu.Unlock()
 	switch {
-	case parent.Err() != nil:
-		// This server is stopping, or restarting in place to take new
-		// settings: give the scan back so it is not lost.
-		s.requeue(parent, sc, t, wasStopped)
+	case parent.Err() != nil || wasHandedOff:
+		// This server is stopping, restarting in place to take new
+		// settings, or no longer runs the jobs for a network without a
+		// scanner of its own: give the scan back so it is not lost.
+		s.requeue(parent, sc, t, wasStopped && !wasHandedOff)
 		return
 	case wasStopped:
 		s.finish(parent, sc, StateStopped, "")
