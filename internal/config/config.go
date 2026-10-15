@@ -1222,6 +1222,12 @@ type Vulns struct {
 	OpenVASUsername string `yaml:"openvas_username,omitempty"`
 	OpenVASPassword string `yaml:"openvas_password,omitempty"`
 	OpenVASCAFile   string `yaml:"openvas_ca_file,omitempty"`
+	// KEVURL and EPSSURL are copies of CISA's Known Exploited
+	// Vulnerabilities catalog and FIRST's EPSS scores, in place of the
+	// public ones: an http(s) address, or for a network with no internet a
+	// file on the server that runs the background jobs.
+	KEVURL  string `yaml:"kev_url,omitempty"`
+	EPSSURL string `yaml:"epss_url,omitempty"`
 }
 
 // Intel configures threat intel feeds. Nothing is downloaded until a
@@ -2088,6 +2094,14 @@ func (c *Config) applyEnv() error {
 		c.Vulns.NVDURL = v
 		c.fromEnv("vulns.nvd_url", "SIGNALITH_NVD_URL")
 	}
+	if v := strings.TrimSpace(os.Getenv("SIGNALITH_KEV_URL")); v != "" {
+		c.Vulns.KEVURL = v
+		c.fromEnv("vulns.kev_url", "SIGNALITH_KEV_URL")
+	}
+	if v := strings.TrimSpace(os.Getenv("SIGNALITH_EPSS_URL")); v != "" {
+		c.Vulns.EPSSURL = v
+		c.fromEnv("vulns.epss_url", "SIGNALITH_EPSS_URL")
+	}
 	if v, from, err := envSecret("SIGNALITH_M365_CLIENT_SECRET"); err != nil {
 		return err
 	} else if len(v) > 0 {
@@ -2386,6 +2400,11 @@ func (c *Config) Validate() error {
 	if c.Vulns.NVDURL != "" {
 		if u, err := url.Parse(c.Vulns.NVDURL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 			p = append(p, fmt.Sprintf("vulns.nvd_url %q must be http(s)://host[:port][/path]", redact.URL(c.Vulns.NVDURL)))
+		}
+	}
+	for _, f := range []struct{ key, v string }{{"vulns.kev_url", c.Vulns.KEVURL}, {"vulns.epss_url", c.Vulns.EPSSURL}} {
+		if err := FeedSource(f.v); err != nil {
+			p = append(p, f.key+": "+err.Error())
 		}
 	}
 	p = append(p, c.Intel.problems()...)
@@ -2799,6 +2818,9 @@ const header = `# Signalith configuration.
 #                    format: lines, csv (with column:), stix or auto; see docs/threat-intel.md
 # vulns.nvd_api_key  optional free NVD API key for faster CVE lookups on the
 #                    Vulnerabilities page (SIGNALITH_NVD_API_KEY); see docs/vulnerabilities.md
+# vulns.kev_url, vulns.epss_url  copies of CISA's KEV catalog and FIRST's EPSS
+#                    scores (an address, or a file for a network with no internet);
+#                    empty uses the public ones; see docs/vulnerabilities.md
 # m365.tenant_id, m365.client_id, m365.client_secret  read Microsoft 365's audit
 #                    log with an Entra ID app (SIGNALITH_M365_CLIENT_SECRET); m365.cloud
 #                    is commercial, gcc, gcc_high or dod; see docs/microsoft-365.md

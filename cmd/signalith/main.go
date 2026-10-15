@@ -1393,9 +1393,12 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		openvas = &vulnscan.OpenVAS{Address: c.Vulns.OpenVASAddress, Username: c.Vulns.OpenVASUsername,
 			Password: c.Vulns.OpenVASPassword, CAFile: c.Vulns.OpenVASCAFile}
 	}
+	// CISA's KEV catalog and FIRST's EPSS scores rank what scans find.
+	exploits := vulnscan.NewExploitFeeds(vstore, c.Vulns.KEVURL, c.Vulns.EPSSURL)
+	exploits.Log = log
 	scanner := &vulnscan.Scanner{
-		Store: vstore, NVD: nvd, Events: pipeline, Server: sampleServer, NodeID: sampleNode, Log: log, OpenVAS: openvas,
-		Checker: &vulnscan.Checker{NVD: nvd, Docker: cluster.InContainer(), OpenVAS: openvas},
+		Store: vstore, NVD: nvd, Events: pipeline, Server: sampleServer, NodeID: sampleNode, Log: log, OpenVAS: openvas, Exploits: exploits,
+		Checker: &vulnscan.Checker{NVD: nvd, Docker: cluster.InContainer(), OpenVAS: openvas, Exploits: exploits},
 	}
 	if r.node != nil {
 		scanner.Leader, scanner.Paused = r.node.RunsJobs, r.node.WritesRefused

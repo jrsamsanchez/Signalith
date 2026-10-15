@@ -307,6 +307,7 @@
       bannerFor(d),
       el('div', { class: 'vs-kpis' },
         kpi('Known exploited', t.kev, 'kev', 'CVEs attackers are using now'),
+        kpi('Likely exploited', t.likely || 0, 'likely', 'EPSS ' + pct(likelyEPSS(d)) + ' or more'),
         kpi('Critical', t.critical, 'critical', 'CVSS 9.0 and up'),
         kpi('High', t.high, 'high', 'CVSS 7.0 to 8.9'),
         kpi('Medium and low', t.medium + t.low, 'medium', 'CVSS below 7.0'),
@@ -410,8 +411,39 @@
   function cveCounts(c) {
     const parts = [];
     if (c.kev) parts.push(el('span', { class: 'badge vs-kev', title: 'In CISA’s Known Exploited Vulnerabilities catalog' }, icon('flag'), c.kev + ' exploited'));
+    if (c.likely) parts.push(el('span', { class: 'badge vs-likely', title: 'Not yet known exploited, but EPSS gives a ' + pct(likelyEPSS(S.data)) + ' or higher chance of exploitation in the next 30 days' }, c.likely + ' likely'));
     for (const s of SEV) if (c[s]) parts.push(el('span', { class: 'vs-count', 'data-sev': s, title: c[s] + ' ' + s }, el('span', { class: 'vs-dot' }), c[s]));
     return parts.length ? el('span', { class: 'vs-counts' }, ...parts) : el('span', { class: 'vs-muted' }, '—');
+  }
+
+  // EPSS is a probability; show it the way FIRST does, as a percentage.
+  function pct(p) {
+    const n = p * 100;
+    return (n >= 10 || n === 0 ? n.toFixed(0) : n < 0.1 ? '<0.1' : n.toFixed(1)) + '%';
+  }
+
+  function likelyEPSS(d) {
+    return (d && d.exploits && d.exploits.likely_epss) || 0.1;
+  }
+
+  // Exploit intelligence on one vulnerability: the KEV flag, the
+  // ransomware note and the EPSS chance, for the row's summary line.
+  function exploitBadges(v) {
+    const out = [];
+    if (v.kev) {
+      out.push(el('span', { class: 'badge vs-kev', title: 'Added to CISA’s Known Exploited Vulnerabilities catalog on ' + v.kev_added + (v.kev_due ? '; US federal agencies must fix it by ' + v.kev_due : '') }, icon('flag'), 'Exploited'));
+      if (v.ransomware) out.push(el('span', { class: 'badge vs-kev', title: 'CISA knows of ransomware campaigns using this vulnerability' }, 'Ransomware'));
+    }
+    if (v.epss) {
+      const likely = !v.kev && v.epss >= likelyEPSS(S.data);
+      out.push(el('span', { class: 'badge vs-epss' + (likely ? ' vs-likely' : ''), title: 'FIRST EPSS: ' + pct(v.epss) + ' chance of exploitation in the next 30 days, higher than ' + pct(v.epss_percentile || 0) + ' of all CVEs' }, 'EPSS ' + pct(v.epss)));
+    }
+    return out;
+  }
+
+  function exploitNote(v) {
+    return [v.kev ? 'Known exploited since ' + v.kev_added : '', v.kev && v.kev_due ? 'CISA fix-by date ' + v.kev_due : '', v.kev && v.ransomware ? 'Used by ransomware' : '',
+      v.epss ? 'EPSS ' + pct(v.epss) + ' (' + Math.floor((v.epss_percentile || 0) * 100) + 'th percentile)' : ''].filter(Boolean);
   }
 
   function portsText(ports) {
@@ -482,13 +514,14 @@
             el('span', { class: 'vs-score num', title: 'Severity score from OpenVAS' }, v.cvss ? v.cvss.toFixed(1) : '–'),
             v.cve ? el('span', { class: 'vs-vuln__id mono' }, v.cve) : null,
             el('span', { class: 'badge badge--accent', title: 'Found by an OpenVAS test' }, 'OpenVAS'),
+            ...exploitBadges(v),
             el('span', { class: 'vs-vuln__desc' }, v.name || v.description || ''),
             icon('chevron-down', 'icon--sm chev')),
           el('div', { class: 'vs-vuln__more' },
             el('p', {}, el('b', {}, v.name || 'OpenVAS finding')),
             v.description ? el('p', {}, v.description) : null,
             v.solution ? el('p', {}, el('b', {}, 'How to fix it: '), v.solution) : null,
-            el('p', { class: 'vs-muted' }, ['OpenVAS test ' + v.oid, v.cves && v.cves.length > 1 ? 'Also ' + v.cves.filter((c) => c !== v.cve).join(', ') : ''].filter(Boolean).join(' · ')),
+            el('p', { class: 'vs-muted' }, ['OpenVAS test ' + v.oid, v.cves && v.cves.length > 1 ? 'Also ' + v.cves.filter((c) => c !== v.cve).join(', ') : '', ...exploitNote(v)].filter(Boolean).join(' · ')),
             nvd)));
     }
     return el('li', { class: 'vs-vuln' },
@@ -497,12 +530,12 @@
           el('span', { class: 'sev', 'data-sev': SEV.includes(v.severity) ? v.severity : 'low' }, cap(v.severity)),
           el('span', { class: 'vs-score num', title: 'CVSS ' + (v.cvss_version || '') + ' base score' }, v.cvss ? v.cvss.toFixed(1) : '–'),
           el('span', { class: 'vs-vuln__id mono' }, v.cve),
-          v.kev ? el('span', { class: 'badge vs-kev', title: 'Added to CISA’s Known Exploited Vulnerabilities catalog on ' + v.kev_added }, icon('flag'), 'Exploited') : null,
+          ...exploitBadges(v),
           el('span', { class: 'vs-vuln__desc' }, v.description || ''),
           icon('chevron-down', 'icon--sm chev')),
         el('div', { class: 'vs-vuln__more' },
           v.description ? el('p', {}, v.description) : null,
-          el('p', { class: 'vs-muted' }, [v.published ? 'Published ' + v.published : '', v.kev ? 'Known exploited since ' + v.kev_added : '', 'Matched ' + v.cpe].filter(Boolean).join(' · ')),
+          el('p', { class: 'vs-muted' }, [v.published ? 'Published ' + v.published : '', ...exploitNote(v), 'Matched ' + v.cpe].filter(Boolean).join(' · ')),
           el('p', {}, el('a', { href: 'https://nvd.nist.gov/vuln/detail/' + encodeURIComponent(v.cve), target: '_blank', rel: 'noopener noreferrer' }, 'Read about ' + v.cve + ' in the National Vulnerability Database', icon('external-link', 'icon--xs'))))));
   }
 
