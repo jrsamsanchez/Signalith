@@ -357,7 +357,11 @@ func TestLoadgenSizing(t *testing.T) {
 		if len(reports) > 0 {
 			opts.Baseline = reports[0]
 		}
-		rep := c.runWith(c.scenario("sizing-small.yaml"), opts, fmt.Sprintf("sizing-small-%d", len(names)))
+		s := c.scenario("sizing-small.yaml")
+		// Not verified event by event: reading millions back takes longer
+		// than the run (s1-small checks that).
+		s.OpenSearch = OpenSearch{}
+		rep := c.runWith(s, opts, fmt.Sprintf("sizing-small-%d", len(names)))
 		requirePass(t, rep)
 		reports = append(reports, rep)
 	}

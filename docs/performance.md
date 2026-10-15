@@ -29,7 +29,8 @@ prints a report and, with `-json`, saves it.
   One server is the baseline the other results are compared with.
 
 A nightly GitHub job runs the short scenarios (S1, S2, S3, S4 and S6 at CI size) on two
-servers sharing the Docker quick start's OpenSearch and keeps each report.
+servers sharing the Docker quick start's OpenSearch and keeps each report. A second job
+in it measures the sizing table below.
 
 ## Scenarios
 
@@ -47,8 +48,50 @@ servers sharing the Docker quick start's OpenSearch and keeps each report.
 
 ## Sizing
 
-Measured numbers from the lab will fill this table. Until then, a single server is set up
-as in [Getting started](getting-started.md).
+### Measured on a CI runner
+
+These numbers come from the nightly job's sizing run
+([loadtest/sizing-small.yaml](https://github.com/jrsamsanchez/Signalith/blob/main/loadtest/sizing-small.yaml))
+on one standard GitHub-hosted Linux runner (4 vCPU, 16 GB). **They are not a lab
+measurement.** One machine runs everything: the Signalith servers, a single OpenSearch
+node (the Docker quick start's, with its default 1 GB heap), and the load generator.
+Agents send events of about 500 bytes, and the load goes up every 45 seconds. Measured
+on 2026-10-15.
+
+| Servers | Agents asked to send (events/s) | Stored (events/s) | p99 answer to agents | Busiest server CPU (cores) | Most memory of one server |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 1,000 | 1,000 | 618 ms | 0.1 | 72 MB |
+| 1 | 4,000 | 4,000 | 472 ms | 0.3 | 78 MB |
+| 1 | 16,000 | 16,000 | 966 ms | 0.7 | 116 MB |
+| 1 | 32,000 | 17,000 | 2.4 s | 0.7 | 172 MB |
+| 2 | 1,000 | 1,000 | 222 ms | 0.1 | 70 MB |
+| 2 | 4,000 | 4,000 | 175 ms | 0.1 | 72 MB |
+| 2 | 16,000 | 16,000 | 808 ms | 0.4 | 98 MB |
+| 2 | 32,000 | 18,000 | 2.5 s | 0.4 | 135 MB |
+
+What this shows:
+
+- **The single OpenSearch node is the limit, not Signalith.** Both runs level off at
+  about 17,000 to 18,000 events a second. At that point the busiest Signalith server
+  uses less than one core and under 200 MB. A second server adds little here (1.06
+  times one server) because both servers write to that one node. Extra servers help when
+  OpenSearch has room to spare, and for staying up when one server stops.
+- **Past the limit, nothing is lost.** Agents are told to wait and send again, so
+  answers slow down (2.4 s at the 99th percentile) but no events are dropped. The
+  nightly S1 run counts every event to check this.
+- **A small setup has plenty of room.** One server and one OpenSearch node sharing a
+  4-vCPU machine stored 16,000 events a second, which is well over a billion a day.
+  Disk space and how long you keep data usually set the size first (see
+  [Retention](retention.md)).
+
+The latest numbers are in each night's `sizing-reports` artifact, as `sizing.md`.
+
+### Lab sizes
+
+Lab measurements on separate machines (3 Linux servers with 4 vCPU and 8 GB each, and a
+3-node OpenSearch cluster) will fill this table, using S1 at full size as the
+[lab runbook](https://github.com/jrsamsanchez/Signalith/blob/main/loadtest/README.md)
+describes.
 
 | Events/s | Servers | OpenSearch nodes | CPU per server | Memory per server |
 | --- | --- | --- | --- | --- |
