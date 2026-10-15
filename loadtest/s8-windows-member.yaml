@@ -1,0 +1,61 @@
+# S8, lab only: a Windows server in a cluster with a Linux one. Join the
+# Windows server first with the line from Servers > Add a server, point
+# both servers' archive folder at the same SMB share, and list each server
+# directly as a target (so each gets its share of agents and can be asked
+# whether it runs the jobs). Faults stop the server running the jobs
+# twice, so each server takes over once: the Windows one must run the
+# jobs for a while. The check asks the Windows server whether its own
+# computer account can write to the share. See README.md, "S8".
+name: s8-windows-member
+description: A Windows server joins, takes its share of ingest, takes over the jobs and archives to SMB.
+needs: [cluster, windows_server]
+targets: [https://siem-1.lab:8443, https://win-1.lab:8443]
+ca_file: lab/ca.pem
+credentials:
+  admin_file: lab/admin.txt
+  token_file: lab/token.txt
+opensearch:
+  url: https://os-1.lab:9200
+  ca: lab/opensearch-ca.pem
+  cert: lab/opensearch-client.pem
+  key: lab/opensearch-client-key.pem
+drain: 5m
+phases:
+  - {name: warm, for: 1m, agents: {n: 100, rate: 5000, switch_on_error: true}}
+  - {name: share, for: 5m, agents: {n: 100, rate: 10000, switch_on_error: true}}
+  - {name: failover, for: 6m, agents: {n: 100, rate: 10000, switch_on_error: true}}
+faults:
+  # Whichever server runs the jobs first, the other takes over at 7m and
+  # the first takes them back at 10m.
+  - at: 7m
+    kind: kill9
+    target: leader
+    for: 1m
+    cmd: "ssh {server} sudo systemctl kill -s KILL signalith"
+    undo: "ssh {server} sudo systemctl start signalith"
+    windows_cmd: "ssh {server} taskkill /F /IM signalith.exe"
+    windows_undo: "ssh {server} sc.exe start signalith"
+  - at: 10m
+    kind: kill9
+    target: leader
+    for: 1m
+    cmd: "ssh {server} sudo systemctl kill -s KILL signalith"
+    undo: "ssh {server} sudo systemctl start signalith"
+    windows_cmd: "ssh {server} taskkill /F /IM signalith.exe"
+    windows_undo: "ssh {server} sc.exe start signalith"
+checks:
+  # Runs on the Windows server as the service's account (LocalSystem, so
+  # the computer account on the network): writes, reads back and removes a
+  # file on the share. See README.md for the script.
+  - {name: smb_archive_as_computer_account, cmd: "ssh win-1.lab powershell -NoProfile -File C:\\loadtest\\check-archive-share.ps1"}
+criteria:
+  - {name: servers_ready, min: 2}
+  - {name: windows_servers_ready, min: 1}
+  - {name: ingest_share_min, phase: share, min: 0.5}
+  - {name: ingest_error_rate, phase: share, max: 0.01}
+  - {name: takeover_seconds, max: 45}
+  - {name: windows_led_seconds, min: 30}
+  - {name: leaders_at_once, max: 1}
+  - {name: events_lost, max: 0}
+  - {name: events_duplicated, max: 0}
+  - {name: check_failures, max: 0}

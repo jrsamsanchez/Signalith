@@ -1345,3 +1345,137 @@ func TestDrainAndResume(t *testing.T) {
 		t.Error("resuming moved the jobs back")
 	}
 }
+
+// yieldTiming is fast with a short hand-over to a newer version.
+func yieldTiming(every time.Duration) Timing {
+	t := fast
+	t.YieldSettle, t.YieldEvery = 400*time.Millisecond, every
+	return t
+}
+
+// versionNode starts an eligible node of version with timing; mod may
+// change its settings.
+func versionNode(t *testing.T, c *store.Client, version string, timing Timing, mod func(*Settings)) *Node {
+	t.Helper()
+	dir := t.TempDir()
+	l, err := OpenLocal(dir, testOptions("host-"+version+"-"+filepath.Base(dir)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := New(Options{Local: l, Version: version, Timing: timing})
+	ctx, cancel := context.WithCancel(context.Background())
+	n.Start(ctx)
+	s := Settings{Eligible: true, Listen: "0.0.0.0:8080"}
+	if mod != nil {
+		mod(&s)
+	}
+	n.Use(c, "s", s)
+	t.Cleanup(func() {
+		cancel()
+		n.Close()
+	})
+	return n
+}
+
+// stays fails when cond turns false within d.
+func stays(t *testing.T, d time.Duration, what string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(d)
+	for time.Now().Before(deadline) {
+		if !cond() {
+			t.Fatalf("%s stopped being true", what)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func TestHolderHandsTheJobsToANewerVersion(t *testing.T) {
+	fos := ostest.New(t)
+	c := store.New(store.Config{URL: fos.URL})
+	timing := yieldTiming(time.Minute)
+	a := versionNode(t, c, "1.5.0", timing, nil)
+	until(t, 5*time.Second, "a to run the jobs", a.RunsJobs)
+	b := versionNode(t, c, "1.6.0", timing, nil)
+	until(t, 10*time.Second, "the jobs to move to the newer b", func() bool { return b.RunsJobs() && !a.RunsJobs() })
+	lease := fos.Source("s_runtime", LeaseDocID)
+	if lease["holder"] != b.ID() {
+		t.Errorf("lease %v", lease)
+	}
+	until(t, 5*time.Second, "a's heartbeat to say it handed the jobs over", func() bool {
+		hb := heartbeatOf(t, fos, a.ID())
+		return hb.Upgrade != nil && hb.Upgrade.YieldedTo == b.Name() && hb.Upgrade.YieldedAt != nil
+	})
+	if hb := heartbeatOf(t, fos, b.ID()); !slices.Contains(hb.Features, FeatureYieldNewer) || hb.Upgrade != nil {
+		t.Errorf("b's heartbeat: features %v upgrade %+v", hb.Features, hb.Upgrade)
+	}
+	// The newer server never hands them back.
+	stays(t, 2*time.Second, "b running the jobs", func() bool { return b.RunsJobs() && !a.RunsJobs() })
+}
+
+func TestNoHandOverWhileBusy(t *testing.T) {
+	fos := ostest.New(t)
+	c := store.New(store.Config{URL: fos.URL})
+	timing := yieldTiming(time.Minute)
+	var busy atomic.Value
+	busy.Store("retention run")
+	a := versionNode(t, c, "1.5.0", timing, func(s *Settings) { s.Busy = func() string { return busy.Load().(string) } })
+	until(t, 5*time.Second, "a to run the jobs", a.RunsJobs)
+	until(t, 5*time.Second, "a's heartbeat to say it is busy", func() bool {
+		hb := heartbeatOf(t, fos, a.ID())
+		return hb.Upgrade != nil && hb.Upgrade.Busy == "retention run"
+	})
+	b := versionNode(t, c, "1.6.0", timing, nil)
+	waitReady(t, b, 5*time.Second)
+	stays(t, 2*time.Second, "a running the jobs while busy", func() bool { return a.RunsJobs() && !b.RunsJobs() })
+	busy.Store("")
+	until(t, 10*time.Second, "the jobs to move once a is no longer busy", b.RunsJobs)
+}
+
+func TestNoHandOverToAServerWhoseFilesDiffer(t *testing.T) {
+	fos := ostest.New(t)
+	c := store.New(store.Config{URL: fos.URL})
+	timing := yieldTiming(time.Minute)
+	files := func(r string) func(*Settings) {
+		return func(s *Settings) {
+			s.Fingerprints = func() Fingerprints { return Fingerprints{Retention: r, Feeds: "f", Detections: "d"} }
+		}
+	}
+	a := versionNode(t, c, "1.5.0", timing, files("r1"))
+	until(t, 5*time.Second, "a to run the jobs", a.RunsJobs)
+	b := versionNode(t, c, "1.6.0", timing, files("r2"))
+	until(t, 5*time.Second, "b to say it cannot take over", func() bool { return heartbeatOf(t, fos, b.ID()).CannotTakeOver != "" })
+	stays(t, 2*time.Second, "a running the jobs", func() bool { return a.RunsJobs() && !b.RunsJobs() })
+}
+
+func TestHandOverAtMostOncePerYieldEvery(t *testing.T) {
+	fos := ostest.New(t)
+	c := store.New(store.Config{URL: fos.URL})
+	timing := yieldTiming(time.Minute)
+	a := versionNode(t, c, "1.5.0", timing, nil)
+	until(t, 5*time.Second, "a to run the jobs", a.RunsJobs)
+	b := versionNode(t, c, "1.6.0", timing, nil)
+	until(t, 10*time.Second, "the jobs to move to b", func() bool { return b.RunsJobs() && !a.RunsJobs() })
+	// b stops; a takes the jobs back. A newer server that starts now is
+	// not handed them again within YieldEvery.
+	b.Stop()
+	until(t, 10*time.Second, "a to take the jobs back", a.RunsJobs)
+	b2 := versionNode(t, c, "1.6.0", timing, nil)
+	waitReady(t, b2, 5*time.Second)
+	stays(t, 2*time.Second, "a running the jobs", func() bool { return a.RunsJobs() && !b2.RunsJobs() })
+}
+
+func TestNoHandOverWhileFrozen(t *testing.T) {
+	fos := ostest.New(t)
+	c := store.New(store.Config{URL: fos.URL})
+	timing := yieldTiming(time.Minute)
+	timing.YieldSettle = 1500 * time.Millisecond
+	a := versionNode(t, c, "1.5.0", timing, nil)
+	until(t, 5*time.Second, "a to run the jobs", a.RunsJobs)
+	b := versionNode(t, c, "1.6.0", timing, nil)
+	waitReady(t, b, 5*time.Second)
+	fos.Block(true)
+	until(t, 5*time.Second, "a to hold the jobs in delete-only mode", a.Lease().Frozen)
+	stays(t, 2*time.Second, "a holding the jobs while frozen", func() bool { return a.Lease().Holding() && !b.RunsJobs() })
+	fos.Block(false)
+	until(t, 15*time.Second, "the jobs to move once OpenSearch takes writes", b.RunsJobs)
+}

@@ -794,7 +794,15 @@ All routes need a signed-in user (session cookie or HTTP Basic auth) except
 `POST /api/otlp/v1/logs` (which take an [agent token](agent-tokens.md), never a session or
 password), and osquery's routes under `/api/osquery/` (`POST /api/osquery/enroll` takes an agent
 token; the others take the node key a host got when it enrolled; see
-[endpoints.md](endpoints.md)). Requests from a browser that change something must come from the Signalith
+[endpoints.md](endpoints.md)), and the two routes a new server joins the cluster with,
+`GET /api/cluster/join/ca` (the certificate a join token names, which is public) and
+`POST /api/cluster/join` (which takes a proof that the new server holds a join token, never the
+token itself; it counts against the sign-in limits per token and per address, its body is at most
+16 KiB, and every refusal gets the same answer: `403`, with its own text only once the proof
+matched and the token was left unused, such as another version; `500` when the token was used but
+the join could not be finished, so the new server needs a new token), and `GET /api/cluster/join/install.sh`,
+`GET /api/cluster/join/install.ps1` and `GET /api/cluster/join/binary` (the install scripts and this server's
+program, which a new server downloads before it can sign in; see [multi-server.md](multi-server.md)). Requests from a browser that change something must come from the Signalith
 page itself.
 
 Every answer carries the server's version in `X-Signalith-Version`. Answers to
@@ -819,7 +827,9 @@ request, so a server that has not yet read that change reads it first (see
 `GET /api/risk`, `GET /api/risk/object`, `GET /api/intel`, `GET /api/intel/feeds`,
 `GET /api/intel/catalog`, `GET /api/intel/indicators`, `GET /api/intel/lookup`, `GET /api/posture`,
 `GET /api/dashboards`, `GET /api/dashboards/{id}`, `GET /api/dashboards/{id}/yaml`,
-`POST /api/dashboards/{id}/run`, `POST /api/panels/run`, and the web UI.
+`POST /api/dashboards/{id}/run`, `POST /api/panels/run`, `GET /api/cluster/features`
+(which features wait until every server runs a newer version; only admins see which servers
+they wait for), and the web UI.
 
 **Analyst:** `POST /api/ask`, `POST /api/findings`, `POST /api/findings/bulk`,
 `PATCH /api/findings/{id}`, `POST /api/cases`, `PATCH /api/cases/{id}`,
@@ -859,18 +869,24 @@ server, which can only read), `POST /api/tls/names`, `GET /api/security`,
 (the one-click [sample data](sample-data.md)), `PUT /api/endpoints/settings`,
 `DELETE /api/endpoints/{id}`, `GET /api/endpoints/blocked`, `DELETE /api/endpoints/blocked/{host}`,
 `POST /api/endpoints/queries`, `GET /api/endpoints/queries/{id}` (the [Endpoints page](endpoints.md)),
-`GET /api/vulns/setup`, `PUT /api/vulns/settings`, `POST /api/vulns/networks/{id}/scan`,
+`GET /api/vulns/setup`, `GET /api/vulns/scanners`, `PUT /api/vulns/settings`, `POST /api/vulns/networks/{id}/scan`,
 `POST /api/vulns/scans/{id}/stop` (setting up and running [vulnerability scans](vulnerabilities.md)),
-`GET /api/cluster` (the Servers page; see [servers.md](servers.md)), `POST /api/cluster/restart`
+`GET /api/cluster` (the Servers page; see [servers.md](servers.md)), `GET /api/cluster/opensearch` (its OpenSearch card; see [opensearch-failover.md](opensearch-failover.md)), `POST /api/cluster/restart`
 (restart servers one at a time to apply the shared settings), `GET /api/cluster/tls`,
 `POST /api/cluster/tls/choose` (the cluster's one certificate authority; see
-[servers.md](servers.md#one-certificate-authority)), `GET /api/cluster/opensearch-identity`
+[servers.md](servers.md#one-certificate-authority)), `GET /api/cluster/join/tokens`,
+`POST /api/cluster/tokens`, `DELETE /api/cluster/tokens/{id}` (join tokens that add a server to
+the cluster; a token is shown once, in the answer that makes it), `GET /api/cluster/pending`,
+`POST /api/cluster/servers/{id}/approve` (servers that wait to join, approved by their
+fingerprint), `GET /api/cluster/opensearch-identity`
 (who each server signs in to OpenSearch as; see
 [servers.md](servers.md#each-servers-own-opensearch-certificate)), `GET /api/cluster/lifecycle`,
 `POST /api/cluster/servers/{id}/drain`, `POST /api/cluster/servers/{id}/resume`,
 `DELETE /api/cluster/servers/{id}`, `POST /api/cluster/jobs/move`, `POST /api/cluster/rotate-key`
 (draining and removing servers, and rotating the cluster key; see
-[servers.md](servers.md#draining-and-removing-a-server)), `GET /api/requests/{id}`
+[servers.md](servers.md#draining-and-removing-a-server)), `GET /api/cluster/upgrade` (the upgrade checklist of the Servers
+page; see [servers.md](servers.md#upgrading-servers-you-set-up-by-hand)), `GET /api/cluster/join/prepare`,
+`GET /api/cluster/servers/{id}/check` (Add a server; see [multi-server.md](multi-server.md)), `GET /api/requests/{id}`
 (work asked of the server that runs the background jobs, such as a feed download or a retention
 run; see [servers.md](servers.md#shared-feeds-and-retention-policies)), every
 `/api/notify` route (the Notifications page; see [notifications.md](notifications.md)), every
@@ -884,7 +900,8 @@ run; see [servers.md](servers.md#shared-feeds-and-retention-policies)), every
 A route added without a role is admin-only, and a test fails until it gets one. That
 includes routes registered outside the role table, straight on the server's outer
 router: any `/api/` route there other than the public ones (sign-in, sign-out, agent
-ingest and the CA certificate, `GET /api/tls/ca.pem`) is admin-only.
+ingest, the CA certificate, `GET /api/tls/ca.pem`, the two join routes and the three install
+downloads) is admin-only.
 
 A refused request:
 

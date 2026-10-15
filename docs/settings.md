@@ -8,7 +8,9 @@ whether it applies at once or after a restart, which the page does for you.
 
 **Settings**, at the foot of the sidebar, opens this page. Tabs along its top
 lead to the other pages that set Signalith up: **Users** (with directory
-sign-in), **Notifications**, **Data retention**, **Security**, **Servers** and
+sign-in), **Notifications**, **Data retention**, **Security**, **Servers**,
+**Scanners** (which server scans which network; see
+[vulnerabilities.md](vulnerabilities.md#scanning-each-network-zone-from-inside-it)) and
 **Health**. Agent tokens are on **Add data**, threat intel feeds on **Threat
 intel**; the Settings page links to them too.
 
@@ -364,8 +366,9 @@ settings aren't loaded, it is too busy, or it took the request but didn't answer
 says what to do about each. **Test** for the
 AI assistant asks the model one fixed question ("failed logins in the last 24
 hours") and shows the query it wrote, or says what is wrong, such as an unknown
-model or a refused key. A result is marked out of date as soon as one of the
-settings it used changes.
+model, a refused key, or a model too slow for **Answer time limit** (a local model on a
+CPU without a GPU may need `15m` or more). A result is marked out of date as soon as one
+of the settings it used changes.
 
 The AI assistant's **Address** lists the usual addresses for the provider chosen:
 the provider's own service, and for OpenAI or compatible also Ollama, LM Studio and

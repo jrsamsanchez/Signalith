@@ -25,6 +25,12 @@ type runOptions struct {
 	// Keep leaves the accounts and the case made for the run.
 	Keep bool
 	Log  io.Writer
+	// Baseline is an earlier run's report that ingest_scaling compares
+	// with, normally the same scenario against one server.
+	Baseline *Report
+	// PIDs are the servers' process IDs by name, when they run on this
+	// machine, for server_cpu_cores and server_memory_mb (Linux).
+	PIDs map[string]int
 }
 
 // runner runs one scenario.
@@ -51,6 +57,9 @@ type runner struct {
 	fleet         *Fleet
 	phaseSecs     map[string]float64
 	opsPerSecond  map[string]float64
+	// endReady and endWindows are the servers, and the Windows servers,
+	// ready once the load was over.
+	endReady, endWindows *int
 }
 
 func newRunID() string {
@@ -113,6 +122,13 @@ func runScenario(ctx context.Context, s *Scenario, opts runOptions) (*Report, er
 			r.report.finish()
 			return r.report, nil
 		}
+		if n == "windows_server" {
+			if v, ok := r.anyView(ctx); !ok || len(v.windows()) == 0 {
+				r.report.Skipped = "needs a Windows server in the cluster; none is ready"
+				r.report.finish()
+				return r.report, nil
+			}
+		}
 	}
 	if s.OpenSearch.URL != "" {
 		if r.os, err = newOSReader(s.OpenSearch); err != nil {
@@ -139,15 +155,26 @@ var needSettings = map[string]string{
 // checkNeeds says why the scenario cannot run on these servers, or "".
 func (r *runner) checkNeeds(ctx context.Context) string {
 	for _, need := range r.s.Needs {
-		if need == "cluster" {
+		if need == "cluster" || need == "windows_server" {
 			continue // checked once the cluster is known
 		}
 		key, ok := needSettings[need]
-		if !ok {
+		if !ok && need != "rolling_upgrade" {
 			return fmt.Sprintf("needs %s, which this load generator cannot check for yet", need)
 		}
 		if len(r.admin) == 0 {
 			return fmt.Sprintf("needs %s; checking for it takes credentials.admin_file", need)
+		}
+		if need == "rolling_upgrade" {
+			// A version with rolling upgrades answers the upgrade check.
+			var v upgradeView
+			if err := r.admin[0].Do(ctx, http.MethodGet, "/api/cluster/upgrade", nil, &v); err != nil {
+				if statusOf(err) == http.StatusNotFound {
+					return "needs rolling_upgrade, which this server does not have (no GET /api/cluster/upgrade)"
+				}
+				return fmt.Sprintf("needs rolling_upgrade; the upgrade check did not answer: %v", err)
+			}
+			continue
 		}
 		var v settingsView
 		if err := r.admin[0].Do(ctx, http.MethodGet, "/api/settings", nil, &v); err != nil {
@@ -315,6 +342,12 @@ func (r *runner) phases(ctx context.Context) {
 		bgWG.Add(1)
 		go func() { defer bgWG.Done(); r.sampleLeaders(bg) }()
 	}
+	// Only when asked: the samples are OpenSearch requests too, and S3
+	// counts those.
+	if r.os != nil && r.s.wantsCriterion("opensearch_red_samples", "opensearch_unreachable_samples") {
+		bgWG.Add(1)
+		go func() { defer bgWG.Done(); r.sampleHealth(bg) }()
+	}
 	var faults []FaultResult
 	var faultWG sync.WaitGroup
 	if len(r.s.Faults) > 0 {
@@ -346,6 +379,8 @@ func (r *runner) phases(ctx context.Context) {
 	stopBG()
 	bgWG.Wait()
 	r.report.Faults = faults
+	r.endState(ctx)
+	r.runChecks(ctx)
 	if r.fleet != nil && r.os != nil && r.fleet.sent.Load() > 0 {
 		settle := r.s.Settle.D()
 		if settle <= 0 {
@@ -375,8 +410,10 @@ func (r *runner) phase(ctx context.Context, p Phase) {
 	pctx, cancel := context.WithTimeout(ctx, p.For.D())
 	defer cancel()
 	opsStart, opsErr := int64(0), error(nil)
+	var byIndexStart map[string]int64
 	if r.os != nil {
 		opsStart, opsErr = r.os.opsTotal(ctx)
+		byIndexStart, _ = r.os.opsByIndex(ctx)
 	}
 	start := time.Now()
 	var wg sync.WaitGroup
@@ -421,6 +458,10 @@ func (r *runner) phase(ctx context.Context, p Phase) {
 		cf := &CookieFlooder{rate: c.Rate, targets: r.s.Targets, tr: r.tr, m: r.m}
 		gen(cf.Run)
 	}
+	if len(r.opts.PIDs) > 0 {
+		ps := &procSampler{pids: r.opts.PIDs, m: r.m}
+		gen(func(ctx context.Context) { ps.phase(ctx, p.Name) })
+	}
 	<-pctx.Done()
 	wg.Wait()
 	secs := time.Since(start).Seconds()
@@ -431,6 +472,13 @@ func (r *runner) phase(ctx context.Context, p Phase) {
 			r.opsPerSecond[p.Name] = ops
 			r.m.Set(p.Name, "os_ops_per_second", ops)
 			r.m.Set(p.Name, "os_ops_per_server_per_second", ops/float64(max(len(r.servers), 1)))
+		}
+		if byIndexStart != nil && secs > 0 {
+			if end, err := r.os.opsByIndex(context.Background()); err == nil {
+				for name, n := range busiestIndices(byIndexStart, end, 5) {
+					r.m.Set(p.Name, "os_ops_per_second_"+name, float64(n)/secs)
+				}
+			}
 		}
 	} else if opsErr != nil {
 		r.report.Notes = append(r.report.Notes, "OpenSearch operation counts: "+opsErr.Error())
@@ -463,8 +511,36 @@ func (r *runner) evaluate() {
 	}
 	for _, c := range r.s.Criteria {
 		v, skip := r.measure(c)
+		if len(c.MinByServers) > 0 {
+			if lim, ok := c.MinByServers[r.serverCount()]; ok {
+				c.Min = &lim
+			}
+		}
 		r.report.Criteria = append(r.report.Criteria, judge(c, v, skip))
 	}
+}
+
+// serverCount is how many servers took part: those listed by the
+// cluster, or one.
+func (r *runner) serverCount() int {
+	return max(len(r.servers), 1)
+}
+
+// eventsPerSecond is the events the servers said they stored per second
+// in phase, or over every load phase when phase is empty.
+func eventsPerSecond(phases []PhaseReport, phase string) (float64, string) {
+	var events int64
+	var secs float64
+	for _, p := range phases {
+		if (phase == "" && p.Name != "drain") || p.Name == phase {
+			events += p.Counts["agent_events_stored"]
+			secs += p.Seconds
+		}
+	}
+	if secs == 0 || events == 0 {
+		return 0, "no events stored"
+	}
+	return float64(events) / secs, ""
 }
 
 func (r *runner) measure(c Criterion) (float64, string) {
@@ -575,6 +651,128 @@ func (r *runner) measure(c Criterion) (float64, string) {
 			return 0, "nothing measured"
 		}
 		return ms(h.Max()), ""
+	case "ingest_events_per_second":
+		if r.fleet == nil {
+			return 0, "no agents in the scenario"
+		}
+		return eventsPerSecond(r.report.Phases, ph)
+	case "ingest_scaling":
+		if r.fleet == nil {
+			return 0, "no agents in the scenario"
+		}
+		if r.opts.Baseline == nil {
+			return 0, "no baseline: run with -baseline <report.json> of the same scenario on one server"
+		}
+		now, skip := eventsPerSecond(r.report.Phases, ph)
+		if skip != "" {
+			return 0, skip
+		}
+		base, skip := eventsPerSecond(r.opts.Baseline.Phases, ph)
+		if skip != "" || base == 0 {
+			return 0, "the baseline report has no events for this phase"
+		}
+		return now / base, ""
+	case "ingest_share_min":
+		if r.fleet == nil {
+			return 0, "no agents in the scenario"
+		}
+		if len(r.s.Targets) < 2 {
+			return 0, "needs each server listed in targets"
+		}
+		var total, least int64 = 0, -1
+		for i := range r.s.Targets {
+			n := m.Count(ph, targetCounter(i))
+			total += n
+			if least < 0 || n < least {
+				least = n
+			}
+		}
+		if total == 0 {
+			return 0, "no events stored"
+		}
+		return float64(least) / float64(total) * float64(len(r.s.Targets)), ""
+	case "servers_ready", "windows_servers_ready":
+		if r.endReady == nil {
+			return 0, "needs admin credentials and GET /api/cluster"
+		}
+		if c.Name == "servers_ready" {
+			return float64(*r.endReady), ""
+		}
+		return float64(*r.endWindows), ""
+	case "windows_led_seconds":
+		if m.Count(ph, "leader_samples") == 0 {
+			return 0, "needs each server listed in targets, with admin credentials"
+		}
+		return float64(m.Count(ph, "windows_led_ms")) / 1000, ""
+	case "opensearch_red_samples", "opensearch_unreachable_samples":
+		if r.os == nil {
+			return 0, "the scenario names no OpenSearch"
+		}
+		if m.Count(ph, "opensearch_health_samples") == 0 {
+			return 0, "nothing measured"
+		}
+		return float64(m.Count(ph, c.Name)), ""
+	case "server_cpu_cores", "server_memory_mb":
+		if len(r.opts.PIDs) == 0 {
+			return 0, "needs the servers' process IDs (-pids), on Linux"
+		}
+		v, ok := m.Gauge(ph, c.Name)
+		if !ok {
+			return 0, "nothing measured"
+		}
+		return v, ""
+	case "servers_not_upgraded", "upgrade_server_seconds":
+		var upgrades []FaultResult
+		for _, f := range r.report.Faults {
+			if f.Kind == "upgrade" {
+				upgrades = append(upgrades, f)
+			}
+		}
+		if len(upgrades) == 0 {
+			return 0, "no upgrade fault"
+		}
+		if c.Name == "servers_not_upgraded" {
+			n := 0
+			for _, f := range upgrades {
+				if f.Skipped != "" {
+					return 0, "upgrade skipped: " + f.Skipped
+				}
+				n += len(f.ToUpgrade)
+				for _, st := range f.Upgrades {
+					if st.Error == "" {
+						n--
+					}
+				}
+			}
+			return float64(n), ""
+		}
+		v, ok := m.Gauge(ph, c.Name)
+		if !ok {
+			return 0, "no server was upgraded"
+		}
+		return v, ""
+	case "jobs_moves":
+		if m.Count(ph, "leader_samples") == 0 {
+			return 0, "needs each server listed in targets, with admin credentials"
+		}
+		return float64(m.Count(ph, c.Name)), ""
+	case "page_reloads_per_user":
+		if m.Count(ph, "user_requests") == 0 {
+			return 0, "no user requests"
+		}
+		v, _ := m.Gauge(ph, c.Name)
+		return v, ""
+	case "check_failures":
+		if len(r.report.Checks) == 0 {
+			return 0, "no checks in the scenario"
+		}
+		n := 0
+		for _, ch := range r.report.Checks {
+			if !ch.Pass {
+				n++
+			}
+		}
+		return float64(n), ""
 	}
 	return 0, "not measured by this version"
 }

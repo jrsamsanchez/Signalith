@@ -1,0 +1,42 @@
+# Sizing, CI size: agents send more every 45 seconds, from 1,000 to 32,000
+# events a second, so the report shows how many events a second the
+# servers store, how quickly they answer, and how much CPU and memory the
+# busiest server uses at each step. The nightly job runs it against one
+# server, then two (compared with the first by ingest_scaling), on one
+# GitHub runner shared with OpenSearch and the load generator; the numbers
+# in docs/performance.md come from it. Events are padded to about 500
+# bytes, near a typical Windows or Linux log line after parsing.
+name: sizing-small
+description: Agents from 1k to 32k events/s; stored rate, answer times, CPU and memory per step.
+targets: [https://localhost:8441, https://localhost:8442]
+ca_files: [loadtest/compose/out/siem-a-ca.pem, loadtest/compose/out/siem-b-ca.pem]
+credentials:
+  admin_file: loadtest/compose/out/admin.txt
+  token_file: loadtest/compose/out/token.txt
+drain: 3m
+phases:
+  - {name: 1k, for: 45s, agents: {n: 50, rate: 1000, event_bytes: 500}}
+  - {name: 2k, for: 45s, agents: {n: 50, rate: 2000, event_bytes: 500}}
+  - {name: 4k, for: 45s, agents: {n: 50, rate: 4000, event_bytes: 500}}
+  - {name: 8k, for: 45s, agents: {n: 50, rate: 8000, event_bytes: 500}}
+  - {name: 16k, for: 45s, agents: {n: 50, rate: 16000, event_bytes: 500}}
+  - {name: 32k, for: 45s, agents: {n: 50, rate: 32000, event_bytes: 500}}
+# Counting millions of stored events one by one takes longer than the
+# run, so this scenario does not verify them; s1-small does, at a size it
+# can count.
+criteria:
+  - {name: ingest_p99_ms, phase: 1k, max: 2000}
+  - {name: ingest_events_per_second, phase: 1k}
+  - {name: ingest_events_per_second, phase: 2k}
+  - {name: ingest_events_per_second, phase: 4k}
+  - {name: ingest_events_per_second, phase: 8k}
+  - {name: ingest_events_per_second, phase: 16k}
+  - {name: ingest_events_per_second, phase: 32k}
+  - {name: ingest_p99_ms, phase: 4k}
+  - {name: ingest_p99_ms, phase: 8k}
+  - {name: ingest_p99_ms, phase: 16k}
+  - {name: ingest_p99_ms, phase: 32k}
+  - {name: ingest_scaling, phase: 32k}
+  - {name: server_cpu_cores, phase: 32k}
+  - {name: server_memory_mb}
+  - {name: generator_lag_ms}

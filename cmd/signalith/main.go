@@ -87,7 +87,9 @@ Usage:
   signalith secrets   status|encrypt|set|rotate-master [-c file] ...  the master key and stored passwords
   signalith content   status|install|remove [-c file] ...  content pack updates (newer tested rules)
   signalith security  [-c file] [-json]   print the security report (exit 2 when something is at risk)
-  signalith cluster   status|found|export|import|export-key|import-key|reset-key|accept-restore [-c file] ...  the settings the servers share in OpenSearch
+  signalith cluster   status|found|export|import|export-key|import-key|reset-key|accept-restore|token|approve [-c file] ...  the settings the servers share in OpenSearch
+  signalith join      '<token>' [-c file] [--name] [--listen] [--node-url] [--copy-syslog] [--no-start] [--merge] [--yes]   add this server to a cluster
+  signalith opensearch-check <url> [--ca file] [--cert file --key file] [--user u]   check OpenSearch is ready for several servers
   signalith service   install|uninstall|start|stop     manage the Windows service
   signalith opensearch-certs [-ca-dir DIR] -node NAME [-san ...] [-peer ...] -out DIR   certificates to secure your own OpenSearch
   signalith bootstrap-docker [-opensearch-name NAME] [-nodes N] [-export-ca-key] [-apply-security] [-new-ca]   prepare the Docker quick start (its setup service runs this)
@@ -163,6 +165,12 @@ func main() {
 		err = cmdSecurity(args)
 	case "cluster":
 		err = cmdCluster(args)
+	case "join":
+		os.Exit(runJoinCommand(args))
+	case "opensearch-check":
+		err = cmdOpenSearchCheck(args)
+	case "tcp-forward":
+		err = cmdTCPForward(args)
 	case "version", "-v", "--version":
 		fmt.Println("signalith", version)
 	case "help", "-h", "--help":
@@ -772,8 +780,7 @@ func cmdQuery(args []string) error {
 }
 
 func newAssistant(c *config.Config) *assistant.Client {
-	a := c.Assistant
-	return assistant.New(a.Provider, a.URL, a.Model, a.APIKey)
+	return c.AssistantClient()
 }
 
 // cmdAsk prints the query for a plain-English question, with how each
@@ -912,6 +919,11 @@ func serve(ctx context.Context, path string, log *slog.Logger) error {
 	// GOTRACEBACK set in the environment, and on Linux hardenProcess
 	// keeps even GOTRACEBACK=crash from writing a core file.
 	debug.SetTraceback("single")
+	// A new server started with SIGNALITH_JOIN (Docker) joins its cluster
+	// first, which writes the settings and keys loaded next.
+	if err := joinFromEnv(path, log); err != nil {
+		return err
+	}
 	c, err := loadConfig(path, log)
 	if err != nil {
 		return err
@@ -1212,6 +1224,8 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		n := people.Count()
 		log.Info("users loaded from the shared settings", "local", n[users.SourceLocal], "directory", n[users.SourceDirectory])
 	} else {
+		// The sessions are kept here again.
+		r.sessions.Forward(nil)
 		// Lockouts other servers reported while the users were shared no
 		// longer count.
 		r.limiter.External(nil)
@@ -1243,7 +1257,9 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	estore := endpoint.NewStore(cl, c.OpenSearch.IndexPrefix)
 	in.jobs.Go(func() { estore.Run(ctx, 30*time.Second) })
 	// Network scans for vulnerabilities, set up on the Vulnerabilities
-	// page. The server that runs the background jobs runs them.
+	// page. Every server runs the scans of the networks that name it as
+	// their scanner; the server that runs the background jobs runs the
+	// rest.
 	vstore := vulnscan.NewStore(cl, c.OpenSearch.IndexPrefix)
 	nvd := vulnscan.NewNVD(c.NVDURL(), c.Vulns.NVDAPIKey)
 	in.jobs.Go(func() { feedFoundAssets(ctx, estore, vstore, lists, log) })
@@ -1360,9 +1376,19 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		lcancel()
 	}
 	in.jobs.Go(func() { tokens.Run(ctx) })
+	// OpenVAS, optional, runs the deeper scans of this server's networks
+	// that ask for them.
+	var openvas *vulnscan.OpenVAS
+	if c.Vulns.OpenVASAddress != "" {
+		openvas = &vulnscan.OpenVAS{Address: c.Vulns.OpenVASAddress, Username: c.Vulns.OpenVASUsername,
+			Password: c.Vulns.OpenVASPassword, CAFile: c.Vulns.OpenVASCAFile}
+	}
 	scanner := &vulnscan.Scanner{
-		Store: vstore, NVD: nvd, Events: pipeline, Server: sampleServer, Log: log,
-		Checker: &vulnscan.Checker{NVD: nvd, Docker: cluster.InContainer()},
+		Store: vstore, NVD: nvd, Events: pipeline, Server: sampleServer, NodeID: sampleNode, Log: log, OpenVAS: openvas,
+		Checker: &vulnscan.Checker{NVD: nvd, Docker: cluster.InContainer(), OpenVAS: openvas},
+	}
+	if r.node != nil {
+		scanner.Leader, scanner.Paused = r.node.RunsJobs, r.node.WritesRefused
 	}
 	// The agents that send events, for the Endpoints page: counted here,
 	// written once a minute to the runtime index next to the agent
@@ -1423,6 +1449,8 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		Version:    version,
 	}
 	srv.KnownBrowsers = r.browsers
+	srv.Join = r.sharedJoin(c, certs)
+	wireFeatures(srv, r.shared)
 	if parts != nil {
 		srv.SessionStore, srv.KnownBrowsers, srv.SharedUsers = parts.sessions, parts.browsers, parts.api(c)
 		if rt := r.shared; rt != nil {
@@ -1501,6 +1529,16 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			return false
 		}
 	}
+	// Vulnerability scans run on every server, not as a background job:
+	// each runs those of the networks it scans (see vulnscan.Scanner).
+	// Networks can be added on the page at any time, so the scanner runs
+	// even with none yet.
+	in.jobs.Go(func() {
+		if !ready(ctx) || !vulnsOK {
+			return
+		}
+		scanner.Run(ctx)
+	})
 	// The background jobs run only while this server holds the job lease:
 	// of the servers that share one OpenSearch, one runs them.
 	in.jobsList = []cluster.Job{
@@ -1553,15 +1591,6 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			log.Info("playbooks will run for new findings that match them", "file", c.PlaybooksFile())
 			pbRunner.Run(ctx)
 		}},
-		{Name: "vulnerability scans", Run: func(ctx context.Context) {
-			if !ready(ctx) || !vulnsOK {
-				return
-			}
-			// Networks can be added on the page at any time, so the
-			// scanner runs even with none yet.
-			log.Info("vulnerability scans will run on their schedules")
-			scanner.Run(ctx)
-		}},
 		// Retention keeps running while OpenSearch refuses writes (its
 		// disk is full): its disk guard is what frees space.
 		{Name: "retention", Emergency: true, Run: func(ctx context.Context) {
@@ -1572,6 +1601,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	if r.shared != nil {
 		in.jobsList = append(in.jobsList, requestsJob(r.shared, contentHandlers(feeds, ret, r.auditHandlers(ret), r.lifecycleLeaderHandlers())))
 		in.jobsList = append(in.jobsList, r.auditJobs(c, cl, ret)...)
+		in.jobsList = append(in.jobsList, r.joinJobs()...)
 	}
 	if parts != nil {
 		// Signed-in directory users are checked again by this one server
@@ -1606,9 +1636,9 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		// lost the lease cannot write over a newer one's, and slots are
 		// worked out on OpenSearch's clock, which every server shares.
 		sched.Epoch, sched.NodeID, sched.ClusterNow = r.node.Lease().Epoch, r.node.ID(), r.node.ClusterNow
-		scanner.Allowed = r.node.RunsJobs
 		srv.Cluster = r.node
 		srv.NodeURLChanged = func(c *config.Config) { r.node.SetNodeURL(nodeURL(c)) }
+		wireUpgrade(srv, r.node, r.shared, cl, c.OpenSearch.IndexPrefix)
 		if r.shared != nil {
 			srv.Cluster = sharedCluster{Node: r.node, rt: r.shared}
 			srv.Shared = sharedAPI{rt: r.shared, on: sharedOn}
@@ -1632,6 +1662,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		}
 		in.node = r.node
 	}
+	srv.Install = clusterInstall()
 	tokenSrv.Store(srv)
 	in.srv, in.handler = srv, srv.Handler()
 	r.srv.Store(srv)
@@ -1660,6 +1691,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			Indexed:    pipeline.LastIndexed,
 			TLS:        tlsStatus,
 			OSIdentity: osIdentity,
+			Busy:       jobsBusy(ret, r.shared),
 		}
 		if rt := r.shared; rt != nil {
 			settings.Shared = func() cluster.SharedStatus { return sharedStatus(rt, r.sharedContent) }
@@ -1885,7 +1917,7 @@ func openNode(c *config.Config, log *slog.Logger) (*cluster.Node, *slog.Logger, 
 		log.Warn(w)
 	}
 	log.Info("this server's identity", "node_id", local.Identity.NodeID, "state_dir", local.Dir)
-	node := cluster.New(cluster.Options{Local: local, Version: version, Deployment: deployment(), Log: log})
+	node := cluster.New(cluster.Options{Local: local, Version: version, Deployment: deployment(), Log: log, Timing: nodeTiming()})
 	return node, log, nil
 }
 

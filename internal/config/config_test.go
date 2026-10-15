@@ -486,3 +486,32 @@ func TestMaxEventAge(t *testing.T) {
 		}
 	}
 }
+
+// A server that joined a cluster has no built-in admin password of its
+// own: the cluster's users sign in. One that did not still needs one.
+func TestJoinedServerNeedsNoAdminPassword(t *testing.T) {
+	t.Setenv("SIGNALITH_ADMIN_PASSWORD", "")
+	t.Setenv("SIGNALITH_ADMIN_PASSWORD_FILE", "")
+	dir := t.TempDir()
+	t.Setenv("SIGNALITH_STATE_DIR", dir)
+	path := filepath.Join(dir, "signalith.yaml")
+	if err := os.WriteFile(path, []byte("server:\n  listen: 0.0.0.0:8080\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(path); err == nil || !strings.Contains(err.Error(), "admin_password_hash") {
+		t.Fatalf("a server outside a cluster without a password: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "keys"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "keys", "cluster-k1.key"), []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(path)
+	if err != nil {
+		t.Fatalf("a joined server without a password: %v", err)
+	}
+	if !c.JoinedCluster() || c.CheckPassword("admin", "") {
+		t.Error("the built-in admin signs in without a password")
+	}
+}

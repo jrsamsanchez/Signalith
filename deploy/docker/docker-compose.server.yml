@@ -1,0 +1,69 @@
+# Another Signalith server for a cluster that already runs, on its own
+# computer: Signalith only, using the cluster's OpenSearch.
+#
+# Servers > Add a server > Docker gives the lines for a join.env file next
+# to this file (a join token, the version and this server's name and
+# address). Then, from the Signalith folder:
+#
+#   docker compose -f deploy/docker/docker-compose.server.yml --env-file deploy/docker/join.env up -d
+#
+# On its first start the server joins the cluster with the token (it works
+# once, for 60 minutes): it checks it against the cluster, checks it can
+# reach OpenSearch, and saves its settings and keys, and a signalith.yaml,
+# in the signalith-data volume. Later starts ignore the token; delete
+# join.env's SIGNALITH_JOIN line once the server shows on the Servers page.
+name: signalith-server
+
+services:
+  signalith:
+    image: ghcr.io/jrsamsanchez/signalith:${SIGNALITH_VERSION:-main}
+    pull_policy: always
+    # This server's name on the Servers page and in its HTTPS certificate.
+    hostname: ${SIGNALITH_NODE_NAME:-signalith-2}
+    restart: unless-stopped
+    # A stop gives the background jobs up to a minute to finish before
+    # another server takes them over.
+    stop_grace_period: 90s
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      # Web UI, API and agents, and the other servers' checks.
+      - "8080:8080"
+      # Syslog on this computer's 514 (and over TLS on 6514).
+      - "514:5514/udp"
+      - "514:5514/tcp"
+      - "6514:6514"
+    # Its settings are in its data volume: join writes them there.
+    command: ["serve", "-c", "/var/lib/signalith/signalith.yaml"]
+    environment:
+      - SIGNALITH_JOIN=${SIGNALITH_JOIN:-}
+      - SIGNALITH_NODE_NAME=${SIGNALITH_NODE_NAME:-signalith-2}
+      # The address the other servers reach this one at, such as
+      # https://192.168.1.21:8080.
+      - SIGNALITH_NODE_URL=${SIGNALITH_NODE_URL:-}
+      # The ports inside the container, which the ports above reach (it
+      # cannot open ports below 1024).
+      - SIGNALITH_LISTEN=0.0.0.0:8080
+      - SIGNALITH_SYSLOG_UDP=0.0.0.0:5514
+      - SIGNALITH_SYSLOG_TCP=0.0.0.0:5514
+    volumes:
+      # Everything this server keeps: its identity, keys, certificates and
+      # its settings.
+      - signalith-data:/var/lib/signalith
+    # Hardening: only the volume above can be written, no extra
+    # privileges, and no core dumps that could hold secrets from memory.
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    ulimits:
+      core: 0
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+
+volumes:
+  signalith-data:

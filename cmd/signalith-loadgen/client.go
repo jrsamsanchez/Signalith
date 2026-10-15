@@ -135,6 +135,8 @@ type Session struct {
 	client   *http.Client
 	mu       sync.Mutex
 	signedIn bool
+	// version is the X-Signalith-Version of the last answer.
+	version string
 }
 
 func newSession(base string, tr http.RoundTripper, user, password string) *Session {
@@ -189,6 +191,14 @@ func (s *Session) Do(ctx context.Context, method, path string, in, out any) erro
 	return err
 }
 
+// Version is the version of the server that answered last, "" before
+// any answer.
+func (s *Session) Version() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.version
+}
+
 func (s *Session) raw(ctx context.Context, method, path string, body []byte, out any) error {
 	var rd io.Reader
 	if body != nil {
@@ -210,6 +220,11 @@ func (s *Session) raw(ctx context.Context, method, path string, body []byte, out
 		return err
 	}
 	defer resp.Body.Close()
+	if v := resp.Header.Get("X-Signalith-Version"); v != "" {
+		s.mu.Lock()
+		s.version = v
+		s.mu.Unlock()
+	}
 	b, _ := io.ReadAll(io.LimitReader(resp.Body, 32<<20))
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		return &apiError{Status: resp.StatusCode, Body: truncate(string(b), 300)}
@@ -243,7 +258,31 @@ type clusterView struct {
 		State   string `json:"state"`
 		Jobs    string `json:"jobs"`
 		NodeURL string `json:"node_url"`
+		OS      string `json:"os"`
+		Version string `json:"version"`
+		NodeID  string `json:"node_id"`
 	} `json:"servers"`
+}
+
+// windows lists the ready servers that run on Windows.
+func (v clusterView) windows() []string {
+	var out []string
+	for _, s := range v.Servers {
+		if s.State == "ready" && s.OS == "windows" {
+			out = append(out, s.Name)
+		}
+	}
+	return out
+}
+
+// isWindows says whether the named server runs on Windows.
+func (v clusterView) isWindows(name string) bool {
+	for _, s := range v.Servers {
+		if s.Name == name {
+			return s.OS == "windows"
+		}
+	}
+	return false
 }
 
 // selfName is the name of the server that answered.

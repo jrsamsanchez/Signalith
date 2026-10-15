@@ -10,6 +10,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/cluster"
 	"github.com/jrsamsanchez/signalith/internal/clusterauth"
 	"github.com/jrsamsanchez/signalith/internal/clustercfg"
+	"github.com/jrsamsanchez/signalith/internal/clusterjoin"
 	"github.com/jrsamsanchez/signalith/internal/clusterlib"
 	"github.com/jrsamsanchez/signalith/internal/clusterpki"
 	"github.com/jrsamsanchez/signalith/internal/config"
@@ -49,7 +50,13 @@ func openShared(c *config.Config, node *cluster.Node, log *slog.Logger) (*shared
 		Content:    ct.track,
 		Importers:  ct.holdImporters(sharedImporters(ct.sharedDocs, ct.files())),
 		Log:        log,
+		JoinInfo:   joinInfo(c),
+		Secured:    func() error { return clusterjoin.ViewOf(c).Secured() },
+		Version:    version,
+		Migrations: sharedMigrations(),
 	})
+	// Join tokens are made and used by a member only.
+	ct.join.Writable = rt.Writable
 	ct.rt.Store(rt)
 	ct.users.follow(rt)
 	return rt, ct
@@ -71,6 +78,11 @@ type sharedDocs struct {
 	auth *clusterauth.Docs
 	// tls holds the cluster's certificate authority (see sharedtls.go).
 	tls *sharedTLS
+	// join holds the join tokens (see sharedjoin.go).
+	join *clusterjoin.Tokens
+	// reports holds the migration reports of servers that joined with
+	// signalith join --merge.
+	reports *clustercfg.Reports
 	// osca holds OpenSearch's certificate authority, which issues each
 	// server its own OpenSearch certificate (see sharedosid.go).
 	osca *clusterpki.OSCA
@@ -79,7 +91,8 @@ type sharedDocs struct {
 // newSharedDocs returns the documents of a process, with auth as the
 // users' documents.
 func newSharedDocs(auth *clusterauth.Docs) sharedDocs {
-	d := sharedDocs{docs: clustercfg.NewDocs(), auth: auth, tls: newSharedTLS(), lib: clusterlib.NewDocs(), osca: clusterpki.New()}
+	d := sharedDocs{docs: clustercfg.NewDocs(), auth: auth, tls: newSharedTLS(), join: clusterjoin.New(nil), reports: clustercfg.NewReports(),
+		lib: clusterlib.NewDocs(), osca: clusterpki.New()}
 	// The users and directory importers and the auth settings of
 	// signalith.yaml reach the users' documents.
 	d.docs.UseAuth(auth)
@@ -100,6 +113,8 @@ func (d sharedDocs) trackers() []sharedTracker {
 		d.docs,
 		d.auth,
 		d.tls.tls,
+		d.join,
+		d.reports,
 		d.lib,
 		d.osca,
 		// Append a new shared collection here.
@@ -163,7 +178,7 @@ func peersOf(st cluster.Status) []shared.Peer {
 	out := make([]shared.Peer, 0, len(st.Servers))
 	for _, s := range st.Servers {
 		p := shared.Peer{NodeID: s.NodeID, Name: s.Name, Leader: s.Jobs == "runs",
-			Live: s.State != cluster.StateOffline && s.State != cluster.StateStopped}
+			Live: s.State != cluster.StateOffline && s.State != cluster.StateStopped, Version: s.Version, OfflineSince: s.OfflineSince}
 		if s.Detail != nil {
 			p.Eligible, p.MaxRev = s.Detail.LeaderEligible, s.Detail.MaxRev
 			p.LevelMax, p.Users = s.Detail.LevelMax, s.Detail.FilesFingerprint.Users

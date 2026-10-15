@@ -11,8 +11,10 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/securefile"
@@ -37,6 +39,10 @@ type Runtime struct {
 
 	// stepMu lets one evaluation or watch cycle run at a time.
 	stepMu sync.Mutex
+	// polled says the step running came from the Poll timer rather than
+	// a Kick, so its watch cycle may stop at an unchanged mark (Hub.Poll).
+	// Guarded by stepMu.
+	polled bool
 	// running counts the loop and the cache writer, for Wait.
 	running sync.WaitGroup
 
@@ -92,6 +98,14 @@ type Runtime struct {
 	keyFileWarned bool
 	// fingerprint is this server's node key's, once read or made.
 	fingerprint string
+	// approval is a waiting server's request to join (approval.go).
+	approval approvalState
+	// migMu lets one run of the level migrations go at a time; migAgain
+	// asks the run going on to go round once more, and migRunning says
+	// one runs (Busy), see runLevelMigrations.
+	migMu      sync.Mutex
+	migAgain   atomic.Bool
+	migRunning atomic.Bool
 }
 
 // Mode is how this server uses the shared configuration.
@@ -325,6 +339,10 @@ type Peer struct {
 	// before key rotations).
 	KeyIDs     []string
 	ClusterKID string
+	// Version is the version it runs, and OfflineSince when its
+	// heartbeat stopped (nil while it is live, or when not known).
+	Version      string
+	OfflineSince *time.Time
 }
 
 // RuntimeOptions are what a Runtime needs.
@@ -361,6 +379,21 @@ type RuntimeOptions struct {
 	Clock         Clock
 	Timing        Timing
 	Log           *slog.Logger
+	// JoinInfo says what a server waiting for approval tells about itself
+	// in its pending document (version, addresses, node_url); nil gives
+	// only its name, key and platform.
+	JoinInfo func() PendingDoc
+	// Secured checks that OpenSearch is secured as several servers need
+	// (clusterjoin.RequireSecured); a server with KeyFile warns when it
+	// fails. nil checks nothing.
+	Secured func() error
+	// Version is this server's version, recorded with each level it
+	// raises the cluster to (ClusterBody.LevelVersions).
+	Version string
+	// Migrations are the one-time migrations of the cluster's levels,
+	// which the server running the background jobs runs once each when
+	// the cluster reaches their level (see LevelMigration).
+	Migrations []LevelMigration
 
 	// levelMax stands in for LevelMax, so tests can run a runtime of an
 	// older version; 0 is LevelMax.
@@ -592,13 +625,16 @@ func (rt *Runtime) Start(ctx context.Context) {
 	}
 	rt.log.Info("shared settings watcher started")
 	rt.running.Go(func() {
+		polled := false
 		for {
-			rt.step(ctx)
+			rt.step(ctx, polled)
 			select {
 			case <-ctx.Done():
 				return
 			case <-rt.wake:
+				polled = false
 			case <-rt.clock.After(rt.opts.Timing.Poll):
+				polled = true
 			}
 		}
 	})
@@ -608,9 +644,11 @@ func (rt *Runtime) Start(ctx context.Context) {
 // writer of cache.enc to end; the writer saves what changed last first.
 func (rt *Runtime) Wait() { rt.running.Wait() }
 
-func (rt *Runtime) step(ctx context.Context) {
+func (rt *Runtime) step(ctx context.Context, polled bool) {
 	rt.stepMu.Lock()
 	defer rt.stepMu.Unlock()
+	rt.polled = polled
+	defer func() { rt.polled = false }()
 	rt.stepLocked(ctx, true)
 }
 
@@ -719,6 +757,9 @@ func (rt *Runtime) readKeys() (localKeys, error) {
 		case err == nil:
 			if w := KeyFileWarning(p); w != "" && !warned {
 				rt.log.Warn(w)
+			}
+			if kw := rt.keyFileUnsecured(); kw != nil && !warned {
+				rt.log.Warn(kw.Text)
 			}
 			out.file = k
 			if out.get(k.ID()) == nil {
@@ -859,7 +900,7 @@ func (rt *Runtime) evaluate(ctx context.Context, mayFound bool) {
 		return
 	}
 	if len(keys.all) == 0 {
-		rt.notMember()
+		rt.notMember(ctx)
 		return
 	}
 	var active *ClusterKey
@@ -893,7 +934,7 @@ func (rt *Runtime) evaluate(ctx context.Context, mayFound bool) {
 				rt.setMode(ModeKeyMissing, err.Error())
 				return
 			}
-			rt.notMember()
+			rt.notMember(ctx)
 			return
 		}
 		rt.log.Error("config.tamper: the cluster document in OpenSearch was changed outside Signalith", "audit", true, "doc", ClusterDocID, "reason", err.Error())
@@ -969,14 +1010,16 @@ func (rt *Runtime) noteHolder() {
 
 // notMember is a look that found a cluster this server has no key to:
 // legacy (b). Its node key is made now, so the Servers page can show the
-// fingerprint an admin approves it by.
-func (rt *Runtime) notMember() {
+// fingerprint an admin approves it by, and it asks to join.
+func (rt *Runtime) notMember(ctx context.Context) {
 	rt.setMode(ModeLegacyB, "")
 	if !rt.opts.ReadOnly {
 		if _, err := rt.nodeKey(); err != nil {
 			rt.log.Debug("could not make this server's node key", "err", err)
 		}
 	}
+	// It asks to join, and takes the key once an admin approves it.
+	rt.awaitApproval(ctx)
 }
 
 // nodeKey returns this server's node key, making it the first time, and
@@ -1092,7 +1135,11 @@ func (rt *Runtime) cycle(ctx context.Context) {
 	h := rt.hub
 	rt.mu.Unlock()
 	cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	err := h.Cycle(cctx)
+	read := h.Cycle
+	if rt.polled {
+		read = h.Poll
+	}
+	err := read(cctx)
 	cancel()
 	if err != nil {
 		if ctx.Err() != nil {
@@ -1140,6 +1187,10 @@ func (rt *Runtime) afterCycle(ctx context.Context) {
 		return
 	}
 	if err := checkLevel(body.Level, rt.maxLevel()); err != nil {
+		var le *LevelError
+		if errors.As(err, &le) {
+			le.Since, le.Version = body.LevelVersions[strconv.Itoa(body.Level)], rt.opts.Version
+		}
 		rt.fail(err)
 		return
 	}
@@ -1204,8 +1255,8 @@ func (rt *Runtime) afterCycle(ctx context.Context) {
 		// background jobs: after a rolling upgrade another server may
 		// keep them for good.
 		lease := rt.holdsLease()
-		if lease {
-			rt.RaiseLevel(ctx)
+		if lease && rt.RaiseLevel(ctx) {
+			rt.runLevelMigrations(ctx)
 		}
 		if lease || body.CreatedByID == rt.opts.Self.NodeID {
 			if err := rt.lateImports(ctx, lease); err != nil && ctx.Err() == nil {
@@ -1518,6 +1569,8 @@ func (rt *Runtime) Housekeep(ctx context.Context) {
 		// The loop runs the imports the new level allows.
 		rt.Kick()
 	}
+	rt.runLevelMigrations(ctx)
+	rt.PruneMigrations(ctx)
 }
 
 // maxLevel is the highest level this version reads.
@@ -1593,6 +1646,12 @@ func (rt *Runtime) RaiseLevel(ctx context.Context) bool {
 			return errRaised
 		}
 		b.Level = from + 1
+		if rt.opts.Version != "" {
+			if b.LevelVersions == nil {
+				b.LevelVersions = map[string]string{}
+			}
+			b.LevelVersions[strconv.Itoa(from+1)] = rt.opts.Version
+		}
 		return nil
 	})
 	if err != nil {
@@ -1812,7 +1871,7 @@ func (rt *Runtime) Warnings() []Warning {
 			fp = " Its fingerprint is " + st.Fingerprint + "."
 		}
 		w = append(w, Warning{Level: "red", Text: "This server is not part of the cluster yet, so it uses its own files and runs no background jobs. " +
-			"Give it the cluster key: export it on a member with signalith cluster export-key and run signalith cluster import-key here, or set SIGNALITH_CLUSTER_KEY_FILE. " +
+			"Approve it on another server after comparing the fingerprint (signalith cluster approve there), or give it the cluster key: export it on a member with signalith cluster export-key and run signalith cluster import-key here, or set SIGNALITH_CLUSTER_KEY_FILE. " +
 			"It joins within seconds of having the key." + fp,
 			Banner: "This server is not part of the cluster yet, so it runs no background jobs."})
 	case ModeLegacyC:
@@ -1859,6 +1918,9 @@ func (rt *Runtime) Warnings() []Warning {
 		if lw := rt.lateWarning(); lw != nil {
 			w = append(w, *lw)
 		}
+		if lw := rt.levelWarning(); lw != nil {
+			w = append(w, *lw)
+		}
 		if fw := rt.founderWarning(); fw != nil {
 			w = append(w, *fw)
 		}
@@ -1867,6 +1929,9 @@ func (rt *Runtime) Warnings() []Warning {
 		w = append(w, Warning{Level: "red", Text: fmt.Sprintf("Shared settings were changed in OpenSearch outside Signalith (%s), so this server keeps its last good copy. "+
 			"If a snapshot of OpenSearch was restored on purpose, run signalith cluster accept-restore.", strings.Join(st.Tamper, ", ")),
 			Banner: "Shared settings were changed in OpenSearch outside Signalith."})
+	}
+	if kw := rt.keyFileUnsecured(); kw != nil {
+		w = append(w, *kw)
 	}
 	if len(st.NeedsUpgrade) > 0 {
 		w = append(w, Warning{Level: "amber", Text: fmt.Sprintf("Some shared settings were written by a newer version of Signalith (%s), so this server keeps its last good copy. Upgrade it.",

@@ -42,8 +42,10 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/retention"
 	"github.com/jrsamsanchez/signalith/internal/sample"
 	"github.com/jrsamsanchez/signalith/internal/search"
+	"github.com/jrsamsanchez/signalith/internal/shared"
 	"github.com/jrsamsanchez/signalith/internal/syslog"
 	"github.com/jrsamsanchez/signalith/internal/tlsauto"
+	"github.com/jrsamsanchez/signalith/internal/upgradecheck"
 	"github.com/jrsamsanchez/signalith/internal/users"
 )
 
@@ -184,17 +186,32 @@ type Server struct {
 	// ClusterTLS is the cluster's one certificate authority; nil on a
 	// server that is not a member of a cluster.
 	ClusterTLS ClusterTLS
+	// Join adds servers to the cluster: join tokens, the public join and
+	// approvals (clusterjoin.go); nil on a server without shared settings.
+	Join ClusterJoin
 	// ClusterServers drains and removes servers and rotates the cluster
 	// key; nil on a server that is not a member of a cluster.
 	ClusterServers ClusterServers
 	// ClusterOSIdentity is OpenSearch's certificate authority the cluster
 	// keeps; nil on a server that is not a member of a cluster.
 	ClusterOSIdentity ClusterOSIdentity
+	// Features says which features that come with a cluster level are on
+	// (GET /api/cluster/features), and ClusterLevel the cluster's level;
+	// nil on a server without shared settings.
+	Features     func() []shared.FeatureState
+	ClusterLevel func() int
+	// Upgrade judges whether the next server may be upgraded, for the
+	// Servers page's checklist (GET /api/cluster/upgrade); nil on a
+	// server without a cluster.
+	Upgrade func(ctx context.Context) (upgradecheck.Verdict, error)
+	// Install hands new servers the install scripts and this server's
+	// program; nil turns that off.
+	Install *ClusterInstall
 
 	authOnce     sync.Once
-	creds        credCache  // recently checked Basic credentials
-	routes       []route    // every API route and its role, from Handler
-	caseMu       sync.Mutex // serializes case changes
+	creds        credCache // recently checked Basic credentials
+	routes       []route   // every API route and its role, from Handler
+	caseLocks    caseLocks // one lock per case being changed
 	checksMu     sync.Mutex
 	dirChecks    map[string]dirCheck // when each directory user was last checked
 	dirSlotsOnce sync.Once
@@ -306,7 +323,10 @@ func (s *Server) Handler() http.Handler {
 	s.routeCluster(api)
 	s.routeClusterTLS(api)
 	s.routeClusterServers(api)
+	s.routeClusterFeatures(api)
+	s.routeClusterUpgrade(api)
 	s.routeClusterOSIdentity(api)
+	s.routeClusterInstall(mux, api)
 	s.routeTokens(api)
 	s.routeAPITokens(api)
 	s.routeAgents(api)
@@ -940,6 +960,12 @@ func (s *Server) handleAgentConfig(w http.ResponseWriter, r *http.Request) {
 		CollectorOS: v.Get("collector"),
 		Platform:    v.Get("platform"),
 		Version:     s.Version,
+		// A network sensor: both tools unless the page says otherwise.
+		Zeek:              v.Get("zeek") != "false",
+		Suricata:          v.Get("suricata") != "false",
+		ZeekDir:           strings.TrimSpace(v.Get("zeek_dir")),
+		EVEPath:           strings.TrimSpace(v.Get("eve_path")),
+		SuricataProtocols: v.Get("suricata_protocols") == "true",
 	}
 	if certs != nil {
 		// While a new certificate authority is prepared, agents get both,
@@ -963,6 +989,11 @@ func (s *Server) handleAgentConfig(w http.ResponseWriter, r *http.Request) {
 	a, err := agents.Generate(opts)
 	if errors.Is(err, agents.ErrNoNameToCheck) {
 		fieldError(err)
+		return
+	}
+	var fe *agents.FieldError
+	if errors.As(err, &fe) {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": fe.Error(), "field": fe.Field})
 		return
 	}
 	if err != nil {
