@@ -121,6 +121,36 @@ search reads up to the event limit (`search.max_events`, 10,000 by default).
 It must come first, with nothing before the `|`. An empty cell is a missing
 field, so `where isnull(owner)` finds rows with no owner.
 
+## GeoIP database for iplocation
+
+The search command `iplocation` adds where an IP address is (`City`, `Region`,
+`Country`, `lat`, `lon`) from a GeoIP database in the MaxMind DB format (`.mmdb`).
+Signalith does not ship one, since the free ones need an account or a credit line,
+so an admin adds it. Any City or Country database works, free or paid:
+
+- **DB-IP IP to City Lite**: free under CC BY 4.0, no account. Download the MMDB
+  file from <https://db-ip.com/db/download/ip-to-city-lite> and unzip it (`.gz`).
+  The license asks that pages showing its results credit DB-IP, for example
+  "IP geolocation by DB-IP".
+- **MaxMind GeoLite2 City**: free with a MaxMind account, at <https://www.maxmind.com/en/geolite2/signup>.
+
+Put the `.mmdb` file in the `geoip` folder inside the lookups folder on **each
+server** (the files are not shared between servers):
+
+| Install | Folder |
+| --- | --- |
+| Docker | `/var/lib/signalith/lookups/geoip`: `docker compose -f deploy/docker/docker-compose.yml cp dbip-city-lite.mmdb signalith:/var/lib/signalith/lookups/geoip/` |
+| Linux package or install script | `/var/lib/signalith/lookups/geoip` |
+| Windows, or a `lookups.dir` of your own | `geoip` inside the lookups folder (`lookups.dir`) |
+
+No restart is needed: the next `iplocation` search reads the file. Signalith uses
+the newest `.mmdb` file in the folder and looks for a newer one every 30 seconds,
+so to update it, add the new file and then delete the old one. The file is read
+into memory (about 130 MB for a City database, 10 MB for a Country one) the first
+time a search uses it, and is checked before use; a damaged file, one larger than
+512 MB, or a database of another kind (such as ASN) is not used, and the server log
+says why while searches keep the file they had.
+
 ## Several servers
 
 Each server keeps its tables in `tables` inside the folder of the asset and

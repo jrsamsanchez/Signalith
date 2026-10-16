@@ -1448,6 +1448,10 @@ func (c *Config) ResponseScriptsDir() string {
 // LookupsDir returns the absolute lookups folder.
 func (c *Config) LookupsDir() string { return c.resolve(c.Lookups.Dir) }
 
+// GeoIPDir is where the search command iplocation finds its GeoIP
+// database, a .mmdb file an admin puts there.
+func (c *Config) GeoIPDir() string { return filepath.Join(c.LookupsDir(), "geoip") }
+
 // TLSDir is where Signalith keeps its own certificate authority and HTTPS
 // certificate (server.tls.mode auto).
 func (c *Config) TLSDir() string { return filepath.Join(c.StateDir(), "tls") }
