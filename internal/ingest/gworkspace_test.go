@@ -147,20 +147,19 @@ func gwsManyEvents(n int) string {
 	"logName": "organizations/123456789012/logs/cloudaudit.googleapis.com%2Factivity"}`
 }
 
-// An entry with many events costs no more than its first few, and a
-// parameter keeps a bounded number of values.
+// An entry with many events keeps only its first few, a parameter keeps a
+// bounded number of values, and reading it costs about as much as decoding
+// its JSON. The bound is relative to the decode so a slow runner or the
+// race detector, which slow both alike, don't fail it.
 func TestWorkspaceManyEvents(t *testing.T) {
 	entry := gwsManyEvents(45000)
-	// Reading the entry's JSON, which takes time in proportion to its
-	// size, is the yardstick, so a slow machine or the race detector
-	// slows both alike.
 	start := time.Now()
 	r := decode(t, entry)
-	read := time.Since(start)
+	decoded := time.Since(start)
 	start = time.Now()
 	ev := Normalize(GCPTag, r, now)
-	if d := time.Since(start); d > 2*time.Second && d > 10*read {
-		t.Errorf("took %v, reading the entry %v", d, read)
+	if d := time.Since(start); d > 2*time.Second && d > 10*decoded {
+		t.Errorf("took %v, decoding took %v", d, decoded)
 	}
 	if names, _ := ev.Fields["event_name"].([]any); len(names) != workspaceMaxEvents {
 		t.Errorf("event_name has %d values", len(names))
