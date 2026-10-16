@@ -372,32 +372,37 @@ too if you changed the security files): the CA is then new as well.
 
 ## Moving to OpenSearch 3.x
 
-Signalith works with OpenSearch 2.x (2.17 or later) and 3.x, and the security settings on
-this page are the same for both. An OpenSearch 2.17 data folder starts directly on 3.x and
-keeps its events, findings and security settings. OpenSearch can't go back to 2.x on the
-same data once 3.x has started on it, so take a backup first: an OpenSearch snapshot, or a
-copy of the OpenSearch volume while it is stopped.
+The Docker quick start uses OpenSearch 3.9 from Signalith 0.3.0 on; earlier versions used
+2.17. Signalith works with both, and the security settings on this page are the same for
+each. An OpenSearch 2.17 data volume starts directly on 3.9 and keeps its events, findings
+and security settings, so a quick start updated with `git pull` moves on its next `up`.
 
-With Docker, put the 3.x image on the `opensearch` and `opensearch-security` services in
-an override file, then start again:
+OpenSearch can't go back to 2.17 on the same data once 3.9 has started on it, so copy the
+OpenSearch volume first, from the Signalith folder (PowerShell or a terminal):
+
+```sh
+docker compose -f deploy/docker/docker-compose.yml stop
+docker run --rm -v docker_opensearch-data:/data -v "${PWD}:/backup" alpine tar czf /backup/opensearch-data-2.17.tgz -C /data .
+```
+
+Then update and start as in
+[Upgrading the Docker quick start](https://github.com/jrsamsanchez/Signalith#upgrading-the-docker-quick-start).
+The step that loads the security settings loads them once more after the move (3.x has no
+`whitelist.yml`), which is expected. To stay on 2.17 for now, put the 2.17 image on the
+`opensearch` and `opensearch-security` services in an override file and add
+`-f deploy/docker/docker-compose.override.yml` to each command:
 
 ```yaml
 # deploy/docker/docker-compose.override.yml
 services:
   opensearch:
-    image: opensearchproject/opensearch:3.9.0
+    image: opensearchproject/opensearch:2.17.1
   opensearch-security:
-    image: opensearchproject/opensearch:3.9.0
+    image: opensearchproject/opensearch:2.17.1
 ```
 
-```sh
-docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.override.yml up -d
-```
-
-The step that loads the security settings loads them once more after the move (3.x has no
-`whitelist.yml`), which is expected. On OpenSearch installed without Docker, follow
-OpenSearch's own upgrade steps and keep the `opensearch.yml` lines from
-[step 2](#2-put-the-files-in-place-on-the-opensearch-machine).
+On OpenSearch installed without Docker, follow OpenSearch's own upgrade steps and keep the
+`opensearch.yml` lines from [step 2](#2-put-the-files-in-place-on-the-opensearch-machine).
 
 ## Other setups
 
