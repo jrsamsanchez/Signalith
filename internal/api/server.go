@@ -39,6 +39,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/intel"
 	"github.com/jrsamsanchez/signalith/internal/m365"
 	"github.com/jrsamsanchez/signalith/internal/oidc"
+	"github.com/jrsamsanchez/signalith/internal/onboard"
 	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/redact"
 	"github.com/jrsamsanchez/signalith/internal/respond"
@@ -201,6 +202,9 @@ type Server struct {
 	// ClusterTLS is the cluster's one certificate authority; nil on a
 	// server that is not a member of a cluster.
 	ClusterTLS ClusterTLS
+	// Parsers keeps and runs the custom parsers admins save on the Add
+	// data page; nil keeps them in the state folder, for this API only.
+	Parsers *onboard.Registry
 	// ComplianceNotes keeps the notes on compliance controls in the
 	// shared settings, used while this server takes its content from them;
 	// nil, or until then, they stay in the state folder.
@@ -256,6 +260,9 @@ type Server struct {
 	sec           *SecurityChecker
 	comp          complianceState
 	caMu          sync.Mutex // one change of certificate authority at a time
+	// localParsers is the parsers' registry of a server started without
+	// one (Parsers), made at first use.
+	localParsers localParsers
 	// badTuning is the hash of the stored rule tuning last refused to
 	// sensors (refusedTuning), so it is logged once.
 	badTuningMu sync.Mutex
@@ -334,6 +341,7 @@ func (s *Server) Handler() http.Handler {
 	s.routeDetections(api)
 	s.routeRisk(api)
 	s.routeLookupTables(api)
+	s.routeParsers(api)
 	s.routeAsk(api)
 	s.routeInvestigate(api)
 	s.routeIntel(api)
