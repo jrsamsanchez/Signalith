@@ -2353,7 +2353,7 @@ func keepTemplate(ctx context.Context, cl *store.Client, c *config.Config, log *
 			return
 		case <-t.C:
 		}
-		put, err := ingest.RestoreIndexTemplate(ctx, cl, c.OpenSearch.IndexPrefix, c.OpenSearch.Replicas.IndexSettings(), log)
+		put, err := ingest.RestoreIndexTemplate(ctx, cl, c.OpenSearch.IndexPrefix, c.OpenSearch.EventIndexSettings(), log)
 		if put {
 			log.Info("the index template from an older Signalith was replaced with this version's", "template", c.OpenSearch.IndexPrefix)
 		}
@@ -2367,7 +2367,7 @@ func keepTemplate(ctx context.Context, cl *store.Client, c *config.Config, log *
 // It reports false if ctx ended first.
 func ensureTemplate(ctx context.Context, cl *store.Client, c *config.Config, log *slog.Logger) bool {
 	for {
-		err := ingest.PutIndexTemplate(ctx, cl, c.OpenSearch.IndexPrefix, c.OpenSearch.Replicas.IndexSettings(), log)
+		err := ingest.PutIndexTemplate(ctx, cl, c.OpenSearch.IndexPrefix, c.OpenSearch.EventIndexSettings(), log)
 		if err == nil {
 			log.Info("opensearch index template ready", "url", redact.URL(c.OpenSearch.URL))
 			return true
