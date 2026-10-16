@@ -12,6 +12,11 @@ on:
 permissions:
   contents: read
 
+# A new push to a pull request cancels the runs of its older pushes.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   analyze:
     runs-on: ubuntu-latest
