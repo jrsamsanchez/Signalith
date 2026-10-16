@@ -33,7 +33,8 @@ func TestCloudRuleFieldsMapped(t *testing.T) {
 			continue
 		}
 		for _, f := range queryFields(q) {
-			if !ingest.KnownField(f) && !slices.Contains(missing, f) {
+			// _time is the event's time, @timestamp.
+			if f != "_time" && !ingest.KnownField(f) && !slices.Contains(missing, f) {
 				missing = append(missing, f)
 			}
 		}

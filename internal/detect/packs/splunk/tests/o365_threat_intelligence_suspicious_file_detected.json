@@ -1,0 +1,9 @@
+{"rule": "00958c7b-35db-4e7a-ad13-31550a7a7c64", "cases": [
+  {"expect":true,"source":"synthesized","channel":"o365","event_id":"ThreatIntelligence","data":{"ClientIP":"203.0.113.7","Operation":"AtpDetection","RecordType":"28","UserId":"admin@example.com","Workload":"ThreatIntelligence"}},
+  {"expect":true,"source":"synthesized","channel":"o365","event_id":"ThreatIntelligence","data":{"ClientIP":"203.0.113.7","Operation":"AtpDetection","RecordType":"28","UserId":"admin@example.com","Workload":"ThreatIntelligence"}},
+  {"expect":true,"source":"synthesized","channel":"o365","event_id":"ThreatIntelligence","data":{"ClientIP":"203.0.113.7","Operation":"AtpDetection","RecordType":"28","UserId":"admin@example.com","Workload":"ThreatIntelligence"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"ThreatIntelligencf","data":{"ClientIP":"203.0.113.7","Operation":"AtpDetection","UserId":"admin@example.com","Workload":"ThreatIntelligencf"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"AzureActiveDirectory","data":{"ClientIP":"203.0.113.7","Operation":"AtpDetection","UserId":"admin@example.com","Workload":"AzureActiveDirectory"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"ThreatIntelligence","data":{"ClientIP":"203.0.113.7","Operation":"AtpDetectioo","RecordType":"28","UserId":"admin@example.com","Workload":"ThreatIntelligence"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"ThreatIntelligence","data":{"ClientIP":"203.0.113.7","Operation":"Update user.","RecordType":"28","UserId":"admin@example.com","Workload":"ThreatIntelligence"}}
+]}

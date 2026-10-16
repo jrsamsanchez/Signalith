@@ -848,7 +848,7 @@ changes and more, plus two risk incident rules); 19 are on by default.
   Signalith query and lists anything it had to approximate. Imported rules start
   disabled so you can test them first.
 - **Content packs** add community rules, off until you turn them on: 2,455 tested
-  [SigmaHQ](https://github.com/SigmaHQ/sigma) Windows, Linux, web server, network, AWS CloudTrail, Azure and Microsoft 365 rules and 1,111
+  [SigmaHQ](https://github.com/SigmaHQ/sigma) Windows, Linux, web server, network, AWS CloudTrail, Azure and Microsoft 365 rules and 1,125
   Windows, Linux, web, network, AWS CloudTrail, Entra ID and Microsoft 365 detections
   from Splunk's open source
   [security_content](https://github.com/splunk/security_content) (Apache 2.0). With
