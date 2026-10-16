@@ -105,13 +105,34 @@ retry() {
   return 1
 }
 
+# The built-in admin must replace the first password Signalith made before
+# anything else, so the lab gives it a new random one, kept for root in
+# $LAB/admin-password (lab-e2e reads it too).
+admin_password() {
+  if [ -s "$LAB/admin-password" ]; then cat "$LAB/admin-password"; else cat /etc/signalith/initial-admin-password; fi
+}
+
+# login signs in as the built-in admin, keeping the session in the jar $1.
+login() {
+  curl -fsS -c "$1" --cacert /var/lib/signalith/tls/ca.pem -H 'Content-Type: application/json' -H 'Origin: https://localhost:9000' \
+    -d "$(jq -n --rawfile p <(admin_password) '{username: "admin", password: ($p | rtrimstr("\n"))}')" \
+    https://localhost:9000/api/login >/dev/null
+}
+
 # api calls Signalith's API on signalith-1, signed in as the built-in
 # admin (as the Add data page would).
 api() {
   local ca=/var/lib/signalith/tls/ca.pem jar=$LAB/cookies
-  curl -fsS -c "$jar" --cacert "$ca" -H 'Content-Type: application/json' -H 'Origin: https://localhost:9000' \
-    -d "$(jq -n --rawfile p /etc/signalith/initial-admin-password '{username: "admin", password: ($p | rtrimstr("\n"))}')" \
-    https://localhost:9000/api/login >/dev/null
+  login "$jar"
+  if [ "$(curl -fsS -b "$jar" --cacert "$ca" https://localhost:9000/api/me | jq -r .must_change_password)" = true ]; then
+    (umask 077 && openssl rand -base64 24 | tr -d '/+=\n' >"$LAB/admin-password.new")
+    jq -n --rawfile c <(admin_password) --rawfile n "$LAB/admin-password.new" \
+      '{current_password: ($c | rtrimstr("\n")), new_password: $n}' |
+      curl -fsS -b "$jar" --cacert "$ca" -H 'Content-Type: application/json' -H 'Origin: https://localhost:9000' \
+        --data-binary @- https://localhost:9000/api/me/password >/dev/null
+    mv "$LAB/admin-password.new" "$LAB/admin-password"
+    login "$jar"
+  fi
   curl -fsS -b "$jar" --cacert "$ca" -H 'Origin: https://localhost:9000' "https://localhost:9000$1"
   rm -f "$jar"
 }
@@ -579,12 +600,14 @@ fi
 install -m 755 "$LAB/src/deploy/lab/lab-e2e.sh" /usr/local/sbin/lab-e2e
 
 public=$(curl -fsS -4 --max-time 5 https://ipv4.icanhazip.com 2>/dev/null || echo '<signalith-1 address>')
+pwfile=/etc/signalith/initial-admin-password
+[ ! -s "$LAB/admin-password" ] || pwfile=$LAB/admin-password
 say "Lab ready."
 cat <<MSG
 
   Signalith:  https://$public:9000
   User:       admin
-  Password:   sudo cat /etc/signalith/initial-admin-password  (on signalith-1)
+  Password:   sudo cat $pwfile  (on signalith-1)
 
   Agents and the sensor send to https://$SIEM:7779$([ -n "$LB_IP" ] && echo " (the load balancer)").
   The rest is by hand: see "After the setup" in docs/cloud-lab.md

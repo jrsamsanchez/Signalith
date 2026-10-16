@@ -114,7 +114,10 @@ WEB="https://127.0.0.1:$WEB_PORT"
 
 # ---- the API ----
 
+# The password lab-setup gave the admin in place of the first one, unless
+# given.
 PW=${E2E_PASSWORD:-}
+[ -n "$PW" ] || PW=$(cat /root/lab/admin-password 2>/dev/null)
 [ -n "$PW" ] || PW=$(cat /etc/signalith/initial-admin-password 2>/dev/null)
 CODE=''
 BODY=''
@@ -174,8 +177,17 @@ if ! call GET /api/me; then
   exit 2
 fi
 if [ "$(j .must_change_password)" = true ]; then
-  echo "The admin account must choose a new password first: sign in on the web page once, then run: sudo E2E_PASSWORD='<new password>' lab-e2e" >&2
-  exit 2
+  # Still the first password Signalith made: replace it, as lab-setup does,
+  # keeping the new one for root.
+  (umask 077 && mkdir -p /root/lab && openssl rand -base64 24 | tr -d '/+=\n' >/root/lab/admin-password.new)
+  if ! call POST /api/me/password "$(jq -nc --arg c "$PW" --rawfile n /root/lab/admin-password.new '{current_password: $c, new_password: $n}')"; then
+    rm -f /root/lab/admin-password.new
+    echo "The admin account must choose a new password first, and the test could not set one ($CODE): $(why)" >&2
+    exit 2
+  fi
+  mv /root/lab/admin-password.new /root/lab/admin-password
+  PW=$(cat /root/lab/admin-password)
+  echo "The admin's first password was replaced; the new one is in /root/lab/admin-password." >&2
 fi
 
 say "Signalith lab end-to-end test $STAMP (web port $WEB_PORT, agent port $AGENT_PORT$([ "$ALL" = true ] && echo ', with --all'))"

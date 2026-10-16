@@ -95,7 +95,9 @@ It prints `ssh root@<signalith-1 address> tail -f /var/log/lab-setup.log`: copy 
 
 1. Open the `signalith` address it printed, such as `https://203.0.113.10:9000`.
 2. Sign in as `admin`, with the password from the `admin_password` line:
-   `ssh root@<signalith-1 address> cat /etc/signalith/initial-admin-password`.
+   `ssh root@<signalith-1 address> cat /root/lab/admin-password`. Signalith asks the admin
+   for a new password before anything else, so the setup replaces the first one with a
+   random password and keeps it there.
 3. The browser warns about the certificate: trust Signalith's own CA from the sign-in
    page, as on any new install (see [HTTPS](https.md)).
 
@@ -174,7 +176,9 @@ It ends with how many checks passed and failed, and writes the report to
 scp root@<signalith-1 address>:/root/lab/e2e/latest/report.md .
 ```
 
-If you changed the admin password, give it to the test:
+The test signs in with the password in `/root/lab/admin-password`. A lab whose admin
+still has the first password Signalith made gets a new random one there, as a new lab
+does. If you changed the admin password yourself, give it to the test:
 `sudo E2E_PASSWORD='<password>' lab-e2e`.
 
 ## A lab made before the port change
