@@ -44,8 +44,32 @@ func commandSubsearches(c Command) int {
 			n += commandSubsearches(c)
 		}
 		return n
+	case *Map:
+		return 1
 	}
 	return 0
+}
+
+// countMapSearches adds up the most searches q's map commands run.
+func countMapSearches(q *Query) int {
+	n := 0
+	var walk func(cmds []Command)
+	walk = func(cmds []Command) {
+		for _, c := range cmds {
+			switch c := c.(type) {
+			case *Map:
+				n += c.Max
+			case *Join:
+				walk(c.Sub.Commands)
+			case *Append:
+				walk(c.Sub.Commands)
+			case *AppendPipe:
+				walk(c.Commands)
+			}
+		}
+	}
+	walk(q.Commands)
+	return n
 }
 
 // maxSubsearchDepth bounds subsearches inside subsearches.

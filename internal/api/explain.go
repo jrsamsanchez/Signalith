@@ -268,6 +268,8 @@ func describeCommand(c query.Command) string {
 			where = strings.Join(c.Fields, ", ")
 		}
 		return "Replace " + strings.Join(parts, ", ") + " in " + where + "."
+	case *query.Map:
+		return fmt.Sprintf("For each of the first %d rows, run the search %s with the row's values in place of its $field$ names, and keep the rows those searches find.", c.Max, strconv.Quote(c.Search))
 	case *query.IPLocation:
 		return "Add where the IP address in " + c.Field + " is, from the GeoIP database: " + strings.Join(c.Fields(), ", ") + "."
 	case *query.XMLKV:
