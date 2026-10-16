@@ -95,6 +95,11 @@
       path: 'api/settings/test/m365', button: 'Test', icon: 'cloud', busy: 'Signing in to Microsoft…',
       lead: 'Signs in to Microsoft with the settings above, saved or not, and checks the app can read the audit log.',
     },
+    okta: {
+      keys: ['okta.domain', 'okta.client_id', 'okta.private_key', 'okta.key_id', 'okta.api_token'],
+      path: 'api/settings/test/okta', button: 'Test', icon: 'cloud', busy: 'Signing in to Okta…',
+      lead: 'Signs in to Okta with the settings above, saved or not, and reads the last hour of the System Log.',
+    },
   };
 
   // ---------- small helpers ----------
@@ -1440,6 +1445,9 @@
     } else if (id === 'm365') {
       if (r.ok) kids.push(dxAlert('success', 'Signed in to Microsoft 365', r.message));
       else kids.push(dxAlert('danger', 'Couldn’t read the audit log', r.message, settingLink(r.field || '')));
+    } else if (id === 'okta') {
+      if (r.ok) kids.push(dxAlert('success', 'Signed in to Okta', r.message, r.dpop ? el('p', {}, 'The app requires DPoP: Signalith proves each token with a key of its own.') : null));
+      else kids.push(dxAlert('danger', 'Couldn’t read the System Log', r.message, settingLink(r.field || '')));
     } else if (r.ok) {
       const took = r.took_ms < 1000 ? 'in under a second' : `in ${(r.took_ms / 1000).toFixed(1)} seconds`;
       kids.push(dxAlert('success', 'The model answered ' + took, null, el('div', { class: 'st-test__qa' },

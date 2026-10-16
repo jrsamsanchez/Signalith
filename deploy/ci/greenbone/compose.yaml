@@ -252,6 +252,28 @@ services:
       default:
         ipv4_address: 172.29.0.51
 
+  # For the signed-in scan: Debian 12.0 (2023) with an SSH server and a
+  # plain scan user, signalith-scan, who signs in with the key the
+  # workflow makes in ./keys. Its old packages are what OpenVAS's
+  # signed-in checks report.
+  target-ssh:
+    image: debian:bookworm-20230612
+    command:
+      - sh
+      - -c
+      - >-
+        apt-get update && apt-get install -y --no-install-recommends openssh-server &&
+        useradd --create-home --shell /bin/sh signalith-scan &&
+        install -d -m 755 /run/sshd &&
+        install -d -m 700 -o signalith-scan -g signalith-scan /home/signalith-scan/.ssh &&
+        install -m 600 -o signalith-scan -g signalith-scan /keys/scan.pub /home/signalith-scan/.ssh/authorized_keys &&
+        exec /usr/sbin/sshd -D -e
+    volumes:
+      - ./keys:/keys:ro
+    networks:
+      default:
+        ipv4_address: 172.29.0.52
+
 networks:
   default:
     ipam:

@@ -2840,6 +2840,8 @@ body:has(.page.active .inspector:not([hidden], .hidden)) #toast { bottom: 88px; 
 :is(#page-data, #page-apitokens, #page-lookuptables) .tk-table td[data-col="used"] { color: var(--text-2); white-space: nowrap; }
 #page-apitokens .tk-table [data-col="role"] { width: 110px; color: var(--text-2); }
 #page-apitokens .tk-table [data-col="created"] { width: 200px; }
+#page-apitokens .tk-table [data-col="expires"] { width: 120px; }
+#page-apitokens .tk-table td[data-col="expires"] { color: var(--text-2); white-space: nowrap; }
 :is(#page-data, #page-apitokens, #page-lookuptables) .tk-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; color: var(--text); }
 :is(#page-data, #page-apitokens, #page-lookuptables) .tk-hint { margin-top: 2px; font-size: var(--fs-xs); color: var(--text-3); }
 :is(#page-data, #page-apitokens, #page-lookuptables) .tk-muted { color: var(--text-3); }
@@ -2909,6 +2911,9 @@ body:has(.page.active .inspector:not([hidden], .hidden)) #toast { bottom: 88px; 
   :is(#page-data, #page-apitokens, #page-lookuptables) .tk-table td[data-col="used"] { order: 4; }
   #page-apitokens .tk-table td[data-col="role"] { order: 3; }
   #page-apitokens .tk-table td[data-col="created"] { order: 4; }
+  #page-apitokens .tk-table td[data-col="expires"] { order: 5; }
+  #page-apitokens .tk-table td[data-col="expires"]::before { content: "Expires "; color: var(--text-3); }
+  #page-apitokens .tk-table td[data-col="used"] { order: 6; }
   :is(#page-data, #page-apitokens, #page-lookuptables) .tk-table td[data-col="created"]::before { content: "Created "; color: var(--text-3); }
   :is(#page-data, #page-apitokens, #page-lookuptables) .tk-table td[data-col="used"]::before { content: "Last used: "; color: var(--text-3); }
   :is(#page-data, #page-apitokens, #page-lookuptables) .tk-table td[data-col="events"] { order: 5; }
@@ -4989,6 +4994,17 @@ dialog.ep-set { width: min(620px, calc(100vw - 32px)); }
 .sc-card__nets .icon { flex: none; margin-top: 2px; color: var(--text-3); }
 .sc-card__nets b { color: var(--text); font-weight: 600; }
 .sc-needs__table td { vertical-align: top; }
+.sc-logins .card__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.sc-logins .card__head > div { flex: 1 1 320px; min-width: 0; }
+.sc-login-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.sc-login { display: flex; align-items: flex-start; gap: 12px; padding: 12px 0; border-top: 1px solid var(--border); }
+.sc-login:first-child { border-top: 0; padding-top: 0; }
+.sc-login__icon { display: grid; place-items: center; width: 32px; height: 32px; flex: none; border-radius: var(--r-md); color: var(--text-2); background: var(--hover); }
+.sc-login__main { flex: 1 1 auto; min-width: 0; }
+.sc-login__main p { margin: 2px 0 0; overflow-wrap: anywhere; }
+.sc-login__name { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.vs-logins { display: flex; flex-direction: column; gap: var(--sp-3); padding-left: 12px; border-left: 2px solid var(--border); }
+.vs-logins .hint { margin: 0; }
 
 /* Settings > Network sensors */
 .ns-page { display: flex; flex-direction: column; gap: var(--sp-4); max-width: 960px; }
@@ -5404,6 +5420,8 @@ dialog.modal.sj-dialog[open] { display: flex; flex-direction: column; max-height
 .au-fields { font-family: var(--font-mono, monospace); font-size: var(--fs-xs); }
 .au-time { white-space: nowrap; }
 .au-table code { font-size: var(--fs-sm); }
+#au-check .card { margin-bottom: var(--sp-3); }
+.au-problems { text-align: left; margin: var(--sp-2) auto 0; padding-left: 1.2em; overflow-wrap: anywhere; }
 #page-retention #rt-edit-form[data-kind="monthly"] #rt-f-cap,
 #page-retention #rt-edit-form[data-kind="monthly"] #rt-f-compact { display: none; }
 

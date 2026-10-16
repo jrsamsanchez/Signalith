@@ -1,0 +1,4 @@
+{"rule": "5c82f0b9-3c6d-477f-a318-0e14a1df73e0", "cases": [
+  {"expect":true,"source":"synthesized","channel":"okta","event_id":"log","data":{"eventType":"security.threat.detected"}},
+  {"expect":false,"source":"synthesized","channel":"okta","event_id":"log","data":{}}
+]}

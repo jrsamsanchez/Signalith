@@ -230,6 +230,7 @@ var checks = []def{
 	{"accounts.sessions", "accounts", "Sign-in sessions", 23, checkSessions},
 	{"accounts.mfa", "accounts", "Two-step sign-in", 5, checkMFA},
 	{"accounts.agent_tokens", "accounts", "Agent tokens", 6, checkAgentTokens},
+	{"accounts.api_tokens", "accounts", "API tokens", 28, checkAPITokens},
 	{"accounts.opensearch_role", "accounts", "Signalith's OpenSearch account", 14, checkOpenSearchRole},
 	{"accounts.opensearch_crl", "accounts", "OpenSearch's revocation list", 27, checkOpenSearchCRL},
 	{"host.account", "host", "Account Signalith runs as", 15, checkAccount},

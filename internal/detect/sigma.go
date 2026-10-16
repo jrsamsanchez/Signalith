@@ -378,6 +378,10 @@ func (c *sigmaConv) anyModel() bool {
 		// And Google Cloud's: changes are Change events, sign-ins
 		// Authentication and reads Other.
 		return true
+	case ingest.OktaService:
+		// And Okta's: sign-ins are Authentication events, admin changes
+		// Change, threats Alerts and the rest Other.
+		return true
 	}
 	// And Google Workspace's, which are Google Cloud's in all but name.
 	return slices.Contains(ingest.WorkspaceServices, c.category)
@@ -550,6 +554,10 @@ func ConvertSigmaWith(src []byte, opt SigmaOptions) (*SigmaResult, error) {
 			// entry's name, or the Reports API's (eventName, new_value).
 			category = strings.ToLower(service)
 		}
+	}
+	if product, _ := r.Logsource["product"].(string); category == "" && strings.EqualFold(product, ingest.OktaService) {
+		// Okta's System Log, each field by the LogEvent's name.
+		category = ingest.OktaService
 	}
 	if product, _ := r.Logsource["product"].(string); category == "" && strings.EqualFold(product, "m365") {
 		// Microsoft 365's audit log, whatever the service: each field by
@@ -730,6 +738,10 @@ func productScope(ls map[string]any, category string) query.Expr {
 		if category == "m365" {
 			return &query.Compare{Field: "sourcetype", Op: "=", Value: ingest.O365Sourcetype}
 		}
+	case ingest.OktaService:
+		if category == ingest.OktaService {
+			return &query.Compare{Field: "sourcetype", Op: "=", Value: ingest.OktaSourcetype}
+		}
 	case "gcp":
 		if category == ingest.GCPService || slices.Contains(ingest.WorkspaceServices, category) {
 			return &query.Compare{Field: "sourcetype", Op: "=", Value: ingest.GCPSourcetype}
@@ -828,6 +840,14 @@ func (c *sigmaConv) field(name string) string {
 		f, ok := ingest.O365SigmaField(name)
 		if !ok {
 			c.approx("field %s is not a Microsoft 365 field Signalith keeps", name)
+			return name
+		}
+		return f
+	}
+	if c.category == ingest.OktaService {
+		f, ok := ingest.OktaSigmaField(name)
+		if !ok {
+			c.approx("field %s is not an Okta field Signalith keeps", name)
 			return name
 		}
 		return f

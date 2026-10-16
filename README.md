@@ -46,7 +46,8 @@ sign in, and what each may do), and Signalith starts after it. If the first comm
 with `service "opensearch-security" didn't complete successfully`, see
 [If OpenSearch's security settings aren't loaded](docs/opensearch-security.md#if-opensearchs-security-settings-arent-loaded).
 The second command shows the admin password. Open https://localhost:9000 and sign
-in as `admin` with it. Signalith serves HTTPS with a certificate it makes for itself, so
+in as `admin` with it; since Signalith made that password, you then choose your own
+before anything else. Signalith serves HTTPS with a certificate it makes for itself, so
 the browser warns until you trust it; the sign-in page has a **Download the server
 certificate** link, and [docs/https.md](docs/https.md) says how to trust it.
 
@@ -179,7 +180,9 @@ same):
    ```
    The old one no longer works. People you added on the **Users** page keep theirs.
 4. Open **https**://localhost:9000 (old `http://` bookmarks are redirected) and sign in as
-   `admin`. Trust the certificate as described in [docs/https.md](docs/https.md).
+   `admin`. You are asked to choose your own password before anything else (an install
+   that still uses the first password Signalith made is asked once, after any upgrade,
+   however often it was used before). Trust the certificate as described in [docs/https.md](docs/https.md).
 5. Update the agents. Agents you set up before keep sending for now: on its first start
    Signalith sees that OpenSearch already holds events from before the upgrade, so it
    still accepts agents over plain `http://`, with the old example token. (A new install
@@ -240,6 +243,20 @@ fictional and kept apart from your own data, and one click removes all of it. Se
 ```sh
 docker compose -f deploy/docker/docker-compose.yml exec signalith signalith sample-data load
 ```
+
+### Kubernetes (Helm)
+
+Each release also publishes a Helm chart, which runs Signalith, a secured OpenSearch and
+optional scanners, with no default passwords and pods that meet the restricted Pod
+Security Standard:
+
+```sh
+helm install signalith oci://ghcr.io/jrsamsanchez/charts/signalith --version <release> \
+  --namespace signalith --create-namespace
+```
+
+See [docs/kubernetes.md](docs/kubernetes.md) for the first password, exposing it,
+several servers and an OpenSearch of your own.
 
 ### Packages (.deb, .rpm, .msi)
 
@@ -374,6 +391,7 @@ Supported sources in Phase 1:
 | AWS CloudTrail sign-ins and API calls, through the OpenTelemetry Collector ([docs/aws-cloudtrail.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/aws-cloudtrail.md)) | Authentication, Change or Other |
 | Microsoft Entra ID sign-ins, audit log and risk detections, and the Azure activity log, through an Event Hub and the OpenTelemetry Collector ([docs/azure.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/azure.md)) | Authentication, Change or Alerts |
 | Microsoft 365 audit log (Exchange, SharePoint, OneDrive, Teams, admin activity and alerts), read from Microsoft's Management Activity API with no agent ([docs/microsoft-365.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/microsoft-365.md)) | Authentication, Change, Alerts or Other |
+| Okta System Log (sign-ins, MFA, account, app and policy changes, admin roles, API tokens and ThreatInsight threats), read from Okta's System Log API with no agent ([docs/okta.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/okta.md)) | Authentication, Change, Alerts or Other |
 | Google Cloud audit logs (Admin Activity, Data Access, System Event, Policy Denied), and Google Workspace admin and sign-in audit logs shared with Google Cloud, through a log sink, Pub/Sub and the OpenTelemetry Collector ([docs/google-cloud.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/google-cloud.md)) | Change, Authentication or Other |
 | Zeek and Suricata on a network sensor, or Suricata EVE over syslog from pfSense and OPNsense ([docs/network-sensor.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/network-sensor.md)) | Network_Traffic, Network_Resolution, Web, Certificates, File_Transfers, Intrusion_Detection, Authentication, Filesystem or Other |
 | Anything else | Other (searchable by text and fields) |
@@ -880,9 +898,9 @@ changes and more, plus two risk incident rules); 19 are on by default.
 - **Import Sigma rule** converts a [Sigma](https://github.com/SigmaHQ/sigma) rule to a
   Signalith query and lists anything it had to approximate. Imported rules start
   disabled so you can test them first.
-- **Content packs** add community rules, off until you turn them on: 2,478 tested
-  [SigmaHQ](https://github.com/SigmaHQ/sigma) Windows, Linux, web server, network, AWS CloudTrail, Azure, Microsoft 365, Google Cloud and Google Workspace rules and 1,144
-  Windows, Linux, web, network, AWS CloudTrail, Entra ID and Microsoft 365 detections
+- **Content packs** add community rules, off until you turn them on: 2,497 tested
+  [SigmaHQ](https://github.com/SigmaHQ/sigma) Windows, Linux, web server, network, AWS CloudTrail, Azure, Microsoft 365, Google Cloud, Google Workspace and Okta rules and 1,156
+  Windows, Linux, web, network, AWS CloudTrail, Entra ID, Microsoft 365 and Okta detections
   from Splunk's open source
   [security_content](https://github.com/splunk/security_content) (Apache 2.0). With
   both packs on, detections cover 160 ATT&CK techniques. Newer tested rules arrive as

@@ -196,6 +196,9 @@ func ParseWith(src []byte, macros map[string]*Macro, opt ParseOptions) (*Rule, e
 			return nil, errors.New("search is not a tstats search of Network_Traffic, Network_Resolution or Web")
 		}
 	}
+	if om, ok := oktaTstatsNode(first, r.DataSource); ok && m == nil {
+		m = om
+	}
 	if m == nil {
 		return nil, errors.New("search is not a tstats search of Endpoint.Processes, Filesystem, Registry or Web")
 	}
@@ -214,6 +217,10 @@ func ParseWith(src []byte, macros map[string]*Macro, opt ParseOptions) (*Rule, e
 	var present []Expr
 	var post []string
 	for i, s := range stages[1:] {
+		if IsOktaTstatsNode(r.Node) && iplocationRe.MatchString(s) {
+			// iplocation only adds columns.
+			continue
+		}
 		if limits, ok := parseLimits(s); ok && r.Threshold == nil {
 			t, err := tstatsThreshold(r.Node, m[1], m[5], limits)
 			if err != nil {
@@ -273,6 +280,10 @@ func ParseWith(src []byte, macros map[string]*Macro, opt ParseOptions) (*Rule, e
 	if len(present) > 0 {
 		where = &And{Kids: append([]Expr{where}, present...)}
 	}
+	if IsOktaTstatsNode(r.Node) {
+		// Okta's events, the rule's one data source.
+		where = &And{Kids: []Expr{&Cmp{Field: "sourcetype", Values: []string{ingest.OktaSourcetype}}, where}}
+	}
 	r.Where = where
 	return &r, nil
 }
@@ -282,7 +293,7 @@ func ParseWith(src []byte, macros map[string]*Macro, opt ParseOptions) (*Rule, e
 // the node, and each node's fields map to the Signalith fields they are
 // stored as. The code stays in the clause as signature_id.
 var (
-	rawRe = regexp.MustCompile("(?s)^`(powershell|sysmon|wineventlog_security|wineventlog_system|linux_auditd|cloudtrail|azure_monitor_aad|azure_monitor_activity|o365_management_activity)`\\s+(.*)$")
+	rawRe = regexp.MustCompile("(?s)^`(powershell|sysmon|wineventlog_security|wineventlog_system|linux_auditd|cloudtrail|azure_monitor_aad|azure_monitor_activity|o365_management_activity|okta)`\\s+(.*)$")
 	// rawNodes are the nodes of each source by event code.
 	rawNodes = map[string]map[string]string{
 		"powershell": {"4104": "PowerShell"},
@@ -312,6 +323,8 @@ var (
 		"azure_monitor_activity": {},
 		// Microsoft 365 audit records: one node (O365Node).
 		o365Source: {},
+		// Okta System Log events: one node (OktaNode).
+		oktaSource: {},
 	}
 	// RawFields are the event fields a raw search may name on each node,
 	// with the Signalith field each is stored as.
@@ -680,10 +693,10 @@ func parseRawStages(r *Rule, source, terms string, later []string, macros map[st
 			if err != nil {
 				return nil, err
 			}
-			// A Microsoft 365 search renames fields one by one; a
-			// pattern (Item.* as *) is read only for Entra ID's
+			// A Microsoft 365 or Okta search renames fields one by one;
+			// a pattern (Item.* as *) is read only for Entra ID's
 			// properties.
-			if cs.node == O365Node && slices.ContainsFunc(rs, func(r rename) bool { return strings.Contains(r.from, "*") }) {
+			if cs.node != AzureNode && slices.ContainsFunc(rs, func(r rename) bool { return strings.Contains(r.from, "*") }) {
 				return nil, fmt.Errorf("rename %s is not supported", firstWords(s))
 			}
 			renames = append(renames, rs...)
@@ -891,7 +904,7 @@ func fieldsOf(e Expr, node string, xml bool) error {
 	case *Not:
 		return fieldsOf(x.Kid, node, xml)
 	case *Cmp:
-		if x.Field == eventCode || node == AuditdNode && strings.HasPrefix(x.Field, "auditd_") || node == CloudTrailNode || node == AzureNode || node == O365Node {
+		if x.Field == eventCode || node == AuditdNode && strings.HasPrefix(x.Field, "auditd_") || node == CloudTrailNode || node == AzureNode || node == O365Node || node == OktaNode {
 			return nil
 		}
 		for _, f := range RawFields[node] {

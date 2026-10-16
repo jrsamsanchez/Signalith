@@ -50,6 +50,9 @@ const (
 	// Cloud has them, whose data are the fields of the Sigma rule
 	// (eventName, new_value).
 	WorkspaceChannel = ingest.WorkspaceChannel
+	// OktaChannel is Okta System Log events, whose data are the fields
+	// of the Sigma rule (eventType, outcome.result).
+	OktaChannel = ingest.OktaChannel
 )
 
 // TestFile holds a shipped rule's test events.
@@ -132,7 +135,7 @@ func (c Case) SigmaView() (map[string]string, bool) {
 		}
 		return out, true
 	case c.Channel == CloudTrailChannel, c.Channel == AzureChannel, c.Channel == O365Channel, c.Channel == GCPChannel,
-		c.Channel == WorkspaceChannel:
+		c.Channel == WorkspaceChannel, c.Channel == OktaChannel:
 		// Sigma's CloudTrail rules name the record's own fields, and its
 		// Azure rules the fields the record is built from.
 		return maps.Clone(c.Data), true
@@ -234,6 +237,9 @@ func (c Case) Record(host string, t time.Time) (string, map[string]any) {
 	}
 	if c.Channel == WorkspaceChannel {
 		return ingest.GCPTag, ingest.WorkspaceRecord(host, t, c.Data)
+	}
+	if c.Channel == OktaChannel {
+		return ingest.OktaTag, ingest.OktaRecord(host, t, c.Data)
 	}
 	if c.Channel == WebChannel {
 		return ingest.WebTag, ingest.WebRecord(ingest.AccessLine(t, c.Data), "/var/log/nginx/access.log", host, t)
@@ -381,6 +387,9 @@ func init() {
 		Bases[s] = map[string]string{}
 		sysmonEvents[s] = "activity"
 	}
+	// And an Okta System Log event's.
+	Bases[ingest.OktaService] = map[string]string{}
+	sysmonEvents[ingest.OktaService] = "log"
 	Bases["sysmon_event"] = map[string]string{}
 	Bases["security_named"] = map[string]string{}
 	Bases["sysmon_file_block"] = Bases["file_event"]
@@ -418,6 +427,8 @@ func Channel(category string) string {
 		return O365Channel
 	case ingest.GCPService:
 		return GCPChannel
+	case ingest.OktaService:
+		return OktaChannel
 	}
 	if slices.Contains(ingest.AzureServices, category) {
 		return AzureChannel

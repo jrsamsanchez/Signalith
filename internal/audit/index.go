@@ -35,6 +35,7 @@ func Template(prefix, replicas string) map[string]any {
 		replicas = "0-1"
 	}
 	kw := map[string]any{"type": "keyword"}
+	unindexed := map[string]any{"type": "keyword", "index": false, "doc_values": false}
 	return map[string]any{
 		"index_patterns": []string{Pattern(prefix)},
 		// Above any catch-all template someone may have.
@@ -51,6 +52,13 @@ func Template(prefix, replicas string) map[string]any {
 						"fields": map[string]any{"keyword": map[string]any{"type": "keyword", "ignore_above": 1024}}},
 					"epoch": map[string]any{"type": "long"},
 					"seq":   map[string]any{"type": "long"},
+					// The chain (chain.go). Verify reads prev and mac from the
+					// document, so they are kept, not searchable. Indices made
+					// before these were mapped keep them the same way, as
+					// dynamic is false.
+					"chain": kw, "kid": kw,
+					"chain_start": map[string]any{"type": "boolean"},
+					"prev":        unindexed, "mac": unindexed,
 					// Kept in the document, not searchable on their own.
 					"fields": map[string]any{"type": "object", "enabled": false},
 				},

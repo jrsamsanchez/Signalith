@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -70,13 +71,24 @@ func TestSpoolCapDropsOldestAndRecordsTheLoss(t *testing.T) {
 		t.Errorf("files hold %d bytes, stats say %d", size, st.SpooledBytes)
 	}
 	evs := spooled(t, dir)
+	// Each drop is named in an audit.lost record, with the run of
+	// sequence numbers it took.
 	var lost []Event
+	var total int64
+	next := int64(1)
 	for _, ev := range evs {
 		if ev.Action == "audit.lost" {
 			lost = append(lost, ev)
+			n, _ := strconv.ParseInt(ev.Fields["lost"], 10, 64)
+			total += n
+			if ev.Fields["lost_from"] != fmt.Sprint(next) || ev.Fields["lost_chain"] != ev.Chain || ev.Message != "audit records lost: the spool was full" {
+				t.Errorf("lost event %+v, want a run from %d", ev, next)
+			}
+			to, _ := strconv.ParseInt(ev.Fields["lost_to"], 10, 64)
+			next = to + 1
 		}
 	}
-	if len(lost) != 1 || lost[0].Fields["lost"] != fmt.Sprint(st.Lost) || lost[0].Message != "audit records lost: the spool was full" {
+	if len(lost) == 0 || total != st.Lost {
 		t.Fatalf("lost events %+v, stats %+v", lost, st)
 	}
 	if strings.HasPrefix(evs[0].Message, "1 ") {

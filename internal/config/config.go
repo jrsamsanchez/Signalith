@@ -55,6 +55,7 @@ type Config struct {
 	Intel      Intel      `yaml:"intel"`
 	Vulns      Vulns      `yaml:"vulns,omitempty"`
 	M365       M365       `yaml:"m365,omitempty"`
+	Okta       Okta       `yaml:"okta,omitempty"`
 	Notify     Notify     `yaml:"notify,omitempty"`
 	Response   Response   `yaml:"response,omitempty"`
 	Playbooks  Playbooks  `yaml:"playbooks,omitempty"`
@@ -75,6 +76,9 @@ type Config struct {
 	// (see AdminPasswordVersion), and envAdminHash is the hash made from
 	// it for this process.
 	envAdminVersion, envAdminHash string
+	// firstPassword is what the state folder keeps about the built-in
+	// admin's first password (see FirstPassword).
+	firstPassword FirstPassword
 	// publicURLFromEnv is set when SIGNALITH_PUBLIC_URL set
 	// server.public_url.
 	publicURLFromEnv bool
@@ -1284,6 +1288,25 @@ type M365 struct {
 	Cloud string `yaml:"cloud,omitempty"`
 }
 
+// Okta reads an Okta organization's System Log from Okta's System Log
+// API (internal/okta), as an API service app granted the okta.logs.read
+// scope that signs in with its private key, or with an admin's API token.
+// It is on when the domain and either the app and its key or the token
+// are set.
+type Okta struct {
+	// Domain is the organization's Okta domain, such as
+	// example.okta.com.
+	Domain string `yaml:"domain,omitempty"`
+	// ClientID is the service app's client ID, and PrivateKey its private
+	// key (PEM, or a JWK as Okta's admin console shows it). KeyID is the
+	// key's ID (kid), needed when the app has more than one key.
+	ClientID   string `yaml:"client_id,omitempty"`
+	PrivateKey string `yaml:"private_key,omitempty"`
+	KeyID      string `yaml:"key_id,omitempty"`
+	// APIToken is an admin's API token, used when no app is set.
+	APIToken string `yaml:"api_token,omitempty"`
+}
+
 // Vulns configures the CVE lookups of vulnerability scans (the
 // Vulnerabilities page keeps its networks in OpenSearch).
 type Vulns struct {
@@ -1427,6 +1450,10 @@ func (c *Config) ResponseScriptsDir() string {
 
 // LookupsDir returns the absolute lookups folder.
 func (c *Config) LookupsDir() string { return c.resolve(c.Lookups.Dir) }
+
+// GeoIPDir is where the search command iplocation finds its GeoIP
+// database, a .mmdb file an admin puts there.
+func (c *Config) GeoIPDir() string { return filepath.Join(c.LookupsDir(), "geoip") }
 
 // TLSDir is where Signalith keeps its own certificate authority and HTTPS
 // certificate (server.tls.mode auto).
@@ -1836,6 +1863,7 @@ func readAndEnv(path string) (*Config, error) {
 	}
 	c.syncEligible()
 	c.readDockerUpgrade()
+	c.readFirstPassword()
 	c.layers.pageFileEnv = strings.TrimSpace(os.Getenv("SIGNALITH_SETTINGS_FILE")) != ""
 	c.layers.pageFile = c.SettingsFile()
 	return c, nil
@@ -2196,6 +2224,18 @@ func (c *Config) applyEnv() error {
 		c.M365.ClientSecret = strings.TrimSpace(v[0])
 		c.fromEnv("m365.client_secret", from)
 	}
+	if v, from, err := envSecret("SIGNALITH_OKTA_PRIVATE_KEY"); err != nil {
+		return err
+	} else if len(v) > 0 {
+		c.Okta.PrivateKey = strings.TrimSpace(v[0])
+		c.fromEnv("okta.private_key", from)
+	}
+	if v, from, err := envSecret("SIGNALITH_OKTA_API_TOKEN"); err != nil {
+		return err
+	} else if len(v) > 0 {
+		c.Okta.APIToken = strings.TrimSpace(v[0])
+		c.fromEnv("okta.api_token", from)
+	}
 	if v, from, err := envSecret("SIGNALITH_NVD_API_KEY"); err != nil {
 		return err
 	} else if len(v) > 0 {
@@ -2493,6 +2533,16 @@ func (c *Config) Validate() error {
 	}
 	for _, f := range []struct{ key, what, v string }{{"m365.tenant_id", "tenant ID", c.M365.TenantID}, {"m365.client_id", "application ID", c.M365.ClientID}} {
 		if err := m365ID(f.what)(f.v); err != nil {
+			p = append(p, f.key+": "+err.Error())
+		}
+	}
+	for _, f := range []struct {
+		key   string
+		check func(any) error
+		v     string
+	}{{"okta.domain", checkOktaDomain, c.Okta.Domain}, {"okta.client_id", checkOktaClientID, c.Okta.ClientID},
+		{"okta.key_id", checkOktaKeyID, c.Okta.KeyID}, {"okta.private_key", CheckOktaPrivateKey, c.Okta.PrivateKey}} {
+		if err := f.check(f.v); err != nil {
 			p = append(p, f.key+": "+err.Error())
 		}
 	}
@@ -2939,6 +2989,10 @@ const header = `# Signalith configuration.
 # m365.tenant_id, m365.client_id, m365.client_secret  read Microsoft 365's audit
 #                    log with an Entra ID app (SIGNALITH_M365_CLIENT_SECRET); m365.cloud
 #                    is commercial, gcc, gcc_high or dod; see docs/microsoft-365.md
+# okta.domain, okta.client_id, okta.private_key, okta.key_id  read Okta's System
+#                    Log with an API service app (SIGNALITH_OKTA_PRIVATE_KEY_FILE);
+#                    or okta.api_token, an admin's API token
+#                    (SIGNALITH_OKTA_API_TOKEN); see docs/okta.md
 # notify.file        where the Notifications page keeps its channels and rules
 #                    (default notifications.yaml in lookups.dir); see docs/notifications.md
 # response.file      where the Response actions page keeps its actions (default
