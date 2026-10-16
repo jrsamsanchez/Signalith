@@ -374,6 +374,10 @@ func (e *Engine) compile(q *query.Query) (*Plan, error) {
 	p.Body = body
 
 	if len(cmds) > 0 {
+		if c, ok := cmds[0].(*query.Chart); ok {
+			// chart is stats, which runs in OpenSearch, then a pivot.
+			cmds = append(chartCommands(c), cmds[1:]...)
+		}
 		switch c := cmds[0].(type) {
 		case *query.Stats:
 			p.Mode, p.transform, p.post = "stats", c, cmds[1:]
@@ -457,7 +461,7 @@ func needsAllEvents(cmds []query.Command) bool {
 		case *query.Head:
 			return false
 		case *query.Sort, *query.Where, *query.Stats, *query.Top, *query.Dedup, *query.EventStats, *query.Transaction,
-			*query.StreamStats, *query.Regex, *query.AppendPipe:
+			*query.StreamStats, *query.Regex, *query.AppendPipe, *query.Chart:
 			return true
 		}
 	}
@@ -470,7 +474,7 @@ func leadingHead(cmds []query.Command) (int, bool) {
 		case *query.Head:
 			return c.N, true
 		case *query.Table, *query.Rename, *query.Enrich, *query.Intel, *query.Eval, *query.Rex, *query.Fillnull, *query.Lookup,
-			*query.Bin, *query.FieldsRemove:
+			*query.Bin, *query.FieldsRemove, *query.Spath:
 			continue
 		}
 		return 0, false

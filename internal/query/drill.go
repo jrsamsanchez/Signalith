@@ -87,6 +87,9 @@ func (q *Query) Drilldown() *Drill {
 		}
 	case *Timechart:
 		d.Series = c.By
+	case *Chart:
+		fields[c.Over] = c.Over
+		d.Series = c.By
 	}
 	for _, c := range q.Commands[cut+1:] {
 		switch c := c.(type) {
@@ -111,8 +114,8 @@ func (q *Query) Drilldown() *Drill {
 			for _, f := range c.Fields {
 				delete(fields, f)
 			}
-		case *Rex:
-			// Its groups can overwrite any column.
+		case *Rex, *Spath:
+			// Its fields can overwrite any column.
 			clear(fields)
 		case *Bin:
 			// Buckets are in no event.
@@ -129,7 +132,7 @@ func (q *Query) Drilldown() *Drill {
 			for _, a := range c.Aggs {
 				delete(fields, a.Column())
 			}
-		case *Stats, *Top, *Timechart, *Append, *AppendPipe:
+		case *Stats, *Top, *Timechart, *Chart, *Append, *AppendPipe, *XYSeries, *Untable:
 			// A summary of a summary, or rows from elsewhere: only the
 			// time range still holds.
 			clear(fields)
@@ -144,7 +147,7 @@ func (q *Query) Drilldown() *Drill {
 
 func summarises(c Command) bool {
 	switch c.(type) {
-	case *Stats, *Top, *Timechart:
+	case *Stats, *Top, *Timechart, *Chart:
 		return true
 	}
 	return false

@@ -32,6 +32,9 @@ Commands:
   bin span=1h _time      round times (or numbers, span=100) into buckets
   regex field="<regex>"  keep rows that match; field!= keeps those that do not
   fields - f1, f2        remove fields
+  | tstats count from datamodel=Authentication where Authentication.action=failure by Authentication.user  as in Splunk
+  chart count over host by action   one column per action; xyseries and untable pivot and unpivot
+  spath [path=a.b{}.c]   extract JSON values from _raw
   | makeresults [count=N]  start with N rows holding only _time
   enrich [fields]        add asset and identity context (priority, owner, watchlist)
   threatmatch [fields]   keep events whose fields match threat intel; must come right after the search

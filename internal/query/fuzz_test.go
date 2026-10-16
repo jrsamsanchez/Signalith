@@ -41,6 +41,9 @@ var fuzzSeeds = []string{
 	`* | streamstats current=f window=5 count, avg(bytes) as a, dc(user) by src | bin span=1h _time | bucket bytes span=0.5 AS "as"`,
 	`* | regex process!="(?i)-enc\s" | regex "x]" | regex "a b"=y | fields - _raw, tmp_* | fields + a`,
 	`| makeresults count=3 | append [search datamodel=Change | stats count by user] | appendpipe [| stats count by user | eval user="TOTAL" | appendpipe [head 1]]`,
+	`| tstats summariesonly=t count, values(Processes.process) as p from datamodel=Endpoint.Processes where Processes.process_name IN (a, b) NOT Processes.user=x earliest=-1d by Processes.dest, _time span=1h | where count > 1`,
+	`| tstats count where index=* by index, sourcetype | chart limit=3 sum(count) over index by sourcetype | untable index st c | xyseries index, st, c`,
+	`* | spath | spath input=body output="a b" path="x.y{}.z" | chart count, dc(user) by "by"`,
 	`* | appendpipe [where x="]"]`, `* | append [inputlookup t]`, `* | appendpipe []`, `* | bin _time`, `* | streamstats median(x)`,
 }
 

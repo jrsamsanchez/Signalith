@@ -6,7 +6,7 @@ import (
 )
 
 // Commands lists every pipe command, for autocomplete and error messages.
-var Commands = []string{"stats", "eventstats", "timechart", "top", "rare", "where", "eval", "rex", "dedup", "fillnull", "sort", "head", "table", "rename", "lookup", "inputlookup", "transaction", "join", "enrich", "intel", "threatmatch", "streamstats", "bin", "bucket", "fields", "regex", "makeresults", "append", "appendpipe"}
+var Commands = []string{"stats", "eventstats", "timechart", "top", "rare", "where", "eval", "rex", "dedup", "fillnull", "sort", "head", "table", "rename", "lookup", "inputlookup", "transaction", "join", "enrich", "intel", "threatmatch", "streamstats", "bin", "bucket", "fields", "regex", "makeresults", "append", "appendpipe", "tstats", "chart", "xyseries", "untable", "spath"}
 
 // AggFuncs lists the aggregation functions stats, eventstats and timechart
 // accept. perc95 stands for every percentile from perc1 to perc99.
@@ -61,6 +61,15 @@ func parseAt(src string, base, depth int) (*Query, error) {
 		cmd, err := p.parseCommand()
 		if err != nil {
 			return nil, err
+		}
+		if ts, ok := cmd.(*tstats); ok {
+			if len(q.Commands) > 0 || q.Search != nil || q.Index != "" || q.Datamodel != "" || q.Earliest != "" || q.Latest != "" {
+				return nil, errorf(at, "tstats starts the search: | tstats count from datamodel=Authentication by user")
+			}
+			commands := q.Commands
+			*q = ts.q
+			q.Commands = append(commands, ts.cmds...)
+			continue
 		}
 		if len(q.Commands) > 0 || q.Search != nil || q.Index != "" || q.Datamodel != "" || q.Earliest != "" || q.Latest != "" {
 			switch cmd.(type) {
@@ -508,6 +517,16 @@ func (p *parser) parseCommand() (Command, error) {
 		return p.parseAppend(t)
 	case "appendpipe":
 		return p.parseAppendPipe(t)
+	case "tstats":
+		return p.parseTstats(t)
+	case "chart":
+		return p.parseChart(t)
+	case "xyseries":
+		return p.parseXYSeries(t)
+	case "untable":
+		return p.parseUntable(t)
+	case "spath":
+		return p.parseSpath(t)
 	case "lookup":
 		return p.parseLookup(t)
 	case "inputlookup":

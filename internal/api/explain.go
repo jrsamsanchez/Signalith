@@ -340,6 +340,28 @@ func describeCommand(c query.Command) string {
 		return fmt.Sprintf("Keep the first %d rows.", c.N)
 	case *query.Table:
 		return "Show only the columns " + strings.Join(c.Fields, ", ") + "."
+	case *query.Chart:
+		s := "Chart " + describeAggs(c.Aggs) + " for each " + c.Over
+		if c.By != "" {
+			s += ", one column per " + c.By
+			if c.Limit > 0 {
+				s += fmt.Sprintf(" (the %d largest)", c.Limit)
+			}
+		}
+		return s + "."
+	case *query.XYSeries:
+		return "Make one row per " + c.X + " with one column per " + c.Y + ", holding " + strings.Join(c.Values, " and ") + "."
+	case *query.Untable:
+		return "Make one row per cell: " + c.X + ", the column's name as " + c.Label + " and its value as " + c.Value + "."
+	case *query.Spath:
+		if c.Path == "" {
+			return "Extract every value from the JSON in " + c.Input + ", each named by its path."
+		}
+		out := c.Output
+		if out == "" {
+			out = c.Path
+		}
+		return "Extract " + c.Path + " from the JSON in " + c.Input + " into " + out + "."
 	case *query.FieldsRemove:
 		return "Remove the fields " + strings.Join(c.Fields, ", ") + "."
 	case *query.StreamStats:
