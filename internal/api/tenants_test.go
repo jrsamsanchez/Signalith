@@ -194,6 +194,34 @@ func TestSwitchedTenantTurnedOff(t *testing.T) {
 	}
 }
 
+// A provider analyst lowered to viewer cannot stay in the tenant they
+// switched to.
+func TestSwitchedTenantRoleLowered(t *testing.T) {
+	reg, _ := tenants.Open(tenants.File(t.TempDir()))
+	reg.Add("acme", "Acme", "test", time.Now())
+	store := users.NewMemory()
+	store.Create(context.Background(), users.NewUser{Username: "pat", Role: users.Analyst, Password: "role-password"})
+	ts, _ := newTestServerWith(t, func(s *Server) {
+		s.Tenants = reg
+		s.TenantRuntime = &fakeTenantRuntime{}
+		s.Users = store
+	})
+	_, _, cookie := login(t, ts, "pat", "role-password")
+	if code, _, _ := call(t, ts, "POST", "/api/tenants/switch", `{"tenant":"acme"}`, "", "", cookie); code != 200 {
+		t.Fatalf("switch: %d", code)
+	}
+	viewer := users.Viewer
+	if _, err := store.Update(context.Background(), "pat", users.Change{Role: &viewer}); err != nil {
+		t.Fatal(err)
+	}
+	if code, body, _ := call(t, ts, "GET", "/api/findings", "", "", "", cookie); code != http.StatusConflict || body["code"] != "tenant_unavailable" {
+		t.Errorf("findings as a viewer in acme: %d %v", code, body)
+	}
+	if _, me, _ := call(t, ts, "GET", "/api/me", "", "", "", cookie); me["active_tenant"] != tenants.Default {
+		t.Errorf("me after the refusal: %v", me)
+	}
+}
+
 // Every route is classified: its resource is in exactly one of the lists,
 // and the lists name only routes and resources there are.
 func TestEveryRouteHasAScope(t *testing.T) {
@@ -309,6 +337,7 @@ type fakeTenantRuntime struct{ changed []string }
 
 func (f *fakeTenantRuntime) Server(string) *Server { return nil }
 func (f *fakeTenantRuntime) Servers() []*Server    { return nil }
+func (f *fakeTenantRuntime) SettingsChanged()      {}
 func (f *fakeTenantRuntime) Changed(_ context.Context, id string) error {
 	f.changed = append(f.changed, id)
 	return nil
@@ -361,6 +390,7 @@ func (o oneTenant) Server(id string) *Server {
 }
 func (o oneTenant) Servers() []*Server                    { return []*Server{o.srv} }
 func (o oneTenant) Changed(context.Context, string) error { return nil }
+func (o oneTenant) SettingsChanged()                      {}
 
 // A tenant's requests are answered by its own server, with its own data,
 // whoever asks: its users, and the provider's users switched into it.

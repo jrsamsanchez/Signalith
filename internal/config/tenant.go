@@ -54,7 +54,7 @@ func (c *Config) ForTenant(id string) *Config {
 
 	t.Retention = c.Retention
 	t.Retention.ArchiveDir = filepath.Join(dir, "archive")
-	t.Ingest = Ingest{MaxEventAge: c.Ingest.MaxEventAge}
+	t.Ingest = Ingest{MaxEventAge: c.Ingest.MaxEventAge, URLQuery: c.Ingest.URLQuery}
 	t.envTokens, t.sharedTokenFrom = nil, nil
 	t.Syslog = Syslog{}
 	t.Detections = c.Detections

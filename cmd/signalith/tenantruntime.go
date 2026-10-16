@@ -143,12 +143,29 @@ func (t *tenantRuntime) Changed(_ context.Context, id string) error {
 		}
 		t.running[id] = ti
 		t.mu.Unlock()
+		// A change applied while it started.
+		ti.srv.FollowLive(t.front.Running())
 		t.log.Info("tenant started", "tenant", id)
 	case !want && cur != nil:
 		cur.stop()
 		t.log.Info("tenant stopped", "tenant", id)
 	}
 	return nil
+}
+
+// SettingsChanged has every running tenant's server follow the settings
+// the default tenant's server applied at once.
+func (t *tenantRuntime) SettingsChanged() {
+	t.mu.Lock()
+	list := make([]*tenantInstance, 0, len(t.running))
+	for _, ti := range t.running {
+		list = append(list, ti)
+	}
+	t.mu.Unlock()
+	front := t.front.Running()
+	for _, ti := range list {
+		ti.srv.FollowLive(front)
+	}
 }
 
 // stop stops every tenant, and starts none after.
@@ -177,7 +194,8 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 	if err := tenants.ValidID(id); err != nil {
 		return nil, err
 	}
-	c := t.c.ForTenant(id)
+	// The settings in use now, with those applied at once since start.
+	c := t.front.Running().ForTenant(id)
 	cl := t.cl
 	log := t.log.With("tenant", id)
 	prefix := c.OpenSearch.IndexPrefix
@@ -344,7 +362,7 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 		Content:    updater,
 		Endpoints:  estore,
 		Background: front.Background,
-		Assistant:  front.Assistant,
+		Assistant:  newAssistant(c),
 		// The provider's users and sessions: everyone signs in on the
 		// default tenant's server, which hands a tenant's requests on.
 		Users:         front.Users,

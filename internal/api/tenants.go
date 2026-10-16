@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"slices"
 	"strings"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/jrsamsanchez/signalith/internal/agenttokens"
 	"github.com/jrsamsanchez/signalith/internal/tenants"
+	"github.com/jrsamsanchez/signalith/internal/users"
 )
 
 // What each API route works on, by its resource (the path's segment after
@@ -107,6 +109,9 @@ type TenantRuntime interface {
 	// Changed starts tenant id's server, or stops it, after the tenant
 	// was added, turned off or on.
 	Changed(ctx context.Context, id string) error
+	// SettingsChanged has every tenant's server follow the settings
+	// applied at once on this server (see Server.FollowLive).
+	SettingsChanged()
 }
 
 // tenantKey is the tenant of this server's data: tenants.Default for the
@@ -190,17 +195,26 @@ func (s *Server) agentTenant(r *http.Request) *Server {
 
 // activeTenant returns the tenant a request of p works in: a tenant
 // user's own; for the provider's users the one their session switched
-// to, else the default tenant. lost is true when the session's tenant can
-// no longer be used (turned off or removed): the request is then refused
-// (see allow), never answered with the default tenant's data instead.
-func (s *Server) activeTenant(p *principal, session string) (active string, lost bool) {
+// to, else the default tenant. lost says why the session's tenant can no
+// longer be used, when it cannot (turned off or removed, or the user may
+// no longer switch): the request is then refused (see allow), never
+// answered with the default tenant's data instead.
+func (s *Server) activeTenant(p *principal, session string) (active, lost string) {
 	if p.Tenant != "" {
-		return p.Tenant, false
+		return p.Tenant, ""
 	}
 	if session == "" || session == tenants.Default {
-		return tenants.Default, false
+		return tenants.Default, ""
 	}
-	return session, !s.tenantUsable(session)
+	if !p.Role.AtLeast(users.Analyst) {
+		// Switching is for analysts and admins: one whose role was
+		// lowered since cannot stay in the tenant.
+		return session, "Your role no longer lets you work in other tenants. You are back in the default tenant."
+	}
+	if !s.tenantUsable(session) {
+		return session, fmt.Sprintf("Tenant %q was turned off or removed. You are back in the default tenant.", session)
+	}
+	return session, ""
 }
 
 func (s *Server) routeTenants(api *router) {

@@ -159,6 +159,34 @@ func TestTenantsDataStaysApart(t *testing.T) {
 		t.Errorf("acme's tokens: %d %v", code, out)
 	}
 
+	// Settings applied at once on the Settings page apply to every
+	// tenant, as do those of a tenant added after.
+	aiOn := func(who *running) any {
+		t.Helper()
+		code, out, err := who.call("", "GET", "/api/ask", "")
+		if err != nil || code != 200 {
+			t.Fatalf("ask: %d %v %v", code, out, err)
+		}
+		return out["ai_available"]
+	}
+	if aiOn(ada) != false {
+		t.Fatal("acme has an AI model before one was set")
+	}
+	must("PUT", "/api/settings", `{"values":{"assistant.provider":"openai","assistant.url":"http://127.0.0.1:11434/v1","assistant.model":"llama3"}}`, 200)
+	if aiOn(ada) != true {
+		t.Error("acme does not use the AI model set on the Settings page")
+	}
+	must("POST", "/api/tenants", `{"id":"contoso","name":"Contoso"}`, http.StatusCreated)
+	must("POST", "/api/tenants/switch", `{"tenant":"contoso"}`, 200)
+	if aiOn(rs) != true {
+		t.Error("a tenant added after the change does not use the AI model")
+	}
+	must("PUT", "/api/settings", `{"reset":["assistant.provider"]}`, 200)
+	if aiOn(ada) != false || aiOn(rs) != false {
+		t.Error("the AI model turned off on the Settings page is still in use in a tenant")
+	}
+	must("POST", "/api/tenants/switch", `{"tenant":"default"}`, 200)
+
 	// Turned off: its agents and users are refused at once.
 	must("PATCH", "/api/tenants/acme", `{"disabled":true}`, 200)
 	if code := ingest(acmeToken, "late"); code == 200 {

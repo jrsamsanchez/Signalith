@@ -129,8 +129,9 @@ type principal struct {
 	// tenants.Default (see activeTenant).
 	Tenant string
 	Active string
-	// lostTenant is set when the session's tenant can no longer be used.
-	lostTenant bool
+	// lostTenant says why the session's tenant can no longer be used,
+	// when it cannot.
+	lostTenant string
 }
 
 // runsServer reports whether p may see how the server itself runs (file
@@ -197,9 +198,8 @@ func (s *Server) allow(rt route, next http.Handler) http.Handler {
 				"error": "This is a page for the provider that runs Signalith, not for a tenant's users.", "code": "provider_only"})
 			return
 		}
-		if p.lostTenant && !rt.Anytime {
-			writeJSON(w, http.StatusConflict, map[string]any{
-				"error": fmt.Sprintf("Tenant %q was turned off or removed. You are back in the default tenant.", p.Active), "code": "tenant_unavailable"})
+		if p.lostTenant != "" && !rt.Anytime {
+			writeJSON(w, http.StatusConflict, map[string]any{"error": p.lostTenant, "code": "tenant_unavailable"})
 			return
 		}
 		if !rt.Platform && !rt.Anytime && !rt.Shared && !s.servesTenant(p.Active) {
@@ -288,7 +288,7 @@ func (s *Server) authenticate(r *http.Request) (*principal, error) {
 			if p := s.principalFor(ss.User); p != nil && (ss.Version == "" || ss.Version == s.passwordStamp(ss.User)) {
 				p.Method, p.token, p.remember, p.signedIn = "session", c.Value, ss.Remember, ss.Created
 				p.Active, p.lostTenant = s.activeTenant(p, ss.Tenant)
-				if p.lostTenant {
+				if p.lostTenant != "" {
 					// The session goes back to the default tenant, after
 					// this request is refused (see allow).
 					if err := s.sessions().SetTenant(r.Context(), c.Value, ""); err != nil {

@@ -260,6 +260,8 @@ type Server struct {
 	// apply at once, and liveAI the assistant they give.
 	live   atomic.Pointer[config.Config]
 	liveAI atomic.Pointer[liveModel]
+	// followMu keeps a tenant's server following one change at a time.
+	followMu sync.Mutex
 
 	// legacyProxies are reverse proxies believed only because the config
 	// predates HTTPS by default (see viaTrustedProxy).

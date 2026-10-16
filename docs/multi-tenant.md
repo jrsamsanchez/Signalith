@@ -32,7 +32,8 @@ configured index prefix and folders, so nothing moves when you upgrade.
 - **Files.** Each tenant's files are in `tenants/<id>/` in the state folder: its lookups,
   detections, dashboards, archives, response scripts and settings files.
 - **Its own server.** Signalith runs each tenant's data with a server of its own inside the
-  same process, built from the tenant's own settings. A tenant's request is answered by
+  same process, built from the tenant's own settings. Settings saved on the Settings page
+  that apply at once (the AI model, search limits and so on) apply to every tenant too. A tenant's request is answered by
   that server only, with that tenant's stores, so nothing can fall back to another
   tenant's data. If it is not running, the request is refused (`503`, code
   `tenant_unavailable`).
@@ -42,8 +43,9 @@ configured index prefix and folders, so nothing moves when you upgrade.
 - **Sign-in.** Everyone signs in on the same page. A tenant user's session can only ever
   work in their tenant. A provider analyst or admin can switch to any tenant (viewers
   cannot), and every switch is in the audit log. If the tenant a provider user switched
-  to is turned off, their next request is refused (`409`, code `tenant_unavailable`) and
-  the session goes back to the default tenant, never to another tenant's data silently.
+  to is turned off, or their role is lowered to viewer, their next request is refused
+  (`409`, code `tenant_unavailable`) and the session goes back to the default tenant,
+  never to another tenant's data silently.
 - **Audit.** Every change made in a tenant other than the default one is in the audit log
   with `tenant=<id>`, and so is every log line of that tenant's server, searches
   included.
