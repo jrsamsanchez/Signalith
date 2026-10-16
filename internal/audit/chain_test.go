@@ -586,6 +586,74 @@ func TestForgeriesWithoutTheKeyShow(t *testing.T) {
 			t.Fatalf("report %+v", r)
 		}
 	})
+	// When the check reads no signed record of a server at all, the time
+	// the cluster document says it started signing still holds.
+	since := func(evs []Event) VerifyQuery {
+		return VerifyQuery{SignedSince: map[string]time.Time{"n1": evs[0].Time.Add(-2 * time.Minute)}}
+	}
+	t.Run("every MAC of a server removed", func(t *testing.T) {
+		evs := chain(t, 6, false)
+		evs[2].User = "mallory"
+		for i := range evs {
+			evs[i].KID, evs[i].MAC = "", ""
+		}
+		relink(evs, 1)
+		if r := Check(asStored(t, evs), VerifyQuery{}, testKeys); r.Tampered() {
+			t.Fatalf("without the cluster document's word it cannot tell: %+v", r)
+		}
+		r := Check(asStored(t, evs), since(evs), testKeys)
+		if !r.Tampered() || r.Stripped != 6 || r.Unsigned != 0 {
+			t.Fatalf("report %+v", r)
+		}
+		// A server holding no key checks no MAC, and says nothing of them.
+		if r := Check(asStored(t, evs), since(evs), nil); r.Tampered() || r.Unsigned != 6 {
+			t.Fatalf("no key: %+v", r)
+		}
+	})
+	t.Run("every record signed again with another key", func(t *testing.T) {
+		evs := chain(t, 6, false)
+		evs[2].User = "mallory"
+		for i := range evs {
+			evs[i].KID = "k9"
+		}
+		relink(evs, 1)
+		for i := range evs {
+			evs[i].KID = "k9"
+			evs[i].MAC = evs[i].sign([]byte("mallory's own key, 32 bytes long"))
+		}
+		r := Check(asStored(t, evs), since(evs), testKeys)
+		if !r.Tampered() || r.Stripped != 6 || r.UnknownKey != 0 {
+			t.Fatalf("report %+v", r)
+		}
+	})
+	t.Run("MACs removed in the range checked", func(t *testing.T) {
+		base := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+		s := newTestSink(t, SinkOptions{Server: "a", NodeID: "n1", Now: func() time.Time { return base }})
+		s.SetKeySource(keySource("k1"))
+		for i := range 6 {
+			s.Add(Event{Time: base.Add(time.Duration(i) * time.Hour), Action: "x.y", Message: fmt.Sprint(i)})
+		}
+		s.Close()
+		evs := spooled(t, s.dir)
+		evs[2].User = "mallory"
+		for i := 2; i < 4; i++ {
+			evs[i].KID, evs[i].MAC = "", ""
+		}
+		relink(evs, 3)
+		var in []Hit
+		for _, h := range asStored(t, evs) {
+			// What Verify reads of the range: the records next to it the
+			// attacker left signed are an hour away.
+			if !h.Time.Before(base.Add(2*time.Hour)) && h.Time.Before(base.Add(4*time.Hour)) {
+				in = append(in, h)
+			}
+		}
+		q := VerifyQuery{From: base.Add(2 * time.Hour), To: base.Add(4 * time.Hour), SignedSince: map[string]time.Time{"n1": base}}
+		r := Check(in, q, testKeys)
+		if !r.Tampered() || r.Stripped != 2 {
+			t.Fatalf("report %+v", r)
+		}
+	})
 	t.Run("unsigned drops where nothing is signed", func(t *testing.T) {
 		evs := chain(t, 5, true)
 		f := lostEvent(lostRange{chain: evs[0].Chain, from: 3, to: 3, hash: evs[2].Hash(), n: 1, reason: "the spool was full"})

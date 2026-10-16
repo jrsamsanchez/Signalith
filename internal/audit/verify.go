@@ -33,6 +33,11 @@ type VerifyQuery struct {
 	Server string
 	// Limit is the most records read (DefaultVerifyLimit when 0).
 	Limit int
+	// SignedSince holds, per node id, when that server started signing
+	// its records, from a source the records' writers cannot change (the
+	// cluster document): its records dated after it must be signed with a
+	// key this server holds, whatever records the check reads.
+	SignedSince map[string]time.Time
 }
 
 // Report is what Verify found. A record is OK when its MAC checks out
@@ -304,6 +309,13 @@ func Check(hits []Hit, q VerifyQuery, keys KeyFunc) *Report {
 	// records with a key this server holds.
 	all := make([]*checked, len(hits))
 	signedFrom := map[string]time.Time{}
+	if keys != nil {
+		for node, t := range q.SignedSince {
+			if !t.IsZero() {
+				signedFrom[node] = t
+			}
+		}
+	}
 	for i := range hits {
 		h := &hits[i]
 		c := &checked{hit: h}
@@ -391,7 +403,7 @@ func Check(hits []Hit, q VerifyQuery, keys KeyFunc) *Report {
 			// little after its first signed one (see verifyMargin): its
 			// place in its chain says more, checked below.
 			if t, ok := signedFrom[h.NodeID]; ok && h.Time.After(t.Add(verifyMargin)) {
-				stripped(c, "the record is not signed with a key this server holds, though its server signed its records from "+
+				stripped(c, "the record is not signed with a key this server holds, though its server signs its records since "+
 					t.UTC().Format(time.RFC3339)+": its MAC was removed or replaced, or the record was put in")
 			}
 		}

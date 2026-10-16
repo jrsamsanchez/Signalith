@@ -85,7 +85,10 @@ What it cannot show:
   hour, show only once a later line of that server or a later checkpoint exists. Lines
   removed at the start of the oldest chain look like lines retention deleted.
 - A line put in without a chain place and dated before its server first signed a line, or
-  within a minute after, counts only as unsigned.
+  within a minute after, counts only as unsigned. When a server first signs its lines, it notes
+  the time in the cluster's shared settings, which are signed with the cluster key, so a check
+  of any range knows its later lines must be signed even if every line it reads was stripped.
+  Lines of a server that never signed (an older version) are only counted as unsigned.
 - Lines written before this version, imported lines (the founder's retention history), and
   lines a server wrote while it had no cluster key yet are chained (when written by a server
   of this version) but not signed: changing one shows only through the line after it.

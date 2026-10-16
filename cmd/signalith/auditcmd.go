@@ -70,7 +70,9 @@ func cmdAudit(args []string) error {
 	if err != nil {
 		return errors.New(store.Unusable(err))
 	}
-	keys := auditKeys(c, cliClusterKeys(c, cl))
+	keySet, rt := cliClusterKeys(c, cl)
+	keys := auditKeys(c, keySet)
+	q.SignedSince = auditSignedSince(rt)
 	if keys == nil {
 		fmt.Fprintln(os.Stderr, "This server holds no cluster key, so the records' MACs cannot be checked; only their links are.")
 	}
@@ -93,14 +95,14 @@ func cmdAudit(args []string) error {
 // cliClusterKeys returns the cluster keys the cluster uses now, as this
 // server's shared runtime reads them, or nil on a server that never
 // started.
-func cliClusterKeys(c *config.Config, cl *store.Client) func() *shared.KeySet {
+func cliClusterKeys(c *config.Config, cl *store.Client) (func() *shared.KeySet, *shared.Runtime) {
 	self, err := cluster.ReadIdentity(c.StateDir())
 	if err != nil {
-		return nil
+		return nil, nil
 	}
 	x := &clusterCLI{c: c, cl: cl, log: newLogger(io.Discard), self: self, out: io.Discard, errOut: io.Discard, by: cliUser()}
 	rt := x.runtime(true, "")
-	return func() *shared.KeySet { return rt.Hub().Keys() }
+	return func() *shared.KeySet { return rt.Hub().Keys() }, rt
 }
 
 // parseAuditDate reads a date (2026-10-01) or an RFC 3339 time. A date

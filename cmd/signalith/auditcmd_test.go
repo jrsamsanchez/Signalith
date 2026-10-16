@@ -47,3 +47,25 @@ func TestPrintAuditReport(t *testing.T) {
 		t.Errorf("clean report:\n%s", buf.String())
 	}
 }
+
+// A server that signs its audit records notes so in the cluster
+// document, out of reach of whoever can write to OpenSearch, once: the
+// first time stays.
+func TestMarkAuditSigned(t *testing.T) {
+	t.Setenv(clusterKeyFileEnv, "")
+	rs := startRunnerWith(t, runOptions{scheduler: true, server: plainHTTP})
+	eventually(t, "the shared settings are in use", func() bool {
+		return rs.r.shared != nil && rs.r.shared.Cluster() != nil && rs.r.shared.Writable() == nil
+	})
+	id := rs.r.node.ID()
+	first := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
+	if err := markAuditSigned(t.Context(), rs.r.shared, id, first); err != nil {
+		t.Fatal(err)
+	}
+	if err := markAuditSigned(t.Context(), rs.r.shared, id, first.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if got := auditSignedSince(rs.r.shared)[id]; !got.Equal(first) {
+		t.Fatalf("signed since %v, want %v", got, first)
+	}
+}

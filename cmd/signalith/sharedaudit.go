@@ -88,11 +88,26 @@ func (r *runner) useAudit(ctx context.Context, in *instance, c *config.Config, c
 	// now. A server that has none at the moment (it has not been handed
 	// the key yet) chains its records unsigned until it has one.
 	sh := r.shared
+	nodeID, log := r.node.ID(), r.log
+	var marked, marking atomic.Bool
 	r.audit.sink.SetKeySource(func() (string, []byte) {
-		if k := sh.Hub().Keys().Active(); k != nil {
-			return k.ID(), k.AuditKey()
+		k := sh.Hub().Keys().Active()
+		if k == nil {
+			return "", nil
 		}
-		return "", nil
+		if !marked.Load() && marking.CompareAndSwap(false, true) {
+			go func() {
+				defer marking.Store(false)
+				mctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+				defer cancel()
+				if err := markAuditSigned(mctx, sh, nodeID, time.Now()); err != nil {
+					log.Debug("could not note in the shared settings that this server signs its audit records", "err", err)
+					return
+				}
+				marked.Store(true)
+			}()
+		}
+		return k.ID(), k.AuditKey()
 	})
 	in.jobs.Go(func() { ensureAuditTemplate(ctx, cl, c, r.log) })
 	node := r.node
@@ -176,6 +191,49 @@ func reportArchiveFolder(ctx context.Context, f *clusterarchive.Folders, log *sl
 	}
 }
 
+// markAuditSigned notes in the cluster document that the server nodeID
+// signs its audit records from at on, unless it noted so before: the
+// integrity check then counts its later unsigned records as tampered
+// with, whatever records it reads (audit.VerifyQuery.SignedSince).
+func markAuditSigned(ctx context.Context, rt *shared.Runtime, nodeID string, at time.Time) error {
+	doc := rt.Cluster()
+	if doc == nil {
+		return errors.New("the cluster document cannot be read")
+	}
+	if b, ok := doc.Get(); ok && b.AuditSigned[nodeID] != "" {
+		return nil
+	}
+	_, err := doc.Mutate(ctx, "signalith", func(b *shared.ClusterBody) error {
+		if b.AuditSigned[nodeID] == "" {
+			if b.AuditSigned == nil {
+				b.AuditSigned = map[string]string{}
+			}
+			b.AuditSigned[nodeID] = at.UTC().Format(time.RFC3339Nano)
+		}
+		return nil
+	})
+	return err
+}
+
+// auditSignedSince reads from the cluster document of rt when each server
+// started signing its audit records.
+func auditSignedSince(rt *shared.Runtime) map[string]time.Time {
+	if rt == nil || rt.Cluster() == nil {
+		return nil
+	}
+	b, ok := rt.Cluster().Get()
+	if !ok {
+		return nil
+	}
+	out := map[string]time.Time{}
+	for node, v := range b.AuditSigned {
+		if t, err := time.Parse(time.RFC3339Nano, v); err == nil {
+			out[node] = t
+		}
+	}
+	return out
+}
+
 // auditAPI is the Audit page's backing for this start.
 func (r *runner) auditAPI(c *config.Config, cl *store.Client) *api.Audit {
 	on := r.auditOn()
@@ -183,8 +241,10 @@ func (r *runner) auditAPI(c *config.Config, cl *store.Client) *api.Audit {
 	if sh := r.shared; sh != nil {
 		keys = func() *shared.KeySet { return sh.Hub().Keys() }
 	}
+	sh := r.shared
 	return &api.Audit{Client: cl, Prefix: c.OpenSearch.IndexPrefix, Shared: func() bool { return on },
-		Keys: func() audit.KeyFunc { return auditKeys(c, keys) }}
+		Keys:        func() audit.KeyFunc { return auditKeys(c, keys) },
+		SignedSince: func() map[string]time.Time { return auditSignedSince(sh) }}
 }
 
 // auditKeys returns the audit keys of every cluster key this server

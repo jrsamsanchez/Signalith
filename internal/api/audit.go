@@ -27,6 +27,10 @@ type Audit struct {
 	// cluster key this server holds, retired ones included; nil, or a nil
 	// KeyFunc, when it holds none.
 	Keys func() audit.KeyFunc
+	// SignedSince returns, from the cluster document, when each server
+	// started signing its audit records (audit.VerifyQuery.SignedSince);
+	// nil is none known.
+	SignedSince func() map[string]time.Time
 
 	// verifying is held while an integrity check runs: one at a time, as
 	// each reads up to auditVerifyLimit records.
@@ -70,6 +74,9 @@ func (s *Server) handleAuditVerify(w http.ResponseWriter, r *http.Request) {
 	var keys audit.KeyFunc
 	if s.Audit.Keys != nil {
 		keys = s.Audit.Keys()
+	}
+	if s.Audit.SignedSince != nil {
+		vq.SignedSince = s.Audit.SignedSince()
 	}
 	rep, err := audit.Verify(ctx, s.Audit.Client, s.Audit.Prefix, vq, keys)
 	if err != nil {
