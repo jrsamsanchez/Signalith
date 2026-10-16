@@ -76,8 +76,11 @@ func TestParseBitTests(t *testing.T) {
 			t.Errorf("%s: want %v", mask, want)
 		}
 	}
-	// A comparison with another value is not a bit test.
-	if _, err := Parse(rule("`sysmon` EventCode=10 TargetImage=\"*x*\" | eval g = tonumber(GrantedAccess, 16) | eval r = bit_and(g, 16) | where r == 3"), nil); err == nil {
-		t.Error("r == 3 parsed")
+	// A comparison with another value is not a bit test; it runs as a
+	// later stage, since Signalith's eval has bit_and.
+	if r, err := Parse(rule("`sysmon` EventCode=10 TargetImage=\"*x*\" | eval g = tonumber(GrantedAccess, 16) | eval r = bit_and(g, 16) | where r == 3"), nil); err != nil {
+		t.Errorf("r == 3: %v", err)
+	} else if r.Post == "" {
+		t.Error("r == 3 has no later stage")
 	}
 }

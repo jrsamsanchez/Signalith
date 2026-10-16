@@ -364,6 +364,7 @@ func QueryReference() string {
   mvcombine f   merges rows that differ only in f into one with all f values; nomv f joins a multivalue field into one value
   strcat [allrequired=t] f1 " text " f2 dest   joins fields and quoted text into dest
   rangemap field=f low=0-10 high=11-100 [default=name]   sets range to the matching range name
+  replace "old*" WITH "new*"[, ...] [IN f1, f2]   changes matching values; xmlkv [field] extracts XML elements as fields
   foreach f_* [eval <<FIELD>>=<<FIELD>>*2]   runs eval for each matching field (<<MATCHSTR>> is the * text); fieldformat runs as eval
   appendpipe [<commands>]   runs commands over the results so far and adds their rows after them, e.g. appendpipe [stats sum(count) as count | eval user="TOTAL"]
   join [type=left] [max=N] f1, f2 [search <query>]   adds the fields of a subsearch's rows that share f1, f2 (inner by default; the first match unless max=0 or max=N)

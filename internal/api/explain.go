@@ -258,6 +258,18 @@ func describeCommand(c query.Command) string {
 			parts[i] = fmt.Sprintf("%s for %g to %g", r.Name, r.Lo, r.Hi)
 		}
 		return "Set range by " + c.Field + ": " + strings.Join(parts, ", ") + ", otherwise " + c.DefaultName() + "."
+	case *query.Replace:
+		parts := make([]string, 0, len(c.Pairs))
+		for _, p := range c.Pairs {
+			parts = append(parts, strconv.Quote(p[0])+" with "+strconv.Quote(p[1]))
+		}
+		where := "every field"
+		if len(c.Fields) > 0 {
+			where = strings.Join(c.Fields, ", ")
+		}
+		return "Replace " + strings.Join(parts, ", ") + " in " + where + "."
+	case *query.XMLKV:
+		return "Extract the text of each XML element in " + c.Field + " as a field named by its tag."
 	case *query.ForEach:
 		return "For each field matching " + strings.Join(c.Fields, ", ") + ", run: " + c.Body + "."
 	case *query.Rex:
