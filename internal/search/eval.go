@@ -49,6 +49,10 @@ type evaluator struct {
 	err      error
 	// eachValues counts the values mvmap and mvfilter went through.
 	eachValues int
+	// The JSON text the JSON functions decoded last, and its value.
+	jsonText string
+	jsonDoc  any
+	jsonOK   bool
 }
 
 func newEvaluator(ctx context.Context) *evaluator {
@@ -83,6 +87,26 @@ const checkSteps = 256
 // rather than at the search timeout. A search over 100,000 events with
 // 20 assignments of 100 steps each takes 200 million.
 var maxEvalSteps = 500_000_000 // a variable so tests can lower it
+
+// stepN counts n steps of work at once, checking the step budget and
+// the search's context as step does.
+func (ev *evaluator) stepN(n int) bool {
+	if ev.err != nil {
+		return false
+	}
+	ev.steps += n
+	if ev.steps > maxEvalSteps {
+		ev.fail("the search evaluated more than %d million expressions; narrow the search first", maxEvalSteps/1_000_000)
+		return false
+	}
+	if ev.ctx != nil {
+		if err := ev.ctx.Err(); err != nil {
+			ev.err = err
+			return false
+		}
+	}
+	return true
+}
 
 // step counts work and stops the evaluation once the search's context
 // ends, so a few expensive rows cannot outlive the search timeout.
@@ -1077,6 +1101,9 @@ func (ev *evaluator) call(c *query.Call, r Row) any {
 			return nil
 		}
 		return numOut(float64(t.UnixNano()) / 1e9)
+	}
+	if v, ok := ev.callMore(c.Func, args); ok {
+		return v
 	}
 	return ev.fail("function %s() is not supported here", c.Func)
 }

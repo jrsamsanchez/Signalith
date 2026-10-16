@@ -109,6 +109,9 @@ var EvalFuncs = map[string][2]int{
 	"time": {0, 0}, "tonumber": {1, 2}, "tostring": {1, 2}, "trim": {1, 2}, "true": {0, 0},
 	"typeof": {1, 1}, "upper": {1, 1}, "urldecode": {1, 1},
 	"mvfilter": {1, 1}, "mvmap": {2, 2}, "mvfind": {2, 2}, "mvzip": {2, 3},
+	"spath": {2, 2}, "json_extract": {1, 2}, "json_keys": {1, 1}, "json_valid": {1, 1}, "json_array_to_mv": {1, 1},
+	"json_object": {0, -1}, "json_array": {0, -1}, "relative_time": {2, 2}, "mvrange": {2, 3},
+	"printf": {1, -1}, "isint": {1, 1}, "validate": {2, -1},
 }
 
 // maxEvalDepth bounds how deeply an expression may nest, so a hostile

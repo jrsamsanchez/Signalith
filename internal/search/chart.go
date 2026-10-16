@@ -180,6 +180,9 @@ func applySpath(ctx context.Context, res *Result, c *query.Spath) error {
 		if !ok || s == "" {
 			continue
 		}
+		if !ev.stepN(len(s)) {
+			return ev.err
+		}
 		dec := json.NewDecoder(strings.NewReader(s))
 		dec.UseNumber()
 		var doc any
@@ -340,6 +343,9 @@ func applyFromJSON(ctx context.Context, res *Result, c *query.FromJSON) error {
 		s, ok := evStr(r[c.Field])
 		if !ok || s == "" {
 			continue
+		}
+		if !ev.stepN(len(s)) {
+			return ev.err
 		}
 		dec := json.NewDecoder(strings.NewReader(s))
 		dec.UseNumber()
