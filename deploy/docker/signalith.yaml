@@ -29,6 +29,9 @@ opensearch:
   # auto: a copy of each day's events on a second OpenSearch node once
   # there is one, none on this single node.
   replicas: auto
+  # Primary shards for each new day's events, per data model: 1 unless the
+  # busiest data model stores tens of GB a day (see the Settings page).
+  # shards: 1
 search:
   default_earliest: -24h
   max_events: 10000
