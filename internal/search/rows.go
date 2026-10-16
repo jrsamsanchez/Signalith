@@ -629,8 +629,13 @@ type shiftAnd struct {
 
 func newShiftAnd(p string) *shiftAnd {
 	rs := []rune(p)
-	words := (len(rs)-1)/64 + 1 // divide first, so the size cannot overflow
-	sa := &shiftAnd{n: len(rs), any: make([]uint64, words), exact: map[rune][]uint64{}, state: make([]uint64, words)}
+	// One word of bits per 64 characters, grown without a size sum that
+	// could overflow.
+	words := []uint64{0}
+	for i := 64; i < len(rs); i += 64 {
+		words = append(words, 0)
+	}
+	sa := &shiftAnd{n: len(rs), any: words, exact: map[rune][]uint64{}, state: make([]uint64, len(words))}
 	for k, r := range rs {
 		if r == '?' {
 			sa.any[k/64] |= 1 << (k % 64)
