@@ -31,4 +31,6 @@ var cloudRuleFields = []string{
 	"DetectionMethod", "FileData.FileName", "FileData.FilePath", "FileData.FileSize", "FileData.MalwareFamily", "Id",
 	"ModifiedProperties{}.NewValue", "Item.ParentFolder.MemberRights", "Item.ParentFolder.MemberUpn", "SessionId",
 	"SiteUrl", "SourceFileName", "UserAgent", "ZipFileName", "AlertId", "ModifiedProperties{}.Name",
+	// Google Workspace: an admin event's parameters.
+	"event_parameters.new_value", "event_parameters.setting_name",
 }

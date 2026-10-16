@@ -1,0 +1,5 @@
+{"rule": "2d1b83e4-17c6-4896-a37b-29140b40a788", "cases": [
+  {"expect":true,"source":"synthesized","channel":"gworkspace","event_id":"activity","data":{"eventName":"GRANT_ADMIN_PRIVILEGE","eventService":"admin.googleapis.com"}},
+  {"expect":false,"source":"synthesized","channel":"gworkspace","event_id":"activity","data":{"eventService":"admin.googleapis.com"}},
+  {"expect":false,"source":"synthesized","channel":"gworkspace","event_id":"activity","data":{"eventName":"GRANT_ADMIN_PRIVILEGE"}}
+]}
