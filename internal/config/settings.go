@@ -455,7 +455,7 @@ var Registry = []Setting{
 			"With a cloud provider, it leaves your network.", ConfirmWhen: "on"},
 	{Key: "assistant.mask_fields", Scope: ScopeCluster, Section: "assistant", Label: "Fields never sent", Type: TypeList,
 		Help: "Fields whose values are replaced with stand-ins such as masked-user-1 wherever they appear, such as user or src. The same value always gets the same stand-in, " +
-			"and the real values are put back into the model's searches and its write-up. Add _raw to leave out the original event text. Wildcards * work. " +
+			"and the real values are put back into the model's searches and its write-up. Add _raw to leave out the original event text. Wildcards * work, and a field covers its subfields: user also masks user.name. " +
 			"Passwords, tokens, keys and cookies are always masked.",
 		Placeholder: "user, _raw", EmptyMeans: "only passwords, tokens, keys and cookies"},
 	{Key: "assistant.request_timeout", Scope: ScopeCluster, Section: "assistant", Label: "Answer time limit", Type: TypeDuration,

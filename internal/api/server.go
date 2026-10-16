@@ -26,6 +26,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/assistant"
 	"github.com/jrsamsanchez/signalith/internal/auth"
 	"github.com/jrsamsanchez/signalith/internal/cases"
+	"github.com/jrsamsanchez/signalith/internal/chatops"
 	"github.com/jrsamsanchez/signalith/internal/clientaddr"
 	"github.com/jrsamsanchez/signalith/internal/compliance"
 	"github.com/jrsamsanchez/signalith/internal/config"
@@ -95,6 +96,9 @@ type Server struct {
 	// Playbooks backs the Playbooks and Approvals pages; nil disables
 	// them.
 	Playbooks *Playbooks
+	// Chat answers the buttons in Slack and Teams messages; nil disables
+	// them.
+	Chat *Chat
 	// Retention enforces data retention policies; nil disables the Data
 	// retention page.
 	Retention *retention.Manager
@@ -302,6 +306,8 @@ type Server struct {
 	tokensOnce  sync.Once
 	tokenRate   tokenRate         // agent token creation
 	sensorCache sensorHealthCache // the Health page's network sensor counts
+	chatOnce    sync.Once
+	chatSvc     *chatops.Service
 }
 
 // EventAge is what keeps the age of events the server accepts in step
@@ -384,6 +390,7 @@ func (s *Server) Handler() http.Handler {
 	s.routeNotebooks(api)
 	s.routeRespond(api)
 	s.routePlaybooks(api)
+	s.routeChat(mux, api)
 	s.routeUsers(api)
 	s.routeSSO(api)
 	s.routeSAML(api)

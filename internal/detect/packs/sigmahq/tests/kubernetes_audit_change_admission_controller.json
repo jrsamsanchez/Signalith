@@ -1,0 +1,6 @@
+{"rule": "eed82177-38f5-4299-8a76-098d50d225ab", "cases": [
+  {"expect":true,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"objectRef.apiGroup":"admissionregistration.k8s.io","objectRef.resource":"validatingwebhookconfigurations","verb":"replace"}},
+  {"expect":false,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"objectRef.resource":"validatingwebhookconfigurations","verb":"replace"}},
+  {"expect":false,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"objectRef.apiGroup":"admissionregistration.k8s.io","verb":"replace"}},
+  {"expect":false,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"objectRef.apiGroup":"admissionregistration.k8s.io","objectRef.resource":"validatingwebhookconfigurations"}}
+]}

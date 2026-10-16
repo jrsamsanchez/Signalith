@@ -970,6 +970,30 @@ func TestSensorStatusNoStatsLine(t *testing.T) {
 
 // Run again with another capture port: the capture service stops as
 // written for the old port, which puts that port back as it was.
+// A run again with other networks restarts Zeek and Suricata, which read
+// them only when they start; their files are written at the end of a
+// pipeline, in a subshell.
+func TestSensorScriptNewNetworks(t *testing.T) {
+	m := newSensorMachine(t)
+	root, _ := m.install(t, "4")
+	out, err := m.run(t, "4", testToken, "--role", "sensor", "--from", "https://siem.example.com:8443", "--ca-sha256", m.caSHA,
+		"--version", "1.6.0", "--token", "-", "--networks", "10.0.0.0/8,203.0.113.7/32", "--dry-run", root)
+	if err != nil {
+		t.Fatalf("again: %v\n%s", err, out)
+	}
+	for _, want := range []string{"would run: systemctl restart signalith-zeek.service", "would run: systemctl restart signalith-suricata.service"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output has no %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "Nothing to change") || strings.Contains(out, "restart signalith-fluent-bit.service") {
+		t.Errorf("new networks:\n%s", out)
+	}
+	if got := readFile(t, filepath.Join(root, "opt/zeek/etc/networks.cfg")); !strings.Contains(got, "203.0.113.7/32") {
+		t.Errorf("networks.cfg:\n%s", got)
+	}
+}
+
 func TestSensorScriptNewPort(t *testing.T) {
 	m := newSensorMachine(t, "eth0", "eth1", "eth2")
 	root, _ := m.install(t, "4", "--interface", "eth1")
