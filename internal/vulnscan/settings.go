@@ -53,7 +53,12 @@ type Target struct {
 	Gentle bool `json:"gentle"`
 	// OpenVAS also scans the network with OpenVAS after Nmap, on a scanner
 	// where it is set up: deeper, but much slower.
-	OpenVAS  bool     `json:"openvas,omitempty"`
+	OpenVAS bool `json:"openvas,omitempty"`
+	// SSHLogin and SMBLogin are the IDs of the scan logins OpenVAS signs
+	// in to the hosts with, over SSH (Linux) and SMB (Windows); "" scans
+	// without signing in.
+	SSHLogin string   `json:"ssh_login,omitempty"`
+	SMBLogin string   `json:"smb_login,omitempty"`
 	Schedule Schedule `json:"schedule"`
 	Enabled  bool     `json:"enabled"`
 	// Scanner is the node ID of the server that scans this network, one
@@ -195,6 +200,12 @@ func (t *Target) Validate() error {
 	// is what gentle mode exists to spare fragile devices.
 	if t.Gentle && t.OpenVAS {
 		return inputErrorf("%s: OpenVAS cannot scan a network in gentle mode: it sends far more traffic than fragile devices may take. Turn one of them off", t.Name)
+	}
+	if !validLoginRef(t.SSHLogin) || !validLoginRef(t.SMBLogin) {
+		return inputErrorf("%s: its scan login is not valid; reload the page and pick another", t.Name)
+	}
+	if !t.OpenVAS && (t.SSHLogin != "" || t.SMBLogin != "") {
+		return inputErrorf("%s: only OpenVAS scans sign in to hosts; turn OpenVAS on or set the logins to None", t.Name)
 	}
 	t.Scanner = strings.TrimSpace(t.Scanner)
 	if t.Scanner != "" && !scannerRE.MatchString(t.Scanner) {

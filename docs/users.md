@@ -402,6 +402,8 @@ Some changes ask for your password again when you have not entered it in the las
   now;
 - switching certificate authority, and saving response actions, playbooks or
   notifications, or removing the detection content pack;
+- saving the networks to scan for vulnerabilities, and adding, changing or removing a
+  scan login;
 - saving a setting that affects sign-in, encryption or where data goes: **Sign out
   after**, **Require two-step sign-in**, single sign-on and the other `auth.*`
   settings, HTTPS and the certificate files (`server.tls*`), **Listen address**,
@@ -1099,7 +1101,8 @@ server, which can only read), `POST /api/tls/names`, `GET /api/security`,
 `DELETE /api/endpoints/{id}`, `GET /api/endpoints/blocked`, `DELETE /api/endpoints/blocked/{host}`,
 `POST /api/endpoints/queries`, `GET /api/endpoints/queries/{id}` (the [Endpoints page](endpoints.md)),
 `GET /api/vulns/setup`, `GET /api/vulns/scanners`, `PUT /api/vulns/settings`, `POST /api/vulns/networks/{id}/scan`,
-`POST /api/vulns/scans/{id}/stop` (setting up and running [vulnerability scans](vulnerabilities.md)),
+`POST /api/vulns/scans/{id}/stop`, `GET /api/vulns/logins`, `PUT /api/vulns/logins/{id}`, `DELETE /api/vulns/logins/{id}`
+(setting up and running [vulnerability scans](vulnerabilities.md), and their scan logins),
 `PUT /api/compliance/notes` (marking a [compliance](compliance.md) control as handled outside
 Signalith or not applicable),
 `GET /api/cluster` (the Servers page; see [servers.md](servers.md)), `GET /api/cluster/opensearch` (its OpenSearch card; see [opensearch-failover.md](opensearch-failover.md)), `POST /api/cluster/restart`
