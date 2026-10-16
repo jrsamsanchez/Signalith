@@ -25,7 +25,7 @@ const (
 
 // publicRoutes work without signing in. Ingest checks its own token; the
 // CA certificate is public.
-var publicRoutes = slices.Concat([]string{"POST /api/ingest", otlpLogsRoute, "POST /api/login", "POST /api/logout", "GET /api/tls/ca.pem"}, osqueryRoutes, joinPublicRoutes, installRoutes, sensorPublicRoutes, ssoPublicRoutes, scimPublicRoutes, chatPublicRoutes)
+var publicRoutes = slices.Concat([]string{"POST /api/ingest", otlpLogsRoute, "POST /api/login", "POST /api/logout", "GET /api/tls/ca.pem"}, osqueryRoutes, joinPublicRoutes, installRoutes, sensorPublicRoutes, ssoPublicRoutes, scimPublicRoutes, passkeyPublicRoutes, chatPublicRoutes)
 
 // routeLogin adds the routes that work without signing in: the sign-in
 // page, its static assets, and sign-in and sign-out.
@@ -36,6 +36,7 @@ func (s *Server) routeLogin(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/logout", s.handleLogout)
 	mux.HandleFunc("GET /api/tls/ca.pem", s.handleCAPEM)
 	s.routeJoinPublic(mux)
+	s.routePasskeyLogin(mux)
 	mux.HandleFunc(ssoStartRoute, s.handleSSOStart)
 	mux.HandleFunc(ssoCallbackRoute, s.handleSSOCallback)
 	if s.UI != nil {
@@ -171,16 +172,21 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
-		// Code is the two-step code, sent with the password again once
-		// the first answer asked for it.
-		Code     string `json:"code"`
-		Remember bool   `json:"remember"`
+		// Code is the two-step code, or Passkey a passkey's answer, sent
+		// with the password again once the first answer asked for it.
+		Code     string         `json:"code"`
+		Passkey  *passkeyAnswer `json:"passkey"`
+		Remember bool           `json:"remember"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	p, err := s.signIn(r, req.Username, req.Password, req.Code, "session")
+	p, err := s.signIn(r, req.Username, req.Password, secondFactor{Code: req.Code, Passkey: req.Passkey}, "session")
+	if errors.Is(err, errMFANeeded) && p != nil {
+		writeJSON(w, errMFANeeded.status, s.stepNeeded(r, p))
+		return
+	}
 	if err != nil {
 		writeSignInError(w, err)
 		return

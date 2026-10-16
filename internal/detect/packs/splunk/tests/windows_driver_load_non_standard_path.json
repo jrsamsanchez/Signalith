@@ -1,0 +1,5 @@
+{"rule": "9216ef3d-066a-4958-8f27-c84589465e62", "cases": [
+  {"expect":true,"source":"synthesized","channel":"System","event_id":"7045","data":{"AccountName":"LocalSystem","ImagePath":"\"C:\\Program Files\\Example\\updater.exe\" --service","ServiceName":"ExampleUpdater","ServiceType":"kernel mode driver","StartType":"auto start"}},
+  {"expect":false,"source":"synthesized","channel":"System","event_id":"7045","data":{"AccountName":"LocalSystem","ImagePath":"\"C:\\Program Files\\Example\\updater.exe\" --service","ServiceName":"ExampleUpdater","ServiceType":"kernel mode drives","StartType":"auto start"}},
+  {"expect":false,"source":"synthesized","channel":"System","event_id":"7045","data":{"AccountName":"LocalSystem","ImagePath":"\"C:\\Program Files\\Example\\updater.exe\" --service","ServiceName":"ExampleUpdater","ServiceType":"user mode service","StartType":"auto start"}}
+]}
