@@ -5,6 +5,8 @@ import (
 	"compress/gzip"
 	"context"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -232,5 +234,20 @@ func TestIPDBFileStaysInFolder(t *testing.T) {
 	_, err := e.fetchIPDB(ctx, "file:bad.tsv")
 	if err == nil || strings.Contains(err.Error(), "secret") {
 		t.Errorf("bad line: %v", err)
+	}
+}
+
+// TestIPDBRedirectStaysHTTPS: an https mirror can't send the download to
+// plain http.
+func TestIPDBRedirectStaysHTTPS(t *testing.T) {
+	plain := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, testIPDB) }))
+	defer plain.Close()
+	tls := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, plain.URL+"/ip.tsv", http.StatusFound)
+	}))
+	defer tls.Close()
+	e := &Engine{HTTP: tls.Client()}
+	if _, err := e.fetchIPDB(context.Background(), tls.URL+"/ip.tsv"); err == nil || !strings.Contains(err.Error(), "not https") {
+		t.Errorf("followed a redirect to http: %v", err)
 	}
 }

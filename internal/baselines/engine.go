@@ -1093,7 +1093,18 @@ func (e *Engine) fetchIPDB(ctx context.Context, src string) (*IPDB, error) {
 		return nil, err
 	}
 	req.Header.Set("User-Agent", "Signalith")
-	resp, err := e.HTTP.Do(req)
+	// A redirect stays on https, as the address itself must.
+	client := *e.HTTP
+	client.CheckRedirect = func(r *http.Request, via []*http.Request) error {
+		if r.URL.Scheme != "https" {
+			return errors.New("the IP database address redirected to an address that is not https")
+		}
+		if len(via) >= 5 {
+			return errors.New("the IP database address redirected too many times")
+		}
+		return nil
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
