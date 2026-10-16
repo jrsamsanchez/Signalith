@@ -45,7 +45,7 @@ func TestJudgeUpgrade(t *testing.T) {
 		next     string
 	}{
 		{name: "two ready servers", hbs: []cluster.Heartbeat{hb("a", "0.2.0", leads), hb("b", "0.2.0")}, st: member, tasksOK: true,
-			next: "Upgrade siem-b next: it does not run the jobs. Upgrade siem-a, which runs them, last."},
+			next: "To upgrade, start with siem-b: it does not run the jobs. Upgrade siem-a, which runs them, last."},
 		{name: "config behind", hbs: []cluster.Heartbeat{hb("a", "0.2.0", leads), hb("b", "0.2.0", func(h *cluster.Heartbeat) { h.MaxRev = 7 })}, st: member, tasksOK: true,
 			blockers: []string{"config_behind"}},
 		{name: "legacy skips config", hbs: []cluster.Heartbeat{hb("a", "0.2.0", leads), hb("b", "0.2.0", func(h *cluster.Heartbeat) { h.MaxRev = 0 })},
@@ -170,7 +170,7 @@ func TestJudgeHandOverAndBusy(t *testing.T) {
 	a, b := hb("a", "1.5.0", true), hb("b", "1.5.0", false)
 	a.Features = []string{cluster.FeatureYieldNewer}
 	v := judge(now, "n_a", []cluster.Heartbeat{a, b}, nil, member, 10, nil, true)
-	if want := "Upgrade siem-b next. siem-a hands the jobs to it once it is ready, then upgrade siem-a."; v.Next != want {
+	if want := "To upgrade, start with siem-b. siem-a hands the jobs to it once it is ready, then upgrade siem-a."; v.Next != want || v.Current != "1.5.0" || v.Newest != "" {
 		t.Errorf("next %q, want %q", v.Next, want)
 	}
 	a.Upgrade = &cluster.UpgradeStatus{Busy: "retention run"}
@@ -192,5 +192,76 @@ func TestNextAfterTheHandOver(t *testing.T) {
 	got := Next([]cluster.Heartbeat{a, b}, &b, map[string]int{"1.5.0": 3, "1.6.0": 3})
 	if got != "Upgrade siem-a next: siem-b, which runs the jobs, runs the new version already." {
 		t.Errorf("next %q", got)
+	}
+}
+
+func TestNextPromisesOnlyHandOversThatHappen(t *testing.T) {
+	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
+	yields := []string{cluster.FeatureYieldNewer}
+	leader := cluster.Heartbeat{NodeID: "n_1", Name: "signalith-1", Version: "ae9485c", Leader: true, LeaderEligible: true, Features: yields, StartedAt: now.Add(-time.Hour)}
+	two := cluster.Heartbeat{NodeID: "n_2", Name: "signalith-2", Version: "ae9485c", LeaderEligible: true, Features: yields, StartedAt: now.Add(-time.Hour)}
+	scanner := cluster.Heartbeat{NodeID: "n_s", Name: "scanner", Version: "ae9485c", Role: cluster.RoleScanner, NotEligible: "scanner", Features: yields, StartedAt: now.Add(-time.Hour)}
+	up := func(hb cluster.Heartbeat, ver string) cluster.Heartbeat {
+		hb.Version, hb.StartedAt = ver, now
+		return hb
+	}
+	for _, tc := range []struct {
+		name   string
+		live   []cluster.Heartbeat
+		levels map[string]int
+		want   string
+	}{
+		{name: "a scanner first never takes the jobs",
+			live: []cluster.Heartbeat{leader, two, scanner}, levels: map[string]int{"ae9485c": 3},
+			want: "To upgrade, start with scanner: it does not run the jobs. Upgrade signalith-1, which runs them, last."},
+		{name: "a commit build keeps the jobs until it is upgraded",
+			live: []cluster.Heartbeat{leader, two}, levels: map[string]int{"ae9485c": 3},
+			want: "To upgrade, start with signalith-2: it does not run the jobs. Upgrade signalith-1, which runs them, last."},
+		{name: "commit builds are not handed the jobs",
+			live: []cluster.Heartbeat{leader, up(two, "07d3263"), up(scanner, "07d3263")}, levels: map[string]int{"ae9485c": 3, "07d3263": 3},
+			want: "Upgrade signalith-1 next: it runs the jobs, so they move once, to the new version."},
+		{name: "commit builds, the newer one sorts first",
+			live: []cluster.Heartbeat{up(leader, "0a0a0a0"), two, scanner}, levels: map[string]int{"ae9485c": 3, "0a0a0a0": 3},
+			want: "Upgrade scanner next: signalith-1, which runs the jobs, runs the new version already."},
+		{name: "a release hands the jobs to the upgraded server",
+			live: []cluster.Heartbeat{up(leader, "0.2.0"), up(two, "0.3.0"), up(scanner, "0.3.0")}, levels: map[string]int{"0.2.0": 3, "0.3.0": 3},
+			want: "Upgrade signalith-1 next: it runs the jobs, so they move once, to the new version."},
+		{name: "a release on the first eligible server",
+			live: []cluster.Heartbeat{up(leader, "0.2.0"), up(two, "0.2.0"), up(scanner, "0.3.0")}, levels: map[string]int{"0.2.0": 3, "0.3.0": 3},
+			want: "Upgrade signalith-2 next. signalith-1 hands the jobs to it once it is ready, then upgrade signalith-1."},
+		{name: "commit builds before the first eligible server",
+			live: []cluster.Heartbeat{leader, two, up(scanner, "07d3263")}, levels: map[string]int{"ae9485c": 3, "07d3263": 3},
+			want: "Upgrade signalith-2 next: it does not run the jobs. Upgrade signalith-1, which runs them, last."},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var l *cluster.Heartbeat
+			for i := range tc.live {
+				if tc.live[i].Leader {
+					l = &tc.live[i]
+				}
+			}
+			if got := Next(tc.live, l, tc.levels); got != tc.want {
+				t.Errorf("next %q\nwant %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestJudgeEveryServerOnOneVersion(t *testing.T) {
+	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
+	member := shared.Status{Mode: shared.ModeMember, Level: 3}
+	hb := func(id string, leader bool) cluster.Heartbeat {
+		return cluster.Heartbeat{NodeID: "n_" + id, Name: "signalith-" + id, State: cluster.StateReady, Version: "07d3263", HeartbeatAt: now,
+			LeaderEligible: true, Leader: leader, Mode: string(shared.ModeMember), MaxRev: 10, LevelMax: 3}
+	}
+	v := judge(now, "n_1", []cluster.Heartbeat{hb("1", true), hb("2", false)}, nil, member, 10, nil, true)
+	if !v.Safe || v.Current != "07d3263" || v.Newest != "" || !strings.HasPrefix(v.Next, "To upgrade, start with signalith-2") {
+		t.Errorf("one version: %+v", v)
+	}
+	two := hb("2", false)
+	two.Version = "0.3.0"
+	v = judge(now, "n_1", []cluster.Heartbeat{hb("1", true), two}, nil, member, 10, nil, true)
+	if v.Current != "" || v.Newest != "0.3.0" {
+		t.Errorf("two versions: current %q newest %q", v.Current, v.Newest)
 	}
 }
