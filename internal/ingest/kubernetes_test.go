@@ -396,6 +396,13 @@ func TestKubernetesCredentialsRedacted(t *testing.T) {
 				"data": {"password": "` + jwt + `"}, "stringData": {"user": "` + jwt + `"}},
 			"responseObject": {"kind": "SecretList", "items": [{"metadata": {"name": "db"}, "data": {"password": "` + jwt + `"}}]},
 			"requestReceivedTimestamp": "2026-10-16T12:00:00.000000Z", "stageTimestamp": "2026-10-16T12:00:00.010000Z"}`,
+		"secret json patch": `{"kind": "Event", "apiVersion": "audit.k8s.io/v1", "level": "Request", "auditID": "a4",
+			"stage": "ResponseComplete", "verb": "patch", "requestURI": "/api/v1/namespaces/default/secrets/db",
+			"user": {"username": "admin"}, "sourceIPs": ["10.0.0.7"],
+			"objectRef": {"resource": "secrets", "namespace": "default", "name": "db", "apiVersion": "v1"},
+			"responseStatus": {"code": 200},
+			"requestObject": [{"op": "add", "path": "/data/pw", "value": "` + jwt + `"}],
+			"requestReceivedTimestamp": "2026-10-16T12:00:00.000000Z", "stageTimestamp": "2026-10-16T12:00:00.010000Z"}`,
 	} {
 		r := decode(t, s)
 		ev := Normalize(KubernetesTag, r, now)

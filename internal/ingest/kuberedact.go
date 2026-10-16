@@ -17,10 +17,23 @@ func kubeRedact(r map[string]any) map[string]any {
 	ref, _ := r["objectRef"].(map[string]any)
 	resource, _ := ref["resource"].(string)
 	sub, _ := ref["subresource"].(string)
+	sensitive := resource == "secrets" || resource == "tokenreviews" || resource == "tokenrequests" || sub == "token"
 	var out map[string]any
 	for _, k := range []string{"requestObject", "responseObject"} {
-		obj, ok := r[k].(map[string]any)
+		v, has := r[k]
+		if !has || v == nil {
+			continue
+		}
+		obj, ok := v.(map[string]any)
 		if !ok {
+			// A JSON patch (a list of operations) or anything else that
+			// is not an object can carry the values anywhere in it.
+			if sensitive {
+				if out == nil {
+					out = maps.Clone(r)
+				}
+				out[k] = kubeRedacted
+			}
 			continue
 		}
 		red := kubeRedactObject(obj, resource, sub)
