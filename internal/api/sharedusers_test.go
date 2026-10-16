@@ -544,8 +544,10 @@ func TestLockoutsAcrossServers(t *testing.T) {
 		docs, _ := c.cl.SearchDocs(context.Background(), memberPrefix+"_runtime", map[string]any{"term": map[string]any{"kind": "lock"}})
 		return len(docs) == 1
 	})
-	c.b.cycle()
+	// The lock is written before watch:locks moves, so B polls until it
+	// sees the move, as its watcher would.
 	waitFor(t, "B refuses jlee from the address", func() bool {
+		c.b.cycle()
 		_, code := c.b.signIn("jlee", "first-password-1")
 		return code == http.StatusTooManyRequests
 	})
@@ -559,8 +561,8 @@ func TestLockoutsAcrossServers(t *testing.T) {
 	if _, code := c.a.signIn("kim", "k-password-one"); code != http.StatusTooManyRequests {
 		t.Fatalf("kim on A after the address was locked: %d", code)
 	}
-	c.b.cycle()
 	waitFor(t, "B refuses the address", func() bool {
+		c.b.cycle()
 		_, code := c.b.signIn("kim", "k-password-one")
 		return code == http.StatusTooManyRequests
 	})
