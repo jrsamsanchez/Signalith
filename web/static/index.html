@@ -944,6 +944,11 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
           <span class="agent-os__text"><b>Microsoft 365</b><span>Exchange, SharePoint, OneDrive and Teams activity</span></span>
           <input type="radio" name="os" value="m365">
         </label>
+        <label class="card agent-os__card">
+          <span class="agent-os__icon"><svg class="icon" aria-hidden="true"><use href="#i-cloud"/></svg></span>
+          <span class="agent-os__text"><b>Google Cloud</b><span>Admin activity and audit logs from your Google Cloud projects</span></span>
+          <input type="radio" name="os" value="gcp">
+        </label>
       </fieldset>
 
       <div class="card agent-setup" id="agent-setup">
@@ -1046,6 +1051,19 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
               </div>
               <p id="aws-queue-error" class="field-error hidden" role="alert"></p>
               <p id="aws-paths-help" class="hint agent-token__help"><span>The S3 bucket your trail writes to, and the queue S3 tells about each new file. The steps below make the queue; the <a href="https://github.com/jrsamsanchez/Signalith/blob/main/docs/aws-cloudtrail.md" target="_blank" rel="noopener">CloudTrail guide</a> walks through it.</span></p>
+            </div>
+            <div id="gcp-paths" class="hidden">
+              <div class="agent-addr__row">
+                <label class="label" for="gcp-project">Project ID</label>
+                <input id="gcp-project" class="input input--sm mono" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="my-project" aria-describedby="gcp-project-error gcp-paths-help">
+              </div>
+              <p id="gcp-project-error" class="field-error hidden" role="alert"></p>
+              <div class="agent-addr__row">
+                <label class="label" for="gcp-subscription">Pub/Sub subscription</label>
+                <input id="gcp-subscription" class="input input--sm mono" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="signalith-audit" aria-describedby="gcp-subscription-error gcp-paths-help">
+              </div>
+              <p id="gcp-subscription-error" class="field-error hidden" role="alert"></p>
+              <p id="gcp-paths-help" class="hint agent-token__help"><span>The project that holds the Pub/Sub topic your log sink publishes to, and the subscription the Collector pulls. The steps below make both; the <a href="https://github.com/jrsamsanchez/Signalith/blob/main/docs/google-cloud.md" target="_blank" rel="noopener">Google Cloud guide</a> walks through it.</span></p>
             </div>
             <div class="agent-addr__row agent-token" id="agent-token-row">
               <label class="label" for="agent-token-name" id="agent-token-label">Token for these agents</label>

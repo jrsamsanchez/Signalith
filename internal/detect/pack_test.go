@@ -190,8 +190,9 @@ func TestPackDetections(t *testing.T) {
 		if !strings.Contains(d.Query, "sourcetype=WinEventLog:") && !strings.Contains(d.Query, `sourcetype="WinEventLog:`) &&
 			!strings.Contains(d.Query, "sourcetype=sysmon:linux") && !strings.Contains(d.Query, "sourcetype=linux:audit") &&
 			!strings.HasPrefix(d.Query, "datamodel=Web ") && !strings.HasPrefix(d.Query, "sourcetype=aws:cloudtrail ") &&
-			!strings.Contains(d.Query, "sourcetype=azure:monitor:") && !strings.HasPrefix(d.Query, "sourcetype=o365:management:activity ") {
-			t.Errorf("%s: not limited to Windows, Sysmon for Linux, Linux audit, web server, CloudTrail, Azure or Microsoft 365 events: %s", d.ID, d.Query)
+			!strings.Contains(d.Query, "sourcetype=azure:monitor:") && !strings.HasPrefix(d.Query, "sourcetype=o365:management:activity ") &&
+			!strings.HasPrefix(d.Query, "sourcetype=google:gcp:pubsub:message ") {
+			t.Errorf("%s: not limited to Windows, Sysmon for Linux, Linux audit, web server, CloudTrail, Azure, Microsoft 365 or Google Cloud events: %s", d.ID, d.Query)
 		}
 	}
 }

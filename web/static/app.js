@@ -2480,7 +2480,7 @@ $('powershell').addEventListener('change', loadAgentConfig);
 ['sensor-zeek', 'sensor-suricata', 'sensor-protocols'].forEach((id) => $(id).addEventListener('change', loadAgentConfig));
 // The paths are asked for as they are typed, like the server address.
 let sensorPathTimer = 0;
-['sensor-zeek-dir', 'sensor-eve-path', 'aws-bucket', 'aws-queue'].forEach((id) => $(id).addEventListener('input', () => {
+['sensor-zeek-dir', 'sensor-eve-path', 'aws-bucket', 'aws-queue', 'gcp-project', 'gcp-subscription'].forEach((id) => $(id).addEventListener('input', () => {
   clearTimeout(sensorPathTimer);
   sensorPathTimer = setTimeout(loadAgentConfig, 400);
 }));
@@ -2516,15 +2516,15 @@ agentServerEl.addEventListener('change', async () => {
 // in storage; changing the name or the source drops it, so the next copy
 // makes a new token. "Use a token I already have" takes a pasted token
 // instead (checked here only).
-const AGENT_TOKEN_DEFAULTS = { linux: 'Linux servers', windows: 'Windows servers', otel: 'OpenTelemetry Collector', osquery: 'osquery hosts', wazuh: 'Wazuh manager', sensor: 'Network sensor', aws: 'AWS CloudTrail', azure: 'Entra ID and Azure' };
+const AGENT_TOKEN_DEFAULTS = { linux: 'Linux servers', windows: 'Windows servers', otel: 'OpenTelemetry Collector', osquery: 'osquery hosts', wazuh: 'Wazuh manager', sensor: 'Network sensor', aws: 'AWS CloudTrail', azure: 'Entra ID and Azure', gcp: 'Google Cloud' };
 // AGENT_TOKEN_PURPOSES is the token purpose of a source whose agent is
 // another's: Fluent Bit on the Wazuh manager is a Linux agent, and the
-// Collectors that read AWS CloudTrail or Azure's event hub OpenTelemetry
-// Collectors.
-const AGENT_TOKEN_PURPOSES = { wazuh: 'linux', aws: 'otel', azure: 'otel' };
+// Collectors that read AWS CloudTrail, Azure's event hub or Google Cloud's
+// Pub/Sub subscription OpenTelemetry Collectors.
+const AGENT_TOKEN_PURPOSES = { wazuh: 'linux', aws: 'otel', azure: 'otel', gcp: 'otel' };
 const agentTokenNameKey = 'signalith.agentTokenName.';
 const agentTok = {
-  purpose: '', // linux, windows, otel, osquery, wazuh, sensor, aws or azure: what the setup on screen is for
+  purpose: '', // linux, windows, otel, osquery, wazuh, sensor, aws, azure or gcp: what the setup on screen is for
   secret: '', // the token made on this page for name + purpose
   madeFor: '', // purpose + name the secret was made for
   made: null, // the token record of the secret, for the success line
@@ -2778,11 +2778,15 @@ async function agentSetupLoad() {
   // Entra ID and Azure: an OpenTelemetry Collector that reads the event
   // hub they send their logs to.
   const azure = os === 'azure';
-  const cloud = aws || azure;
+  // Google Cloud: an OpenTelemetry Collector that reads the Pub/Sub
+  // subscription a log sink feeds.
+  const gcp = os === 'gcp';
+  const cloud = aws || azure || gcp;
   const collector = otel || cloud;
   const host = collector ? $('otel-host').value : osq || sensor ? '' : os;
   agentTokPurpose(otel ? 'otel' : osq ? 'osquery' : sensor ? 'sensor' : os);
   $('aws-paths').classList.toggle('hidden', !aws);
+  $('gcp-paths').classList.toggle('hidden', !gcp);
   $('sensor-opts').classList.toggle('hidden', !sensor);
   $('sensor-paths').classList.toggle('hidden', !sensor);
   $('sensor-note').classList.toggle('hidden', !sensor);
@@ -2802,12 +2806,14 @@ async function agentSetupLoad() {
   $('agent-title').textContent = osq ? 'Manage ' + osqName + ' hosts with osquery' : otel ? 'Set up the OpenTelemetry Collector on ' + (host === 'windows' ? 'Windows' : 'Linux')
     : aws ? 'Read AWS CloudTrail with the OpenTelemetry Collector on ' + (host === 'windows' ? 'Windows' : 'Linux')
     : azure ? 'Read Entra ID and Azure logs with the OpenTelemetry Collector on ' + (host === 'windows' ? 'Windows' : 'Linux')
+    : gcp ? 'Read Google Cloud audit logs with the OpenTelemetry Collector on ' + (host === 'windows' ? 'Windows' : 'Linux')
     : wazuh ? 'Set up Fluent Bit on the Wazuh manager'
     : sensor ? 'Send network sensor logs with Fluent Bit'
     : 'Set up Fluent Bit on ' + (os === 'windows' ? 'Windows' : 'Linux');
   $('agent-sub').textContent = wazuh ? 'Do this once, on the Wazuh manager. Your Wazuh agents keep reporting to it as before.'
     : aws ? 'Do this once, on a machine that can reach AWS and this server, such as a small EC2 instance.'
     : azure ? 'Do this once, on a machine that can reach Azure and this server, such as a small Azure VM.'
+    : gcp ? 'Do this once, on a machine that can reach Google Cloud and this server, such as a small Compute Engine VM.'
     : sensor ? 'Do this on the machine that runs Zeek or Suricata.'
     : 'Do this on each host you want to collect from.';
   // Network sensor > Set up a new sensor: one line instead of a
@@ -2822,6 +2828,7 @@ async function agentSetupLoad() {
       zeek_dir: $('sensor-zeek-dir').value.trim(), eve_path: $('sensor-eve-path').value.trim() })
     : aws ? new URLSearchParams({ os, aws_bucket: $('aws-bucket').value.trim(), aws_queue: $('aws-queue').value.trim() })
     : azure ? new URLSearchParams({ os })
+    : gcp ? new URLSearchParams({ os, gcp_project: $('gcp-project').value.trim(), gcp_subscription: $('gcp-subscription').value.trim() })
     : new URLSearchParams({ os, source: $('linux-source').value, sysmon: (host === 'linux' ? !otel && $('sysmon-linux').checked : $('sysmon').checked), powershell: $('powershell').checked });
   if (collector) q.set('collector', host);
   if (osq) q.set('platform', $('osquery-platform').value);
@@ -2837,6 +2844,7 @@ async function agentSetupLoad() {
     agentServerError('');
     sensorFieldError('');
     awsFieldError('');
+    gcpFieldError('');
     try {
       if (agentDest.to) { /* one server's own address: not remembered */ }
       else if (server && server !== agentServerGuess) localStorage.setItem(agentServerKey, server);
@@ -2848,6 +2856,7 @@ async function agentSetupLoad() {
     if (e.field === 'server' || e.field === 'to') agentServerError(e.message);
     else if (sensor && ['tools', 'zeek_dir', 'eve_path'].includes(e.field)) sensorFieldError(e.field, e.message);
     else if (aws && ['aws_bucket', 'aws_queue'].includes(e.field)) awsFieldError(e.field, e.message);
+    else if (gcp && ['gcp_project', 'gcp_subscription'].includes(e.field)) gcpFieldError(e.field, e.message);
     else agentSetupError(e);
   } finally {
     if (seq === agentSetupSeq) steps.removeAttribute('aria-busy');
@@ -2881,6 +2890,26 @@ function sensorFieldError(field, msg) {
 function awsFieldError(field, msg) {
   for (const f of ['aws_bucket', 'aws_queue']) {
     const id = f === 'aws_bucket' ? 'aws-bucket' : 'aws-queue';
+    const on = f === field && msg;
+    const err = $(id + '-error');
+    err.replaceChildren(...(on ? [icon('circle-alert'), msg.charAt(0).toUpperCase() + msg.slice(1) + (/[.?!]$/.test(msg) ? '' : '.')] : []));
+    err.classList.toggle('hidden', !on);
+    if (on) $(id).setAttribute('aria-invalid', 'true');
+    else $(id).removeAttribute('aria-invalid');
+  }
+  // nothing to show for a config that can't be made
+  if (field) {
+    agentSetupConfig = '';
+    $('agent-steps').replaceChildren();
+    agentFileEl.classList.add('hidden');
+  }
+}
+
+// gcpFieldError shows a Google Cloud option's error under it (field
+// gcp_project or gcp_subscription), or clears both when field is empty.
+function gcpFieldError(field, msg) {
+  for (const f of ['gcp_project', 'gcp_subscription']) {
+    const id = f === 'gcp_project' ? 'gcp-project' : 'gcp-subscription';
     const on = f === field && msg;
     const err = $(id + '-error');
     err.replaceChildren(...(on ? [icon('circle-alert'), msg.charAt(0).toUpperCase() + msg.slice(1) + (/[.?!]$/.test(msg) ? '' : '.')] : []));
@@ -3303,7 +3332,7 @@ function loadDataSource() {
 }
 
 // pickDataSource selects a source card on the Add data page: linux,
-// windows, syslog, antivirus, otel, osquery, wazuh, sensor, aws, azure or m365. It is false
+// windows, syslog, antivirus, otel, osquery, wazuh, sensor, aws, azure, m365 or gcp. It is false
 // for anything else.
 function pickDataSource(src) {
   const r = document.querySelector(`input[name=os][value="${CSS.escape(String(src))}"]`);

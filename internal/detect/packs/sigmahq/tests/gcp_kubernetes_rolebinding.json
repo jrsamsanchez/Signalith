@@ -1,0 +1,4 @@
+{"rule": "0322d9f2-289a-47c2-b5e1-b63c90901a3e", "cases": [
+  {"expect":true,"source":"synthesized","channel":"gcp","event_id":"activity","data":{"gcp.audit.method_name":"io.k8s.authorization.rbac.v.clusterrolebindings.update"}},
+  {"expect":false,"source":"synthesized","channel":"gcp","event_id":"activity","data":{}}
+]}

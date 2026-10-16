@@ -1,0 +1,4 @@
+{"rule": "e2feb918-4e77-4608-9697-990a1aaf74c3", "cases": [
+  {"expect":true,"source":"synthesized","channel":"gcp","event_id":"activity","data":{"gcp.audit.method_name":"storage.buckets.list"}},
+  {"expect":false,"source":"synthesized","channel":"gcp","event_id":"activity","data":{}}
+]}

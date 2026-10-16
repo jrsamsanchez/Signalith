@@ -374,6 +374,10 @@ func (c *sigmaConv) anyModel() bool {
 	case "m365":
 		// So are Microsoft 365's, and its alerts Alerts.
 		return true
+	case ingest.GCPService:
+		// And Google Cloud's: changes are Change events, sign-ins
+		// Authentication and reads Other.
+		return true
 	}
 	return false
 }
@@ -531,6 +535,13 @@ func ConvertSigmaWith(src []byte, opt SigmaOptions) (*SigmaResult, error) {
 			// Entra ID's and Azure's logs, by Sigma's service
 			// (signinlogs), each field by Microsoft Sentinel's name.
 			category = strings.ToLower(service)
+		}
+	}
+	if product, _ := r.Logsource["product"].(string); category == "" && strings.EqualFold(product, "gcp") {
+		if service, _ := r.Logsource["service"].(string); strings.EqualFold(service, ingest.GCPService) {
+			// Google Cloud's audit logs, each field by the log entry's
+			// name.
+			category = ingest.GCPService
 		}
 	}
 	if product, _ := r.Logsource["product"].(string); category == "" && strings.EqualFold(product, "m365") {
@@ -712,6 +723,10 @@ func productScope(ls map[string]any, category string) query.Expr {
 		if category == "m365" {
 			return &query.Compare{Field: "sourcetype", Op: "=", Value: ingest.O365Sourcetype}
 		}
+	case "gcp":
+		if category == ingest.GCPService {
+			return &query.Compare{Field: "sourcetype", Op: "=", Value: ingest.GCPSourcetype}
+		}
 	case "azure":
 		if category == "activitylogs" {
 			return &query.Compare{Field: "sourcetype", Op: "=", Value: ingest.AzureActivitySourcetype}
@@ -806,6 +821,14 @@ func (c *sigmaConv) field(name string) string {
 		f, ok := ingest.O365SigmaField(name)
 		if !ok {
 			c.approx("field %s is not a Microsoft 365 field Signalith keeps", name)
+			return name
+		}
+		return f
+	}
+	if c.category == ingest.GCPService {
+		f, ok := ingest.GCPSigmaField(name)
+		if !ok {
+			c.approx("field %s is not a Google Cloud field Signalith keeps", name)
 			return name
 		}
 		return f
@@ -1119,6 +1142,11 @@ func (c *sigmaConv) selection(name string, v any) (query.Expr, error) {
 	if c.category == "webserver" {
 		return c.webSelection(name, v)
 	}
+	if c.category == ingest.GCPService {
+		if e, ok, err := c.gcpKeywords(name, v); ok {
+			return e, err
+		}
+	}
 	switch s := v.(type) {
 	case map[string]any:
 		return c.fieldMap(s)
@@ -1190,6 +1218,32 @@ func (c *sigmaConv) webSelection(name string, v any) (query.Expr, error) {
 		return nil, fmt.Errorf("selection %s is empty", name)
 	}
 	return or(kids), nil
+}
+
+// gcpKeywords is a Google Cloud rule's selection of keywords, which are
+// searched in the call's request (ingest.GCPKeywordField), where the
+// rules look for an object's annotations. It is false for a selection of
+// fields.
+func (c *sigmaConv) gcpKeywords(name string, v any) (query.Expr, bool, error) {
+	var keywords []any
+	switch s := v.(type) {
+	case string:
+		keywords = append(keywords, s)
+	case []any:
+		for _, item := range s {
+			if _, ok := item.(map[string]any); ok {
+				return nil, false, nil
+			}
+			keywords = append(keywords, item)
+		}
+	default:
+		return nil, false, nil
+	}
+	if len(keywords) == 0 {
+		return nil, true, fmt.Errorf("selection %s is empty", name)
+	}
+	e, err := c.fieldCond(ingest.GCPKeywordField+"|contains", keywords)
+	return e, true, err
 }
 
 func (c *sigmaConv) fieldMap(m map[string]any) (query.Expr, error) {

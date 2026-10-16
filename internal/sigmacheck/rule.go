@@ -22,6 +22,7 @@ import (
 	"strings"
 	"unicode/utf16"
 
+	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"gopkg.in/yaml.v3"
 )
 
@@ -101,6 +102,9 @@ func Parse(src []byte) (*Rule, error) {
 	if r.Logsource["category"] == "webserver" {
 		r.webKeywords()
 	}
+	if r.Logsource["product"] == "gcp" && r.Logsource["service"] == ingest.GCPService {
+		r.gcpKeywords()
+	}
 	return r, nil
 }
 
@@ -123,6 +127,22 @@ func (r *Rule) webKeywords() {
 		for _, f := range WebKeywordFields {
 			s.alts = append(s.alts, []*fieldCond{{field: f, mods: []string{"contains"}, values: values}})
 		}
+		s.keywords = nil
+	}
+}
+
+// gcpKeywords turns a Google Cloud rule's keywords into searches of the
+// call's request (ingest.GCPKeywordField), as the converted rule does.
+func (r *Rule) gcpKeywords() {
+	for _, s := range r.sels {
+		if len(s.keywords) == 0 {
+			continue
+		}
+		var values []*string
+		for _, kw := range s.keywords {
+			values = append(values, &kw)
+		}
+		s.alts = append(s.alts, []*fieldCond{{field: ingest.GCPKeywordField, mods: []string{"contains"}, values: values}})
 		s.keywords = nil
 	}
 }
