@@ -184,7 +184,7 @@ func looksNumeric(s string) bool {
 func applyAddTotals(ctx context.Context, res *Result, c *query.AddTotals) error {
 	ev := evaluatorFor(ctx)
 	name := c.TotalName()
-	wanted := func(f string) bool {
+	wanted := fieldMatcher(ev, len(c.Fields), func(f string) bool {
 		if f == name || f == c.LabelField {
 			return false
 		}
@@ -197,7 +197,7 @@ func applyAddTotals(ctx context.Context, res *Result, c *query.AddTotals) error 
 			}
 		}
 		return false
-	}
+	})
 	cols := map[string]*total{}
 	var keys []string
 	for i, r := range res.Rows {
@@ -208,7 +208,11 @@ func applyAddTotals(ctx context.Context, res *Result, c *query.AddTotals) error 
 		// every time.
 		keys = keys[:0]
 		for f := range r {
-			if wanted(f) {
+			want, ok := wanted(f)
+			if !ok {
+				return ev.err
+			}
+			if want {
 				keys = append(keys, f)
 			}
 		}
@@ -407,20 +411,25 @@ func applyConvert(ctx context.Context, res *Result, c *query.Convert) error {
 			none = append(none, f.Field)
 		}
 	}
-	excluded := func(name string) bool {
+	excludedOK := fieldMatcher(ev, len(none), func(name string) bool {
 		for _, p := range none {
 			if query.MatchField(p, name) {
 				return true
 			}
 		}
 		return false
+	})
+	// matches[i] is Funcs[i]'s pattern, remembered per field name.
+	var matches []func(string) (bool, bool)
+	for _, f := range c.Funcs {
+		matches = append(matches, fieldMatcher(ev, 1, func(k string) bool { return query.MatchField(f.Field, k) }))
 	}
 	var keys []string
 	for i, r := range res.Rows {
 		if i%checkEvery == 0 && ctx.Err() != nil {
 			return ctx.Err()
 		}
-		for _, f := range c.Funcs {
+		for fi, f := range c.Funcs {
 			if f.Func == "none" {
 				continue
 			}
@@ -428,13 +437,26 @@ func applyConvert(ctx context.Context, res *Result, c *query.Convert) error {
 			if strings.Contains(f.Field, "*") {
 				keys = keys[:0]
 				for k := range r {
-					if query.MatchField(f.Field, k) && !excluded(k) {
+					m, ok := matches[fi](k)
+					if !ok {
+						return ev.err
+					}
+					if !m {
+						continue
+					}
+					ex, ok := excludedOK(k)
+					if !ok {
+						return ev.err
+					}
+					if !ex {
 						keys = append(keys, k)
 					}
 				}
 				sort.Strings(keys)
 				names = keys
-			} else if excluded(f.Field) {
+			} else if ex, ok := excludedOK(f.Field); !ok {
+				return ev.err
+			} else if ex {
 				continue
 			}
 			for _, name := range names {
