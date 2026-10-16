@@ -16,22 +16,25 @@ type Drill struct {
 	// Pipe holds the commands before the summary, each starting "\n| ".
 	Pipe  string `json:"pipe,omitempty"`
 	Where bool   `json:"where,omitempty"`
+	// Events is set when the query has no summary: each result row is an
+	// event.
+	Events bool `json:"events,omitempty"`
 	// Fields maps a result column to the event field its values come from:
 	// the by fields of stats, top or timechart, followed through renames.
 	Fields map[string]string `json:"fields,omitempty"`
 	// Series is timechart's by field: each series column is one of its
 	// values.
 	Series string `json:"series,omitempty"`
-	// Latest is the query's own latest=, if any. Its earliest= is already
-	// the panel's time range.
-	Latest string `json:"latest,omitempty"`
+	// Earliest and Latest are the query's own time range, if it sets one.
+	Earliest string `json:"earliest,omitempty"`
+	Latest   string `json:"latest,omitempty"`
 }
 
 // Drilldown returns how to find the events behind q's results. Every
 // query has one: without stats, top or timechart its results are the
 // events themselves.
 func (q *Query) Drilldown() *Drill {
-	d := &Drill{Latest: q.Latest}
+	d := &Drill{Earliest: q.Earliest, Latest: q.Latest}
 	base := &Query{Datamodel: q.Datamodel, Index: q.Index, Search: q.Search}
 	if or, ok := q.Search.(*Or); ok {
 		// a OR b, then host=x, would read as a OR (b AND host=x).
@@ -55,13 +58,21 @@ func (q *Query) Drilldown() *Drill {
 			if _, expr := c.Expr.(*Cond); expr {
 				d.Where = true
 			}
-		case *ThreatMatch:
+		case *ThreatMatch, *Table, *Sort:
+		case *Head, *Dedup:
+			// They pick which events a summary counts, so a filter must
+			// come after them; without a summary a filter only finds one
+			// of the events, which it can do first.
+			if cut < len(q.Commands) {
+				d.Where = true
+			}
 		default:
 			d.Where = true
 		}
 	}
 	d.Pipe = pipe.String()
 	if cut == len(q.Commands) {
+		d.Events = true
 		return d
 	}
 	fields := map[string]string{}

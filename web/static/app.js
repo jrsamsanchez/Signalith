@@ -884,6 +884,52 @@ function quoteValue(v) {
   v = String(v);
   return /^[^\s|()=!<>,"]+$/.test(v) && !/^(AND|OR|NOT|IN)$/i.test(v) ? v : '"' + v.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
 }
+// ---------- drilldown: from a number to the events behind it ----------
+// A drill (query.Drill on the server) is a query's search, the commands
+// before its stats, top or timechart, and which result columns name event
+// fields. drillTerm filters on one value; a missing value matches the
+// events without the field.
+function drillTerm(f, v) {
+  if (v == null || v === '') return `NOT ${f}=*`;
+  const s = String(v);
+  return f + '=' + (s.includes('\\') ? '"' + s.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"' : quoteValue(s));
+}
+// drillQuery adds [field, value] filters to a drill: in the search, or in a
+// where after the commands that make the fields.
+function drillQuery(dr, pairs = []) {
+  const terms = pairs.filter(([, v]) => v == null || typeof v !== 'object').map(([f, v]) => drillTerm(f, v));
+  let search = dr.search || '';
+  if (terms.length && !dr.where) search = [search, ...terms].filter(Boolean).join(' ');
+  let q = (search || '*') + (dr.pipe || '');
+  if (terms.length && dr.where) q += '\n| where ' + terms.join(' AND ');
+  return q;
+}
+// drillBucket: the start and end of timechart row i, or null when the rows
+// do not say how long a bucket is.
+function drillBucket(rows, i) {
+  if (i == null || !rows[i] || rows.length < 2) return null;
+  const t = (k) => new Date(rows[k]._time).getTime();
+  const start = t(i);
+  const step = i + 1 < rows.length ? t(i + 1) - start : start - t(i - 1);
+  if (!(step > 0)) return null;
+  return [new Date(start).toISOString(), new Date(start + step - 1).toISOString()];
+}
+// drillTarget: the filters and time bucket behind the number in column col
+// of row i of a summary.
+function drillTarget(dr, res, i, col) {
+  const rows = res.rows || [];
+  if (res.kind === 'timechart') return { pairs: dr.series && col && col !== '_time' ? [[dr.series, col]] : [], bucket: drillBucket(rows, i) };
+  const row = rows[i] || {};
+  return { pairs: Object.entries(dr.fields || {}).filter(([c]) => (res.columns || []).includes(c)).map(([c, f]) => [f, row[c]]), bucket: null };
+}
+// drillEvent: the query for one row of an events result, by the values it
+// shows (the caller searches its exact _time). Commands that only filter or
+// shape the table are left out, so Search shows the whole event.
+function drillEvent(dr, row, cols) {
+  const pairs = cols.filter((c) => c !== '_time' && c !== '_raw').map((c) => [c, row[c]]);
+  return drillQuery(dr.where ? dr : { search: dr.search }, pairs);
+}
+
 function addSearchTerm(term) {
   const [search, rest] = splitPipes($('query').value);
   let s = search.trim();
@@ -1783,13 +1829,19 @@ function renderTable(box, res, opts) {
         icon(on ? (sort.desc ? 'arrow-down' : 'arrow-up') : 'arrow-up-down', on ? 'is-on' : '')));
     return th;
   });
-  const body = rows.map((r) => el('tr', {}, ...cols.map((c) => {
+  const drill = res.drill && opts.kind !== 'events' ? res.drill : null;
+  const body = rows.map((r, ri) => el('tr', {}, ...cols.map((c) => {
     const v = r[c];
     const td = el('td', { 'data-label': c });
     if (numCols.has(c)) td.className = 'num';
     if (c === '_raw') td.className = 'raw';
     if (c === '_time') td.className = 'time';
-    td.addEventListener('click', (ev) => showCellMenu(ev, c, v, opts.kind, r));
+    const go = drill ? () => searchDrill(res, ri, c) : null;
+    if (go && numCols.has(c) && c !== 'percent' && v != null) {
+      td.classList.add('drill');
+      td.title = DRILL_TITLE;
+      td.addEventListener('click', (ev) => { ev.stopPropagation(); go(); });
+    } else td.addEventListener('click', (ev) => showCellMenu(ev, c, v, opts.kind, r, false, go));
     if (v == null || v === '') return td;
     const text = c === '_time' ? fmtTime(v) : fmtValue(v);
     const kind = searchEntityKind(c, v);
@@ -1976,12 +2028,27 @@ function timeTicks(t0, t1, max) {
 }
 
 // ---------- cell actions ----------
-function showCellMenu(ev, col, value, kind, row, canSort) {
+// searchDrill opens the events behind row i's number in column col of a
+// summary in Search.
+const DRILL_TITLE = 'Click to see the events behind this number';
+function searchDrill(res, i, col) {
+  const dr = res.drill;
+  const t = drillTarget(dr, res, i, col);
+  const [from, to] = t.bucket || [dr.earliest || (lastSearch && lastSearch.earliest) || undefined, dr.latest || undefined];
+  openSearch(drillQuery(dr, t.pairs), from, to);
+}
+
+function showCellMenu(ev, col, value, kind, row, canSort, drill) {
   hideCellMenu();
   const item = (iconName, label, act) => el('button', {
     type: 'button', class: 'menu__item', role: 'menuitem', title: label,
     onclick: (e) => { e.stopPropagation(); hideCellMenu(); act(); },
   }, icon(iconName), el('span', {}, label));
+  const show = drill ? item('list', 'Show the events behind this row', drill) : null;
+  if (show && (value === null || value === undefined || col === 'count' || col === 'percent')) {
+    openCellMenu(ev, [show]);
+    return;
+  }
   const pin = kind === 'events' && row && can('analyst') && typeof pinEventToCase === 'function' ? item('pin', 'Pin this event to a case', () => pinEventToCase(row)) : null;
   if (value === null || value === undefined || col === 'count' || col === 'percent' || (col === '_raw' && !pin)) return;
   if (col === '_raw') {
@@ -1989,7 +2056,7 @@ function showCellMenu(ev, col, value, kind, row, canSort) {
     return;
   }
   const field = col === '_time' ? null : col;
-  const items = [];
+  const items = show ? [show] : [];
   if (field && kind !== 'timechart') {
     items.push(...pivotItems(item, field, value));
     items.push(item('filter', `Filter to ${field}=${fmtValue(value)}`, () => addSearchTerm(field + '=' + quoteValue(value))));

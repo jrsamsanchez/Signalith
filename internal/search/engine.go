@@ -173,6 +173,9 @@ type Result struct {
 	Matched   int64    `json:"matched"` // events matching the search
 	Truncated bool     `json:"truncated,omitempty"`
 	TookMS    int64    `json:"took_ms"`
+	// Drill finds the events behind the numbers in a summary; the search
+	// API sets it.
+	Drill *query.Drill `json:"drill,omitempty"`
 }
 
 // Plan is the OpenSearch request a query compiles to, for "show the

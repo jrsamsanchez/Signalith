@@ -795,6 +795,7 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 		writeSearchError(w, err)
 		return
 	}
+	res.Drill = q.Drilldown()
 	writeJSON(w, http.StatusOK, res)
 }
 

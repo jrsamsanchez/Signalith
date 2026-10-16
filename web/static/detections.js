@@ -983,12 +983,26 @@ function renderFindingDetail(box, data, opts = {}) {
           el('pre', { class: 'dx-code' }, f.query || '*'),
           win ? el('p', { class: 'dx-hint' }, win) : null),
         dxSection('What the detection found',
-          result.length ? dxKv(result.map(([k, v]) => [k, el('span', { class: 'mono' }, k === '_time' ? fmtTime(v) : fmtValue(v))]))
+          result.length ? dxKv(result.map(([k, v]) => [k, findingValue(f, k, v)]))
             : el('p', { class: 'muted' }, 'No fields were recorded.')),
         f.result && f.result._raw ? dxSection('Raw event', el('pre', { class: 'dx-code dx-raw' }, f.result._raw)) : null),
       dxPanel(prefix, 'activity', fnd.tab,
         activity.length ? el('ol', { class: 'timeline' }, ...activity) : el('p', { class: 'muted' }, 'No activity yet. Notes and changes appear here.'))),
     el('div', { class: 'inspector__foot' }, ...(can('analyst') ? [save, mine, caseBtn] : [f.case_id ? caseBtn : null]), el('span', { class: 'spacer' }), more));
+}
+
+// findingValue shows one field the detection found. A value of an event
+// field opens Search on every event with it around the finding's time.
+// Numbers are left alone: most are counts from the detection's stats, with
+// no single value to search for.
+function findingValue(f, k, v) {
+  const text = k === '_time' ? fmtTime(v) : fmtValue(v);
+  if (k === '_time' || k.includes('(') || v == null || v === '' || typeof v !== 'string') return el('span', { class: 'mono' }, text);
+  // Risk events are left out of searches unless asked for, as findingEntity does.
+  const term = (k.startsWith('risk_') ? 'datamodel=Risk ' : '') + drillTerm(k, v);
+  const a = el('a', { class: 'mono dx-value-link', href: '#search', title: `Search every event with ${k}=${text} from this finding's time` }, text);
+  a.addEventListener('click', (ev) => { ev.preventDefault(); openSearch(term, f.earliest || '-7d', f.latest); });
+  return a;
 }
 
 // findingRespond is the Response section: Respond runs an action (block
