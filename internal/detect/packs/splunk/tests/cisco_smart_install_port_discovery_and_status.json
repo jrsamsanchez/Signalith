@@ -1,6 +1,5 @@
 {"rule": "ded9f9d7-edb8-48cf-8b72-1b459eee6785", "cases": [
   {"expect":true,"source":"synthesized","channel":"zeek:conn","event_id":"","data":{"conn_state":"SF","id.orig_h":"192.0.2.10","id.orig_p":"50123","id.resp_h":"93.184.216.34","id.resp_p":"4786","proto":"tcp"}},
-  {"expect":true,"source":"synthesized","channel":"zeek:conn","event_id":"","data":{"conn_state":"SF","id.orig_h":"192.0.2.10","id.orig_p":"50123","id.resp_h":"93.184.216.34","id.resp_p":"4786","proto":"tcp"}},
   {"expect":false,"source":"synthesized","channel":"zeek:conn","event_id":"","data":{"conn_state":"SF","id.orig_h":"192.0.2.10","id.orig_p":"50123","id.resp_h":"93.184.216.34","id.resp_p":"4787","proto":"tcp"}},
   {"expect":false,"source":"synthesized","channel":"zeek:conn","event_id":"","data":{"conn_state":"SF","id.orig_h":"192.0.2.10","id.orig_p":"50123","id.resp_h":"93.184.216.34","id.resp_p":"443","proto":"tcp"}},
   {"expect":false,"source":"synthesized","channel":"zeek:conn","event_id":"","data":{"conn_state":"SF","id.orig_h":"192.0.2.10","id.orig_p":"50123","id.resp_h":"93.184.216.34","id.resp_p":"4786","proto":"tcq"}}

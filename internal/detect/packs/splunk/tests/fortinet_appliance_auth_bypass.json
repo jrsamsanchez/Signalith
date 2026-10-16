@@ -2,7 +2,6 @@
   {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","url":"x /api/v2/cmdb/system/admin x"}},
   {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"PUT","url":"x /api/v2/cmdb/system/admin x"}},
   {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","url":"x /api/v2/cmdb/system/admin y"}},
-  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","url":"x /api/v2/cmdb/system/admin x"}},
   {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"PUT","url":"x /api/v2/cmdb/system/admin y"}},
   {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET"}},
   {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GEU","url":"x /api/v2/cmdb/system/admin x"}},

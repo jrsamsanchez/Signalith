@@ -53,7 +53,9 @@ func TestPackRulesAgainstOpenSearch(t *testing.T) {
 	}
 	var rules []ruleCases
 	records := map[string][]map[string]any{}
-	at := time.Now().Add(-5 * time.Minute)
+	// On a 10-minute boundary, so a repeated case's events fall in one
+	// bucket of any span a rule counts over (bucket span=2m _time).
+	at := time.Now().Add(-15 * time.Minute).Truncate(10 * time.Minute)
 	i := 0
 	for _, name := range []string{"sigmahq", "splunk"} {
 		dir := filepath.Join("..", "detect", "packs", name)
@@ -111,10 +113,13 @@ func TestPackRulesAgainstOpenSearch(t *testing.T) {
 				if c.Expect {
 					rc.positives[host] = true
 				}
-				tag, rec := c.Record(host, at)
-				records[tag] = append(records[tag], rec)
+				copies, offsets := c.Copies()
+				for k, cp := range copies {
+					tag, rec := cp.Record(host, at.Add(offsets[k]))
+					records[tag] = append(records[tag], rec)
+				}
 				// A Linux program start, as auditd records it too.
-				if recs, ok := c.AuditdProcessRecords(host+"-auditd", at); ok {
+				if recs, ok := c.AuditdProcessRecords(host+"-auditd", at); ok && c.Repeat <= 1 {
 					rc.hosts = append(rc.hosts, host+"-auditd")
 					if c.Expect {
 						rc.positives[host+"-auditd"] = true

@@ -3,6 +3,9 @@ package splcheck
 import (
 	"strings"
 	"testing"
+
+	"github.com/jrsamsanchez/signalith/internal/query"
+	"github.com/jrsamsanchez/signalith/internal/sigmacheck"
 )
 
 func TestPostStages(t *testing.T) {
@@ -84,5 +87,45 @@ func TestQuoteDotted(t *testing.T) {
 		if got := quoteDotted(in); got != want {
 			t.Errorf("%s: got %s", in, got)
 		}
+	}
+}
+
+func TestPostBursts(t *testing.T) {
+	// A count of distinct accounts over 5 needs 6 events, each for
+	// another account.
+	r, err := Parse(rule("`wineventlog_security` EventCode=4768 Status=0x6 | eval x=1 | stats dc(TargetUserName) as accounts by src_ip | where accounts > 5"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Post == "" {
+		t.Fatal("no later stages")
+	}
+	var pos, neg *sigmacheck.Case
+	for _, c := range Cases(r) {
+		if c.Repeat > 1 {
+			if c.Expect {
+				pos = &c
+			} else {
+				neg = &c
+			}
+		}
+	}
+	if pos == nil || neg == nil {
+		t.Fatal("no repeated test events")
+	}
+	if pos.Repeat != 6 || neg.Repeat != 4 || len(pos.Vary) != 1 || pos.Vary[0] != "TargetUserName" {
+		t.Errorf("repeats %d and %d, varying %v", pos.Repeat, neg.Repeat, pos.Vary)
+	}
+	copies, at := pos.Copies()
+	if len(copies) != 6 || copies[0].Data["TargetUserName"] == copies[1].Data["TargetUserName"] || at[5] >= sigmacheck.RepeatSpan {
+		t.Errorf("copies %v at %v", copies, at)
+	}
+	tf := &sigmacheck.TestFile{Cases: []sigmacheck.Case{*pos, *neg}}
+	filter := &query.And{Children: []query.Expr{
+		&query.Compare{Field: "signature_id", Op: "=", Value: "4768"},
+		&query.Compare{Field: "kerberos_status", Op: "=", Value: "0x6"},
+	}}
+	if errs := Verify(r, "Authentication", filter, tf); len(errs) > 0 {
+		t.Error(errs)
 	}
 }

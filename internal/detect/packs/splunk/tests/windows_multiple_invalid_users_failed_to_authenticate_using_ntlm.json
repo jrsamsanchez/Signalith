@@ -1,7 +1,5 @@
 {"rule": "57ad5a64-9df7-11eb-a290-acde48001122", "cases": [
   {"expect":true,"source":"synthesized","channel":"Security","event_id":"4776","data":{"PackageName":"MICROSOFT_AUTHENTICATION_PACKAGE_V1_0","Status":"0xc0000064","TargetUserName":"x","Workstation":"WS2"}},
-  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4776","data":{"PackageName":"MICROSOFT_AUTHENTICATION_PACKAGE_V1_0","Status":"0xc0000064","TargetUserName":"x","Workstation":"WS2"}},
-  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4776","data":{"PackageName":"MICROSOFT_AUTHENTICATION_PACKAGE_V1_0","Status":"0xc0000064","TargetUserName":"x","Workstation":"WS2"}},
   {"expect":true,"source":"synthesized","channel":"Security","event_id":"4776","data":{"PackageName":"MICROSOFT_AUTHENTICATION_PACKAGE_V1_0","Status":"0xc0000064","TargetUserName":"y","Workstation":"WS2"}},
   {"expect":true,"source":"synthesized","channel":"Security","event_id":"4776","data":{"PackageName":"MICROSOFT_AUTHENTICATION_PACKAGE_V1_0","Status":"0xc0000064","TargetUserName":"CORP\\tester","Workstation":"WS2"}},
   {"expect":false,"source":"synthesized","channel":"Security","event_id":"4776","data":{"PackageName":"MICROSOFT_AUTHENTICATION_PACKAGE_V1_0","Status":"0xc0000064","TargetUserName":"x $","Workstation":"WS2"}},
