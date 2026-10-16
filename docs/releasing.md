@@ -29,18 +29,22 @@ The **Release** workflow (`.github/workflows/release.yml`) runs when a tag such 
    from the Linux program), `SHA256SUMS`, its Sigstore signature, its GPG signature when
    the key is set up (below), and GitHub build provenance for every file.
 6. Publishes it all on the [Releases page](https://github.com/jrsamsanchez/Signalith/releases),
-   with install and verify steps (`.github/release-notes.md`) above the generated
-   list of changes. A version with a `-` suffix is marked as a pre-release.
+   with the version's own notes (`.github/releases/<version>.md`, such as `0.3.0.md`,
+   when there is one), install and verify steps (`.github/release-notes.md`) and the
+   generated list of changes. A version with a `-` suffix is marked as a pre-release
+   and uses the notes of the version it leads to.
 7. Once it has published, the **Website** workflow adds the new packages to the apt and
    dnf repositories on signalith.io (below), so `apt upgrade` and `dnf upgrade` find them.
 
 **Run workflow** on the Release workflow's page (Actions > Release) is a dry run: it
 builds and tests everything for the version you enter and keeps the files as a workflow
-artifact named `release`, and publishes nothing.
+artifact named `release`, and publishes nothing. Its summary shows the release notes the
+version would get.
 
 ## Making a release
 
-1. Make sure CI is green on `main`.
+1. Make sure CI is green on `main`, and `.github/releases/<version>.md` says what's new
+   and what to do before upgrading.
 2. Tag and push:
 
     ```sh

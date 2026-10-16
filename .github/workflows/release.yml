@@ -273,6 +273,19 @@ jobs:
         with:
           name: release
           path: release/
+      - name: Write the release notes
+        run: |
+          # This version's own notes (.github/releases/0.3.0.md, also used
+          # for its -rc versions) when there are any, then how to install
+          # and check it. The GPG lines only when the checksums were signed
+          # with GPG. A dry run shows the notes in its summary.
+          notes=".github/releases/${VERSION%%-*}.md"
+          gpg_line='s/^{GPG}//'
+          [ -f release/SHA256SUMS.asc ] || gpg_line='/^{GPG}/d'
+          { [ ! -f "$notes" ] || cat "$notes"
+            sed -e "s/{VERSION}/$VERSION/g" -e "$gpg_line" .github/release-notes.md
+          } > "$RUNNER_TEMP/notes.md"
+          cat "$RUNNER_TEMP/notes.md" >> "$GITHUB_STEP_SUMMARY"
       - name: Publish the release
         if: env.PUBLISH == 'true'
         env:
@@ -281,10 +294,5 @@ jobs:
         run: |
           pre=""
           case "$VERSION" in *-*) pre=--prerelease ;; esac
-          # How to install and check this release, then the changes.
-          # The GPG line only when the checksums were signed with GPG.
-          gpg_line='s/^{GPG}//'
-          [ -f release/SHA256SUMS.asc ] || gpg_line='/^{GPG}/d'
-          sed -e "s/{VERSION}/$VERSION/g" -e "$gpg_line" .github/release-notes.md > "$RUNNER_TEMP/notes.md"
           gh release create "$TAG" release/* --repo "$GITHUB_REPOSITORY" --verify-tag $pre \
             --title "Signalith $VERSION" --notes-file "$RUNNER_TEMP/notes.md" --generate-notes
