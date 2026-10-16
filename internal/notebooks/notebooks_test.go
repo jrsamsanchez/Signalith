@@ -269,3 +269,15 @@ func TestMemoryStore(t *testing.T) {
 		t.Errorf("missing = %v", err)
 	}
 }
+
+// Two changes at the same clock reading still get different versions.
+func TestTouchMovesForward(t *testing.T) {
+	now := time.Date(2026, 10, 16, 0, 0, 0, 0, time.UTC)
+	n := &Notebook{}
+	n.Touch("a", now)
+	first := n.Updated
+	n.Touch("b", now)
+	if !n.Updated.After(first) || n.UpdatedBy != "b" {
+		t.Errorf("updated %v after %v", n.Updated, first)
+	}
+}

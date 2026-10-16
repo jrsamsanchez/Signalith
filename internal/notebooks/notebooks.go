@@ -306,6 +306,16 @@ func (n *Notebook) CanManage(user string, admin bool) bool {
 	return !n.Starter && (admin || n.IsOwner(user))
 }
 
+// Touch records a change by user. Updated is the version a save names in
+// If-Match, so it always moves forward, even when the clock reads the same
+// time twice (Windows clocks tick about every 15ms).
+func (n *Notebook) Touch(user string, now time.Time) {
+	if !now.After(n.Updated) {
+		now = n.Updated.Add(time.Microsecond)
+	}
+	n.Updated, n.UpdatedBy = now, user
+}
+
 // IsOwner reports whether user made n. User names compare without case,
 // as sign-in does.
 func (n *Notebook) IsOwner(user string) bool {

@@ -312,7 +312,7 @@ func (s *Server) handlePutNotebook(w http.ResponseWriter, r *http.Request) {
 		if err := n.Validate(); err != nil {
 			return false, err
 		}
-		n.Updated, n.UpdatedBy = time.Now().UTC(), user
+		n.Touch(user, time.Now().UTC())
 		return true, nil
 	})
 	if err != nil {
@@ -375,7 +375,7 @@ func (s *Server) handleAddNotebookCell(w http.ResponseWriter, r *http.Request) {
 			return false, err
 		}
 		added = n.Cells[len(n.Cells)-1].ID
-		n.Updated, n.UpdatedBy = time.Now().UTC(), userOf(r)
+		n.Touch(userOf(r), time.Now().UTC())
 		return true, nil
 	})
 	if err != nil {
