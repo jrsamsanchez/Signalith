@@ -473,7 +473,7 @@ func TestInitSavePassword(t *testing.T) {
 
 	// signalith passwd replaces it: the file goes, and initial-password
 	// says it was changed.
-	t.Setenv("SIGNALITH_NEW_PASSWORD", "the admin's own password")
+	t.Setenv("SIGNALITH_NEW_PASSWORD", "the owner's own password")
 	printed = captureStdout(t, func() {
 		if err := cmdPasswd([]string{"-c", path}); err != nil {
 			t.Fatal(err)
@@ -486,7 +486,7 @@ func TestInitSavePassword(t *testing.T) {
 	if err := printInitialPassword(&out, path); err == nil || !strings.Contains(err.Error(), "was changed on") || out.Len() != 0 {
 		t.Errorf("initial-password after the change: %q %v", out.String(), err)
 	}
-	if c, err := config.Load(path); err != nil || c.FirstPasswordHash() != "" || !c.CheckPassword("admin", "the admin's own password") {
+	if c, err := config.Load(path); err != nil || c.FirstPasswordHash() != "" || !c.CheckPassword("admin", "the owner's own password") {
 		t.Errorf("after passwd: %v", err)
 	}
 }

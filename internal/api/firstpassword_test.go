@@ -70,20 +70,20 @@ func TestBuiltinFirstPasswordFromFile(t *testing.T) {
 	if code, body, _ := call(t, ts, "POST", "/api/me/password", `{"current_password":"`+first+`","new_password":"`+first+`"}`, "", "", cookie); code != 400 || body["code"] != "same_password" {
 		t.Errorf("same password = %d %v", code, body)
 	}
-	if code, body, _ := call(t, ts, "POST", "/api/me/password", `{"current_password":"`+first+`","new_password":"my-own-admin-pass"}`, "", "", cookie); code != 200 || body["must_change_password"] != false {
+	if code, body, _ := call(t, ts, "POST", "/api/me/password", `{"current_password":"`+first+`","new_password":"my-own-chosen-pass"}`, "", "", cookie); code != 200 || body["must_change_password"] != false {
 		t.Fatalf("change = %d %v", code, body)
 	}
 	if code, _, _ := call(t, ts, "GET", "/api/health", "", "", "", cookie); code != 200 {
 		t.Errorf("health after the change = %d", code)
 	}
-	if code, body := doAs(t, ts, "admin", "my-own-admin-pass", "GET", "/api/me", ""); code != 200 || body["must_change_password"] != false || body["can_change_password"] != false {
+	if code, body := doAs(t, ts, "admin", "my-own-chosen-pass", "GET", "/api/me", ""); code != 200 || body["must_change_password"] != false || body["can_change_password"] != false {
 		t.Errorf("Basic auth with the new password = %d %v", code, body)
 	}
 	if code, _ := doAs(t, ts, "admin", first, "GET", "/api/me", ""); code != 401 {
 		t.Errorf("the first password after the change = %d", code)
 	}
 	// Once changed, it is the server's again: signalith passwd changes it.
-	if code, body := doAs(t, ts, "admin", "my-own-admin-pass", "POST", "/api/me/password", `{"current_password":"my-own-admin-pass","new_password":"yet-another-pass"}`); code != 400 || body["code"] != "builtin" {
+	if code, body := doAs(t, ts, "admin", "my-own-chosen-pass", "POST", "/api/me/password", `{"current_password":"my-own-chosen-pass","new_password":"yet-another-pass"}`); code != 400 || body["code"] != "builtin" {
 		t.Errorf("a second change = %d %v", code, body)
 	}
 
@@ -100,7 +100,7 @@ func TestBuiltinFirstPasswordFromFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if again.AdminPasswordChanged() == "" || !again.CheckPassword("admin", "my-own-admin-pass") || again.CheckPassword("admin", first) {
+	if again.AdminPasswordChanged() == "" || !again.CheckPassword("admin", "my-own-chosen-pass") || again.CheckPassword("admin", first) {
 		t.Error("the new password is not used after a restart")
 	}
 	if s.builtinFirstPassword() {
@@ -128,10 +128,10 @@ func TestBuiltinFirstPasswordNoted(t *testing.T) {
 	if code, body := doAs(t, ts, "admin", first, "GET", "/api/health", ""); code != 403 || body["code"] != "password_change_required" {
 		t.Errorf("before the change = %d %v", code, body)
 	}
-	if code, body := doAs(t, ts, "admin", first, "POST", "/api/me/password", `{"current_password":"`+first+`","new_password":"chosen-by-the-admin"}`); code != 200 || body["must_change_password"] != false {
+	if code, body := doAs(t, ts, "admin", first, "POST", "/api/me/password", `{"current_password":"`+first+`","new_password":"chosen-by-the-owner"}`); code != 200 || body["must_change_password"] != false {
 		t.Fatalf("change = %d %v", code, body)
 	}
-	if code, _ := doAs(t, ts, "admin", "chosen-by-the-admin", "GET", "/api/health", ""); code != 200 {
+	if code, _ := doAs(t, ts, "admin", "chosen-by-the-owner", "GET", "/api/health", ""); code != 200 {
 		t.Errorf("after the change = %d", code)
 	}
 	if _, err := os.Stat(filepath.Join(root, config.InitialPasswordFileName)); !os.IsNotExist(err) {
@@ -183,7 +183,7 @@ func TestBuiltinFirstPasswordShared(t *testing.T) {
 	if code, out, _ := c.b.call("GET", "/api/health", "", onB, nil); code != 403 || out["code"] != "password_change_required" {
 		t.Errorf("health on B: %d %v", code, out)
 	}
-	code, out, resp := c.a.call("POST", "/api/me/password", `{"current_password":"s3cret-pass","new_password":"the-cluster-admin-pass"}`, admin, nil)
+	code, out, resp := c.a.call("POST", "/api/me/password", `{"current_password":"s3cret-pass","new_password":"the-cluster-chosen-pass"}`, admin, nil)
 	if code != 200 || out["must_change_password"] != false {
 		t.Fatalf("change on A: %d %v", code, out)
 	}
@@ -197,7 +197,7 @@ func TestBuiltinFirstPasswordShared(t *testing.T) {
 		t.Errorf("health on A after the change: %d", code)
 	}
 	c.b.cycle()
-	onB, _ = c.b.signIn("admin", "the-cluster-admin-pass")
+	onB, _ = c.b.signIn("admin", "the-cluster-chosen-pass")
 	if code, out, _ := c.b.call("GET", "/api/health", "", onB, nil); code != 200 {
 		t.Errorf("health on B after the change: %d %v", code, out)
 	}
