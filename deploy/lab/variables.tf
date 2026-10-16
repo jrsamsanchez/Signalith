@@ -2,13 +2,19 @@
 # variable, never from a file in this folder.
 
 variable "size" {
-  description = "full: every machine (about $0.10 an hour). minimal: one Signalith server, one OpenSearch node and one Linux endpoint (about $0.03 an hour)."
+  description = "full: every machine (about $0.10 an hour). minimal: one Signalith server, one OpenSearch node and one Linux endpoint (about $0.03 an hour). loadtest: the terabyte-a-day load test's machines (about $0.12 an hour; see docs/cloud-lab.md)."
   type        = string
   default     = "full"
   validation {
-    condition     = contains(["full", "minimal"], var.size)
-    error_message = "size is full or minimal."
+    condition     = contains(["full", "minimal", "loadtest"], var.size)
+    error_message = "size is full, minimal or loadtest."
   }
+}
+
+variable "loadtest_volume_gb" {
+  description = "The size of each OpenSearch node's volume in the load test, in GB."
+  type        = number
+  default     = 500
 }
 
 variable "location" {
