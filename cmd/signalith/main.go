@@ -47,6 +47,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/lookuptables"
 	"github.com/jrsamsanchez/signalith/internal/m365"
 	"github.com/jrsamsanchez/signalith/internal/nlq"
+	"github.com/jrsamsanchez/signalith/internal/notebooks"
 	"github.com/jrsamsanchez/signalith/internal/notify"
 	"github.com/jrsamsanchez/signalith/internal/playbooks"
 	"github.com/jrsamsanchez/signalith/internal/query"
@@ -1290,6 +1291,8 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	fstore.Replicas = c.OpenSearch.Replicas.IndexSettings()
 	cstore := cases.NewOpenSearch(cl, c.OpenSearch.IndexPrefix)
 	cstore.Replicas = c.OpenSearch.Replicas.IndexSettings()
+	nstore := notebooks.NewOpenSearch(cl, c.OpenSearch.IndexPrefix)
+	nstore.Replicas = c.OpenSearch.Replicas.IndexSettings()
 	// Hosts running osquery, managed from the Endpoints page. Each server
 	// notes the hosts that reach it and writes their last contact in bulk.
 	estore := endpoint.NewStore(cl, c.OpenSearch.IndexPrefix)
@@ -1483,6 +1486,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		Notify:       &api.Notify{Settings: notes, Deliveries: deliveries, Sender: senders, Server: sampleServer},
 		Dashboards:   boards,
 		Cases:        cstore,
+		Notebooks:    nstore,
 		Respond:      responder,
 		Playbooks:    &api.Playbooks{Manager: pbooks, Runs: pruns},
 		Retention:    ret,
@@ -1543,7 +1547,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	// which ones are there. Changes to existing indices and the background
 	// jobs are for the one server that runs those.
 	indicesReady := make(chan struct{})
-	var intelOK, casesOK, findingsOK, notifyOK, playbooksOK, respondOK, vulnsOK bool
+	var intelOK, casesOK, notebooksOK, findingsOK, notifyOK, playbooksOK, respondOK, vulnsOK bool
 	in.jobs.Go(func() {
 		if !ensureTemplate(ctx, cl, c, log) {
 			return
@@ -1560,6 +1564,11 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			log.Error("could not create the cases index; investigations will not work", "index", cstore.Index, "err", err)
 		} else {
 			casesOK = true
+		}
+		if err := nstore.EnsureIndex(ctx); err != nil {
+			log.Error("could not create the hunting notebooks index; notebooks cannot be saved", "index", nstore.Index, "err", err)
+		} else {
+			notebooksOK = true
 		}
 		if err := fstore.EnsureIndex(ctx); err != nil {
 			log.Error("could not create the findings index; detections will not run", "index", fstore.Index, "err", err)
@@ -1629,6 +1638,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			upgradeIndices(ctx, log, func() bool { return r.node == nil || r.node.RunsJobs() }, []indexUpgrade{
 				{intelOK, ibackend.Index, clusterUpgrade(r.shared, "intel-fields", ibackend.Upgrade), ibackend.Replicate},
 				{casesOK, cstore.Index, clusterUpgrade(r.shared, "cases-fields", cstore.Upgrade), cstore.Replicate},
+				{notebooksOK, nstore.Index, clusterUpgrade(r.shared, "notebooks-fields", nstore.Upgrade), nstore.Replicate},
 				{findingsOK, fstore.Index, clusterUpgrade(r.shared, "findings-fields", fstore.Upgrade), fstore.Replicate},
 				{notifyOK, deliveries.Index, nil, deliveries.Replicate},
 				{playbooksOK, pruns.Index, nil, pruns.Replicate}, {respondOK, astore.Index, nil, astore.Replicate},

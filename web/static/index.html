@@ -187,6 +187,7 @@
       <div class="nav__label">Hunt</div>
       <a class="nav__item" href="#search" data-page="search"><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg><span>Search</span></a>
       <a class="nav__item" href="#intel" data-page="intel"><svg class="icon" aria-hidden="true"><use href="#i-radar"/></svg><span>Threat intel</span></a>
+      <a class="nav__item" href="#notebooks" data-page="notebooks"><svg class="icon" aria-hidden="true"><use href="#i-notebook-pen"/></svg><span>Hunting notebooks</span></a>
     </div>
     <div class="nav__group" data-group="Detect &amp; respond">
       <div class="nav__label">Detect &amp; respond</div>
@@ -307,6 +308,7 @@
             <button id="explain" class="btn btn--ghost btn--sm" type="button" title="Explain this query in plain English" aria-pressed="false" aria-controls="explanation"><svg class="icon" aria-hidden="true"><use href="#i-book-open"/></svg><span>Explain</span></button>
             <button id="save-detection" data-min-role="admin" class="btn btn--ghost btn--sm" type="button" title="Run this query on a schedule and raise findings"><svg class="icon" aria-hidden="true"><use href="#i-crosshair"/></svg><span>Save as detection</span></button>
             <button id="add-to-dashboard" data-min-role="analyst" class="btn btn--ghost btn--sm" type="button" title="Show this query as a panel on a dashboard"><svg class="icon" aria-hidden="true"><use href="#i-layout-dashboard"/></svg><span>Add to dashboard</span></button>
+            <button id="search-to-notebook" data-min-role="analyst" class="btn btn--ghost btn--sm" type="button" title="Add this search to a hunting notebook"><svg class="icon" aria-hidden="true"><use href="#i-notebook-pen"/></svg><span>Add to notebook</span></button>
             <button id="search-to-case" data-min-role="analyst" class="btn btn--ghost btn--sm" type="button" title="Save this search and a snapshot of its results to an investigation"><svg class="icon" aria-hidden="true"><use href="#i-briefcase"/></svg><span>Add to case</span></button>
             <div class="run">
               <span class="hint" aria-hidden="true"><kbd class="mod-key">Ctrl</kbd><kbd>↵</kbd></span>
@@ -545,6 +547,25 @@
   </section>
 
   <!-- Investigations -->
+  <section id="page-notebooks" class="page">
+    <div id="nb-list-view">
+      <div class="page-head">
+        <div>
+          <h2 class="page-head__title">Hunting notebooks</h2>
+          <p class="page-head__desc">Saved hunts: notes and searches in order, with what each search found, tagged to ATT&amp;CK.</p>
+        </div>
+        <div class="page-head__actions">
+          <button id="nb-new" class="btn btn--primary" type="button" data-min-role="analyst"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>New notebook</button>
+        </div>
+      </div>
+      <div class="toolbar" role="search">
+        <div class="input-wrap"><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg><input id="nb-q" class="input" type="search" placeholder="Search titles, notes, techniques like T1059" aria-label="Search notebooks" autocomplete="off"></div>
+      </div>
+      <div id="nb-list" class="nb-list" aria-live="polite"></div>
+    </div>
+    <div id="nb-view" class="hidden"></div>
+  </section>
+
   <section id="page-cases" class="page">
     <div id="c-list-view">
       <div class="page-head">
@@ -818,6 +839,7 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
         <p class="page-head__desc" id="d-desc">Scheduled searches that raise a finding for each result.</p>
       </div>
       <div class="page-head__actions">
+        <button class="btn btn--secondary" type="button" id="d-describe" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-wand-sparkles"/></svg>Describe a detection</button>
         <button class="btn btn--secondary" type="button" id="d-sigma" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-sigma"/></svg>Import Sigma rule</button>
         <button class="btn btn--primary" type="button" id="d-new" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>New detection</button>
       </div>
@@ -838,6 +860,25 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
       <aside class="card inspector" id="d-detail" aria-label="Detection details" hidden></aside>
     </div>
     <dialog class="modal det-editor" id="d-editor" aria-labelledby="de-heading"></dialog>
+    <dialog class="modal" id="d-describe-box" aria-labelledby="d-describe-title">
+      <form method="dialog" id="d-describe-form">
+        <div class="modal__head">
+          <div><h2 class="modal__title" id="d-describe-title">Describe a detection</h2><p class="modal__desc">Say what to catch in plain English. Signalith drafts the whole rule and shows what it would have found in the past 30 days. Nothing runs until you turn it on.</p></div>
+          <button class="btn btn--ghost btn--icon btn--sm dx-close" type="button" aria-label="Close" id="d-describe-x"><svg class="icon" aria-hidden="true"><use href="#i-x"/></svg></button>
+        </div>
+        <div class="modal__body">
+          <div class="alert hidden" data-tone="danger" id="d-describe-error" role="alert"><svg class="icon" aria-hidden="true"><use href="#i-circle-alert"/></svg><div><b>No draft was made.</b><p id="d-describe-error-text"></p></div></div>
+          <div class="field"><label class="label" for="d-describe-text">What should it catch?</label><textarea class="textarea" id="d-describe-text" rows="3" maxlength="1000" placeholder="more than 10 failed logins from the same source in 5 minutes"></textarea>
+            <div class="hint" id="d-describe-hint">Name the activity, a threshold and a time window if there is one. Say "high severity" to set it.</div></div>
+          <div class="dx-examples" id="d-describe-examples" aria-label="Examples"></div>
+          <label class="check hidden" id="d-describe-ai-row"><input type="checkbox" id="d-describe-ai" checked> <span id="d-describe-ai-label">Use the AI model</span></label>
+        </div>
+        <div class="modal__foot">
+          <button class="btn btn--ghost" type="button" id="d-describe-cancel">Cancel</button>
+          <button class="btn btn--primary" type="submit" id="d-describe-go"><svg class="icon" aria-hidden="true"><use href="#i-wand-sparkles"/></svg>Draft detection</button>
+        </div>
+      </form>
+    </dialog>
     <dialog class="modal" id="d-sigma-box" aria-labelledby="d-sigma-title">
       <form method="dialog" id="d-sigma-form">
         <div class="modal__head">
@@ -1778,6 +1819,7 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
 <script src="cases.js"></script>
 <script src="respond.js"></script>
 <script src="investigate.js"></script>
+<script src="notebooks.js"></script>
 <script src="assets/passkey.js"></script>
 <script src="users.js"></script>
 <script src="notify.js"></script>

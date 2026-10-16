@@ -56,6 +56,8 @@ func TestTranslate(t *testing.T) {
 		"traffic to or from 10.1.2.3":                           `datamodel=Network_Traffic src=10.1.2.3 OR dest=10.1.2.3`,
 		"events on web1 in the last 15 minutes":                 `host=web1 earliest=-15m`,
 		"failed sudo":                                           `datamodel=Authentication action=failure app=sudo`,
+		"more than 10 failed logins from the same source":       `datamodel=Authentication action=failure | stats count by src | where count>10 | sort -count`,
+		"a single user logging on to more than 5 hosts":         `datamodel=Authentication | stats dc(dest) as distinct_dest by user | where distinct_dest>5 | sort -distinct_dest`,
 		"risk by detection":                                     `datamodel=Risk | stats sum(risk_score) as risk_score by detection_id | sort -risk_score`,
 		// Antivirus data.
 		"malware on web1":                        `datamodel=Malware type=threat dest=web1`,

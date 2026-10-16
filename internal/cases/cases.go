@@ -1,6 +1,6 @@
 // Package cases stores investigations: a case groups related findings with
 // the analyst's notes, the searches they ran and the events they pinned,
-// like Splunk ES investigations.
+// like a SOC investigation.
 package cases
 
 import (
@@ -36,6 +36,9 @@ const (
 	// ran, on what, by whom and how it went; RunID names its record in
 	// the audit log.
 	KindAction = "action"
+	// KindNotebook is a hunting notebook linked to the case: Text is its
+	// title when it was linked, NotebookID names it.
+	KindNotebook = "notebook"
 )
 
 // Limits keep one case document a reasonable size.
@@ -96,6 +99,8 @@ type Entry struct {
 
 	Event     map[string]any `json:"event,omitempty"`
 	FindingID string         `json:"finding_id,omitempty"`
+
+	NotebookID string `json:"notebook_id,omitempty"`
 
 	RunID  string `json:"run_id,omitempty"`
 	Status string `json:"status,omitempty"` // of the run: succeeded or failed

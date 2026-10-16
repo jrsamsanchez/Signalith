@@ -159,9 +159,9 @@ func TestNoOriginNoStamp(t *testing.T) {
 	}
 }
 
-// TestSampleSignalithOrigin: the sample-data pipeline records Signalith's
-// own events as Signalith's, and only those: a field a generated event
-// carries is still dropped, and any other origin is not recorded.
+// TestSampleSignalithOrigin: the sample-data pipeline records the origin a
+// generated event names, such as Signalith's own, but a field a generated
+// event carries is still dropped.
 func TestSampleSignalithOrigin(t *testing.T) {
 	fb := &fakeBulk{}
 	sp := &Pipeline{Store: fb, Prefix: "sig", Now: func() time.Time { return now }, SampleMark: "sample-1"}
@@ -174,7 +174,7 @@ func TestSampleSignalithOrigin(t *testing.T) {
 		t.Fatal(err)
 	}
 	expect(t, fb.docs[0].Doc, map[string]any{IntakeField: IntakeSignalith, TokenField: nil})
-	expect(t, fb.docs[1].Doc, map[string]any{IntakeField: nil, TokenField: nil})
+	expect(t, fb.docs[1].Doc, map[string]any{IntakeField: IntakeAgent, TokenField: "x"})
 	expect(t, fb.docs[2].Doc, map[string]any{IntakeField: nil})
 }
 

@@ -283,9 +283,11 @@ func anyMatch(d *Data, q *query.Query, indicators map[string]bool) bool {
 			continue
 		}
 		doc := e.Document()
-		if e.Origin.Intake == ingest.IntakeSignalith {
-			// The sample's pipeline records it, as for Signalith's own events.
-			doc[ingest.IntakeField] = e.Origin.Intake
+		// The origin the loader stamps on the stored event.
+		for k, v := range map[string]string{ingest.IntakeField: e.Origin.Intake, ingest.TokenPurposeField: e.Origin.Purpose} {
+			if v != "" {
+				doc[k] = v
+			}
 		}
 		if ok, err := search.MatchDoc(q.Search, doc); err != nil {
 			panic(fmt.Sprintf("search %v: %v", q.Search, err))
@@ -323,7 +325,7 @@ func eventHitsIntel(e ingest.Event, indicators map[string]bool) bool {
 
 // TestStories: the four intrusion stories, the benign story, the two
 // antivirus stories, the vulnerability scan, the network stories and the
-// sensor upkeep and the source that stopped are present, and the sample investigation has the phishing story's host and
+// sensor upkeep are present, and the sample investigation has the phishing story's host and
 // user to gather its findings by.
 func TestStories(t *testing.T) {
 	d := genData(t, SizeSmall)

@@ -475,7 +475,7 @@ func leadingHead(cmds []query.Command) (int, bool) {
 			return c.N, true
 		case *query.Table, *query.Rename, *query.Enrich, *query.Intel, *query.Eval, *query.Rex, *query.Fillnull, *query.Lookup,
 			*query.Bin, *query.FieldsRemove, *query.Spath, *query.FromJSON, *query.MakeMV, *query.Convert,
-			*query.NoMV, *query.StrCat, *query.RangeMap, *query.ForEach:
+			*query.NoMV, *query.StrCat, *query.RangeMap, *query.ForEach, *query.Replace, *query.XMLKV:
 			continue
 		}
 		return 0, false

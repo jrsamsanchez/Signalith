@@ -361,7 +361,9 @@ func (p *Pipeline) write(ctx context.Context, events []Event, ids []string) (*Re
 		nReserved := p.dropReserved(ev.Fields, &reserved)
 		ApplyURLQuery(ev.Fields, urlQuery)
 		// After the drop, so only Signalith sets these. The sample data
-		// carries its own marker instead.
+		// carries its own marker instead, and the origin an event of it
+		// names (as a sensor's token would send it), so detections that
+		// believe only such events fire on the sample too.
 		if p.SampleMark == "" {
 			o := ev.Origin
 			if o.IsZero() {
@@ -369,9 +371,7 @@ func (p *Pipeline) write(ctx context.Context, events []Event, ids []string) (*Re
 			}
 			o.stamp(ev.Fields)
 			setSource(ev.Fields, o.Intake)
-		} else if ev.Origin.Intake == IntakeSignalith {
-			// What the sample shows Signalith noticing itself, such as a
-			// source that stopped sending.
+		} else {
 			ev.Origin.stamp(ev.Fields)
 		}
 		if ev.Time.IsZero() {

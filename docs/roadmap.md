@@ -52,6 +52,8 @@ The first four phases are complete, and work on hardening for 1.0 has started.
 
 - Investigation cases that collect findings, notes, searches and evidence, and
   [Investigate with AI](investigate.md) for a first verdict on a finding.
+- [Hunting notebooks](hunting-notebooks.md): saved, shareable hunts of notes and searches
+  tagged to ATT&CK, with seven starter hunts.
 - [Notifications](notifications.md) to email, webhooks, Slack and Microsoft Teams, and
   [response actions](response-actions.md) and [playbooks](playbooks.md) with an approval
   step.

@@ -688,8 +688,10 @@ when a sensor reports Zeek or Suricata stopped, its capture port down or idle, r
 tuning failing or old, or a full disk, and when it goes silent: one finding per sensor and
 problem a day. A search cannot find what did not arrive, so the server that runs the
 background jobs writes a `sensor:health` event ("Sensor silent") when a sensor with a status
-line stops sending, and again each day it stays silent. Packet loss has its own detection,
-`network-sensor-packet-loss`.
+line stops sending, and again each day it stays silent. It believes only status lines sent
+with a network sensor's token and the silent events Signalith writes itself, so another
+agent's token cannot raise findings for hosts of its choosing. Packet loss has its own
+detection, `network-sensor-packet-loss`.
 
 ## Rule tuning from Signalith
 
@@ -949,6 +951,12 @@ sensor**, with when it last sent. If it is not there, check Fluent Bit's log on 
 Common causes are a wrong address under **Agents send to**, a firewall blocking port 8080, a
 revoked token, or a wrong log path (Fluent Bit says it found no files). The **Health** page
 shows problems with incoming data.
+
+**The script says OISF's Suricata repository could not be read.** On Ubuntu, Suricata
+comes from OISF's PPA, because Ubuntu's own older Suricata has no `suricata-update` and so
+never loads rules. When the PPA does not answer, the script tries three times and then
+stops before installing anything from Ubuntu instead. Run the line again later, or install
+with `--docker`. A sensor already running keeps its Suricata.
 
 **Zeek events are in `sourcetype=zeek:unknown`.** Zeek is writing tab-separated logs: turn
 on JSON logs (see [Zeek's JSON logs](#zeeks-json-logs)). Lines written before the change stay
