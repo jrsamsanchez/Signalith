@@ -712,7 +712,7 @@ the audit log, see [Microsoft 365](microsoft-365.md).
 
 ### Splunk Security Content
 
-**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,131 Windows,
+**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,138 Windows,
 Linux, web, network, AWS CloudTrail, Entra ID and Microsoft 365 detections from Splunk's Threat Research Team
 ([security_content](https://github.com/splunk/security_content)), pinned to one
 commit. They are the production TTP and anomaly rules that search the CIM

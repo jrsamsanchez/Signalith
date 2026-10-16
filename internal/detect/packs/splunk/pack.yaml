@@ -214,6 +214,10 @@ rules:
     rule_id: eac4de87-7a56-4538-a21b-277897af6d8d
     file: azure_ad_application_administrator_role_assigned.yml
     path: detections/cloud/azure_ad_application_administrator_role_assigned.yml
+  - id: splunk-azure-ad-authentication-failed-during-mfa-challenge
+    rule_id: e62c9c2e-bf51-4719-906c-3074618fcc1c
+    file: azure_ad_authentication_failed_during_mfa_challenge.yml
+    path: detections/cloud/azure_ad_authentication_failed_during_mfa_challenge.yml
   - id: splunk-azure-ad-azurehound-useragent-detected
     rule_id: d62852db-a1f1-40db-a7fc-c3d56fa8bda3
     file: azure_ad_azurehound_useragent_detected.yml
@@ -1750,6 +1754,14 @@ rules:
     rule_id: 1668812a-6047-11eb-ae93-0242ac130002
     file: o365_added_service_principal.yml
     path: detections/cloud/o365_added_service_principal.yml
+  - id: splunk-o365-application-available-to-other-tenants
+    rule_id: 942548a3-0273-47a4-8dbd-e5202437395c
+    file: o365_application_available_to_other_tenants.yml
+    path: detections/cloud/o365_application_available_to_other_tenants.yml
+  - id: splunk-o365-bypass-mfa-via-trusted-ip
+    rule_id: c783dd98-c703-4252-9e8a-f19d9f66949e
+    file: o365_bypass_mfa_via_trusted_ip.yml
+    path: detections/cloud/o365_bypass_mfa_via_trusted_ip.yml
   - id: splunk-o365-compliance-content-search-exported
     rule_id: 2ce9f31d-ab4f-4179-b2b7-c77a9652e1d8
     file: o365_compliance_content_search_exported.yml
@@ -1774,6 +1786,10 @@ rules:
     rule_id: 4d28013d-3a0f-4d65-a33f-4e8009fee0ae
     file: o365_email_security_feature_changed.yml
     path: detections/cloud/o365_email_security_feature_changed.yml
+  - id: splunk-o365-email-transport-rule-changed
+    rule_id: 11ebb7c2-46bd-41c9-81e1-d0b4b34583a2
+    file: o365_email_transport_rule_changed.yml
+    path: detections/cloud/o365_email_transport_rule_changed.yml
   - id: splunk-o365-excessive-sso-logon-errors
     rule_id: 8158ccc4-6038-11eb-ae93-0242ac130002
     file: o365_excessive_sso_logon_errors.yml
@@ -1822,6 +1838,10 @@ rules:
     rule_id: 5f694cc4-a678-4a60-9410-bffca1b647dc
     file: o365_pst_export_alert.yml
     path: detections/cloud/o365_pst_export_alert.yml
+  - id: splunk-o365-safe-links-detection
+    rule_id: 711d9e8c-2cb0-45cf-8813-5f191ecb9b26
+    file: o365_safe_links_detection.yml
+    path: detections/cloud/o365_safe_links_detection.yml
   - id: splunk-o365-service-principal-new-client-credentials
     rule_id: a1b229e9-d962-4222-8c62-905a8a010453
     file: o365_service_principal_new_client_credentials.yml
@@ -1838,6 +1858,10 @@ rules:
     rule_id: 00958c7b-35db-4e7a-ad13-31550a7a7c64
     file: o365_threat_intelligence_suspicious_file_detected.yml
     path: detections/cloud/o365_threat_intelligence_suspicious_file_detected.yml
+  - id: splunk-o365-zap-activity-detection
+    rule_id: 4df275fd-a0e5-4246-8b92-d3201edaef7a
+    file: o365_zap_activity_detection.yml
+    path: detections/cloud/o365_zap_activity_detection.yml
   - id: splunk-overwriting-accessibility-binaries
     rule_id: 13c2f6c3-10c5-4deb-9ba1-7c4460ebe4ae
     file: overwriting_accessibility_binaries.yml
@@ -4382,6 +4406,10 @@ rules:
     rule_id: e4602172-db86-4315-86df-da66fb40bcde
     file: windows_unusual_syswow64_process_run_system32_executable.yml
     path: detections/endpoint/windows_unusual_syswow64_process_run_system32_executable.yml
+  - id: splunk-windows-usbstor-registry-key-modification
+    rule_id: a345980a-417d-4ed3-9fb4-cac30c9405a0
+    file: windows_usbstor_registry_key_modification.yml
+    path: detections/endpoint/windows_usbstor_registry_key_modification.yml
   - id: splunk-windows-user-deletion-via-net
     rule_id: b0b6fd2c-8953-4d1b-8f7b-56075ea6ab3e
     file: windows_user_deletion_via_net.yml
