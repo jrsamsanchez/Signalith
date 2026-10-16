@@ -28,8 +28,8 @@ The first four phases are complete, and work on hardening for 1.0 has started.
   Change, Malware and more).
 - A pipe-based [query language](query-language.md) that reads like SPL, plain-English
   questions that become queries, a visual query builder, and an optional AI model.
-- A Docker quick start, [packages](install-packages.md) for Linux and Windows, and signed
-  apt and dnf repositories.
+- A Docker quick start, [packages](install-packages.md) for Linux and Windows, signed
+  apt and dnf repositories, and a [Helm chart](kubernetes.md) for Kubernetes.
 
 **Detect and triage**
 
@@ -121,9 +121,6 @@ The first four phases are complete, and work on hardening for 1.0 has started.
 **Tenants**
 :   Several teams or customers on one install, each with its own data, users and
     detections.
-
-**Kubernetes**
-:   A Helm chart to run Signalith on a Kubernetes cluster.
 
 ## Next <span class="sg-pill sg-pill--next">Planned</span> { #next data-toc-label="Next" }
 

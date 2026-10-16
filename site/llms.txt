@@ -6,7 +6,7 @@ Key facts:
 
 - License: Apache License 2.0. No paid tier, no telemetry, no account needed.
 - Source: https://github.com/jrsamsanchez/Signalith (Go server with the web UI built in).
-- Runs as a Windows service, a systemd unit or a Docker container, on one server or several sharing one OpenSearch.
+- Runs as a Windows service, a systemd unit, a Docker container or on Kubernetes with a Helm chart, on one server or several sharing one OpenSearch.
 - Install for evaluation: clone the repository, then `docker compose -f deploy/docker/docker-compose.yml up -d`. Packages for Debian/Ubuntu, RHEL-family and Windows are on GitHub Releases, with signed apt and dnf repositories at https://signalith.io/apt/ and https://signalith.io/rpm/.
 - Data intake: Fluent Bit agents for Windows and Linux, syslog and CEF/LEEF, OpenTelemetry (OTLP) logs, osquery, Wazuh alerts, Zeek and Suricata network sensor, Apache and Nginx access logs, AWS CloudTrail, Microsoft Entra ID and Azure, Microsoft 365, Okta, Google Cloud and Google Workspace audit logs, antivirus (Defender, ClamAV), and a guided parser builder for any other log.
 - Search: a pipe-style query language (familiar to SPL users; not SPL-compatible), a visual query builder, and plain-English questions turned into searches by a built-in offline parser or an optional AI model (Claude, OpenAI or a local Ollama model).
