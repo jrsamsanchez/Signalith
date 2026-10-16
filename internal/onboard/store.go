@@ -233,12 +233,19 @@ func (r *Registry) ParseCustom(name string, rec map[string]any, now time.Time) (
 	return ev, drop, true
 }
 
+// syslogKept are the fields of a syslog event that the receiver set from
+// the header and the connection: a parser's fields never replace them.
+var syslogKept = map[string]bool{"host": true, "dvc": true, "facility": true, "severity": true, "severity_id": true,
+	"app": true, "process_id": true, "message": true}
+
 // Syslog applies the parser that names a syslog message's program to the
 // message's text. It keeps what the receiver set from the header and the
-// connection (host, dvc, facility, severity, the event time, where it
-// came from), and the message.
+// connection (syslogKept), and the event time unless the line has a
+// usable one. Messages a built-in parser read (sshd, sudo, firewalls and
+// so on: any but plain syslog in Other) are left as they are, so a parser
+// cannot turn sign-ins into something the detections for them miss.
 func (r *Registry) Syslog(m *syslog.Message, ev *ingest.Event) {
-	if m.AppName == "" || m.CEF != nil || m.LEEF != nil {
+	if m.AppName == "" || m.CEF != nil || m.LEEF != nil || ev.Model != "Other" || ev.Fields["sourcetype"] != "syslog" {
 		return
 	}
 	s := r.current()
@@ -253,15 +260,18 @@ func (r *Registry) Syslog(m *syslog.Message, ev *ingest.Event) {
 	case FormatCEF, FormatLEEF:
 		return
 	}
-	fields, ok := c.parseBody(m.Text)
+	text := m.Text
+	if len(text) > MaxLine {
+		text = text[:MaxLine]
+	}
+	fields, ok := c.parseBody(text)
 	if !ok {
 		return
 	}
 	parsed := c.finish(fields, m.Raw, time.Time{}, "", "", ev.Time)
-	// What the line says wins, but for the sending device and the
-	// message as received.
+	// What the line says wins, but for what the receiver set.
 	for k, v := range ev.Fields {
-		if _, set := parsed.Fields[k]; !set || k == "dvc" || k == "message" {
+		if _, set := parsed.Fields[k]; !set || syslogKept[k] {
 			parsed.Fields[k] = v
 		}
 	}

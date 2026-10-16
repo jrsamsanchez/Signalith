@@ -3,6 +3,7 @@ package agents
 import (
 	"errors"
 	"fmt"
+	"path"
 	"strings"
 )
 
@@ -53,17 +54,73 @@ func customPath(p, hostOS string) error {
 	case strings.Contains(p, ".."):
 		return fmt.Errorf("the path %q must not use ..", p)
 	}
+	var deny []string
+	norm := p
 	switch hostOS {
 	case "linux":
 		if !strings.HasPrefix(p, "/") {
 			return fmt.Errorf("the path %q must start with /", p)
 		}
+		deny = linuxDenied
 	case "windows":
 		if len(p) < 3 || p[1] != ':' || p[2] != '\\' {
 			return fmt.Errorf(`the path %q must start with a drive, such as C:\`, p)
 		}
+		// Windows paths do not care about case, the kind of slash or, here,
+		// the drive.
+		norm = "?" + strings.ToLower(strings.ReplaceAll(p[1:], `\`, "/"))
+		deny = windowsDenied
 	default:
 		return fmt.Errorf("unknown os %q; use linux or windows", hostOS)
 	}
+	if secretPath(norm, deny) {
+		return fmt.Errorf("the path %q may hold secrets (passwords, keys or the agent's own token), which would become searchable; name the log files themselves", p)
+	}
 	return nil
+}
+
+// Files and folders that hold secrets: the agent's own configuration and
+// token, Signalith's, password and key stores. A path naming one, or a
+// pattern that can match one, is refused. Folders end in /.
+var (
+	linuxDenied = []string{"/etc/fluent-bit/", "/var/lib/fluent-bit/", "/etc/td-agent-bit/", "/etc/signalith/", "/var/lib/signalith/",
+		"/etc/shadow", "/etc/gshadow", "/etc/shadow-", "/etc/gshadow-", "/etc/sudoers", "/etc/sudoers.d/", "/etc/ssh/", "/root/",
+		"/proc/", "/sys/", "/dev/", "/etc/ssl/private/", "/etc/pki/"}
+	windowsDenied = []string{"?:/program files/fluent-bit/", "?:/programdata/fluent-bit/", "?:/programdata/signalith/", "?:/program files/signalith/",
+		"?:/windows/system32/config/", "?:/windows/ntds/", "?:/users/*/.ssh/", "?:/programdata/ssh/"}
+)
+
+// secretPath reports whether p names, or as a pattern can match, a denied
+// file or something in a denied folder, or a key file.
+func secretPath(p string, deny []string) bool {
+	if ext := strings.ToLower(path.Ext(p)); ext == ".key" || ext == ".pfx" || ext == ".p12" || ext == ".kdbx" {
+		return true
+	}
+	for _, d := range deny {
+		if strings.HasSuffix(d, "/") {
+			// In the folder: the path, or the part of a pattern before its
+			// first wildcard, is under it, or the pattern's folder matches it.
+			lit := p
+			if i := strings.IndexAny(p, "*?["); i >= 0 {
+				lit = p[:i]
+			}
+			if m, _ := path.Match(d+"*", lit); m || strings.HasPrefix(lit, d) || strings.HasPrefix(lit+"/", d) {
+				return true
+			}
+			for dir := path.Dir(p); dir != "/" && dir != "."; dir = path.Dir(dir) {
+				dd := strings.TrimSuffix(d, "/")
+				if m, _ := path.Match(dd, dir); m {
+					return true
+				}
+				if m, _ := path.Match(dir, dd); m {
+					return true
+				}
+			}
+			continue
+		}
+		if m, _ := path.Match(p, d); m || p == d {
+			return true
+		}
+	}
+	return false
 }

@@ -65,7 +65,7 @@ func TestAnalyzeSamples(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			pv := c.Run(lines, now)
+			pv, _ := c.Run(context.Background(), lines, now)
 			if pv.Parsed != tc.parsed {
 				t.Errorf("parsed %d of %d lines, want %d", pv.Parsed, pv.Lines, tc.parsed)
 			}
@@ -182,7 +182,9 @@ func TestValidate(t *testing.T) {
 		{"look-ahead", func(p *Parser) { p.Pattern = `(?=x)(?P<a>\S+)` }, "does not compile"},
 		{"long", func(p *Parser) { p.Pattern = "(?P<a>x)" + strings.Repeat("y", MaxPattern) }, "at most"},
 		{"huge repeat", func(p *Parser) { p.Pattern = `(?P<a>(?:x{1000}){1000})` }, "does not compile"},
-		{"big program", func(p *Parser) { p.Pattern = "(?P<a>" + strings.Repeat(`[a-z]{1,400}`, 12) + ")" }, "too large"},
+		{"big program", func(p *Parser) { p.Pattern = "(?P<a>" + strings.Repeat(`[a-z]{1,50}`, 12) + ")" }, "too large"},
+		{"slow repeat", func(p *Parser) { p.Pattern = `(?P<a>(?:\w\s?){0,1000})(?P<b>Q)` }, "at most 100"},
+		{"slow repeat 2", func(p *Parser) { p.Pattern = `(?P<a>(?:\w\s?\w?){0,1000})` }, "at most 100"},
 		{"mapping target", func(p *Parser) { p.Mappings = []Mapping{{From: "x", To: "risk_score"}} }, "data model field"},
 		{"mapping twice", func(p *Parser) { p.Mappings = []Mapping{{From: "x", To: "src"}, {From: "x", To: "dest"}} }, "twice"},
 		{"time format", func(p *Parser) { p.TimeField, p.TimeFormat = "ts", "strftime" }, "time format"},
@@ -433,7 +435,7 @@ func FuzzAnalyze(f *testing.F) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		pv := c.Run(lines, now)
+		pv, _ := c.Run(context.Background(), lines, now)
 		if pv.Lines != len(lines) || pv.Parsed > pv.Lines {
 			t.Fatalf("preview %d of %d", pv.Parsed, pv.Lines)
 		}
@@ -479,4 +481,36 @@ func FuzzParseLine(f *testing.F) {
 			}
 		}
 	})
+}
+
+// TestSyslogLeavesBuiltIn: a parser that names a program a built-in
+// parser reads (sshd) does not replace it, and cannot change the host
+// the header names; a long message is read only to MaxLine.
+func TestSyslogLeavesBuiltIn(t *testing.T) {
+	st := NewFileStore("")
+	reg := NewRegistry(st)
+	p := Parser{Name: "acme", Sourcetype: "acme:thing", Model: "Change", Format: FormatKV, KVSeparator: "=", SyslogApps: []string{"sshd", "acmefw"}}
+	if err := st.Put(context.Background(), p, "admin"); err != nil {
+		t.Fatal(err)
+	}
+	m := syslog.Parse([]byte("<38>Oct 16 14:05:09 web01 sshd[2211]: Failed password for root from 203.0.113.5 port 52320 ssh2"), now)
+	ev := m.Event(netip.MustParseAddr("192.0.2.1"), now, 0)
+	reg.Syslog(&m, &ev)
+	if ev.Model != "Authentication" || ev.Fields["sourcetype"] == "acme:thing" {
+		t.Errorf("sshd sign-in became %s %v", ev.Model, ev.Fields["sourcetype"])
+	}
+
+	m = syslog.Parse([]byte("<134>Oct 16 14:05:09 fw01 acmefw: host=spoofed severity=emergency user=bob"), now)
+	ev = m.Event(netip.MustParseAddr("192.0.2.1"), now, 0)
+	reg.Syslog(&m, &ev)
+	if ev.Fields["host"] != "fw01" || ev.Fields["severity"] != "informational" || ev.Fields["user"] != "bob" || ev.Model != "Change" {
+		t.Errorf("event %v in %s", ev.Fields, ev.Model)
+	}
+
+	m = syslog.Parse([]byte("<134>Oct 16 14:05:09 fw01 acmefw: "+strings.Repeat("x", MaxLine)+" user=late"), now)
+	ev = m.Event(netip.MustParseAddr("192.0.2.1"), now, 0)
+	reg.Syslog(&m, &ev)
+	if _, ok := ev.Fields["user"]; ok {
+		t.Errorf("read past MaxLine: %v", ev.Fields["user"])
+	}
 }

@@ -66,7 +66,9 @@ Free text is read with a regular expression whose **named groups** become fields
 Name groups after data model fields where you can (`user`, `src`, `dest`, `action`). The
 expression is [RE2](https://github.com/google/re2/wiki/Syntax): matching takes time in
 proportion to the line and never backtracks, so a pattern cannot stall ingest. RE2 has no
-look-ahead or back-references. A line the pattern does not match is still stored, as
+look-ahead or back-references. A pattern can compile to at most 500 instructions, with
+counted repeats such as `{1,20}` up to 100, and reads at most the first 8 KB of a line, so
+what one line costs stays small. A line the pattern does not match is still stored, as
 text, and found by searching for its words.
 
 ## Improve it with AI
@@ -94,7 +96,9 @@ Step 5 of the page shows how, once the parser is saved:
   the agent from the Linux or Windows card first if the host has none. The input sends
   each line under the tag `custom.<parser name>`, from the end of the files onward.
 - **Syslog**: name the device's program under **Also read syslog from**, and point the
-  device at Signalith as on the [Syslog](sending-data.md) card.
+  device at Signalith as on the [Syslog](sending-data.md) card. A program Signalith already
+  reads (sshd, sudo, firewalls and the like) keeps its built-in parser, and the host,
+  facility and severity always come from the syslog header.
 - **A script**: send JSON lines to `/api/ingest` with an [agent token](agent-tokens.md)
   and the header `X-Signalith-Tag: custom.<parser name>`. Each line is
   `{"log": "<the line>"}`, or, for a JSON parser, the JSON object itself.
@@ -120,10 +124,10 @@ changes how events are stored. Saving, changing and deleting a parser are writte
 | Parsers | 100 |
 | Sample | 500 lines, 512 KB |
 | Line read | 16 KB (the whole line is still stored) |
-| Regular expression | 2,000 characters, 150 named groups, and a cap on its compiled size |
+| Regular expression | 2,000 characters, 150 named groups, 500 compiled instructions, repeats up to 100, first 8 KB of a line |
 | CSV columns, field mappings | 128 each |
 | Syslog programs per parser | 16 |
-| Files per agent input | 8, absolute paths without `..`, commas, quotes or shell characters |
+| Files per agent input | 8, absolute paths without `..`, commas, quotes or shell characters, and none that hold secrets: the agent's and Signalith's own folders, `/etc/shadow`, `/etc/sudoers`, SSH and private key folders, `*.key`, `*.pfx`, the Windows registry hives |
 
 Field names must be valid Signalith field names, and a parser cannot write the fields
 Signalith sets itself (`datamodel`, `@timestamp`, risk fields and the like). A parser that

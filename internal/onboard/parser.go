@@ -53,9 +53,15 @@ const HeaderSyslog = "syslog"
 // Limits on what a parser may hold, so a saved one stays cheap to run on
 // every record.
 const (
-	MaxParsers     = 100
-	MaxPattern     = 2000
-	maxProgInst    = 8000
+	MaxParsers = 100
+	MaxPattern = 2000
+	// maxProgInst caps a pattern's compiled size, and maxRepeat its
+	// counted repeats: Go's matcher takes time in proportion to both
+	// and the line, so together with maxRegexInput they bound what one
+	// line costs.
+	maxProgInst    = 500
+	maxRepeat      = 100
+	maxRegexInput  = 8 << 10
 	MaxColumns     = 128
 	MaxMappings    = 128
 	MaxSyslogApps  = 16
@@ -364,6 +370,9 @@ func compilePattern(pattern string) (*regexp.Regexp, error) {
 	if err != nil {
 		return nil, fmt.Errorf("The regular expression does not compile: %v.", err)
 	}
+	if err := checkRepeats(re); err != nil {
+		return nil, err
+	}
 	prog, err := syntax.Compile(re.Simplify())
 	if err != nil {
 		return nil, fmt.Errorf("The regular expression does not compile: %v.", err)
@@ -392,6 +401,20 @@ func compilePattern(pattern string) (*regexp.Regexp, error) {
 		return nil, fmt.Errorf("The regular expression can have at most %d named groups.", maxFields)
 	}
 	return rx, nil
+}
+
+// checkRepeats refuses counted repeats over maxRepeat, such as
+// (?:\w\s?){0,1000}, which make a short pattern slow on every line.
+func checkRepeats(re *syntax.Regexp) error {
+	if re.Op == syntax.OpRepeat && (re.Min > maxRepeat || re.Max > maxRepeat) {
+		return fmt.Errorf("Counted repeats such as {1,%d} can be at most %d.", maxRepeat, maxRepeat)
+	}
+	for _, s := range re.Sub {
+		if err := checkRepeats(s); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Compiled is a checked parser, ready to run.
@@ -556,6 +579,9 @@ func (c *Compiled) parseBody(body string) (map[string]any, bool) {
 			return nil, false
 		}
 	case FormatRegex:
+		if len(body) > maxRegexInput {
+			body = body[:maxRegexInput]
+		}
 		m := c.re.FindStringSubmatch(body)
 		if m != nil {
 			for i, n := range c.re.SubexpNames() {

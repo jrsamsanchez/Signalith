@@ -81,7 +81,7 @@ func Refine(ctx context.Context, m Chatter, lines []string, current Parser) (Par
 		if err != nil {
 			return current, "", err
 		}
-		p, why, err := applyReply(reply, current, lines)
+		p, why, err := applyReply(ctx, reply, current, lines)
 		if err == nil {
 			return p, why, nil
 		}
@@ -101,7 +101,7 @@ func aiView(p Parser) aiReply {
 
 // applyReply reads the model's JSON onto the current parser and checks
 // that the result compiles and reads the sample.
-func applyReply(reply string, current Parser, lines []string) (Parser, string, error) {
+func applyReply(ctx context.Context, reply string, current Parser, lines []string) (Parser, string, error) {
 	js := jsonObject(reply)
 	var r aiReply
 	if err := json.Unmarshal([]byte(js), &r); err != nil {
@@ -133,7 +133,10 @@ func applyReply(reply string, current Parser, lines []string) (Parser, string, e
 		return current, "", err
 	}
 	p = c.P
-	pv := c.Run(lines, time.Now())
+	pv, err := c.Run(ctx, lines, time.Now())
+	if err != nil {
+		return current, "", err
+	}
 	if p.Format == FormatRegex && pv.Parsed*2 < pv.Lines {
 		return current, "", fmt.Errorf("the pattern reads only %d of the %d sample lines", pv.Parsed, pv.Lines)
 	}

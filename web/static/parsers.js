@@ -521,7 +521,7 @@
         placeholder: win ? 'C:\\ProgramData\\Acme\\logs\\*.log' : '/var/log/acme/*.log' });
       ta.value = C.paths;
       ta.addEventListener('input', () => { C.paths = ta.value; });
-      parts.push(dxField('Log files on the host', ta, 'One per line; * matches any part of a name.'),
+      parts.push(dxField('Log files on the host', ta, 'One per line; * matches any part of a name. Files that hold secrets, such as the agent’s own configuration or password and key files, are refused: they would become searchable.'),
         el('div', { class: 'cl-row' }, dxBtn('secondary', 'Make the agent input', makeInput, { sm: true, icon: 'file-code' })),
         C.inputErr ? el('p', { class: 'field-error', role: 'alert' }, icon('circle-alert'), sentence(C.inputErr)) : null);
       if (C.input) {

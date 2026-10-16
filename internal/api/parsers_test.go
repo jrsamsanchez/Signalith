@@ -87,7 +87,7 @@ func TestCustomParserFlow(t *testing.T) {
 	if code, out := do(t, ts, "PUT", "/api/parsers/fw", jsonBody(p), true); code != 200 || out["updated_by"] != "admin" {
 		t.Fatalf("save = %d %v", code, out)
 	}
-	if !strings.Contains(log.String(), `msg="custom parser added"`) || !strings.Contains(log.String(), "parser=fw") {
+	if !strings.Contains(log.String(), `msg="custom parser added"`) || !strings.Contains(log.String(), "parser=fw") || !strings.Contains(log.String(), "mappings=") {
 		t.Errorf("not audited: %s", log)
 	}
 	req, _ := http.NewRequest("POST", ts.URL+"/api/ingest", strings.NewReader(jsonBody([]map[string]string{{"log": strings.Split(kvSample, "\n")[0]}})))

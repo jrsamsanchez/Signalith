@@ -2,6 +2,8 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"net/http"
 	"path/filepath"
@@ -164,7 +166,12 @@ func (s *Server) answerSample(w http.ResponseWriter, r *http.Request, ans *sampl
 		return
 	}
 	ans.Parser = c.P
-	ans.Preview = c.Run(lines, now)
+	ctx, cancel := context.WithTimeout(r.Context(), analyzeTimeout)
+	defer cancel()
+	if ans.Preview, err = c.Run(ctx, lines, now); err != nil {
+		writeError(w, http.StatusUnprocessableEntity, err)
+		return
+	}
 	ans.Tag = ans.Parser.Tag()
 	if ans.Parser.Name != "" {
 		_, ans.Exists = s.parsers().Store().Get(ans.Parser.Name)
@@ -174,6 +181,9 @@ func (s *Server) answerSample(w http.ResponseWriter, r *http.Request, ans *sampl
 	}
 	writeJSON(w, http.StatusOK, ans)
 }
+
+// analyzeTimeout bounds the preview of one sample.
+const analyzeTimeout = 20 * time.Second
 
 // refines counts the AI refines running on this server; maxRefines is
 // how many may run at once.
@@ -273,7 +283,17 @@ func (s *Server) handlePutParser(w http.ResponseWriter, r *http.Request) {
 	if existed {
 		verb = "custom parser changed"
 	}
-	s.audit(r, verb, "parser", p.Name, "sourcetype", p.Sourcetype, "model", p.Model, "format", p.Format)
+	targets := make([]string, 0, len(p.Mappings))
+	for _, m := range p.Mappings {
+		targets = append(targets, m.From+"->"+m.To)
+	}
+	args := []any{"parser", p.Name, "sourcetype", p.Sourcetype, "model", p.Model, "format", p.Format,
+		"time_field", p.TimeField, "mappings", strings.Join(targets, ","), "syslog_apps", strings.Join(p.SyslogApps, ",")}
+	if p.Pattern != "" {
+		sum := sha256.Sum256([]byte(p.Pattern))
+		args = append(args, "pattern_sha256", hex.EncodeToString(sum[:8]))
+	}
+	s.audit(r, verb, args...)
 	saved, _ := st.Get(p.Name)
 	writeJSON(w, http.StatusOK, saved)
 }

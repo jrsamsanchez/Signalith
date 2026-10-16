@@ -2,7 +2,9 @@ package onboard
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"slices"
@@ -565,7 +567,7 @@ type Preview struct {
 }
 
 // Run parses the sample's lines with c.
-func (c *Compiled) Run(lines []string, now time.Time) *Preview {
+func (c *Compiled) Run(ctx context.Context, lines []string, now time.Time) (*Preview, error) {
 	pv := &Preview{Lines: len(lines)}
 	stats := map[string]*Field{}
 	examples := map[string]map[string]bool{}
@@ -574,6 +576,9 @@ func (c *Compiled) Run(lines []string, now time.Time) *Preview {
 		from[m.To] = m.From
 	}
 	for _, l := range lines {
+		if err := ctx.Err(); err != nil {
+			return nil, errors.New("reading the sample took too long; try fewer lines or a simpler pattern")
+		}
 		ev, drop, read := c.parseLine(l, now)
 		if drop {
 			pv.Skipped++
@@ -628,5 +633,5 @@ func (c *Compiled) Run(lines []string, now time.Time) *Preview {
 		}
 		return a.Name < b.Name
 	})
-	return pv
+	return pv, nil
 }
