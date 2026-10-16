@@ -78,8 +78,9 @@ var (
 	sshdClause  = regexp.MustCompile(` from \S+ port \d+`)
 	sshdInvalid = regexp.MustCompile(`^Invalid user (.*) from (\S+?)(?: port (\d+))?(?:\s.*)?$`)
 	// sudo leaves TTY out when run without a terminal (over ssh with a
-	// command, from cron or a script), and 1.9 may add GROUP= or ENV=.
-	sudoCommand   = regexp.MustCompile(`^\s*(\S+) : (?:(\d+) incorrect password attempts? ; )?(?:TTY=\S+ ; )?PWD=[^;]* ; USER=(\S+) ; (?:[A-Z]+=[^;]* ; )*COMMAND=(.*)$`)
+	// command, from cron or a script), and 1.9 may add GROUP= or ENV=. A
+	// refusal (user NOT in sudoers, command not allowed) comes first.
+	sudoCommand   = regexp.MustCompile(`^\s*(\S+) : (?:(\d+) incorrect password attempts? ; |([^;=]+?) ; )?(?:TTY=\S+ ; )?PWD=[^;]* ; USER=(\S+) ; (?:[A-Z]+=[^;]* ; )*COMMAND=(.*)$`)
 	sudoAuthFail  = regexp.MustCompile(`pam_unix\(sudo:auth\): authentication failure;.*\bruser=(\S*).*\buser=(\S+)`)
 	suSession     = regexp.MustCompile(`pam_unix\(su(?:-l)?:session\): session opened for user (\S+?)(?:\(uid=\d+\))? by (\S+?)(?:\(uid=\d+\))?$`)
 	suFail        = regexp.MustCompile(`pam_unix\(su(?:-l)?:auth\): authentication failure;.*\bruser=(\S*).*\buser=(\S+)`)
@@ -141,12 +142,16 @@ func ParseProgram(host, program, pid, msg, sourcetype string) Event {
 		if m := sudoCommand.FindStringSubmatch(msg); m != nil {
 			ev.Model = "Authentication"
 			f["src_user"] = m[1]
-			f["user"] = m[3]
-			f["process"] = m[4]
+			f["user"] = m[4]
+			f["process"] = m[5]
 			if m[2] != "" {
 				f["action"] = "failure"
 				f["reason"] = "bad password"
 				f["signature"] = "sudo incorrect password"
+			} else if m[3] != "" {
+				f["action"] = "failure"
+				f["reason"] = m[3]
+				f["signature"] = "sudo refused"
 			} else {
 				f["action"] = "success"
 				f["signature"] = "sudo command"

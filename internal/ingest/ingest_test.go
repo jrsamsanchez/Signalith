@@ -561,6 +561,8 @@ func TestLinuxAuthLines(t *testing.T) {
 			map[string]any{"datamodel": "Authentication", "action": "success", "src_user": "e2e-tester", "user": "root", "process": "/usr/bin/cat /etc/shadow"}},
 		{"Oct 11 09:16:45 web1 sudo: e2e-tester : 3 incorrect password attempts ; PWD=/home/e2e-tester ; USER=root ; COMMAND=/usr/bin/true",
 			map[string]any{"action": "failure", "reason": "bad password", "src_user": "e2e-tester"}},
+		{"Oct 11 09:16:47 web1 sudo: e2e-tester : user NOT in sudoers ; PWD=/root ; USER=root ; COMMAND=/usr/bin/true",
+			map[string]any{"datamodel": "Authentication", "action": "failure", "reason": "user NOT in sudoers", "signature": "sudo refused", "src_user": "e2e-tester", "user": "root", "process": "/usr/bin/true"}},
 		{"Oct 11 09:16:50 web1 sudo:    alice : TTY=pts/1 ; PWD=/srv ; USER=root ; GROUP=adm ; COMMAND=/bin/ls",
 			map[string]any{"action": "success", "process": "/bin/ls"}},
 		{"Oct 11 09:17:00 web1 useradd[900]: new user: name=backdoor, UID=1002, GID=1002, home=/home/backdoor, shell=/bin/bash",

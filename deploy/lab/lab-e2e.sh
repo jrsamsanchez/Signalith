@@ -285,7 +285,9 @@ else
       -H "Authorization: Bearer $token" -H 'Content-Type: application/json' \
       -d "$(jq -nc --arg m "$3" '{resourceLogs: [{resource: {attributes: [{key: "service.name", value: {stringValue: "lab-e2e"}}]}, scopeLogs: [{logRecords: [{severityText: "INFO", body: {stringValue: $m}}]}]}]}')"
   }
-  # Servers learn of a new token within a few seconds.
+  # Servers learn of a new token within a few seconds; one sent sooner is
+  # turned away, which the health page then warns about.
+  sleep 15
   for i in 1 2 3 4 5 6; do
     c=$(otlp "$SIEM" "$AGENT_PORT" "lab e2e otlp $TAG")
     [[ $c == 2* ]] && break
@@ -617,12 +619,15 @@ if call GET /api/retention; then
 else
   fail "Retention" "($CODE) $(why)"
 fi
-if sg cluster export -settings -o "$OUT/settings-export.yaml" >/dev/null 2>"$OUT/export.err" && [ -s "$OUT/settings-export.yaml" ]; then
-  pass "Shared settings export" "$(wc -c <"$OUT/settings-export.yaml") bytes"
+# The command runs as the signalith user, which cannot write under /root.
+exp=$(mktemp -d)
+chown signalith "$exp"
+if sg cluster export -settings -o "$exp/settings.yaml" >/dev/null 2>"$OUT/export.err" && [ -s "$exp/settings.yaml" ]; then
+  pass "Shared settings export" "$(wc -c <"$exp/settings.yaml") bytes"
 else
   fail "Shared settings export" "$(grep -v 'level=INFO' "$OUT/export.err" | tail -n 3 | head -c 300)"
 fi
-rm -f "$OUT/settings-export.yaml" "$OUT/export.err"
+rm -rf "$exp" "$OUT/export.err"
 
 # =====================================================================
 area "Vulnerability scanning"
