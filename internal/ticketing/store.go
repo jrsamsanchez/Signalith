@@ -119,8 +119,8 @@ type Store interface {
 	// ForCases returns the links of some cases.
 	ForCases(ctx context.Context, caseIDs []string) ([]Stored, error)
 	// Due returns the links the sync works on: pending ones, active
-	// linked ones, and failed ones a connection opened by itself that may
-	// be tried again.
+	// linked ones, and failed or being-opened ones a connection opened by
+	// itself that may be tried again.
 	Due(ctx context.Context) ([]Stored, error)
 }
 
@@ -242,7 +242,7 @@ func (o *OpenSearch) Due(ctx context.Context) ([]Stored, error) {
 	q := map[string]any{"bool": map[string]any{"minimum_should_match": 1, "should": []any{
 		term("state", StatePending),
 		map[string]any{"bool": map[string]any{"filter": []any{term("state", StateLinked), term("active", true)}}},
-		map[string]any{"bool": map[string]any{"filter": []any{term("state", StateFailed), term("auto", true),
+		map[string]any{"bool": map[string]any{"filter": []any{map[string]any{"terms": map[string]any{"state": []string{StateFailed, StateCreating}}}, term("auto", true),
 			map[string]any{"range": map[string]any{"attempts": map[string]any{"lt": maxAutoAttempts}}}}}},
 	}}}
 	return o.search(ctx, q)
@@ -333,6 +333,6 @@ func (m *Memory) ForCases(_ context.Context, caseIDs []string) ([]Stored, error)
 func (m *Memory) Due(_ context.Context) ([]Stored, error) {
 	return m.list(func(l Link) bool {
 		return l.State == StatePending || (l.State == StateLinked && l.Active) ||
-			(l.State == StateFailed && l.Auto && l.Attempts < maxAutoAttempts)
+			((l.State == StateFailed || l.State == StateCreating) && l.Auto && l.Attempts < maxAutoAttempts)
 	}), nil
 }

@@ -210,6 +210,10 @@ job every minute.
   project or table, and records that one instead of opening a second. If the project's
   create screen has no **Labels** field, Jira issues are opened without the label, and this
   check cannot find them.
+- A ticket the connection was opening by itself (**Open a ticket for every new case**) is
+  tried again by the background sync once it has been left being opened for 10 minutes,
+  looking first in the same way. Together with failed tries, it gets three in all; after
+  that the card shows it as failed, and **Retry** on the case still looks before opening.
 
 ## Where the settings live
 

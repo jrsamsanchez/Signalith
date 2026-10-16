@@ -166,7 +166,7 @@ func (s *Service) Pass(ctx context.Context) {
 	}
 	s.problem("links", "")
 	for _, st := range due {
-		if st.State != StatePending && st.State != StateFailed {
+		if st.State != StatePending && st.State != StateFailed && st.State != StateCreating {
 			continue
 		}
 		if !s.allowed() || ctx.Err() != nil {
@@ -197,6 +197,21 @@ func (s *Service) openDue(ctx context.Context, set Settings, st Stored, now time
 		return
 	}
 	l := st.Link
+	if st.State == StateCreating {
+		// A ticket a connection was opening by itself when its server
+		// stopped: once stale, it may or may not exist, so the next try
+		// looks for it first. The lost try counts toward the limit.
+		if !st.Auto || now.Sub(st.Updated) < staleAfter {
+			return
+		}
+		l.MayExist = true
+		l.Attempts++
+		if l.Attempts >= maxAutoAttempts {
+			l.State, l.Error, l.ErrorAt, l.Updated = StateFailed, "The server opening this ticket stopped, and it could not be opened after several tries. Open it from the case.", now, now
+			_, _ = s.Links.Update(ctx, &l, st.Version)
+			return
+		}
+	}
 	l.State, l.Updated, l.Server = StateCreating, now, s.Server
 	v, err := s.Links.Update(ctx, &l, st.Version)
 	if err != nil {

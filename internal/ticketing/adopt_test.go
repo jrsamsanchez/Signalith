@@ -4,12 +4,21 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 )
 
 // crashAfterCreate opens a ticket for a case as a server would, and stops
 // before recording it: the link is left being created, and the ticket
 // exists only in the system.
 func (e *env) crashAfterCreate(connID, caseID string) {
+	e.t.Helper()
+	e.crash(connID, caseID, false, true)
+}
+
+// crash leaves a case's link being created, as a server that stopped
+// while opening its ticket does: auto when the connection was opening it
+// by itself, made when the system had made the ticket.
+func (e *env) crash(connID, caseID string, auto, made bool) {
 	e.t.Helper()
 	ctx := context.Background()
 	set, err := e.svc.Settings.Settings()
@@ -18,8 +27,15 @@ func (e *env) crashAfterCreate(connID, caseID string) {
 	}
 	conn, _ := set.Connection(connID)
 	c := e.getCase(caseID)
-	if _, err := e.links.Create(ctx, newLink(conn, c, "ann", false, StateCreating, e.clk.Now())); err != nil {
+	by := "ann"
+	if auto {
+		by = "Signalith"
+	}
+	if _, err := e.links.Create(ctx, newLink(conn, c, by, auto, StateCreating, e.clk.Now())); err != nil {
 		e.t.Fatal(err)
+	}
+	if !made {
+		return
 	}
 	rem, err := e.svc.remote(conn)
 	if err != nil {
@@ -184,5 +200,101 @@ func TestMarkers(t *testing.T) {
 	}
 	if len(correlationID(strings.Repeat("a", 80))) > 100 {
 		t.Error("correlation ID too long for ServiceNow's 100")
+	}
+}
+
+func autoEnv(t *testing.T) (*env, *fakeSN) {
+	t.Helper()
+	f := newFakeSN(t, basic("svc.signalith", "sn-password-123"))
+	conn := snConn(f)
+	conn.AutoCreate, conn.AutoMinSeverity = true, "high"
+	clk := newClock()
+	conn.AutoSince = clk.Now().Add(-time.Hour)
+	e := newEnv(t, conn)
+	e.clk = clk
+	e.svc.Now = clk.Now
+	return e, f
+}
+
+// A ticket the connection was opening by itself when the server stopped
+// is opened again by the sync once stale: it looks first, and adopts the
+// ticket when the system made it.
+func TestSyncRetriesStaleAutoOpen(t *testing.T) {
+	e, f := autoEnv(t)
+	e.newCase("made", "made before the crash", "high")
+	e.newCase("lost", "lost in the crash", "critical")
+	e.crash("sn", "made", true, true)
+	e.crash("sn", "lost", true, false)
+
+	e.pass()
+	for _, id := range []string{"made", "lost"} {
+		if st := e.link("sn", id); st.State != StateCreating {
+			t.Fatalf("%s before stale: %+v", id, st.Link)
+		}
+	}
+	if n := f.count("POST /api/now/table/incident"); n != 1 {
+		t.Fatalf("%d creates before stale", n)
+	}
+
+	e.clk.add(staleAfter)
+	e.pass()
+	if st := e.link("sn", "made"); st.State != StateLinked || st.Key != "INC0010001" || st.MayExist {
+		t.Errorf("made: %+v", st.Link)
+	}
+	if st := e.link("sn", "lost"); st.State != StateLinked || st.Key != "INC0010002" {
+		t.Errorf("lost: %+v", st.Link)
+	}
+	if n := f.count("POST /api/now/table/incident"); n != 2 {
+		t.Errorf("%d creates, want 2: %v", n, f.requests())
+	}
+	finds := 0
+	for _, r := range f.requests() {
+		if strings.Contains(r, "correlation_id%3D") {
+			finds++
+		}
+	}
+	if finds != 2 {
+		t.Errorf("%d finds, want one for each retry", finds)
+	}
+	if c := e.getCase("made"); len(c.Tickets) != 1 || c.Tickets[0].Key != "INC0010001" {
+		t.Errorf("made tickets %+v", c.Tickets)
+	}
+}
+
+// The sync gives up on a stale automatic open after the auto-create
+// tries, and leaves it failed for a person to retry, still looking first.
+func TestSyncStaleAutoOpenIsBounded(t *testing.T) {
+	e, f := autoEnv(t)
+	ctx := context.Background()
+	e.newCase("made", "made before the crash", "high")
+	e.crash("sn", "made", true, true)
+	st := e.link("sn", "made")
+	l := st.Link
+	l.Attempts = maxAutoAttempts - 1
+	if _, err := e.links.Update(ctx, &l, st.Version); err != nil {
+		t.Fatal(err)
+	}
+
+	e.clk.add(staleAfter)
+	e.pass()
+	st = e.link("sn", "made")
+	if st.State != StateFailed || !st.MayExist || st.Error == "" {
+		t.Fatalf("after the last try: %+v", st.Link)
+	}
+	if n := f.count("GET /api/now/table/incident?"); n != 0 {
+		t.Errorf("%d lookups after giving up", n)
+	}
+	e.clk.add(retryEvery)
+	e.pass()
+	if n := f.count("POST /api/now/table/incident"); n != 1 {
+		t.Errorf("%d creates after giving up", n)
+	}
+
+	got, err := e.svc.Create(ctx, "made", "sn", "ann")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Key != "INC0010001" || f.count("POST /api/now/table/incident") != 1 {
+		t.Errorf("manual retry %+v, %d creates", got, f.count("POST /api/now/table/incident"))
 	}
 }
