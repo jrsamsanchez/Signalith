@@ -10,6 +10,7 @@
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="assets/css/app.css">
 <script src="assets/theme.js"></script>
+<script src="assets/passkey.js" defer></script>
 <script src="assets/login.js" defer></script>
 </head>
 <body>
@@ -29,6 +30,7 @@
 <symbol id="i-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></symbol>
 <symbol id="i-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></symbol>
 <symbol id="i-eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49"/><path d="M14.084 14.158a3 3 0 0 1-4.242-4.242"/><path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143"/><path d="m2 2 20 20"/></symbol>
+<symbol id="i-fingerprint" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M12 10a2 2 0 0 0-2 2c0 1.02-.1 2.51-.26 4"/><path d="M14 13.12c0 2.38 0 6.38-1 8.88"/><path d="M17.29 21.02c.12-.6.43-2.3.5-3.02"/><path d="M2 12a10 10 0 0 1 18-6"/><path d="M2 16h.01"/><path d="M21.8 16c.2-2 .131-5.354 0-6"/><path d="M5 19.5C5.5 18 6 15 6 12a6 6 0 0 1 .34-2"/><path d="M8.65 22c.21-.66.45-1.32.57-2"/><path d="M9 6.8a6 6 0 0 1 9 5.2v2"/></symbol>
 <symbol id="i-info" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></symbol>
 <symbol id="i-key-round" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z"/><circle cx="16.5" cy="7.5" r=".5" fill="currentColor"/></symbol>
 <symbol id="i-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
@@ -103,6 +105,10 @@
         </div>
         <label class="check"><input type="checkbox" id="remember" name="remember">Keep me signed in</label>
         <button class="btn btn--primary btn--block auth__submit" type="submit" id="login-submit"><span id="login-submit-label">Sign in</span><svg class="icon" aria-hidden="true"><use href="#i-arrow-right"/></svg></button>
+        <div class="auth__passkey" id="passkey-signin" hidden>
+          <div class="auth__or" role="separator"><span>or</span></div>
+          <button class="btn btn--secondary btn--block" type="button" id="passkey-btn"><svg class="icon" aria-hidden="true"><use href="#i-fingerprint"/></svg><span id="passkey-label">Sign in with a passkey</span></button>
+        </div>
         <p class="auth__help auth__ca" id="ca-help" hidden><a href="api/tls/ca.pem" download="signalith-ca.crt"><svg class="icon icon--sm" aria-hidden="true"><use href="#i-download"/></svg>Download the server certificate</a><span>Trust it once to stop the browser warning. <a href="https://github.com/jrsamsanchez/signalith/blob/main/docs/https.md#trust-the-certificate" target="_blank" rel="noopener">How</a></span></p>
         <p class="auth__help auth__ca" id="ca-next" hidden><a href="api/tls/ca.pem?which=next" download="signalith-ca-new.crt"><svg class="icon icon--sm" aria-hidden="true"><use href="#i-download"/></svg>Download the new server certificate</a><span>A new server certificate is coming. Trust it too, and nothing changes for you when the server switches. <a href="https://github.com/jrsamsanchez/signalith/blob/main/docs/https.md#switching-to-a-new-certificate-authority" target="_blank" rel="noopener">How</a></span></p>
         <p class="auth__help" id="join-wait" hidden></p>
@@ -131,22 +137,28 @@
       </form>
       <form class="auth__form" id="code-form" novalidate hidden>
         <div>
-          <span class="mfa-mark" aria-hidden="true"><svg class="icon" aria-hidden="true"><use href="#i-smartphone"/></svg></span>
+          <span class="mfa-mark" aria-hidden="true"><svg class="icon" aria-hidden="true"><use id="code-mark" href="#i-smartphone"/></svg></span>
           <h1>Two-step sign-in</h1>
           <p class="sub" id="code-sub">Enter the 6-digit code from your authenticator app.</p>
         </div>
         <div class="alert" data-tone="danger" id="code-error" role="alert" hidden><svg class="icon" aria-hidden="true"><use href="#i-circle-alert"/></svg><div><b id="code-error-title"></b><p id="code-error-text"></p></div></div>
-        <div class="field">
-          <label class="label" for="code" id="code-label">Code</label>
-          <input class="input input--lg mfa-code" id="code" name="code" autocomplete="one-time-code" inputmode="numeric" autocapitalize="none" spellcheck="false" maxlength="6" placeholder="123456" aria-describedby="code-hint">
-          <div class="hint" id="code-hint">The code changes every 30 seconds.</div>
+        <div class="mfa-passkey" id="code-passkey" hidden>
+          <button class="btn btn--primary btn--block auth__submit" type="button" id="code-passkey-btn"><svg class="icon" aria-hidden="true"><use href="#i-fingerprint"/></svg><span id="code-passkey-label">Use your passkey</span></button>
+          <div class="auth__or" role="separator" id="code-or"><span>or enter a code</span></div>
         </div>
-        <button class="btn btn--primary btn--block auth__submit" type="submit" id="code-submit"><span id="code-submit-label">Verify</span><svg class="icon" aria-hidden="true"><use href="#i-arrow-right"/></svg></button>
+        <div class="mfa-entry" id="code-entry">
+          <div class="field">
+            <label class="label" for="code" id="code-label">Code</label>
+            <input class="input input--lg mfa-code" id="code" name="code" autocomplete="one-time-code" inputmode="numeric" autocapitalize="none" spellcheck="false" maxlength="6" placeholder="123456" aria-describedby="code-hint">
+            <div class="hint" id="code-hint">The code changes every 30 seconds.</div>
+          </div>
+          <button class="btn btn--primary btn--block auth__submit" type="submit" id="code-submit"><span id="code-submit-label">Verify</span><svg class="icon" aria-hidden="true"><use href="#i-arrow-right"/></svg></button>
+        </div>
         <div class="mfa-alt">
           <button class="link-btn" type="button" id="code-recovery">Use a recovery code instead</button>
           <button class="link-btn" type="button" id="code-lost" aria-expanded="false" aria-controls="code-lost-note">Lost your phone?</button>
         </div>
-        <div class="callout auth__note" id="code-lost-note" hidden><svg class="icon" aria-hidden="true"><use href="#i-info"/></svg><p>Sign in with one of the recovery codes you saved when you set up two-step sign-in. Each works once. No codes left? Ask a Signalith admin to reset two-step sign-in for your account.</p></div>
+        <div class="callout auth__note" id="code-lost-note" hidden><svg class="icon" aria-hidden="true"><use href="#i-info"/></svg><p id="code-lost-text">Sign in with one of the recovery codes you saved when you set up two-step sign-in. Each works once. No codes left? Ask a Signalith admin to reset two-step sign-in for your account.</p></div>
         <p class="auth__help"><button class="link-btn" type="button" id="code-back"><svg class="icon icon--sm" aria-hidden="true"><use href="#i-arrow-left"/></svg>Sign in as someone else</button></p>
       </form>
       <form class="auth__form" id="mfa-form" novalidate hidden>
@@ -169,13 +181,18 @@
           </li>
         </ol>
         <button class="btn btn--primary btn--block auth__submit" type="submit" id="mfa-submit"><span id="mfa-submit-label">Turn on two-step sign-in</span><svg class="icon" aria-hidden="true"><use href="#i-arrow-right"/></svg></button>
+        <div class="auth__passkey" id="mfa-passkey" hidden>
+          <div class="auth__or" role="separator"><span>or</span></div>
+          <button class="btn btn--secondary btn--block" type="button" id="mfa-passkey-btn"><svg class="icon" aria-hidden="true"><use href="#i-fingerprint"/></svg><span id="mfa-passkey-label">Use a passkey instead</span></button>
+          <p class="hint">Your fingerprint, face or device PIN, instead of an app.</p>
+        </div>
         <p class="auth__help">Not you? <button class="link-btn" type="button" id="mfa-signout">Sign out</button></p>
       </form>
       <form class="auth__form" id="codes-form" novalidate hidden>
         <div>
           <span class="mfa-mark" data-tone="success" aria-hidden="true"><svg class="icon" aria-hidden="true"><use href="#i-check"/></svg></span>
           <h1>Save your recovery codes</h1>
-          <p class="sub">Two-step sign-in is on. If you lose your phone, each of these codes signs you in once. Keep them somewhere safe, such as a password manager.</p>
+          <p class="sub">Two-step sign-in is on. If you lose your phone or passkey, each of these codes signs you in once. Keep them somewhere safe, such as a password manager.</p>
         </div>
         <ul class="mfa-codes" id="codes-list" aria-label="Recovery codes"></ul>
         <div class="mfa-codes__actions">

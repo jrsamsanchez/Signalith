@@ -21,7 +21,8 @@ import (
 // Two-step sign-in: after the password, a six-digit code from an
 // authenticator app (TOTP, RFC 6238: SHA-1, 30-second steps, the way
 // Google Authenticator, Microsoft Authenticator, 1Password and the like
-// expect it), or one of ten recovery codes that each work once.
+// expect it), a passkey (see Passkey), or one of ten recovery codes that
+// each work once.
 //
 // The app's key is kept encrypted, with the master key in the users file
 // and with the cluster key in the shared settings, and is bound to its
@@ -44,6 +45,14 @@ type MFA struct {
 	// Pending is a key being set up and not yet confirmed with a code
 	// from the app: sign-in does not ask for it.
 	Pending bool
+	// NoApp says there is no authenticator app: the user has passkeys
+	// only, and Secret only keys the recovery codes. It is never shown.
+	NoApp bool
+	// Handle is the random user handle the user's passkeys carry (the
+	// WebAuthn user ID), which names the account without its username.
+	Handle []byte
+	// Passkeys are the user's passkeys.
+	Passkeys []Passkey
 	// Recovery holds the digest of each recovery code not used yet.
 	Recovery []string
 	// Since is when it was turned on, or when setting it up began.
@@ -54,8 +63,12 @@ type MFA struct {
 	LastStep int64
 }
 
-// On reports whether m asks for a code at sign-in.
-func (m *MFA) On() bool { return m != nil && !m.Pending }
+// On reports whether m asks for a second step at sign-in: a code from
+// the app, or a passkey.
+func (m *MFA) On() bool { return m.AppOn() || m != nil && len(m.Passkeys) > 0 }
+
+// AppOn reports whether codes from an authenticator app are accepted.
+func (m *MFA) AppOn() bool { return m != nil && !m.Pending && !m.NoApp }
 
 func (m *MFA) clone() *MFA {
 	if m == nil {
@@ -63,6 +76,14 @@ func (m *MFA) clone() *MFA {
 	}
 	c := *m
 	c.Recovery = slices.Clone(m.Recovery)
+	c.Handle = slices.Clone(m.Handle)
+	c.Passkeys = make([]Passkey, len(m.Passkeys))
+	for i, k := range m.Passkeys {
+		c.Passkeys[i] = k.clone()
+	}
+	if m.Passkeys == nil {
+		c.Passkeys = nil
+	}
 	return &c
 }
 
@@ -81,7 +102,7 @@ var (
 	// ErrMFAOff says the user has no two-step sign-in to check.
 	ErrMFAOff = errors.New("two-step sign-in is not turned on for this account")
 	// ErrMFAOn refuses to set up two-step sign-in again while it is on.
-	ErrMFAOn = errors.New("two-step sign-in is already on; turn it off first to set up another app")
+	ErrMFAOn = errors.New("an authenticator app is already set up; turn it off first to set up another")
 	// ErrNoSetup refuses to confirm a set-up that was never started or
 	// took too long.
 	ErrNoSetup = errors.New("start setting up two-step sign-in again: the QR code is no longer valid")
@@ -254,6 +275,7 @@ type CodeKind string
 const (
 	CodeApp      CodeKind = "app"
 	CodeRecovery CodeKind = "recovery"
+	CodePasskey  CodeKind = "passkey"
 )
 
 // CodeResult is a code that was accepted: which kind, and how many
@@ -272,7 +294,7 @@ func useCode(m *MFA, code string, t time.Time) (*MFA, CodeResult, error) {
 	code = normalizeCode(code)
 	next := m.clone()
 	if isAppCode(code) {
-		if m.Secret == "" {
+		if !m.AppOn() || m.Secret == "" {
 			return nil, CodeResult{}, ErrWrongCode
 		}
 		step, ok := checkTOTP(m.Secret, code, t, m.LastStep)
@@ -385,10 +407,23 @@ func (s *Store) BeginMFA(ctx context.Context, name string) (string, error) {
 	}
 	defer release()
 	err = s.changeMFA(ctx, name, func(cur *MFA) (*MFA, bool, error) {
-		if cur.On() {
+		if cur.AppOn() {
 			return nil, false, ErrMFAOn
 		}
-		return &MFA{Secret: secret, Pending: true, Since: s.now()}, false, nil
+		if !cur.On() {
+			return &MFA{Secret: secret, Pending: true, Since: s.now()}, false, nil
+		}
+		// Passkeys stay. Their recovery codes are keyed with the key
+		// they keep, so the app gets that key, unless it cannot be
+		// decrypted here.
+		next := cur.clone()
+		if cur.Secret == "" {
+			next.Sealed, next.Problem = "", ""
+		} else {
+			secret = cur.Secret
+		}
+		next.Secret, next.Pending, next.NoApp, next.Since = secret, true, false, s.now()
+		return next, false, nil
 	})
 	if err != nil {
 		return "", err
@@ -410,18 +445,19 @@ func (s *Store) ConfirmMFA(ctx context.Context, name, code string) ([]string, er
 	now := s.now()
 	err = s.changeMFA(ctx, name, func(cur *MFA) (*MFA, bool, error) {
 		switch {
-		case cur.On():
+		case cur.AppOn():
 			return nil, false, ErrMFAOn
-		case cur == nil || cur.Secret == "" || now.Sub(cur.Since) > SetupFor:
+		case cur == nil || !cur.Pending || cur.Secret == "" || now.Sub(cur.Since) > SetupFor:
 			return nil, false, ErrNoSetup
 		}
 		step, ok := checkTOTP(cur.Secret, normalizeCode(code), now, 0)
 		if !ok {
 			return nil, false, ErrWrongCode
 		}
-		var digests []string
-		codes, digests = newRecoveryCodes(cur.Secret)
-		return &MFA{Secret: cur.Secret, Recovery: digests, Since: now, LastStep: step}, true, nil
+		next := cur.clone()
+		codes, next.Recovery = newRecoveryCodes(cur.Secret)
+		next.Pending, next.NoApp, next.Since, next.LastStep = false, false, now, step
+		return next, true, nil
 	})
 	if err != nil {
 		return nil, err
@@ -473,8 +509,36 @@ func (s *Store) NewRecoveryCodes(ctx context.Context, name string) ([]string, er
 	return codes, nil
 }
 
-// RemoveMFA turns off name's two-step sign-in, or stops setting it up.
-// It reports whether there was any.
+// RemoveApp turns off name's authenticator app, or stops setting one
+// up. Passkeys stay, with the recovery codes; without passkeys it is
+// RemoveMFA. It reports whether there was an app, set up or being set up.
+func (s *Store) RemoveApp(ctx context.Context, name string) (bool, error) {
+	release, err := s.hold()
+	if err != nil {
+		return false, err
+	}
+	defer release()
+	had := false
+	err = s.changeMFA(ctx, name, func(cur *MFA) (*MFA, bool, error) {
+		if cur == nil || cur.NoApp {
+			return nil, false, ErrNoChange
+		}
+		had = true
+		if len(cur.Passkeys) == 0 {
+			return nil, false, nil
+		}
+		next := cur.clone()
+		next.NoApp, next.Pending, next.LastStep = true, false, 0
+		return next, false, nil
+	})
+	if errors.Is(err, ErrNoChange) {
+		err = nil
+	}
+	return had, err
+}
+
+// RemoveMFA turns off name's two-step sign-in, passkeys included, or
+// stops setting it up. It reports whether there was any.
 func (s *Store) RemoveMFA(ctx context.Context, name string) (bool, error) {
 	release, err := s.hold()
 	if err != nil {

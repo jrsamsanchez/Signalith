@@ -18,6 +18,7 @@ func (s *Server) routeUsers(api *router) {
 	api.self("GET /api/me", s.handleMe)
 	api.self("POST /api/me/password", s.handleChangeOwnPassword)
 	s.routeMFA(api)
+	s.routePasskeys(api)
 	s.routeRecheck(api)
 
 	api.admin("GET /api/users", s.handleListUsers)

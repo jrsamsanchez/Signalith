@@ -3,7 +3,6 @@ package users
 import (
 	"encoding/json"
 	"fmt"
-	"slices"
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/secrets"
@@ -16,9 +15,14 @@ type StoredMFA struct {
 	// BuiltinMFAField.
 	Secret   string    `json:"secret"`
 	Pending  bool      `json:"pending,omitempty"`
+	NoApp    bool      `json:"no_app,omitempty"`
 	Recovery []string  `json:"recovery,omitempty"`
 	Since    time.Time `json:"since"`
 	LastStep int64     `json:"last_step,omitempty"`
+	// Handle and Passkeys are kept as they are: a passkey's public key
+	// is no secret.
+	Handle   []byte    `json:"handle,omitempty"`
+	Passkeys []Passkey `json:"passkeys,omitempty"`
 }
 
 // MFAKeys encrypts and decrypts authenticator keys: the master key for
@@ -50,7 +54,8 @@ func (m *StoredMFA) Open(keys MFAKeys, field string) *MFA {
 	if m == nil {
 		return nil
 	}
-	out := &MFA{Pending: m.Pending, Recovery: slices.Clone(m.Recovery), Since: m.Since, LastStep: m.LastStep}
+	out := (&MFA{Pending: m.Pending, NoApp: m.NoApp, Recovery: m.Recovery, Since: m.Since, LastStep: m.LastStep,
+		Handle: m.Handle, Passkeys: m.Passkeys}).clone()
 	if secrets.IsSealed(m.Secret) {
 		out.Sealed = m.Secret
 	}
@@ -71,7 +76,9 @@ func SealMFA(keys MFAKeys, field string, m *MFA) (*StoredMFA, error) {
 	if m == nil {
 		return nil, nil
 	}
-	out := &StoredMFA{Pending: m.Pending, Recovery: slices.Clone(m.Recovery), Since: m.Since.UTC(), LastStep: m.LastStep}
+	c := m.clone()
+	out := &StoredMFA{Pending: m.Pending, NoApp: m.NoApp, Recovery: c.Recovery, Since: m.Since.UTC(), LastStep: m.LastStep,
+		Handle: c.Handle, Passkeys: c.Passkeys}
 	switch {
 	case m.Secret == "":
 		out.Secret = m.Sealed
