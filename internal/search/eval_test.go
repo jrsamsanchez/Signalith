@@ -3,6 +3,7 @@ package search
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"regexp"
 	"strings"
@@ -452,4 +453,29 @@ func FuzzEvalCommands(f *testing.F) {
 			}
 		}
 	})
+}
+
+func TestEvalChargesCopiedValues(t *testing.T) {
+	// Copying a field builds nothing new, but every copy is written out
+	// with the result, so it counts against the search's budget.
+	s := strings.Repeat("x", 900<<10)
+	rows := make([]Row, 40)
+	for i := range rows {
+		rows[i] = Row{"s": s}
+	}
+	res := &Result{Rows: rows}
+	assigns := make([]query.Assign, 10)
+	for i := range assigns {
+		assigns[i] = query.Assign{Field: fmt.Sprintf("c%d", i), Expr: mustEval(t, `if(true(), s, s)`)}
+	}
+	err := applyCommand(withEvaluator(context.Background()), res, &query.Eval{Assigns: assigns})
+	if err == nil || !strings.Contains(err.Error(), "MB of values") {
+		t.Errorf("err = %v, want the search budget", err)
+	}
+	// A value the expression built is counted once.
+	ev := newEvaluator(context.Background())
+	res = &Result{Rows: []Row{{"s": "abc"}}}
+	if err := applyEval(context.WithValue(context.Background(), evaluatorKey{}, ev), res, &query.Eval{Assigns: []query.Assign{{Field: "t", Expr: mustEval(t, `s."def"`)}}}); err != nil || ev.produced != 6 {
+		t.Errorf("err = %v, produced = %d, want 6", err, ev.produced)
+	}
 }

@@ -84,6 +84,14 @@ func TestPackRulesAgainstOpenSearch(t *testing.T) {
 				}
 				tag, rec := c.Record(host, at)
 				records[tag] = append(records[tag], rec)
+				// A Linux program start, as auditd records it too.
+				if recs, ok := c.AuditdProcessRecords(host+"-auditd", at); ok {
+					rc.hosts = append(rc.hosts, host+"-auditd")
+					if c.Expect {
+						rc.positives[host+"-auditd"] = true
+					}
+					records["linux.audit"] = append(records["linux.audit"], recs...)
+				}
 			}
 			rules = append(rules, rc)
 		}

@@ -364,6 +364,7 @@ Data models and their fields (every event also has: `)
 	for _, f := range datamodel.Common {
 		common = append(common, f.Name)
 	}
+	common = append(common, "index (the daily index the event is stored in)")
 	b.WriteString(strings.Join(common, ", ") + "):\n")
 	for _, m := range datamodel.Models {
 		fmt.Fprintf(&b, "- %s: %s\n", m.Name, m.Description)
