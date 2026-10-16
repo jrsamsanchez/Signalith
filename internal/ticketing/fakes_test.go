@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -122,6 +123,7 @@ type fakeIssue struct {
 	description                                   any
 	updated                                       int
 	comments                                      []fakeComment
+	labels                                        []string
 }
 
 type fakeComment struct {
@@ -138,6 +140,7 @@ type fakeJira struct {
 	cloud      bool
 	issues     map[string]*fakeIssue
 	noPriority bool     // the priority field is not on the screen
+	noLabels   bool     // nor the labels field
 	lastJQL    []string // every search
 	pageSize   int      // issues per search page; 0 is 100
 	made       int      // issues created
@@ -198,7 +201,10 @@ func (f *fakeJira) delete(key string) {
 	delete(f.issues, key)
 }
 
-var jqlKeys = regexp.MustCompile(`issuekey in \(([^)]*)\)`)
+var (
+	jqlKeys  = regexp.MustCompile(`issuekey in \(([^)]*)\)`)
+	jqlLabel = regexp.MustCompile(`^project = "([^"]*)" AND labels = "([^"]*)" ORDER BY created ASC$`)
+)
 
 func (f *fakeJira) serve(w http.ResponseWriter, r *http.Request) {
 	if !f.front(w, r, false) {
@@ -238,6 +244,10 @@ func (f *fakeJira) serve(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, 400, map[string]any{"errorMessages": []string{}, "errors": map[string]any{"priority": "Field 'priority' cannot be set. It is not on the appropriate screen, or unknown."}})
 			return
 		}
+		if _, ok := fields["labels"]; ok && f.noLabels {
+			writeJSON(w, 400, map[string]any{"errorMessages": []string{}, "errors": map[string]any{"labels": "Field 'labels' cannot be set. It is not on the appropriate screen, or unknown."}})
+			return
+		}
 		if fields["project"].(map[string]any)["key"] != "SEC" {
 			writeJSON(w, 400, map[string]any{"errors": map[string]any{"project": "valid project is required"}})
 			return
@@ -259,18 +269,43 @@ func (f *fakeJira) serve(w http.ResponseWriter, r *http.Request) {
 		if pr, ok := fields["priority"].(map[string]any); ok {
 			i.priority, _ = pr["name"].(string)
 		}
+		if ls, ok := fields["labels"].([]any); ok {
+			for _, l := range ls {
+				s, _ := l.(string)
+				if strings.ContainsAny(s, " \t") {
+					writeJSON(w, 400, map[string]any{"errors": map[string]any{"labels": "Labels cannot contain spaces."}})
+					return
+				}
+				i.labels = append(i.labels, s)
+			}
+		}
 		f.issues[i.key] = i
 		writeJSON(w, 201, map[string]any{"id": i.id, "key": i.key, "self": f.srv.URL + api + "/issue/" + i.id})
 	case (r.Method == http.MethodPost && p == "/rest/api/3/search/jql" && f.cloud) || (r.Method == http.MethodPost && p == "/rest/api/2/search" && !f.cloud):
 		jql, _ := body["jql"].(string)
 		f.lastJQL = append(f.lastJQL, jql)
+		var list []any
 		m := jqlKeys.FindStringSubmatch(jql)
-		if m == nil {
+		if lm := jqlLabel.FindStringSubmatch(jql); m == nil && lm != nil {
+			// By label in a project, oldest first, as find asks.
+			if lm[1] != "SEC" {
+				writeJSON(w, 400, map[string]any{"errorMessages": []string{"The value '" + lm[1] + "' does not exist for the field 'project'."}})
+				return
+			}
+			for n := 1; n <= f.made; n++ {
+				if i, ok := f.issues["SEC-"+strconv.Itoa(n)]; ok && slices.Contains(i.labels, lm[2]) {
+					list = append(list, f.issueJSON(i))
+				}
+			}
+			m = []string{"", ""}
+		} else if m == nil {
 			writeJSON(w, 400, map[string]any{"errorMessages": []string{"bad JQL"}})
 			return
 		}
-		var list []any
 		for _, k := range strings.Split(m[1], ",") {
+			if m[1] == "" {
+				break
+			}
 			k = strings.TrimSpace(k)
 			i, ok := f.issues[k]
 			if !ok {
@@ -395,6 +430,7 @@ func sortTransitions(list []any) {
 
 type fakeRecord struct {
 	sysID, number, shortDesc, description, impact, urgency, state, closeCode, closeNotes, caller string
+	correlationID, correlationDisplay                                                            string
 	updated                                                                                      int
 }
 
@@ -513,13 +549,21 @@ func (f *fakeSN) serve(w http.ResponseWriter, r *http.Request) {
 		n := len(f.records) + 1
 		rec := &fakeRecord{sysID: fmt.Sprintf("%032x", n), number: fmt.Sprintf("INC%07d", 10000+n), state: "1",
 			shortDesc: str("short_description"), description: str("description"), impact: str("impact"), urgency: str("urgency"),
-			caller: str("caller_id"), updated: f.stamp()}
+			caller: str("caller_id"), correlationID: str("correlation_id"), correlationDisplay: str("correlation_display"), updated: f.stamp()}
 		f.records[rec.sysID] = rec
 		writeJSON(w, 201, map[string]any{"result": f.recordJSON(rec)})
 	case p == "/api/now/table/incident" && r.Method == http.MethodGet:
 		query := q.Get("sysparm_query")
 		var list []any
-		if rest, ok := strings.CutPrefix(query, "sys_idIN"); ok {
+		if rest, ok := strings.CutPrefix(query, "correlation_id="); ok {
+			want, _, _ := strings.Cut(rest, "^")
+			list = []any{}
+			for n := 1; n <= len(f.records); n++ {
+				if rec := f.records[fmt.Sprintf("%032x", n)]; rec != nil && rec.correlationID == want {
+					list = append(list, f.recordJSON(rec))
+				}
+			}
+		} else if rest, ok := strings.CutPrefix(query, "sys_idIN"); ok {
 			ids, _, _ := strings.Cut(rest, "^")
 			for _, id := range strings.Split(ids, ",") {
 				if rec, ok := f.records[id]; ok {

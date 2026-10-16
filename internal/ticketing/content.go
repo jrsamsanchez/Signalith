@@ -1,7 +1,10 @@
 package ticketing
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"net/url"
+	"regexp"
 	"sort"
 	"strings"
 	"unicode"
@@ -34,6 +37,27 @@ type ticketContent struct {
 	// set.
 	Link string
 }
+
+// markerID is a case's ID as it goes into the marker each ticket carries
+// (a Jira label, a ServiceNow correlation ID): the ID itself when it is
+// short and holds only characters both take (case IDs such as
+// CASE-20261012-3fa9c1d27b40e865 do), else a short hash of it.
+func markerID(caseID string) string {
+	if markerSafe.MatchString(caseID) {
+		return caseID
+	}
+	sum := sha256.Sum256([]byte(caseID))
+	return "h" + hex.EncodeToString(sum[:8])
+}
+
+var markerSafe = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,80}$`)
+
+// jiraLabel is the label a Jira issue opened for a case carries.
+func jiraLabel(caseID string) string { return "signalith-" + markerID(caseID) }
+
+// correlationID is the correlation_id a ServiceNow ticket opened for a
+// case carries.
+func correlationID(caseID string) string { return "signalith:" + markerID(caseID) }
 
 // CaseLink returns the address that opens a case in Signalith, or "" when
 // the public address is not set.

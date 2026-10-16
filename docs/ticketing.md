@@ -80,6 +80,7 @@ A new ticket gets:
 | Description | "Opened from Signalith case …", the severity and status, a link to the case, and the case's description |
 | Priority (Jira) | The case's severity, mapped: Critical to Highest, High to High, Medium to Medium, Low to Low, Informational to Lowest. You can change the names under **Mapping and advanced**, or turn it off. When the project's screens have no Priority field, Signalith leaves it out by itself. |
 | Impact and urgency (ServiceNow) | Critical 1 and 1, High 1 and 2, Medium 2 and 2, Low 2 and 3, Informational 3 and 3, which make priorities 1 to 5 |
+| Label (Jira), correlation ID (ServiceNow) | `signalith-<case id>` or `signalith:<case id>`, so a ticket opened by a server that stopped before recording it is found rather than opened twice (see [Which server syncs](#which-server-syncs)) |
 
 That is all a ticket ever gets: the title, severity, status, description, notes and a link
 to the case. It never gets events, search results or findings, so data stays in Signalith.
@@ -199,9 +200,16 @@ job every minute.
 - Each ticket has a record in OpenSearch (the `<prefix>_ticket_sync` index), with an ID made
   from the connection and the case. Only one server can create it, so a case never gets two
   tickets in one connection, even when two analysts click at once.
-- If a server stops between opening a ticket and recording it, the ticket may exist without
-  the case knowing. The case's card shows it as being opened; after 10 minutes an analyst may
-  try again, which may open a second ticket.
+- Every ticket carries a marker of its case: the Jira label `signalith-<case id>`, or the
+  ServiceNow `correlation_id` `signalith:<case id>` (with `correlation_display` `Signalith`).
+  A case ID with characters these do not take is replaced by a short hash of it.
+- If a server stops between opening a ticket and recording it, or a try fails in a way that
+  does not say whether the ticket was made (such as a timeout), the case's card shows it as
+  being opened or failed. When it is tried again (after 10 minutes for one left being
+  opened), Signalith first looks for a ticket with the case's marker, in the connection's
+  project or table, and records that one instead of opening a second. If the project's
+  create screen has no **Labels** field, Jira issues are opened without the label, and this
+  check cannot find them.
 
 ## Where the settings live
 

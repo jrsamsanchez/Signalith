@@ -57,6 +57,11 @@ type Link struct {
 	Updated   time.Time `json:"updated"`
 	// Attempts counts the tries to open the ticket.
 	Attempts int `json:"attempts,omitempty"`
+	// MayExist marks a ticket an earlier try may have opened without
+	// recording it: the server stopped while opening it, or the try failed
+	// in a way that does not say whether the system made it. The next try
+	// looks for it by its marker before opening another.
+	MayExist bool `json:"may_exist,omitempty"`
 	// Error is the last problem, for people; "" once the next sync
 	// succeeds.
 	Error    string    `json:"error,omitempty"`

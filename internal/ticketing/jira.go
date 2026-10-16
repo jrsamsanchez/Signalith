@@ -69,28 +69,35 @@ func (i jiraIssue) state() remoteState {
 	return remoteState{ref: ref{Key: i.Key, ID: i.ID}, Status: i.Fields.Status.remote(), Updated: i.Fields.Updated}
 }
 
-// noPriority remembers that the priority field cannot be set on this
-// connection's issues (it is not on the screen), so it is no longer sent.
-func (j *jira) noPriority() bool {
+// quirk reports whether this connection's Jira refused something before,
+// such as a field that is not on its screens (no-priority, no-labels), so
+// it is no longer sent.
+func (j *jira) quirk(name string) bool {
 	if j.quirks == nil {
 		return false
 	}
-	_, ok := j.quirks.Load(j.conn.ID + ":no-priority")
+	_, ok := j.quirks.Load(j.conn.ID + ":" + name)
 	return ok
+}
+
+func (j *jira) noPriority() bool { return j.quirk("no-priority") }
+
+// fieldRefused reports whether err is Jira refusing a field, and
+// remembers it as the quirk no-<field>.
+func (j *jira) fieldRefused(err error, field string) bool {
+	e := errorOf(err)
+	if e == nil || e.Code != http.StatusBadRequest || !slices.Contains(e.Fields, field) {
+		return false
+	}
+	if j.quirks != nil {
+		j.quirks.Store(j.conn.ID+":no-"+field, true)
+	}
+	return true
 }
 
 // priorityRefused reports whether err is Jira refusing the priority
 // field, and remembers it.
-func (j *jira) priorityRefused(err error) bool {
-	e := errorOf(err)
-	if e == nil || e.Code != http.StatusBadRequest || !slices.Contains(e.Fields, "priority") {
-		return false
-	}
-	if j.quirks != nil {
-		j.quirks.Store(j.conn.ID+":no-priority", true)
-	}
-	return true
-}
+func (j *jira) priorityRefused(err error) bool { return j.fieldRefused(err, "priority") }
 
 func (j *jira) setPriority() bool { return j.conn.SetPriority && !j.noPriority() }
 
@@ -104,15 +111,26 @@ func (j *jira) create(ctx context.Context, t ticketContent) (created, error) {
 	if j.setPriority() {
 		fields["priority"] = map[string]any{"name": j.conn.priority(t.Severity)}
 	}
+	if !j.quirk("no-labels") {
+		// The label find looks for, so an issue opened by a server that
+		// stopped before it could record it is found, not opened again.
+		fields["labels"] = []string{jiraLabel(t.CaseID)}
+	}
 	var out struct {
 		ID  string `json:"id"`
 		Key string `json:"key"`
 	}
 	err := j.do(ctx, request{method: http.MethodPost, path: j.api("/issue"), body: map[string]any{"fields": fields}, out: &out})
-	if err != nil && fields["priority"] != nil && j.priorityRefused(err) {
-		// The priority field is not on the project's create screen: the
-		// issue is made without it.
-		delete(fields, "priority")
+	for tries := 0; err != nil && tries < 2; tries++ {
+		// A field that is not on the project's create screen: the issue
+		// is made without it.
+		if fields["priority"] != nil && j.priorityRefused(err) {
+			delete(fields, "priority")
+		} else if fields["labels"] != nil && j.fieldRefused(err, "labels") {
+			delete(fields, "labels")
+		} else {
+			break
+		}
 		err = j.do(ctx, request{method: http.MethodPost, path: j.api("/issue"), body: map[string]any{"fields": fields}, out: &out})
 	}
 	if err != nil {
@@ -294,6 +312,25 @@ func (j *jira) search(ctx context.Context, q string) ([]remoteState, error) {
 		}
 	}
 	return out, nil
+}
+
+// find looks for the issue opened earlier for a case by its label, in the
+// connection's project; the oldest when there are several.
+func (j *jira) find(ctx context.Context, caseID string) (*created, error) {
+	if !projectForm.MatchString(j.conn.Project) {
+		return nil, nil
+	}
+	q := fmt.Sprintf(`project = "%s" AND labels = "%s" ORDER BY created ASC`, j.conn.Project, jiraLabel(caseID))
+	got, err := j.search(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	for _, rs := range got {
+		if issueKey.MatchString(rs.Key) {
+			return &created{ref: rs.ref, URL: strings.TrimRight(j.conn.URL, "/") + "/browse/" + url.PathEscape(rs.Key), Status: rs.Status, Updated: rs.Updated}, nil
+		}
+	}
+	return nil, nil
 }
 
 // each reads issues one by one; one that is not found is gone.

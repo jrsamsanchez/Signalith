@@ -25,6 +25,11 @@ type remote interface {
 	poll(ctx context.Context, refs []ref, since time.Time) ([]remoteState, error)
 	// comments returns a ticket's comments, oldest first.
 	comments(ctx context.Context, r ref) ([]comment, error)
+	// find returns the ticket opened earlier for a case, by the marker
+	// create puts on it (jiraLabel, correlationID), or nil when there is
+	// none. It is asked before a ticket is opened again for a case whose
+	// earlier opening may have created one, so a crash never opens two.
+	find(ctx context.Context, caseID string) (*created, error)
 	// test checks the credentials and access to the project or table,
 	// and says what it found.
 	test(ctx context.Context) (string, error)

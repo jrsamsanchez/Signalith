@@ -60,6 +60,10 @@ func (s *serviceNow) create(ctx context.Context, t ticketContent) (created, erro
 		"description":       t.text(),
 		"impact":            impact,
 		"urgency":           urgency,
+		// What find looks for, so a ticket opened by a server that
+		// stopped before it could record it is found, not opened again.
+		"correlation_id":      correlationID(t.CaseID),
+		"correlation_display": "Signalith",
 	}
 	if s.conn.CallerID != "" {
 		body["caller_id"] = s.conn.CallerID
@@ -189,6 +193,29 @@ func (s *serviceNow) poll(ctx context.Context, refs []ref, since time.Time) ([]r
 		}
 	}
 	return out, nil
+}
+
+// find looks for the ticket opened earlier for a case by its
+// correlation_id; the oldest when there are several.
+func (s *serviceNow) find(ctx context.Context, caseID string) (*created, error) {
+	var res struct {
+		Result []snRecord `json:"result"`
+	}
+	q := url.Values{
+		"sysparm_query":  {"correlation_id=" + correlationID(caseID) + "^ORDERBYsys_created_on"},
+		"sysparm_fields": {snFields},
+		"sysparm_limit":  {"1"},
+	}
+	if err := s.do(ctx, request{method: http.MethodGet, path: s.table(""), query: snQuery(q), out: &res}); err != nil {
+		return nil, err
+	}
+	for _, r := range res.Result {
+		if sysID.MatchString(r.SysID) && r.Number != "" {
+			st := r.state()
+			return &created{ref: st.ref, URL: s.recordURL(r.SysID), Status: st.Status, Updated: st.Updated}, nil
+		}
+	}
+	return nil, nil
 }
 
 func (s *serviceNow) comments(ctx context.Context, r ref) ([]comment, error) {

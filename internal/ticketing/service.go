@@ -191,6 +191,9 @@ func (s *Service) claim(ctx context.Context, l *Link) (Stored, error) {
 		}
 	}
 	l.Attempts = cur.Attempts
+	// A server that stopped while opening the ticket, or a try that
+	// failed, may have left one in the system: the next try looks first.
+	l.MayExist = cur.MayExist || cur.State == StateCreating || cur.State == StateFailed
 	v, err = s.Links.Update(ctx, l, cur.Version)
 	if errors.Is(err, store.ErrConflict) {
 		return Stored{}, ErrInProgress
@@ -208,16 +211,27 @@ func (s *Service) open(ctx context.Context, conn Connection, st Stored) (*Link, 
 	now := s.now().UTC()
 	c, err := s.Cases.Get(ctx, l.CaseID)
 	var cr created
+	adopted := false
 	if err == nil {
 		var rem remote
 		rem, err = s.remote(conn)
-		if err == nil {
+		if err == nil && l.MayExist {
+			// An earlier try may have opened it: record that one rather
+			// than open another.
+			var found *created
+			found, err = rem.find(ctx, l.CaseID)
+			if err == nil && found != nil {
+				cr, adopted = *found, true
+			}
+		}
+		if err == nil && !adopted {
 			cr, err = rem.create(ctx, contentOf(c, s.caseLink(l.CaseID)))
 		}
 	}
 	l.Attempts++
 	l.Updated, l.Server = now, s.Server
 	if err != nil {
+		l.MayExist = true
 		msg := Scrub(err.Error(), conn)
 		if errors.Is(err, cases.ErrNotFound) {
 			msg = "The case was deleted."
@@ -230,7 +244,7 @@ func (s *Service) open(ctx context.Context, conn Connection, st Stored) (*Link, 
 			"case", l.CaseID, "by", l.CreatedBy, "auto", l.Auto, "attempt", l.Attempts, "err", l.Error)
 		return nil, &Error{Msg: l.Error, Retry: retryable(err)}
 	}
-	l.State, l.Active, l.Error, l.ErrorAt = StateLinked, true, "", time.Time{}
+	l.State, l.Active, l.Error, l.ErrorAt, l.MayExist = StateLinked, true, "", time.Time{}, false
 	l.Key, l.RemoteID, l.URL = cr.Key, cr.ID, cr.URL
 	l.RemoteStatus, l.RemoteUpdated = cr.Status, cr.Updated
 	l.CaseTitle, l.CaseSeverity, l.CaseStatus = c.Title, c.Severity, ""
@@ -248,8 +262,13 @@ func (s *Service) open(ctx context.Context, conn Connection, st Stored) (*Link, 
 	if err := s.linkCase(ctx, l, now); err != nil {
 		s.log().Error("opened a ticket but could not add it to the case; the sync adds it later", "case", l.CaseID, "key", l.Key, "err", err)
 	}
-	s.log().Info("opened a ticket for a case", "audit", true, "connection", conn.Name, "system", conn.Type,
-		"case", l.CaseID, "key", l.Key, "by", l.CreatedBy, "auto", l.Auto)
+	if adopted {
+		s.log().Info("found the ticket an earlier try opened for a case, and recorded it instead of opening another", "audit", true,
+			"connection", conn.Name, "system", conn.Type, "case", l.CaseID, "key", l.Key, "by", l.CreatedBy, "auto", l.Auto)
+	} else {
+		s.log().Info("opened a ticket for a case", "audit", true, "connection", conn.Name, "system", conn.Type,
+			"case", l.CaseID, "key", l.Key, "by", l.CreatedBy, "auto", l.Auto)
+	}
 	return &l, nil
 }
 
