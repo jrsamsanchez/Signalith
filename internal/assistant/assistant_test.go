@@ -151,3 +151,20 @@ func TestErrorsHideSecretsInTheURL(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+func TestCleanReplyUnwrapsQuotedQuery(t *testing.T) {
+	for in, want := range map[string]string{
+		"'sourcetype=linux:audit | stats count by host'":      "sourcetype=linux:audit | stats count by host",
+		"`index=signalith-* user=root`":                       "index=signalith-* user=root",
+		"\"failed logins\"":                                   "failed logins",
+		"Query: 'action=failure'":                             "action=failure",
+		"```\n'datamodel=authentication action=failure'\n```": "datamodel=authentication action=failure",
+		"status=\"failed\" user=\"root\"":                     "status=\"failed\" user=\"root\"",
+		"\"a\" OR \"b\"":                                      "\"a\" OR \"b\"",
+		"'":                                                   "'",
+	} {
+		if got := cleanReply(in); got != want {
+			t.Errorf("cleanReply(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

@@ -214,6 +214,7 @@
       <a class="nav__item" href="#apitokens" data-page="apitokens" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-key-round"/></svg><span>API tokens</span></a>
       <a class="nav__item" href="#notify" data-page="notify" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-bell"/></svg><span>Notifications</span></a>
       <a class="nav__item" href="#retention" data-page="retention" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-hourglass"/></svg><span>Data retention</span></a>
+      <a class="nav__item" href="#lookuptables" data-page="lookuptables" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-file-spreadsheet"/></svg><span>Lookups</span></a>
       <a class="nav__item" href="#security" data-page="security" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-shield-check"/></svg><span>Security</span></a>
       <a class="nav__item" href="#servers" data-page="servers" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-server"/></svg><span>Servers</span></a>
       <a class="nav__item" href="#scanners" data-page="scanners" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-radar"/></svg><span>Scanners</span></a>
@@ -272,6 +273,7 @@
       <a class="set-tab" href="#apitokens" data-page="apitokens" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-key-round"/></svg><span>API tokens</span></a>
       <a class="set-tab" href="#notify" data-page="notify" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-bell"/></svg><span>Notifications</span></a>
       <a class="set-tab" href="#retention" data-page="retention" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-hourglass"/></svg><span>Data retention</span></a>
+      <a class="set-tab" href="#lookuptables" data-page="lookuptables" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-file-spreadsheet"/></svg><span>Lookups</span></a>
       <a class="set-tab" href="#security" data-page="security" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-shield-check"/></svg><span>Security</span><span id="security-count" class="nav__count hidden" data-critical></span></a>
       <a class="set-tab" href="#servers" data-page="servers" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-server"/></svg><span>Servers</span></a>
       <a class="set-tab" href="#scanners" data-page="scanners" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-radar"/></svg><span>Scanners</span></a>
@@ -1627,6 +1629,27 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
     </div>
   </section>
 
+  <section id="page-lookuptables" class="page">
+    <div class="page-head">
+      <div>
+        <h2 class="page-head__title">Lookups</h2>
+        <p class="page-head__desc">Tables of your own, uploaded as CSV, that searches and detections add columns from with the lookup command.</p>
+      </div>
+    </div>
+    <div class="card tokens-card">
+      <div class="card__head tokens-card__head">
+        <div>
+          <h3 class="card__title" id="lt-title">Lookup tables</h3>
+          <p class="card__sub">For example a list of service owners: <code>| lookup owners host OUTPUT owner, team</code> adds each event’s owner and team.</p>
+        </div>
+        <div class="card__actions">
+          <button class="btn btn--primary btn--sm" type="button" id="lt-new"><svg class="icon" aria-hidden="true"><use href="#i-upload"/></svg><span>Add a table</span></button>
+        </div>
+      </div>
+      <div class="tokens-card__body" id="lt-body" aria-busy="true" aria-labelledby="lt-title"></div>
+    </div>
+  </section>
+
   <section id="page-audit" class="page">
     <div class="page-head">
       <div>
@@ -1675,6 +1698,7 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
         <div><dt data-query="| head 10"></dt><dd>Keep the first N rows.</dd></div>
         <div><dt data-query="| table _time, user, src"></dt><dd>Choose the columns.</dd></div>
         <div><dt data-query="| rename src as source_ip"></dt><dd>Rename columns.</dd></div>
+        <div><dt data-query="| lookup owners host OUTPUT owner, team"></dt><dd>Add columns from a lookup table uploaded on Settings &gt; Lookups to events whose field matches. <code>host AS dest</code> matches another field; <code>OUTPUTNEW</code> fills only missing fields.</dd></div>
         <div><dt data-query="| enrich"></dt><dd>Add owner, priority and category from the asset and identity lists, as <code>dest_owner</code>, <code>user_priority</code> and so on.</dd></div>
         <div><dt data-query="| threatmatch"></dt><dd>Keep only events whose IP, domain, URL, hash or email fields match threat intel, with <code>threat_match_value</code>, <code>threat_source</code> and <code>threat_weight</code> columns. Name fields to check only those, as in <code>| threatmatch src, dest</code>. Put it right after the search.</dd></div>
         <div><dt data-query="| intel src, dest"></dt><dd>Check any result against threat intel. Adds <code>src_intel_source</code>, <code>src_intel_type</code>, <code>src_intel_weight</code> and <code>src_intel_description</code> where a value is a known indicator.</dd></div>
@@ -1735,6 +1759,7 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
 <script src="tokens.js"></script>
 <script src="apitokens.js"></script>
 <script src="sso.js"></script>
+<script src="lookuptables.js"></script>
 <script src="servers-ca.js"></script>
 <script src="servers-lifecycle.js"></script>
 <script src="servers-osid.js"></script>

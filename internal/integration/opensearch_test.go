@@ -323,6 +323,18 @@ func TestEndToEnd(t *testing.T) {
 		}
 	})
 
+	t.Run("transaction", func(t *testing.T) {
+		res := run(t, eng, `datamodel=Authentication action=failure | transaction src maxpause=1h | sort -eventcount`)
+		if len(res.Rows) != 2 || res.Rows[0]["src"] != "203.0.113.9" || res.Rows[0]["eventcount"] != int64(13) || res.Rows[0]["duration"] == nil {
+			t.Errorf("rows = %v", res.Rows)
+		}
+	})
+	t.Run("join", func(t *testing.T) {
+		res := run(t, eng, `datamodel=Authentication action=failure | stats count by src | join type=left src [search datamodel=Authentication action=failure user=root | stats count as root by src] | sort src`)
+		if len(res.Rows) != 2 || res.Rows[0]["src"] != "198.51.100.23" || res.Rows[0]["root"] != int64(3) || res.Rows[1]["root"] != nil {
+			t.Errorf("rows = %v", res.Rows)
+		}
+	})
 	t.Run("mapping discovers fields", func(t *testing.T) {
 		m, err := cl.Mapping(context.Background(), prefix+"-authentication-*")
 		if err != nil {

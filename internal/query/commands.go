@@ -340,3 +340,173 @@ func fillnullString(c *Fillnull) string {
 	}
 	return s
 }
+
+// Lookup adds columns from a lookup table (Settings > Lookups) to rows
+// whose fields match its key columns:
+// lookup owners host AS dest OUTPUT owner, team AS owner_team.
+type Lookup struct {
+	Table   string
+	Keys    []LookupField // table column, and the row field it matches when As is set
+	Outputs []LookupField // table column, and the field it is written to when As is set; none means every other column
+	New     bool          // OUTPUTNEW: only fill fields the row does not have
+}
+
+// LookupField is a table column and, when it differs, the row's field.
+type LookupField struct {
+	Column string
+	As     string
+}
+
+// Field returns the row's field for f.
+func (f LookupField) Field() string {
+	if f.As != "" {
+		return f.As
+	}
+	return f.Column
+}
+
+func (*Lookup) Name() string { return "lookup" }
+
+var lookupTableRE = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
+
+func (p *parser) lookupWord() bool {
+	return p.isKeywordFold("output") || p.isKeywordFold("outputnew")
+}
+
+// lookupFields reads column [AS field] pairs, separated by spaces or
+// commas, up to OUTPUT, OUTPUTNEW or the end of the command.
+func (p *parser) lookupFields() ([]LookupField, error) {
+	var out []LookupField
+	name := func() (string, bool) {
+		t := p.peek()
+		if t.kind == tokString || t.kind == tokWord && !strings.EqualFold(t.text, "as") && !p.lookupWord() {
+			p.next()
+			return t.text, t.text != ""
+		}
+		return "", false
+	}
+	for {
+		if p.peek().kind == tokComma {
+			p.next()
+			continue
+		}
+		col, ok := name()
+		if !ok {
+			return out, nil
+		}
+		f := LookupField{Column: col}
+		if p.isKeywordFold("as") {
+			at := p.next()
+			if f.As, ok = name(); !ok {
+				return nil, errorf(at.pos, `expected a field name after "as" in lookup`)
+			}
+		}
+		out = append(out, f)
+	}
+}
+
+func (p *parser) parseLookup(cmd token) (Command, error) {
+	t := p.peek()
+	if t.kind != tokWord && t.kind != tokString {
+		return nil, errorf(t.pos, "lookup needs a table name, for example: lookup owners host OUTPUT owner")
+	}
+	p.next()
+	if !lookupTableRE.MatchString(t.text) {
+		return nil, errorf(t.pos, "%q is not a lookup table name; names use lower-case letters, digits, - and _", t.text)
+	}
+	l := &Lookup{Table: t.text}
+	var err error
+	if l.Keys, err = p.lookupFields(); err != nil {
+		return nil, err
+	}
+	if len(l.Keys) == 0 {
+		return nil, errorf(p.peek().pos, "lookup needs the column to match, for example: lookup %s host OUTPUT owner", l.Table)
+	}
+	if p.lookupWord() {
+		kw := p.next()
+		l.New = strings.EqualFold(kw.text, "outputnew")
+		if l.Outputs, err = p.lookupFields(); err != nil {
+			return nil, err
+		}
+		if len(l.Outputs) == 0 {
+			return nil, errorf(kw.pos, "%s needs at least one column", strings.ToUpper(kw.text))
+		}
+	}
+	return l, p.endCommand()
+}
+
+// lookupName prints a column or field name so that it reads back as the
+// same name, quoting the lookup keywords.
+func lookupName(n string) string {
+	switch strings.ToLower(n) {
+	case "output", "outputnew":
+		return quote(n)
+	}
+	return FormatValue(n)
+}
+
+func lookupFieldsString(fs []LookupField) string {
+	parts := make([]string, len(fs))
+	for i, f := range fs {
+		parts[i] = lookupName(f.Column)
+		if f.As != "" {
+			parts[i] += " AS " + lookupName(f.As)
+		}
+	}
+	return strings.Join(parts, ", ")
+}
+
+func lookupString(c *Lookup) string {
+	s := "lookup " + c.Table + " " + lookupFieldsString(c.Keys)
+	if len(c.Outputs) > 0 {
+		kw := " OUTPUT "
+		if c.New {
+			kw = " OUTPUTNEW "
+		}
+		s += kw + lookupFieldsString(c.Outputs)
+	}
+	return s
+}
+
+// InputLookup starts a search with the rows of a lookup table instead of
+// events: | inputlookup [max=N] owners.
+type InputLookup struct {
+	Table string
+	Max   int // the most rows to read; 0 means the search's event limit
+}
+
+func (*InputLookup) Name() string { return "inputlookup" }
+
+func (p *parser) parseInputLookup() (Command, error) {
+	c := &InputLookup{}
+	for p.isKeywordFold("max") && p.peekAt(1).kind == tokOp && p.peekAt(1).text == "=" {
+		p.next()
+		p.next()
+		at := p.peek().pos
+		n, err := p.int()
+		if err != nil {
+			return nil, err
+		}
+		if n < 1 {
+			return nil, errorf(at, "max must be at least 1")
+		}
+		c.Max = n
+	}
+	t := p.peek()
+	if t.kind != tokWord && t.kind != tokString {
+		return nil, errorf(t.pos, "inputlookup needs a table name, for example: | inputlookup owners")
+	}
+	p.next()
+	if !lookupTableRE.MatchString(t.text) {
+		return nil, errorf(t.pos, "%q is not a lookup table name; names use lower-case letters, digits, - and _", t.text)
+	}
+	c.Table = t.text
+	return c, p.endCommand()
+}
+
+func inputLookupString(c *InputLookup) string {
+	if c.Max > 0 {
+		return "inputlookup max=" + strconv.Itoa(c.Max) + " " + c.Table
+	}
+	return "inputlookup " + c.Table
+}

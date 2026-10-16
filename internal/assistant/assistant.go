@@ -292,7 +292,18 @@ func cleanReply(s string) string {
 		}
 		s = rest
 	}
-	return strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(s), "Query:"))
+	s = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(s), "Query:"))
+	// A model may wrap the whole query in quotes or backticks, which would
+	// make it one phrase that matches nothing. Quotes inside the query
+	// (status="failed") are kept.
+	for len(s) >= 2 {
+		q := s[0]
+		if q != '`' && q != '\'' && q != '"' || s[len(s)-1] != q || strings.IndexByte(s[1:len(s)-1], q) >= 0 {
+			break
+		}
+		s = strings.TrimSpace(s[1 : len(s)-1])
+	}
+	return s
 }
 
 func userPrompt(question, draft string) string {
@@ -338,11 +349,15 @@ func QueryReference() string {
   eval name=<expression>[, name2=<expression>]   operators + - * / % . (concatenate) = != < <= > >= AND OR NOT XOR LIKE; field names with other characters in single quotes ('dc(user)'); strings in double quotes. Functions: ` + evalFuncList() + `
   rex [field=f] [max_match=N] "<RE2 regex with named groups (?<name>...)>"   extracts fields (default field _raw)
   dedup [N] f1, f2 [keepempty=true] [consecutive=true]   keeps the first N rows (default 1) per value; events come newest first
+  transaction f1, f2 [maxspan=10m] [maxpause=1m] [maxevents=N] [startswith="text"|(search)] [endswith="text"|(search)]   groups events sharing the fields into one row each, with duration (seconds) and eventcount
+  join [type=left] [max=N] f1, f2 [search <query>]   adds the fields of a subsearch's rows that share f1, f2 (inner by default; the first match unless max=0 or max=N)
   fillnull [value=X] [fields]   sets missing values (default 0)
   sort [-]field, ...    ("-" is descending)
   head N
   table f1, f2
   rename f as g
+  lookup <table> <col> [AS field] [OUTPUT|OUTPUTNEW col [AS name], ...]   adds columns from an uploaded lookup table (Settings > Lookups) where col matches; only use table names the user gave
+  | inputlookup [max=N] <table>   starts a search with the rows of a lookup table instead of events
   enrich [fields]   adds asset and identity context columns
   intel [fields]    adds threat intel columns (<field>_intel_source, _intel_type, _intel_weight) for values that are known indicators
   threatmatch [fields]   keeps only events whose IP, domain, URL, hash or email fields match threat intel; must come right after the search
