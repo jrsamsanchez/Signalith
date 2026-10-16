@@ -157,7 +157,9 @@ func (a Agg) Column() string {
 func (a Agg) String() string {
 	s := a.Func
 	if a.Field != "" {
-		s += "(" + a.Field + ")"
+		// A name that is not a bare word, such as one an eval() alias
+		// gave, is quoted: values(" ").
+		s += "(" + FormatValue(a.Field) + ")"
 	}
 	if a.Alias != "" {
 		s += " as " + FormatValue(a.Alias)

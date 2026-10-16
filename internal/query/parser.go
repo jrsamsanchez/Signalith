@@ -696,7 +696,7 @@ func (p *parser) parseAggs(cmdPos int) ([]Agg, error) {
 				evalX = x
 			} else {
 				f := p.next()
-				if f.kind != tokWord {
+				if (f.kind != tokWord && f.kind != tokString) || f.text == "" {
 					return nil, errorf(f.pos, "expected a field name inside %s()", a.Func)
 				}
 				a.Field = f.text
@@ -720,6 +720,11 @@ func (p *parser) parseAggs(cmdPos int) ([]Agg, error) {
 			// Computed first into the AS name, then aggregated from it.
 			if a.Alias == "" {
 				return nil, errorf(evalAt, "name the result of %s(eval(...)) with AS, as in Splunk: %s(eval(...)) AS name", a.Func, a.Func)
+			}
+			// The name is also the field eval sets, which eval's text
+			// cannot hold with a | or a single quote in it.
+			if strings.ContainsAny(a.Alias, "|'\\") {
+				return nil, errorf(evalAt, "the AS name of %s(eval(...)) cannot hold |, ' or \\", a.Func)
 			}
 			for _, e := range p.evals {
 				if e.Field == a.Alias {
