@@ -102,6 +102,17 @@ func TestTrendline(t *testing.T) {
 			t.Errorf("%s = %v, want %v", f, got, want)
 		}
 	}
+	// Two huge values overflow the sums; once they leave the window the
+	// averages are numbers again.
+	res = runSeq(t, `| makeresults count=6 | streamstats count as n | eval v=case(n<=2, 1e308, true(), n) | trendline sma2(v) wma2(v) AS w ema2(v) AS e`)
+	for _, f := range []string{"sma2(v)", "w", "e"} {
+		if got := num(f)[5]; got == nil {
+			t.Errorf("%s stayed empty after an overflow: %v", f, seqColumn(res, f))
+		}
+	}
+	if got := num("sma2(v)")[5]; got != 5.5 {
+		t.Errorf("sma2 after an overflow = %v", got)
+	}
 	for _, bad := range []string{"trendline", "trendline sma1(v)", "trendline sma10001(v)", "trendline sma05(v)", "trendline avg5(v)", "trendline sma5 v", "trendline sma5()", "trendline sma5(v) AS"} {
 		if _, err := (&Engine{Store: &fakeStore{}}).Run(context.Background(), "| makeresults | "+bad); err == nil {
 			t.Errorf("%s parsed", bad)

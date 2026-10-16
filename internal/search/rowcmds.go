@@ -143,6 +143,8 @@ type trend struct {
 	query.Trend
 	ring      []float64
 	next, n   int
+	since     int     // rows since the sums were last added up
+	work      int     // values added up again, for the step count
 	sum, wsum float64 // the window's sum, and for wma its weighted sum
 	ema       float64
 }
@@ -150,6 +152,10 @@ type trend struct {
 // add takes the next number and returns the average once the window is
 // full.
 func (t *trend) add(x float64) (float64, bool) {
+	// A non-finite number would stay in the running sums for good.
+	if !finite(x) {
+		return 0, false
+	}
 	p := t.Period
 	if t.n < p {
 		t.ring = append(t.ring, x)
@@ -168,9 +174,29 @@ func (t *trend) add(x float64) (float64, bool) {
 	// Each value's weight drops by one and the new one weighs p.
 	t.wsum += float64(p)*x - t.sum
 	t.sum += x - old
+	// Sums that overflowed would stay Inf or NaN after the large values
+	// leave the window, and rounding builds up, so every period rows, or
+	// at once when they are not finite, they are added up again.
+	if t.since++; t.since >= p || !finite(t.sum) || !finite(t.wsum) {
+		t.recount()
+	}
 	alpha := 2 / float64(p+1)
 	t.ema = alpha*x + (1-alpha)*t.ema
+	if !finite(t.ema) {
+		t.ema = t.sum / float64(p)
+	}
 	return t.value(), true
+}
+
+// recount adds up the window again, oldest value first.
+func (t *trend) recount() {
+	t.sum, t.wsum, t.since = 0, 0, 0
+	t.work += t.Period
+	for i := range t.Period {
+		x := t.ring[(t.next+i)%t.Period]
+		t.sum += x
+		t.wsum += float64(i+1) * x
+	}
 }
 
 func (t *trend) value() float64 {
@@ -215,6 +241,12 @@ func applyTrendline(ctx context.Context, res *Result, c *query.Trendline) error 
 				continue
 			}
 			avg, ok := t.add(x)
+			if t.work > 0 {
+				if !ev.stepN(t.work) {
+					return ev.err
+				}
+				t.work = 0
+			}
 			if !ok {
 				continue
 			}
