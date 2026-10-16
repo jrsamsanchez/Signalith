@@ -81,8 +81,19 @@ func (r *runner) useAudit(ctx context.Context, in *instance, c *config.Config, c
 	r.audit.sink.SetIdentity(r.node.Name(), r.node.ID())
 	r.audit.sink.SetEnabled(on)
 	if !on {
+		r.audit.sink.SetKeySource(nil)
 		return
 	}
+	// The records are signed with the audit key of the cluster key in use
+	// now. A server that has none at the moment (it has not been handed
+	// the key yet) chains its records unsigned until it has one.
+	sh := r.shared
+	r.audit.sink.SetKeySource(func() (string, []byte) {
+		if k := sh.Hub().Keys().Active(); k != nil {
+			return k.ID(), k.AuditKey()
+		}
+		return "", nil
+	})
 	in.jobs.Go(func() { ensureAuditTemplate(ctx, cl, c, r.log) })
 	node := r.node
 	name, id := node.Name(), node.ID()
@@ -168,7 +179,35 @@ func reportArchiveFolder(ctx context.Context, f *clusterarchive.Folders, log *sl
 // auditAPI is the Audit page's backing for this start.
 func (r *runner) auditAPI(c *config.Config, cl *store.Client) *api.Audit {
 	on := r.auditOn()
-	return &api.Audit{Client: cl, Prefix: c.OpenSearch.IndexPrefix, Shared: func() bool { return on }}
+	var keys func() *shared.KeySet
+	if sh := r.shared; sh != nil {
+		keys = func() *shared.KeySet { return sh.Hub().Keys() }
+	}
+	return &api.Audit{Client: cl, Prefix: c.OpenSearch.IndexPrefix, Shared: func() bool { return on },
+		Keys: func() audit.KeyFunc { return auditKeys(c, keys) }}
+}
+
+// auditKeys returns the audit keys of every cluster key this server
+// holds, by key id: those the cluster uses now (keys, when set) and those
+// kept in the state folder, retired ones included, so records signed
+// before a key rotation still verify. It returns nil when there are none.
+func auditKeys(c *config.Config, keys func() *shared.KeySet) audit.KeyFunc {
+	byID := map[string][]byte{}
+	if saved, err := (shared.KeyStore{Dir: c.StateDir(), Master: c.Keyring()}).ClusterKeys(); err == nil {
+		for _, k := range saved {
+			byID[k.ID()] = k.AuditKey()
+		}
+	}
+	if keys != nil {
+		set := keys()
+		for _, id := range set.IDs() {
+			byID[id] = set.Get(id).AuditKey()
+		}
+	}
+	if len(byID) == 0 {
+		return nil
+	}
+	return func(kid string) []byte { return byID[kid] }
 }
 
 // auditJobs are the background jobs of the shared archives, run by the
@@ -176,13 +215,17 @@ func (r *runner) auditAPI(c *config.Config, cl *store.Client) *api.Audit {
 // unfinished, and the daily export of the shared settings into the
 // archive folder.
 func (r *runner) auditJobs(c *config.Config, cl *store.Client, ret *retention.Manager) []cluster.Job {
-	if !r.auditOn() || ret.Archive == nil || ret.Archive.Dir == "" {
+	if !r.auditOn() {
 		return nil
+	}
+	jobs := []cluster.Job{r.auditCheckpointJob(c, cl)}
+	if ret.Archive == nil || ret.Archive.Dir == "" {
+		return jobs
 	}
 	prefix := c.OpenSearch.IndexPrefix
 	manifests := &clusterarchive.Manifests{Client: cl, Prefix: prefix, Server: r.node.Name(), NodeID: r.node.ID()}
 	dir, log := ret.Archive.Dir, r.log
-	return []cluster.Job{{Name: "archive housekeeping", Run: func(ctx context.Context) {
+	return append(jobs, cluster.Job{Name: "archive housekeeping", Run: func(ctx context.Context) {
 		for {
 			if n, err := manifests.Housekeep(ctx, dir); err != nil {
 				if ctx.Err() == nil {
@@ -206,7 +249,48 @@ func (r *runner) auditJobs(c *config.Config, cl *store.Client, ret *retention.Ma
 			case <-time.After(time.Hour):
 			}
 		}
-	}}}
+	}})
+}
+
+// auditCheckpointEvery is how often the server that runs the background
+// jobs writes an audit checkpoint.
+const auditCheckpointEvery = time.Hour
+
+// auditCheckpointJob writes an audit.checkpoint record every hour,
+// naming the latest audit record of each server in OpenSearch. Removing
+// the last records of a server leaves no gap any later record of its own
+// would show; the checkpoint, chained in this server's records, still
+// names them (see audit.Verify).
+func (r *runner) auditCheckpointJob(c *config.Config, cl *store.Client) cluster.Job {
+	prefix, sink, log := c.OpenSearch.IndexPrefix, r.audit.sink, r.log
+	return cluster.Job{Name: "audit checkpoint", Run: func(ctx context.Context) {
+		// After a few minutes first, so the records spooled at the start
+		// are written.
+		wait := 5 * time.Minute
+		failing := false
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(wait):
+			}
+			wait = auditCheckpointEvery
+			tctx, cancel := context.WithTimeout(ctx, time.Minute)
+			heads, err := audit.Heads(tctx, cl, prefix)
+			cancel()
+			if err != nil {
+				if !failing && ctx.Err() == nil {
+					log.Warn("could not read the latest audit records for the hourly audit checkpoint", "err", err)
+				}
+				failing = true
+				continue
+			}
+			failing = false
+			if len(heads) > 0 {
+				sink.Add(audit.CheckpointEvent(heads))
+			}
+		}
+	}}
 }
 
 // configExportDir is the folder of the daily exports of the shared

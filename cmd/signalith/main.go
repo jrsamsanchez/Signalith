@@ -90,6 +90,7 @@ Usage:
   signalith secrets   status|encrypt|set|rotate-master [-c file] ...  the master key and stored passwords
   signalith content   status|install|remove [-c file] ...  content pack updates (newer tested rules)
   signalith security  [-c file] [-json]   print the security report (exit 2 when something is at risk)
+  signalith audit     verify [-c file] [-from date] [-to date] [-server name]  check the audit records were not changed or removed (exit 2 when they were)
   signalith cluster   status|found|export|import|export-key|import-key|reset-key|accept-restore|token|approve [-c file] ...  the settings the servers share in OpenSearch
   signalith join      '<token>' [-c file] [--name] [--listen] [--node-url] [--copy-syslog] [--no-start] [--merge] [--yes]   add this server to a cluster
   signalith opensearch-check <url> [--ca file] [--cert file --key file] [--user u]   check OpenSearch is ready for several servers
@@ -166,6 +167,8 @@ func main() {
 		err = cmdContent(args)
 	case "security":
 		err = cmdSecurity(args)
+	case "audit":
+		err = cmdAudit(args)
 	case "cluster":
 		err = cmdCluster(args)
 	case "join":
@@ -180,6 +183,9 @@ func main() {
 		fmt.Printf(usage, defaultConfigPath())
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command %q\n\n"+usage, cmd, defaultConfigPath())
+		os.Exit(2)
+	}
+	if errors.Is(err, errTampered) {
 		os.Exit(2)
 	}
 	if err != nil {

@@ -42,8 +42,18 @@ type Event struct {
 	Fields   map[string]string `json:"fields,omitempty"`
 	Epoch    int64             `json:"epoch,omitempty"`
 	// Seq numbers the events of one Sink, so two events of one server
-	// logged at the same instant still get different IDs.
+	// logged at the same instant still get different IDs. Within a chain
+	// it counts up from 1 without gaps.
 	Seq int64 `json:"seq"`
+	// Chain names the chain of the server's records the event is in, and
+	// ChainStart marks its first record; Prev is the Hash of the record
+	// before it in the chain, and MAC an HMAC-SHA256 of the event made
+	// with the audit key KID. See chain.go.
+	Chain      string `json:"chain,omitempty"`
+	ChainStart bool   `json:"chain_start,omitempty"`
+	Prev       string `json:"prev,omitempty"`
+	KID        string `json:"kid,omitempty"`
+	MAC        string `json:"mac,omitempty"`
 }
 
 // ID returns the event's document ID: the first 24 hex digits of a
@@ -59,12 +69,12 @@ func (e Event) ID() string {
 // is kept to the millisecond, as a date field in OpenSearch is.
 func (e Event) doc() map[string]any {
 	d := map[string]any{
-		"@timestamp": e.Time.UTC().Format("2006-01-02T15:04:05.000Z"),
+		"@timestamp": stamp(e.Time),
 		"message":    e.Message,
 		"seq":        e.Seq,
 	}
 	for k, v := range map[string]string{"server": e.Server, "node_id": e.NodeID, "user": e.User, "action": e.Action,
-		"target": e.Target, "source_ip": e.SourceIP, "level": e.Level} {
+		"target": e.Target, "source_ip": e.SourceIP, "level": e.Level, "chain": e.Chain, "prev": e.Prev, "kid": e.KID, "mac": e.MAC} {
 		if v != "" {
 			d[k] = v
 		}
@@ -78,6 +88,9 @@ func (e Event) doc() map[string]any {
 	}
 	if e.Epoch != 0 {
 		d["epoch"] = e.Epoch
+	}
+	if e.ChainStart {
+		d["chain_start"] = true
 	}
 	return d
 }

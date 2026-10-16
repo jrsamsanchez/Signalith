@@ -5205,6 +5205,8 @@ dialog.modal.sj-dialog[open] { display: flex; flex-direction: column; max-height
 .au-fields { font-family: var(--font-mono, monospace); font-size: var(--fs-xs); }
 .au-time { white-space: nowrap; }
 .au-table code { font-size: var(--fs-sm); }
+#au-check .card { margin-bottom: var(--sp-3); }
+.au-problems { text-align: left; margin: var(--sp-2) auto 0; padding-left: 1.2em; overflow-wrap: anywhere; }
 #page-retention #rt-edit-form[data-kind="monthly"] #rt-f-cap,
 #page-retention #rt-edit-form[data-kind="monthly"] #rt-f-compact { display: none; }
 

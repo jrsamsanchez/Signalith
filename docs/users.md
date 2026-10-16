@@ -939,8 +939,8 @@ page; see [servers.md](servers.md#upgrading-servers-you-set-up-by-hand)), `GET /
 (work asked of the server that runs the background jobs, such as a feed download or a retention
 run; see [servers.md](servers.md#shared-feeds-and-retention-policies)), every
 `/api/notify` route (the Notifications page; see [notifications.md](notifications.md)), every
-`/api/retention` route (see [retention.md](retention.md)), `GET /api/audit` and
-`GET /api/audit/servers` (the [Audit page](audit.md)), every
+`/api/retention` route (see [retention.md](retention.md)), `GET /api/audit`,
+`GET /api/audit/servers` and `GET /api/audit/verify` (the [Audit page](audit.md)), every
 `/api/users`, `/api/auth/directory` and `/api/auth/oidc` route below (the last two are
 `GET /api/auth/oidc` and `POST /api/auth/oidc/test`; see [sso.md](sso.md#api)), and every `/api/settings` route
 (`GET` and `PUT /api/settings`, `POST /api/settings/test/opensearch`,
