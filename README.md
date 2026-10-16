@@ -219,6 +219,20 @@ fictional and kept apart from your own data, and one click removes all of it. Se
 docker compose -f deploy/docker/docker-compose.yml exec signalith signalith sample-data load
 ```
 
+### Kubernetes (Helm)
+
+Each release also publishes a Helm chart, which runs Signalith, a secured OpenSearch and
+optional scanners, with no default passwords and pods that meet the restricted Pod
+Security Standard:
+
+```sh
+helm install signalith oci://ghcr.io/jrsamsanchez/charts/signalith --version <release> \
+  --namespace signalith --create-namespace
+```
+
+See [docs/kubernetes.md](docs/kubernetes.md) for the first password, exposing it,
+several servers and an OpenSearch of your own.
+
 ### Packages (.deb, .rpm, .msi)
 
 Each [release](https://github.com/jrsamsanchez/Signalith/releases) has signed packages
