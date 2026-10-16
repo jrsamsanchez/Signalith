@@ -63,3 +63,10 @@ func splitNumbers(v string) ([]int, string) {
 	}
 	return nums, v
 }
+
+// ReadableVersion reports whether NewerVersion can order v against
+// another version at the same level: false for dev and commit hashes.
+func ReadableVersion(v string) bool {
+	nums, _ := splitVersion(v)
+	return len(nums) > 0
+}
