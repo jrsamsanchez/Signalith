@@ -203,7 +203,8 @@ func exportUsers(ctx context.Context, a *clusterauth.Docs, f Files, t shared.Exp
 	if err != nil {
 		return nil, err
 	}
-	if err := users.WriteFile(p, recs, builtinLast); err != nil {
+	builtinMFA := (&clusterauth.UsersBackend{Docs: a}).BuiltinMFA()
+	if err := users.WriteFileMFA(p, recs, builtinLast, builtinMFA); err != nil {
 		return nil, err
 	}
 	return []shared.ExportedFile{{Path: p, Dest: dest, Secret: true}}, nil

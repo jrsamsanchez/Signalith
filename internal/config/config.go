@@ -766,6 +766,19 @@ type Auth struct {
 	// OIDC is single sign-on with an OpenID Connect identity provider,
 	// usually set on the Single sign-on tab of Settings.
 	OIDC OIDC `yaml:"oidc,omitempty"`
+	// MFARequired says who must use two-step sign-in (a code from an
+	// authenticator app after the password): off, admins or everyone.
+	// See MFARequiredMode.
+	MFARequired string `yaml:"mfa_required,omitempty"`
+}
+
+// MFARequiredMode returns auth.mfa_required: off, admins or everyone.
+func (c *Config) MFARequiredMode() string {
+	switch m := strings.ToLower(strings.TrimSpace(c.Auth.MFARequired)); m {
+	case "admins", "everyone":
+		return m
+	}
+	return "off"
 }
 
 // UsersFile returns the absolute path of the users file.
@@ -2494,6 +2507,11 @@ func (c *Config) Validate() error {
 			p = append(p, fmt.Sprintf("ingest.max_event_age %q must be a duration from 1h to 3650d, for example 7d or 30d (empty: 7 days)", c.Ingest.MaxEventAge))
 		}
 	}
+	switch strings.ToLower(strings.TrimSpace(c.Auth.MFARequired)) {
+	case "", "off", "admins", "everyone":
+	default:
+		p = append(p, fmt.Sprintf("auth.mfa_required %q must be off, admins or everyone (empty: off)", c.Auth.MFARequired))
+	}
 	switch strings.ToLower(strings.TrimSpace(c.Ingest.URLQuery)) {
 	case "", "keep", "redact", "drop":
 	default:
@@ -2829,6 +2847,7 @@ const header = `# Signalith configuration.
 # auth.session_timeout  sign the web UI out after this long idle (default 1h)
 # auth.session_max_age  sign the web UI out this long after sign-in, even when kept
 #                    signed in (default 24h; 1h to 30d)
+# auth.mfa_required     who must use two-step sign-in: off, admins or everyone
 # auth.users_file    where Users page accounts are kept (default users.json in lookups.dir)
 # auth.ldap          optional LDAP / Active Directory sign-in; usually set up on the Users
 #                    page instead (see docs/users.md)

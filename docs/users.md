@@ -165,6 +165,7 @@ they do not reveal which usernames exist. Other answers are:
 | `password_expired` (403) | Active Directory says the password expired or must be changed |
 | `directory_unavailable` (503) | The directory server could not be reached, or too many directory sign-ins are being checked at once |
 | `locked_out` (429) | Too many wrong passwords; see below |
+| `mfa_required`, `mfa_wrong`, `mfa_basic` | See [Two-step sign-in](#two-step-sign-in) |
 
 **Failed sign-in limits.** Wrong passwords are counted so that guessing stays slow,
 but someone guessing your password cannot keep you out:
@@ -261,6 +262,64 @@ accounts disabled in the directory are picked up as described in
 says `"must_change_password": true` and the sign-in page asks for a new password.
 Until it is changed, every request other than `GET /api/me` and
 `POST /api/me/password` answers `403` with code `password_change_required`.
+
+## Two-step sign-in
+
+Two-step sign-in asks for a code from an authenticator app on your phone after your
+password, so a stolen password alone cannot sign in. Any app that makes 6-digit codes
+works: Microsoft Authenticator, Google Authenticator, 1Password, Bitwarden, Authy and
+others. It works for local users, the built-in admin and directory users. Users who
+sign in with single sign-on get their second step from their identity provider, and
+Signalith does not ask again.
+
+**Turn it on.** Open the user menu (your name, top right) and choose **Two-step
+sign-in**, then **Set up**:
+
+1. Scan the QR code with your authenticator app. Without a camera, type the key shown
+   under it into the app instead.
+2. Enter the 6-digit code the app shows, and choose **Turn on**. The QR code works for
+   15 minutes; after that, start again.
+3. Save the 10 recovery codes shown next (**Copy** or **Download**). Each one signs
+   you in once in place of a code from the app, for when you lose your phone. They are
+   not shown again.
+
+Every other browser signed in as you is signed out.
+
+**Signing in** then asks for the code after the password. A code works once, and the
+code just before or after the current one also works, for a phone clock a little off.
+**Use a recovery code instead** takes one of the recovery codes; after one is used,
+the page says how many are left. **Make new recovery codes** in the same menu replaces
+them all.
+
+**Turn it off** from the same menu, with a code from the app or a recovery code.
+
+**Lost your phone and your recovery codes?** An admin opens **Settings > Users** and
+chooses **Reset two-step sign-in** on your row. You then sign in with your password
+alone, and set it up again. Admins cannot reset their own; another admin can. The
+built-in admin can also be reset by another admin.
+
+**Require it.** On the **Settings** page, **Require two-step sign-in**
+(`auth.mfa_required`) is `off` (the default), `admins` (every admin) or `everyone`.
+Someone it applies to who has not set it up is taken straight to setting it up after
+their password, and can do nothing else until they have.
+
+Wrong codes count toward the failed sign-in limits like wrong passwords, so someone
+who knows your password still cannot guess the code. Scripts cannot use HTTP Basic auth
+with an account that has two-step sign-in, or is required to: a script that only reads
+can use an [API token](ai-tools.md#api-tokens), which is never asked for a code; one
+that changes things needs its own account without two-step sign-in.
+
+The app's key is stored encrypted: in `users.json` with the master key, and on servers
+that share their users with the cluster key (re-encrypted when the cluster key is
+rotated). Recovery codes are kept only as hashes.
+
+| `code` | When |
+| --- | --- |
+| `mfa_required` (401) | The password was right; send it again with `"code"` |
+| `mfa_wrong` (401) | Wrong code, or one used already |
+| `mfa_basic` (403) | HTTP Basic auth for an account with two-step sign-in, or required to have it |
+| `mfa_setup_required` (403) | Two-step sign-in is required and not set up yet; only the routes under **Every role** work |
+| `mfa_unavailable` (503) | The code could not be checked just now (for example the shared settings cannot be written) |
 
 ## Sign in with Active Directory or LDAP
 
@@ -730,7 +789,7 @@ full:
 
 | File | Holds | Default place |
 | --- | --- | --- |
-| `users.json` | Local users (with bcrypt password hashes), directory users seen so far, last sign-in times | The lookups folder (`lookups.dir`), or `auth.users_file` / `SIGNALITH_USERS_FILE` |
+| `users.json` | Local users (with bcrypt password hashes), directory users seen so far, last sign-in times, two-step sign-in (the app's key encrypted, recovery codes hashed) | The lookups folder (`lookups.dir`), or `auth.users_file` / `SIGNALITH_USERS_FILE` |
 | `directory.json` | Directory sign-in settings from the Users page, including the service account's password | Next to `users.json` |
 
 The lookups folder is:
@@ -773,7 +832,8 @@ the Settings page and restarts are logged the same way; see
 
 | Message | Fields |
 | --- | --- |
-| `signed in` | `user`, `role`, `source`, `client`, `method` (session or basic) |
+| `signed in` | `user`, `role`, `source`, `client`, `method` (session or basic), `mfa` (`app` or `recovery`, when a code was asked for), `recovery_codes_left` |
+| `password accepted, waiting for the two-step code` | `user`, `client`, `method` |
 | `sign-in failed` | `user`, `client`, `method`, `reason` (for example `wrong password`, `account disabled`, `directory: in no group mapped to a role`), `locked_out` (further tries are refused or slowed down for a while) |
 | `sign-ins from this address are paused …` | `client`, `minutes` |
 | `signed out` | `user`, `client` |
@@ -785,6 +845,12 @@ the Settings page and restarts are logged the same way; see
 | `password reset` | `by`, `user`, `sessions_ended` |
 | `password changed` | `by`, `user`, `other_sessions_ended` |
 | `password change refused` | `user`, `client`, `reason`, `locked_out` |
+| `two-step sign-in turned on` | `by`, `user`, `other_sessions_ended` |
+| `two-step sign-in turned off` | `by`, `user` |
+| `two-step sign-in reset` | `by` (the admin), `user` |
+| `new recovery codes made` | `by`, `user` |
+| `recovery code used` | `by`, `user`, `recovery_codes_left` |
+| `two-step code refused` | `user`, `client`, `locked_out` |
 | `directory settings changed` | `by`, `enabled`, `servers`, `fields` (names only) |
 | `directory connection tested` | `by`, `servers`, `bind_dn`, `ok` |
 | `directory user looked up` | `by`, `user`, `servers`, `ok`, `code`, `password_checked` |
@@ -854,7 +920,8 @@ request, so a server that has not yet read that change reads it first (see
 ### Roles of every route
 
 **Every role** (also allowed while a password change is pending): `GET /api/me`,
-`POST /api/me/password`.
+`POST /api/me/password`, `GET /api/me/mfa`, `POST /api/me/mfa/setup`,
+`POST /api/me/mfa/confirm`, `POST /api/me/mfa/recovery`, `POST /api/me/mfa/off`.
 
 **Viewer:** `GET /api/health` (with `?scope=cluster`, totals for every server), `POST /api/search`, `POST /api/explain`,
 `POST /api/build`, `POST /api/parse`, `GET /api/datamodels`, `GET /api/fields`,
@@ -980,6 +1047,26 @@ share their users, the built-in admin may change its own password here too
 (`can_change_password` says so), and the answer sets a new session cookie: the
 password change ended every session of the user, this one's too.
 
+### Two-step sign-in
+
+`POST /api/login` with `{"username", "password"}` answers `401` with
+`"code": "mfa_required"` when the account has two-step sign-in; send the same body
+again with `"code": "123456"` (or a recovery code). The reply then has `"mfa": true`,
+and `recovery_codes_left` when a recovery code was used. `GET /api/me` also has
+`"mfa"` and `"must_setup_mfa"`.
+
+| Route | Body | Reply |
+| --- | --- | --- |
+| `GET /api/me/mfa` | | `{"on", "required", "possible", "since", "recovery_left"}` |
+| `POST /api/me/mfa/setup` | | `{"secret", "otpauth", "qr_svg", "expires_in"}`: a new key, not used until confirmed |
+| `POST /api/me/mfa/confirm` | `{"code"}` | `{"recovery_codes": [...], "mfa": {...}}`, and a new session cookie |
+| `POST /api/me/mfa/recovery` | `{"code"}` | `{"recovery_codes": [...], "mfa": {...}}` |
+| `POST /api/me/mfa/off` | `{"code"}` | `{"mfa": {...}}`; an empty body only drops a setup not confirmed yet |
+| `DELETE /api/users/{username}/mfa` (admin) | | `{"username", "mfa": false}`; `409` for your own account |
+
+A wrong code answers `400` with `"code": "mfa_wrong"` and counts toward the failed
+sign-in limits. Single sign-on users get `400` with `"code": "mfa_elsewhere"`.
+
 ### Users (admin)
 
 `GET /api/users`:
@@ -1012,7 +1099,7 @@ the users wait to be brought in (see
 [When the users become shared](#when-the-users-become-shared)).
 
 `actions` lists what the signed-in admin may do to that user: `edit` (name and
-email), `role`, `reset_password`, `disable` or `enable`, and `delete`; and, on the
+email), `role`, `reset_password`, `reset_mfa`, `disable` or `enable`, and `delete`; and, on the
 built-in admin's own row when the users are shared, `change_password` (with
 `POST /api/me/password`). A directory
 user the directory no longer lets in has `"role": ""` and `"refused"` saying why, for

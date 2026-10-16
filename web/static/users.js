@@ -264,6 +264,9 @@
     if (u.must_change_password) return ['temp', 'Temporary password', 'Must choose a new password at their next sign-in.'];
     return ['ok', 'Active', ''];
   }
+  // mfaBadge marks a user who signs in with a code from an authenticator app.
+  const mfaBadge = (u) => (u.mfa ? el('span', { class: 'u-mfa', title: 'Two-step sign-in is on: they enter a code from an authenticator app after their password.' },
+    icon('shield-check'), el('span', {}, 'Two-step')) : null);
 
   function userRow(u) {
     const [state, stateLabel, stateTitle] = statusOf(u);
@@ -284,7 +287,7 @@
             el('span', { class: 'u-user__src' }, (sub.length ? ' · ' : '') + (SOURCE_LABEL[u.source] || u.source)))))),
       el('td', { 'data-col': 'role' }, roleBadge),
       el('td', { 'data-col': 'source' }, el('span', { class: 'u-source' }, SOURCE_LABEL[u.source] || u.source)),
-      el('td', { 'data-col': 'status' }, el('span', { class: 'u-status', 'data-state': state, title: stateTitle }, stateLabel)),
+      el('td', { 'data-col': 'status' }, el('div', { class: 'u-status-cell' }, el('span', { class: 'u-status', 'data-state': state, title: stateTitle }, stateLabel), mfaBadge(u))),
       el('td', { 'data-col': 'last' }, u.last_sign_in
         // With shared users, the server they signed in on last, too.
         ? el('div', {}, el('span', { class: 'age', title: new Date(u.last_sign_in).toLocaleString() + (u.last_sign_in_server ? ` on ${u.last_sign_in_server}` : '') }, ago(u.last_sign_in)),
@@ -300,6 +303,7 @@
     // The built-in admin's own row, once every server shares its password.
     if (has('change_password')) items.push({ icon: 'key-round', label: 'Change password', run: () => openChangePassword() });
     if (has('reset_password')) items.push({ icon: 'key-round', label: 'Reset password', run: () => openResetPassword(u) });
+    if (has('reset_mfa')) items.push({ icon: 'shield-off', label: 'Reset two-step sign-in', run: () => resetMFA(u) });
     if (has('disable')) items.push({ icon: 'user-x', label: 'Disable', run: () => setDisabled(u, true) });
     if (has('enable')) items.push({ icon: 'user-check', label: 'Enable', run: () => setDisabled(u, false) });
     if (has('delete')) items.push('sep', { icon: 'trash-2', label: 'Delete', danger: true, run: () => deleteUser(u) });
@@ -526,6 +530,27 @@
     pw.init();
     d.showModal();
     form.querySelector('.seg button').focus();
+  }
+
+  // resetMFA turns off a user's two-step sign-in, for someone who lost
+  // their phone and their recovery codes.
+  async function resetMFA(u) {
+    const ok = await caseConfirm({
+      title: `Reset ${u.username}’s two-step sign-in?`,
+      text: 'Their authenticator app and recovery codes stop working. They sign in with only their password until they set it up again, '
+        + 'right away if two-step sign-in is required. Do this only once you are sure it is them asking.',
+      confirm: 'Reset two-step sign-in',
+    });
+    if (!ok) { focusRow(u.username); return; }
+    try {
+      await api('api/users/' + encodeURIComponent(u.username) + '/mfa', undefined, 'DELETE');
+    } catch (e) {
+      toastChangeFailed(u, e, 'Couldn’t reset ' + u.username + '’s two-step sign-in');
+      focusRow(u.username);
+      return;
+    }
+    toast(`${u.username} can sign in with their password and set up two-step sign-in again.`, null, { title: 'Two-step sign-in reset' });
+    loadUsers({ quiet: true }).then(() => focusRow(u.username));
   }
 
   async function setDisabled(u, off) {
@@ -1280,5 +1305,228 @@
     fill(d, form);
     d.showModal();
     cur.focus();
+  }
+  // ---------- Two-step sign-in (account menu) ----------
+  // A code from an authenticator app after the password. Setting it up
+  // shows a QR code, checks one code from the app, then shows the recovery
+  // codes once. Turning it off or making new recovery codes takes a code.
+  $('mfa-open').addEventListener('click', () => {
+    $('user-menu').removeAttribute('open');
+    openMFA();
+  });
+
+  const fmtDay = (t) => new Date(t).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+
+  function codeInput(id, recovery) {
+    const n = el('input', { id, class: 'input input--lg mfa-code', autocomplete: 'one-time-code', inputmode: 'numeric', maxlength: '6', placeholder: '123456', spellcheck: 'false' });
+    if (recovery) {
+      // A recovery code works here too.
+      n.maxLength = 11;
+      n.inputMode = 'text';
+      n.placeholder = '123456 or a recovery code';
+      n.dataset.kind = 'recovery';
+    } else {
+      n.addEventListener('input', () => { n.value = n.value.replace(/\D/g, '').slice(0, 6); });
+    }
+    return n;
+  }
+
+  async function openMFA() {
+    const d = modalDialog('u-mfa-dialog');
+    d.classList.add('u-dialog', 'u-mfa-dialog');
+    d.onclose = null;
+    const close = () => d.close();
+    fill(d, modalHead('u-mfa-dialog', 'Two-step sign-in', 'A code from an authenticator app after your password.', close),
+      el('div', { class: 'modal__body' }, el('div', { class: 'u-skel-gap' }), dxSkel('100%'), el('div', { class: 'u-skel-gap' }), dxSkel('60%')));
+    if (!d.open) d.showModal();
+    let st;
+    try {
+      st = await api('api/me/mfa');
+    } catch (e) {
+      fill(d, modalHead('u-mfa-dialog', 'Two-step sign-in', '', close),
+        el('div', { class: 'modal__body' }, dxEmpty({ tone: 'danger', icon: 'circle-alert', title: 'Couldn’t load two-step sign-in', text: sentence(e.message), action: dxRetry(openMFA) })));
+      return;
+    }
+    if (st.on) mfaOnView(d, st); else mfaOffView(d, st);
+  }
+
+  function mfaOffView(d, st) {
+    const close = () => d.close();
+    const start = el('button', { type: 'button', class: 'btn btn--primary' }, icon('shield-check'), 'Set up');
+    start.addEventListener('click', () => mfaSetupView(d, st));
+    fill(d,
+      modalHead('u-mfa-dialog', 'Two-step sign-in', 'Keep your account safe even if someone learns your password.', close),
+      el('div', { class: 'modal__body' },
+        el('div', { class: 'mfa-status' },
+          el('span', { class: 'mfa-mark', 'aria-hidden': 'true' }, icon('smartphone')),
+          el('div', { class: 'mfa-status__text' }, el('b', {}, 'Off'),
+            el('span', {}, 'After your password, Signalith will ask for a 6-digit code from an authenticator app on your phone, such as Microsoft Authenticator, Google Authenticator or 1Password.')))),
+      footer(cancelButton(d, 'Not now'), start));
+    start.focus();
+  }
+
+  async function mfaSetupView(d, st) {
+    const close = () => d.close();
+    const err = formAlert();
+    const img = el('img', { alt: 'QR code for your authenticator app', width: '176', height: '176', hidden: '' });
+    const wait = el('span', { class: 'mfa-qr__wait' }, 'Making a QR code…');
+    const key = el('code', {});
+    const copy = el('button', { type: 'button', class: 'btn btn--ghost btn--icon btn--sm', 'aria-label': 'Copy the key', title: 'Copy the key' }, icon('copy'));
+    const code = codeInput('u-mfa-code');
+    const submit = el('button', { type: 'submit', class: 'btn btn--primary' }, 'Turn on');
+    const form = el('form', { novalidate: '' },
+      modalHead('u-mfa-dialog', 'Set up two-step sign-in', 'It takes a minute.', close),
+      el('div', { class: 'modal__body' }, err,
+        el('ol', { class: 'mfa-steps' },
+          el('li', {}, el('b', {}, 'Scan the QR code'), ' with an authenticator app, such as Microsoft Authenticator, Google Authenticator or 1Password.',
+            el('div', { class: 'mfa-qr' }, img, wait),
+            el('details', { class: 'mfa-manual' }, el('summary', {}, 'Can’t scan it? Type this key instead'),
+              el('div', { class: 'mfa-key' }, key, copy),
+              el('p', { class: 'hint' }, 'Choose a time-based key. The app shows Signalith with your username.'))),
+          el('li', {}, el('b', {}, 'Enter the 6-digit code'), ' the app shows.', code))),
+      footer(cancelButton(d), submit));
+    let secret = '';
+    async function load() {
+      img.hidden = true;
+      wait.hidden = false;
+      wait.textContent = 'Making a QR code…';
+      try {
+        const res = await api('api/me/mfa/setup', {});
+        secret = res.secret;
+        key.textContent = res.secret;
+        img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(res.qr_svg);
+        img.hidden = false;
+        wait.hidden = true;
+      } catch (e) {
+        wait.textContent = 'No QR code';
+        showAlert(err, 'Two-step sign-in could not be set up.', sentence(e.message));
+      }
+    }
+    copy.addEventListener('click', async () => {
+      const ok = await copyText(secret.replace(/\s/g, ''));
+      copy.querySelector('use').setAttribute('href', ok ? '#i-check' : '#i-circle-alert');
+    });
+    code.addEventListener('input', () => clearField(code));
+    form.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      err.classList.add('hidden');
+      clearFields(form);
+      if (!/^\d{6}$/.test(code.value)) { markField(code, 'enter the 6-digit code the app shows'); code.focus(); return; }
+      const restore = busy(submit, 'Checking…');
+      let res;
+      try {
+        res = await api('api/me/mfa/confirm', { code: code.value });
+      } catch (e) {
+        restore();
+        if (e.code === 'mfa_no_setup') { showAlert(err, 'That QR code expired.', 'Scan the new one, then enter the code it shows.'); code.value = ''; load(); return; }
+        if (e.code === 'mfa_wrong') { markField(code, 'that code isn’t right. Check the app shows Signalith, then enter the code it shows now'); code.select(); return; }
+        showAlert(err, 'Two-step sign-in was not turned on.', sentence(e.message));
+        return;
+      }
+      mfaCodesView(d, res.recovery_codes || [], 'Two-step sign-in is on');
+      refreshMe();
+    });
+    // Closing before the code stops the set-up, so no half-made key stays.
+    d.onclose = () => { if (form.isConnected) api('api/me/mfa/off', {}).catch(() => {}); };
+    fill(d, form);
+    code.focus();
+    await load();
+  }
+
+  function mfaCodesView(d, codes, title) {
+    d.onclose = null;
+    // A stray click outside must not lose codes shown only once.
+    d.onclick = null;
+    const text = () => 'Signalith recovery codes for ' + location.host + '\nEach code signs you in once.\n\n' + codes.join('\n') + '\n';
+    const copyLabel = el('span', {}, 'Copy');
+    const copy = el('button', { type: 'button', class: 'btn btn--secondary' }, icon('copy'), copyLabel);
+    copy.addEventListener('click', async () => { if (await copyText(text())) copyLabel.textContent = 'Copied'; });
+    const download = el('button', { type: 'button', class: 'btn btn--secondary' }, icon('download'), 'Download');
+    download.addEventListener('click', () => {
+      const a = el('a', { href: URL.createObjectURL(new Blob([text()], { type: 'text/plain' })), download: 'signalith-recovery-codes.txt' });
+      document.body.append(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    });
+    const saved = el('input', { type: 'checkbox', id: 'u-mfa-saved' });
+    const done = el('button', { type: 'button', class: 'btn btn--primary', disabled: '', onclick: () => d.close() }, 'Done');
+    saved.addEventListener('change', () => { done.disabled = !saved.checked; });
+    fill(d,
+      modalHead('u-mfa-dialog', title, 'If you lose your phone, each recovery code signs you in once. Keep them somewhere safe, such as a password manager. This is the only time they are shown.', () => d.close()),
+      el('div', { class: 'modal__body' },
+        el('ul', { class: 'mfa-codes', 'aria-label': 'Recovery codes' }, ...codes.map((c) => el('li', {}, c))),
+        el('div', { class: 'mfa-codes__actions' }, copy, download),
+        el('label', { class: 'check' }, saved, 'I saved my recovery codes')),
+      footer(done));
+    copy.focus();
+  }
+
+  function mfaOnView(d, st) {
+    const close = () => d.close();
+    const left = st.recovery_left;
+    const leftText = left === 0 ? 'no recovery codes left' : `${left} recovery code${left === 1 ? '' : 's'} left`;
+    const renew = el('button', { type: 'button', class: 'btn btn--secondary' }, icon('refresh-cw'), 'New recovery codes');
+    const off = el('button', { type: 'button', class: 'btn btn--ghost u-mfa-off' }, 'Turn off');
+    renew.addEventListener('click', () => mfaCodeStep(d, st, 'renew'));
+    off.addEventListener('click', () => mfaCodeStep(d, st, 'off'));
+    fill(d,
+      modalHead('u-mfa-dialog', 'Two-step sign-in', 'A code from an authenticator app after your password.', close),
+      el('div', { class: 'modal__body' },
+        st.problem ? el('div', { class: 'alert', 'data-tone': 'warning', role: 'status' }, icon('circle-alert'), el('div', {}, el('b', {}, 'Codes from your app are refused here.'), el('p', {}, st.problem))) : null,
+        el('div', { class: 'mfa-status' },
+          el('span', { class: 'mfa-mark', 'data-tone': 'success', 'aria-hidden': 'true' }, icon('shield-check')),
+          el('div', { class: 'mfa-status__text' }, el('b', {}, 'On'),
+            el('span', {}, `Since ${fmtDay(st.since)} · ${leftText}`))),
+        left <= 2 ? el('p', { class: 'hint' }, icon('info'), left === 0 ? 'Make new recovery codes, so you can still sign in if you lose your phone.' : 'You are running out of recovery codes. Make new ones.') : null),
+      footer(off, el('span', { class: 'spacer' }), renew, el('button', { type: 'button', class: 'btn btn--primary', onclick: close }, 'Done')));
+    renew.focus();
+  }
+
+  // mfaCodeStep asks for a code before making new recovery codes or turning
+  // two-step sign-in off.
+  function mfaCodeStep(d, st, what) {
+    const close = () => d.close();
+    const err = formAlert();
+    const code = codeInput('u-mfa-check', true);
+    const renew = what === 'renew';
+    const submit = el('button', { type: 'submit', class: renew ? 'btn btn--primary' : 'btn btn--danger' }, renew ? 'Make new codes' : 'Turn off');
+    const back = el('button', { type: 'button', class: 'btn btn--ghost', onclick: () => mfaOnView(d, st) }, 'Back');
+    const note = renew ? 'Your current recovery codes stop working.'
+      : st.required ? 'Your Signalith admin requires two-step sign-in, so you will set it up again right away.' : 'After this, your password alone signs you in.';
+    code.addEventListener('input', () => clearField(code));
+    const form = el('form', { novalidate: '' },
+      modalHead('u-mfa-dialog', renew ? 'Make new recovery codes' : 'Turn off two-step sign-in', note, close),
+      el('div', { class: 'modal__body' }, err,
+        field('Code from your app', code, 'Or one of your recovery codes.')),
+      footer(back, submit));
+    form.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      err.classList.add('hidden');
+      clearFields(form);
+      if (!code.value.trim()) { markField(code, 'enter the code your app shows'); code.focus(); return; }
+      const restore = busy(submit, renew ? 'Making…' : 'Turning off…');
+      let res;
+      try {
+        res = await api(renew ? 'api/me/mfa/recovery' : 'api/me/mfa/off', { code: code.value.trim() });
+      } catch (e) {
+        restore();
+        if (e.code === 'mfa_wrong') { markField(code, 'that code isn’t right, or was used already'); code.select(); return; }
+        showAlert(err, renew ? 'No new recovery codes were made.' : 'Two-step sign-in is still on.', sentence(e.message));
+        return;
+      }
+      if (renew) { mfaCodesView(d, res.recovery_codes || [], 'New recovery codes'); return; }
+      close();
+      toast(st.required ? 'Set it up again now: your admin requires it.' : 'Your password alone signs you in now.', null, { title: 'Two-step sign-in is off' });
+      if (st.required) toSignIn(false, true);
+      refreshMe();
+    });
+    fill(d, form);
+    code.focus();
+  }
+
+  // refreshMe updates the account menu after a change.
+  function refreshMe() {
+    api('api/me').then(showUser).catch(() => {});
   }
 }());

@@ -304,8 +304,9 @@ func importRetention(ctx context.Context, d *Docs, f Files, by string) error {
 // step safe to run again (what is there counts as done): the built-in
 // admin with the password in use here (the one signalith passwd wrote to
 // the state folder included); every user of users.json with their
-// password hash, flags and session epoch 1 (one with the built-in admin's
-// name is left out: it could never sign in); and their last sign-ins.
+// password hash, flags, two-step sign-in and session epoch 1 (one with
+// the built-in admin's name is left out: it could never sign in); their
+// last sign-ins; and the built-in admin's two-step sign-in.
 // It records what this server's files say of auth.*.
 func importUsers(ctx context.Context, a *clusterauth.Docs, f Files, by string) error {
 	c := f.Config()
@@ -344,6 +345,20 @@ func importUsers(ctx context.Context, a *clusterauth.Docs, f Files, by string) e
 	if builtinLast != nil {
 		if err := seen.Import(ctx, clusterauth.Seen{User: builtin, At: builtinLast.UTC(), Node: f.Node, Method: clusterauth.MethodSession}); err != nil {
 			return err
+		}
+	}
+	// The built-in admin's two-step sign-in, unless the cluster's has one
+	// already.
+	if m, err := users.ReadFileBuiltinMFA(c.UsersFile()); err != nil {
+		return err
+	} else if m.On() {
+		if err := ub.ChangeBuiltinMFA(ctx, by, func(cur *users.MFA) (*users.MFA, bool, error) {
+			if cur != nil {
+				return nil, false, users.ErrNoChange
+			}
+			return m, false, nil
+		}); err != nil {
+			return fmt.Errorf("the built-in admin's two-step sign-in: %w", err)
 		}
 	}
 	return recordAuth(ctx, f, a)

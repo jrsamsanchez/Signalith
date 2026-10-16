@@ -10,9 +10,10 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/users"
 )
 
-// Resealer seals the directory's service account password again with
-// the active cluster key, and signs every session again with it, for a
-// key rotation: a signed-in user stays signed in.
+// Resealer seals the directory's service account password and the
+// users' authenticator keys again with the active cluster key, and signs
+// every session again with it, for a key rotation: a signed-in user
+// stays signed in.
 func Resealer(d *Docs, client func() (*store.Client, string)) shared.Resealer {
 	return func(ctx context.Context) error {
 		h := d.Hub()
@@ -34,6 +35,11 @@ func Resealer(d *Docs, client func() (*store.Client, string)) shared.Resealer {
 				}); err != nil {
 					return err
 				}
+			}
+		}
+		if d.Users() != nil {
+			if err := d.resealMFA(ctx, keys); err != nil {
+				return err
 			}
 		}
 		return resignSessions(ctx, client, keys)

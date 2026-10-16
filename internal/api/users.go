@@ -2,8 +2,6 @@ package api
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
@@ -19,6 +17,7 @@ import (
 func (s *Server) routeUsers(api *router) {
 	api.self("GET /api/me", s.handleMe)
 	api.self("POST /api/me/password", s.handleChangeOwnPassword)
+	s.routeMFA(api)
 
 	api.admin("GET /api/users", s.handleListUsers)
 	api.admin("POST /api/users", s.handleCreateUser)
@@ -51,6 +50,8 @@ func meView(p *principal) map[string]any {
 		"role_label":           p.Role.Label(),
 		"source":               p.Source,
 		"must_change_password": p.MustChangePassword,
+		"mfa":                  p.MFA,
+		"must_setup_mfa":       p.MustSetupMFA,
 		// Only local users' passwords are kept by Signalith, and the
 		// built-in admin's once it is shared by the servers of a cluster.
 		"can_change_password": p.Source == users.SourceLocal || (p.Source == users.SourceBuiltin && p.shared),
@@ -107,12 +108,7 @@ func (s *Server) handleChangeOwnPassword(w http.ResponseWriter, r *http.Request)
 	from := s.client(r)
 	// A signed-in session counts as a browser of its own: the account's
 	// slow-down for strangers does not apply to it.
-	browser := ""
-	if p.token != "" {
-		sum := sha256.Sum256([]byte(p.token))
-		browser = "session:" + hex.EncodeToString(sum[:12])
-	}
-	attempt, err := s.beginAttempt(r, from, p.Username, browser)
+	attempt, err := s.beginAttempt(r, from, p.Username, sessionBrowser(p))
 	if err != nil {
 		writeSignInError(w, err)
 		return
@@ -177,6 +173,7 @@ func (s *Server) handleChangeOwnPassword(w http.ResponseWriter, r *http.Request)
 	}
 	s.audit(r, "password changed", "user", p.Username, "other_sessions_ended", ended)
 	np.Method = p.Method
+	s.noteMFA(np)
 	writeJSON(w, http.StatusOK, meView(np))
 }
 
@@ -228,9 +225,11 @@ type userView struct {
 	LastSignIn *time.Time `json:"last_sign_in"`
 	// LastSignInServer names the server of the last sign-in, when the
 	// servers of a cluster share the users.
-	LastSignInServer string   `json:"last_sign_in_server,omitempty"`
-	You              bool     `json:"you"`
-	Actions          []string `json:"actions"`
+	LastSignInServer string `json:"last_sign_in_server,omitempty"`
+	// MFA is whether two-step sign-in is on for the user.
+	MFA     bool     `json:"mfa"`
+	You     bool     `json:"you"`
+	Actions []string `json:"actions"`
 	// ETag is the version of the user listed, for If-Match on a change.
 	ETag string `json:"etag,omitempty"`
 }
@@ -258,6 +257,10 @@ func (s *Server) viewUser(u users.User, me string) userView {
 	default:
 		v.Actions = []string{toggle, "delete"}
 	}
+	v.MFA = s.userStore().MFAOn(u.Username)
+	if v.MFA && !v.You {
+		v.Actions = append(v.Actions, "reset_mfa")
+	}
 	return v
 }
 
@@ -275,6 +278,10 @@ func (s *Server) builtinView(me string) userView {
 			// password, which its user may change here.
 			v.Actions = []string{"change_password"}
 		}
+	}
+	v.MFA = s.userStore().MFAOn(name)
+	if v.MFA && !v.You {
+		v.Actions = append(v.Actions, "reset_mfa")
 	}
 	return v
 }
