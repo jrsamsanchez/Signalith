@@ -1264,6 +1264,16 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			return nil, err
 		}
 	}
+	// A change of the first password that reached this server while its
+	// users moved is kept, and so is the session that made it. Checked
+	// before the shared users are in use, so sign-ins that finish meanwhile
+	// stay in the sessions carry moves.
+	cc := c
+	if parts != nil {
+		if h := keepFirstPasswordChange(ctx, parts.sessions.Docs, c, log); h != "" {
+			cc = c.WithAdminHashFile(h)
+		}
+	}
 	if r.sharedContent != nil {
 		r.sharedContent.users.use(parts)
 	}
@@ -1272,12 +1282,6 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	if parts != nil {
 		// The sessions made while this server kept its users in its own
 		// files carry over.
-		// A change of the first password that reached this server while
-		// its users moved is kept, and so is the session that made it.
-		cc := c
-		if h := keepFirstPasswordChange(ctx, parts.sessions.Docs, c, log); h != "" {
-			cc = c.WithAdminHashFile(h)
-		}
 		parts.carry(ctx, r.sessions, r.people, cc, log)
 		people, dir = parts.store, parts.dir
 		n := people.Count()

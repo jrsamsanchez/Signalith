@@ -192,7 +192,8 @@ func TestSwitchKeepsALateSignIn(t *testing.T) {
 	t.Setenv(clusterKeyFileEnv, "")
 	rs := startRunnerWith(t, runOptions{scheduler: true, server: plainHTTP})
 	eventually(t, "the users are shared", func() bool {
-		return rs.r.sharedContent.users.on.Load() && rs.r.sharedContent.users.cur.Load() != nil
+		return rs.r.sharedContent.users.on.Load() && rs.r.sharedContent.users.cur.Load() != nil &&
+			strings.Contains(rs.logs.String(), "users loaded from the shared settings")
 	})
 	token := rs.r.sessions.Start(auth.NewSession{User: "admin", Method: users.SourceBuiltin})
 	if rs.r.sessions.Len() != 0 {
