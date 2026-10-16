@@ -24,8 +24,7 @@ const (
 // expires. Purpose binds it: a token made for one purpose (or account,
 // or session, when purpose names them) is refused for any other.
 func (k *BrowserKey) SealState(purpose string, data []byte, expires time.Time) string {
-	b := make([]byte, 8, 8+len(data)+sha256.Size)
-	binary.BigEndian.PutUint64(b, uint64(expires.Unix()))
+	b := binary.BigEndian.AppendUint64(nil, uint64(expires.Unix()))
 	b = append(b, data...)
 	return statePrefix + base64.RawURLEncoding.EncodeToString(k.signState(b, purpose))
 }
