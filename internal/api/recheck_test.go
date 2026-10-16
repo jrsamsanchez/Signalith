@@ -64,6 +64,12 @@ func TestRecheckBeforeSensitiveChanges(t *testing.T) {
 		{"PUT", "/api/settings", `{"values":{"auth.mfa_required":"off"}}`},
 		{"PUT", "/api/settings", `{"reset":["server.tls.mode"]}`},
 		{"PUT", "/api/settings", `{"reset_all":true}`},
+		{"PUT", "/api/settings", `{"values":{"opensearch.tls_skip_verify":true}}`},
+		{"PUT", "/api/settings", `{"values":5}`},
+		{"POST", "/api/me/mfa/setup", `{}`},
+		{"PUT", "/api/retention/guard", `{}`},
+		{"POST", "/api/cluster/rotate-key", `{}`},
+		{"PUT", "/api/notify", `{}`},
 	} {
 		if code, out, _ := callWith(t, ts.URL, c.method, c.path, c.body, old); code != 403 || out["code"] != "recheck_required" || out["with"] != "password" {
 			t.Errorf("%s %s = %d %v", c.method, c.path, code, out)
@@ -126,7 +132,10 @@ func TestRecheckBeforeSensitiveChanges(t *testing.T) {
 func TestProtectedSettings(t *testing.T) {
 	for key, want := range map[string]bool{
 		"auth.mfa_required": true, "auth.session_timeout": true, "server.tls.mode": true, "server.tls.plaintext_ingest": true,
-		"server.trusted_proxies": true, "syslog.allow": true, "server.public_url": false, "search.max_events": false, "authx": false,
+		"server.trusted_proxies": true, "syslog.allow": true, "server.tls_cert": true, "server.tls_key": true, "auth.oidc.issuer": true,
+		"opensearch.url": true, "opensearch.tls_skip_verify": true, "cluster.opensearch_url": true, "syslog.tls": true,
+		"intel.allow_loopback_feeds": true, "server.listen": true, "assistant.url": true,
+		"server.public_url": false, "search.max_events": false, "authx": false, "syslog.udp": false, "assistant.model": false,
 	} {
 		if protectedSetting(key) != want {
 			t.Errorf("%s: %v", key, !want)

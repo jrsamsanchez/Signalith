@@ -39,6 +39,12 @@ func (rt *router) sensitive(pattern string, h http.HandlerFunc) {
 	rt.add(route{Pattern: pattern, Role: users.Admin, Recheck: true}, h)
 }
 
+// selfSensitive registers a route about the signed-in user that asks for
+// the password or code again, like sensitive.
+func (rt *router) selfSensitive(pattern string, h http.HandlerFunc) {
+	rt.add(route{Pattern: pattern, Role: users.Viewer, Anytime: true, Recheck: true}, h)
+}
+
 func (s *Server) routeRecheck(api *router) {
 	api.self("POST /api/me/recheck", s.handleRecheck)
 }
@@ -162,14 +168,17 @@ func (s *Server) handleRecheck(w http.ResponseWriter, r *http.Request) {
 }
 
 // protectedSettings are the settings whose change can weaken how people
-// sign in or how traffic is protected; saving one asks for the password
-// or code again. A name ending in . covers every setting under it.
-var protectedSettings = []string{"auth.", "server.tls.", "server.trusted_proxies", "server.client_header",
-	"server.shared_addresses", "server.proxy_protocol", "syslog.allow"}
+// sign in, how traffic is protected, or where events and secrets go;
+// saving one asks for the password or code again. Each covers the setting
+// of that name and those under it (auth covers auth.oidc.issuer, and
+// server.tls covers server.tls_cert).
+var protectedSettings = []string{"auth", "server.tls", "server.listen", "server.trusted_proxies", "server.client_header",
+	"server.shared_addresses", "server.proxy_protocol", "opensearch", "cluster.opensearch_url", "syslog.allow",
+	"syslog.tls", "syslog.proxy_protocol", "intel.allow_loopback_feeds", "assistant.url", "assistant.mask_fields"}
 
 func protectedSetting(key string) bool {
 	for _, p := range protectedSettings {
-		if key == p || (strings.HasSuffix(p, ".") && strings.HasPrefix(key, p)) {
+		if rest, ok := strings.CutPrefix(key, p); ok && (rest == "" || rest[0] == '.' || rest[0] == '_') {
 			return true
 		}
 	}
@@ -180,7 +189,11 @@ func protectedSetting(key string) bool {
 // changes a protected setting, or puts every setting back.
 func settingsSaveRecheck(raw json.RawMessage) bool {
 	var b settingsRequest
-	if json.Unmarshal(raw, &b) != nil || b.CheckOnly {
+	if json.Unmarshal(raw, &b) != nil {
+		// Asked for whatever it holds; the save refuses it anyway.
+		return true
+	}
+	if b.CheckOnly {
 		return false
 	}
 	if b.ResetAll {

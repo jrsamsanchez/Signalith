@@ -270,7 +270,8 @@ password, so a stolen password alone cannot sign in. Any app that makes 6-digit 
 works: Microsoft Authenticator, Google Authenticator, 1Password, Bitwarden, Authy and
 others. It works for local users, the built-in admin and directory users. Users who
 sign in with single sign-on get their second step from their identity provider, and
-Signalith does not ask again.
+Signalith does not ask again, so require it there: **Require two-step sign-in** does
+not reach them.
 
 **Turn it on.** Open the user menu (your name, top right) and choose **Two-step
 sign-in**, then **Set up**:
@@ -311,7 +312,11 @@ that changes things needs its own account without two-step sign-in.
 
 The app's key is stored encrypted: in `users.json` with the master key, and on servers
 that share their users with the cluster key (re-encrypted when the cluster key is
-rotated). Recovery codes are kept only as hashes.
+rotated). Recovery codes are kept only as hashes keyed with the app's key, so a copy
+of the file without the key that decrypts it gives them away no more than the key
+itself. If the key cannot be decrypted (for example, `users.json` restored next to
+another master key), neither codes from the app nor recovery codes work until an admin
+resets two-step sign-in.
 
 | `code` | When |
 | --- | --- |
@@ -327,14 +332,22 @@ Some changes ask for your password again when you have not entered it in the las
 15 minutes, so someone at a computer you left signed in cannot make them:
 
 - adding, changing, disabling or deleting a user, resetting a password or two-step
-  sign-in, and saving the directory sign-in settings;
-- making an API token, an agent token or a token to add a server, and accepting an
-  old shared agent token;
-- saving a setting that affects sign-in or encryption: **Sign out after**, **Require
-  two-step sign-in** and the other `auth.*` settings, HTTPS (`server.tls.*`),
-  **Trusted reverse proxies**, **Client address header**, **Proxies and gateways**,
-  **PROXY protocol from load balancers** and syslog's **Allowed senders**, or **Reset
-  all**.
+  sign-in, saving the directory sign-in settings, and setting up your own two-step
+  sign-in;
+- making an API token, an agent token or a token to add a server, accepting an old
+  shared agent token, approving a new server, and rotating the cluster key;
+- changing retention policies, the default or the disk guard, and running retention
+  now;
+- switching certificate authority, and saving response actions, playbooks or
+  notifications, or removing the detection content pack;
+- saving a setting that affects sign-in, encryption or where data goes: **Sign out
+  after**, **Require two-step sign-in**, single sign-on and the other `auth.*`
+  settings, HTTPS and the certificate files (`server.tls*`), **Listen address**,
+  **Trusted reverse proxies**, **Client address header**, **Proxies and gateways**, the
+  PROXY protocol, the OpenSearch connection (`opensearch.*` and
+  `cluster.opensearch_url`), syslog over TLS and **Allowed senders**, threat intel
+  feeds on this computer (`intel.allow_loopback_feeds`), the AI assistant's address
+  and masked fields, or **Reset all**.
 
 With two-step sign-in on, a code from your app (or a recovery code) works instead of
 the password. Signing in counts, so for 15 minutes after you sign in nothing is asked.

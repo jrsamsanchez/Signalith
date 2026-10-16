@@ -32,7 +32,8 @@ func TestTOTPMatchesRFC6238(t *testing.T) {
 }
 
 func TestRecoveryCodes(t *testing.T) {
-	codes, digests := newRecoveryCodes()
+	const secret = "JBSWY3DPEHPK3PXP"
+	codes, digests := newRecoveryCodes(secret)
 	if len(codes) != RecoveryCodes || len(digests) != RecoveryCodes {
 		t.Fatalf("%d codes, %d digests", len(codes), len(digests))
 	}
@@ -42,9 +43,25 @@ func TestRecoveryCodes(t *testing.T) {
 			t.Errorf("code %q", c)
 		}
 		seen[c] = true
-		if recoveryDigest(strings.ToUpper(strings.ReplaceAll(c, "-", " "))) != digests[i] {
+		if recoveryDigest(secret, strings.ToUpper(strings.ReplaceAll(c, "-", " "))) != digests[i] {
 			t.Errorf("%q typed in upper case with a space does not match", c)
 		}
+	}
+	// The digest needs the key: the same code under another key differs.
+	if !strings.HasPrefix(digests[0], recoveryV2) || recoveryDigest("GEZDGNBVGY3TQOJQ", codes[0]) == digests[0] {
+		t.Errorf("digest %q", digests[0])
+	}
+	// Codes kept as plain SHA-256 by the first version still work, once.
+	m := &MFA{Secret: secret, Recovery: []string{legacyRecoveryDigest(codes[0]), digests[1]}, Since: time.Now()}
+	next, res, err := useCode(m, codes[0], time.Now())
+	if err != nil || res.Kind != CodeRecovery || res.Left != 1 {
+		t.Fatalf("legacy code: %v %+v", err, res)
+	}
+	if _, _, err := useCode(next, codes[0], time.Now()); !errors.Is(err, ErrWrongCode) {
+		t.Errorf("legacy code again: %v", err)
+	}
+	if _, res, err := useCode(next, codes[1], time.Now()); err != nil || res.Left != 0 {
+		t.Errorf("new code: %v %+v", err, res)
 	}
 }
 
@@ -296,9 +313,10 @@ func TestMFAKeyFromAnotherMasterKey(t *testing.T) {
 	if _, err := other.UseMFACode(ctx, "jdoe", code(t, secret, time.Now().Add(30*time.Second))); !errors.Is(err, ErrWrongCode) {
 		t.Errorf("app code without the key: %v", err)
 	}
-	// Recovery codes still work, and the key is kept as it was.
-	if _, err := other.UseMFACode(ctx, "jdoe", codes[0]); err != nil {
-		t.Errorf("recovery code: %v", err)
+	// Recovery codes are keyed with it, so they are refused too, and the
+	// key is kept as it was.
+	if _, err := other.UseMFACode(ctx, "jdoe", codes[0]); !errors.Is(err, ErrWrongCode) {
+		t.Errorf("recovery code without the key: %v", err)
 	}
 	secrets.SetDefault(prev)
 	back, err := Open(path)

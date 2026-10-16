@@ -78,7 +78,7 @@ func (s *Server) routeClusterJoin(api *router) {
 	api.sensitive("POST /api/cluster/tokens", s.handleJoinTokenNew)
 	api.admin("DELETE /api/cluster/tokens/{id}", s.handleJoinTokenRevoke)
 	api.admin("GET /api/cluster/pending", s.handleJoinPending)
-	api.admin("POST /api/cluster/servers/{id}/approve", s.handleJoinApprove)
+	api.sensitive("POST /api/cluster/servers/{id}/approve", s.handleJoinApprove)
 }
 
 var errNoJoin = errors.New("this server cannot add servers to a cluster: it does not keep shared settings")
