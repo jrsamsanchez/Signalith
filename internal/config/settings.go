@@ -600,6 +600,7 @@ var Excluded = map[string]Exclusion{
 	"notify.file":                {ScopeBootstrap, "The Notifications page keeps its channels and rules there, and a page cannot move a file it depends on. Shown under About this server."},
 	"response.file":              {ScopeBootstrap, "The Response actions page keeps its actions there, and a page cannot move a file it depends on. Shown under About this server."},
 	"playbooks.file":             {ScopeBootstrap, "The Playbooks page keeps its playbooks there, and a page cannot move a file it depends on. Shown under About this server."},
+	"ticketing.file":             {ScopeBootstrap, "The Ticketing page keeps its connections there, and a page cannot move a file it depends on. Shown under About this server."},
 	"response.scripts_dir":       {ScopeServer, "It decides which programs response actions may run, so only signalith.yaml or SIGNALITH_RESPONSE_SCRIPTS_DIR can set it, never a page. Shown under About this server."},
 	"vulns.openvas_address":      {ScopeServer, "OpenVAS runs on the scanning server itself, so it is set there: signalith.yaml or SIGNALITH_OPENVAS_*. Settings > Scanners shows each server’s OpenVAS check."},
 	"vulns.openvas_username":     {ScopeServer, "OpenVAS runs on the scanning server itself, so it is set there: signalith.yaml or SIGNALITH_OPENVAS_*. Settings > Scanners shows each server’s OpenVAS check."},

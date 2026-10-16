@@ -433,8 +433,8 @@ Some changes ask for your password again when you have not entered it in the las
   shared agent token, approving a new server, and rotating the cluster key;
 - changing retention policies, the default or the disk guard, and running retention
   now;
-- switching certificate authority, and saving response actions, playbooks or
-  notifications, or removing the detection content pack;
+- switching certificate authority, and saving response actions, playbooks,
+  notifications or ticketing connections, or removing the detection content pack;
 - linking a Slack or Teams account to yourself, making a code to link one, or confirming
   that a Teams app channel moves to another Teams channel;
 - saving the networks to scan for vulnerabilities, and adding, changing or removing a
@@ -1074,7 +1074,7 @@ request, so a server that has not yet read that change reads it first (see
 `GET /api/detections`, `GET /api/detections/{id}`, `GET /api/detections/{id}/yaml`,
 `GET /api/coverage`, `GET /api/detections/packs`, `GET /api/detections/content`, `GET /api/findings`, `GET /api/findings/summary`,
 `GET /api/findings/{id}`, `GET /api/cases`, `GET /api/cases/summary`,
-`GET /api/cases/{id}`, `GET /api/lookups/context`, `GET /api/lookups/{kind}`, `GET /api/lookuptables`, `GET /api/lookuptables/{name}`,
+`GET /api/cases/{id}`, `GET /api/cases/{id}/tickets` (a case's [Jira and ServiceNow tickets](ticketing.md)), `GET /api/lookups/context`, `GET /api/lookups/{kind}`, `GET /api/lookuptables`, `GET /api/lookuptables/{name}`,
 `GET /api/risk`, `GET /api/risk/object`, `GET /api/intel`, `GET /api/intel/feeds`,
 `GET /api/intel/catalog`, `GET /api/intel/indicators`, `GET /api/intel/lookup`, `GET /api/posture`,
 `GET /api/dashboards`, `GET /api/dashboards/{id}`, `GET /api/dashboards/{id}/yaml`,
@@ -1094,7 +1094,7 @@ clicks still need the Analyst role), and the web UI.
 `PATCH /api/findings/{id}`, `POST /api/cases`, `PATCH /api/cases/{id}`,
 `POST /api/cases/{id}/findings`, `DELETE /api/cases/{id}/findings/{fid}`,
 `POST /api/cases/{id}/entries`, `DELETE /api/cases/{id}/entries/{entry}`,
-`POST /api/cases/{id}/entities`, `POST /api/dashboards`, `PUT /api/dashboards/{id}`,
+`POST /api/cases/{id}/entities`, `POST /api/cases/{id}/tickets` (opening a [ticket](ticketing.md) for a case), `POST /api/dashboards`, `PUT /api/dashboards/{id}`,
 `DELETE /api/dashboards/{id}`, `POST /api/dashboards/{id}/panels`, `POST /api/notebooks`,
 `PUT /api/notebooks/{id}`, `DELETE /api/notebooks/{id}`, `POST /api/notebooks/{id}/cells`,
 `POST /api/notebooks/{id}/cases`, `DELETE /api/notebooks/{id}/cases/{case}` (an analyst changes
@@ -1164,6 +1164,8 @@ page; see [servers.md](servers.md#upgrading-servers-you-set-up-by-hand)), `GET /
 run; see [servers.md](servers.md#shared-feeds-and-retention-policies)), every
 `/api/notify` route (the Notifications page; see [notifications.md](notifications.md)),
 `GET /api/chat/links` and `DELETE /api/chat/links/{id}` (every linked chat account), every
+`/api/ticketing` route (`GET` and `PUT /api/ticketing`, `POST /api/ticketing/test`: Settings >
+Ticketing; see [ticketing.md](ticketing.md)), every
 `/api/retention` route (see [retention.md](retention.md)), `GET /api/audit`,
 `GET /api/audit/servers` and `GET /api/audit/verify` (the [Audit page](audit.md)), every
 `/api/users`, `/api/auth/directory`, `/api/auth/oidc` and `/api/auth/scim` route below (the last
