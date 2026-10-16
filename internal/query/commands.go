@@ -510,3 +510,111 @@ func inputLookupString(c *InputLookup) string {
 	}
 	return "inputlookup " + c.Table
 }
+
+// Regex keeps rows whose field matches a regular expression, or with !=
+// those that do not: regex process="(?i)-enc\s". With no field it looks
+// at _raw.
+type Regex struct {
+	Field   string
+	Pattern string
+	Negate  bool
+}
+
+func (*Regex) Name() string { return "regex" }
+
+func (p *parser) parseRegex(cmd token) (Command, error) {
+	const usage = `regex expects: regex field="<regular expression>", field!="..." or "<regular expression>"`
+	r := &Regex{Field: "_raw"}
+	t := p.peek()
+	var pat token
+	switch {
+	case (t.kind == tokWord || t.kind == tokString) && p.peekAt(1).kind == tokOp && (p.peekAt(1).text == "=" || p.peekAt(1).text == "!="):
+		p.next()
+		op := p.next()
+		r.Field, r.Negate = t.text, op.text == "!="
+		if r.Field == "" {
+			return nil, errorf(t.pos, "regex needs a field name before %s", op.text)
+		}
+		pat = p.next()
+		if pat.kind != tokString && pat.kind != tokWord {
+			return nil, errorf(pat.pos, usage)
+		}
+	case t.kind == tokString:
+		pat = p.next()
+	default:
+		return nil, errorf(cmd.pos, usage)
+	}
+	if len(pat.text) > MaxRexPattern {
+		return nil, errorf(pat.pos, "the regex pattern is %d characters long; the limit is %d", len(pat.text), MaxRexPattern)
+	}
+	if _, err := regexp.Compile(pat.text); err != nil {
+		return nil, errorf(pat.pos, "regex pattern: %v", err)
+	}
+	r.Pattern = pat.text
+	return r, p.endCommand()
+}
+
+func regexString(c *Regex) string {
+	if c.Field == "_raw" && !c.Negate {
+		return "regex " + quote(c.Pattern)
+	}
+	op := "="
+	if c.Negate {
+		op = "!="
+	}
+	return "regex " + FormatValue(c.Field) + op + quote(c.Pattern)
+}
+
+// MakeResults starts a search with rows made up on the spot, each with
+// only _time, for trying out eval and other commands: | makeresults count=3.
+type MakeResults struct {
+	Count int
+}
+
+func (*MakeResults) Name() string { return "makeresults" }
+
+// MaxMakeResults caps makeresults count=.
+const MaxMakeResults = 10000
+
+func (p *parser) parseMakeResults() (Command, error) {
+	m := &MakeResults{Count: 1}
+	for p.peek().kind == tokWord && p.peekAt(1).kind == tokOp && p.peekAt(1).text == "=" {
+		t := p.next()
+		p.next()
+		if !strings.EqualFold(t.text, "count") {
+			return nil, errorf(t.pos, "unknown makeresults option %q; makeresults takes count=", t.text)
+		}
+		at := p.peek().pos
+		n, err := p.int()
+		if err != nil {
+			return nil, err
+		}
+		if n < 1 || n > MaxMakeResults {
+			return nil, errorf(at, "makeresults count is 1 to %d", MaxMakeResults)
+		}
+		m.Count = n
+	}
+	return m, p.endCommand()
+}
+
+func makeResultsString(c *MakeResults) string {
+	if c.Count == 1 {
+		return "makeresults"
+	}
+	return "makeresults count=" + strconv.Itoa(c.Count)
+}
+
+// FieldsRemove drops fields from the rows: fields - _raw, tmp_*.
+type FieldsRemove struct {
+	Fields []string
+}
+
+func (*FieldsRemove) Name() string { return "fields" }
+
+func fieldsRemoveString(c *FieldsRemove) string {
+	names := make([]string, len(c.Fields))
+	for i, f := range c.Fields {
+		names[i] = formatName(f)
+	}
+	return "fields - " + strings.Join(names, ", ")
+}

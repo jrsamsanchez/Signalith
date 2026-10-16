@@ -114,8 +114,24 @@ func (q *Query) Drilldown() *Drill {
 		case *Rex:
 			// Its groups can overwrite any column.
 			clear(fields)
-		case *Stats, *Top, *Timechart:
-			// A summary of a summary: only the time range still holds.
+		case *Bin:
+			// Buckets are in no event.
+			if c.As != "" {
+				delete(fields, c.As)
+			} else {
+				delete(fields, c.Field)
+			}
+		case *StreamStats:
+			for _, a := range c.Aggs {
+				delete(fields, a.Column())
+			}
+		case *EventStats:
+			for _, a := range c.Aggs {
+				delete(fields, a.Column())
+			}
+		case *Stats, *Top, *Timechart, *Append, *AppendPipe:
+			// A summary of a summary, or rows from elsewhere: only the
+			// time range still holds.
 			clear(fields)
 			d.Series = ""
 		}

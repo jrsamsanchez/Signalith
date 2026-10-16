@@ -186,7 +186,7 @@ type Result struct {
 type Plan struct {
 	Index string         `json:"index"`
 	Body  map[string]any `json:"body"`
-	Mode  string         `json:"mode"` // events, stats, timechart, top, inputlookup
+	Mode  string         `json:"mode"` // events, stats, timechart, top, inputlookup, makeresults
 
 	transform query.Command
 	post      []query.Command
@@ -256,14 +256,32 @@ func (e *Engine) Compile(q *query.Query) (*Plan, error) {
 		return nil, err
 	}
 	// A subsearch that does not compile fails the search before it runs.
-	for _, c := range p.post {
-		if j, ok := c.(*query.Join); ok {
-			if _, err := e.Compile(subsearch(j, q)); err != nil {
-				return nil, err
+	if err := e.compileSubsearches(p.post, q); err != nil {
+		return nil, err
+	}
+	return p, nil
+}
+
+func (e *Engine) compileSubsearches(cmds []query.Command, q *query.Query) error {
+	for _, c := range cmds {
+		var sub *query.Query
+		switch c := c.(type) {
+		case *query.Join:
+			sub = c.Sub
+		case *query.Append:
+			sub = c.Sub
+		case *query.AppendPipe:
+			if err := e.compileSubsearches(c.Commands, q); err != nil {
+				return err
+			}
+		}
+		if sub != nil {
+			if _, err := e.Compile(subsearch(sub, q)); err != nil {
+				return err
 			}
 		}
 	}
-	return p, nil
+	return nil
 }
 
 func (e *Engine) compile(q *query.Query) (*Plan, error) {
@@ -273,6 +291,9 @@ func (e *Engine) compile(q *query.Query) (*Plan, error) {
 		if c, ok := cmds[0].(*query.InputLookup); ok {
 			// The rows come from a lookup table, not from OpenSearch.
 			return &Plan{Mode: "inputlookup", transform: c, post: cmds[1:]}, nil
+		}
+		if c, ok := cmds[0].(*query.MakeResults); ok {
+			return &Plan{Mode: "makeresults", transform: c, post: cmds[1:]}, nil
 		}
 	}
 
@@ -435,7 +456,8 @@ func needsAllEvents(cmds []query.Command) bool {
 		switch c.(type) {
 		case *query.Head:
 			return false
-		case *query.Sort, *query.Where, *query.Stats, *query.Top, *query.Dedup, *query.EventStats, *query.Transaction:
+		case *query.Sort, *query.Where, *query.Stats, *query.Top, *query.Dedup, *query.EventStats, *query.Transaction,
+			*query.StreamStats, *query.Regex, *query.AppendPipe:
 			return true
 		}
 	}
@@ -447,7 +469,8 @@ func leadingHead(cmds []query.Command) (int, bool) {
 		switch c := c.(type) {
 		case *query.Head:
 			return c.N, true
-		case *query.Table, *query.Rename, *query.Enrich, *query.Intel, *query.Eval, *query.Rex, *query.Fillnull, *query.Lookup:
+		case *query.Table, *query.Rename, *query.Enrich, *query.Intel, *query.Eval, *query.Rex, *query.Fillnull, *query.Lookup,
+			*query.Bin, *query.FieldsRemove:
 			continue
 		}
 		return 0, false
@@ -539,9 +562,12 @@ func (e *Engine) execute(ctx context.Context, q *query.Query) (*Result, error) {
 func (e *Engine) run(ctx context.Context, q *query.Query, p *Plan) (*Result, error) {
 	var res *Result
 	var err error
-	if c, ok := p.transform.(*query.InputLookup); ok {
+	switch c := p.transform.(type) {
+	case *query.InputLookup:
 		res, err = e.inputLookup(c)
-	} else {
+	case *query.MakeResults:
+		res = makeResults(c)
+	default:
 		res, err = e.fetch(ctx, p)
 	}
 	if err != nil {
@@ -550,9 +576,18 @@ func (e *Engine) run(ctx context.Context, q *query.Query, p *Plan) (*Result, err
 	if p.threat != nil {
 		e.threatAnnotate(res, p.threat, p.Mode == "events")
 	}
-	for _, c := range p.post {
+	if err := e.post(ctx, res, p.post, q); err != nil {
+		return nil, err
+	}
+	return res, nil
+}
+
+// post runs commands over rows held in memory; q is the query they belong
+// to, whose time range subsearches inherit.
+func (e *Engine) post(ctx context.Context, res *Result, cmds []query.Command, q *query.Query) error {
+	for _, c := range cmds {
 		if err := ctx.Err(); err != nil {
-			return nil, err
+			return err
 		}
 		var err error
 		switch c := c.(type) {
@@ -562,16 +597,20 @@ func (e *Engine) run(ctx context.Context, q *query.Query, p *Plan) (*Result, err
 			err = e.lookup(ctx, res, c)
 		case *query.Join:
 			err = e.join(ctx, res, c, q)
+		case *query.Append:
+			err = e.appendSearch(ctx, res, c, q)
+		case *query.AppendPipe:
+			err = e.appendPipe(ctx, res, c, q)
 		case *query.Intel:
 			err = e.intelEnrich(res, c)
 		default:
 			err = applyCommand(ctx, res, c)
 		}
 		if err != nil {
-			return nil, err
+			return err
 		}
 	}
-	return res, nil
+	return nil
 }
 
 func (e *Engine) fetch(ctx context.Context, p *Plan) (*Result, error) {

@@ -47,6 +47,7 @@ In a regular expression that means `\.` stays `\.`, and a literal backslash is
 | --- | --- | --- |
 | `stats` | `stats count, dc(user) as users, perc95(bytes) by src, dest` | Functions are listed [below](#stats-functions) |
 | `eventstats` | `eventstats avg(bytes) as avg_bytes by src` | Same [functions](#stats-functions) as `stats`, but adds the results to every row instead of replacing the rows, so later commands can compare each event with its group: `\| where bytes > avg_bytes * 10` |
+| `streamstats` | `streamstats current=f window=5 avg(bytes) as prev_avg by src` | Adds running results to each row, over the rows before it in result order (events come newest first; `sort` first for oldest first). Takes `count`, `dc`, `sum`, `avg`, `min`, `max`, `range`, `first` and `last`. `current=f` leaves the row itself out; `window=N` (up to 10,000) looks back over the last N rows of each group |
 | `timechart` | `timechart span=1h count by action` | One aggregation when splitting by a field; span picked automatically if omitted |
 | `top` | `top limit=10 process_name by host` | Adds `count` and `percent` |
 | `rare` | `rare limit=10 process_name by host` | Like `top`, least common values first |
@@ -56,12 +57,17 @@ In a regular expression that means `\.` stays `\.`, and a literal backslash is
 | `dedup` | `dedup user, host` | Keeps the first row for each combination of values; `dedup 3 user` keeps three. Events come newest first, so this keeps the latest. Rows missing a field are dropped unless `keepempty=true`; `consecutive=true` only drops repeats that follow each other. Sort before `dedup` to choose which row stays |
 | `transaction` | `transaction host, user maxspan=30m startswith="Accepted" endswith=(action=logoff)` | Groups events that share the fields' values into one row each, oldest event first: `_time` is the first event's, `duration` the seconds to the last, `eventcount` how many, `_raw` their raw text one per line, and other fields the distinct values. A transaction ends where the next event would pass `maxspan=` (first to last) or `maxpause=` (between events) or `maxevents=` (default 1,000), or matches `startswith=`. With `startswith=`, events before a start are left out; with `endswith=`, transactions that never end are left out. Both take text found in `_raw` or a search in parentheses. Events missing a field are left out |
 | `join` | `join type=left user [search datamodel=Change \| stats count as changes by user]` | Adds the fields of a subsearch's rows to the rows that share the join fields' values; the subsearch's values win. `type=inner` (the default) drops rows with no match, `type=left` keeps them. Each row takes the first match, `max=N` up to N, `max=0` all (up to 100). The subsearch searches the same time range unless it sets its own, may start with `search`, and counts toward the same limits; a query runs at most 10 subsearches, nested at most 3 deep |
+| `append` | `append [search datamodel=Change \| stats count by user]` | Adds a subsearch's rows after the results. The subsearch works as in `join` and counts toward the same limits |
+| `appendpipe` | `appendpipe [stats sum(count) as count \| eval user="TOTAL"]` | Runs the commands in `[ ]` over a copy of the results so far and adds the rows they give after them, for totals and summary rows. `inputlookup`, `makeresults`, `timechart` and `threatmatch` cannot run inside |
+| `bin` | `bin span=1h _time` | Rounds values down into buckets so `stats ... by _time` groups them: a time span (`30s`, `15m`, `1h`, `1d`, `1w`; weeks start on Monday, all in UTC) on times, or a number span (`span=100`) that turns numbers into ranges like `200-300`. `AS name` writes the bucket to another field. Also `bucket` |
+| `regex` | `regex process="(?i)-enc(odedcommand)?\s"` | Keeps rows where the field matches an [RE2](https://github.com/google/re2/wiki/Syntax) regular expression (any value of a multivalue field); `field!="..."` keeps those that do not. `regex "..."` looks at `_raw`. Rows without the field never match |
 | `fillnull` | `fillnull value=0 bytes, packets` | Sets missing values (default `0`). With no fields it fills every column |
 | `sort` | `sort -count, src` | `-` for descending |
 | `head` | `head 20` | Also `limit` |
-| `table` | `table _time, user, src` | Also `fields`; wildcards allowed |
+| `table` | `table _time, user, src` | Also `fields`; wildcards allowed. `fields - _raw, tmp_*` removes fields instead |
 | `rename` | `rename src as source_ip` | |
 | `lookup` | `lookup owners host OUTPUT owner, team` | Adds columns from a lookup table (Settings > Lookups) to rows whose field matches a key column; `host AS dest` matches another field, `OUTPUTNEW` fills only missing fields, no `OUTPUT` adds every column. See [Lookup tables](https://github.com/jrsamsanchez/signalith/blob/main/docs/lookups.md) |
+| `makeresults` | `\| makeresults count=3 \| eval user="test"` | Starts a search with rows that hold only `_time` (now), for trying out `eval` and other commands; `count=N` makes up to 10,000. It must come first, with nothing before the `\|` |
 | `inputlookup` | `\| inputlookup owners \| stats count by team` | Starts a search with a lookup table's rows instead of events; `max=N` reads at most N rows. It must come first, with nothing before the `\|` |
 | `enrich` | `enrich` or `enrich user, dest` | Adds asset and identity context: `<field>_priority`, `_category`, `_bunit`, plus `_owner`, `_location` for assets and `_name`, `_email`, `_manager`, `_watchlist` for users. With no fields it enriches `user`, `src_user`, `src`, `dest`, `host`, `src_host`, `dest_host` and `risk_object` |
 | `threatmatch` | `threatmatch` or `threatmatch src, dest` | Keeps only events where a field equals a threat intel indicator. Runs inside OpenSearch, so it must come right after the search (before `stats` and other commands). Adds `threat_match_field`, `threat_match_value`, `threat_indicator`, `threat_type`, `threat_source`, `threat_weight`, `threat_description` and `threat_target` (the system on your side) to each event |
@@ -175,7 +181,8 @@ model is configured, questions with unknown words go to it; see
 - `threatmatch` becomes `terms` filters of indicator values (10,000 per clause) and
   prefix filters for networks, so matching runs inside OpenSearch too.
 - Commands after that run in the Signalith server on the aggregated rows. So do `eval`,
-  `rex`, `dedup`, `eventstats`, and a `where` written as an expression, wherever they are.
+  `rex`, `dedup`, `eventstats`, `streamstats`, `bin`, `regex`, `append`, `appendpipe`, and a
+  `where` written as an expression, wherever they are.
 - An event search without `stats` returns the newest 100 events, or up to
   `search.max_events` (at most 100,000) when later commands need to sort, filter,
   de-duplicate or aggregate them all. To work on more events, filter in the search or
