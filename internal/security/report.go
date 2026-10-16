@@ -211,6 +211,7 @@ var checks = []def{
 	{"transit.certificate", "transit", "HTTPS certificate", 12, checkCertificate},
 	{"transit.ca_scope", "transit", "Certificate authority", 13, checkCAScope},
 	{"transit.agents_plain", "transit", "Agents on plain HTTP", 11, checkAgentsPlain},
+	{"transit.agent_port", "transit", "Agent port", 28, checkAgentPort},
 	{"transit.syslog", "transit", "Syslog", 16, checkSyslog},
 	{"transit.opensearch", "transit", "Connection to OpenSearch", 1, checkOpenSearchTransit},
 	{"transit.outbound", "transit", "AI assistant and threat intel", 7, checkOutbound},

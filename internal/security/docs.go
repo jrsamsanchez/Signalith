@@ -67,6 +67,7 @@ var (
 	docServersIdentity = DocLink{File: "servers.md", Anchor: "identity"}
 	docServersCRL      = DocLink{File: "servers.md", Anchor: "ending-a-servers-opensearch-access-at-once"}
 	docSecSyslog       = DocLink{File: "security.md", Anchor: "syslog"}
+	docAgentPortUp     = DocLink{File: "sending-data.md", Anchor: "upgrading-to-03"}
 	docSecDisk         = DocLink{File: "security.md", Anchor: "disk-encryption"}
 	docSecOSDisk       = DocLink{File: "security.md", Anchor: "where-opensearch-keeps-events"}
 	docSecFiles        = DocLink{File: "security.md", Anchor: "file-permissions"}
