@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -460,4 +461,91 @@ type carryCase struct {
 	role users.Role
 	hash string
 	kept bool
+}
+
+// At shared.LevelTenants a provider user's session moves to a tenant on
+// one server and works there on every server; the tenant is in the MAC,
+// so moving a session to another tenant in OpenSearch ends it. Tenant
+// users are kept as tenant users.
+func TestTenantSessionsAcrossServers(t *testing.T) {
+	o, a, b, _ := pair(t)
+	ctx := context.Background()
+	if !a.docs.TenantsOn() {
+		t.Fatal("a new cluster is below the tenants' level")
+	}
+	a.addUser("pat", users.Analyst)
+	ada, err := a.store.Create(ctx, users.NewUser{Username: "ada", Role: users.Admin, Tenant: "acme", Password: "a-good-password"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.cycle()
+	if u, ok := b.store.Get("ada"); !ok || u.Tenant != "acme" || ada.Tenant != "acme" {
+		t.Fatalf("ada on B: %+v %v", u, ok)
+	}
+	if err := a.sessions.SetTenant(ctx, a.signIn("ada", false), "beta"); err == nil {
+		t.Error("a tenant user's session switched tenants")
+	}
+	cookie := a.signIn("pat", false)
+	if err := a.sessions.SetTenant(ctx, cookie, "acme"); err != nil {
+		t.Fatal(err)
+	}
+	b.cycle()
+	for _, s := range []*server{a, b} {
+		if got, ok := s.sessions.Lookup(ctx, cookie, false); !ok || got.Tenant != "acme" {
+			t.Errorf("%s: session %+v %v, want tenant acme", s.name, got, ok)
+		}
+	}
+	if err := b.sessions.SetTenant(ctx, cookie, ""); err != nil {
+		t.Fatal(err)
+	}
+	a.cycle()
+	if got, ok := a.sessions.Lookup(ctx, cookie, false); !ok || got.Tenant != "" {
+		t.Errorf("A after switching back on B: %+v %v", got, ok)
+	}
+	for _, bad := range []string{"ACME", "default", "a"} {
+		if err := a.sessions.SetTenant(ctx, cookie, bad); err == nil {
+			t.Errorf("switched to %q", bad)
+		}
+	}
+
+	// Moved to another tenant outside Signalith: refused and audited.
+	if err := a.sessions.SetTenant(ctx, cookie, "acme"); err != nil {
+		t.Fatal(err)
+	}
+	index := shared.SessionsIndex(testPrefix)
+	src := o.fake.Source(index, SessionID(cookie))
+	src["tenant"] = "beta"
+	o.fake.Put(index, SessionID(cookie), src)
+	b.cycle()
+	if b.valid(cookie) {
+		t.Fatal("a session moved to another tenant in OpenSearch is accepted")
+	}
+	if !strings.Contains(b.logs.String(), "session.tamper") {
+		t.Error("the moved session was not audited")
+	}
+}
+
+// Below shared.LevelTenants no server keeps a tenant user or a session's
+// tenant, and one found anyway is never read as the provider's.
+func TestNoTenantsBelowTheirLevel(t *testing.T) {
+	_, a, b, _ := pair(t)
+	ctx := context.Background()
+	a.addUser("pat", users.Analyst)
+	b.cycle()
+	cookie := a.signIn("pat", false)
+	if err := a.sessions.SetTenant(ctx, cookie, "acme"); err != nil {
+		t.Fatal(err)
+	}
+	never := func() bool { return false }
+	a.docs.Tenants, b.docs.Tenants = never, never
+	if _, err := a.store.Create(ctx, users.NewUser{Username: "ada", Role: users.Admin, Tenant: "acme", Password: "a-good-password"}); !errors.Is(err, ErrTenantUsers) {
+		t.Errorf("tenant user below the level: %v", err)
+	}
+	if err := a.sessions.SetTenant(ctx, cookie, ""); !errors.Is(err, ErrTenantUsers) {
+		t.Errorf("switch below the level: %v", err)
+	}
+	b.cycle()
+	if b.valid(cookie) {
+		t.Error("a session with a tenant is read below the tenants' level")
+	}
 }

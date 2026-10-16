@@ -6,9 +6,9 @@ events, findings, investigations, detections, dashboards, hunting notebooks, lis
 notifications, retention and agent tokens, and its own users.
 
 !!! note "Being built"
-    Multi-tenant mode arrives in steps. This version runs tenants on a server that does
-    not share its users with other servers; the Settings page and the tenant picker come
-    next. An install without tenants works exactly as before.
+    Multi-tenant mode arrives in steps. This version runs tenants and has an API for them;
+    the Settings page and the tenant picker come next. An install without tenants works
+    exactly as before.
 
 ## Who is who
 
@@ -69,10 +69,17 @@ Tenant IDs are 2 to 24 lower-case letters and digits, starting with a letter, su
 
 ## Limits of this version
 
-- Tenants work on a server that keeps its users in its own files. Once servers share
-  their users in OpenSearch, which a server running the background jobs sets up on its
-  own, tenants cannot be added and provider users cannot switch; the next version lifts
-  this.
+- While servers share their settings in OpenSearch (which a server that runs the
+  background jobs sets up by itself, even on its own), tenants need every server on a
+  version that supports them: the cluster then moves to level 10, and older versions
+  refuse to start. Until it has, tenants cannot be added and provider users cannot
+  switch.
+- Tenants run on the server that runs the background jobs, and their list is kept in its
+  state folder. Every other server refuses tenants' users, tenants' agents and provider
+  users switched into a tenant (`503`, code `tenant_unavailable`), and so does a server
+  that gives the background jobs up; the tenant's data waits in OpenSearch. Point
+  tenants' users and agents at that server. A switch shows on the other servers within
+  one poll of the shared settings, about 15 seconds at most.
 - Directory (LDAP) and single sign-on users are provider users.
 - Syslog, Microsoft 365, Okta, vulnerability scans, network sensors, osquery hosts, API tokens and
   compliance notes are the default tenant's. Content updates of the detections go to the

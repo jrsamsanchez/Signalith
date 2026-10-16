@@ -54,6 +54,11 @@ type Docs struct {
 	// tokenUse is when this server last tried to write each API token's
 	// LastUsed (NoteAPITokenUse).
 	tokenUse map[string]time.Time
+
+	// Tenants reports whether the cluster keeps tenants
+	// (shared.Runtime.Tenants), the one place that decides it; nil is
+	// never.
+	Tenants func() bool
 }
 
 // Kinds of change subscribers hear of.

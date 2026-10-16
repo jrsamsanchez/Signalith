@@ -171,7 +171,7 @@ func TestSwitchedTenantTurnedOff(t *testing.T) {
 	reg, _ := tenants.Open(tenants.File(t.TempDir()))
 	reg.Add("acme", "Acme", "test", time.Now())
 	ts, _ := newTestServerWith(t, func(s *Server) {
-		s.Tenants = reg
+		s.Tenants, s.TenantRuntime = reg, &fakeTenantRuntime{}
 		s.Users = users.NewMemory()
 		s.Users.Create(context.Background(), users.NewUser{Username: "pat", Role: users.Analyst, Password: "role-password"})
 	})
@@ -338,6 +338,7 @@ type fakeTenantRuntime struct{ changed []string }
 func (f *fakeTenantRuntime) Server(string) *Server { return nil }
 func (f *fakeTenantRuntime) Servers() []*Server    { return nil }
 func (f *fakeTenantRuntime) SettingsChanged()      {}
+func (f *fakeTenantRuntime) Ready() error          { return nil }
 func (f *fakeTenantRuntime) Changed(_ context.Context, id string) error {
 	f.changed = append(f.changed, id)
 	return nil
@@ -391,6 +392,7 @@ func (o oneTenant) Server(id string) *Server {
 func (o oneTenant) Servers() []*Server                    { return []*Server{o.srv} }
 func (o oneTenant) Changed(context.Context, string) error { return nil }
 func (o oneTenant) SettingsChanged()                      {}
+func (o oneTenant) Ready() error                          { return nil }
 
 // A tenant's requests are answered by its own server, with its own data,
 // whoever asks: its users, and the provider's users switched into it.

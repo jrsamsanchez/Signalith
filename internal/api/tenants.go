@@ -115,6 +115,8 @@ type TenantRuntime interface {
 	// SettingsChanged has every tenant's server follow the settings
 	// applied at once on this server (see Server.FollowLive).
 	SettingsChanged()
+	// Ready says why this server cannot run tenants now, or nil.
+	Ready() error
 }
 
 // tenantKey is the tenant of this server's data: tenants.Default for the
@@ -201,7 +203,9 @@ func (s *Server) agentTenant(r *http.Request) *Server {
 // to, else the default tenant. lost says why the session's tenant can no
 // longer be used, when it cannot (turned off or removed, or the user may
 // no longer switch): the request is then refused (see allow), never
-// answered with the default tenant's data instead.
+// answered with the default tenant's data instead. A server that does
+// not run the tenants now (another server of a cluster) refuses the
+// tenant's requests but leaves a session of a tenant turned off as it is.
 func (s *Server) activeTenant(p *principal, session string) (active, lost string) {
 	if p.Tenant != "" {
 		return p.Tenant, ""
@@ -214,7 +218,7 @@ func (s *Server) activeTenant(p *principal, session string) (active, lost string
 		// lowered since cannot stay in the tenant.
 		return session, "Your role no longer lets you work in other tenants. You are back in the default tenant."
 	}
-	if !s.tenantUsable(session) {
+	if runs := s.TenantRuntime != nil && s.TenantRuntime.Ready() == nil; runs && !s.tenantUsable(session) {
 		return session, fmt.Sprintf("Tenant %q was turned off or removed. You are back in the default tenant.", session)
 	}
 	return session, ""
@@ -233,9 +237,13 @@ func (s *Server) tenantsWritable(w http.ResponseWriter) bool {
 	switch {
 	case s.Tenants == nil:
 		writeError(w, http.StatusServiceUnavailable, errors.New("the list of tenants cannot be read; see the server's log"))
-	case s.SharedUsers != nil || s.TenantRuntime == nil:
-		writeError(w, http.StatusConflict, errors.New("tenants need a single Signalith server for now; this one shares its users with other servers"))
+	case s.TenantRuntime == nil:
+		writeError(w, http.StatusConflict, errors.New("this server cannot run tenants"))
 	default:
+		if err := s.TenantRuntime.Ready(); err != nil {
+			writeError(w, http.StatusConflict, err)
+			return false
+		}
 		return true
 	}
 	return false

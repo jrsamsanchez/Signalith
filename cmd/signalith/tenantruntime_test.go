@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -8,14 +9,16 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jrsamsanchez/signalith/internal/cluster/ostest"
 )
 
 // A tenant added on a running server gets data of its own: its agents'
 // events go to its indices only, its users see only its data, and the
 // default tenant's agents and users never reach it.
 func TestTenantsDataStaysApart(t *testing.T) {
-	// Without the background jobs this server never founds a cluster,
-	// whose shared users cannot have tenants yet.
+	// Without the background jobs this server never founds a cluster:
+	// a server that keeps its users in its own files.
 	rs := startRunnerWith(t, runOptions{server: plainHTTP})
 	must := func(method, path, body string, want int) map[string]any {
 		t.Helper()
@@ -207,5 +210,74 @@ func TestTenantsDataStaysApart(t *testing.T) {
 	}
 	if code, _, _ := ada.call("", "GET", "/api/findings", ""); code == 200 {
 		t.Error("a user of a tenant turned off was let in")
+	}
+}
+
+// In a cluster at the tenants' level, tenants run on the server that runs
+// the background jobs. Another server refuses tenants' users, provider
+// users switching and tenants' agents; so does the first once it gave the
+// jobs up, rather than serve data it no longer keeps up to date.
+func TestTenantsInACluster(t *testing.T) {
+	t.Setenv(clusterKeyFileEnv, "")
+	fos := ostest.New(t)
+	a := startRunnerWith(t, runOptions{scheduler: true, server: plainHTTP, os: fos, name: "siem-a"})
+	a.usersShared()
+	giveKey(t, a)
+	b := startRunnerWith(t, runOptions{scheduler: true, server: plainHTTP, os: fos, name: "siem-b"})
+	b.usersShared()
+	must := func(rs *running, method, path, body string, want int) map[string]any {
+		t.Helper()
+		code, out, err := rs.call("", method, path, body)
+		if err != nil || code != want {
+			t.Fatalf("%s %s %s: %d %v %v, want %d", rs.r.node.Name(), method, path, code, out, err, want)
+		}
+		return out
+	}
+	eventually(t, "the cluster keeps tenants", func() bool { return a.r.shared.Tenants() && b.r.shared.Tenants() })
+	must(a, "POST", "/api/tenants", `{"id":"acme","name":"Acme"}`, http.StatusCreated)
+	must(a, "POST", "/api/tenants/switch", `{"tenant":"acme"}`, 200)
+	must(a, "POST", "/api/users", `{"username":"ada","role":"analyst","password":"Long-pass-for-acme-9","must_change_password":false}`, http.StatusCreated)
+	token, _ := must(a, "POST", "/api/agent-tokens", `{"name":"acme agents"}`, http.StatusCreated)["secret"].(string)
+	ingest := func(rs *running) int {
+		t.Helper()
+		req, _ := http.NewRequest("POST", "http://"+rs.addr+"/api/ingest", strings.NewReader(`[{"log":"acme"}]`))
+		req.Header.Set("Authorization", "Bearer "+token)
+		resp, err := noFollow.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	eventually(t, "acme's agent is accepted on A", func() bool { return ingest(a) == 200 })
+	// The session's tenant is shared: B, which runs no tenant, refuses.
+	b.cookie = a.cookie
+	if code, out, _ := b.call("", "GET", "/api/findings", ""); code != http.StatusServiceUnavailable || out["code"] != "tenant_unavailable" {
+		t.Errorf("B on acme's findings: %d %v", code, out)
+	}
+	if code := ingest(b); code == 200 {
+		t.Error("B accepted acme's agent")
+	}
+	saved := b.cookie
+	// Once B has read ada, she is refused: B runs no tenant.
+	eventually(t, "B read acme's user", func() bool {
+		if err := b.r.shared.Hub().Cycle(context.Background()); err != nil {
+			return false
+		}
+		_, ok := b.r.srv.Load().Users.Get("ada")
+		return ok
+	})
+	if code := b.signInAs("ada", "Long-pass-for-acme-9"); code != http.StatusForbidden {
+		t.Errorf("acme's user signing in on B: %d", code)
+	}
+	b.cookie = saved
+	// A gives the jobs up: it refuses acme's requests and agents too.
+	a.r.node.Drain("test")
+	eventually(t, "A gave the jobs up", func() bool { return !a.r.node.RunsJobs() })
+	if code, out, _ := a.call("", "GET", "/api/findings", ""); code != http.StatusServiceUnavailable || out["code"] != "tenant_unavailable" {
+		t.Errorf("A on acme's findings without the jobs: %d %v", code, out)
+	}
+	if code := ingest(a); code == 200 {
+		t.Error("A accepted acme's agent without the jobs")
 	}
 }

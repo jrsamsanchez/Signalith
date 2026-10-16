@@ -1899,10 +1899,14 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	}
 	tokenSrv.Store(srv)
 	in.srv, in.handler = srv, srv.Handler()
-	if srv.Tenants != nil && parts == nil {
-		// Each tenant's data, on this server only for now: tenants' users
-		// cannot be kept in the shared settings of a cluster yet.
+	if srv.Tenants != nil {
+		// Each tenant's data. While the users are shared, on the server
+		// that runs the background jobs only, once the cluster keeps
+		// tenants (tenantRuntime.Ready).
 		tr := newTenantRuntime(ctx, r, c, cl, srv.Tenants, srv)
+		if parts != nil {
+			tr.sharedOK = r.shared.Tenants
+		}
 		srv.TenantRuntime, in.tenants = tr, tr
 		in.jobs.Go(tr.startAll)
 	}

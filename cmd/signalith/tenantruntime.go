@@ -15,6 +15,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/assets"
 	"github.com/jrsamsanchez/signalith/internal/cases"
 	"github.com/jrsamsanchez/signalith/internal/cluster"
+	"github.com/jrsamsanchez/signalith/internal/clusterauth"
 	"github.com/jrsamsanchez/signalith/internal/config"
 	"github.com/jrsamsanchez/signalith/internal/content"
 	"github.com/jrsamsanchez/signalith/internal/dashboards"
@@ -50,8 +51,11 @@ type tenantRuntime struct {
 	front *api.Server
 	ctx   context.Context
 	log   *slog.Logger
-	// leader reports whether this server runs the background jobs now.
-	leader func() bool
+	// leader reports whether this server runs the background jobs now,
+	// and sharedOK, set while the users are shared, whether the cluster
+	// keeps tenants (shared.LevelTenants).
+	leader   func() bool
+	sharedOK func() bool
 
 	// changing makes Changed one at a time; mu guards running, which
 	// requests read while a tenant starts.
@@ -92,7 +96,28 @@ func (t *tenantRuntime) startAll() {
 	}
 }
 
+// Ready says why this server cannot run tenants now: while servers share
+// their users, tenants run on the one that runs the background jobs, and
+// only once every server reads tenants. Tenants' requests and agents are
+// refused on the others, and on a server that lost the job lease, rather
+// than answered with data it no longer keeps up to date.
+func (t *tenantRuntime) Ready() error {
+	if t.sharedOK == nil {
+		return nil
+	}
+	if !t.sharedOK() {
+		return clusterauth.ErrTenantUsers
+	}
+	if !t.leader() {
+		return errors.New("tenants run on the server that runs the background jobs; use that one")
+	}
+	return nil
+}
+
 func (t *tenantRuntime) Server(id string) *api.Server {
+	if t.Ready() != nil {
+		return nil
+	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if ti := t.running[id]; ti != nil {
@@ -102,6 +127,9 @@ func (t *tenantRuntime) Server(id string) *api.Server {
 }
 
 func (t *tenantRuntime) Servers() []*api.Server {
+	if t.Ready() != nil {
+		return nil
+	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	out := make([]*api.Server, 0, len(t.running))
