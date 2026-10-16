@@ -1,0 +1,100 @@
+name: Helm chart
+# The Kubernetes Helm chart (deploy/helm/signalith): lint and schema checks
+# of what it renders with several sets of values, then an install on kind,
+# from an image built from this code, into a namespace that enforces the
+# restricted Pod Security Standard, and deploy/helm/smoke-test.sh. Not a
+# required check.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'deploy/helm/**'
+      - 'deploy/docker/Dockerfile'
+      - 'deploy/docker/opensearch/**'
+      - 'cmd/signalith/bootstrap*.go'
+      - '.github/workflows/helm.yml'
+  pull_request:
+    paths:
+      - 'deploy/helm/**'
+      - 'deploy/docker/Dockerfile'
+      - 'deploy/docker/opensearch/**'
+      - 'cmd/signalith/bootstrap*.go'
+      - '.github/workflows/helm.yml'
+  schedule:
+    - cron: '41 4 * * 2'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Install kubeconform
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/kc.tgz" https://github.com/yannh/kubeconform/releases/download/v0.7.0/kubeconform-linux-amd64.tar.gz
+          echo "c31518ddd122663b3f3aa874cfe8178cb0988de944f29c74a0b9260920d115d3  $RUNNER_TEMP/kc.tgz" | sha256sum -c
+          tar -xzf "$RUNNER_TEMP/kc.tgz" -C "$RUNNER_TEMP" kubeconform
+      - name: Lint, render and check against the Kubernetes schemas
+        run: |
+          helm version
+          chart=deploy/helm/signalith
+          helm lint --strict --kube-version 1.30.0 "$chart"
+          check() {
+            echo "== $*"
+            helm template t "$chart" --kube-version 1.30.0 "$@" > "$RUNNER_TEMP/out.yaml"
+            "$RUNNER_TEMP/kubeconform" -strict -summary -kubernetes-version 1.30.0 "$RUNNER_TEMP/out.yaml"
+          }
+          check
+          check -f deploy/helm/ci/kind-values.yaml
+          check --set server.replicas=3 --set opensearch.replicas=3 --set scanner.enabled=true \
+            --set server.service.type=LoadBalancer --set server.syslog.service.type=LoadBalancer
+          check --set opensearch.enabled=false --set 'opensearch.external.urls[0]=https://os.example.com:9200' \
+            --set opensearch.external.existingSecret=os --set server.tls.existingSecret=tls \
+            --set 'networkPolicy.serverEgress[0].to[0].ipBlock.cidr=10.0.0.0/8'
+          check --set opensearch.enabled=false --set 'opensearch.external.urls[0]=https://os.example.com:9200' \
+            --set opensearch.external.existingSecret=os --set opensearch.external.auth=certificate
+          # Two OpenSearch nodes are refused.
+          ! helm template t "$chart" --kube-version 1.30.0 --set opensearch.replicas=2 >/dev/null 2>&1
+      - name: Shellcheck the smoke test
+        run: shellcheck -s sh deploy/helm/smoke-test.sh
+
+  kind:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      NS: signalith
+      REL: sig
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Build the image
+        run: docker build -f deploy/docker/Dockerfile -t signalith:local .
+      - name: Start kind
+        run: |
+          kind version
+          kind create cluster --name helm --wait 120s
+          kind load docker-image signalith:local --name helm
+          docker pull -q opensearchproject/opensearch:3.9.0
+          kind load docker-image opensearchproject/opensearch:3.9.0 --name helm
+      - name: Install the chart where Pod Security "restricted" is enforced
+        run: |
+          kubectl create namespace "$NS"
+          kubectl label namespace "$NS" pod-security.kubernetes.io/enforce=restricted pod-security.kubernetes.io/warn=restricted
+          helm install -n "$NS" "$REL" deploy/helm/signalith -f deploy/helm/ci/kind-values.yaml --wait --timeout 15m
+          kubectl -n "$NS" get pods -o wide
+      - name: Smoke test
+        run: sh deploy/helm/smoke-test.sh
+      - name: State and logs
+        if: failure()
+        run: |
+          kubectl -n "$NS" get all,pvc,secret,networkpolicy -o wide || true
+          kubectl -n "$NS" get events --sort-by=.lastTimestamp | tail -60 || true
+          for p in $(kubectl -n "$NS" get pods -o name); do
+            echo "===== $p"
+            kubectl -n "$NS" describe "$p" | tail -30 || true
+            kubectl -n "$NS" logs "$p" --all-containers --prefix --tail 150 || true
+          done
+          for j in $(kubectl -n "$NS" get jobs -o name); do kubectl -n "$NS" logs "$j" --tail 100 || true; done

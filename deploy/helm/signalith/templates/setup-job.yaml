@@ -1,0 +1,121 @@
+{{- /*
+The setup Job makes and keeps the Secrets nothing else may choose (see
+values.yaml, setup). It runs before every install and upgrade, with a
+service account that exists only while it runs and may only read and write
+Secrets in this namespace. Helm doesn't manage those Secrets, so they
+outlive an uninstall, as the data does: helm install again and everything
+is as it was. docs/kubernetes.md says how to remove them.
+*/ -}}
+{{- $name := printf "%s-setup" (include "signalith.fullname" .) -}}
+{{- $hook := dict "helm.sh/hook" "pre-install,pre-upgrade" "helm.sh/hook-delete-policy" "before-hook-creation,hook-succeeded" -}}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "signalith.labels" . | nindent 4 }}
+    app.kubernetes.io/component: setup
+  annotations:
+    {{- toYaml $hook | nindent 4 }}
+    helm.sh/hook-weight: "-10"
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "signalith.labels" . | nindent 4 }}
+    app.kubernetes.io/component: setup
+  annotations:
+    {{- toYaml $hook | nindent 4 }}
+    helm.sh/hook-weight: "-10"
+rules:
+  # Reading and replacing only this release's Secrets. Kubernetes can't
+  # limit create to names, so create covers the namespace.
+  - apiGroups: [""]
+    resources: [secrets]
+    resourceNames:
+      - {{ include "signalith.secretsName" . }}
+      - {{ include "signalith.opensearchName" . }}-certs
+      - {{ include "signalith.opensearchName" . }}-ca
+    verbs: [get, update]
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [create]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "signalith.labels" . | nindent 4 }}
+    app.kubernetes.io/component: setup
+  annotations:
+    {{- toYaml $hook | nindent 4 }}
+    helm.sh/hook-weight: "-9"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $name }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $name }}
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "signalith.labels" . | nindent 4 }}
+    app.kubernetes.io/component: setup
+  annotations:
+    {{- toYaml $hook | nindent 4 }}
+    helm.sh/hook-weight: "0"
+spec:
+  backoffLimit: {{ .Values.setup.backoffLimit }}
+  activeDeadlineSeconds: 600
+  template:
+    metadata:
+      labels:
+        {{- include "signalith.selector" (dict "ctx" . "component" "setup") | nindent 8 }}
+    spec:
+      serviceAccountName: {{ $name }}
+      automountServiceAccountToken: true
+      restartPolicy: Never
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- include "signalith.podSecurity" (dict "uid" 65532) | nindent 8 }}
+      containers:
+        - name: setup
+          image: {{ include "signalith.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - bootstrap-kubernetes
+            - -prefix={{ include "signalith.fullname" . }}
+            - -instance={{ .Release.Name }}
+            - -opensearch={{ .Values.opensearch.enabled }}
+            {{- if .Values.opensearch.enabled }}
+            - -opensearch-name={{ include "signalith.opensearchNames" . }}
+            {{- end }}
+          securityContext:
+            {{- include "signalith.containerSecurity" . | nindent 12 }}
+          resources:
+            {{- toYaml .Values.setup.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        # Memory only: the work folder holds the CA's key for a moment.
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Mi
