@@ -198,7 +198,7 @@ type move struct {
 func newRunner(path string, log *slog.Logger) *runner {
 	r := &runner{
 		path: path, log: log, started: time.Now(),
-		sessions: auth.NewSessions(12 * time.Hour), limiter: auth.NewLimiter(), browsers: auth.NewBrowserKey(),
+		sessions: auth.NewSessions(config.DefaultSessionIdle), limiter: auth.NewLimiter(), browsers: auth.NewBrowserKey(),
 		front: &front{}, agentFront: &front{}, requests: make(chan restartRequest, 1), confirmed: make(chan *move, 1),
 	}
 	r.front.ready = r.ready

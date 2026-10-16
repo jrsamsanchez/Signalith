@@ -57,7 +57,9 @@ type Report struct {
 	EventsBySourcetype *search.Result    `json:"events_by_sourcetype,omitempty"`
 	Health             *Health           `json:"health,omitempty"`
 	Queries            map[string]string `json:"queries"`
-	Errors             map[string]string `json:"errors,omitempty"`
+	// Drills finds the events behind the numbers each query gives.
+	Drills map[string]*query.Drill `json:"drills"`
+	Errors map[string]string       `json:"errors,omitempty"`
 	// FindingsTruncated is set when there were more findings in the period
 	// than one request returns; finding metrics then undercount.
 	FindingsTruncated bool `json:"findings_truncated,omitempty"`
@@ -201,6 +203,7 @@ func (p *Posture) Report(ctx context.Context, rng time.Duration, rangeLabel stri
 		},
 		Errors: map[string]string{},
 	}
+	rep.Drills = drills(rep.Queries)
 
 	var (
 		mu                                     sync.Mutex
@@ -713,4 +716,15 @@ func toFloatAny(v any) (float64, bool) {
 		}
 	}
 	return 0, false
+}
+
+// drills works out each posture query's drilldown.
+func drills(queries map[string]string) map[string]*query.Drill {
+	out := map[string]*query.Drill{}
+	for k, src := range queries {
+		if q, err := query.Parse(src); err == nil {
+			out[k] = q.Drilldown()
+		}
+	}
+	return out
 }

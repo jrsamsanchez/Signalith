@@ -162,22 +162,6 @@ type upgradeOutput struct {
 		Code   string `json:"code"`
 		Server string `json:"server"`
 	} `json:"warnings"`
-	Servers []struct {
-		Name     string `json:"name"`
-		Live     bool   `json:"live"`
-		CaughtUp string `json:"caught_up"`
-	} `json:"servers"`
-}
-
-// caughtUp says whether server name is live and has applied every
-// change of the shared settings.
-func (o upgradeOutput) caughtUp(name string) bool {
-	for _, s := range o.Servers {
-		if s.Name == name {
-			return s.Live && s.CaughtUp == "yes"
-		}
-	}
-	return false
 }
 
 func (o upgradeOutput) has(code string) bool {
@@ -600,25 +584,24 @@ func TestUpgradeCheckSays(t *testing.T) {
 		return ok && st == cluster.StateReady
 	})
 	// The shared settings may have changed while siem-b was paused: the
-	// heartbeat copied below must be one that has caught up. Right after
-	// the pause siem-b's last heartbeat is stale, which upgrade-check
-	// reports as offline rather than behind, so it must be live too.
+	// heartbeat copied below must be one that has caught up.
 	waitUntil(t, 60*time.Second, "siem-b to catch up on the shared settings", func() bool {
 		code, out, r := upgradeCheck(t, a, b.next)
 		raw = r
-		return code == 0 && !out.has("config_behind") && !out.has("offline") && out.caughtUp("siem-b")
+		return code == 0 && !out.has("config_behind")
 	})
 
 	// A restart in place by request ends within a second, faster than
 	// heartbeats are written, so a server that is restarting is planted:
-	// a third heartbeat that says so.
-	hb, ok := h.heartbeat("siem-b")
-	if !ok {
-		t.Fatal("no heartbeat of siem-b")
-	}
-	hb.NodeID, hb.Name, hb.BootID = "n_restarting", "siem-c", "boot-c"
-	hb.Restart = &cluster.RestartStatus{Busy: true}
-	plant := func() {
+	// a third heartbeat that says so. It is copied from siem-b's latest
+	// each time, so it never falls behind the shared settings.
+	plant := func(restart *cluster.RestartStatus) {
+		hb, ok := h.heartbeat("siem-b")
+		if !ok {
+			t.Fatal("no heartbeat of siem-b")
+		}
+		hb.NodeID, hb.Name, hb.BootID = "n_restarting", "siem-c", "boot-c"
+		hb.Restart = restart
 		hb.HeartbeatAt = time.Now().UTC()
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -626,31 +609,19 @@ func TestUpgradeCheckSays(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	plant()
+	plant(&cluster.RestartStatus{Busy: true})
 	code, out, raw := upgradeCheck(t, a, b.next)
 	if code != 3 || out.Safe || !out.has("restart_running") {
 		t.Errorf("upgrade-check while siem-c restarts: exit %d\n%s", code, raw)
 	}
-	// Once it restarted, siem-c is as caught up as siem-b: the shared
-	// settings may have moved on since the copy, so it copies siem-b's
-	// latest heartbeat until siem-b has applied them.
-	deadline := time.Now().Add(60 * time.Second)
-	for {
-		latest, ok := h.heartbeat("siem-b")
-		if !ok {
-			t.Fatal("no heartbeat of siem-b")
-		}
-		hb.ConfigSeq, hb.MaxRev, hb.Restart = latest.ConfigSeq, latest.MaxRev, &cluster.RestartStatus{}
-		plant()
-		code, out, raw := upgradeCheck(t, a, b.next)
-		if code == 0 && !out.has("restart_running") {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("upgrade-check once siem-c restarted: exit %d\n%s", code, raw)
-		}
-		time.Sleep(500 * time.Millisecond)
-	}
+	// The shared settings can still change under the servers, so wait for
+	// siem-b (and the copy of it) to be caught up rather than check once.
+	waitUntil(t, 60*time.Second, "upgrade-check once siem-c restarted", func() bool {
+		plant(&cluster.RestartStatus{})
+		code, out, r := upgradeCheck(t, a, b.next)
+		raw = r
+		return code == 0 && !out.has("restart_running")
+	})
 }
 
 // One server alone on its OpenSearch: upgrade-check says to stop it,

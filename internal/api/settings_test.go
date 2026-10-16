@@ -265,7 +265,7 @@ func TestSaveSettings(t *testing.T) {
 	}
 	// Reset goes back to signalith.yaml.
 	code, out = put(`{"reset":["server.listen","auth.session_timeout"]}`)
-	if code != 200 || field(t, out, "server.listen")["source"].(map[string]any)["kind"] != "file" || srv.Sessions.Idle != 12*time.Hour {
+	if code != 200 || field(t, out, "server.listen")["source"].(map[string]any)["kind"] != "file" || srv.Sessions.Idle != config.DefaultSessionIdle {
 		t.Errorf("reset %d %v idle %v", code, field(t, out, "server.listen"), srv.Sessions.Idle)
 	}
 	// The listen address is back to the one in use, so it needs no restart.
