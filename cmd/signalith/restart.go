@@ -114,6 +114,12 @@ type runner struct {
 	agents atomic.Pointer[agentinv.Inventory]
 
 	front *front
+	// agentFront is the handler the agent port serves, held back during a
+	// restart as front is; agentSrv is that port, nil when agents send to
+	// the web port (see agentport.go).
+	agentFront *front
+	agentMu    sync.Mutex
+	agentSrv   *agentServer
 	// prepared is the HTTPS certificate a restart's checks loaded or made
 	// for the new settings, which starting with them then uses, and
 	// preparedKey the settings it was made for. It lasts only for that
@@ -193,7 +199,7 @@ func newRunner(path string, log *slog.Logger) *runner {
 	r := &runner{
 		path: path, log: log, started: time.Now(),
 		sessions: auth.NewSessions(12 * time.Hour), limiter: auth.NewLimiter(), browsers: auth.NewBrowserKey(),
-		front: &front{}, requests: make(chan restartRequest, 1), confirmed: make(chan *move, 1),
+		front: &front{}, agentFront: &front{}, requests: make(chan restartRequest, 1), confirmed: make(chan *move, 1),
 	}
 	r.front.ready = r.ready
 	r.front.confirmMove = r.confirmProbe
@@ -505,7 +511,7 @@ func (r *runner) run(ctx context.Context, c *config.Config) error {
 		return err
 	}
 	r.cur, r.good = in, c
-	r.front.resume(in.handler, in.plain)
+	r.resumeWith(in)
 	r.web = r.serveWeb(c, ln, in.certs)
 	go r.followShared(ctx)
 	if r.shared != nil && r.node != nil {
@@ -798,6 +804,7 @@ func (r *runner) shutdown() error {
 	if r.web != nil {
 		err = r.web.close(10 * time.Second)
 	}
+	r.closeAgents(10 * time.Second)
 	sampleWait.Wait()
 	var wg sync.WaitGroup
 	for _, w := range r.retired {
@@ -898,7 +905,7 @@ func (r *runner) done(res *api.RestartResult, req restartRequest, start time.Tim
 	// so the page sees it at once.
 	r.finish(res, m)
 	if r.cur != nil {
-		r.front.resume(r.cur.handler, r.cur.plain)
+		r.resumeWith(r.cur)
 	}
 	if m == nil {
 		// A restart another server asked for ends here, unless it moved the
@@ -1007,7 +1014,7 @@ func (r *runner) switchTo(ctx context.Context, prev, next *config.Config, res *a
 
 	// Switch: hold new requests back, stop the old components, start new ones.
 	old := r.cur
-	r.front.pause(drainWait)
+	r.pauseAll(drainWait)
 	old.stop()
 	in, err := r.start(ctx, next)
 	if err == nil && plan.moveWeb && plan.ln == nil && plan.reuse == nil {
@@ -1041,6 +1048,9 @@ func (r *runner) switchTo(ctx context.Context, prev, next *config.Config, res *a
 			r.log.Error("Signalith could not start with the new settings or the previous ones; it tries again every 30 seconds", "new", err, "previous", err2)
 			r.cur = nil
 			r.front.resume(downHandler, downHandler)
+			if r.agentFront != nil {
+				r.agentFront.resume(downHandler, downHandler)
+			}
 			if r.node != nil {
 				// Another server that shares the OpenSearch runs the jobs
 				// meanwhile.
@@ -1110,7 +1120,7 @@ func (r *runner) recover(ctx context.Context) bool {
 		// The result is in place before the requests held back go through,
 		// as after a restart (done).
 		r.finish(&api.RestartResult{At: time.Now().UTC(), By: "Signalith", OK: true, Keys: []string{}}, nil)
-		r.front.resume(in.handler, in.plain)
+		r.resumeWith(in)
 		return true
 	}
 	// The saved settings, unless they move the web page: that is checked
@@ -1747,6 +1757,28 @@ func (f *front) pause(wait time.Duration) {
 	select {
 	case <-idle:
 	case <-t.C:
+	}
+}
+
+// pauseAll holds new requests back on the web port and the agent port,
+// and waits up to wait for those in progress to finish.
+func (r *runner) pauseAll(wait time.Duration) {
+	if r.agentFront == nil {
+		r.front.pause(wait)
+		return
+	}
+	var wg sync.WaitGroup
+	wg.Go(func() { r.agentFront.pause(wait) })
+	r.front.pause(wait)
+	wg.Wait()
+}
+
+// resumeWith serves the web port and the agent port with in's handlers,
+// letting the requests held back through.
+func (r *runner) resumeWith(in *instance) {
+	r.front.resume(in.handler, in.plain)
+	if r.agentFront != nil {
+		r.agentFront.resume(in.agentHandler, in.agentPlain)
 	}
 }
 

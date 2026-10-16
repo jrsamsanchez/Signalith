@@ -9,8 +9,8 @@ import (
 
 // TestAgentPort: agents send to server.agent_listen over HTTPS with the
 // web page's certificate, the web port turns them away, load balancers
-// can check the agent port, and a restart that moves it listens at the
-// new address.
+// can check the agent port, a restart keeps it open, and one that moves
+// it listens at the new address.
 func TestAgentPort(t *testing.T) {
 	t.Setenv("SIGNALITH_AGENT_LISTEN", "")
 	agents := freeAddr(t)
@@ -39,6 +39,36 @@ func TestAgentPort(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("readyz on the agent port: %d", resp.StatusCode)
+	}
+
+	// A restart that keeps the address keeps the port open: agents
+	// sending meanwhile are held back, never refused or reset.
+	open := rs.r.agentPort()
+	stop := make(chan struct{})
+	failed := make(chan string, 1)
+	go func() {
+		defer close(failed)
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			if code, err := send(agents); code == 0 {
+				failed <- err
+				return
+			}
+		}
+	}()
+	if _, res := rs.restart(); !res.OK {
+		t.Fatalf("restart: %+v\n%s", res, rs.logs.String())
+	}
+	close(stop)
+	if err, ok := <-failed; ok {
+		t.Errorf("an agent could not reach the agent port during a restart: %s", err)
+	}
+	if rs.r.agentPort() != open {
+		t.Error("a restart that keeps the agent address listened again")
 	}
 
 	moved := freeAddr(t)

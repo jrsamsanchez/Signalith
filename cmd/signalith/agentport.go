@@ -2,41 +2,57 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
-	"github.com/jrsamsanchez/signalith/internal/api"
 	"github.com/jrsamsanchez/signalith/internal/config"
 	"github.com/jrsamsanchez/signalith/internal/httpserver"
 	"github.com/jrsamsanchez/signalith/internal/tlsauto"
 )
 
-// agentServer is the agent port of one start (server.agent_listen):
-// ingest, OTLP, osquery and network sensors send there, apart from the
-// web page. Unlike the web listener it belongs to the components, as the
-// syslog receiver does: a restart closes it and the next start listens
-// again, and agents send their batches again meanwhile.
+// agentServer is the agent port (server.agent_listen): ingest, OTLP,
+// osquery and network sensors send there, apart from the web page. Like
+// the web listener it belongs to the runner and stays open across a
+// restart in place, which holds its requests back meanwhile (agentFront),
+// so an agent never finds the port closed; a restart that changes the
+// address or HTTPS listens again.
 type agentServer struct {
 	hs, plain *http.Server
-	addr      string
+	addr      string // as set, which says whether a restart moves it
+	bound     string // the address listened on
+	https     bool
+	certs     atomic.Pointer[tlsauto.Manager]
 }
 
-// serveAgents listens on the agent port of c and serves srv's agent
-// routes there, over HTTPS when c has it on, with the web page's
-// certificate. It returns nil when agents send to the web port.
-func (r *runner) serveAgents(c *config.Config, srv *api.Server, certs *tlsauto.Manager) (*agentServer, error) {
-	addr := c.Server.AgentAddr()
+// listenAgents makes the agent port match c: it listens on c's agent
+// address, keeps the open one when that is the same, and closes it when
+// agents send to the web port. certs is the HTTPS certificate of the
+// instance that starts.
+func (r *runner) listenAgents(c *config.Config, certs *tlsauto.Manager) error {
+	addr, https := c.Server.AgentAddr(), c.Server.HTTPS() && certs != nil
+	r.agentMu.Lock()
+	defer r.agentMu.Unlock()
+	if a := r.agentSrv; a != nil {
+		if a.addr == addr && a.https == https {
+			a.certs.Store(certs)
+			return nil
+		}
+		r.agentSrv = nil
+		a.close(drainWait)
+	}
 	if addr == "" {
-		return nil, nil
+		return nil
 	}
 	lim := webLimits(c)
 	ln, err := httpserver.Listen(addr, lim, r.log)
 	if err != nil {
-		return nil, keyed(fmt.Errorf("cannot listen for agents on %s: %w", addr, opError(err)), "server.agent_listen")
+		return keyed(fmt.Errorf("cannot listen for agents on %s: %w", addr, opError(err)), "server.agent_listen")
 	}
 	// Load balancers may check this port as they check the web port.
 	probed := func(h http.Handler) http.Handler {
@@ -47,33 +63,60 @@ func (r *runner) serveAgents(c *config.Config, srv *api.Server, certs *tlsauto.M
 			h.ServeHTTP(w, req)
 		})
 	}
-	h := srv.AgentHandler()
-	a := &agentServer{hs: httpserver.New(probed(h), lim, r.log), addr: ln.Addr().String()}
-	if c.Server.HTTPS() && certs != nil {
+	a := &agentServer{hs: httpserver.New(probed(r.agentFront), lim, r.log), addr: addr, bound: ln.Addr().String(), https: https}
+	a.certs.Store(certs)
+	if https {
 		httpserver.OnRefusal(a.hs, func(addr string) {
-			certs.NoteRefusal(addr, "https")
+			if m := a.certs.Load(); m != nil {
+				m.NoteRefusal(addr, "https")
+			}
 			if v := r.agents.Load(); v != nil {
 				v.NoteRefusedCA(addr)
 			}
 		})
-		a.hs.TLSConfig.GetCertificate = certs.GetCertificate
-		a.plain = httpserver.New(probed(srv.AgentPlainHandler(h)), lim, r.log)
+		a.hs.TLSConfig.GetCertificate = func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+			m := a.certs.Load()
+			if m == nil {
+				return nil, errNoCertificate
+			}
+			return m.GetCertificate(hello)
+		}
+		a.plain = httpserver.New(probed(r.agentFront.plainSide()), lim, r.log)
 		go func() { r.agentServeEnded(a, httpserver.ServeBoth(a.hs, a.plain, ln)) }()
 	} else {
 		go func() { r.agentServeEnded(a, a.hs.Serve(ln)) }()
 	}
-	r.log.Info("agents send to", "addr", a.addr, "url", c.AgentURL(c.Server.PublicURL))
+	r.agentSrv = a
+	r.log.Info("agents send to", "addr", a.bound, "url", c.AgentURL(c.Server.PublicURL))
 	if n := c.AgentListenNotice(); n != "" {
 		r.log.Warn(n)
 	}
-	return a, nil
+	return nil
+}
+
+// agentPort returns the agent port open now, or nil.
+func (r *runner) agentPort() *agentServer {
+	r.agentMu.Lock()
+	defer r.agentMu.Unlock()
+	return r.agentSrv
+}
+
+// closeAgents stops listening for agents, at shutdown.
+func (r *runner) closeAgents(wait time.Duration) {
+	r.agentMu.Lock()
+	a := r.agentSrv
+	r.agentSrv = nil
+	r.agentMu.Unlock()
+	if a != nil {
+		a.close(wait)
+	}
 }
 
 // agentServeEnded logs why the agent port stopped serving, unless it was
 // closed.
 func (r *runner) agentServeEnded(a *agentServer, err error) {
 	if err != nil && !errors.Is(err, http.ErrServerClosed) && !errors.Is(err, net.ErrClosed) {
-		r.log.Error("the agent port stopped", "addr", a.addr, "err", err)
+		r.log.Error("the agent port stopped", "addr", a.bound, "err", err)
 	}
 }
 

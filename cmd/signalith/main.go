@@ -1006,8 +1006,9 @@ type instance struct {
 	certs    *tlsauto.Manager
 	certKey  string
 	receiver *syslog.Receiver
-	// agents is the agent port; nil when agents send to the web port.
-	agents *agentServer
+	// agentHandler serves the agent port, and agentPlain plain HTTP on it;
+	// nil when agents send to the web port.
+	agentHandler, agentPlain http.Handler
 	// retention is the retention manager.
 	retention *retention.Manager
 	// jobsList are the background jobs, which run only while this server
@@ -1026,10 +1027,6 @@ type instance struct {
 // waits for them, so the next instance does not run them twice. The job
 // lease is kept: the next instance runs its jobs under the same epoch.
 func (in *instance) stop() {
-	if in.agents != nil {
-		// Agents send again after the restart.
-		in.agents.close(drainWait)
-	}
 	if in.node != nil {
 		in.node.SetJobs(nil)
 	}
@@ -1736,8 +1733,12 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	tokenSrv.Store(srv)
 	in.srv, in.handler = srv, srv.Handler()
 	r.srv.Store(srv)
-	if in.agents, err = r.serveAgents(c, srv, certs); err != nil {
+	if err := r.listenAgents(c, certs); err != nil {
 		return nil, err
+	}
+	if c.Server.AgentAddr() != "" {
+		in.agentHandler = srv.AgentHandler()
+		in.agentPlain = srv.AgentPlainHandler(in.agentHandler)
 	}
 	// The example ingest token of an older Docker quick start: decide
 	// whether this one was upgraded if that is still open, and end it for
