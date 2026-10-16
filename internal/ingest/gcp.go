@@ -150,7 +150,8 @@ func GCPEntry(r map[string]any) map[string]any {
 // is not one.
 func gcpText(b []byte) map[string]any {
 	b = bytes.TrimSpace(b)
-	if len(b) == 0 || b[0] != '{' || len(b) > MaxRecordBytes || !bytes.Contains(b, []byte(`"logName"`)) {
+	// The text sat inside a string, past the body's own depth check.
+	if len(b) == 0 || b[0] != '{' || len(b) > MaxRecordBytes || !bytes.Contains(b, []byte(`"logName"`)) || depth(b) > MaxDepth {
 		return nil
 	}
 	d := json.NewDecoder(bytes.NewReader(b))

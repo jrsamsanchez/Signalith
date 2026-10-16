@@ -121,6 +121,28 @@ func TestGCPPubSubMessage(t *testing.T) {
 	}
 }
 
+// gcpDeep is an entry with a request nested n objects deep.
+func gcpDeep(n int) string {
+	return `{"logName": "projects/p/logs/cloudaudit.googleapis.com%2Factivity", "resource": {"type": "project"}, "protoPayload": {"request": ` +
+		strings.Repeat(`{"a": `, n) + "1" + strings.Repeat("}", n) + `}}`
+}
+
+// An entry in a message's data nested deeper than a body may be is not
+// read as one: each level would cost a field name as long as the path.
+func TestGCPTooDeep(t *testing.T) {
+	data := base64.StdEncoding.EncodeToString([]byte(gcpDeep(1000)))
+	ev := Normalize(GCPTag, decode(t, `{"message": {"data": "`+data+`"}}`), now)
+	if ev.Fields["sourcetype"] == GCPSourcetype {
+		t.Errorf("a 1,000-deep entry was read: %d fields", len(ev.Fields))
+	}
+	if gcpFromOTLP(gcpDeep(1000)) != nil {
+		t.Error("a 1,000-deep OTLP body was read")
+	}
+	if gcpText([]byte(gcpDeep(5))) == nil {
+		t.Error("a shallow entry was not read")
+	}
+}
+
 // The googlecloudpubsub receiver with the text encoding passes each
 // message's data on as the body's text.
 func TestGCPFromOTLP(t *testing.T) {
