@@ -425,7 +425,7 @@ func checkSecret(c Credential, secret, phrase string) error {
 
 // keyRounds reads how many bcrypt rounds an OpenSSH private key's
 // passphrase asks for; ok is false for any other key.
-func keyRounds(secret string) (int, bool) {
+func keyRounds(secret string) (uint32, bool) {
 	b, _ := pem.Decode([]byte(secret))
 	if b == nil || b.Type != "OPENSSH PRIVATE KEY" {
 		return 0, false
@@ -462,7 +462,7 @@ func keyRounds(secret string) (int, bool) {
 	if _, ok := str(); !ok || len(rest) < 4 { // the salt, then the rounds
 		return 0, false
 	}
-	return int(binary.BigEndian.Uint32(rest)), true
+	return binary.BigEndian.Uint32(rest), true
 }
 
 // OpenLogin decrypts the login id for a scan.
