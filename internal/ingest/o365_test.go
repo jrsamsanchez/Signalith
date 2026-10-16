@@ -54,6 +54,12 @@ func TestO365SignIn(t *testing.T) {
 	if again := Normalize("", decode(t, o365LoginFailed), now); again.ID != ev.ID || again.Model != "Authentication" {
 		t.Errorf("untagged record: %s %s", again.Model, again.ID)
 	}
+	// A changed copy with the record's Id is stored as its own.
+	forged := decode(t, o365LoginFailed)
+	forged["ClientIP"] = "192.0.2.99"
+	if Normalize(O365Tag, forged, now).ID == ev.ID {
+		t.Error("a changed copy took the record's ID")
+	}
 }
 
 func TestO365ChangeAndAlert(t *testing.T) {
