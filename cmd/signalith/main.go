@@ -1598,6 +1598,15 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		Version:      version,
 	}
 	followProxyTrust(srv)
+	// Likewise a host that stopped sending: the server that runs the
+	// background jobs writes an event when a steady source goes quiet, which
+	// the built-in detection data-source-stopped reads.
+	sourceWatch := &dashboards.SourceWatch{Engine: eng, Events: pipeline, Log: log,
+		StaleAfter: func() time.Duration { return srv.Running().StaleAfter() }}
+	if r.node != nil {
+		sourceWatch.Leader = r.node.RunsJobs
+	}
+	in.jobs.Go(func() { sourceWatch.Run(ctx) })
 	srv.KnownBrowsers = r.browsers
 	srv.Join = r.sharedJoin(c, certs)
 	if r.shared != nil && r.sharedContent != nil {

@@ -245,7 +245,7 @@ var capabilities = []Capability{
 	builtin("search", "Log search and reports", "search",
 		"Search, dashboards and exports filter and summarize events on demand, without changing them."),
 	builtin("source-health", "Log source monitoring", "health",
-		"The Health page and the posture dashboard list sources that stopped sending, and the disk and OpenSearch state."),
+		"The Health page and the posture dashboard list sources that stopped sending, and the disk and OpenSearch state; the built-in detection data-source-stopped raises a finding when a host that sent all day goes quiet."),
 	{ID: "siem-access", Name: "Access to the logs is limited", Page: "users",
 		Description: "Everyone signs in with their own account and a role (Viewer, Analyst or Admin); events cannot be changed from Signalith.",
 		Fix:         "Give each person their own account on Settings > Users, or sign in with your directory (LDAP or Active Directory).",
