@@ -766,7 +766,7 @@ derives, so they are left out. To send the audit logs, see
 
 ### Splunk Security Content
 
-**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,150 Windows,
+**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,156 Windows,
 Linux, web, network, AWS CloudTrail, Entra ID, Microsoft 365 and Okta detections from Splunk's Threat Research Team
 ([security_content](https://github.com/splunk/security_content)), pinned to one
 commit. They are the production TTP and anomaly rules that search the CIM
