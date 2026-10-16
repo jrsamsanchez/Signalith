@@ -672,6 +672,29 @@ func TestConvertSigmaServiceInstall(t *testing.T) {
 	}
 }
 
+// Google Workspace's rules read the Reports API's names for an event
+// (eventName) and its parameters (new_value), and its sign-in rules the
+// event's name in the log entry's metadata.
+func TestConvertSigmaWorkspace(t *testing.T) {
+	admin := "title: MFA disabled\nlogsource:\n  product: gcp\n  service: google_workspace.admin\ndetection:\n  sel:\n    eventService: admin.googleapis.com\n    eventName: ENFORCE_STRONG_AUTHENTICATION\n    new_value: 'false'\n  condition: sel\nlevel: medium\n"
+	login := "title: Suspicious login\nlogsource:\n  product: gcp\n  service: google_workspace.login\ndetection:\n  sel:\n    protoPayload.serviceName: login.googleapis.com\n    protoPayload.metadata.event.eventName: suspicious_login\n  condition: sel\nlevel: medium\n"
+	for rule, wants := range map[string][]string{
+		admin: {"sourcetype=google:gcp:pubsub:message", "protoPayload.serviceName=admin.googleapis.com",
+			"event_name=ENFORCE_STRONG_AUTHENTICATION", "event_parameters.new_value=false"},
+		login: {"sourcetype=google:gcp:pubsub:message", "protoPayload.serviceName=login.googleapis.com", "event_name=suspicious_login"},
+	} {
+		res, err := ConvertSigmaWith([]byte(rule), SigmaOptions{Strict: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range wants {
+			if !strings.Contains(res.Detection.Query, want) {
+				t.Errorf("query missing %s: %s", want, res.Detection.Query)
+			}
+		}
+	}
+}
+
 func TestConvertSigmaSecurityLog(t *testing.T) {
 	logon := "title: RDP logon\nlogsource:\n  product: windows\n  service: security\ndetection:\n  sel:\n    EventID: 4624\n    LogonType: 10\n    LogonProcessName: User32\n  condition: sel\nlevel: medium\n"
 	res, err := ConvertSigmaWith([]byte(logon), SigmaOptions{Strict: true})

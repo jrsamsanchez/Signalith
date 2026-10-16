@@ -130,9 +130,11 @@ var cloudCategories = map[string][2]string{
 	// Microsoft 365's rules are in a folder per service, all of them one
 	// audit log.
 	"m365": {"m365", "rules/cloud/m365"},
-	// Google Cloud's audit logs. Google Workspace's (gworkspace) are
-	// another log Signalith does not read.
-	"gcp.audit": {"gcp", "rules/cloud/gcp/audit"},
+	// Google Cloud's audit logs, and Google Workspace's, as Google Cloud
+	// has them when an organization shares them.
+	"gcp.audit":              {"gcp", "rules/cloud/gcp/audit"},
+	"google_workspace.admin": {"gcp", "rules/cloud/gcp/gworkspace/admin"},
+	"google_workspace.login": {"gcp", "rules/cloud/gcp/gworkspace/login"},
 }
 
 // networkCategories are the network log sources, and the folders their
