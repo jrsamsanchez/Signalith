@@ -113,10 +113,21 @@ admin_password() {
 }
 
 # login signs in as the built-in admin, keeping the session in the jar $1.
+# The password goes to curl on its input, not its command line. One whose
+# change Signalith took though curl did not hear back is still in
+# admin-password.new.
 login() {
-  curl -fsS -c "$1" --cacert /var/lib/signalith/tls/ca.pem -H 'Content-Type: application/json' -H 'Origin: https://localhost:9000' \
-    -d "$(jq -n --rawfile p <(admin_password) '{username: "admin", password: ($p | rtrimstr("\n"))}')" \
-    https://localhost:9000/api/login >/dev/null
+  local pw
+  for pw in "" "$LAB/admin-password.new"; do
+    if [ -n "$pw" ]; then [ -s "$pw" ] || return 1; fi
+    if jq -n --rawfile p <(if [ -n "$pw" ]; then cat "$pw"; else admin_password; fi) '{username: "admin", password: ($p | rtrimstr("\n"))}' |
+      curl -fsS -c "$1" --cacert /var/lib/signalith/tls/ca.pem -H 'Content-Type: application/json' -H 'Origin: https://localhost:9000' \
+        --data-binary @- https://localhost:9000/api/login >/dev/null; then
+      [ -z "$pw" ] || mv "$pw" "$LAB/admin-password"
+      return 0
+    fi
+  done
+  return 1
 }
 
 # api calls Signalith's API on signalith-1, signed in as the built-in
