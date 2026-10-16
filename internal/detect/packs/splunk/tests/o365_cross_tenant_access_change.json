@@ -1,0 +1,9 @@
+{"rule": "7c0fa490-12b0-4d0b-b9f5-e101d1e0e06f", "cases": [
+  {"expect":true,"source":"synthesized","channel":"o365","event_id":"AzureActiveDirectory","data":{"ClientIP":"203.0.113.7","Operation":"Add a partner to cross-tenant access setting.","UserId":"admin@example.com","Workload":"AzureActiveDirectory"}},
+  {"expect":true,"source":"synthesized","channel":"o365","event_id":"AzureActiveDirectory","data":{"ClientIP":"203.0.113.7","Operation":"Delete partner specific cross-tenant access setting.","UserId":"admin@example.com","Workload":"AzureActiveDirectory"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"AzureActiveDirectorz","data":{"ClientIP":"203.0.113.7","Operation":"Add a partner to cross-tenant access setting.","UserId":"admin@example.com","Workload":"AzureActiveDirectorz"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"AzureActiveDirectory","data":{"ClientIP":"203.0.113.7","Operation":"Add a partner to cross-tenant access settinh.","UserId":"admin@example.com","Workload":"AzureActiveDirectory"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"AzureActiveDirectory","data":{"ClientIP":"203.0.113.7","Operation":"Update user.","UserId":"admin@example.com","Workload":"AzureActiveDirectory"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"AzureActiveDirectorz","data":{"ClientIP":"203.0.113.7","Operation":"Delete partner specific cross-tenant access setting.","UserId":"admin@example.com","Workload":"AzureActiveDirectorz"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"AzureActiveDirectory","data":{"ClientIP":"203.0.113.7","Operation":"Delete partner specific cross-tenant access settinh.","UserId":"admin@example.com","Workload":"AzureActiveDirectory"}}
+]}

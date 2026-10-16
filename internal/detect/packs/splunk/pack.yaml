@@ -1774,6 +1774,10 @@ rules:
     rule_id: 58e034de-1f87-4812-9dc3-a4f68c7db930
     file: o365_concurrent_sessions_from_different_ips.yml
     path: detections/cloud/o365_concurrent_sessions_from_different_ips.yml
+  - id: splunk-o365-cross-tenant-access-change
+    rule_id: 7c0fa490-12b0-4d0b-b9f5-e101d1e0e06f
+    file: o365_cross_tenant_access_change.yml
+    path: detections/cloud/o365_cross_tenant_access_change.yml
   - id: splunk-o365-disable-mfa
     rule_id: c783dd98-c703-4252-9e8a-f19d9f5c949e
     file: o365_disable_mfa.yml
@@ -2502,10 +2506,18 @@ rules:
     rule_id: 08cb291e-ea77-48e8-a95a-0799319bf056
     file: windows_ad_dsrm_account_changes.yml
     path: detections/endpoint/windows_ad_dsrm_account_changes.yml
+  - id: splunk-windows-ad-serviceprincipalname-added-to-domain-account
+    rule_id: 8a1259cb-0ea7-409c-8bfe-74bad89259f9
+    file: windows_ad_serviceprincipalname_added_to_domain_account.yml
+    path: detections/endpoint/windows_ad_serviceprincipalname_added_to_domain_account.yml
   - id: splunk-windows-ad-sid-history-attribute-modified
     rule_id: 1155e47d-307f-4247-beab-71071e3a458c
     file: windows_ad_sid_history_attribute_modified.yml
     path: detections/endpoint/windows_ad_sid_history_attribute_modified.yml
+  - id: splunk-windows-ad-spn-unicode-collision-injection
+    rule_id: d2d2c043-57a6-4aca-be43-ebb402dbb9e5
+    file: windows_ad_spn_unicode_collision_injection.yml
+    path: detections/endpoint/windows_ad_spn_unicode_collision_injection.yml
   - id: splunk-windows-adfind-exe
     rule_id: bd3b0187-189b-46c0-be45-f52da2bae67f
     file: windows_adfind_exe.yml
@@ -2950,6 +2962,10 @@ rules:
     rule_id: a7fbbc4e-4571-424a-b627-6968e1c939e4
     file: windows_domain_account_discovery_via_get_netcomputer.yml
     path: detections/endpoint/windows_domain_account_discovery_via_get_netcomputer.yml
+  - id: splunk-windows-driver-load-non-standard-path
+    rule_id: 9216ef3d-066a-4958-8f27-c84589465e62
+    file: windows_driver_load_non_standard_path.yml
+    path: detections/endpoint/windows_driver_load_non_standard_path.yml
   - id: splunk-windows-edrsilencer-execution
     rule_id: a206324d-4945-4b0c-a731-87c311ddae2f
     file: windows_edrsilencer_execution.yml
@@ -4278,6 +4294,10 @@ rules:
     rule_id: 35aeb0e7-7de5-444a-ac45-24d6788796ec
     file: windows_spearphishing_attachment_onenote_spawn_mshta.yml
     path: detections/endpoint/windows_spearphishing_attachment_onenote_spawn_mshta.yml
+  - id: splunk-windows-speechruntime-com-hijacking-dll-load
+    rule_id: bd35738c-e93a-4e4f-be24-f6a3680b950a
+    file: windows_speechruntime_com_hijacking_dll_load.yml
+    path: detections/endpoint/windows_speechruntime_com_hijacking_dll_load.yml
   - id: splunk-windows-speechruntime-suspicious-child-process
     rule_id: f7bb956f-b956-42a5-8c2c-ff9cdbbf7526
     file: windows_speechruntime_suspicious_child_process.yml
@@ -4294,6 +4314,10 @@ rules:
     rule_id: bac85b56-0b65-4ce5-aad5-d94880df0967
     file: windows_steal_authentication_certificates_certutil_backup.yml
     path: detections/endpoint/windows_steal_authentication_certificates_certutil_backup.yml
+  - id: splunk-windows-steal-authentication-certificates-esc1-abuse
+    rule_id: cbe761fc-d945-4c8c-a71d-e26d12255d32
+    file: windows_steal_authentication_certificates___esc1_abuse.yml
+    path: detections/endpoint/windows_steal_authentication_certificates___esc1_abuse.yml
   - id: splunk-windows-steal-authentication-certificates-export-certific
     rule_id: e39dc429-c2a5-4f1f-9c3c-6b211af6b332
     file: windows_steal_authentication_certificates_export_certificate.yml
