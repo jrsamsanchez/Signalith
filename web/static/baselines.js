@@ -413,7 +413,7 @@
     if (ip.error && !off) notes.push(el('p', { class: 'st-warn' }, icon('triangle-alert'), el('span', {}, 'The last download failed' + (ip.tried_at ? ' (' + ago(ip.tried_at) + ')' : '') + ': ' + sentence(ip.error) + (ip.rows ? ' The copy downloaded before is still used.' : ''))));
     return el('div', { class: rowClass('ip_database') },
       el('div', { class: 'st-field__text' }, el('label', { class: 'st-field__label', for: 'bl-ipdb' }, 'IP database'),
-        el('p', { class: 'st-field__help', id: 'bl-ipdb-help' }, 'Tells the country and network checks which network an address belongs to. Empty downloads the free iptoasn.com database weekly. Enter a mirror’s address, the full path of a file on the server that runs the background jobs (for servers without internet access), or off.')),
+        el('p', { class: 'st-field__help', id: 'bl-ipdb-help' }, 'Tells the country and network checks which network an address belongs to. Empty downloads the free iptoasn.com database weekly. Enter a mirror’s https address; for servers without internet access, file: and the name of a file in the ipdb folder of the lookups folder, such as file:ip2asn-combined.tsv.gz; or off.')),
       el('div', { class: 'st-field__control' }, n, el('div', { class: 'st-field__notes', id: 'bl-ipdb-notes' }, ...notes)));
   }
 

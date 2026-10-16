@@ -98,6 +98,9 @@ type Engine struct {
 	// HTTP downloads the IP database. It must refuse addresses on this
 	// machine and cloud metadata services (intel.NewDownloadClient).
 	HTTP *http.Client
+	// FileDir is the ipdb folder, the only place a file: IP database is
+	// read from.
+	FileDir string
 	// Allowed reports whether this server still runs the background
 	// jobs. It is asked before every write. Epoch is the job lease's
 	// epoch, NodeID this server's name.
@@ -1061,13 +1064,23 @@ func (e *Engine) maintainIPDB(ctx context.Context, set Settings, now time.Time) 
 func (e *Engine) fetchIPDB(ctx context.Context, src string) (*IPDB, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
-	if p, ok := ipFile(src); ok {
-		if err := IPSourceProblem(p); err != nil {
+	if name, ok := ipFile(src); ok {
+		if err := fileNameProblem(name); err != nil {
 			return nil, err
 		}
-		f, err := os.Open(p)
+		if e.FileDir == "" {
+			return nil, errors.New("this server has no ipdb folder for IP database files")
+		}
+		// The root keeps the open inside the folder, through symbolic
+		// links too.
+		root, err := os.OpenRoot(e.FileDir)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("the ipdb folder can't be opened: %w", err)
+		}
+		defer root.Close()
+		f, err := root.Open(name)
+		if err != nil {
+			return nil, fmt.Errorf("%s is not in the ipdb folder (%s)", name, e.FileDir)
 		}
 		defer f.Close()
 		return ParseIPDB(f)
@@ -1093,8 +1106,8 @@ func (e *Engine) fetchIPDB(ctx context.Context, src string) (*IPDB, error) {
 
 // redactSource leaves only the host of an address, for logs.
 func redactSource(src string) string {
-	if p, ok := ipFile(src); ok {
-		return p
+	if name, ok := ipFile(src); ok {
+		return "file:" + name
 	}
 	rest := strings.TrimPrefix(strings.TrimPrefix(src, "https://"), "http://")
 	host, _, _ := strings.Cut(rest, "/")

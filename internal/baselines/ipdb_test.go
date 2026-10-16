@@ -3,8 +3,11 @@ package baselines
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"io"
 	"net/netip"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -167,9 +170,18 @@ func TestSettingsProblems(t *testing.T) {
 			t.Errorf("%s: no problem", name)
 		}
 	}
-	for _, v := range []string{"", "off", "OFF", `C:\data\ip2asn.tsv.gz`, "/srv/ip2asn.tsv", "file:///srv/ip.gz"} {
+	for _, v := range []string{"", "off", "OFF", "file:ip2asn.tsv.gz", "FILE:ip.tsv", "https://mirror.example.com/ip2asn.tsv.gz"} {
 		if err := IPSourceProblem(v); err != nil {
 			t.Errorf("%q: %v", v, err)
+		}
+	}
+	// Only a bare file name in the ipdb folder, and only https: no other
+	// file of the server, no network share, nothing changed on the way.
+	for _, v := range []string{`C:\data\ip2asn.tsv.gz`, "/srv/ip2asn.tsv", "//attacker/share/x.tsv", `\\attacker\share\x.tsv`,
+		"file:///srv/ip.gz", "file:../users.json.gz", "file:..", "file:sub/ip.gz", `file:sub\ip.gz`, "file:.hidden.gz", "file:ip.json",
+		"file:C:ip.gz", "http://mirror.example.com/ip.gz", "https://u:p@mirror.example.com/ip.gz", "ftp://x/ip.gz"} {
+		if IPSourceProblem(v) == nil {
+			t.Errorf("%q: allowed", v)
 		}
 	}
 	if (Settings{}).IPSource() != DefaultIPDatabase || (Settings{IPDatabase: "off"}).IPSource() != "" {
@@ -192,5 +204,33 @@ func TestChecksATTACK(t *testing.T) {
 				t.Errorf("%s: %s is not a tactic of %s (%v)", c.ID, c.Tactic, id, tech.Tactics)
 			}
 		}
+	}
+}
+
+// TestIPDBFileStaysInFolder: a file: IP database is read only from the
+// ipdb folder, not through a link out of it, and a bad line's error
+// doesn't quote the file.
+func TestIPDBFileStaysInFolder(t *testing.T) {
+	dir, out := t.TempDir(), t.TempDir()
+	secret := filepath.Join(out, "secret.tsv")
+	if err := os.WriteFile(secret, []byte("top-secret-value\tsecond\t1\tUS\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	e := &Engine{FileDir: dir}
+	ctx := context.Background()
+	if err := os.Symlink(secret, filepath.Join(dir, "link.tsv")); err == nil {
+		if _, err := e.fetchIPDB(ctx, "file:link.tsv"); err == nil {
+			t.Error("read a file outside the folder through a link")
+		}
+	}
+	if _, err := e.fetchIPDB(ctx, "file:../"+filepath.Base(out)+"/secret.tsv"); err == nil {
+		t.Error("read a file outside the folder")
+	}
+	if err := os.WriteFile(filepath.Join(dir, "bad.tsv"), []byte("top-secret-value\tsecond\t1\tUS\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := e.fetchIPDB(ctx, "file:bad.tsv")
+	if err == nil || strings.Contains(err.Error(), "secret") {
+		t.Errorf("bad line: %v", err)
 	}
 }

@@ -112,12 +112,12 @@ func newRig(t *testing.T, set Settings) *rig {
 	if err := st.EnsureIndex(ctx); err != nil {
 		t.Fatal(err)
 	}
+	dir := t.TempDir()
 	if set.IPDatabase == "" {
-		p := filepath.Join(t.TempDir(), "ip2asn.tsv")
-		if err := os.WriteFile(p, []byte(testIPDB), 0o600); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, "ip2asn.tsv"), []byte(testIPDB), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		set.IPDatabase = p
+		set.IPDatabase = "file:ip2asn.tsv"
 	}
 	if _, err := st.SaveSettings(ctx, set, store.Version{}); err != nil {
 		t.Fatal(err)
@@ -125,7 +125,7 @@ func newRig(t *testing.T, set Settings) *rig {
 	r := &rig{t: t, os: srv, store: st, runner: &fakeRunner{}, risk: &fakeRisk{}, allow: true,
 		now: time.Date(2026, 10, 16, 12, 10, 0, 0, time.UTC)}
 	r.e = &Engine{Store: st, Search: r.runner, Risk: r.risk, Now: func() time.Time { return r.now },
-		Allowed: func() bool { return r.allow }, Epoch: func() int64 { return 1 }, NodeID: "n1",
+		Allowed: func() bool { return r.allow }, Epoch: func() int64 { return 1 }, NodeID: "n1", FileDir: dir,
 		history: set.Learning() + 2*24*time.Hour}
 	return r
 }
@@ -564,8 +564,8 @@ func TestIPDBKept(t *testing.T) {
 	}
 	// Another server reads the stored copy without the file.
 	set, v, _ := r.store.Settings(ctx)
-	e2 := &Engine{Store: r.store, Search: r.runner, Now: r.e.Now}
-	if err := os.Remove(set.IPDatabase); err != nil {
+	e2 := &Engine{Store: r.store, Search: r.runner, Now: r.e.Now, FileDir: r.e.FileDir}
+	if err := os.Remove(filepath.Join(r.e.FileDir, "ip2asn.tsv")); err != nil {
 		t.Fatal(err)
 	}
 	e2.maintainIPDB(ctx, set, r.now)

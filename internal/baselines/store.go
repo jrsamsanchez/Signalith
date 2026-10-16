@@ -336,6 +336,9 @@ func (s *Store) saveIPDB(ctx context.Context, db *IPDB, at time.Time) error {
 	if err != nil {
 		return err
 	}
+	if len(z) > maxIPDBStored {
+		return fmt.Errorf("the IP database is too large to keep: %d MB compressed, at most %d MB", len(z)>>20, maxIPDBStored>>20)
+	}
 	var old ipdbDoc
 	v, _, err := s.get(ctx, ipdbID, &old)
 	if err != nil {

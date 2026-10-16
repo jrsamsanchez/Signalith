@@ -1319,7 +1319,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	// new or rare (see internal/baselines).
 	blStore := baselines.NewStore(cl, c.OpenSearch.IndexPrefix)
 	behavior := &baselines.Engine{Store: blStore, Search: eng, Risk: &risk.Store{Client: cl, Prefix: c.OpenSearch.IndexPrefix},
-		Assets: lists, HTTP: newDownloadClient(c), Log: log}
+		Assets: lists, HTTP: newDownloadClient(c), FileDir: filepath.Join(c.LookupsDir(), "ipdb"), Log: log}
 	if saved, err := ret.Store.Get(); err != nil {
 		if sharedOn {
 			log.Error("the shared retention policies cannot be read from OpenSearch yet; retention is paused until they can", "err", err)

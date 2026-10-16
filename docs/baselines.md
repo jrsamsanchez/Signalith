@@ -118,15 +118,19 @@ one and a failed download keeps the last copy. The server that runs the backgrou
 jobs downloads it from `https://iptoasn.com/data/ip2asn-combined.tsv.gz`, a few
 MB. Allow that address in your firewall, or set **IP database** to:
 
-- the address of a mirror (`https://mirror.example.com/ip2asn-combined.tsv.gz`);
-- the full path of the file on the server that runs the background jobs, for
-  servers without internet access (`/var/lib/signalith/ip2asn-combined.tsv.gz` or
-  `C:\ProgramData\Signalith\ip2asn-combined.tsv.gz`), and replace the file now and
-  then;
+- the https address of a mirror (`https://mirror.example.com/ip2asn-combined.tsv.gz`);
+- for servers without internet access, `file:` and the name of a file in the
+  `ipdb` folder of the lookups folder on the server that runs the background jobs,
+  such as `file:ip2asn-combined.tsv.gz` for
+  `/var/lib/signalith/lookups/ipdb/ip2asn-combined.tsv.gz`. Only a file name is
+  taken, never a path, so the setting can't read other files of the server. With
+  several servers, put the file on each one that can run the background jobs, and
+  replace it now and then;
 - `off`, and the country and network checks wait.
 
 Downloads follow the [threat intel feed rules](threat-intel.md): they don't
-reach loopback, link-local or cloud metadata addresses, or OpenSearch. The file is
+reach loopback, link-local or cloud metadata addresses, or OpenSearch, and only
+https addresses are taken. The file is
 read as tab-separated lines of start address, end address, AS number, country
 code and AS name, up to 64 MB compressed.
 

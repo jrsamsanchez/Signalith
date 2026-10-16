@@ -33,6 +33,9 @@ const (
 	maxIPDBBytes   = 64 << 20  // as downloaded, compressed or not
 	maxIPDBRawSize = 512 << 20 // uncompressed
 	maxIPDBRows    = 4_000_000
+	// maxIPDBStored is the most the stored copy may take, gzipped, so the
+	// one document that holds it stays well within what OpenSearch takes.
+	maxIPDBStored = 24 << 20
 )
 
 // Network is what the database says of one address.
@@ -152,11 +155,11 @@ func (d *IPDB) addLine(s string) error {
 	start, err1 := netip.ParseAddr(f[0])
 	end, err2 := netip.ParseAddr(f[1])
 	if err1 != nil || err2 != nil || start.Is4() != end.Is4() || end.Less(start) {
-		return fmt.Errorf("%q to %q is not an address range", short(f[0]), short(f[1]))
+		return errors.New("not an address range")
 	}
 	asn, err := strconv.ParseUint(f[2], 10, 32)
 	if err != nil {
-		return fmt.Errorf("%q is not an AS number", short(f[2]))
+		return errors.New("the AS number is not a number")
 	}
 	if asn == 0 {
 		return nil // not routed

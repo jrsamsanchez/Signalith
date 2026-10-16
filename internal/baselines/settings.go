@@ -213,27 +213,24 @@ func (s Settings) Problems() []string {
 }
 
 // IPSourceProblem checks where the IP database comes from: empty, off, an
-// http(s) address without a password, or an absolute path of a .gz or
-// .tsv file. Either system's absolute paths pass, so a value saved on one
-// server checks the same on all of them.
+// https address without a password, or file: and the name of a .gz, .tsv
+// or .txt file in the ipdb folder of the server that runs the background
+// jobs (FileDir). Only a bare file name is taken, so the setting can't read
+// other files of the server or reach a network share.
 func IPSourceProblem(v string) error {
 	v = strings.TrimSpace(v)
 	if v == "" || strings.EqualFold(v, "off") {
 		return nil
 	}
-	if p, ok := ipFile(v); ok {
-		if !absPath(p) {
-			return errors.New("The IP database file must be an absolute path.")
-		}
-		switch strings.ToLower(filepath.Ext(p)) {
-		case ".gz", ".tsv", ".txt":
-			return nil
-		}
-		return errors.New("The IP database file must be a .tsv or .gz file.")
+	if name, ok := ipFile(v); ok {
+		return fileNameProblem(name)
 	}
 	u, err := url.Parse(v)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		return errors.New("The IP database must be off, an http or https address, or the full path of a file.")
+	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
+		return errors.New("The IP database must be off, an https address, or file: and the name of a file in the ipdb folder.")
+	}
+	if u.Scheme != "https" {
+		return errors.New("The IP database address must use https, so its contents can't be changed on the way.")
 	}
 	if u.User != nil {
 		return errors.New("The IP database address can't have a user name or password in it.")
@@ -241,18 +238,21 @@ func IPSourceProblem(v string) error {
 	return nil
 }
 
-func absPath(p string) bool {
-	return strings.HasPrefix(p, "/") || (len(p) > 2 && p[1] == ':' && (p[2] == '\\' || p[2] == '/'))
+func fileNameProblem(name string) error {
+	if name == "" || name == "." || name == ".." || strings.HasPrefix(name, ".") || strings.ContainsAny(name, `/\:`) || strings.ContainsRune(name, 0) {
+		return errors.New("The IP database file must be just a file name, such as file:ip2asn-combined.tsv.gz, in the ipdb folder.")
+	}
+	switch strings.ToLower(filepath.Ext(name)) {
+	case ".gz", ".tsv", ".txt":
+		return nil
+	}
+	return errors.New("The IP database file must be a .tsv or .gz file.")
 }
 
-// ipFile returns the path of a file source: file:///path or an absolute
-// path.
+// ipFile returns the file name of a file source, file:NAME.
 func ipFile(v string) (string, bool) {
-	if p, ok := strings.CutPrefix(v, "file://"); ok {
-		return p, true
-	}
-	if absPath(v) {
-		return v, true
+	if len(v) > 5 && strings.EqualFold(v[:5], "file:") {
+		return strings.TrimSpace(v[5:]), true
 	}
 	return "", false
 }
