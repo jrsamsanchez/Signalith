@@ -517,16 +517,35 @@ func TestSyslogLeavesBuiltIn(t *testing.T) {
 
 func TestMaskSecrets(t *testing.T) {
 	for in, want := range map[string]string{
-		`user=bob password=hunter2 src=10.0.0.1`:           `user=bob password=[masked] src=10.0.0.1`,
-		`{"user":"bob","api_key":"abc123","ok":true}`:      `{"user":"bob","api_key":"[masked]","ok":true}`,
-		`GET /x?token=s3cr3t&page=2`:                       `GET /x?token=[masked]&page=2`,
-		`Authorization: Bearer eyJhbGciOi.x.y next`:        `Authorization: [masked] next`,
-		`session_id=42; theme=dark`:                        `session_id=[masked]; theme=dark`,
-		`Accepted publickey for bob from 10.0.0.1 port 22`: `Accepted publickey for bob from 10.0.0.1 port 22`,
+		`user=bob password=hunter2 src=10.0.0.1`:                                       `user=bob password=[masked] src=10.0.0.1`,
+		`{"user":"bob","api_key":"abc123","ok":true}`:                                  `{"user":"bob","api_key":"[masked]","ok":true}`,
+		`GET /x?token=s3cr3t&page=2`:                                                   `GET /x?token=[masked]&page=2`,
+		`Authorization: Bearer eyJhbGciOi.x.y next`:                                    `Authorization: [masked] next`,
+		`session_id=42; theme=dark`:                                                    `session_id=[masked]; theme=dark`,
+		`Accepted publickey for bob from 10.0.0.1 port 22`:                             `Accepted publickey for bob from 10.0.0.1 port 22`,
+		`Failed password for invalid user bob from 10.0.0.1`:                           `Failed password for invalid user bob from 10.0.0.1`,
+		`password="SECRET VAL1" user=bob`:                                              `password="[masked]" user=bob`,
+		`password="a\"b c" user=bob`:                                                   `password="[masked]" user=bob`,
+		`CEF:0|v|p|1|1|n|5|suser=bob password=SECRET VAL1 dst=10.0.0.2`:                `CEF:0|v|p|1|1|n|5|suser=bob password=[masked] dst=10.0.0.2`,
+		`aws_secret_access_key = wJalrXUtnFEMI/K7MDENG`:                                `aws_secret_access_key = [masked]`,
+		`id=AKIAIOSFODNN7EXAMPLE`:                                                      `id=[masked]`,
+		`dsn=postgres://admin:PaSS@db:5432/x`:                                          `dsn=postgres://admin:[masked]@db:5432/x`,
+		`t eyJhbGciOiJIUzI1.eyJzdWIiOiIx.c2lnbmF0dXJl end`:                             `t [masked] end`,
+		`gh ghp_abcdefghijklmnopqrstuvwxyz0123`:                                        `gh [masked]`,
+		`Cookie: a=1; sessionid=xyz; b=2`:                                              `Cookie: [masked]`,
+		`<password>hunter2</password>`:                                                 `<password>[masked]</password>`,
+		`the password hunter2 was used`:                                                `the password [masked] was used`,
+		`credential=abc key=def auth=ghi pass: jkl`:                                    `credential=[masked] key=[masked] auth=[masked] pass: [masked]`,
+		`url?X-Amz-Signature=abcd&sig=efg`:                                             `url?X-Amz-Signature=[masked]&sig=[masked]`,
+		`k -----BEGIN RSA PRIVATE KEY-----MIIE abc-----END RSA PRIVATE KEY----- after`: `k [masked private key] after`,
 	} {
 		if got := MaskSecrets(in); got != want {
-			t.Errorf("MaskSecrets(%q) = %q, want %q", in, got, want)
+			t.Errorf("MaskSecrets(%q)\n got %q\nwant %q", in, got, want)
 		}
+	}
+	got := MaskSecretLines([]string{"a", "-----BEGIN PRIVATE KEY-----", "MIIEvQIBADANBg", "-----END PRIVATE KEY-----", "b"})
+	if strings.Join(got, "|") != "a|-----BEGIN PRIVATE KEY-----|[masked private key]|[masked private key]|b" {
+		t.Errorf("multi-line key: %q", got)
 	}
 }
 

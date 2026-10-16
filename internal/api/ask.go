@@ -98,7 +98,7 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 			resp["ai_error"] = err.Error()
 		} else {
 			resp["query"], resp["source"], resp["ai_model"] = q, "ai", ai.Name()
-			s.Log.Info("question translated with AI", "audit", true, "by", userOf(r), "model", ai.Name(), "sent_to", sentTo, "chars_sent", len(req.Question))
+			s.Log.Info("question translated with AI", "audit", true, "by", userOf(r), "model", ai.Name(), "sent_to", sentTo, "chars_sent", len(req.Question)+len(res.Query))
 		}
 	}
 	if q, err := query.Parse(resp["query"].(string)); err == nil {

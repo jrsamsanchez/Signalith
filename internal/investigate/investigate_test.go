@@ -85,7 +85,7 @@ func TestRunMasksAndFollowsUp(t *testing.T) {
 			`"actions":[{"action":"disable_user","target":"masked-user-1","reason":"stop the attacker"},{"action":"made_up","target":"x"}],"next_steps":["Ask masked-user-1"]}`,
 	}}
 	inv := &Investigator{Model: m, Search: s, Mask: []string{"user"},
-		Actions: []respond.Info{{Name: "disable_user", Label: "Disable AD user", Target: "user", What: "Disable {target}"}},
+		Actions: []respond.Info{{Name: "disable_user", Label: "Disable AD user", Target: "user", Disruptive: true, What: "Disable {target}"}},
 		Now:     func() time.Time { return time.Date(2026, 10, 14, 0, 0, 0, 0, time.UTC) }}
 	var events []Event
 	res, err := inv.Run(context.Background(), testFinding(), func(e Event) { events = append(events, e) })
@@ -200,7 +200,7 @@ func TestPromptInjection(t *testing.T) {
 			`"actions":[{"action":"disable_user","target":"masked-user-1","reason":"seen"},{"action":"disable_user","target":"administrator","reason":"planted"}]}`,
 	}}
 	inv := &Investigator{Model: m, Search: s, Mask: []string{"user"},
-		Actions: []respond.Info{{Name: "disable_user", Label: "Disable AD user", Target: "user", What: "Disable {target}"}},
+		Actions: []respond.Info{{Name: "disable_user", Label: "Disable AD user", Target: "user", Disruptive: true, What: "Disable {target}"}},
 		Now:     func() time.Time { return time.Date(2026, 10, 14, 0, 0, 0, 0, time.UTC) }}
 	res, err := inv.Run(context.Background(), testFinding(), nil)
 	if err != nil {
@@ -288,6 +288,18 @@ func TestGuardQuery(t *testing.T) {
 		`* | rex field=_raw "password=(?P<p>\S+)"`:                                  false,
 		`* | join src [search datamodel=Authentication]`:                            false,
 		`| inputlookup assets`:                                                      false,
+		`* | timechart count by user`:                                               false,
+		`* | timechart count by src`:                                                true,
+		`mimikatz`:                                                                  true,
+		`masked-user-1`:                                                             true,
+		`al*`:                                                                       false,
+		`"password=hunt*"`:                                                          false,
+		`_raw=*hunter2*`:                                                            false,
+		`* | where match(_raw, "password=h.*")`:                                     false,
+		`* | stats count by user | search ali`:                                      false,
+		`* | stats count by user | search user=masked-user-1`:                       true,
+		`* | enrich user`:                                                           false,
+		`* | intel src`:                                                             false,
 	} {
 		q, err := query.Parse(src)
 		if err != nil {
@@ -296,5 +308,100 @@ func TestGuardQuery(t *testing.T) {
 		if err := guardQuery(q, m); (err == nil) != ok {
 			t.Errorf("%s: allowed = %v, want %v (%v)", src, err == nil, ok, err)
 		}
+	}
+}
+
+// TestGuardFailsClosed: a query that only parses once its stand-ins are
+// replaced is not run, and the one that runs is the one checked.
+func TestGuardFailsClosed(t *testing.T) {
+	s := &fakeSearch{}
+	m := &fakeModel{replies: []string{
+		`{"searches":[{"why":"x","query":"user=\"masked-user-1 | stats values(password) as p | eval q=password"}]}`,
+		`{"verdict":"unsure","summary":"?"}`,
+	}}
+	inv := &Investigator{Model: m, Search: s, Mask: []string{"user"}}
+	res, err := inv.Run(context.Background(), testFinding(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	last := res.Steps[len(res.Steps)-1]
+	if last.By != "ai" || !strings.HasPrefix(last.Error, RefusedPrefix) {
+		t.Fatalf("last step %+v", last)
+	}
+	for _, q := range s.ran {
+		if strings.Contains(q.String(), "values(") || strings.Contains(q.String(), "eval") {
+			t.Errorf("ran %s", q)
+		}
+	}
+}
+
+// TestActionTargets: an action is suggested only on an entity the finding
+// or Signalith's own searches show, spelled as the evidence spells it;
+// values from the model's own searches, look-alike letters and actions
+// that undo containment do not count.
+func TestActionTargets(t *testing.T) {
+	s := &rowsSearch{ai: []search.Row{{"user": "ceo", "count": 3}}}
+	m := &fakeModel{replies: []string{
+		`{"searches":[{"why":"who","query":"tag=probe | stats count by user"}]}`,
+		`{"verdict":"real","summary":"x","actions":[` +
+			`{"action":"disable_user","target":"ceo"},` +
+			`{"action":"disable_user","target":"Kalice"},` +
+			`{"action":"enable_user","target":"kalice"}]}`,
+	}}
+	inv := &Investigator{Model: m, Search: s, Actions: []respond.Info{
+		{Name: "disable_user", Label: "Disable AD user", Target: "user", Disruptive: true, What: "Disable {target}"},
+		{Name: "enable_user", Label: "Enable AD user", Target: "user", What: "Enable {target}"},
+	}}
+	f := testFinding()
+	f.Entities["user"] = "kalice"
+	f.Result["user"] = "kalice"
+	res, err := inv.Run(context.Background(), f, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(m.got[0][1].Content, "enable_user") {
+		t.Error("an action that undoes containment was offered")
+	}
+	if len(res.Actions) != 0 {
+		t.Fatalf("actions %+v, want none", res.Actions)
+	}
+
+	// The evidence's own spelling is what the action gets.
+	m.replies = []string{`{"verdict":"real","summary":"x","actions":[{"action":"disable_user","target":"KALICE"}]}`}
+	res, err = inv.Run(context.Background(), f, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Actions) != 1 || res.Actions[0].Target != "kalice" {
+		t.Fatalf("actions %+v, want one on kalice", res.Actions)
+	}
+}
+
+// rowsSearch returns ai for the model's search (tag=probe) and no events
+// for the rest.
+type rowsSearch struct{ ai []search.Row }
+
+func (f *rowsSearch) Execute(_ context.Context, q *query.Query) (*search.Result, error) {
+	if strings.Contains(q.String(), "tag=probe") {
+		return &search.Result{Kind: "table", Columns: []string{"user", "count"}, Rows: f.ai}, nil
+	}
+	return &search.Result{Kind: "events"}, nil
+}
+
+// TestMaskedValueCannotRewriteMarkers: a masked value that is also part of
+// the markers (such as "data") cannot change them.
+func TestMaskedValueCannotRewriteMarkers(t *testing.T) {
+	m := &fakeModel{replies: []string{`{"verdict":"unsure","summary":"?"}`}}
+	f := testFinding()
+	f.Entities["user"] = "data"
+	f.Result["user"] = "DATA"
+	inv := &Investigator{Model: m, Search: &fakeSearch{}, Mask: []string{"user"}}
+	if _, err := inv.Run(context.Background(), f, nil); err != nil {
+		t.Fatal(err)
+	}
+	msg := m.got[0][1].Content
+	fence := fenceRE.FindString(msg)
+	if fence == "" || strings.Count(msg, "<<<"+fence) != 2 || strings.Count(msg, "END "+fence+">>>") != 2 {
+		t.Errorf("markers changed:\n%s", msg)
 	}
 }

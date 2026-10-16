@@ -253,7 +253,7 @@ func (inv *Investigator) Run(ctx context.Context, f *findings.Finding, emit func
 			} else {
 				b.WriteString("\nNo more searches are possible: give your verdict now.")
 			}
-			next := r.mask.Text(b.String())
+			next := b.String()
 			msgs = append(msgs, assistant.Message{Role: "user", Content: next})
 			res.Sent += len(next)
 			continue
@@ -543,7 +543,7 @@ func (r *run) related(ctx context.Context) {
 // followUp runs a search the model asked for.
 func (r *run) followUp(ctx context.Context, s askedSearch) Step {
 	asked := strings.TrimSpace(s.Query)
-	st := Step{Title: strings.TrimSpace(s.Why), By: "ai", Why: strings.TrimSpace(s.Why), Query: r.mask.Query(asked)}
+	st := Step{Title: strings.TrimSpace(s.Why), By: "ai", Why: strings.TrimSpace(s.Why), Query: asked}
 	if st.Title == "" {
 		st.Title = "A search the AI model asked for"
 	}
@@ -562,25 +562,34 @@ func (r *run) followUp(ctx context.Context, s askedSearch) Step {
 		from = to.Add(-MaxSpan)
 	}
 	st.Earliest, st.Latest = stamp(from), stamp(to)
-	if q, err := query.Parse(st.Query); err == nil && (q.Earliest != "" || q.Latest != "") {
-		// Times in the query itself are relative to now; the ones given
-		// alongside are kept to so a search cannot cover more than MaxSpan.
-		q.Earliest, q.Latest = "", ""
-		st.Query = q.String()
-	}
-	if strings.TrimSpace(st.Query) == "" {
-		st.Kind = "search"
+	st.Kind = "search"
+	if asked == "" {
 		st.Error = "no query was given"
 		return r.add(st)
 	}
-	if q, err := query.Parse(asked); err == nil {
-		if err := guardQuery(q, r.mask); err != nil {
-			st.Kind, st.Query, st.Error = "search", asked, "not run: "+err.Error()
-			return r.add(st)
-		}
+	// The query is checked as the model wrote it, and runs as parsed then:
+	// real values go into the parsed query, so none can change how it
+	// reads. One that does not parse is not run.
+	q, err := query.Parse(asked)
+	if err != nil {
+		st.Error = RefusedPrefix + "it does not parse: " + err.Error()
+		return r.add(st)
 	}
+	if err := guardQuery(q, r.mask); err != nil {
+		st.Error = RefusedPrefix + err.Error()
+		return r.add(st)
+	}
+	// Times in the query itself are relative to now; the ones given
+	// alongside are kept to so a search cannot cover more than MaxSpan.
+	q.Earliest, q.Latest = "", ""
+	r.mask.revealQuery(q)
+	st.Query = q.String()
 	return r.search(ctx, st)
 }
+
+// RefusedPrefix starts the error of a search the model asked for that was
+// not run because it could reveal masked values.
+const RefusedPrefix = "not run: "
 
 func stamp(t time.Time) string { return t.UTC().Format(time.RFC3339) }
 
@@ -655,7 +664,7 @@ func (r *run) firstMessage() string {
 	b.WriteString("\n## Response actions that can be suggested\n")
 	n := 0
 	for _, a := range r.inv.Actions {
-		if a.Problem != "" {
+		if !suggestable(a) {
 			continue
 		}
 		n++
@@ -671,7 +680,7 @@ func (r *run) firstMessage() string {
 	}
 	b.WriteString(r.fenced(ev.String()))
 	fmt.Fprintf(&b, "\nNow ask for up to %d searches, or give your verdict.", MaxPerRound)
-	return r.mask.Text(b.String())
+	return b.String()
 }
 
 // findingText describes the finding itself: its title, entities, the
@@ -823,16 +832,19 @@ func (r *run) finish(res *Result, rep reply) {
 		if len(res.Actions) >= maxSuggestions {
 			break
 		}
-		i := slices.IndexFunc(r.inv.Actions, func(x respond.Info) bool { return x.Name == strings.TrimSpace(a.Action) && x.Problem == "" })
+		i := slices.IndexFunc(r.inv.Actions, func(x respond.Info) bool { return x.Name == strings.TrimSpace(a.Action) && suggestable(x) })
 		target := strings.Trim(reveal(strings.TrimSpace(a.Target)), `"`)
 		if i < 0 || target == "" {
-			continue // only actions that exist and can run
+			continue // only containment actions that exist and can run
 		}
 		if r.inv.Actions[i].Target == "ip" && !isAddr(target) {
 			continue // not an address: the model mixed up its values
 		}
-		if !r.seen(target) {
-			continue // not in the evidence: planted text may have named it
+		// Only on a user, host or address the evidence shows, as the
+		// evidence spells it: planted text may have named another.
+		target, ok := r.evidenceValue(r.inv.Actions[i].Target, target)
+		if !ok {
+			continue
 		}
 		res.Actions = append(res.Actions, Suggestion{Action: r.inv.Actions[i].Name, Label: r.inv.Actions[i].Label, Target: cut(target, 500),
 			Reason: reveal(cut(strings.TrimSpace(a.Reason), 1000))})

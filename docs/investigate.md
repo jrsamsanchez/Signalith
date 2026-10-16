@@ -91,12 +91,18 @@ can do:
   since it was written before the word was chosen.
 - The model has no tools of its own. Its searches are read-only and limited to `search`,
   `where`, `stats`, `timechart`, `top`, `sort`, `head`, `table`, `dedup` and `fields`. A
-  masked field can be matched only with `=` or `!=` and one of its stand-ins, and counted
-  with `count` or `dc`, so a search cannot copy a masked value into another column
-  (`eval`, `rename`, `values()`) or test guesses against it (wildcards, regular
-  expressions, `like()`). A refused search shows on the page with the reason.
-- Suggested response actions must act on a user, host or address that the finding or the
-  evidence shows, and nothing runs until you confirm it in the Respond dialog.
+  masked field, and the event text `_raw`, can be matched only with `=` or `!=` and one of
+  its stand-ins, and counted with `count` or `dc`. Free text must be whole words, with no
+  wildcards, and cannot follow a command. So a search cannot copy a masked value into
+  another column (`eval`, `rename`, `values()`, `timechart ... by`) or test guesses
+  against it one character at a time (wildcards, regular expressions, `like()`). A search
+  that does not parse is not run either. A refused search shows on the page with the
+  reason, and goes in the audit log.
+- The model may suggest only containment actions (blocking an address, isolating a host,
+  disabling a user), never one that undoes containment or a workflow that takes any
+  target. Each must act on a user, host or address that the finding or Signalith's own
+  searches show, spelled as they show it, and nothing runs until you confirm it in the
+  Respond dialog.
 - The write-up is shown as plain text: no links, images or formatting from the model are
   rendered.
 
