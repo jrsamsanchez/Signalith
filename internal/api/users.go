@@ -40,8 +40,13 @@ func (s *Server) audit(r *http.Request, msg string, args ...any) {
 	// A tenant's server tags every line of its log with the tenant
 	// already; the default tenant's server tags those it writes for one.
 	var tenant []any
-	if p := principalOf(r); s.TenantID == "" && p != nil && p.Active != "" && p.Active != tenants.Default {
-		tenant = []any{"tenant", p.Active}
+	// The ID logged is the registry's, never text from the request.
+	if p := principalOf(r); s.TenantID == "" && s.Tenants != nil && p != nil && p.Active != "" && p.Active != tenants.Default {
+		id := "unknown"
+		if t, err := s.Tenants.Get(p.Active); err == nil {
+			id = t.ID
+		}
+		tenant = []any{"tenant", id}
 	}
 	s.Log.Info(msg, slices.Concat([]any{"audit", true, "by", userOf(r)}, tenant, s.client(r).logAttrs(), args)...)
 }
