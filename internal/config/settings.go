@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"path/filepath"
 	"reflect"
 	"regexp"
 	"slices"
@@ -228,6 +229,12 @@ var Registry = []Setting{
 	{Key: "auth.session_max_age", Scope: ScopeCluster, Section: "general", Label: "Sign in again after", Type: TypeDuration,
 		Help:        "Ends every session this long after sign-in, also when Keep me signed in was ticked. From 1h to 30d. NIST SP 800-63B (AAL2) asks for at most 24h.",
 		Placeholder: "24h", EmptyMeans: "24h"},
+	{Key: "auth.mfa_required", Scope: ScopeCluster, Section: "general", Label: "Require two-step sign-in", Type: TypeChoice,
+		Help: "Who must enter a code from an authenticator app after their password. Everyone can turn it on for themselves from the account menu either way. " +
+			"Someone who has not set it up is asked to right after they sign in. Signing in with a password over the API (HTTP Basic) stops working for them: use an API token instead. " +
+			"Single sign-on users get it from their identity provider instead.",
+		Choices:    []Choice{{"off", "Not required"}, {"admins", "Admins"}, {"everyone", "Everyone"}},
+		EmptyMeans: "Not required"},
 	{Key: "cluster.name", Scope: ScopeCluster, Section: "general", Label: "Cluster name", Type: TypeText, SharedOnly: true,
 		Help:        "The name of the servers that share this OpenSearch, shown at the top of the Servers page. Every server shows the same name.",
 		Placeholder: "SOC", EmptyMeans: "the name the first server gave it"},
@@ -506,6 +513,17 @@ var Registry = []Setting{
 		Help:        "Only for a copy of the NVD's CVE API 2.0 on your own network.",
 		Placeholder: DefaultNVDURL, EmptyMeans: "the National Vulnerability Database", Env: "SIGNALITH_NVD_URL",
 		check: noSecretIn("put the key in NVD API key above")},
+
+	{Key: "vulns.kev_url", Scope: ScopeCluster, Section: "vulns", Label: "Known exploited catalog address", Type: TypeText,
+		Help: "Only for a copy of CISA's Known Exploited Vulnerabilities catalog (JSON) on your own network, or, with no internet, " +
+			"the path of that file on the server that runs the background jobs. Signalith reads it once a day.",
+		Placeholder: DefaultKEVURL, EmptyMeans: "CISA's catalog", Env: "SIGNALITH_KEV_URL",
+		check: func(v any) error { return FeedSource(v.(string)) }},
+	{Key: "vulns.epss_url", Scope: ScopeCluster, Section: "vulns", Label: "EPSS scores address", Type: TypeText,
+		Help: "Only for a copy of FIRST's daily EPSS scores (CSV, gzipped or not) on your own network, or, with no internet, " +
+			"the path of that file on the server that runs the background jobs. Signalith reads it once a day.",
+		Placeholder: DefaultEPSSURL, EmptyMeans: "FIRST's scores", Env: "SIGNALITH_EPSS_URL",
+		check: func(v any) error { return FeedSource(v.(string)) }},
 
 	{Key: "m365.tenant_id", Scope: ScopeCluster, Section: "m365", Label: "Tenant ID", Type: TypeText,
 		Help:        "Your Microsoft 365 tenant's ID (Directory (tenant) ID on the app's Overview page in Entra ID).",
@@ -1149,6 +1167,49 @@ func (c *Config) M365APIURL() string { return c.m365Cloud()[1] }
 
 // DefaultNVDURL is the NVD's CVE API 2.0.
 const DefaultNVDURL = "https://services.nvd.nist.gov/rest/json/cves/2.0"
+
+// Where exploit intelligence comes from (internal/vulnscan has the same).
+const (
+	DefaultKEVURL  = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
+	DefaultEPSSURL = "https://epss.empiricalsecurity.com/epss_scores-current.csv.gz"
+)
+
+// FeedSource checks a KEV or EPSS source: empty, an http(s) address with
+// no password or key in it, or the absolute path of a .json, .csv or .gz
+// file (file:///path works too).
+func FeedSource(v string) error {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return nil
+	}
+	// Either system's absolute paths, so a setting saved on one server
+	// validates on all of them.
+	abs := func(p string) bool {
+		return strings.HasPrefix(p, "/") || (len(p) > 2 && p[1] == ':' && (p[2] == '\\' || p[2] == '/'))
+	}
+	p, isFile := strings.CutPrefix(v, "file://")
+	if !isFile && abs(v) {
+		p, isFile = v, true
+	}
+	if isFile {
+		if !abs(p) {
+			return errors.New("a feed file must be an absolute path")
+		}
+		switch strings.ToLower(filepath.Ext(p)) {
+		case ".json", ".csv", ".gz":
+			return nil
+		}
+		return errors.New("a feed file must be a .json, .csv or .gz file")
+	}
+	u, err := url.Parse(v)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return errors.New("must be http(s)://host/path, or the path of a file")
+	}
+	if hasSecret(v) {
+		return errors.New("leave passwords and keys out of the address")
+	}
+	return nil
+}
 
 // NVDURL returns where CVE lookups go.
 func (c *Config) NVDURL() string {

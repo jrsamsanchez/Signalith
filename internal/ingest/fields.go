@@ -273,6 +273,8 @@ var knownFields = func() map[string]string {
 		// Vulnerability scans: a CVSS score has a decimal (9.8), which a
 		// long would cut to 9 in sorts, charts and stats.
 		"cvss": double,
+		// An EPSS score and percentile are fractions (0.944).
+		"epss": double, "epss_percentile": double,
 		// A connection's length in seconds (Zeek, Suricata): 0.4 s would
 		// be 0 as a long.
 		"duration": double,

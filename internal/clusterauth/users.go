@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jrsamsanchez/signalith/internal/secrets"
 	"github.com/jrsamsanchez/signalith/internal/shared"
 	"github.com/jrsamsanchez/signalith/internal/store"
 	"github.com/jrsamsanchez/signalith/internal/users"
@@ -32,16 +33,47 @@ type UserBody struct {
 	Refused            string     `json:"refused,omitempty"`
 	PasswordHash       string     `json:"password_hash,omitempty"`
 	SessionEpoch       int64      `json:"session_epoch"`
-	Created            time.Time  `json:"created"`
-	Updated            time.Time  `json:"updated"`
-	shared.Extra       `json:"-"`
+	// MFA is the user's two-step sign-in, its key sealed with the cluster
+	// key; the built-in admin's too.
+	MFA          *users.StoredMFA `json:"mfa,omitempty"`
+	Created      time.Time        `json:"created"`
+	Updated      time.Time        `json:"updated"`
+	shared.Extra `json:"-"`
 }
 
+// mfaKeys seal authenticator keys with the active cluster key, and open
+// them with any cluster key this server has.
+type mfaKeys struct{ keys *shared.KeySet }
+
+func (k mfaKeys) Seal(field, plain string) (string, error) {
+	if k.keys == nil || k.keys.Active() == nil {
+		return "", errors.New("this server has no cluster key")
+	}
+	return k.keys.Active().SecretsKey().Seal(field, plain)
+}
+
+func (k mfaKeys) Open(field, stored string) (string, error) {
+	return opener(k.keys).Open(field, stored)
+}
+
+func (k mfaKeys) Current(stored string) bool {
+	return k.keys != nil && k.keys.Active() != nil && secrets.KeyID(stored) == k.keys.Active().ID()
+}
+
+// mfaKeys returns the keys authenticator keys are sealed with.
+func (d *Docs) mfaKeys() users.MFAKeys { return mfaKeys{d.keys()} }
+
 // bodyOf returns the body of a user record, over the fields of old (nil
-// for a new user) this version does not know.
-func bodyOf(r users.Record, old *UserBody) *UserBody {
+// for a new user) this version does not know, the authenticator key
+// sealed with keys.
+func bodyOf(r users.Record, old *UserBody, keys users.MFAKeys) (*UserBody, error) {
+	m, err := users.SealMFA(keys, users.MFAField(r.Username), r.MFA)
+	if err != nil {
+		return nil, err
+	}
 	b := &UserBody{Username: r.Username, Name: r.Name, Email: r.Email, Role: r.Role, Source: r.Source, Disabled: r.Disabled,
-		MustChangePassword: r.MustChangePassword, DN: r.DN, Subject: r.Subject, ExternalID: r.ExternalID, InactiveAtIdP: r.InactiveAtIdP, Refused: r.Refused, SessionEpoch: r.Epoch,
+		MustChangePassword: r.MustChangePassword, DN: r.DN, Subject: r.Subject, ExternalID: r.ExternalID, InactiveAtIdP: r.InactiveAtIdP,
+		Refused: r.Refused, SessionEpoch: r.Epoch, MFA: m,
 		Created: r.Created.UTC(), Updated: r.Updated.UTC()}
 	if r.Source == users.SourceLocal {
 		b.PasswordHash = r.Hash
@@ -52,14 +84,17 @@ func bodyOf(r users.Record, old *UserBody) *UserBody {
 			b.PasswordHash = old.PasswordHash
 		}
 	}
-	return b
+	return b, nil
 }
 
-// record returns the user record of a body.
-func record(b *UserBody, etag string) users.Record {
+// record returns the user record of a body, the authenticator key opened
+// with keys.
+func record(b *UserBody, etag string, keys users.MFAKeys) users.Record {
 	r := users.Record{User: users.User{Username: b.Username, Name: b.Name, Email: b.Email, Role: b.Role, Source: b.Source,
-		Disabled: b.Disabled, MustChangePassword: b.MustChangePassword, DN: b.DN, Subject: b.Subject, ExternalID: b.ExternalID, InactiveAtIdP: b.InactiveAtIdP,
-		Refused: b.Refused, Created: b.Created, Updated: b.Updated, SessionEpoch: b.SessionEpoch}, Epoch: b.SessionEpoch, ETag: etag}
+		Disabled: b.Disabled, MustChangePassword: b.MustChangePassword, DN: b.DN, Subject: b.Subject, ExternalID: b.ExternalID,
+		InactiveAtIdP: b.InactiveAtIdP, Refused: b.Refused,
+		Created: b.Created, Updated: b.Updated, SessionEpoch: b.SessionEpoch}, Epoch: b.SessionEpoch, ETag: etag,
+		MFA: b.MFA.Open(keys, users.MFAField(b.Username))}
 	if b.Source == users.SourceLocal {
 		r.Hash = b.PasswordHash
 	}
@@ -106,11 +141,12 @@ var _ users.Backend = (*UsersBackend)(nil)
 // Load returns every user but the built-in admin.
 func (b *UsersBackend) Load() (map[string]users.Record, error) {
 	out := map[string]users.Record{}
+	keys := b.Docs.mfaKeys()
 	for _, it := range b.Docs.Users().List() {
 		if it.Value == nil || it.Value.Source == users.SourceBuiltin {
 			continue
 		}
-		out[it.Name] = record(it.Value, it.ETag)
+		out[it.Name] = record(it.Value, it.ETag, keys)
 	}
 	return out, nil
 }
@@ -127,7 +163,12 @@ func (b *UsersBackend) Create(ctx context.Context, by string, r users.Record) (u
 	if r.Source == users.SourceBuiltin {
 		return users.Record{}, users.ErrReserved
 	}
-	_, err := col.Create(ctx, by, r.Username, bodyOf(r, nil))
+	keys := b.Docs.mfaKeys()
+	body, err := bodyOf(r, nil, keys)
+	if err != nil {
+		return users.Record{}, err
+	}
+	_, err = col.Create(ctx, by, r.Username, body)
 	if errors.Is(err, store.ErrExists) {
 		return users.Record{}, users.ErrExists
 	}
@@ -138,7 +179,7 @@ func (b *UsersBackend) Create(ctx context.Context, by string, r users.Record) (u
 	if !ok {
 		return users.Record{}, users.ErrNotFound
 	}
-	return record(v, etag), nil
+	return record(v, etag, keys), nil
 }
 
 // errNoWrite stops a change that changes nothing.
@@ -151,13 +192,14 @@ var errNoWrite = errors.New("nothing to write")
 // not changed here.
 func (b *UsersBackend) Change(ctx context.Context, by, name, etag string, fn func(*users.Record) error) (users.Record, error) {
 	col := b.Docs.Users()
+	keys := b.Docs.mfaKeys()
 	var out users.Record
 	none := false
 	change := func(v *UserBody) error {
 		if v.Source == users.SourceBuiltin {
 			return users.ErrNotFound
 		}
-		cur := record(v, "")
+		cur := record(v, "", keys)
 		r := cur
 		err := fn(&r)
 		if errors.Is(err, users.ErrNoChange) {
@@ -168,7 +210,10 @@ func (b *UsersBackend) Change(ctx context.Context, by, name, etag string, fn fun
 			return err
 		}
 		r.Username = name
-		nb := bodyOf(r, v)
+		nb, err := bodyOf(r, v, keys)
+		if err != nil {
+			return err
+		}
 		if sameBody(nb, v) {
 			// Only what is kept apart changed, such as a sign-in time.
 			out, none = cur, true
@@ -197,7 +242,7 @@ func (b *UsersBackend) Change(ctx context.Context, by, name, etag string, fn fun
 	if !ok {
 		return users.Record{}, users.ErrNotFound
 	}
-	return record(v, et), nil
+	return record(v, et, keys), nil
 }
 
 // Delete deletes the user name, leaving a signed tombstone, once check
@@ -225,7 +270,7 @@ func (b *UsersBackend) Delete(ctx context.Context, by, name, etag string, check 
 			return err
 		}
 		if check != nil {
-			if err := check(record(v, cur)); err != nil {
+			if err := check(record(v, cur, b.Docs.mfaKeys())); err != nil {
 				return err
 			}
 		}
@@ -258,4 +303,75 @@ func sameBody(a, b *UserBody) bool {
 	x, errA := json.Marshal(a)
 	y, errB := json.Marshal(b)
 	return errA == nil && errB == nil && string(x) == string(y)
+}
+
+// BuiltinMFA returns the built-in admin's two-step sign-in, or nil.
+func (b *UsersBackend) BuiltinMFA() *users.MFA {
+	v, _, ok := b.Docs.BuiltinUser()
+	if !ok {
+		return nil
+	}
+	return v.MFA.Open(b.Docs.mfaKeys(), users.BuiltinMFAField)
+}
+
+// ChangeBuiltinMFA changes the built-in admin's two-step sign-in with
+// fn, on the latest copy of its document.
+func (b *UsersBackend) ChangeBuiltinMFA(ctx context.Context, by string, fn users.MFAChange) error {
+	v, _, ok := b.Docs.BuiltinUser()
+	if !ok {
+		return errors.New("the built-in admin is not in the shared settings yet")
+	}
+	keys := b.Docs.mfaKeys()
+	_, err := b.Docs.Users().Mutate(ctx, by, v.Username, func(v *UserBody) error {
+		if v.Source != users.SourceBuiltin {
+			return errors.New(v.Username + " is not the built-in admin")
+		}
+		next, end, err := fn(v.MFA.Open(keys, users.BuiltinMFAField))
+		if err != nil {
+			return err
+		}
+		m, err := users.SealMFA(keys, users.BuiltinMFAField, next)
+		if err != nil {
+			return err
+		}
+		v.MFA = m
+		if end {
+			v.SessionEpoch++
+		}
+		v.Updated = time.Now().UTC()
+		return nil
+	})
+	if errors.Is(err, users.ErrNoChange) {
+		return nil
+	}
+	return err
+}
+
+// resealMFA seals every authenticator key in the users' documents (the
+// built-in admin's too) again with the active cluster key, for a key
+// rotation.
+func (d *Docs) resealMFA(ctx context.Context, keys *shared.KeySet) error {
+	for _, it := range d.Users().List() {
+		if it.Value == nil || it.Value.MFA == nil || it.Value.MFA.Secret == "" || (mfaKeys{keys}).Current(it.Value.MFA.Secret) {
+			continue
+		}
+		field := users.MFAField(it.Name)
+		if it.Value.Source == users.SourceBuiltin {
+			field = users.BuiltinMFAField
+		}
+		if _, err := d.Users().Mutate(ctx, "signalith", it.Name, func(v *UserBody) error {
+			if v.MFA == nil || v.MFA.Secret == "" {
+				return nil
+			}
+			sealed, err := shared.Reseal(keys, field, v.MFA.Secret)
+			if err != nil {
+				return err
+			}
+			v.MFA.Secret = sealed
+			return nil
+		}); err != nil {
+			return fmt.Errorf("two-step sign-in of %s: %w", it.Name, err)
+		}
+	}
+	return nil
 }
