@@ -128,6 +128,7 @@ nav:
       - Entra ID and Azure: azure.md
       - Microsoft 365: microsoft-365.md
       - Okta: okta.md
+      - Kubernetes: kubernetes.md
       - Google Cloud: google-cloud.md
       - Antivirus: antivirus.md
       - Vulnerability scanning: vulnerabilities.md

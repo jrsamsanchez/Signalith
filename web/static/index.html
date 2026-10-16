@@ -995,6 +995,11 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
           <span class="agent-os__text"><b>Google Cloud</b><span>Admin activity and audit logs from your Google Cloud projects</span></span>
           <input type="radio" name="os" value="gcp">
         </label>
+        <label class="card agent-os__card">
+          <span class="agent-os__icon"><svg class="icon" aria-hidden="true"><use href="#i-box"/></svg></span>
+          <span class="agent-os__text"><b>Kubernetes</b><span>A cluster's audit log: who created, changed, read or exec'd into what</span></span>
+          <input type="radio" name="os" value="kubernetes">
+        </label>
         <label class="card agent-os__card agent-os__card--wide">
           <span class="agent-os__icon"><svg class="icon" aria-hidden="true"><use href="#i-file-search"/></svg></span>
           <span class="agent-os__text"><b>Any other log</b><span>Paste a sample of a log Signalith doesn’t know yet. It works out the format and fields, shows which detections can use them, and saves a parser.</span></span>
@@ -1197,6 +1202,24 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
           </div>
         </div>
         <div class="card__body" id="okta-body" aria-busy="true"></div>
+      </div>
+
+      <div class="card agent-setup hidden" id="kubernetes-setup">
+        <div class="card__head">
+          <div>
+            <h3 class="card__title">Send a Kubernetes cluster's audit log</h3>
+            <p class="card__sub">The API server posts its audit events to Signalith with an agent token. Nothing to install in the cluster.</p>
+          </div>
+        </div>
+        <div class="card__body">
+          <ol class="agent-steps" role="list">
+            <li class="agent-step"><span class="agent-step__num">1</span><div class="agent-step__body"><p class="agent-step__text">Create an agent token for the cluster under <b>Agent tokens</b> below.</p></div></li>
+            <li class="agent-step"><span class="agent-step__num">2</span><div class="agent-step__body"><p class="agent-step__text">On each control plane node, save an audit policy as <code>/etc/kubernetes/audit-policy.yaml</code>. The guide has one that records changes with what was sent, and only who touched secrets.</p></div></li>
+            <li class="agent-step"><span class="agent-step__num">3</span><div class="agent-step__body"><p class="agent-step__text">Save a webhook configuration (a kubeconfig file) whose server is <code>https://&lt;this server&gt;:7779/api/ingest?tag=kubernetes</code> (the agent port), with the token and Signalith's CA certificate, <code>/api/tls/ca.pem</code>.</p></div></li>
+            <li class="agent-step"><span class="agent-step__num">4</span><div class="agent-step__body"><p class="agent-step__text">Start the API server with <code>--audit-policy-file</code>, <code>--audit-webhook-config-file</code> and <code>--audit-webhook-mode=batch</code>. Events appear in Search under <code>source=kubernetes</code> within a minute.</p></div></li>
+          </ol>
+          <p class="hint">To tail the audit log file with Fluent Bit instead, or for EKS, GKE and AKS, which send it through their cloud's logs, see the <a href="https://github.com/jrsamsanchez/Signalith/blob/main/docs/kubernetes.md" target="_blank" rel="noopener">Kubernetes guide</a>.</p>
+        </div>
       </div>
 
       <div class="card agent-setup hidden" id="antivirus-setup">

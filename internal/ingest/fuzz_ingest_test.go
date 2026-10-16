@@ -795,3 +795,67 @@ func FuzzOktaRecord(f *testing.F) {
 		}
 	})
 }
+
+func FuzzKubernetesRecord(f *testing.F) {
+	f.Add(kubePodCreated)
+	f.Add(kubeAnonymous)
+	f.Add(`{"kind": "EventList", "apiVersion": "audit.k8s.io/v1", "items": [` + kubeUnauthenticated + "," + kubeAnonymous + "]}")
+	f.Add("[" + kubeAnonymous + "," + kubeUnauthenticated + "]")
+	f.Add(`{"kind": "Event", "apiVersion": "audit.k8s.io/v1", "auditID": "a", "verb": "v", "stage": "s", "user": "x", "sourceIPs": "y",
+		"objectRef": [1, {"a": [{"b": 2}]}], "annotations": {"a.b": {"c": 1}, "": 2, "c{}": 3, "a.b.c": "d"},
+		"requestObject": {"spec": {"containers": [null, "x", {"image": {"a": 1}}], "a.b": 1}, "metadata": "m"}, "responseObject": [1]}`)
+	f.Add(`{"kind": "Event", "apiVersion": "audit.k8s.io/v1", "auditID": 1, "verb": "create", "stage": "s", "responseStatus": {"code": "x"}}`)
+	f.Add(`{"kind": "Event", "apiVersion": "audit.k8s.io/v1", "auditID": "a", "verb": "v", "stage": "s", "requestObject": ` +
+		strings.Repeat(`{"a": `, 40) + "1" + strings.Repeat("}", 40) + `}`)
+	f.Fuzz(func(t *testing.T, msg string) {
+		recs, err := KubernetesRecords([]byte(msg))
+		if err != nil {
+			recs = nil
+		}
+		d := json.NewDecoder(strings.NewReader(msg))
+		d.UseNumber()
+		var r map[string]any
+		if d.Decode(&r) == nil && r != nil {
+			recs = append(recs, r)
+		}
+		// And as a line Fluent Bit read from the audit log file.
+		if l := kubeLine(map[string]any{"log": msg}); l["log"] == nil {
+			recs = append(recs, l)
+		}
+		for _, r := range recs {
+			ev := Normalize(KubernetesTag, r, now)
+			if !IsKubernetesRecord(r) {
+				// Not an event: a generic event, whose names the
+				// pipeline's field checks look after.
+				continue
+			}
+			if ev.Fields["sourcetype"] != KubernetesSourcetype || ev.Fields["message"] == nil || ev.ID == "" {
+				t.Fatalf("model %q fields %v", ev.Model, ev.Fields)
+			}
+			if _, err := json.Marshal(ev.Document()); err != nil {
+				t.Fatal(err)
+			}
+			if len(ev.Fields) > maxFieldsPerEvent {
+				t.Fatalf("%d fields", len(ev.Fields))
+			}
+			for k := range ev.Fields {
+				if !KnownField(k) && !validFieldName(k) {
+					t.Fatalf("field name %q", k)
+				}
+				if knownObjects[k] {
+					t.Fatalf("value %q where a known field has an object", k)
+				}
+			}
+		}
+		// The same text as an OTLP body is events only if it holds them,
+		// and as a webhook's body an EventList's items are an array.
+		for _, e := range kubernetesFromOTLP(msg) {
+			if !IsKubernetesRecord(e) {
+				t.Fatalf("event from text %v", e)
+			}
+		}
+		if items, ok := kubeEventListItems([]byte(msg)); ok && (len(items) == 0 || items[0] != '[') {
+			t.Fatalf("items %q", items)
+		}
+	})
+}

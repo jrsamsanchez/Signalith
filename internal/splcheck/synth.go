@@ -319,6 +319,8 @@ func records(node string, ev map[string]string) []sigmacheck.Case {
 		return []sigmacheck.Case{o365Record(ev)}
 	case OktaNode, OktaAuthNode, OktaChangeNode:
 		return []sigmacheck.Case{oktaRecord(ev)}
+	case KubernetesNode:
+		return []sigmacheck.Case{kubeRecord(ev)}
 	case "Web":
 		return []sigmacheck.Case{webRecord(ev)}
 	case "Processes":
@@ -1024,6 +1026,10 @@ func reads(r *Rule, c sigmacheck.Case) bool {
 		// Every Okta event, in any data model.
 		return c.Channel == sigmacheck.OktaChannel && Eval(r.Where, View(doc))
 	}
+	if r.Node == KubernetesNode {
+		// Every Kubernetes audit event, in any data model.
+		return c.Channel == sigmacheck.KubernetesChannel && Eval(r.Where, View(doc))
+	}
 	return InModel(r.Node, model) && slices.Contains(NodeEvents[r.Node], c.EventID) && Eval(r.Where, View(doc))
 }
 
@@ -1075,7 +1081,7 @@ func InModel(node, model string) bool {
 		// Sign-ins, changes and reads.
 		return model == "Authentication" || model == "Change" || model == "Other"
 	}
-	if node == AzureNode || node == O365Node || node == OktaNode {
+	if node == AzureNode || node == O365Node || node == OktaNode || node == KubernetesNode {
 		// Sign-ins, changes, risk detections or alerts, and the rest.
 		return model == "Authentication" || model == "Change" || model == "Alerts" || model == "Other"
 	}
