@@ -137,6 +137,14 @@ func TestBootstrapKubernetesMakesThenKeeps(t *testing.T) {
 	if !bytes.Equal(api.data["sig-secrets"][initialPasswordFile], sig[initialPasswordFile]) || !bytes.Equal(api.data["sig-secrets"][clusterKeyFile], sig[clusterKeyFile]) {
 		t.Error("the password or cluster key changed")
 	}
+
+	// A first password deleted once it was changed is not made again.
+	delete(api.data["sig-secrets"], initialPasswordFile)
+	before = api.n
+	out = runK8sBootstrap(t, api, o)
+	if _, ok := api.data["sig-secrets"][initialPasswordFile]; ok || api.n != before {
+		t.Errorf("the deleted first password came back:\n%s", out)
+	}
 }
 
 func TestBootstrapKubernetesExternalOpenSearch(t *testing.T) {

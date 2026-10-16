@@ -63,7 +63,8 @@ each with a comment. Change them with a file of your own (`-f my-values.yaml`) o
 The web Service is `ClusterIP` by default. To reach it from outside the cluster:
 
 - **A load balancer**: `server.service.type: LoadBalancer`. Limit who can connect with
-  `server.service.loadBalancerSourceRanges`, and keep each client's own address (which
+  `server.service.loadBalancerSourceRanges` (without it the sign-in page is open to every
+  network the load balancer is on, and the install notes warn about it), and keep each client's own address (which
   sign-in limits and the audit log use) with `server.service.externalTrafficPolicy: Local`.
 - **Syslog**: the `signalith-syslog` Service takes UDP and TCP 514 and syslog over TLS on
   6514, with the same settings under `server.syslog.service`. `server.syslog.allow` lists
@@ -167,7 +168,15 @@ kubectl -n signalith delete pvc,secret -l app.kubernetes.io/instance=signalith
 
 **Change the admin password** on the Users page, or with `signalith passwd` in a server's
 pod (`kubectl -n signalith exec -it signalith-0 -- signalith passwd`); the first password
-then stops working. Turn on [two-factor sign-in](users.md) for every admin.
+then stops working. Then delete it from the Secret, so nobody who can read Secrets finds
+an old password there; the setup Job does not make it again:
+
+```sh
+kubectl -n signalith patch secret signalith-secrets --type=json \
+  -p '[{"op":"remove","path":"/data/initial-admin-password"}]'
+```
+
+Turn on [two-factor sign-in](users.md) for every admin.
 
 ## Security
 
@@ -180,6 +189,10 @@ then stops working. Turn on [two-factor sign-in](users.md) for every admin.
     kubectl label namespace signalith pod-security.kubernetes.io/enforce=restricted
     ```
 
+- **A namespace of its own**: install Signalith in a namespace used by nothing else. The
+  network policies recognize Signalith's pods by their labels, so anyone who can create
+  pods in the namespace could give one those labels and reach OpenSearch's port (it still
+  needs a client certificate from OpenSearch's CA to sign in).
 - **Network**: OpenSearch takes connections only from the release's Signalith pods (and its
   own nodes), and connects only to its own nodes. Signalith's pods take connections only on
   their web and syslog ports. Limit who may reach those with `networkPolicy.webFrom` and

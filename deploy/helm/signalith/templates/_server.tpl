@@ -93,7 +93,15 @@ spec:
         - name: signalith
           image: {{ include "signalith.image" $ctx }}
           imagePullPolicy: {{ $v.image.pullPolicy }}
-          args: [serve, -c, /etc/signalith/signalith.yaml]
+          # Without the first password, once deleted from the Secret after
+          # it was changed (docs/kubernetes.md), the admin's password is
+          # the one the servers share.
+          command:
+            - sh
+            - -c
+            - |
+              [ -f "$SIGNALITH_ADMIN_PASSWORD_FILE" ] || unset SIGNALITH_ADMIN_PASSWORD_FILE
+              exec signalith serve -c /etc/signalith/signalith.yaml
           env:
             - name: POD_NAME
               valueFrom: { fieldRef: { fieldPath: metadata.name } }

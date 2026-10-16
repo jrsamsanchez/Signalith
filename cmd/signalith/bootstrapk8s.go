@@ -12,6 +12,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"maps"
 	"net"
 	"net/http"
@@ -158,6 +159,15 @@ func bootstrapKubernetes(ctx context.Context, out io.Writer, api k8sSecrets, o k
 				if err := writeFile(filepath.Join(sig, name), []byte(made[name]()+"\n"), 0o600); err != nil {
 					return err
 				}
+			}
+		}
+	}
+	// Once an admin has changed the first password, it can be deleted
+	// from the secret (docs/kubernetes.md); it is not made again then.
+	if old := secrets[0].old; old != nil {
+		if _, ok := old[initialPasswordFile]; !ok {
+			if err := os.Remove(filepath.Join(sig, initialPasswordFile)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+				return err
 			}
 		}
 	}
