@@ -369,7 +369,7 @@ var Registry = []Setting{
 	{Key: "search.max_events", Scope: ScopeCluster, Section: "search", Label: "Events per search", Type: TypeNumber, Min: intp(1), Max: intp(100000),
 		Help: "The most events a search fetches to sort, filter or count after searching. More uses more memory."},
 	{Key: "dashboards.stale_after", Scope: ScopeCluster, Section: "search", Label: "Quiet data source after", Type: TypeDuration,
-		Help:        "The Posture dashboard lists a host and source type as stopped when nothing arrives from it for this long. At least 5m.",
+		Help:        "The Posture dashboard lists a host and source type as stopped when nothing arrives from it for this long, and the detection Data source stopped sending fires for one that sent all day before. At least 5m.",
 		Placeholder: "2h"},
 
 	{Key: "syslog.udp", Scope: ScopeServer, Section: "syslog", Label: "UDP address", Type: TypeAddress, Restart: true,
