@@ -159,6 +159,10 @@ func checkFolder(dir string) (warnings []string, shared string, err error) {
 	return nil, "", nil
 }
 
+// IdentityPath is the file in the state folder dir that holds this
+// server's identity (node.id).
+func IdentityPath(dir string) string { return filepath.Join(dir, nodeFile) }
+
 // ReadIdentity reads node.id in the state folder dir without locking the
 // folder or changing anything, for a command run while the server runs.
 // An error wrapping fs.ErrNotExist means the server has not started yet.

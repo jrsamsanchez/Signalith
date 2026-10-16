@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"errors"
+	"html"
 	"io/fs"
 	"net/http"
 	"net/url"
@@ -24,7 +25,7 @@ const (
 
 // publicRoutes work without signing in. Ingest checks its own token; the
 // CA certificate is public.
-var publicRoutes = slices.Concat([]string{"POST /api/ingest", otlpLogsRoute, "POST /api/login", "POST /api/logout", "GET /api/tls/ca.pem"}, osqueryRoutes, joinPublicRoutes, installRoutes, sensorPublicRoutes)
+var publicRoutes = slices.Concat([]string{"POST /api/ingest", otlpLogsRoute, "POST /api/login", "POST /api/logout", "GET /api/tls/ca.pem"}, osqueryRoutes, joinPublicRoutes, installRoutes, sensorPublicRoutes, ssoPublicRoutes)
 
 // routeLogin adds the routes that work without signing in: the sign-in
 // page, its static assets, and sign-in and sign-out.
@@ -35,6 +36,8 @@ func (s *Server) routeLogin(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/logout", s.handleLogout)
 	mux.HandleFunc("GET /api/tls/ca.pem", s.handleCAPEM)
 	s.routeJoinPublic(mux)
+	mux.HandleFunc(ssoStartRoute, s.handleSSOStart)
+	mux.HandleFunc(ssoCallbackRoute, s.handleSSOCallback)
 	if s.UI != nil {
 		mux.HandleFunc("GET /login", s.handleLoginPage)
 		// Stylesheets, fonts, the logo and the sign-in script are public so
@@ -247,6 +250,12 @@ func (s *Server) handleLoginPage(w http.ResponseWriter, r *http.Request) {
 		// Signalith is switching certificate authority: the line that
 		// offers the new one, hidden otherwise.
 		page = bytes.Replace(page, []byte(`id="ca-next" hidden`), []byte(`id="ca-next"`), 1)
+	}
+	if c := s.conf(); c.OIDCOn() {
+		// The single sign-on button, with its label, hidden otherwise.
+		page = bytes.Replace(page, []byte(`id="sso" hidden`), []byte(`id="sso"`), 1)
+		page = bytes.Replace(page, []byte(`<span id="sso-label">Sign in with single sign-on</span>`),
+			[]byte(`<span id="sso-label">`+html.EscapeString(c.OIDCSettings().ButtonLabel)+`</span>`), 1)
 	}
 	page = s.joinWaiting(page)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

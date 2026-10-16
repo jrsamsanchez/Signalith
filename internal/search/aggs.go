@@ -19,6 +19,15 @@ func metricAgg(a query.Agg) (map[string]any, error) {
 	if field == "_time" {
 		field = TimeField
 	}
+	if field == IndexField {
+		// _index is not in an event's _source and holds no numbers.
+		switch a.Func {
+		case "count", "dc", "values", "mode":
+			field = indexMeta
+		default:
+			return nil, fmt.Errorf("%s(index) is not supported; index works with count, dc, values and mode", a.Func)
+		}
+	}
 	byTime := func(order string, size int) map[string]any {
 		return map[string]any{
 			"filter": map[string]any{"exists": map[string]any{"field": field}},
