@@ -274,6 +274,25 @@ func describeCommand(c query.Command) string {
 		return fmt.Sprintf("Set %s to %s minus its value %d rows with a number earlier.", c.DeltaName(), c.Field, c.P)
 	case *query.AutoRegress:
 		return "Copy " + c.Field + " from earlier rows into " + strings.Join(c.Names(), ", ") + "."
+	case *query.Transpose:
+		s := fmt.Sprintf("Turn the first %d rows into columns, one row per field with its name in %s", c.Rows, c.ColumnName)
+		if c.HeaderField != "" {
+			s += " and columns named by " + c.HeaderField
+		}
+		return s + "."
+	case *query.FillDown:
+		if len(c.Fields) == 0 {
+			return "Give each row missing a field that field's value in the last row that has it."
+		}
+		return "Give each row missing " + strings.Join(c.Fields, ", ") + " the value in the last row that has it."
+	case *query.AddInfo:
+		return "Add the search's time range and run time (info_min_time, info_max_time, info_search_time) to each row."
+	case *query.Trendline:
+		names := make([]string, 0, len(c.Trends))
+		for _, t := range c.Trends {
+			names = append(names, t.Name())
+		}
+		return "Add the moving averages " + strings.Join(names, ", ") + "."
 	case *query.FieldSummary:
 		return "Describe each field: how many rows have it, its distinct and most common values, and for numbers min, max, mean and stdev."
 	case *query.Map:
