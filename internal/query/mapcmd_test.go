@@ -1,6 +1,8 @@
 package query
 
 import (
+	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -50,7 +52,7 @@ func TestSubstituteMap(t *testing.T) {
 		`a=$kw$ b=$tilde$ c=$empty$`: `a="OR" b="~.*" c=""`,
 		`user=$evil$`:                `user="a\" OR user=* | delete \""`,
 		`user="pre $evil$ post"`:     `user="pre a\" OR user=* | delete \" post"`,
-		`| eval x='$sq$'`:            `| eval x='it\'s\''`,
+		`| eval x='$name$'`:          `| eval x='alice'`,
 		`| eval x=$plus$, y=$pipe$`:  `| eval x="a+b", y="x | y"`,
 		`cost=$$5 and $name$`:        `cost=$5 and alice`,
 		`say="it's $name$"`:          `say="it's alice"`,
@@ -63,6 +65,13 @@ func TestSubstituteMap(t *testing.T) {
 	}
 	if _, err := SubstituteMap(`x=$missing$`, get); err != ErrMapField {
 		t.Errorf("missing: %v", err)
+	}
+	// A value that needs quotes cannot go where its quotes would not
+	// keep it one value.
+	for _, in := range []string{`user='$evil$'`, `user=a$evil$`, `user=$evil$b`, `| eval a='$sq$'`, `a="b"$evil$`, `$evil$"c"`} {
+		if _, err := SubstituteMap(in, get); err == nil || err == ErrMapField {
+			t.Errorf("%s: err = %v", in, err)
+		}
 	}
 	big := strings.Repeat("v", MaxMapSearchText)
 	if _, err := SubstituteMap(`x=$big$`, func(string) (string, bool) { return big, true }); err == nil {
@@ -88,29 +97,84 @@ func TestSubstituteMap(t *testing.T) {
 	}
 }
 
-// FuzzSubstituteMap checks that no value can change what map's search
-// does besides the value it compares with, in or out of quotes.
+// mapTemplates are map searches the fuzz test fills in, each with $v$.
+var mapTemplates = []string{
+	`user=$v$`, `user="$v$"`, `user='$v$'`, `a'$v$'`, `"$v$"x`, `x=1 $v$ y=2`, `user IN ($v$, b)`,
+	`* | eval a='$v$'`, `* | eval a=$v$, b=1`, `* | where a='$v$'`, `* | where a=$v$ | table a`,
+	`* | eval a="pre $v$ post" | stats count by a`, `* | search a=$v$ | head 1`,
+}
+
+// shape writes q's structure without its text values: the commands, the
+// kinds of conditions and the count of each list, so two queries with the
+// same shape do the same things with different values.
+func shape(v reflect.Value, b *strings.Builder) {
+	switch v.Kind() {
+	case reflect.Pointer, reflect.Interface:
+		if v.IsNil() {
+			b.WriteString("nil ")
+			return
+		}
+		if v.Kind() == reflect.Pointer {
+			b.WriteString(v.Type().String() + " ")
+		}
+		shape(v.Elem(), b)
+	case reflect.Struct:
+		b.WriteString("{")
+		for i := 0; i < v.NumField(); i++ {
+			shape(v.Field(i), b)
+		}
+		b.WriteString("}")
+	case reflect.Slice, reflect.Map:
+		fmt.Fprintf(b, "[%d ", v.Len())
+		if v.Kind() == reflect.Slice {
+			for i := 0; i < v.Len(); i++ {
+				shape(v.Index(i), b)
+			}
+		}
+		b.WriteString("]")
+	case reflect.String:
+		b.WriteString("s ")
+	default:
+		b.WriteString(v.Kind().String() + " ")
+	}
+}
+
+// FuzzSubstituteMap checks that no value changes the structure of map's
+// search, in or out of quotes: it parses to the same shape as with a
+// value of the same kind, or does not run.
 func FuzzSubstituteMap(f *testing.F) {
-	for _, s := range []string{"alice", `a" OR b=* | delete "`, "~x", "it's", `\`, `\"`, "$", "OR", "1e5", "a+b", ""} {
+	for _, s := range []string{"alice", `a" OR b=* | delete "`, "~x", "it's", `\`, `\"`, "$", "OR", "1e5", "a+b", "", "x OR user=* OR a=b", "x | head 1 | rename a as b", "x' , b=1, c='"} {
 		f.Add(s)
 	}
 	f.Fuzz(func(t *testing.T, v string) {
 		if len(v) > 1000 {
 			return
 		}
-		for _, tmpl := range []string{`user=$v$`, `user="$v$"`} {
+		// A value of the same kind: bare for a plain name or number, and
+		// quoted otherwise.
+		like := "x y"
+		if mapValue(v) == v {
+			like = v
+		}
+		for _, tmpl := range mapTemplates {
 			text, err := SubstituteMap(tmpl, func(string) (string, bool) { return v, true })
 			if err != nil {
-				t.Fatal(err)
+				continue
 			}
 			q, err := ParseMapSearch(text)
 			if err != nil {
-				// A value can fail to parse, as a lone \ in quotes can not.
 				continue
 			}
-			c, ok := q.Search.(*Compare)
-			if len(q.Commands) != 0 || !ok || c.Field != "user" || c.Op != "=" || c.Value != v {
-				t.Fatalf("%s with %q gave %s", tmpl, v, q.String())
+			base, _ := SubstituteMap(tmpl, func(string) (string, bool) { return like, true })
+			bq, err := ParseMapSearch(base)
+			if err != nil {
+				t.Fatalf("%s with %q: %v", tmpl, like, err)
+			}
+			var got, want strings.Builder
+			shape(reflect.ValueOf(q), &got)
+			shape(reflect.ValueOf(bq), &want)
+			if got.String() != want.String() {
+				t.Fatalf("%s with %q gave %s\nwant the shape of %s", tmpl, v, q.String(), bq.String())
 			}
 		}
 	})

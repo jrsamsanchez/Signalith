@@ -2,8 +2,10 @@ package query
 
 import (
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 // Map runs Search once for each of the first Max rows, with each $field$
@@ -128,24 +130,25 @@ func ParseMapSearch(text string) (*Query, error) {
 var ErrMapField = errors.New("a $field$ in map's search is missing from the row")
 
 // SubstituteMap replaces each $name$ in s with value(name). Inside double
-// or single quotes a value is escaped so it stays in them; elsewhere it is
-// written as one quoted value when it needs quotes, so no value can add
-// commands, conditions or expressions to the search. $$ is a literal $.
+// quotes a value is escaped so it stays in them. Elsewhere it is written
+// as one quoted value unless it is a number or a plain name, and a value
+// that needs quotes must stand apart from the text around it (not 'x' or
+// a$name$), since there quotes could not keep it one value. So no value
+// can add commands, conditions or expressions to the search. Single
+// quotes are not quotes here: the search lexer reads them as such only
+// in parts of eval and where. $$ is a literal $.
 func SubstituteMap(s string, value func(name string) (string, bool)) (string, error) {
 	var b strings.Builder
-	var quote byte // the quote the text is inside, or 0
+	inQuote := false
 	for i := 0; i < len(s); i++ {
 		ch := s[i]
 		switch {
-		case ch == '\\' && quote != 0 && i+1 < len(s):
+		case ch == '\\' && inQuote && i+1 < len(s):
 			b.WriteByte(ch)
 			b.WriteByte(s[i+1])
 			i++
-		case quote == 0 && ch == '"', quote == 0 && ch == '\'' && (i == 0 || strings.IndexByte(" \t\n\r\f\v(,=!<>+-*/%.", s[i-1]) >= 0):
-			quote = ch
-			b.WriteByte(ch)
-		case quote != 0 && ch == quote:
-			quote = 0
+		case ch == '"':
+			inQuote = !inQuote
 			b.WriteByte(ch)
 		case ch == '$':
 			end := strings.IndexByte(s[i+1:], '$')
@@ -162,11 +165,15 @@ func SubstituteMap(s string, value func(name string) (string, bool)) (string, er
 			if !ok {
 				return "", ErrMapField
 			}
-			if quote != 0 {
-				b.WriteString(strings.ReplaceAll(strings.ReplaceAll(v, `\`, `\\`), string(quote), `\`+string(quote)))
-			} else {
-				b.WriteString(mapValue(v))
+			if inQuote {
+				b.WriteString(strings.ReplaceAll(strings.ReplaceAll(v, `\`, `\\`), `"`, `\"`))
+				continue
 			}
+			out := mapValue(v)
+			if out != v && (!apart(b.String(), true) || !apart(s[i+1:], false)) {
+				return "", fmt.Errorf("the value of $%s$ needs quotes, so write it apart from the text around it or in double quotes, as \"$%s$\"", name, name)
+			}
+			b.WriteString(out)
 		default:
 			b.WriteByte(ch)
 		}
@@ -175,6 +182,22 @@ func SubstituteMap(s string, value func(name string) (string, bool)) (string, er
 		}
 	}
 	return b.String(), nil
+}
+
+// apart reports whether the text before (or after) a value ends (or
+// starts) where a word would: at the edge, a space, or one of | ( ) = ! < > ,
+// (not a ", where the value's quotes would run into another quoted text).
+func apart(s string, before bool) bool {
+	if s == "" {
+		return true
+	}
+	var r rune
+	if before {
+		r, _ = utf8.DecodeLastRuneInString(s)
+	} else {
+		r, _ = utf8.DecodeRuneInString(s)
+	}
+	return !isWordRune(r) && r != '"'
 }
 
 // mapValue writes a value that is not in quotes: bare when it is a number
