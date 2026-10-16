@@ -72,7 +72,7 @@ func TestDrilldown(t *testing.T) {
 		},
 		{
 			src:    `sourcetype=syslog earliest=-7d latest=-1d | where host!="a" | stats count by host`,
-			want:   Drill{Search: `sourcetype=syslog`, Pipe: "\n| where host!=a", Latest: "-1d", Fields: map[string]string{"host": "host"}},
+			want:   Drill{Search: `sourcetype=syslog`, Pipe: "\n| where host!=a", Earliest: "-7d", Latest: "-1d", Fields: map[string]string{"host": "host"}},
 			terms:  []string{`host=b`},
 			events: "sourcetype=syslog host=b\n| where host!=a",
 		},
@@ -88,8 +88,16 @@ func TestDrilldown(t *testing.T) {
 		{
 			// A plain search's events are its results.
 			src:    `datamodel=Malware | table dest, signature | head 50`,
-			want:   Drill{Search: `datamodel=Malware`, Pipe: "\n| table dest, signature\n| head 50", Where: true},
-			events: "datamodel=Malware\n| table dest, signature\n| head 50",
+			want:   Drill{Search: `datamodel=Malware`, Pipe: "\n| table dest, signature\n| head 50", Events: true},
+			terms:  []string{`dest=pc1`},
+			events: "datamodel=Malware dest=pc1\n| table dest, signature\n| head 50",
+		},
+		{
+			// head before stats picks which events are counted.
+			src:    `datamodel=Malware | head 100 | stats count by dest`,
+			want:   Drill{Search: `datamodel=Malware`, Pipe: "\n| head 100", Where: true, Fields: map[string]string{"dest": "dest"}},
+			terms:  []string{`dest=pc1`},
+			events: "datamodel=Malware\n| head 100\n| where dest=pc1",
 		},
 	}
 	for _, c := range cases {
@@ -120,6 +128,24 @@ func TestDrilldownMissingValueParses(t *testing.T) {
 		ev := drillQuery(d, `NOT host=*`)
 		if _, err := Parse(ev); err != nil {
 			t.Errorf("%q: %v", ev, err)
+		}
+	}
+}
+
+func TestDrilldownAfterRoundThreeCommands(t *testing.T) {
+	for src, want := range map[string]map[string]string{
+		`* | stats count by user, bytes | bin span=100 bytes`:               {"user": "user"},
+		`* | stats count by user, src | streamstats count as src`:           {"user": "user"},
+		`* | stats count by user, src | eventstats dc(user) as src`:         {"user": "user"},
+		`* | stats count by user | appendpipe [stats sum(count) as count]`:  nil,
+		`* | stats count by user | append [search * | stats count by user]`: nil,
+	} {
+		q, err := Parse(src)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := q.Drilldown().Fields; !reflect.DeepEqual(got, want) {
+			t.Errorf("%s: fields = %v, want %v", src, got, want)
 		}
 	}
 }

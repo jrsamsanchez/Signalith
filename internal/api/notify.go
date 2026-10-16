@@ -38,7 +38,7 @@ type Notify struct {
 // makes this server send to an address the request names.
 func (s *Server) routeNotify(api *router) {
 	api.admin("GET /api/notify", s.handleNotify)
-	api.admin("PUT /api/notify", s.handleNotifySave)
+	api.sensitive("PUT /api/notify", s.handleNotifySave)
 	api.admin("POST /api/notify/test", s.handleNotifyTest)
 	api.admin("GET /api/notify/deliveries", s.handleNotifyDeliveries)
 }

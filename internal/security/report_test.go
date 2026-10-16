@@ -71,7 +71,7 @@ func TestEvaluate(t *testing.T) {
 			t.Error("HSTS listed with HTTPS off")
 		}
 	}
-	if len(r.NotChecked) != 6 || r.CA == nil {
+	if len(r.NotChecked) != 5 || r.CA == nil {
 		t.Errorf("not checked %d, ca %v", len(r.NotChecked), r.CA)
 	}
 	if !strings.Contains(r.CA.Current.Subject, "Signalith Local CA") || r.CA.ScopeSetting != "standard" {

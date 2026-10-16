@@ -13,8 +13,10 @@ import (
 // CVE that applies to the software on it, all stamped with the scan's
 // finish time and the scanner intake.
 //
-// The CVEs are real, with their real CVSS scores and CISA KEV status, so
-// the findings read like the ones a live scan raises. Unlike live events,
+// The CVEs are real, with their real CVSS scores and CISA KEV status
+// (with its due date and ransomware use), so the findings read like the
+// ones a live scan raises. EPSS scores change every day: the ones here
+// are round examples of the kind each CVE has, not today's. Unlike live events,
 // the sample leaves out each CVE's NVD link (url), so the data names no
 // real domain.
 
@@ -28,6 +30,9 @@ type sampleVuln struct {
 	kev      bool
 	summary  string // first sentence of the NVD description
 	severity string // from the CVSS score
+	epss     float64
+	epssPct  float64
+	kevDue   string
 }
 
 // sampleService is one open port a scan found.
@@ -41,11 +46,11 @@ type sampleService struct {
 }
 
 var (
-	cveApacheTraversal = sampleVuln{"CVE-2021-41773", 7.5, true, "A flaw was found in a change made to path normalization in Apache HTTP Server 2.4.49", "high"}
-	cveApacheRCE       = sampleVuln{"CVE-2021-42013", 9.8, true, "It was found that the fix for CVE-2021-41773 in Apache HTTP Server 2.4.50 was insufficient", "critical"}
-	cveApacheSmuggling = sampleVuln{"CVE-2023-25690", 9.8, false, "Some mod_proxy configurations on Apache HTTP Server versions 2.4.0 through 2.4.55 allow a HTTP Request Smuggling attack", "critical"}
-	cveSSHAgent        = sampleVuln{"CVE-2023-38408", 9.8, false, "The PKCS#11 feature in ssh-agent in OpenSSH before 9.3p2 has an insufficiently trustworthy search path, leading to remote code execution if an agent is forwarded to an attacker-controlled system", "critical"}
-	cveSCPInjection    = sampleVuln{"CVE-2020-15778", 7.8, false, "scp in OpenSSH through 8.3p1 allows command injection in the scp.c toremote function, as demonstrated by backtick characters in the destination argument", "high"}
+	cveApacheTraversal = sampleVuln{"CVE-2021-41773", 7.5, true, "A flaw was found in a change made to path normalization in Apache HTTP Server 2.4.49", "high", 0.94, 0.999, "2021-11-17"}
+	cveApacheRCE       = sampleVuln{"CVE-2021-42013", 9.8, true, "It was found that the fix for CVE-2021-41773 in Apache HTTP Server 2.4.50 was insufficient", "critical", 0.94, 0.999, "2021-11-17"}
+	cveApacheSmuggling = sampleVuln{"CVE-2023-25690", 9.8, false, "Some mod_proxy configurations on Apache HTTP Server versions 2.4.0 through 2.4.55 allow a HTTP Request Smuggling attack", "critical", 0.05, 0.89, ""}
+	cveSSHAgent        = sampleVuln{"CVE-2023-38408", 9.8, false, "The PKCS#11 feature in ssh-agent in OpenSSH before 9.3p2 has an insufficiently trustworthy search path, leading to remote code execution if an agent is forwarded to an attacker-controlled system", "critical", 0.4, 0.97, ""}
+	cveSCPInjection    = sampleVuln{"CVE-2020-15778", 7.8, false, "scp in OpenSSH through 8.3p1 allows command injection in the scp.c toremote function, as demonstrated by backtick characters in the destination argument", "high", 0.03, 0.86, ""}
 )
 
 const (
@@ -91,6 +96,13 @@ func (g *gen) vulnScanEvents(scanID, network string, hosts map[string][]sampleSe
 				f["severity"] = v.severity
 				f["cvss"] = v.cvss
 				f["known_exploited"] = strconv.FormatBool(v.kev)
+				if v.kev {
+					// Both Apache CVEs are known to be used by ransomware gangs.
+					f["known_ransomware"] = "true"
+					f["kev_due"] = v.kevDue
+				}
+				f["epss"] = v.epss
+				f["epss_percentile"] = v.epssPct
 				g.b.emit(ingest.Event{Time: t, Model: "Vulnerabilities", Fields: f, Origin: ingest.Origin{Intake: ingest.IntakeScanner}})
 			}
 		}
@@ -151,7 +163,8 @@ func (g *gen) vulnerabilityScan() {
 		Title: "Nightly scan finds vulnerable servers",
 		Summary: "Signalith's nightly vulnerability scan of the server network finds Apache httpd 2.4.49 on the web server web-01, with two vulnerabilities attackers are known to use " +
 			"(CVE-2021-41773 and CVE-2021-42013, both in CISA's KEV catalog) and a critical request smuggling flaw (CVE-2023-25690). " +
-			"OpenSSH 8.2p1 on app-01 has a critical ssh-agent flaw (CVE-2023-38408), and the jump host jump-01 still answers on Telnet next to SSH.",
-		Detections: []string{"vuln-known-exploited", "vuln-critical", "vuln-cleartext-remote-login"},
+			"web-01 is a high-priority server, so the known exploited ones are critical findings there. " +
+			"OpenSSH 8.2p1 on app-01 has a critical ssh-agent flaw (CVE-2023-38408) that EPSS rates likely to be exploited, and the jump host jump-01 still answers on Telnet next to SSH.",
+		Detections: []string{"vuln-known-exploited", "vuln-known-exploited-priority-asset", "vuln-likely-exploited", "vuln-critical", "vuln-cleartext-remote-login"},
 	}, t.Add(time.Minute), "web-01", "app-01", "jump-01")
 }

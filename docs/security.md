@@ -526,6 +526,20 @@ idle, but is still signed out once **Sign in again after** has passed.
 **To fix:** set **Sign out after** to 1h or less and **Sign in again after** to 24h or
 less on the **Settings** page.
 
+### Two-step sign-in
+
+**Looks at:** **Require two-step sign-in** (`auth.mfa_required`, `off` by default):
+whether people who sign in with a password must also enter a code from an
+authenticator app (see [Two-step sign-in](users.md#two-step-sign-in)). Single sign-on
+users get their second step from their identity provider.
+
+- Good: `admins` or `everyone`.
+- Needs attention: `off`, so an admin's password alone signs in.
+
+**To fix:** set **Require two-step sign-in** to `admins` or `everyone` on the
+**Settings** page. Set it up for your own account first (user menu, **Two-step
+sign-in**), so you are not asked to in the middle of something.
+
 ### Agent tokens
 
 Shown when there are agent tokens: tokens made on **Add data** or with
@@ -757,7 +771,6 @@ them every time:
   [Backing up the key](encryption.md#backing-up-the-key)).
 - **Updates** for Signalith, OpenSearch and the operating system. Signalith doesn't
   contact the internet to check.
-- **Two-step sign-in**. Signalith has none of its own.
 - **The computers agents run on**.
 - **Copies of events outside Signalith**, such as exports, moved archives and OpenSearch
   snapshots.

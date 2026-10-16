@@ -775,6 +775,21 @@ type Auth struct {
 	// OIDC is single sign-on with an OpenID Connect identity provider,
 	// usually set on the Single sign-on tab of Settings.
 	OIDC OIDC `yaml:"oidc,omitempty"`
+	// SCIM lets the identity provider of single sign-on provision users.
+	SCIM SCIM `yaml:"scim,omitempty"`
+	// MFARequired says who must use two-step sign-in (a code from an
+	// authenticator app after the password): off, admins or everyone.
+	// See MFARequiredMode.
+	MFARequired string `yaml:"mfa_required,omitempty"`
+}
+
+// MFARequiredMode returns auth.mfa_required: off, admins or everyone.
+func (c *Config) MFARequiredMode() string {
+	switch m := strings.ToLower(strings.TrimSpace(c.Auth.MFARequired)); m {
+	case "admins", "everyone":
+		return m
+	}
+	return "off"
 }
 
 // UsersFile returns the absolute path of the users file.
@@ -1261,6 +1276,12 @@ type Vulns struct {
 	OpenVASUsername string `yaml:"openvas_username,omitempty"`
 	OpenVASPassword string `yaml:"openvas_password,omitempty"`
 	OpenVASCAFile   string `yaml:"openvas_ca_file,omitempty"`
+	// KEVURL and EPSSURL are copies of CISA's Known Exploited
+	// Vulnerabilities catalog and FIRST's EPSS scores, in place of the
+	// public ones: an http(s) address, or for a network with no internet a
+	// file on the server that runs the background jobs.
+	KEVURL  string `yaml:"kev_url,omitempty"`
+	EPSSURL string `yaml:"epss_url,omitempty"`
 }
 
 // Intel configures threat intel feeds. Nothing is downloaded until a
@@ -2137,6 +2158,14 @@ func (c *Config) applyEnv() error {
 		c.Vulns.NVDURL = v
 		c.fromEnv("vulns.nvd_url", "SIGNALITH_NVD_URL")
 	}
+	if v := strings.TrimSpace(os.Getenv("SIGNALITH_KEV_URL")); v != "" {
+		c.Vulns.KEVURL = v
+		c.fromEnv("vulns.kev_url", "SIGNALITH_KEV_URL")
+	}
+	if v := strings.TrimSpace(os.Getenv("SIGNALITH_EPSS_URL")); v != "" {
+		c.Vulns.EPSSURL = v
+		c.fromEnv("vulns.epss_url", "SIGNALITH_EPSS_URL")
+	}
 	if v, from, err := envSecret("SIGNALITH_M365_CLIENT_SECRET"); err != nil {
 		return err
 	} else if len(v) > 0 {
@@ -2398,6 +2427,7 @@ func (c *Config) Validate() error {
 		}
 	}
 	p = append(p, c.oidcProblems()...)
+	p = append(p, c.scimProblems()...)
 	if c.Detections.Dir == "" {
 		p = append(p, "detections.dir is required, for example: detections")
 	}
@@ -2444,6 +2474,11 @@ func (c *Config) Validate() error {
 			p = append(p, fmt.Sprintf("vulns.nvd_url %q must be http(s)://host[:port][/path]", redact.URL(c.Vulns.NVDURL)))
 		}
 	}
+	for _, f := range []struct{ key, v string }{{"vulns.kev_url", c.Vulns.KEVURL}, {"vulns.epss_url", c.Vulns.EPSSURL}} {
+		if err := FeedSource(f.v); err != nil {
+			p = append(p, f.key+": "+err.Error())
+		}
+	}
 	p = append(p, c.Intel.problems()...)
 	if c.Detections.MaxFindingsPerRun < 1 || c.Detections.MaxFindingsPerRun > 10000 {
 		p = append(p, "detections.max_findings_per_run must be between 1 and 10000")
@@ -2488,6 +2523,11 @@ func (c *Config) Validate() error {
 		if d, err := detect.ParseDuration(c.Ingest.MaxEventAge); err != nil || d < time.Hour || d > 3650*24*time.Hour {
 			p = append(p, fmt.Sprintf("ingest.max_event_age %q must be a duration from 1h to 3650d, for example 7d or 30d (empty: 7 days)", c.Ingest.MaxEventAge))
 		}
+	}
+	switch strings.ToLower(strings.TrimSpace(c.Auth.MFARequired)) {
+	case "", "off", "admins", "everyone":
+	default:
+		p = append(p, fmt.Sprintf("auth.mfa_required %q must be off, admins or everyone (empty: off)", c.Auth.MFARequired))
 	}
 	switch strings.ToLower(strings.TrimSpace(c.Ingest.URLQuery)) {
 	case "", "keep", "redact", "drop":
@@ -2826,6 +2866,7 @@ const header = `# Signalith configuration.
 # auth.session_timeout  sign the web UI out after this long idle (default 1h)
 # auth.session_max_age  sign the web UI out this long after sign-in, even when kept
 #                    signed in (default 24h; 1h to 30d)
+# auth.mfa_required     who must use two-step sign-in: off, admins or everyone
 # auth.users_file    where Users page accounts are kept (default users.json in lookups.dir)
 # auth.ldap          optional LDAP / Active Directory sign-in; usually set up on the Users
 #                    page instead (see docs/users.md)
@@ -2864,6 +2905,9 @@ const header = `# Signalith configuration.
 #                    format: lines, csv (with column:), stix or auto; see docs/threat-intel.md
 # vulns.nvd_api_key  optional free NVD API key for faster CVE lookups on the
 #                    Vulnerabilities page (SIGNALITH_NVD_API_KEY); see docs/vulnerabilities.md
+# vulns.kev_url, vulns.epss_url  copies of CISA's KEV catalog and FIRST's EPSS
+#                    scores (an address, or a file for a network with no internet);
+#                    empty uses the public ones; see docs/vulnerabilities.md
 # m365.tenant_id, m365.client_id, m365.client_secret  read Microsoft 365's audit
 #                    log with an Entra ID app (SIGNALITH_M365_CLIENT_SECRET); m365.cloud
 #                    is commercial, gcc, gcc_high or dod; see docs/microsoft-365.md

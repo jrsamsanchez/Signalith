@@ -701,3 +701,44 @@ func FuzzO365Records(f *testing.F) {
 		}
 	})
 }
+
+func FuzzGCPEntry(f *testing.F) {
+	f.Add(gcpFirewallDelete)
+	f.Add(gcpBucketListDenied)
+	f.Add(`{"message": {"data": "` + base64.StdEncoding.EncodeToString([]byte(gcpBucketListDenied)) + `"}}`)
+	f.Add(`{"logName": "projects/p/logs/", "resource": {}, "protoPayload": {"status": {"code": "x"}, "authorizationInfo": [1, {"a": [{"b": 2}]}]}, "labels": {"a": {"b": 1}}}`)
+	f.Add(`{"logName": "/logs/%zz", "resource": {"labels": []}, "protoPayload": {"methodName": ".", "request": {"a": {"b": {"c": {"d": {"e": 1}}}}}}}`)
+	f.Add(`{"message": {"data": "` + base64.StdEncoding.EncodeToString([]byte(gcpDeep(1000))) + `"}}`)
+	f.Fuzz(func(t *testing.T, msg string) {
+		d := json.NewDecoder(strings.NewReader(msg))
+		d.UseNumber()
+		var r map[string]any
+		if d.Decode(&r) != nil || r == nil {
+			return
+		}
+		ev := Normalize(GCPTag, r, now)
+		if GCPEntry(r) == nil {
+			// Not an entry: a generic event, whose names the pipeline's
+			// field checks look after.
+			return
+		}
+		if ev.Model == "" || ev.Fields["message"] == nil {
+			t.Fatalf("model %q fields %v", ev.Model, ev.Fields)
+		}
+		if _, err := json.Marshal(ev.Document()); err != nil {
+			t.Fatal(err)
+		}
+		if len(ev.Fields) > maxFieldsPerEvent {
+			t.Fatalf("%d fields", len(ev.Fields))
+		}
+		for k := range ev.Fields {
+			if !KnownField(k) && !validFieldName(k) {
+				t.Fatalf("field name %q", k)
+			}
+		}
+		// The same text as an OTLP body is an entry only if it is one.
+		if e := gcpFromOTLP(msg); e != nil && !IsGCPRecord(e) {
+			t.Fatalf("entry from text %v", e)
+		}
+	})
+}

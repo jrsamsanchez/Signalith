@@ -1,8 +1,6 @@
 {"rule": "07052556-d4b5-4bae-89aa-cbdc1bb11250", "cases": [
   {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"SERVICE_STOP","data":{"unit":"firewalld"}},
   {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"SERVICE_STOP","data":{"unit":"ufw"}},
-  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"SERVICE_STOP","data":{"unit":"firewalld"}},
-  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"SERVICE_STOP","data":{"unit":"ufw"}},
   {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SERVICE_STOQ","data":{"unit":"firewalld"}},
   {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SERVICE_STOP","data":{"unit":"firewalle"}},
   {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SERVICE_STOP","data":{}},

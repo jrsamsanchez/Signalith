@@ -310,6 +310,22 @@ func TestAgentConfig(t *testing.T) {
 	}
 }
 
+// The Google Cloud option writes the subscription the page names, and an
+// option it cannot use comes back with the field it came from.
+func TestAgentConfigGCP(t *testing.T) {
+	ts, _ := newTestServer(t)
+	q := url.Values{"os": {"gcp"}, "gcp_project": {"prod-logs-1"}, "gcp_subscription": {"audit-to-siem"}}
+	code, body := do(t, ts, "GET", "/api/agents/config?"+q.Encode(), "", true)
+	cfg, _ := body["config"].(string)
+	if code != http.StatusOK || !strings.Contains(cfg, "subscription: projects/prod-logs-1/subscriptions/audit-to-siem\n") {
+		t.Fatalf("%d %v", code, body)
+	}
+	q.Set("gcp_project", "Not_A_Project")
+	if code, body := do(t, ts, "GET", "/api/agents/config?"+q.Encode(), "", true); code != http.StatusBadRequest || body["field"] != "gcp_project" {
+		t.Errorf("bad project: %d %v", code, body)
+	}
+}
+
 func TestAgentConfigServerAddress(t *testing.T) {
 	ts, _ := newTestServerWith(t, func(s *Server) { s.TLS = newCertManager(t) })
 	// The default public_url is https://127.0.0.1:9000, which only this

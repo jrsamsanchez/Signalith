@@ -143,6 +143,21 @@ func checkSessions(f *Facts) *Check {
 	return &Check{State: Good, Line: "People are signed out after " + span(idle) + " without use, unless they choose Keep me signed in, and every sign-in ends after " + span(maxAge) + "."}
 }
 
+// checkMFA: accounts.mfa.
+func checkMFA(f *Facts) *Check {
+	switch f.Config.MFARequiredMode() {
+	case "everyone":
+		return &Check{State: Good, Line: "Everyone who signs in with a password also enters a code from an authenticator app."}
+	case "admins":
+		return &Check{State: Good, Line: "Admins who sign in with a password also enter a code from an authenticator app.",
+			Details: []string{"Other users can turn two-step sign-in on for themselves from the user menu."}}
+	}
+	return &Check{State: Attention, Line: "Admins can sign in with a password alone.",
+		Details: []string{"Users can turn two-step sign-in on for themselves from the user menu, but nobody has to."},
+		Fix: &Fix{Steps: []string{"Set Require two-step sign-in to admins or everyone."}, Setting: "auth.mfa_required",
+			Docs: docLabeled(docUsersMFA, "Two-step sign-in")}}
+}
+
 // checkAgentTokens: accounts.agent_tokens.
 func checkAgentTokens(f *Facts) *Check {
 	t := f.AgentTokens

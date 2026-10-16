@@ -31,7 +31,7 @@ type Playbooks struct {
 func (s *Server) routePlaybooks(api *router) {
 	// What a playbook does decides what Signalith changes by itself.
 	api.admin("GET /api/playbooks", s.handlePlaybooks)
-	api.admin("PUT /api/playbooks", s.handlePlaybooksSave)
+	api.sensitive("PUT /api/playbooks", s.handlePlaybooksSave)
 	// Approving is analyst work, like running an action by hand.
 	api.analyst("GET /api/playbooks/runs", s.handlePlaybookRuns)
 	api.analyst("POST /api/playbooks/runs/{id}/approve", s.handlePlaybookApprove)

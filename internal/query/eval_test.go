@@ -76,7 +76,7 @@ func TestEvalErrors(t *testing.T) {
 		`* | rex field=process`:                        "rex needs a quoted regular expression",
 		`* | rex "(\w+)"`:                              "named group",
 		`* | rex "(?<x>"`:                              "rex pattern",
-		`* | rex mode=sed "s/a/b/"`:                    "not supported",
+		`* | rex mode=sed "s/a/b/x"`:                   "unknown flags",
 		`* | rex bogus=1 "(?<x>.)"`:                    "unknown rex option",
 		`* | dedup`:                                    "dedup needs at least one field",
 		`* | dedup 0 user`:                             "at least 1 row",

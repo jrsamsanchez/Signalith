@@ -273,6 +273,8 @@ var knownFields = func() map[string]string {
 		// Vulnerability scans: a CVSS score has a decimal (9.8), which a
 		// long would cut to 9 in sorts, charts and stats.
 		"cvss": double,
+		// An EPSS score and percentile are fractions (0.944).
+		"epss": double, "epss_percentile": double,
 		// A connection's length in seconds (Zeek, Suricata): 0.4 s would
 		// be 0 as a long.
 		"duration": double,
@@ -326,6 +328,10 @@ var knownFields = func() map[string]string {
 	// Microsoft 365 audit records (o365.go): the record's own fields, and
 	// its record type by name.
 	for _, k := range o365Mapped {
+		m[k] = kw
+	}
+	// Google Cloud log entries (gcp.go): the entry's own fields.
+	for _, k := range gcpMapped {
 		m[k] = kw
 	}
 	// The fields the shipped cloud rules read (rulefields.go).

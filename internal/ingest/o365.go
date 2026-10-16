@@ -75,6 +75,18 @@ var o365RecordTypes = map[string]string{
 	"148": "DataCenterSecurityCmdlet", "174": "PowerPlatformAdminEnvironment",
 }
 
+// O365RecordType is the number of the record type a name names
+// (AzureActiveDirectoryStsLogon is 15), for test events, or "" when
+// Microsoft documents none by that name.
+func O365RecordType(name string) string {
+	for _, n := range slices.Sorted(maps.Keys(o365RecordTypes)) {
+		if o365RecordTypes[n] == name {
+			return n
+		}
+	}
+	return ""
+}
+
 // IsO365Record reports whether a decoded object is a Microsoft 365 audit
 // record: it has a time, an operation, a workload, a record type and the
 // tenant.
@@ -224,7 +236,7 @@ func ParseO365(r map[string]any) Event {
 		// Sigma names an alert by its name (eventName).
 		set("signature", str(r, "Name"))
 	default:
-		if a := o365ChangeAction(op); a != "" {
+		if a := O365ChangeAction(op); a != "" {
 			ev.Model = "Change"
 			f["action"] = a
 			set("change_type", workload)
@@ -234,10 +246,10 @@ func ParseO365(r map[string]any) Event {
 	return ev
 }
 
-// o365ChangeAction is what an admin operation did, by its verb: Exchange
+// O365ChangeAction is what an admin operation did, by its verb: Exchange
 // cmdlets (New-InboxRule, Set-Mailbox) and Entra ID's operations ("Add
 // member to role.", "Update user."). "" is not a change.
-func o365ChangeAction(op string) string {
+func O365ChangeAction(op string) string {
 	verb, _, _ := strings.Cut(op, "-")
 	if verb == op {
 		verb, _, _ = strings.Cut(op, " ")

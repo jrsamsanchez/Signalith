@@ -16,22 +16,25 @@ type Drill struct {
 	// Pipe holds the commands before the summary, each starting "\n| ".
 	Pipe  string `json:"pipe,omitempty"`
 	Where bool   `json:"where,omitempty"`
+	// Events is set when the query has no summary: each result row is an
+	// event.
+	Events bool `json:"events,omitempty"`
 	// Fields maps a result column to the event field its values come from:
 	// the by fields of stats, top or timechart, followed through renames.
 	Fields map[string]string `json:"fields,omitempty"`
 	// Series is timechart's by field: each series column is one of its
 	// values.
 	Series string `json:"series,omitempty"`
-	// Latest is the query's own latest=, if any. Its earliest= is already
-	// the panel's time range.
-	Latest string `json:"latest,omitempty"`
+	// Earliest and Latest are the query's own time range, if it sets one.
+	Earliest string `json:"earliest,omitempty"`
+	Latest   string `json:"latest,omitempty"`
 }
 
 // Drilldown returns how to find the events behind q's results. Every
 // query has one: without stats, top or timechart its results are the
 // events themselves.
 func (q *Query) Drilldown() *Drill {
-	d := &Drill{Latest: q.Latest}
+	d := &Drill{Earliest: q.Earliest, Latest: q.Latest}
 	base := &Query{Datamodel: q.Datamodel, Index: q.Index, Search: q.Search}
 	if or, ok := q.Search.(*Or); ok {
 		// a OR b, then host=x, would read as a OR (b AND host=x).
@@ -55,13 +58,21 @@ func (q *Query) Drilldown() *Drill {
 			if _, expr := c.Expr.(*Cond); expr {
 				d.Where = true
 			}
-		case *ThreatMatch:
+		case *ThreatMatch, *Table, *Sort:
+		case *Head, *Dedup:
+			// They pick which events a summary counts, so a filter must
+			// come after them; without a summary a filter only finds one
+			// of the events, which it can do first.
+			if cut < len(q.Commands) {
+				d.Where = true
+			}
 		default:
 			d.Where = true
 		}
 	}
 	d.Pipe = pipe.String()
 	if cut == len(q.Commands) {
+		d.Events = true
 		return d
 	}
 	fields := map[string]string{}
@@ -71,22 +82,41 @@ func (q *Query) Drilldown() *Drill {
 			fields[f] = f
 		}
 	case *Top:
-		for _, f := range append(append([]string{}, c.Fields...), c.By...) {
+		// An other row's value is in no event, so with one only the by
+		// fields narrow the events.
+		if !c.UseOther {
+			for _, f := range c.Fields {
+				fields[f] = f
+			}
+		}
+		for _, f := range c.By {
 			fields[f] = f
 		}
 	case *Timechart:
+		d.Series = c.By
+	case *Chart:
+		fields[c.Over] = c.Over
 		d.Series = c.By
 	}
 	for _, c := range q.Commands[cut+1:] {
 		switch c := c.(type) {
 		case *Rename:
 			for _, p := range c.Pairs {
-				f, ok := fields[p[0]]
-				delete(fields, p[0])
-				delete(fields, p[1])
-				if ok {
-					fields[p[1]] = f
+				// A renamed column replaces one that had its new name.
+				next := map[string]string{}
+				for col, f := range fields {
+					if to, ok := RenameField(p, col); ok {
+						next[to] = f
+					}
 				}
+				for col, f := range fields {
+					if _, renamed := RenameField(p, col); !renamed {
+						if _, replaced := next[col]; !replaced {
+							next[col] = f
+						}
+					}
+				}
+				fields = next
 			}
 		case *Eval:
 			for _, a := range c.Assigns {
@@ -100,11 +130,67 @@ func (q *Query) Drilldown() *Drill {
 			for _, f := range c.Fields {
 				delete(fields, f)
 			}
-		case *Rex:
-			// Its groups can overwrite any column.
+		case *MVExpand:
+			delete(fields, c.Field)
+		case *Convert:
+			for _, f := range c.Funcs {
+				if strings.Contains(f.Field, "*") {
+					for col := range fields {
+						if MatchField(f.Field, col) {
+							delete(fields, col)
+						}
+					}
+				} else if f.Func != "none" {
+					delete(fields, f.Field)
+				}
+				if f.As != "" {
+					delete(fields, f.As)
+				}
+			}
+		case *MakeMV:
+			delete(fields, c.Field)
+		case *NoMV:
+			delete(fields, c.Field)
+		case *MVCombine:
+			// A combined row stands for several events.
+			delete(fields, c.Field)
+		case *StrCat:
+			delete(fields, c.Dest)
+		case *RangeMap:
+			delete(fields, "range")
+		case *ForEach:
+			for col := range fields {
+				if _, ok := c.Match(col); ok {
+					delete(fields, col)
+				}
+			}
+		case *AddTotals:
+			// The totals row's label is in no event.
+			delete(fields, c.TotalName())
+			if c.LabelField != "" {
+				delete(fields, c.LabelField)
+			}
+		case *Rex, *Spath, *FromJSON:
+			// Its fields can overwrite any column.
 			clear(fields)
-		case *Stats, *Top, *Timechart:
-			// A summary of a summary: only the time range still holds.
+		case *Bin:
+			// Buckets are in no event.
+			if c.As != "" {
+				delete(fields, c.As)
+			} else {
+				delete(fields, c.Field)
+			}
+		case *StreamStats:
+			for _, a := range c.Aggs {
+				delete(fields, a.Column())
+			}
+		case *EventStats:
+			for _, a := range c.Aggs {
+				delete(fields, a.Column())
+			}
+		case *Stats, *Top, *Timechart, *Chart, *Append, *AppendPipe, *XYSeries, *Untable:
+			// A summary of a summary, or rows from elsewhere: only the
+			// time range still holds.
 			clear(fields)
 			d.Series = ""
 		}
@@ -117,7 +203,7 @@ func (q *Query) Drilldown() *Drill {
 
 func summarises(c Command) bool {
 	switch c.(type) {
-	case *Stats, *Top, *Timechart:
+	case *Stats, *Top, *Timechart, *Chart:
 		return true
 	}
 	return false

@@ -80,6 +80,7 @@ func TestTranslate(t *testing.T) {
 		"vulnerabilities on web1":                    `datamodel=Vulnerabilities category=vulnerability dest=web1`,
 		"known exploited vulnerabilities":            `datamodel=Vulnerabilities category=vulnerability known_exploited=true`,
 		"hosts with known exploited vulnerabilities": `datamodel=Vulnerabilities category=vulnerability known_exploited=true | stats count by dest | sort -count`,
+		"likely exploited vulnerabilities":           `datamodel=Vulnerabilities category=vulnerability known_exploited=false epss>=0.1`,
 		"critical vulns on dc01 in the last 7 days":  `datamodel=Vulnerabilities category=vulnerability severity=critical dest=dc01 earliest=-7d`,
 		"which hosts have CVE-2021-41773":            `datamodel=Vulnerabilities category=vulnerability cve=CVE-2021-41773 | stats count by dest | sort -count`,
 		"top cves":                                   `datamodel=Vulnerabilities category=vulnerability | top limit=10 cve`,

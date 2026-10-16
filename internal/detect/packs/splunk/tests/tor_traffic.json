@@ -1,11 +1,5 @@
 {"rule": "ea688274-9c06-4473-b951-e4cb7a5d7a45", "cases": [
   {"expect":true,"source":"synthesized","channel":"zeek:conn","event_id":"","data":{"conn_state":"SF","id.orig_h":"192.0.2.10","id.orig_p":"50123","id.resp_h":"93.184.216.34","id.resp_p":"443","proto":"tcp","service":"tor"}},
-  {"expect":true,"source":"synthesized","channel":"zeek:conn","event_id":"","data":{"conn_state":"SF","id.orig_h":"192.0.2.10","id.orig_p":"50123","id.resp_h":"93.184.216.34","id.resp_p":"443","proto":"tcp","service":"tor"}},
-  {"expect":true,"source":"synthesized","channel":"zeek:conn","event_id":"","data":{"conn_state":"SF","id.orig_h":"192.0.2.10","id.orig_p":"50123","id.resp_h":"93.184.216.34","id.resp_p":"443","proto":"tcp","service":"tor"}},
-  {"expect":true,"source":"synthesized","channel":"zeek:conn","event_id":"","data":{"conn_state":"SF","id.orig_h":"192.0.2.10","id.orig_p":"50123","id.resp_h":"93.184.216.34","id.resp_p":"443","proto":"tcp","service":"tor"}},
-  {"expect":true,"source":"synthesized","channel":"zeek:conn","event_id":"","data":{"conn_state":"SF","id.orig_h":"192.0.2.10","id.orig_p":"50123","id.resp_h":"93.184.216.34","id.resp_p":"443","proto":"tcp","service":"tor"}},
-  {"expect":false,"source":"synthesized","channel":"zeek:conn","event_id":"","data":{"conn_state":"SF","id.orig_h":"192.0.2.10","id.orig_p":"50123","id.resp_h":"93.184.216.34","id.resp_p":"443","proto":"tcp","service":"tos"}},
-  {"expect":false,"source":"synthesized","channel":"zeek:conn","event_id":"","data":{"conn_state":"SF","id.orig_h":"192.0.2.10","id.orig_p":"50123","id.resp_h":"93.184.216.34","id.resp_p":"443","proto":"tcp"}},
   {"expect":false,"source":"synthesized","channel":"zeek:conn","event_id":"","data":{"conn_state":"SF","id.orig_h":"192.0.2.10","id.orig_p":"50123","id.resp_h":"93.184.216.34","id.resp_p":"443","proto":"tcp","service":"tos"}},
   {"expect":false,"source":"synthesized","channel":"zeek:conn","event_id":"","data":{"conn_state":"SF","id.orig_h":"192.0.2.10","id.orig_p":"50123","id.resp_h":"93.184.216.34","id.resp_p":"443","proto":"tcp"}}
 ]}

@@ -44,6 +44,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/findings"
 	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"github.com/jrsamsanchez/signalith/internal/intel"
+	"github.com/jrsamsanchez/signalith/internal/lookuptables"
 	"github.com/jrsamsanchez/signalith/internal/m365"
 	"github.com/jrsamsanchez/signalith/internal/nlq"
 	"github.com/jrsamsanchez/signalith/internal/notify"
@@ -789,6 +790,9 @@ func cmdQuery(args []string) error {
 	if lists, err := assets.NewStore(c.LookupsDir()); err == nil {
 		eng.Assets = lists
 	}
+	if tables, err := lookuptables.Open(lookuptables.Dir(c.LookupsDir())); err == nil {
+		eng.Lookups = tables
+	}
 	if strings.Contains(src, "intel") || strings.Contains(src, "threatmatch") {
 		eng.Intel = intel.NewStore(intel.NewOpenSearch(newStore(c), c.OpenSearch.IndexPrefix))
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
@@ -807,6 +811,9 @@ func cmdQuery(args []string) error {
 		plan, err := eng.Compile(q)
 		if err != nil {
 			return err
+		}
+		if plan.Body == nil {
+			return nil // reads a lookup table, not OpenSearch
 		}
 		fmt.Printf("\nPOST /%s/_search\n", plan.Index)
 		return enc.Encode(plan.Body)
@@ -1196,6 +1203,12 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	log.Info("asset and identity lists loaded", "assets", len(lists.Assets()), "identities", len(lists.Identities()), "dir", c.LookupsDir())
 	eng.Assets = lists
 	in.jobs.Go(func() { reloadLookups(ctx, lists, log) })
+	// Likewise a damaged lookup table is left out, and the rest load.
+	tables, err := lookuptables.Open(lookuptables.Dir(c.LookupsDir()))
+	if err != nil {
+		log.Error("some lookup tables could not be read and are left out", "err", err)
+	}
+	eng.Lookups = tables
 	ibackend := intel.NewOpenSearch(cl, c.OpenSearch.IndexPrefix)
 	ibackend.Replicas = c.OpenSearch.Replicas.IndexSettings()
 	indicators := intel.NewStore(ibackend)
@@ -1433,9 +1446,12 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		openvas = &vulnscan.OpenVAS{Address: c.Vulns.OpenVASAddress, Username: c.Vulns.OpenVASUsername,
 			Password: c.Vulns.OpenVASPassword, CAFile: c.Vulns.OpenVASCAFile}
 	}
+	// CISA's KEV catalog and FIRST's EPSS scores rank what scans find.
+	exploits := vulnscan.NewExploitFeeds(vstore, c.Vulns.KEVURL, c.Vulns.EPSSURL)
+	exploits.Log = log
 	scanner := &vulnscan.Scanner{
-		Store: vstore, NVD: nvd, Events: pipeline, Server: sampleServer, NodeID: sampleNode, Log: log, OpenVAS: openvas,
-		Checker: &vulnscan.Checker{NVD: nvd, Docker: cluster.InContainer(), OpenVAS: openvas},
+		Store: vstore, NVD: nvd, Events: pipeline, Server: sampleServer, NodeID: sampleNode, Log: log, OpenVAS: openvas, Exploits: exploits,
+		Checker: &vulnscan.Checker{NVD: nvd, Docker: cluster.InContainer(), OpenVAS: openvas, Exploits: exploits},
 	}
 	if r.node != nil {
 		scanner.Leader, scanner.Paused = r.node.RunsJobs, r.node.WritesRefused

@@ -25,7 +25,7 @@ const (
 
 // publicRoutes work without signing in. Ingest checks its own token; the
 // CA certificate is public.
-var publicRoutes = slices.Concat([]string{"POST /api/ingest", otlpLogsRoute, "POST /api/login", "POST /api/logout", "GET /api/tls/ca.pem"}, osqueryRoutes, joinPublicRoutes, installRoutes, sensorPublicRoutes, ssoPublicRoutes)
+var publicRoutes = slices.Concat([]string{"POST /api/ingest", otlpLogsRoute, "POST /api/login", "POST /api/logout", "GET /api/tls/ca.pem"}, osqueryRoutes, joinPublicRoutes, installRoutes, sensorPublicRoutes, ssoPublicRoutes, scimPublicRoutes)
 
 // routeLogin adds the routes that work without signing in: the sign-in
 // page, its static assets, and sign-in and sign-out.
@@ -171,13 +171,16 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
+		// Code is the two-step code, sent with the password again once
+		// the first answer asked for it.
+		Code     string `json:"code"`
 		Remember bool   `json:"remember"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	p, err := s.signIn(r, req.Username, req.Password, "session")
+	p, err := s.signIn(r, req.Username, req.Password, req.Code, "session")
 	if err != nil {
 		writeSignInError(w, err)
 		return
@@ -192,7 +195,13 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	// someone elsewhere is guessing its password.
 	s.rememberBrowser(w, r, req.Username, p.Username)
 	p.Method = "session"
-	writeJSON(w, http.StatusOK, meView(p))
+	s.noteMFA(p)
+	me := meView(p)
+	if p.codeUsed != nil && p.codeUsed.Kind == users.CodeRecovery {
+		// The page says how many are left.
+		me["recovery_codes_left"] = p.codeUsed.Left
+	}
+	writeJSON(w, http.StatusOK, me)
 }
 
 // startSession starts a session for p, signing in from r: with shared
@@ -220,18 +229,20 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		}
 		s.sessions().Delete(r.Context(), c.Value)
 	}
-	http.SetCookie(w, &http.Cookie{Name: s.cookieName(r), Value: "", Path: "/", MaxAge: -1, HttpOnly: true,
-		SameSite: http.SameSiteStrictMode, Secure: s.secureCookie(r)})
+	for _, name := range []string{s.cookieName(r), s.recheckCookieName(r)} {
+		http.SetCookie(w, &http.Cookie{Name: name, Value: "", Path: "/", MaxAge: -1, HttpOnly: true,
+			SameSite: http.SameSiteStrictMode, Secure: s.secureCookie(r)})
+	}
 	writeJSON(w, http.StatusOK, map[string]any{})
 }
 
 // handleLoginPage serves the sign-in page, or sends a signed-in browser
-// to the app. A user who must choose a new password stays here, where the
-// page asks for it.
+// to the app. A user who must choose a new password or set up two-step
+// sign-in stays here, where the page asks for it.
 func (s *Server) handleLoginPage(w http.ResponseWriter, r *http.Request) {
 	if c, err := r.Cookie(s.cookieName(r)); err == nil {
 		if ss, ok := s.sessions().Lookup(r.Context(), c.Value, true); ok {
-			if p := s.principalFor(ss.User); p != nil && !p.MustChangePassword {
+			if p := s.principalFor(ss.User); p != nil && !p.MustChangePassword && !p.MustSetupMFA {
 				http.Redirect(w, r, "/", http.StatusSeeOther)
 				return
 			}

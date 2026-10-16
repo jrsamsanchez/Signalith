@@ -1,0 +1,4 @@
+{"rule": "99980a85-3a61-43d3-ac0f-b68d6b4797b1", "cases": [
+  {"expect":true,"source":"synthesized","channel":"gcp","event_id":"activity","data":{"gcp.audit.method_name":"compute.vpnTunnels.delete"}},
+  {"expect":false,"source":"synthesized","channel":"gcp","event_id":"activity","data":{}}
+]}

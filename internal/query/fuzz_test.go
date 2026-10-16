@@ -3,6 +3,7 @@ package query
 import (
 	"errors"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -34,6 +35,24 @@ var fuzzSeeds = []string{
 	`x | where name=O'Brien | where (a) = 1 | eval n=-x * 2 - -3 % 4, s=substr(cmd, -5, 2), t=strftime(_time, "%Y-%m-%d")`,
 	`* | eval a=`, `* | rex "(?<x"`, `* | dedup`, `* | where NOT`, `* | eval 'x|y'=1 | head 2`,
 	`* | where substr("abc", 1, "NaN") = "" OR replace(s, "", s) != s`,
+	`* | lookup owners host AS dest, "output" OUTPUTNEW owner AS "as", team | lookup t a`,
+	`* | transaction host, "a b" maxspan=5m maxpause=1h maxevents=3 startswith="x y" endswith=(NOT a=1 OR b IN (2, 3))`,
+	`* | join type=left max=0 user, "a b" [search datamodel=Change "x [y]" | stats count by user | join user [search | inputlookup t]] | head 3`,
+	`| inputlookup max=20 owners | where isnull(owner) | lookup owners user OUTPUT team`,
+	`* | streamstats current=f window=5 count, avg(bytes) as a, dc(user) by src | bin span=1h _time | bucket bytes span=0.5 AS "as"`,
+	`* | regex process!="(?i)-enc\s" | regex "x]" | regex "a b"=y | fields - _raw, tmp_* | fields + a`,
+	`| makeresults count=3 | append [search datamodel=Change | stats count by user] | appendpipe [| stats count by user | eval user="TOTAL" | appendpipe [head 1]]`,
+	`| tstats summariesonly=t count, values(Processes.process) as p from datamodel=Endpoint.Processes where Processes.process_name IN (a, b) NOT Processes.user=x earliest=-1d by Processes.dest, _time span=1h | where count > 1`,
+	`| tstats count where index=* by index, sourcetype | chart limit=3 sum(count) over index by sourcetype | untable index st c | xyseries index, st, c`,
+	`* | spath | spath input=body output="a b" path="x.y{}.z" | chart count, dc(user) by "by"`,
+	`search index=* user=adm* | search count>2 OR "a b" | top 3 countfield=n percentfield="p c" showperc=f useother=t otherstr=rest user by host`,
+	`* | rename *_ip as * a as b "x y" as z | rename Processes.* as * | rare showcount=f limit=0 src`,
+	`* | rex field=u mode=sed "s|^CORP\\\\|\\1&|g" | rex mode=sed "y/ab/cd/" | convert timeformat="%Y" ctime(*Time), dur2sec(d) AS secs, none(lastTime) | tail 3 | uniq`,
+	`* | makemv delim=", " allowempty=t r | makemv tokenizer="(\w+)@" r | mvexpand r limit=5 | reverse | addtotals col=t fieldname=sum labelfield=host label=All bytes_* | addcoltotals`,
+	`* | eval u=userIdentity.userName . "@" . a.b | where a != 'b' | stats count(eval(x>1)) AS n, values(eval(mvzip(a, b, "="))) AS v by h | fromjson body prefix="b c" | fromjson x`,
+	`* | mvcombine delim="," host | nomv "a b" | strcat allrequired=t src ":" port addr | rangemap field=n low=-10--1 hi=0-1.5 default=x | fieldformat t=strftime(t, "%F") | foreach b_* c [eval <<FIELD>>=<<FIELD>>*2 | eval m_<<MATCHSTR>>=1]`,
+	`* | eval a=printf("%-5s %05.1f", u, n), b=relative_time(now(), "-1d@d"), c=json_object("k", spath(j, "a.b{}")), d=mvrange(0, 5), e=validate(isint(n), "x")`,
+	`* | appendpipe [where x="]"]`, `* | append [inputlookup t]`, `* | appendpipe []`, `* | bin _time`, `* | streamstats median(x)`,
 }
 
 // FuzzParse checks that Parse never panics, that its errors carry a
@@ -88,5 +107,27 @@ func FuzzParse(f *testing.F) {
 		if s3, ok := FromQuery(q3); !ok || !reflect.DeepEqual(s3, want) {
 			t.Fatalf("builder round trip for %q via %q:\n got %+v (%v)\nwant %+v", src, btext, s3, ok, want)
 		}
+	})
+}
+
+// FuzzParseSed reads any rex mode=sed expression: it fails with an error
+// or gives a regular expression that compiles and a template.
+func FuzzParseSed(f *testing.F) {
+	for _, s := range []string{`s/a/b/`, `s/(\w+)@(\S+)/\2 \1/g`, `s|x\|y|&&|3`, `y/abc/xyz/`, `s/a/\\\&$/`, `s#é#ü#`} {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, expr string) {
+		s, err := ParseSed(expr)
+		if err != nil {
+			return
+		}
+		if s.Y {
+			return
+		}
+		re, err := regexp.Compile(s.Find)
+		if err != nil {
+			t.Fatalf("ParseSed(%q) gave a pattern that does not compile: %v", expr, err)
+		}
+		_ = re.ExpandString(nil, s.GoTemplate(), "ab", []int{0, 2})
 	})
 }

@@ -140,31 +140,7 @@
     onclick: () => openSearch(query, earliest),
   }, icon('search'));
   // ---------- drilldown: a number opens Search on the events behind it ----------
-  // A drill (query.Drill on the server) is the query's search, the commands
-  // before its stats or timechart, and which result columns name event
-  // fields. drillQuery adds [field, value] filters to it; a value missing
-  // from the row matches the events without the field.
-  function drillQuery(dr, pairs = []) {
-    const terms = pairs.filter(([, v]) => !Array.isArray(v) && (v == null || typeof v !== 'object'))
-      .map(([f, v]) => (v == null || v === '' ? `NOT ${f}=*` : `${f}=${quoteValue(v)}`));
-    let search = dr.search || '';
-    if (terms.length && !dr.where) search = [search, ...terms].filter(Boolean).join(' ');
-    let q = (search || '*') + (dr.pipe || '');
-    if (terms.length && dr.where) q += '\n| where ' + terms.join(' AND ');
-    return q;
-  }
-  // rowPairs: the field filters for one stats or top row.
-  const rowPairs = (dr, res, row) => Object.entries(dr.fields || {}).filter(([c]) => (res.columns || []).includes(c)).map(([c, f]) => [f, row[c]]);
-  // bucketTimes: the start and end of timechart row i, or null when the
-  // rows do not say how long a bucket is.
-  function bucketTimes(rows, i) {
-    const t = (k) => new Date(rows[k]._time).getTime();
-    if (i == null || !rows[i] || rows.length < 2) return null;
-    const start = t(i);
-    const step = i + 1 < rows.length ? t(i + 1) - start : start - t(i - 1);
-    if (!(step > 0)) return null;
-    return [new Date(start).toISOString(), new Date(start + step - 1).toISOString()];
-  }
+  // (drillQuery and friends are in app.js; the Search page uses them too.)
   // openDrill opens Search on the events over a bucket's time, or else the
   // panel's.
   function openDrill(dr, pairs, bucket, earliest) {
@@ -174,8 +150,9 @@
   // timechartPick opens the events behind one column, one segment of it
   // (series set), or one series over the whole time range (i null).
   const timechartPick = (dr, rows, earliest) => (i, series) =>
-    openDrill(dr, series != null && dr.series ? [[dr.series, series]] : [], bucketTimes(rows, i), earliest);
+    openDrill(dr, series != null && dr.series ? [[dr.series, series]] : [], drillBucket(rows, i), earliest);
   const DRILL_HINT = 'Click to see the events';
+  const rowPairs = (dr, res, i) => drillTarget(dr, res, i).pairs;
 
   const smallButton = (text, iconName, onclick) => el('button', { class: 'btn btn--secondary btn--sm', type: 'button', onclick }, iconName ? icon(iconName) : null, text);
   // retry reloads what failed: the dashboard's definition, or its data.
@@ -1161,9 +1138,9 @@
             notes.push('Bars need a number column; try | stats count by <field>.');
             content = panelTable(res, earliest, dr);
           } else {
-            content = rankList(rows.slice(0, 20).map((r) => ({
+            content = rankList(rows.slice(0, 20).map((r, ri) => ({
               label: labels.length ? labels.map((c) => fmtValue(r[c])).join(' · ') : vcol, value: num(r[vcol]),
-              ...(dr ? { title: DRILL_HINT, onclick: () => openDrill(dr, rowPairs(dr, res, r), null, earliest) } : {}),
+              ...(dr ? { title: DRILL_HINT, onclick: () => openDrill(dr, rowPairs(dr, res, ri), null, earliest) } : {}),
             })));
           }
         }
@@ -1196,24 +1173,37 @@
     cols = cols.slice(0, 8);
     return el('div', { class: 'db-table' }, el('table', { class: 'table table--compact' },
       el('thead', {}, el('tr', {}, ...cols.map((c) => el('th', { 'data-col': c, title: c, class: typeof (rows[0] || {})[c] === 'number' ? 'num' : '' }, c)))),
-      el('tbody', {}, ...rows.slice(0, 100).map((r, ri) => el('tr', {}, ...cols.map((c) => {
+      el('tbody', {}, ...rows.slice(0, 100).map((r, ri) => el('tr', dr && dr.events ? eventRow(dr, r, res.kind === 'events' ? cols : res.columns || cols, earliest) : {}, ...cols.map((c) => {
         const v = r[c];
         const text = c === '_time' ? shortTime(v) : fmtValue(v);
         const pivot = typeof PIVOTS !== 'undefined' && PIVOTS[c] && v != null && v !== '' && !Array.isArray(v);
         if (dr && res.kind !== 'events' && typeof v === 'number' && c !== '_time') {
-          const pairs = res.kind === 'timechart' ? (dr.series ? [[dr.series, c]] : []) : rowPairs(dr, res, r);
-          const bucket = res.kind === 'timechart' ? bucketTimes(rows, ri) : null;
+          const t = drillTarget(dr, res, ri, c);
           return el('td', { class: 'num' }, el('a', {
             href: '#search', class: 'db-drill', title: `${text}. ${DRILL_HINT}.`,
-            onclick: (ev) => { ev.preventDefault(); openDrill(dr, pairs, bucket, earliest); },
+            onclick: (ev) => { ev.preventDefault(); openDrill(dr, t.pairs, t.bucket, earliest); },
           }, text));
         }
         return el('td', { class: (typeof v === 'number' ? 'num' : '') + (pivot ? ' mono' : ''), title: c === '_time' ? fmtTime(v) : text },
           pivot ? el('a', {
             href: '#search', class: 'db-pivot', title: `Search every event with ${c}=${text}`,
-            onclick: (ev) => { ev.preventDefault(); openSearch(c + '=' + quoteValue(v), earliest); },
+            onclick: (ev) => { ev.preventDefault(); ev.stopPropagation(); openSearch(c + '=' + quoteValue(v), earliest); },
           }, text) : text);
       }))))));
+  }
+
+  // eventRow makes a row of events open that event in Search: its values,
+  // at its exact time.
+  function eventRow(dr, r, cols, earliest) {
+    const go = () => {
+      const t = r._time != null ? new Date(r._time) : null;
+      const at = t && !isNaN(t) ? t.toISOString() : null;
+      openSearch(drillEvent(dr, r, cols), at || earliest, at || dr.latest || undefined);
+    };
+    return {
+      class: 'db-row-drill', tabindex: '0', title: 'Click to open this event in Search',
+      onclick: go, onkeydown: (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); go(); } },
+    };
   }
 
   // ---------- saving ----------

@@ -135,21 +135,29 @@ func (p *Pipeline) IngestOTLP(ctx context.Context, body []byte, isJSON bool) (*R
 	return total, nil
 }
 
-// otlpEvents maps one OTLP log record to its events: one, or each record
-// of an Azure Event Hub message.
+// otlpEvents maps one OTLP log record to its events: one, each record of
+// an Azure Event Hub message, or the Google Cloud log entry of a Pub/Sub
+// message.
 func otlpEvents(l *otlpLog, now time.Time) []Event {
+	parse := ParseAzure
 	recs := azureFromOTLP(l.body)
+	if recs == nil {
+		if r := gcpFromOTLP(l.body); r != nil {
+			parse, recs = ParseGCP, []map[string]any{r}
+		}
+	}
 	if recs == nil {
 		return []Event{otlpEvent(l, now)}
 	}
 	host, _ := l.resource["host.name"].(string)
 	out := make([]Event, 0, len(recs))
 	for _, r := range recs {
-		ev := ParseAzure(r)
+		ev := parse(r)
 		if s, _ := ev.Fields["host"].(string); s == "" && host != "" {
 			ev.Fields["host"] = host
 		}
-		// The record's own time, else when Event Hubs took the message.
+		// The record's own time, else when Event Hubs or Pub/Sub took the
+		// message.
 		switch {
 		case !ev.Time.IsZero():
 		case l.time > 0:

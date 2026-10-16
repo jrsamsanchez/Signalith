@@ -81,7 +81,7 @@ services:
     restart: "no"
 
   opensearch:
-    image: opensearchproject/opensearch:2.17.1@sha256:1193b7c29c5d63028523728243cc4da047ac49f697a8f8105e5aeee2f89bcc4c
+    image: opensearchproject/opensearch:3.9.0@sha256:adfa61f85025d06b4aeb562e7e74fde7e31c437039c93c3862c17e9acebd6c7c
     restart: unless-stopped
     depends_on:
       setup: { condition: service_completed_successfully }
@@ -146,7 +146,7 @@ services:
   # Signalith starts only once this succeeds. Its log shows each step:
   #   docker compose -f deploy/docker/docker-compose.yml logs opensearch-security
   opensearch-security:
-    image: opensearchproject/opensearch:2.17.1
+    image: opensearchproject/opensearch:3.9.0
     depends_on:
       setup: { condition: service_completed_successfully }
       # Started, not healthy: OpenSearch turns healthy only once its

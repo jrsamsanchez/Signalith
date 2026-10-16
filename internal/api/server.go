@@ -229,9 +229,10 @@ type Server struct {
 
 	authOnce     sync.Once
 	ssoOnce      sync.Once
-	creds        credCache // recently checked Basic credentials
-	routes       []route   // every API route and its role, from Handler
-	caseLocks    caseLocks // one lock per case being changed
+	scimRefused  scimRefusals // when a refused SCIM token was last logged, by address
+	creds        credCache    // recently checked Basic credentials
+	routes       []route      // every API route and its role, from Handler
+	caseLocks    caseLocks    // one lock per case being changed
 	checksMu     sync.Mutex
 	dirChecks    map[string]dirCheck // when each directory user was last checked
 	dirSlotsOnce sync.Once
@@ -331,9 +332,10 @@ func (s *Server) Handler() http.Handler {
 	// The security checks name files, accounts and addresses on the
 	// server, and the certificate authority is the server's to change.
 	api.admin("GET /api/security", s.handleSecurity)
-	api.admin("POST /api/security/ca", s.handleSecurityCA)
+	api.sensitive("POST /api/security/ca", s.handleSecurityCA)
 	s.routeDetections(api)
 	s.routeRisk(api)
+	s.routeLookupTables(api)
 	s.routeAsk(api)
 	s.routeInvestigate(api)
 	s.routeIntel(api)
@@ -360,6 +362,7 @@ func (s *Server) Handler() http.Handler {
 	s.routeClusterOSIdentity(api)
 	s.routeClusterInstall(mux, api)
 	s.routeSensor(mux, api)
+	s.routeSCIM(mux, api)
 	s.routeSensors(api)
 	s.routeTokens(api)
 	s.routeAPITokens(api)
@@ -798,6 +801,7 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 		writeSearchError(w, err)
 		return
 	}
+	res.Drill = q.Drilldown()
 	writeJSON(w, http.StatusOK, res)
 }
 
@@ -1032,6 +1036,9 @@ func (s *Server) handleAgentConfig(w http.ResponseWriter, r *http.Request) {
 		// AWS CloudTrail: the bucket and queue the Collector reads.
 		AWSBucket:   v.Get("aws_bucket"),
 		AWSQueueURL: v.Get("aws_queue"),
+		// Google Cloud: the subscription the Collector pulls.
+		GCPProject:      v.Get("gcp_project"),
+		GCPSubscription: v.Get("gcp_subscription"),
 	}
 	agentTLS(&opts, certs)
 	a, err := agents.Generate(opts)
