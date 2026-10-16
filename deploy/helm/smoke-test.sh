@@ -35,7 +35,7 @@ until_ok 60 "the web Service answers through port-forward" sh -c "curl -sfk $URL
 
 PW=$(secret initial-admin-password)
 TOKEN=$(secret ingest-token)
-[ -n "$PW" ] && [ -n "$TOKEN" ] || fail "no password or ingest token in $FULL-secrets"
+if [ -z "$PW" ] || [ -z "$TOKEN" ]; then fail "no password or ingest token in $FULL-secrets"; fi
 api() { curl -sfk -u "admin:$PW" "$URL$1"; }
 
 # Both servers and the scanner joined one cluster by themselves, with the
