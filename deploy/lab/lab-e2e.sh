@@ -99,7 +99,7 @@ port_ready() { curl -fsSk -o /dev/null --max-time 5 "https://$1:$2/readyz"; }
 WEB_PORT=''
 for p in 9000 8080; do
   if curl -fsSk -o /dev/null --max-time 5 "https://127.0.0.1:$p/api/tls/ca.pem" &&
-    curl -sk --max-time 5 "https://127.0.0.1:$p/" | grep -qi '<html'; then
+    curl -sk --max-time 5 "https://127.0.0.1:$p/login" | grep -qi '<html'; then
     WEB_PORT=$p
     break
   fi
@@ -301,9 +301,9 @@ else
     else
       fail "The web port sends agents to the agent port" "answered $c: $(head -c 200 "$OUT/.otlp")"
     fi
-    c=$(curl -sk -o "$OUT/.page" -w '%{http_code}' --max-time 5 "https://127.0.0.1:$AGENT_PORT/")
+    c=$(curl -sk -o "$OUT/.page" -w '%{http_code}' --max-time 5 "https://127.0.0.1:$AGENT_PORT/login")
     if grep -qi '<html' "$OUT/.page" 2>/dev/null && [[ $c == 2* ]]; then
-      fail "The agent port does not serve the web page" "https://127.0.0.1:$AGENT_PORT/ returned the web page"
+      fail "The agent port does not serve the web page" "https://127.0.0.1:$AGENT_PORT/login returned the web page"
     else
       pass "The agent port does not serve the web page" "$c"
     fi
@@ -570,7 +570,7 @@ else
   fail "Security posture dashboard" "($CODE) $(why)"
 fi
 
-page=$(curl -sS --max-time 10 --cacert "$CA" "$WEB/")
+page=$(curl -sS --max-time 10 --cacert "$CA" "$WEB/login")
 if grep -qi '<title' <<<"$page"; then
   missing=''
   while read -r a; do
@@ -578,7 +578,7 @@ if grep -qi '<title' <<<"$page"; then
   done < <(grep -oE '(src|href)="/[^"]+\.(js|css)[^"]*"' <<<"$page" | sed -E 's/^(src|href)="//; s/"$//' | sort -u)
   [ -z "$missing" ] && pass "The web page and its scripts load" || fail "The web page and its scripts load" "missing:$missing"
 else
-  fail "The web page loads" "no page at $WEB/"
+  fail "The web page loads" "no page at $WEB/login"
 fi
 
 if call GET /api/compliance; then pass "Compliance page" "$(j '.frameworks | length') frameworks"; else fail "Compliance page" "($CODE) $(why)"; fi
