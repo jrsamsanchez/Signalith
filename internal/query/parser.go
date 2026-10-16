@@ -62,7 +62,7 @@ func parseAt(src string, base, depth int) (*Query, error) {
 	p := &parser{toks: toks, depth: depth, src: src, base: base}
 	// A query copied from Splunk may start with the search command's name.
 	if t := p.peek(); t.kind == tokWord && strings.EqualFold(t.text, "search") {
-		if n := p.peekAt(1); n.kind != tokEOF && !(n.kind == tokOp && n.text == "=") {
+		if n := p.peekAt(1); n.kind != tokEOF && n.kind != tokOp {
 			p.next()
 		}
 	}
