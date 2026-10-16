@@ -766,6 +766,8 @@ type Auth struct {
 	// OIDC is single sign-on with an OpenID Connect identity provider,
 	// usually set on the Single sign-on tab of Settings.
 	OIDC OIDC `yaml:"oidc,omitempty"`
+	// SCIM lets the identity provider of single sign-on provision users.
+	SCIM SCIM `yaml:"scim,omitempty"`
 	// MFARequired says who must use two-step sign-in (a code from an
 	// authenticator app after the password): off, admins or everyone.
 	// See MFARequiredMode.
@@ -2411,6 +2413,7 @@ func (c *Config) Validate() error {
 		}
 	}
 	p = append(p, c.oidcProblems()...)
+	p = append(p, c.scimProblems()...)
 	if c.Detections.Dir == "" {
 		p = append(p, "detections.dir is required, for example: detections")
 	}

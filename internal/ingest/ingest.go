@@ -354,11 +354,12 @@ func (p *Pipeline) write(ctx context.Context, events []Event, ids []string) (*Re
 		// After the drop, so only Signalith sets these. The sample data
 		// carries its own marker instead.
 		if p.SampleMark == "" {
-			if o := ev.Origin; !o.IsZero() {
-				o.stamp(ev.Fields)
-			} else {
-				ctxOrigin.stamp(ev.Fields)
+			o := ev.Origin
+			if o.IsZero() {
+				o = ctxOrigin
 			}
+			o.stamp(ev.Fields)
+			setSource(ev.Fields, o.Intake)
 		}
 		if ev.Time.IsZero() {
 			ev.Time = recv
@@ -701,7 +702,37 @@ func Normalize(tag string, r map[string]any, now time.Time) Event {
 		raw, _ := json.Marshal(r)
 		ev.Fields["message"] = string(raw)
 	}
+	if !hasSource(ev.Fields) {
+		// Where the agent read it: the file (the tail inputs' Path_Key),
+		// or the journal.
+		if f := str(r, "file"); f != "" {
+			ev.Fields["source"] = truncateUTF8(CapValue(f), maxSourceLen)
+		} else if strings.HasPrefix(tag, "linux.journal") {
+			ev.Fields["source"] = "journald"
+		}
+	}
 	return ev
+}
+
+// maxSourceLen caps a source taken from a file path.
+const maxSourceLen = 1024
+
+func hasSource(f map[string]any) bool {
+	s, ok := f["source"].(string)
+	return ok && s != ""
+}
+
+// setSource gives an event without a source one, as Splunk's source field
+// reads: a Windows event's log (WinEventLog:Security), else how it arrived.
+func setSource(f map[string]any, intake string) {
+	if hasSource(f) {
+		return
+	}
+	if st, _ := f["sourcetype"].(string); strings.HasPrefix(st, "WinEventLog:") {
+		f["source"] = st
+	} else if intake != "" {
+		f["source"] = intake
+	}
 }
 
 func sourcetypeForTag(tag string) string {

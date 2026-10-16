@@ -576,10 +576,35 @@ func (e *Engine) run(ctx context.Context, q *query.Query, p *Plan) (*Result, err
 	if p.threat != nil {
 		e.threatAnnotate(res, p.threat, p.Mode == "events")
 	}
+	if len(p.post) == 0 {
+		return res, nil
+	}
+	before := resultBytes(res)
 	if err := e.post(ctx, res, p.post, q); err != nil {
 		return nil, err
 	}
+	// Commands such as rex and fillnull can put one value in many fields
+	// without building anything, but each copy is written out with the
+	// result.
+	if grown := resultBytes(res) - before; grown > maxResultGrowth {
+		return nil, &QueryError{Msg: fmt.Sprintf("the search's commands add more than %d MB to its results; narrow the search first", maxResultGrowth>>20)}
+	}
 	return res, nil
+}
+
+// maxResultGrowth caps how much a search's commands may add to the rows
+// they were given, measured as written out.
+const maxResultGrowth = maxEvalTotal
+
+// resultBytes is about how many bytes res's rows take once written out.
+func resultBytes(res *Result) int {
+	n := 0
+	for _, r := range res.Rows {
+		for f, v := range r {
+			n += len(f) + valueSize(v)
+		}
+	}
+	return n
 }
 
 // post runs commands over rows held in memory; q is the query they belong

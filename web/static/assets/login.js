@@ -134,6 +134,7 @@
     role: ['Your account can’t use Signalith yet.', 'It isn’t in a group that Signalith lets in. Ask a Signalith admin to add you to one.'],
     new: ['You haven’t used Signalith before, and new users aren’t added.', 'Ask a Signalith admin to let you in.'],
     taken: ['Another Signalith user already has your username.', 'Ask a Signalith admin to sort it out.'],
+    unconfirmed: ['Signalith couldn’t confirm this is the account your organization set up for you.', 'Ask a Signalith admin to check provisioning under Settings, Single sign-on.'],
     disabled: REFUSED_DISABLED,
     busy: ['Only admins can sign in right now.', 'Signalith can’t reach its storage. Try again later.'],
     store: ['Signalith couldn’t save your sign-in.', 'Try again. If it keeps happening, tell a Signalith admin.'],

@@ -35,6 +35,7 @@ var Common = []Field{
 	{Name: "_time", Type: "time", Description: "When the event happened"},
 	{Name: "host", Type: "string", Description: "Host that reported the event"},
 	{Name: "sourcetype", Type: "string", Description: "Source format, for example WinEventLog:Security or linux:auth"},
+	{Name: "source", Type: "string", Description: "Where the event was read from: a log file, a Windows event log, journald, or how it arrived (syslog, otlp, osquery, agent)"},
 	{Name: "datamodel", Type: "string", Description: "Data model the event was mapped to"},
 	{Name: "vendor_product", Type: "string", Description: "Product that produced the event"},
 	{Name: "signature_id", Type: "string", Description: "Vendor event code, such as a Windows event ID"},

@@ -304,7 +304,10 @@ func TestClusterSharedUsersRoundRobin(t *testing.T) {
 }
 
 // blockWrites makes OpenSearch refuse every write to the test's indices
-// as when its disk passes the flood-stage watermark, or lifts that.
+// with a cluster_block_exception, as when its disk passes the flood-stage
+// watermark, or lifts that. It sets a write block rather than the disk's
+// own read_only_allow_delete, which OpenSearch lifts by itself as soon as
+// its disk monitor sees enough free space, in the middle of a test.
 func (h *clusterHarness) blockWrites(on bool) {
 	h.t.Helper()
 	if h.fake != nil {
@@ -318,7 +321,7 @@ func (h *clusterHarness) blockWrites(on bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	if err := h.os.Do(ctx, http.MethodPut, "/"+url.PathEscape(h.prefix+"*")+"/_settings",
-		map[string]any{"index.blocks.read_only_allow_delete": v}, nil); err != nil {
+		map[string]any{"index.blocks.write": v}, nil); err != nil {
 		h.t.Fatalf("block writes %v: %v", on, err)
 	}
 }

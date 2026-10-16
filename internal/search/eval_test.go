@@ -499,3 +499,31 @@ func TestEventStatsChargesEachRow(t *testing.T) {
 		t.Errorf("err = %v, rows = %v", err, res.Rows)
 	}
 }
+
+func TestCommandsCannotGrowResultsWithoutLimit(t *testing.T) {
+	// Each command shares one 4 KB value among 10,000 rows, which costs
+	// nothing to build but 40 MB to write out; ten of them pass the limit.
+	wide := strings.Repeat("x", 4000)
+	for name, cmd := range map[string]string{
+		"fillnull": `fillnull value="` + wide + `" a%d`,
+		"rex":      `rex field=s "(?<a%d>.*)"`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			q := `| makeresults count=10000 | eval s="` + wide + `"`
+			for i := range 10 {
+				q += " | " + fmt.Sprintf(cmd, i)
+			}
+			e := &Engine{Store: &fakeStore{}}
+			_, err := e.Run(context.Background(), q)
+			var qe *QueryError
+			if !errors.As(err, &qe) || !strings.Contains(err.Error(), "MB") {
+				t.Fatalf("err = %v", err)
+			}
+			// Fewer of them are fine.
+			q = `| makeresults count=10000 | eval s="` + wide + `" | ` + fmt.Sprintf(cmd, 0)
+			if _, err := e.Run(context.Background(), q); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
