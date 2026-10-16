@@ -347,7 +347,7 @@ Supported sources in Phase 1:
 | AWS CloudTrail sign-ins and API calls, through the OpenTelemetry Collector ([docs/aws-cloudtrail.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/aws-cloudtrail.md)) | Authentication, Change or Other |
 | Microsoft Entra ID sign-ins, audit log and risk detections, and the Azure activity log, through an Event Hub and the OpenTelemetry Collector ([docs/azure.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/azure.md)) | Authentication, Change or Alerts |
 | Microsoft 365 audit log (Exchange, SharePoint, OneDrive, Teams, admin activity and alerts), read from Microsoft's Management Activity API with no agent ([docs/microsoft-365.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/microsoft-365.md)) | Authentication, Change, Alerts or Other |
-| Google Cloud audit logs (Admin Activity, Data Access, System Event, Policy Denied), through a log sink, Pub/Sub and the OpenTelemetry Collector ([docs/google-cloud.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/google-cloud.md)) | Change, Authentication or Other |
+| Google Cloud audit logs (Admin Activity, Data Access, System Event, Policy Denied), and Google Workspace admin and sign-in audit logs shared with Google Cloud, through a log sink, Pub/Sub and the OpenTelemetry Collector ([docs/google-cloud.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/google-cloud.md)) | Change, Authentication or Other |
 | Zeek and Suricata on a network sensor, or Suricata EVE over syslog from pfSense and OPNsense ([docs/network-sensor.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/network-sensor.md)) | Network_Traffic, Network_Resolution, Web, Certificates, File_Transfers, Intrusion_Detection, Authentication, Filesystem or Other |
 | Anything else | Other (searchable by text and fields) |
 
@@ -849,8 +849,8 @@ changes and more, plus two risk incident rules); 19 are on by default.
 - **Import Sigma rule** converts a [Sigma](https://github.com/SigmaHQ/sigma) rule to a
   Signalith query and lists anything it had to approximate. Imported rules start
   disabled so you can test them first.
-- **Content packs** add community rules, off until you turn them on: 2,471 tested
-  [SigmaHQ](https://github.com/SigmaHQ/sigma) Windows, Linux, web server, network, AWS CloudTrail, Azure, Microsoft 365 and Google Cloud rules and 1,138
+- **Content packs** add community rules, off until you turn them on: 2,478 tested
+  [SigmaHQ](https://github.com/SigmaHQ/sigma) Windows, Linux, web server, network, AWS CloudTrail, Azure, Microsoft 365, Google Cloud and Google Workspace rules and 1,138
   Windows, Linux, web, network, AWS CloudTrail, Entra ID and Microsoft 365 detections
   from Splunk's open source
   [security_content](https://github.com/splunk/security_content) (Apache 2.0). With

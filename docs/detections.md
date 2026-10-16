@@ -330,7 +330,7 @@ Content packs are rule sets from other open source projects, shipped unchanged
 inside Signalith and converted when it starts. Every pack detection is **off** until
 an admin turns it on.
 
-**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,471 rules from
+**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,478 rules from
 [SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 2,080 Windows rules
 for these Sysmon, Security, PowerShell, System, Application, Code Integrity, Windows Firewall, BITS, AppX deployment, WMI activity, Remote Desktop session, shell, SMB client, exploit protection, DNS client, Task Scheduler, NTLM, LSA, CryptoAPI, device driver, packaged app, certificate, OpenSSH, DNS Server, IIS configuration and Defender log sources, 154 Linux rules (see
 [Linux endpoints](#linux-endpoints-sysmon-for-linux) and
@@ -339,7 +339,7 @@ for these Sysmon, Security, PowerShell, System, Application, Code Integrity, Win
 [Network rules](#network-rules-zeek-dns-proxy-and-firewall)), 38 AWS CloudTrail rules (see
 [AWS CloudTrail](#aws-cloudtrail)), 108 Microsoft Entra ID and Azure rules (see
 [Entra ID and Azure](#entra-id-and-azure)), 17 Microsoft 365 rules (see
-[Microsoft 365](#microsoft-365)) and 16 Google Cloud rules (see
+[Microsoft 365](#microsoft-365)), 16 Google Cloud rules and 7 Google Workspace rules (see
 [Google Cloud](#google-cloud)):
 
 | Sigma log source | Windows events | Data model |
@@ -363,6 +363,7 @@ for these Sysmon, Security, PowerShell, System, Application, Code Integrity, Win
 | `product: azure`, `service: activitylogs` | Azure activity log records | Change |
 | `product: m365`, any service | Microsoft 365 audit records (see [Microsoft 365](#microsoft-365)) | Authentication, Change, Alerts or Other |
 | `product: gcp`, `service: gcp.audit` | Google Cloud audit log entries (see [Google Cloud](#google-cloud)) | Change, Authentication or Other |
+| `product: gcp`, `service: google_workspace.admin`, `google_workspace.login` | Google Workspace audit log entries, shared with Google Cloud | Change or Authentication |
 | `service: system` | System 7045 (service installed) | Change |
 | `service: system` | Other System events, by provider and event ID (see below) | Other |
 | `service: application` | Application events, by provider and event ID (see below) | Other |
@@ -722,9 +723,24 @@ of permissions checked reads Splunk's names for its values
 (`protoPayload.authorizationInfo{}.permission`), and a rule's log (`logName`) reads
 `log_id`, the end of the entry's `logName`. A rule's keywords are searched in the call's
 request (`request_parameters`), where a Kubernetes object's annotations are. Every rule
-searches `sourcetype=google:gcp:pubsub:message`. SigmaHQ's Google Workspace rules are left
-out, as are Splunk's Google Cloud detections, which are all experimental. To send the
-audit logs, see [Google Cloud](google-cloud.md).
+searches `sourcetype=google:gcp:pubsub:message`. Splunk's Google Cloud detections are left
+out, as they are all experimental.
+
+SigmaHQ's 7 tested Google Workspace admin rules ship too: an application's access level
+changed, an application removed, an API client given domain-wide access, 2-step
+verification turned off, a role changed or deleted, a privilege removed from a role, and
+admin rights granted. They read Workspace's audit logs as Google Cloud has them when an
+organization shares them, the same entries in the same sourcetype. They name the event as
+Workspace's Reports API does (`eventName`, such as `GRANT_ADMIN_PRIVILEGE`), which reads
+`event_name`, the event's name in the entry's metadata, and its parameters by their names
+in lower case (`new_value`, `setting_name`), which read `event_parameters.new_value` and
+the like. `eventService` reads `protoPayload.serviceName`. The 3 sign-in rules (a
+government-backed attack warning, mail forwarded out of the domain, and sign-ins Google
+calls suspicious) convert as well, but are experimental, so they don't ship. Splunk's
+Google Workspace detections read the Reports API's own records, as Splunk's add-on for
+Google Workspace stores them (`sourcetype=gws:reports:login`), with fields the add-on
+derives, so they are left out. To send the audit logs, see
+[Google Cloud](google-cloud.md).
 
 ### Splunk Security Content
 
