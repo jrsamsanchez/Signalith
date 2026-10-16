@@ -210,7 +210,7 @@
 <!-- Strip of facts -->
 <section class="facts" aria-label="At a glance">
   <div class="wrap facts__in">
-    <div><b>3,300+</b><span>tested detection rules from SigmaHQ and Splunk</span></div>
+    <div><b>3,600+</b><span>tested detection rules from SigmaHQ and Splunk</span></div>
     <div><b>ATT&amp;CK</b><span>mapping on every rule, with a coverage map</span></div>
     <div><b>2</b><span>platforms: Windows and Linux packages</span></div>
     <div><b>$0</b><span>license cost, Apache 2.0</span></div>
@@ -244,18 +244,18 @@
     <div class="section__head">
       <p class="kicker">What it does</p>
       <h2>Everything a security team expects from a SIEM.</h2>
-      <p class="section__lede">Signalith follows the way security analysts already work and puts it on free, open parts you can run anywhere. Click a tile to watch a short demo.</p>
+      <p class="section__lede">Signalith follows the way security analysts already work and puts it on free, open parts you can run anywhere. Click a tile with a play button to watch a short demo.</p>
     </div>
     <div class="grid">
       <article class="card" data-clip="search">
         <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg></span>
         <h3>Search that reads like SPL</h3>
-        <p>A pipe-based query language with <code>stats</code>, <code>timechart</code>, <code>where</code>, regular expressions, CIM-style data models, autocomplete, plain-English questions, and a visual builder that writes the query as you click.</p>
+        <p>A pipe-based query language with <code>stats</code>, <code>timechart</code>, <code>where</code>, regular expressions, lookups, <code>transaction</code>, <code>tstats</code>, <code>iplocation</code> and dozens more commands, CIM-style data models, autocomplete, plain-English questions, and a visual builder that writes the query as you click.</p>
       </article>
       <article class="card" data-clip="detections">
         <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-crosshair"/></svg></span>
         <h3>Thousands of detections, tested</h3>
-        <p>2,330 SigmaHQ and 1,062 Splunk Security Content rules, each with test events that prove it fires and mapped to ATT&amp;CK, next to 48 built-in detections. Turn on the high and critical ones in one click, and get new rules through signed content updates.</p>
+        <p>2,497 SigmaHQ and 1,156 Splunk Security Content rules, each with test events that prove it fires and mapped to ATT&amp;CK, next to 51 built-in detections. Describe a new detection in plain English and backtest it on the past 7, 30 or 90 days before you turn it on.</p>
       </article>
       <article class="card" data-clip="findings">
         <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-gauge"/></svg></span>
@@ -285,12 +285,12 @@
       <article class="card" data-clip="network">
         <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-network"/></svg></span>
         <h3>Network sensor</h3>
-        <p>Zeek and Suricata on a small Linux box plugged into a mirror port, installed with one line from Add data. Network detections catch DNS tunnelling, beaconing, cleartext passwords and scans, and a Network dashboard shows it all.</p>
+        <p>Zeek and Suricata on a small Linux box plugged into a mirror port, installed with one line from Add data. Network detections catch DNS tunnelling, beaconing, cleartext passwords and scans. A Network dashboard shows it all, and one Settings page lists every sensor&rsquo;s health.</p>
       </article>
       <article class="card" data-clip="vulns">
         <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-bug"/></svg></span>
         <h3>Vulnerability scanning</h3>
-        <p>Nmap scans matched to CVEs from the National Vulnerability Database, worst hosts first. Place a scanner inside each network zone, and add OpenVAS where you want deeper scans.</p>
+        <p>Nmap scans matched to CVEs from the National Vulnerability Database, ranked by what attackers exploit today (CISA KEV and EPSS). Place a scanner inside each network zone, and add OpenVAS with encrypted SSH or Windows logins for deeper scans.</p>
       </article>
       <article class="card" data-clip="endpoints">
         <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-monitor"/></svg></span>
@@ -312,15 +312,30 @@
         <h3>Investigation cases</h3>
         <p>Group the findings of one incident with notes, searches and pinned evidence on a single timeline. Close the case and its findings close with it.</p>
       </article>
+      <article class="card">
+        <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-book"/></svg></span>
+        <h3>Hunting notebooks</h3>
+        <p>Save a hunt as notes and searches side by side, tagged to ATT&amp;CK, and share it with the team. Seven starter hunts show the way.</p>
+      </article>
       <article class="card" data-clip="dashboards">
         <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-layout"/></svg></span>
         <h3>Dashboards</h3>
-        <p>Security posture, network, vulnerabilities and malware dashboards out of the box, plus your own: ask a question, pick a chart, done. Dashboards are YAML files, so they can live in Git.</p>
+        <p>Security posture, network, vulnerabilities and malware dashboards out of the box, plus your own: ask a question, pick a chart, done. Click any number or row to see the events behind it. Dashboards are YAML files, so they can live in Git.</p>
       </article>
       <article class="card" data-clip="data">
         <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-database"/></svg></span>
         <h3>Easy data collection</h3>
-        <p>Ready Fluent Bit setups for Windows and Linux, syslog and CEF, OpenTelemetry logs, AWS CloudTrail, and Apache and Nginx access logs with web attack rules. Each agent has its own token you can revoke. Or load sample data in one click.</p>
+        <p>Ready Fluent Bit setups for Windows and Linux, syslog and CEF, OpenTelemetry logs, web server logs, and cloud logs from AWS, Microsoft 365, Entra ID, Okta, Google Cloud and Google Workspace. For any other log, a guided page builds the parser with you. Or load sample data in one click.</p>
+      </article>
+      <article class="card">
+        <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-clipboard"/></svg></span>
+        <h3>Compliance and evidence</h3>
+        <p>See how your detections and data cover NIST SP 800-53, CIS Controls v8, PCI DSS 4.0, ISO/IEC 27001, HIPAA and SOC 2, and hand an auditor an evidence report.</p>
+      </article>
+      <article class="card">
+        <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg></span>
+        <h3>Sign in your way</h3>
+        <p>Local users, Active Directory or LDAP, or single sign-on with OpenID Connect and SCIM provisioning. Two-step sign-in with a passkey or an authenticator app, or a passkey alone with no password.</p>
       </article>
     </div>
   </div>
@@ -368,7 +383,7 @@
       <div class="flow__col">
         <div class="node"><b>Fluent Bit agents</b><span>Windows event logs, Sysmon, Linux auth and audit</span></div>
         <div class="node"><b>Syslog devices</b><span>Firewalls, switches and appliances: UDP, TCP or TLS, CEF</span></div>
-        <div class="node"><b>More sources</b><span>OpenTelemetry, osquery, Wazuh, web servers, and Zeek and Suricata sensors</span></div>
+        <div class="node"><b>More sources</b><span>OpenTelemetry, cloud audit logs, osquery, Wazuh, web servers, and Zeek and Suricata sensors</span></div>
       </div>
       <div class="flow__arrow" aria-hidden="true"><span>HTTPS</span></div>
       <div class="node node--core">
@@ -379,7 +394,7 @@
       <div class="flow__arrow" aria-hidden="true"><span>TLS</span></div>
       <div class="flow__col">
         <div class="node"><b>OpenSearch</b><span>Stores and searches every event, finding and case</span></div>
-        <div class="node"><b>Analysts</b><span>Any browser, with roles and AD or LDAP sign-in</span></div>
+        <div class="node"><b>Analysts</b><span>Any browser, with roles, AD or LDAP, single sign-on and passkeys</span></div>
       </div>
     </div>
     <ul class="built">
@@ -404,8 +419,10 @@
         <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>HTTPS everywhere</b> with a certificate it makes and renews itself; agents check it.</span></li>
         <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>Secrets encrypted at rest</b> with a master key, DPAPI on Windows.</span></li>
         <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>No default passwords.</b> The Docker setup makes its own, and OpenSearch runs with security on.</span></li>
-        <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>Roles and directory sign-in:</b> viewer, analyst and admin, from your AD or LDAP groups.</span></li>
-        <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>A token per agent,</b> so one lost machine is revoked without touching the rest.</span></li>
+        <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>Two-step sign-in</b> with passkeys or an authenticator app, and the password asked again before sensitive changes.</span></li>
+        <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>Roles and single sign-on:</b> viewer, analyst and admin, from AD, LDAP or OpenID Connect groups.</span></li>
+        <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>Passwords checked against NIST 800-63B:</b> about 2,000 commonly used passwords are refused, and sessions have a time limit.</span></li>
+        <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>A token per agent</b> on a port of its own, apart from the web page, so one lost machine is revoked without touching the rest.</span></li>
         <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>Hardened service:</b> its own account on Windows, systemd sandboxing on Linux.</span></li>
         <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>One certificate authority for every server,</b> each server with its own OpenSearch certificate, revoked at once when a server is removed.</span></li>
         <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>Encrypted archives</b> of old data that you can check and restore when an investigation needs them.</span></li>
@@ -486,20 +503,20 @@ sudo dnf install signalith</code></pre><button class="copy" type="button" aria-l
     </div>
     <div class="soon">
       <article class="soon__item">
-        <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-clipboard"/></svg></span>
-        <div><h3>Compliance and evidence</h3><p>Detections and reports mapped to frameworks such as PCI DSS, NIST 800-53 and ISO 27001, with evidence an auditor can take away.</p></div>
+        <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-shield"/></svg></span>
+        <div><h3>SAML sign-in</h3><p>Single sign-on with SAML 2.0 identity providers, next to OpenID Connect.</p></div>
       </article>
       <article class="soon__item">
-        <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-network"/></svg></span>
-        <div><h3>Network sensors in Settings</h3><p>One page listing every network sensor with its health, where you can turn off a noisy rule on all sensors or revoke one.</p></div>
+        <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-server"/></svg></span>
+        <div><h3>Separate teams on one install</h3><p>Tenants that keep each team&rsquo;s or customer&rsquo;s data, users and detections apart on the same servers.</p></div>
       </article>
       <article class="soon__item">
         <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-package"/></svg></span>
-        <div><h3>A signed Windows installer</h3><p>A code-signed <code>.msi</code>, so Windows trusts the installer and the service it puts in place.</p></div>
+        <div><h3>Kubernetes with Helm</h3><p>A Helm chart to run Signalith and its servers on a Kubernetes cluster.</p></div>
       </article>
       <article class="soon__item">
         <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-flag"/></svg></span>
-        <div><h3>Version 1.0</h3><p>An outside security review, load test numbers from a real lab, and then 1.0.</p></div>
+        <div><h3>Version 1.0</h3><p>An outside security review, a code-signed Windows installer, load test numbers from a real lab, and then 1.0.</p></div>
       </article>
     </div>
   </div>

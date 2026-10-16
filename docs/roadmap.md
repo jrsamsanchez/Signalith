@@ -39,13 +39,16 @@ The first four phases are complete, and work on hardening for 1.0 has started.
   [SigmaHQ](https://github.com/SigmaHQ/sigma) and 1,156 from Splunk Security Content,
   each with test events that prove it fires, and signed content updates.
 - [Sigma](https://github.com/SigmaHQ/sigma) rule import.
+- [Describe a detection](detections.md#describe-a-detection-in-plain-english) in plain
+  English, then backtest it over the past 7, 30 or 90 days before turning it on.
 
 **Security depth**
 
 - Risk-based alerting with asset and identity context.
 - [Threat intel](threat-intel.md) feeds (lists, CSV, STIX, TAXII 2.1) matched against
   your events.
-- A security posture dashboard and [dashboards](dashboards.md) of your own.
+- A security posture dashboard and [dashboards](dashboards.md) of your own, where any
+  number or row opens the events behind it.
 - [Sample data](sample-data.md) with attacks hidden in it, to try everything out.
 
 **Respond and scale**
@@ -85,17 +88,25 @@ The first four phases are complete, and work on hardening for 1.0 has started.
   OpenTelemetry Collector, with 16 SigmaHQ Google Cloud rules, and Google Workspace's
   admin and sign-in audit logs the same way, with 7 SigmaHQ Google Workspace rules.
 - A [network sensor](network-sensor.md) with Zeek and Suricata, installed with one line,
-  network detections for sensor, firewall, DNS and proxy data, and a Network dashboard.
-- [Vulnerability scanning](vulnerabilities.md) with Nmap and CVE matching, a scanner for
-  each network zone, and OpenVAS for deeper scans.
+  network detections for sensor, firewall, DNS and proxy data, a Network dashboard, and
+  [Settings > Network sensors](network-sensor.md#settings-network-sensors) to check every
+  sensor's health, tune rules on all sensors at once or revoke one.
+- [Any other log](custom-logs.md): a guided page that builds a parser from a sample, with
+  optional help from AI.
+- [Vulnerability scanning](vulnerabilities.md) with Nmap and CVE matching, ranked with
+  CISA KEV and EPSS, a scanner for each network zone, and OpenVAS for deeper scans, with
+  [encrypted SSH and Windows logins](vulnerabilities.md#credentialed-openvas-scans).
 - A read-only [MCP server](ai-tools.md) for AI tools, with API tokens.
 
 **Built in from the start**
 
 - HTTPS by default, a secured OpenSearch, and [encrypted](encryption.md) passwords, keys
   and archives.
-- [Users and roles](users.md), with Active Directory and LDAP sign-in and two-step sign-in
-  with an authenticator app.
+- [Users and roles](users.md), with Active Directory and LDAP sign-in,
+  [single sign-on](sso.md) with OpenID Connect and SCIM provisioning, and two-step sign-in
+  with [passkeys](users.md#passkeys) or an authenticator app.
+- A separate [agent port](sending-data.md#the-agent-port), so agents never need the web
+  page.
 - [Data retention](retention.md) policies with archives you can restore, and a disk guard.
 - A [security check](security.md) of how each server is set up.
 - [Compliance](compliance.md) coverage for NIST SP 800-53, CIS Controls v8, PCI DSS 4.0,
@@ -104,12 +115,15 @@ The first four phases are complete, and work on hardening for 1.0 has started.
 
 ## Being built now <span class="sg-pill sg-pill--now">In progress</span> { #now data-toc-label="Being built now" }
 
-**Network sensors in Settings**
-:   One page listing every network sensor with its health, where an admin can turn off a
-    noisy rule on all sensors or revoke a sensor.
+**SAML sign-in**
+:   Single sign-on with SAML 2.0 identity providers, next to OpenID Connect.
 
-**More cloud logs**
-:   Microsoft 365 audit logs.
+**Tenants**
+:   Several teams or customers on one install, each with its own data, users and
+    detections.
+
+**Kubernetes**
+:   A Helm chart to run Signalith on a Kubernetes cluster.
 
 ## Next <span class="sg-pill sg-pill--next">Planned</span> { #next data-toc-label="Next" }
 

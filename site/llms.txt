@@ -8,13 +8,13 @@ Key facts:
 - Source: https://github.com/jrsamsanchez/Signalith (Go server with the web UI built in).
 - Runs as a Windows service, a systemd unit or a Docker container, on one server or several sharing one OpenSearch.
 - Install for evaluation: clone the repository, then `docker compose -f deploy/docker/docker-compose.yml up -d`. Packages for Debian/Ubuntu, RHEL-family and Windows are on GitHub Releases, with signed apt and dnf repositories at https://signalith.io/apt/ and https://signalith.io/rpm/.
-- Data intake: Fluent Bit agents for Windows and Linux, syslog and CEF/LEEF, OpenTelemetry (OTLP) logs, osquery, Wazuh alerts, Zeek and Suricata network sensor, Apache and Nginx access logs, AWS CloudTrail, Microsoft Entra ID and Azure, Microsoft 365, antivirus (Defender, ClamAV).
+- Data intake: Fluent Bit agents for Windows and Linux, syslog and CEF/LEEF, OpenTelemetry (OTLP) logs, osquery, Wazuh alerts, Zeek and Suricata network sensor, Apache and Nginx access logs, AWS CloudTrail, Microsoft Entra ID and Azure, Microsoft 365, Okta, Google Cloud and Google Workspace audit logs, antivirus (Defender, ClamAV), and a guided parser builder for any other log.
 - Search: a pipe-style query language (familiar to SPL users; not SPL-compatible), a visual query builder, and plain-English questions turned into searches by a built-in offline parser or an optional AI model (Claude, OpenAI or a local Ollama model).
-- Detection: scheduled detections mapped to MITRE ATT&CK, more than 3,500 tested rules from SigmaHQ and Splunk Security Content (Apache 2.0) with test events that prove each rule fires, Sigma import, signed content updates, an ATT&CK coverage map.
-- Triage and response: findings queue, risk-based alerting with asset and identity context, threat intel feeds (STIX/TAXII 2.1), investigation cases, Investigate with AI, response actions and playbooks with an approval step, notifications to email, webhooks, Slack and Teams.
+- Detection: scheduled detections mapped to MITRE ATT&CK, more than 3,600 tested rules from SigmaHQ and Splunk Security Content (Apache 2.0) with test events that prove each rule fires, Sigma import, signed content updates, an ATT&CK coverage map, and detections described in plain English with a backtest over past data.
+- Triage and response: findings queue, risk-based alerting with asset and identity context, threat intel feeds (STIX/TAXII 2.1), investigation cases, hunting notebooks, Investigate with AI, response actions and playbooks with an approval step, notifications to email, webhooks, Slack and Teams.
 - AI tools: a read-only MCP server so AI assistants can search and read findings with a scoped API token.
-- Security by default: HTTPS, secured OpenSearch, encrypted secrets and archives, per-agent tokens, roles, LDAP/Active Directory and OpenID Connect sign-in, audit log, built-in security check.
-- Also: vulnerability scanning (Nmap with CVE matching, optional OpenVAS), compliance mapping (NIST SP 800-53, CIS Controls v8, PCI DSS 4.0, ISO/IEC 27001, HIPAA, SOC 2), data retention with archives.
+- Security by default: HTTPS, secured OpenSearch, encrypted secrets and archives, per-agent tokens on a separate agent port, roles, LDAP/Active Directory and OpenID Connect sign-in with SCIM provisioning, two-step sign-in with passkeys or an authenticator app, audit log, built-in security check.
+- Also: vulnerability scanning (Nmap with CVE matching ranked by CISA KEV and EPSS, optional credentialed OpenVAS), compliance mapping (NIST SP 800-53, CIS Controls v8, PCI DSS 4.0, ISO/IEC 27001, HIPAA, SOC 2), data retention with archives.
 
 Limits to know (October 2026):
 
