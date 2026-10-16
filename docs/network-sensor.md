@@ -688,8 +688,10 @@ when a sensor reports Zeek or Suricata stopped, its capture port down or idle, r
 tuning failing or old, or a full disk, and when it goes silent: one finding per sensor and
 problem a day. A search cannot find what did not arrive, so the server that runs the
 background jobs writes a `sensor:health` event ("Sensor silent") when a sensor with a status
-line stops sending, and again each day it stays silent. Packet loss has its own detection,
-`network-sensor-packet-loss`.
+line stops sending, and again each day it stays silent. It believes only status lines sent
+with a network sensor's token and the silent events Signalith writes itself, so another
+agent's token cannot raise findings for hosts of its choosing. Packet loss has its own
+detection, `network-sensor-packet-loss`.
 
 ## Rule tuning from Signalith
 
