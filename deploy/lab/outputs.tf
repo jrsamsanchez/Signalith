@@ -1,6 +1,6 @@
 output "signalith" {
   description = "Open this in your browser once the setup has finished."
-  value       = "https://${hcloud_server.linux["signalith-1"].ipv4_address}:8080"
+  value       = "https://${hcloud_server.linux["signalith-1"].ipv4_address}:9000"
 }
 
 output "watch_setup" {
