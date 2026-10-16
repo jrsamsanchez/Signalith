@@ -716,6 +716,26 @@ func TestConvertSigmaOkta(t *testing.T) {
 	}
 }
 
+// GitHub's rules name the event's own fields: action is kept as
+// vendor_action, and actor as github_actor.
+func TestConvertSigmaGitHub(t *testing.T) {
+	rule := "title: Repo deleted\nlogsource:\n  product: github\n  service: audit\ndetection:\n  sel:\n    action: repo.destroy\n    actor: octocat\n    actor_location.country_code: FR\n  condition: sel\nlevel: high\n"
+	res, err := ConvertSigmaWith([]byte(rule), SigmaOptions{Strict: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"sourcetype=github:cloud:audit", "vendor_action=repo.destroy", "github_actor=octocat",
+		"actor_location.country_code=FR"} {
+		if !strings.Contains(res.Detection.Query, want) {
+			t.Errorf("query missing %s: %s", want, res.Detection.Query)
+		}
+	}
+	bad := strings.Replace(rule, "actor:", "'@timestamp':", 1)
+	if _, err := ConvertSigmaWith([]byte(bad), SigmaOptions{Strict: true}); err == nil {
+		t.Error("a field GitHub events do not keep converted")
+	}
+}
+
 func TestConvertSigmaSecurityLog(t *testing.T) {
 	logon := "title: RDP logon\nlogsource:\n  product: windows\n  service: security\ndetection:\n  sel:\n    EventID: 4624\n    LogonType: 10\n    LogonProcessName: User32\n  condition: sel\nlevel: medium\n"
 	res, err := ConvertSigmaWith([]byte(logon), SigmaOptions{Strict: true})

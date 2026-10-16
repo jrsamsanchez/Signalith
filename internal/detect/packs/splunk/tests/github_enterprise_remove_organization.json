@@ -1,0 +1,5 @@
+{"rule": "94cb89aa-aec1-4585-91b1-affcdacf357e", "cases": [
+  {"expect":true,"source":"synthesized","channel":"github","event_id":"audit","data":{"action":"business.remove_organization"}},
+  {"expect":false,"source":"synthesized","channel":"github","event_id":"audit","data":{"action":"business.remove_organizatioo"}},
+  {"expect":false,"source":"synthesized","channel":"github","event_id":"audit","data":{}}
+]}

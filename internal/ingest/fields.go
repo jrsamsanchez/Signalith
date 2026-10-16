@@ -338,6 +338,10 @@ var knownFields = func() map[string]string {
 	for _, k := range oktaMapped {
 		m[k] = kw
 	}
+	// GitHub audit log events (github.go): the event's own fields.
+	for _, k := range githubMapped {
+		m[k] = kw
+	}
 	// The fields the shipped cloud rules read (rulefields.go).
 	for _, k := range cloudRuleFields {
 		m[k] = kw

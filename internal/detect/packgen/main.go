@@ -137,6 +137,8 @@ var cloudCategories = map[string][2]string{
 	"google_workspace.login": {"gcp", "rules/cloud/gcp/gworkspace/login"},
 	// Okta's System Log (product: okta, service: okta).
 	ingest.OktaService: {ingest.OktaService, "rules/identity/okta"},
+	// GitHub's audit log (product: github, service: audit).
+	ingest.GitHubService: {ingest.GitHubProduct, "rules/application/github/audit"},
 }
 
 // networkCategories are the network log sources, and the folders their
@@ -285,6 +287,9 @@ func main() {
 			}
 			if cat == "m365" {
 				want["service"] = rule.Logsource["service"]
+			}
+			if cat == ingest.GitHubService {
+				want["service"] = "audit"
 			}
 			if cat == "code_integrity" {
 				want["category"], want["service"] = "", "codeintegrity-operational"

@@ -1,0 +1,4 @@
+{"rule": "04ad83ef-1a37-4c10-b57a-81092164bf33", "cases": [
+  {"expect":true,"source":"synthesized","channel":"github","event_id":"audit","data":{"action":"repo.transfer_outgoing"}},
+  {"expect":false,"source":"synthesized","channel":"github","event_id":"audit","data":{}}
+]}

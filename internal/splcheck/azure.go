@@ -35,7 +35,7 @@ var azureCIM = map[string]string{
 	"sourcetype": "sourcetype",
 }
 
-// cloudSource is a macro of Entra ID, Azure, Microsoft 365 or Okta records,
+// cloudSource is a macro of Entra ID, Azure, Microsoft 365, Okta or GitHub records,
 // whose searches may rename fields before stats and search again by the
 // new names: its node, the sourcetype it searches, and the stored field
 // of a name a stage reads after renames.
@@ -61,6 +61,12 @@ func cloudSourceOf(source string) (cloudSource, bool) {
 		// Renames name fields one by one, as Microsoft 365's do.
 		return cloudSource{OktaNode, ingest.OktaSourcetype, func(name string, renames []rename) (string, bool) {
 			return oktaField(o365Unrename(name, renames))
+		}}, true
+	}
+	if source == githubEnterpriseSource || source == githubOrgSource {
+		// Renames name fields one by one, as Microsoft 365's do.
+		return cloudSource{GitHubNode, ingest.GitHubSourcetype, func(name string, renames []rename) (string, bool) {
+			return githubField(source, o365Unrename(name, renames))
 		}}, true
 	}
 	return cloudSource{}, false
