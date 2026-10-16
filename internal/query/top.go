@@ -108,10 +108,10 @@ func (p *parser) topOption(top *Top, name string) error {
 func topOptions(c *Top) string {
 	var s string
 	if c.CountField != "" {
-		s += " countfield=" + FormatValue(c.CountField)
+		s += " countfield=" + optionValue(c.CountField)
 	}
 	if c.PercentField != "" {
-		s += " percentfield=" + FormatValue(c.PercentField)
+		s += " percentfield=" + optionValue(c.PercentField)
 	}
 	if c.NoCount {
 		s += " showcount=f"
@@ -123,7 +123,7 @@ func topOptions(c *Top) string {
 		s += " useother=t"
 	}
 	if c.OtherStr != "" {
-		s += " otherstr=" + FormatValue(c.OtherStr)
+		s += " otherstr=" + optionValue(c.OtherStr)
 	}
 	return s
 }

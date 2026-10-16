@@ -105,6 +105,15 @@ func FormatValue(v string) string {
 	return quote(v)
 }
 
+// optionValue writes the value of a key=value option: as FormatValue,
+// but quoted when it starts with ~, which after = would read as =~.
+func optionValue(v string) string {
+	if strings.HasPrefix(v, "~") {
+		return quote(v)
+	}
+	return FormatValue(v)
+}
+
 func quote(v string) string {
 	return `"` + strings.ReplaceAll(strings.ReplaceAll(v, `\`, `\\`), `"`, `\"`) + `"`
 }

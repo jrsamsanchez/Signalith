@@ -195,7 +195,7 @@ func (p *parser) parseBin(cmd token) (Command, error) {
 }
 
 func binString(c *Bin) string {
-	s := "bin span=" + FormatValue(c.Span) + " " + binName(c.Field)
+	s := "bin span=" + optionValue(c.Span) + " " + binName(c.Field)
 	if c.As != "" {
 		s += " AS " + binName(c.As)
 	}

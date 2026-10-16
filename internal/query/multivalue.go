@@ -285,13 +285,13 @@ func addTotalsString(c *AddTotals) string {
 		s += " col=t"
 	}
 	if c.FieldName != "" {
-		s += " fieldname=" + FormatValue(c.FieldName)
+		s += " fieldname=" + optionValue(c.FieldName)
 	}
 	if c.LabelField != "" {
-		s += " labelfield=" + FormatValue(c.LabelField)
+		s += " labelfield=" + optionValue(c.LabelField)
 	}
 	if c.Label != "" {
-		s += " label=" + FormatValue(c.Label)
+		s += " label=" + optionValue(c.Label)
 	}
 	for _, f := range c.Fields {
 		s += " " + formatName(f)

@@ -85,9 +85,17 @@ func (p *parser) parseChart(cmd token) (Command, error) {
 		}
 		c.Over = t.text
 	}
-	by, err := p.parseBy()
-	if err != nil {
-		return nil, err
+	// Names chart writes back quoted (such as "by" or "]") read as names.
+	var by []string
+	if p.isKeywordFold("by") {
+		byTok := p.next()
+		var err error
+		if by, err = p.fieldList(true); err != nil {
+			return nil, err
+		}
+		if len(by) == 0 {
+			return nil, errorf(byTok.pos, `expected a field after "by"`)
+		}
 	}
 	switch {
 	case c.Over == "" && len(by) > 2, c.Over != "" && len(by) > 1:
@@ -273,13 +281,13 @@ func checkSpath(path string) string {
 func spathString(c *Spath) string {
 	s := "spath"
 	if c.Input != "_raw" {
-		s += " input=" + FormatValue(c.Input)
+		s += " input=" + optionValue(c.Input)
 	}
 	if c.Output != "" {
-		s += " output=" + FormatValue(c.Output)
+		s += " output=" + optionValue(c.Output)
 	}
 	if c.Path != "" {
-		s += " path=" + FormatValue(c.Path)
+		s += " path=" + optionValue(c.Path)
 	}
 	return s
 }
