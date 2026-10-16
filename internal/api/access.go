@@ -32,6 +32,10 @@ type route struct {
 	// Anytime routes stay open to a user who must choose a new password
 	// before doing anything else.
 	Anytime bool
+	// Platform routes are about the server itself rather than one
+	// tenant's data (see platformPaths): only the provider's own users
+	// may use them, whatever a tenant user's role.
+	Platform bool
 }
 
 // router registers API routes with the role each needs. It is the one
@@ -74,6 +78,7 @@ func (rt *router) Handle(pattern string, h http.Handler) {
 }
 
 func (rt *router) add(r route, h http.Handler) {
+	r.Platform = platformRoute(r.Pattern)
 	rt.routes = append(rt.routes, r)
 	rt.mux.Handle(r.Pattern, rt.s.allow(r, h))
 }
@@ -113,6 +118,12 @@ type principal struct {
 	// signedIn is when the session (Method "session") was made: signing
 	// in counts as entering the password again (see rechecked).
 	signedIn time.Time
+	// Tenant is the tenant a tenant user belongs to, "" for the
+	// provider's own users; Active is the tenant the request works in:
+	// a tenant user's own, else the one the session switched to, else
+	// tenants.Default (see activeTenant).
+	Tenant string
+	Active string
 }
 
 type userKey struct{}
@@ -165,6 +176,16 @@ func (s *Server) allow(rt route, next http.Handler) http.Handler {
 		if p.Method == "token" && !tokenMayUse(r) {
 			writeJSON(w, http.StatusForbidden, map[string]any{
 				"error": "API tokens can only read. Sign in as a user to change anything.", "code": "token_read_only"})
+			return
+		}
+		if rt.Platform && p.Tenant != "" {
+			writeJSON(w, http.StatusForbidden, map[string]any{
+				"error": "This is a page for the provider that runs Signalith, not for a tenant's users.", "code": "provider_only"})
+			return
+		}
+		if !rt.Platform && !rt.Anytime && !s.servesTenant(p.Active) {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+				"error": fmt.Sprintf("Tenant %q is not running on this server.", p.Active), "code": "tenant_unavailable"})
 			return
 		}
 		if !p.Role.AtLeast(rt.Role) {
@@ -223,7 +244,11 @@ func (s *Server) authenticate(r *http.Request) (*principal, error) {
 	if tok := bearerAPIToken(r); tok != "" {
 		// A token that is not accepted never falls back to the cookie: a
 		// program sending one wants to know it was refused.
-		return s.apiTokenPrincipal(tok), nil
+		p := s.apiTokenPrincipal(tok)
+		if p != nil {
+			p.Active = s.activeTenant(p, "")
+		}
+		return p, nil
 	}
 	if c, err := r.Cookie(s.cookieName(r)); err == nil {
 		if ss, ok := s.sessions().Lookup(r.Context(), c.Value, !background(r)); ok {
@@ -231,6 +256,7 @@ func (s *Server) authenticate(r *http.Request) (*principal, error) {
 			// server sharing the users file) ends the session too.
 			if p := s.principalFor(ss.User); p != nil && (ss.Version == "" || ss.Version == s.passwordStamp(ss.User)) {
 				p.Method, p.token, p.remember, p.signedIn = "session", c.Value, ss.Remember, ss.Created
+				p.Active = s.activeTenant(p, ss.Tenant)
 				return p, nil
 			}
 			// Deleted, disabled or given a new password since signing in.
@@ -252,6 +278,7 @@ func (s *Server) authenticate(r *http.Request) (*principal, error) {
 	}
 	if p != nil {
 		p.Method = "basic"
+		p.Active = s.activeTenant(p, "")
 	}
 	return p, err
 }
@@ -272,6 +299,11 @@ func (s *Server) principalFor(name string) *principal {
 	}
 	u, ok := s.userStore().Get(name)
 	if !ok || u.Disabled {
+		return nil
+	}
+	if u.Tenant != "" && !s.tenantUsable(u.Tenant) {
+		// The tenant was turned off or removed, or is not one this server
+		// knows: its users cannot sign in.
 		return nil
 	}
 	if u.Source == users.SourceSSO {
@@ -320,7 +352,7 @@ func (s *Server) builtinPrincipal() *principal {
 
 func principalFromUser(u users.User) *principal {
 	return &principal{Username: u.Username, Name: u.Name, Email: u.Email, Role: u.Role, Source: u.Source,
-		MustChangePassword: u.MustChangePassword, epoch: u.SessionEpoch}
+		MustChangePassword: u.MustChangePassword, epoch: u.SessionEpoch, Tenant: u.Tenant}
 }
 
 // signInError is a refused sign-in, with the status and words to send.
@@ -338,6 +370,8 @@ var (
 		msg: "Username and password don't match."}
 	errDisabled = &signInError{status: http.StatusForbidden, code: "disabled",
 		msg: "This account is disabled. Ask an admin to enable it."}
+	errTenantOff = &signInError{status: http.StatusForbidden, code: "tenant_disabled",
+		msg: "Your organization's access to Signalith is turned off. Ask your provider."}
 	errPasswordExpired = &signInError{status: http.StatusForbidden, code: "password_expired",
 		msg: "Your directory password has expired or must be changed. Change it (for example by signing in to Windows), then sign in here again."}
 	errNoRole = &signInError{status: http.StatusForbidden, code: "not_in_group",
@@ -578,6 +612,9 @@ func (s *Server) checkCredentials(ctx context.Context, name, password string) (*
 		}
 		if u.Disabled {
 			return nil, "account disabled", errDisabled
+		}
+		if u.Tenant != "" && !s.tenantUsable(u.Tenant) {
+			return nil, fmt.Sprintf("tenant %q is turned off or unknown", u.Tenant), errTenantOff
 		}
 		p := principalFromUser(u)
 		if err := s.degradedRefusal(p); err != nil {

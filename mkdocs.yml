@@ -147,6 +147,7 @@ nav:
       - Server settings: settings.md
       - Users and sign-in: users.md
       - Single sign-on: sso.md
+      - Multi-tenant mode: multi-tenant.md
       - Agent tokens: agent-tokens.md
       - Servers: servers.md
       - Adding servers: multi-server.md

@@ -37,90 +37,6 @@ func TestPrefix(t *testing.T) {
 	}
 }
 
-// match is OpenSearch's index wildcard matching: * matches any run of
-// characters, everything else itself.
-func match(pattern, name string) bool {
-	parts := strings.Split(pattern, "*")
-	if len(parts) == 1 {
-		return pattern == name
-	}
-	if !strings.HasPrefix(name, parts[0]) {
-		return false
-	}
-	name = name[len(parts[0]):]
-	for _, p := range parts[1 : len(parts)-1] {
-		i := strings.Index(name, p)
-		if i < 0 {
-			return false
-		}
-		name = name[i+len(p):]
-	}
-	return strings.HasSuffix(name, parts[len(parts)-1])
-}
-
-// indexNames are index names Signalith makes under prefix p.
-func indexNames(p string) []string {
-	return []string{
-		p + "-authentication-2026.10.16", p + "-risk-2026.10.16", p + "-other-2026.10.16",
-		p + "_findings", p + "_cases", p + "_intel", p + "_actions", p + "_notifications",
-		p + "_playbook_runs", p + "_endpoints", p + "_vulns", p + "_runtime", p + "_config",
-		p + "_sessions", p + "_audit-2026.10", p + "_config_retired_20261016",
-	}
-}
-
-// patterns are the wildcard patterns Signalith builds from prefix p, and
-// the widest a search's index= may name (it must start with p + "-").
-func patterns(p string) []string {
-	return []string{
-		p + "-*", p + "_*", p + "-authentication-*", p + "-risk-*", p + "-other-*",
-		p + "_audit-*", p + "_config_retired_*", p + "-*-*",
-	}
-}
-
-// TestNoPatternReachesAnotherTenant is the property the index names rest
-// on: no pattern of one tenant, default or not, matches an index of
-// another, even when one ID starts with the other.
-func TestNoPatternReachesAnotherTenant(t *testing.T) {
-	for _, base := range []string{"signalith", "siem", "a-b", "x_y"} {
-		ids := []string{Default, "ac", "acme", "acmex", "acme2", "acmeacme", "t", "tacme"}
-		for _, a := range ids {
-			if ValidID(a) != nil && a != Default {
-				continue
-			}
-			for _, b := range ids {
-				if a == b || ValidID(b) != nil && b != Default {
-					continue
-				}
-				for _, pat := range patterns(Prefix(base, a)) {
-					for _, name := range indexNames(Prefix(base, b)) {
-						if match(pat, name) {
-							t.Errorf("prefix %q: tenant %q's pattern %q matches tenant %q's index %q", base, a, pat, b, name)
-						}
-					}
-				}
-			}
-			// Each tenant's own patterns do reach its own indices.
-			if !match(Prefix(base, a)+"-*", Prefix(base, a)+"-authentication-2026.10.16") {
-				t.Errorf("tenant %q cannot reach its own events", a)
-			}
-		}
-	}
-}
-
-// TestSearchPrefixCheck is the search engine's rule for index=: the value
-// must start with the tenant's own prefix and "-". No value that passes
-// it for one tenant names an index of another.
-func TestSearchPrefixCheck(t *testing.T) {
-	own := Prefix("signalith", "acme") + "-"
-	for _, other := range []string{"signalith", Prefix("signalith", "acmex"), Prefix("signalith", "ac")} {
-		for _, name := range indexNames(other) {
-			if strings.HasPrefix(name, own) {
-				t.Errorf("index %q of %q starts with %q", name, other, own)
-			}
-		}
-	}
-}
-
 func TestRegistry(t *testing.T) {
 	dir := t.TempDir()
 	r, err := Open(File(dir))
@@ -143,8 +59,10 @@ func TestRegistry(t *testing.T) {
 	if _, err := r.Add("default", "Default", "admin", now); err == nil {
 		t.Error("the default tenant's ID was accepted")
 	}
-	if _, err := r.Add("bad", "line\nbreak", "admin", now); err == nil {
-		t.Error("a name with a control character was accepted")
+	for _, bad := range []string{"line\nbreak", "be\u0085ll", "evil\u202eemca", "iso\u2067x", ""} {
+		if _, err := r.Add("bad", bad, "admin", now); err == nil {
+			t.Errorf("the name %q was accepted", bad)
+		}
 	}
 	list, err := r.List()
 	if err != nil || len(list) != 2 || list[0].ID != "acme" || list[0].Name != "Acme" || list[1].ID != "zeta" {

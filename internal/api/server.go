@@ -48,6 +48,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/sensortune"
 	"github.com/jrsamsanchez/signalith/internal/shared"
 	"github.com/jrsamsanchez/signalith/internal/syslog"
+	"github.com/jrsamsanchez/signalith/internal/tenants"
 	"github.com/jrsamsanchez/signalith/internal/tlsauto"
 	"github.com/jrsamsanchez/signalith/internal/upgradecheck"
 	"github.com/jrsamsanchez/signalith/internal/users"
@@ -226,6 +227,9 @@ type Server struct {
 	// Install hands new servers the install scripts and this server's
 	// program; nil turns that off.
 	Install *ClusterInstall
+	// Tenants lists the tenants of a multi-tenant install (see
+	// docs/multi-tenant.md); nil has only the default tenant.
+	Tenants *tenants.Registry
 
 	authOnce     sync.Once
 	ssoOnce      sync.Once
@@ -364,6 +368,7 @@ func (s *Server) Handler() http.Handler {
 	s.routeTokens(api)
 	s.routeAPITokens(api)
 	s.routeAgents(api)
+	s.routeTenants(api)
 	if s.UI != nil {
 		api.add(route{Pattern: "GET /", Role: users.Viewer}, revalidate(s.indexPage(staticFiles(s.UI, true))))
 		if v := versionSegment(s.Version); v != "" {

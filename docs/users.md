@@ -976,7 +976,8 @@ request, so a server that has not yet read that change reads it first (see
 `GET /api/compliance/export` (the [Compliance page](compliance.md) and its evidence reports,
 so an auditor can work with a Viewer account), `GET /api/cluster/features`
 (which features wait until every server runs a newer version; only admins see which servers
-they wait for), and the web UI.
+they wait for), `GET /api/tenants` and `POST /api/tenants/switch` (the tenants of a
+[multi-tenant](multi-tenant.md) install, and switching between them), and the web UI.
 
 **Analyst:** `POST /api/ask`, `POST /api/findings`, `POST /api/findings/bulk`,
 `PATCH /api/findings/{id}`, `POST /api/cases`, `PATCH /api/cases/{id}`,
@@ -1053,6 +1054,12 @@ three are `GET /api/auth/oidc`, `POST /api/auth/oidc/test` and `POST /api/auth/s
 (`GET` and `PUT /api/settings`, `POST /api/settings/test/opensearch`,
 `POST /api/settings/test/assistant`, `POST /api/settings/test/m365`, `POST /api/settings/assistant/models`, `POST /api/settings/restart`,
 `GET /api/settings/export`; see [settings.md](settings.md#api)).
+
+**Provider only:** on a [multi-tenant](multi-tenant.md) install, the routes about the server
+itself rather than one tenant's data are refused to tenants' users, whatever their role:
+every `/api/settings`, `/api/cluster` (but `GET /api/cluster/features`), `/api/security`,
+`/api/tls`, `/api/auth`, `/api/audit`, `/api/requests` and `/api/tenants` route. Every other
+route works on the tenant the request is in.
 
 A route added without a role is admin-only, and a test fails until it gets one. That
 includes routes registered outside the role table, straight on the server's outer

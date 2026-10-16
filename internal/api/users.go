@@ -1,6 +1,7 @@
 package api
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/auth"
+	"github.com/jrsamsanchez/signalith/internal/tenants"
 	"github.com/jrsamsanchez/signalith/internal/users"
 )
 
@@ -35,7 +37,11 @@ func (s *Server) routeUsers(api *router) {
 // audit logs a change someone made, with who and from where. Passwords
 // are never passed here.
 func (s *Server) audit(r *http.Request, msg string, args ...any) {
-	s.Log.Info(msg, slices.Concat([]any{"audit", true, "by", userOf(r)}, s.client(r).logAttrs(), args)...)
+	var tenant []any
+	if p := principalOf(r); p != nil && p.Active != "" && p.Active != tenants.Default {
+		tenant = []any{"tenant", p.Active}
+	}
+	s.Log.Info(msg, slices.Concat([]any{"audit", true, "by", userOf(r)}, tenant, s.client(r).logAttrs(), args)...)
 }
 
 // ---- the signed-in user ----
@@ -57,6 +63,10 @@ func meView(p *principal) map[string]any {
 		// built-in admin's once it is shared by the servers of a cluster.
 		"can_change_password": p.Source == users.SourceLocal || (p.Source == users.SourceBuiltin && p.shared),
 		"auth":                p.Method,
+		// The tenant the user belongs to ("" for the provider's own
+		// users) and the one they work in now.
+		"tenant":        p.Tenant,
+		"active_tenant": cmp.Or(p.Active, tenants.Default),
 	}
 }
 

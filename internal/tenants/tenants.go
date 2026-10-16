@@ -18,6 +18,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/jrsamsanchez/signalith/internal/securefile"
@@ -88,8 +89,10 @@ func validName(name string) error {
 		return errors.New("the tenant's name must be at most 100 characters")
 	}
 	for _, r := range name {
-		if r < 0x20 || r == 0x7f {
-			return errors.New("the tenant's name cannot have control characters")
+		// Bidirectional overrides and isolates could make one tenant's
+		// name read as another's.
+		if unicode.IsControl(r) || r >= 0x202a && r <= 0x202e || r >= 0x2066 && r <= 0x2069 {
+			return errors.New("the tenant's name cannot have control or text-direction characters")
 		}
 	}
 	return nil

@@ -2358,6 +2358,7 @@ func (c *Config) Validate() error {
 	if err := tenants.ValidConfiguredPrefix(c.OpenSearch.IndexPrefix); err != nil {
 		p = append(p, err.Error())
 	}
+	p = append(p, c.tenantFolderProblems()...)
 	if !c.OpenSearch.Replicas.Valid() {
 		p = append(p, "opensearch.replicas must be auto or a whole number of 0 or more")
 	}

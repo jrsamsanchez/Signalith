@@ -255,3 +255,43 @@ func TestHealthDetailsAreForAdmins(t *testing.T) {
 		t.Errorf("admin health = %v", body)
 	}
 }
+
+// The provider-only paragraph of docs/users.md names every platform
+// route's prefix, and the routes it names are platform routes.
+func TestUsersDocListsProviderRoutes(t *testing.T) {
+	_, s := newRoleServer(t)
+	b, err := os.ReadFile(filepath.Join("..", "..", "docs", "users.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := strings.ReplaceAll(string(b), "\r\n", "\n")
+	start := strings.Index(doc, "**Provider only:**")
+	if start < 0 {
+		t.Fatal("docs/users.md has no provider-only paragraph")
+	}
+	para := doc[start:]
+	para = strings.Join(strings.Fields(para[:strings.Index(para, "\n\n")]), " ")
+	listed := regexp.MustCompile("`(/api/[a-z]+)`").FindAllStringSubmatch(para, -1)
+	if len(listed) != len(platformPaths) {
+		t.Errorf("the paragraph names %d prefixes, platformPaths has %d", len(listed), len(platformPaths))
+	}
+	for _, m := range listed {
+		if !slices.Contains(platformPaths, strings.TrimPrefix(m[1], "/api/")) {
+			t.Errorf("%s is listed as provider only but is not in platformPaths", m[1])
+		}
+	}
+	for _, v := range tenantVisible {
+		if !strings.Contains(para, "`"+v+"`") && !strings.Contains(para, "`"+strings.TrimPrefix(v, "GET ")+"`") {
+			t.Errorf("%s is open to tenants' users but the paragraph does not say so", v)
+		}
+	}
+	platform := 0
+	for _, r := range s.routes {
+		if r.Platform {
+			platform++
+		}
+	}
+	if platform < 40 {
+		t.Errorf("only %d platform routes; is platformRoute still working?", platform)
+	}
+}
