@@ -70,6 +70,12 @@ In a regular expression that means `\.` stays `\.`, and a literal backslash is
 | `fromjson` | `fromjson body prefix=b_` | Extracts each top-level key of the JSON object in a field as a field of the same name, or `prefix=` and the name. Arrays of plain values come out as multivalue fields; objects and other arrays as JSON text. Up to 500 keys per event |
 | `mvexpand` | `mvexpand user limit=100` | Makes one row for each value of a multivalue field, each a copy of the row with that one value (up to `limit=` values per row, and 100,000 rows). Rows without the field are dropped |
 | `makemv` | `makemv delim="," recipients` | Splits a field's text into a multivalue field at `delim=` (a space by default), or takes each match of `tokenizer="<regex>"` (its first group if it has one). Empty values are dropped unless `allowempty=t` |
+| `mvcombine` | `mvcombine host` | Merges rows that hold the same values in every field but one into a single row whose field holds all their distinct values, in the order the rows came. `delim=` is accepted for Splunk searches; the values stay a multivalue field |
+| `nomv` | `nomv recipients` | Turns a multivalue field into one value, its values on separate lines |
+| `strcat` | `strcat src ":" port addr` | Joins fields and quoted text into the last field named. A missing field adds nothing, unless `allrequired=t`, which leaves the row without the new field |
+| `rangemap` | `rangemap field=count low=0-10 elevated=11-100 default=severe` | Sets `range` to the name of each inclusive range the field's number falls in (a multivalue field when it falls in several), or to `default=` (`None` unless set) |
+| `fieldformat` | `fieldformat firstTime=strftime(firstTime, "%F %T")` | Accepted for Splunk searches and run as `eval`, so it changes the value itself, not only how it is shown. Put it last |
+| `foreach` | `foreach bytes_* [eval <<FIELD>>=round(<<FIELD>>/1024, 1)]` | Runs the `eval` commands in `[ ]` once for each field whose name matches (`*` matches any text, once per name), with `<<FIELD>>` standing for the field's name and `<<MATCHSTR>>` for the text the `*` matched. Fields run in name order, up to 1,000; names other than letters, digits, `_` and dots between them are skipped |
 | `reverse` | `reverse` | Turns the rows' order around, so events come oldest first |
 | `tail` | `tail 20` | Keeps the last 20 rows (default 10), last first. On events, that is the oldest of those the search reads |
 | `uniq` | `uniq` | Drops rows that repeat the row just before them exactly |
@@ -199,7 +205,7 @@ model is configured, questions with unknown words go to it; see
   prefix filters for networks, so matching runs inside OpenSearch too.
 - Commands after that run in the Signalith server on the aggregated rows. So do `eval`,
   `rex`, `dedup`, `eventstats`, `streamstats`, `bin`, `regex`, `append`, `appendpipe`,
-  `xyseries`, `untable`, `spath`, `fromjson`, `mvexpand`, `makemv`, `reverse`, `tail`, `uniq`, `convert`, `addtotals`, and a
+  `xyseries`, `untable`, `spath`, `fromjson`, `mvexpand`, `mvcombine`, `nomv`, `strcat`, `rangemap`, `foreach`, `makemv`, `reverse`, `tail`, `uniq`, `convert`, `addtotals`, and a
   `where` written as an expression, wherever they are.
 - An event search without `stats` returns the newest 100 events, or up to
   `search.max_events` (at most 100,000) when later commands need to sort, filter,

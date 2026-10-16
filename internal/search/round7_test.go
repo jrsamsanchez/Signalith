@@ -136,3 +136,40 @@ func TestNestedMVMapIsCapped(t *testing.T) {
 		t.Errorf("took %v", d)
 	}
 }
+
+func TestFieldCommands(t *testing.T) {
+	run := func(q string) *Result {
+		t.Helper()
+		res, err := (&Engine{Store: &fakeStore{}}).Run(context.Background(), q)
+		if err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+		return res
+	}
+	res := run(`| makeresults count=4 | streamstats count as n | eval host="h" . (n % 2), user=if(n < 3, "a", "b") | fields - _time, n | mvcombine user`)
+	if len(res.Rows) != 2 || !reflect.DeepEqual(res.Rows[0]["user"], []any{"a", "b"}) || res.Rows[0]["host"] != "h1" {
+		t.Errorf("mvcombine rows = %v", res.Rows)
+	}
+	res = run(`| makeresults | eval r=split("a,b", ",") | nomv r`)
+	if res.Rows[0]["r"] != "a\nb" {
+		t.Errorf("nomv = %#v", res.Rows[0]["r"])
+	}
+	res = run(`| makeresults | eval src="10.0.0.1", port=22 | strcat src ":" port addr | strcat allrequired=t src missing other | strcat src missing third`)
+	if r := res.Rows[0]; r["addr"] != "10.0.0.1:22" || r["other"] != nil || r["third"] != "10.0.0.1" {
+		t.Errorf("strcat row = %v", r)
+	}
+	res = run(`| makeresults count=3 | streamstats count as n | eval n=n*10 - 15 | rangemap field=n neg=-100--1 low=0-5 mid=5-10 | table n, range`)
+	got := []any{res.Rows[0]["range"], res.Rows[1]["range"], res.Rows[2]["range"]}
+	if !reflect.DeepEqual(got, []any{"neg", []any{"low", "mid"}, "None"}) {
+		t.Errorf("rangemap = %#v", got)
+	}
+	res = run(`| makeresults | eval bytes_in=2048, bytes_out=4096, other=1 | foreach bytes_* [eval <<FIELD>>=<<FIELD>>/1024 | eval kb_<<MATCHSTR>>=<<FIELD>>] | fieldformat other=other+1`)
+	if r := res.Rows[0]; r["bytes_in"] != int64(2) || r["kb_out"] != int64(4) || r["other"] != int64(2) {
+		t.Errorf("foreach row = %v", r)
+	}
+	for _, bad := range []string{"strcat a", `strcat a "x"`, "rangemap field=n", "rangemap field=n a=5-1", "rangemap field=n a=1-2 a=2-3", "foreach a [stats count]", "foreach [eval x=1]", "foreach a**b [eval x=1]", "nomv", "mvcombine"} {
+		if _, err := (&Engine{Store: &fakeStore{}}).Run(context.Background(), "| makeresults | "+bad); err == nil {
+			t.Errorf("%s parsed", bad)
+		}
+	}
+}

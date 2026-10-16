@@ -361,6 +361,10 @@ func QueryReference() string {
   xyseries x y value   pivots rows into one row per x and one column per y; untable x name value turns them back
   spath [input=f] [output=g] [path=a.b{}.c]   extracts JSON values (default from _raw); no path extracts every value by its path
   fromjson f [prefix=p]   extracts each top-level key of the JSON object in f as a field
+  mvcombine f   merges rows that differ only in f into one with all f values; nomv f joins a multivalue field into one value
+  strcat [allrequired=t] f1 " text " f2 dest   joins fields and quoted text into dest
+  rangemap field=f low=0-10 high=11-100 [default=name]   sets range to the matching range name
+  foreach f_* [eval <<FIELD>>=<<FIELD>>*2]   runs eval for each matching field (<<MATCHSTR>> is the * text); fieldformat runs as eval
   appendpipe [<commands>]   runs commands over the results so far and adds their rows after them, e.g. appendpipe [stats sum(count) as count | eval user="TOTAL"]
   join [type=left] [max=N] f1, f2 [search <query>]   adds the fields of a subsearch's rows that share f1, f2 (inner by default; the first match unless max=0 or max=N)
   fillnull [value=X] [fields]   sets missing values (default 0)

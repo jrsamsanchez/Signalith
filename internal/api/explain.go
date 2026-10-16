@@ -231,7 +231,35 @@ func describeCommand(c query.Command) string {
 		for i, a := range c.Assigns {
 			parts[i] = a.Field + " to " + a.Expr.String()
 		}
+		if c.Format {
+			return "Set " + strings.Join(parts, ", then ") + " (fieldformat runs as eval)."
+		}
 		return "Set " + strings.Join(parts, ", then ") + "."
+	case *query.NoMV:
+		return "Join the values of " + c.Field + " into one, a line each."
+	case *query.MVCombine:
+		return "Merge rows that differ only in " + c.Field + " into one row holding all their " + c.Field + " values."
+	case *query.StrCat:
+		parts := make([]string, len(c.Parts))
+		for i, p := range c.Parts {
+			parts[i] = p.Text
+			if p.Literal {
+				parts[i] = strconv.Quote(p.Text)
+			}
+		}
+		s := "Join " + strings.Join(parts, ", ") + " into " + c.Dest
+		if c.AllRequired {
+			s += ", only where every field has a value"
+		}
+		return s + "."
+	case *query.RangeMap:
+		parts := make([]string, len(c.Ranges))
+		for i, r := range c.Ranges {
+			parts[i] = fmt.Sprintf("%s for %g to %g", r.Name, r.Lo, r.Hi)
+		}
+		return "Set range by " + c.Field + ": " + strings.Join(parts, ", ") + ", otherwise " + c.DefaultName() + "."
+	case *query.ForEach:
+		return "For each field matching " + strings.Join(c.Fields, ", ") + ", run: " + c.Body + "."
 	case *query.Rex:
 		if c.Sed != "" {
 			return "Change the text of " + c.Field + " with the sed expression " + c.Sed + "."

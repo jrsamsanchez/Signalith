@@ -423,6 +423,16 @@ func CommandString(c Command) string {
 		return spathString(c)
 	case *FromJSON:
 		return fromJSONString(c)
+	case *NoMV:
+		return "nomv " + FormatValue(c.Field)
+	case *MVCombine:
+		return mvCombineString(c)
+	case *StrCat:
+		return strCatString(c)
+	case *RangeMap:
+		return rangeMapString(c)
+	case *ForEach:
+		return forEachString(c)
 	case *Enrich:
 		if len(c.Fields) == 0 {
 			return "enrich"

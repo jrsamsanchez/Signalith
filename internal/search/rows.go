@@ -157,6 +157,16 @@ func applyCommand(ctx context.Context, res *Result, c query.Command) error {
 		return applySpath(ctx, res, c)
 	case *query.FromJSON:
 		return applyFromJSON(ctx, res, c)
+	case *query.NoMV:
+		return applyNoMV(ctx, res, c)
+	case *query.MVCombine:
+		return applyMVCombine(ctx, res, c)
+	case *query.StrCat:
+		return applyStrCat(ctx, res, c)
+	case *query.RangeMap:
+		return applyRangeMap(ctx, res, c)
+	case *query.ForEach:
+		return applyForEach(ctx, res, c)
 	case *query.MVExpand:
 		return applyMVExpand(ctx, res, c)
 	case *query.MakeMV:

@@ -43,6 +43,7 @@ Commands:
   chart count over host by action   one column per action; xyseries and untable pivot and unpivot
   spath [path=a.b{}.c]   extract JSON values from _raw
   fromjson f [prefix=p]  extract the top-level keys of the JSON in f
+  strcat, rangemap, mvcombine, nomv, foreach f_* [eval <<FIELD>>=...]  as in Splunk
   | makeresults [count=N]  start with N rows holding only _time
   enrich [fields]        add asset and identity context (priority, owner, watchlist)
   threatmatch [fields]   keep events whose fields match threat intel; must come right after the search

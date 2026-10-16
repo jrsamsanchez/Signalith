@@ -46,7 +46,10 @@ type Assign struct {
 }
 
 // Eval computes new fields: eval ratio=round(bytes_out/bytes_in, 2), kind=lower(kind).
-type Eval struct{ Assigns []Assign }
+type Eval struct {
+	Assigns []Assign
+	Format  bool // written as fieldformat, which Signalith runs as eval
+}
 
 func (*Eval) Name() string { return "eval" }
 
@@ -237,6 +240,9 @@ func evalString(c *Eval) string {
 	parts := make([]string, len(c.Assigns))
 	for i, a := range c.Assigns {
 		parts[i] = (&Field{Name: a.Field}).String() + "=" + a.Expr.String()
+	}
+	if c.Format {
+		return "fieldformat " + strings.Join(parts, ", ")
 	}
 	return "eval " + strings.Join(parts, ", ")
 }

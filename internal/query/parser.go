@@ -6,7 +6,7 @@ import (
 )
 
 // Commands lists every pipe command, for autocomplete and error messages.
-var Commands = []string{"search", "stats", "eventstats", "timechart", "top", "rare", "where", "eval", "rex", "dedup", "fillnull", "sort", "head", "table", "rename", "lookup", "inputlookup", "transaction", "join", "enrich", "intel", "threatmatch", "streamstats", "bin", "bucket", "fields", "regex", "makeresults", "append", "appendpipe", "tstats", "chart", "xyseries", "untable", "spath", "mvexpand", "makemv", "reverse", "addtotals", "addcoltotals", "convert", "tail", "uniq", "fromjson"}
+var Commands = []string{"search", "stats", "eventstats", "timechart", "top", "rare", "where", "eval", "rex", "dedup", "fillnull", "sort", "head", "table", "rename", "lookup", "inputlookup", "transaction", "join", "enrich", "intel", "threatmatch", "streamstats", "bin", "bucket", "fields", "regex", "makeresults", "append", "appendpipe", "tstats", "chart", "xyseries", "untable", "spath", "mvexpand", "makemv", "reverse", "addtotals", "addcoltotals", "convert", "tail", "uniq", "fromjson", "nomv", "mvcombine", "strcat", "rangemap", "fieldformat", "foreach"}
 
 // AggFuncs lists the aggregation functions stats, eventstats and timechart
 // accept. perc95 stands for every percentile from perc1 to perc99.
@@ -548,6 +548,27 @@ func (p *parser) parseCommand() (Command, error) {
 		return p.parseSpath(t)
 	case "fromjson":
 		return p.parseFromJSON(t)
+	case "nomv":
+		return p.parseNoMV(t)
+	case "mvcombine":
+		return p.parseMVCombine(t)
+	case "strcat":
+		return p.parseStrCat(t)
+	case "rangemap":
+		return p.parseRangeMap(t)
+	case "foreach":
+		return p.parseForEach(t)
+	case "fieldformat":
+		raw := p.next()
+		if strings.TrimSpace(raw.text) == "" {
+			return nil, errorf(t.pos, "fieldformat needs an assignment, for example: fieldformat firstTime=strftime(firstTime, \"%%F %%T\")")
+		}
+		e, err := parseEvalCommand(raw.text, raw.pos)
+		if err != nil {
+			return nil, err
+		}
+		e.Format = true
+		return e, nil
 	case "lookup":
 		return p.parseLookup(t)
 	case "inputlookup":
