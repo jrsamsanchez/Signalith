@@ -76,7 +76,7 @@ services:
     restart: "no"
 
   opensearch:
-    image: opensearchproject/opensearch:2.17.1@sha256:1193b7c29c5d63028523728243cc4da047ac49f697a8f8105e5aeee2f89bcc4c
+    image: opensearchproject/opensearch:3.9.0@sha256:adfa61f85025d06b4aeb562e7e74fde7e31c437039c93c3862c17e9acebd6c7c
     restart: unless-stopped
     depends_on:
       setup: { condition: service_completed_successfully }
@@ -106,7 +106,7 @@ services:
       options: { max-size: "10m", max-file: "5" }
 
   opensearch-security:
-    image: opensearchproject/opensearch:2.17.1
+    image: opensearchproject/opensearch:3.9.0
     depends_on:
       setup: { condition: service_completed_successfully }
       opensearch: { condition: service_started }
@@ -122,9 +122,11 @@ services:
       - ./opensearch/security/roles.yml:/usr/share/opensearch/config/opensearch-security/roles.yml:ro
       - ./opensearch/security/roles_mapping.yml:/usr/share/opensearch/config/opensearch-security/roles_mapping.yml:ro
       - opensearch-security-loaded:/usr/share/opensearch/data
+    # /tmp allows running files: from OpenSearch 3, securityadmin.sh
+    # unpacks a native library of its FIPS crypto provider there.
     read_only: true
     tmpfs:
-      - /tmp
+      - /tmp:exec
     cap_drop: [ALL]
     security_opt:
       - no-new-privileges:true

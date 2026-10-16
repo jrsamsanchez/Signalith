@@ -135,6 +135,7 @@
 <symbol id="i-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></symbol>
 <symbol id="i-shield-alert" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="M12 8v4"/><path d="M12 16h.01"/></symbol>
 <symbol id="i-shield-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></symbol>
+<symbol id="i-shield-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="m2 2 20 20"/><path d="M5 5a1 1 0 0 0-1 1v7c0 5 3.5 7.5 7.67 8.94a1 1 0 0 0 .67.01c2.35-.82 4.48-1.97 5.9-3.71"/><path d="M9.309 3.652A12.252 12.252 0 0 0 11.24 2.28a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1v7a9.784 9.784 0 0 1-.08 1.264"/></symbol>
 <symbol id="i-shield-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m14.5 9.5-5 5"/><path d="m9.5 9.5 5 5"/></symbol>
 <symbol id="i-sigma" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M18 7V5a1 1 0 0 0-1-1H6.5a.5.5 0 0 0-.4.8l4.5 6a2 2 0 0 1 0 2.4l-4.5 6a.5.5 0 0 0 .4.8H17a1 1 0 0 0 1-1v-2"/></symbol>
 <symbol id="i-sliders-horizontal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M10 5H3"/><path d="M12 19H3"/><path d="M14 3v4"/><path d="M16 17v4"/><path d="M21 12h-9"/><path d="M21 19h-5"/><path d="M21 5h-7"/><path d="M8 10v4"/><path d="M8 12H3"/></symbol>
@@ -214,6 +215,7 @@
       <a class="nav__item" href="#apitokens" data-page="apitokens" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-key-round"/></svg><span>API tokens</span></a>
       <a class="nav__item" href="#notify" data-page="notify" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-bell"/></svg><span>Notifications</span></a>
       <a class="nav__item" href="#retention" data-page="retention" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-hourglass"/></svg><span>Data retention</span></a>
+      <a class="nav__item" href="#lookuptables" data-page="lookuptables" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-file-spreadsheet"/></svg><span>Lookups</span></a>
       <a class="nav__item" href="#security" data-page="security" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-shield-check"/></svg><span>Security</span></a>
       <a class="nav__item" href="#servers" data-page="servers" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-server"/></svg><span>Servers</span></a>
       <a class="nav__item" href="#scanners" data-page="scanners" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-radar"/></svg><span>Scanners</span></a>
@@ -252,6 +254,7 @@
         <button class="menu__item" type="button" id="about-open" aria-haspopup="dialog"><svg class="icon" aria-hidden="true"><use href="#i-info"/></svg>About Signalith <span class="menu__hint" id="user-menu-version" aria-hidden="true"></span></button>
         <div class="menu__sep"></div>
         <button class="menu__item hidden" type="button" id="change-password"><svg class="icon" aria-hidden="true"><use href="#i-key-round"/></svg>Change password</button>
+        <button class="menu__item hidden" type="button" id="mfa-open" aria-haspopup="dialog"><svg class="icon" aria-hidden="true"><use href="#i-shield-check"/></svg>Two-step sign-in <span class="menu__hint" id="mfa-hint" aria-hidden="true"></span></button>
         <button class="menu__item menu__item--danger" type="button" id="sign-out"><svg class="icon" aria-hidden="true"><use href="#i-log-out"/></svg>Sign out</button>
         <p class="menu__note hidden" id="basic-note">Signed in with HTTP Basic auth. Close the browser to sign out.</p>
       </div>
@@ -272,6 +275,7 @@
       <a class="set-tab" href="#apitokens" data-page="apitokens" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-key-round"/></svg><span>API tokens</span></a>
       <a class="set-tab" href="#notify" data-page="notify" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-bell"/></svg><span>Notifications</span></a>
       <a class="set-tab" href="#retention" data-page="retention" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-hourglass"/></svg><span>Data retention</span></a>
+      <a class="set-tab" href="#lookuptables" data-page="lookuptables" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-file-spreadsheet"/></svg><span>Lookups</span></a>
       <a class="set-tab" href="#security" data-page="security" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-shield-check"/></svg><span>Security</span><span id="security-count" class="nav__count hidden" data-critical></span></a>
       <a class="set-tab" href="#servers" data-page="servers" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-server"/></svg><span>Servers</span></a>
       <a class="set-tab" href="#scanners" data-page="scanners" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-radar"/></svg><span>Scanners</span></a>
@@ -940,6 +944,11 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
           <span class="agent-os__text"><b>Microsoft 365</b><span>Exchange, SharePoint, OneDrive and Teams activity</span></span>
           <input type="radio" name="os" value="m365">
         </label>
+        <label class="card agent-os__card">
+          <span class="agent-os__icon"><svg class="icon" aria-hidden="true"><use href="#i-cloud"/></svg></span>
+          <span class="agent-os__text"><b>Google Cloud</b><span>Admin activity and audit logs from your Google Cloud projects</span></span>
+          <input type="radio" name="os" value="gcp">
+        </label>
       </fieldset>
 
       <div class="card agent-setup" id="agent-setup">
@@ -1042,6 +1051,19 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
               </div>
               <p id="aws-queue-error" class="field-error hidden" role="alert"></p>
               <p id="aws-paths-help" class="hint agent-token__help"><span>The S3 bucket your trail writes to, and the queue S3 tells about each new file. The steps below make the queue; the <a href="https://github.com/jrsamsanchez/Signalith/blob/main/docs/aws-cloudtrail.md" target="_blank" rel="noopener">CloudTrail guide</a> walks through it.</span></p>
+            </div>
+            <div id="gcp-paths" class="hidden">
+              <div class="agent-addr__row">
+                <label class="label" for="gcp-project">Project ID</label>
+                <input id="gcp-project" class="input input--sm mono" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="my-project" aria-describedby="gcp-project-error gcp-paths-help">
+              </div>
+              <p id="gcp-project-error" class="field-error hidden" role="alert"></p>
+              <div class="agent-addr__row">
+                <label class="label" for="gcp-subscription">Pub/Sub subscription</label>
+                <input id="gcp-subscription" class="input input--sm mono" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="signalith-audit" aria-describedby="gcp-subscription-error gcp-paths-help">
+              </div>
+              <p id="gcp-subscription-error" class="field-error hidden" role="alert"></p>
+              <p id="gcp-paths-help" class="hint agent-token__help"><span>The project that holds the Pub/Sub topic your log sink publishes to, and the subscription the Collector pulls. The steps below make both; the <a href="https://github.com/jrsamsanchez/Signalith/blob/main/docs/google-cloud.md" target="_blank" rel="noopener">Google Cloud guide</a> walks through it.</span></p>
             </div>
             <div class="agent-addr__row agent-token" id="agent-token-row">
               <label class="label" for="agent-token-name" id="agent-token-label">Token for these agents</label>
@@ -1627,6 +1649,27 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
     </div>
   </section>
 
+  <section id="page-lookuptables" class="page">
+    <div class="page-head">
+      <div>
+        <h2 class="page-head__title">Lookups</h2>
+        <p class="page-head__desc">Tables of your own, uploaded as CSV, that searches and detections add columns from with the lookup command.</p>
+      </div>
+    </div>
+    <div class="card tokens-card">
+      <div class="card__head tokens-card__head">
+        <div>
+          <h3 class="card__title" id="lt-title">Lookup tables</h3>
+          <p class="card__sub">For example a list of service owners: <code>| lookup owners host OUTPUT owner, team</code> adds each event’s owner and team.</p>
+        </div>
+        <div class="card__actions">
+          <button class="btn btn--primary btn--sm" type="button" id="lt-new"><svg class="icon" aria-hidden="true"><use href="#i-upload"/></svg><span>Add a table</span></button>
+        </div>
+      </div>
+      <div class="tokens-card__body" id="lt-body" aria-busy="true" aria-labelledby="lt-title"></div>
+    </div>
+  </section>
+
   <section id="page-audit" class="page">
     <div class="page-head">
       <div>
@@ -1675,6 +1718,7 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
         <div><dt data-query="| head 10"></dt><dd>Keep the first N rows.</dd></div>
         <div><dt data-query="| table _time, user, src"></dt><dd>Choose the columns.</dd></div>
         <div><dt data-query="| rename src as source_ip"></dt><dd>Rename columns.</dd></div>
+        <div><dt data-query="| lookup owners host OUTPUT owner, team"></dt><dd>Add columns from a lookup table uploaded on Settings &gt; Lookups to events whose field matches. <code>host AS dest</code> matches another field; <code>OUTPUTNEW</code> fills only missing fields.</dd></div>
         <div><dt data-query="| enrich"></dt><dd>Add owner, priority and category from the asset and identity lists, as <code>dest_owner</code>, <code>user_priority</code> and so on.</dd></div>
         <div><dt data-query="| threatmatch"></dt><dd>Keep only events whose IP, domain, URL, hash or email fields match threat intel, with <code>threat_match_value</code>, <code>threat_source</code> and <code>threat_weight</code> columns. Name fields to check only those, as in <code>| threatmatch src, dest</code>. Put it right after the search.</dd></div>
         <div><dt data-query="| intel src, dest"></dt><dd>Check any result against threat intel. Adds <code>src_intel_source</code>, <code>src_intel_type</code>, <code>src_intel_weight</code> and <code>src_intel_description</code> where a value is a known indicator.</dd></div>
@@ -1735,6 +1779,7 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
 <script src="tokens.js"></script>
 <script src="apitokens.js"></script>
 <script src="sso.js"></script>
+<script src="lookuptables.js"></script>
 <script src="servers-ca.js"></script>
 <script src="servers-lifecycle.js"></script>
 <script src="servers-osid.js"></script>

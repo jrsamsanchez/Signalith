@@ -23,6 +23,9 @@ import (
 type route struct {
 	Pattern string
 	Role    users.Role
+	// Recheck routes make sensitive changes, which ask for the password
+	// or two-step code again (see recheckNeeded).
+	Recheck bool
 	// Unclassified routes were registered without a role. They are
 	// admin-only, and TestEveryRouteHasARole fails until they get one.
 	Unclassified bool
@@ -84,6 +87,11 @@ type principal struct {
 	Role               users.Role
 	Source             string // builtin, local or directory
 	MustChangePassword bool
+	// MFA is whether two-step sign-in is on for the user, and
+	// MustSetupMFA whether it is required of them and not set up yet:
+	// they must set it up before anything else.
+	MFA          bool
+	MustSetupMFA bool
 	// Method is how the request signed in: session or basic.
 	Method string
 	token  string // the session's token, to keep it when others end
@@ -100,6 +108,11 @@ type principal struct {
 	// tokenID is the API token the request signed in with (Method
 	// "token"), which may only read (tokenMayUse).
 	tokenID string
+	// codeUsed is the two-step code this sign-in was made with.
+	codeUsed *users.CodeResult
+	// signedIn is when the session (Method "session") was made: signing
+	// in counts as entering the password again (see rechecked).
+	signedIn time.Time
 }
 
 type userKey struct{}
@@ -137,6 +150,18 @@ func (s *Server) allow(rt route, next http.Handler) http.Handler {
 				"error": "Choose a new password before you continue.", "code": "password_change_required"})
 			return
 		}
+		// API tokens are a credential of their own, made by a signed-in
+		// user, and only read.
+		if p.MustSetupMFA && !rt.Anytime && p.Method != "token" {
+			if !strings.HasPrefix(r.URL.Path, "/api/") && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
+				// The sign-in page sets it up.
+				http.Redirect(w, r, "/login?mfa=setup", http.StatusSeeOther)
+				return
+			}
+			writeJSON(w, http.StatusForbidden, map[string]any{
+				"error": "Set up two-step sign-in before you continue.", "code": "mfa_setup_required"})
+			return
+		}
 		if p.Method == "token" && !tokenMayUse(r) {
 			writeJSON(w, http.StatusForbidden, map[string]any{
 				"error": "API tokens can only read. Sign in as a user to change anything.", "code": "token_read_only"})
@@ -149,6 +174,9 @@ func (s *Server) allow(rt route, next http.Handler) http.Handler {
 				"role":     p.Role,
 				"required": rt.Role,
 			})
+			return
+		}
+		if rt.Recheck && s.recheckNeeded(w, r, p) {
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -202,7 +230,7 @@ func (s *Server) authenticate(r *http.Request) (*principal, error) {
 			// A password changed since signing in (perhaps on another
 			// server sharing the users file) ends the session too.
 			if p := s.principalFor(ss.User); p != nil && (ss.Version == "" || ss.Version == s.passwordStamp(ss.User)) {
-				p.Method, p.token, p.remember = "session", c.Value, ss.Remember
+				p.Method, p.token, p.remember, p.signedIn = "session", c.Value, ss.Remember, ss.Created
 				return p, nil
 			}
 			// Deleted, disabled or given a new password since signing in.
@@ -238,7 +266,9 @@ func (s *Server) principalFor(name string) *principal {
 		if !s.builtinReadable() {
 			return nil
 		}
-		return s.builtinPrincipal()
+		p := s.builtinPrincipal()
+		s.noteMFA(p)
+		return p
 	}
 	u, ok := s.userStore().Get(name)
 	if !ok || u.Disabled {
@@ -261,6 +291,7 @@ func (s *Server) principalFor(name string) *principal {
 	}
 	p := principalFromUser(u)
 	p.shared = s.SharedUsers != nil
+	s.noteMFA(p)
 	return p
 }
 
@@ -475,7 +506,7 @@ func (s *Server) noteFailure(from clientInfo, f auth.Failure) {
 // A local username is never looked up in the directory. Wrong passwords
 // count toward the limits (see auth.Limiter), and every attempt is logged
 // without the password.
-func (s *Server) signIn(r *http.Request, name, password, method string) (*principal, error) {
+func (s *Server) signIn(r *http.Request, name, password, code, method string) (*principal, error) {
 	from := s.client(r)
 	name = strings.TrimSpace(name)
 	attempt, err := s.beginAttempt(r, from, name, "")
@@ -485,9 +516,20 @@ func (s *Server) signIn(r *http.Request, name, password, method string) (*princi
 	// The Users page shows how each user last signed in.
 	ctx := clusterauth.WithMethod(r.Context(), method)
 	p, reason, err := s.checkCredentials(ctx, name, password)
+	if err == nil {
+		reason, err = s.secondStep(ctx, p, method, code)
+	}
+	if errors.Is(err, errMFANeeded) {
+		// The password was right; the sign-in page now asks for the
+		// code. That is no guess refused, nor a sign-in yet.
+		attempt.Done()
+		s.Log.Info("password accepted, waiting for the two-step code", slices.Concat([]any{"audit", true, "user", p.Username}, from.logAttrs(),
+			[]any{"method", method})...)
+		return nil, err
+	}
 	if err != nil {
 		var f auth.Failure
-		if errors.Is(err, errWrongCredentials) {
+		if errors.Is(err, errWrongCredentials) || errors.Is(err, errWrongCode) {
 			f = attempt.Fail()
 		} else {
 			// Unreachable directory, or a right password for an account
@@ -502,8 +544,14 @@ func (s *Server) signIn(r *http.Request, name, password, method string) (*princi
 	attempt.Succeed()
 	s.notePlainSignIn(r)
 	s.noteName(r)
-	s.Log.Info("signed in", slices.Concat([]any{"audit", true, "user", p.Username, "role", p.Role, "source", p.Source}, from.logAttrs(),
-		[]any{"method", method})...)
+	attrs := []any{"method", method}
+	if p.codeUsed != nil {
+		attrs = append(attrs, "mfa", string(p.codeUsed.Kind))
+		if p.codeUsed.Kind == users.CodeRecovery {
+			attrs = append(attrs, "recovery_codes_left", p.codeUsed.Left)
+		}
+	}
+	s.Log.Info("signed in", slices.Concat([]any{"audit", true, "user", p.Username, "role", p.Role, "source", p.Source}, from.logAttrs(), attrs)...)
 	return p, nil
 }
 
@@ -826,10 +874,14 @@ func (s *Server) checkBasic(r *http.Request, user, pass string) (*principal, err
 			if err := s.degradedRefusal(p); err != nil {
 				return nil, err
 			}
+			if s.basicBlocked(p) {
+				// Two-step sign-in was turned on or required since.
+				return nil, errMFABasic
+			}
 			return p, nil
 		}
 	}
-	p, err := s.signIn(r, user, pass, "basic")
+	p, err := s.signIn(r, user, pass, "", "basic")
 	if err != nil {
 		return nil, err
 	}

@@ -46,6 +46,8 @@ type Checker struct {
 	Docker bool
 	// OpenVAS is this server's OpenVAS, when set up.
 	OpenVAS *OpenVAS
+	// Exploits are the KEV and EPSS feeds, for their status.
+	Exploits *ExploitFeeds
 	// Reach finds how this server reaches an address; nil is LocalRoute.
 	Reach func(ctx context.Context, entry string) Route
 }
@@ -173,6 +175,10 @@ func (c *Checker) Run(ctx context.Context, set Settings, mine []Target) (checks 
 	}
 	checks = append(checks, key)
 
+	if c.Exploits != nil {
+		checks = append(checks, c.exploitsCheck(ctx, len(set.Targets) > 0))
+	}
+
 	checks = append(checks, c.openVASCheck(ctx, mine))
 
 	nets := Check{ID: "networks", Title: "Networks to scan",
@@ -231,6 +237,62 @@ func plural(n int, one, many string) string {
 		return one
 	}
 	return many
+}
+
+// exploitsCheck says how the KEV and EPSS feeds stand. They are the same
+// for every server: the one running the background jobs downloads them.
+func (c *Checker) exploitsCheck(ctx context.Context, scanning bool) Check {
+	ck := Check{ID: "exploits", Title: "Exploit intelligence: CISA KEV and FIRST EPSS",
+		Why: "CISA's Known Exploited Vulnerabilities catalog lists the CVEs attackers are using now, and FIRST's EPSS scores give every CVE the chance it is exploited in the next 30 days. " +
+			"Signalith downloads both once a day and lists the vulnerabilities attackers use first, so the few that matter most are fixed first. Only the files are downloaded; nothing about your network is sent."}
+	kev, epss := c.Exploits.Status(ctx)
+	when := func(t time.Time) string { return t.UTC().Format("2006-01-02 15:04 UTC") }
+	parts := []string{}
+	if kev.Count > 0 {
+		if kev.FetchedAt.IsZero() {
+			parts = append(parts, fmt.Sprintf("the KEV catalog built into Signalith (%s, %d CVEs)", kev.Version, kev.Count))
+		} else {
+			parts = append(parts, fmt.Sprintf("the KEV catalog of %s (%d CVEs)", kev.Version, kev.Count))
+		}
+	}
+	if epss.Count > 0 {
+		parts = append(parts, fmt.Sprintf("EPSS scores of %s (%d CVEs)", epss.Version, epss.Count))
+	}
+	using := "Using " + strings.Join(parts, " and ") + "."
+	var errs []string
+	if kev.Error != "" {
+		errs = append(errs, "KEV catalog: "+kev.Error)
+	}
+	if epss.Error != "" {
+		errs = append(errs, "EPSS scores: "+epss.Error)
+	}
+	switch {
+	case len(errs) > 0:
+		ck.State = CheckWarn
+		ck.Detail = "The last download failed (" + strings.Join(errs, "; ") + "). " + using
+		ck.Fix = []string{
+			"Allow outbound HTTPS (port 443) from the server that runs the background jobs to www.cisa.gov and epss.empiricalsecurity.com, or set HTTPS_PROXY for the Signalith service.",
+			"With no internet, copy both files to that server every day and enter their paths as Known exploited catalog address and EPSS scores address in Settings, under Vulnerability scans.",
+			"Signalith tries again every hour; scans meanwhile use the last copy.",
+		}
+	case !kev.FetchedAt.IsZero() && !epss.FetchedAt.IsZero():
+		ck.State = CheckOK
+		ck.Detail = using + " Last downloaded " + when(maxTime(kev.FetchedAt, epss.FetchedAt)) + "."
+	case !scanning:
+		ck.State = CheckInfo
+		ck.Detail = "Downloaded once there is a network to scan. " + using
+	default:
+		ck.State = CheckInfo
+		ck.Detail = "Not downloaded yet; the server that runs the background jobs does it shortly. " + using
+	}
+	return ck
+}
+
+func maxTime(a, b time.Time) time.Time {
+	if a.After(b) {
+		return a
+	}
+	return b
 }
 
 // openVASCheck says whether OpenVAS, optional, is set up and answers.

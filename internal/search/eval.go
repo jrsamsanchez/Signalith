@@ -47,6 +47,12 @@ type evaluator struct {
 	produced int
 	steps    int
 	err      error
+	// eachValues counts the values mvmap and mvfilter went through.
+	eachValues int
+	// The JSON text the JSON functions decoded last, and its value.
+	jsonText string
+	jsonDoc  any
+	jsonOK   bool
 }
 
 func newEvaluator(ctx context.Context) *evaluator {
@@ -76,13 +82,46 @@ func evaluatorFor(ctx context.Context) *evaluator {
 // evaluator checks whether the search has been cancelled or timed out.
 const checkSteps = 256
 
+// maxEvalSteps caps the expression steps of one search, so work that
+// multiplies (foreach over many fields, nested mvmap) ends in seconds
+// rather than at the search timeout. A search over 100,000 events with
+// 20 assignments of 100 steps each takes 200 million.
+var maxEvalSteps = 500_000_000 // a variable so tests can lower it
+
+// stepN counts n steps of work at once, checking the step budget and
+// the search's context as step does.
+func (ev *evaluator) stepN(n int) bool {
+	if ev.err != nil {
+		return false
+	}
+	ev.steps += n
+	if ev.steps > maxEvalSteps {
+		ev.fail("the search evaluated more than %d million expressions; narrow the search first", maxEvalSteps/1_000_000)
+		return false
+	}
+	if ev.ctx != nil {
+		if err := ev.ctx.Err(); err != nil {
+			ev.err = err
+			return false
+		}
+	}
+	return true
+}
+
 // step counts work and stops the evaluation once the search's context
 // ends, so a few expensive rows cannot outlive the search timeout.
 func (ev *evaluator) step() bool {
 	if ev.err != nil {
 		return false
 	}
-	if ev.steps++; ev.steps%checkSteps == 0 && ev.ctx != nil {
+	if ev.steps++; ev.steps%checkSteps == 0 {
+		if ev.steps > maxEvalSteps {
+			ev.fail("the search evaluated more than %d million expressions; narrow the search first", maxEvalSteps/1_000_000)
+			return false
+		}
+		if ev.ctx == nil {
+			return true
+		}
 		if err := ev.ctx.Err(); err != nil {
 			ev.err = err
 			return false
@@ -158,6 +197,74 @@ func (ev *evaluator) charge(n int) bool {
 		return false
 	}
 	return true
+}
+
+// fieldOverhead is what the budget counts for a field a command adds to
+// a row, besides its name and value: the row map's entry and its growth.
+const fieldOverhead = 64
+
+// newField charges for adding name to r, when r does not have it yet.
+func (ev *evaluator) newField(r Row, name string) bool {
+	if _, ok := r[name]; ok {
+		return true
+	}
+	return ev.charge(len(name) + fieldOverhead)
+}
+
+// maxEachValues caps the values mvmap and mvfilter go through in one
+// search, so nesting them over different multivalue fields cannot
+// multiply into work that only the deadline stops.
+const maxEachValues = 10_000_000
+
+// eachValue calls f for each value of r's field name, with the field set
+// to that one value while f runs, and gives the values f keeps.
+func (ev *evaluator) eachValue(r Row, name string, f func(v any) (any, bool)) any {
+	orig, had := r[name]
+	if orig == nil {
+		return nil
+	}
+	defer func() {
+		if had {
+			r[name] = orig
+		} else {
+			delete(r, name)
+		}
+	}()
+	vals := asList(orig)
+	if ev.eachValues += len(vals); ev.eachValues > maxEachValues {
+		return ev.fail("mvmap and mvfilter went through more than %d million values; narrow the search first", maxEachValues/1_000_000)
+	}
+	var out []any
+	for _, v := range vals {
+		if !ev.step() {
+			return nil
+		}
+		r[name] = v
+		if x, keep := f(v); keep {
+			out = append(out, x)
+		}
+		if ev.err != nil {
+			return nil
+		}
+	}
+	return ev.list(out)
+}
+
+// evalFields adds the names of the fields e reads to names.
+func evalFields(e query.EvalExpr, names map[string]bool) {
+	switch e := e.(type) {
+	case *query.Field:
+		names[e.Name] = true
+	case *query.Call:
+		for _, a := range e.Args {
+			evalFields(a, names)
+		}
+	case *query.Unary:
+		evalFields(e.X, names)
+	case *query.Binary:
+		evalFields(e.L, names)
+		evalFields(e.R, names)
+	}
 }
 
 // list returns a new multivalue result after checking its count and its
@@ -475,6 +582,29 @@ func (ev *evaluator) call(c *query.Call, r Row) any {
 			}
 		}
 		return nil
+	case "mvfilter":
+		names := map[string]bool{}
+		evalFields(c.Args[0], names)
+		if len(names) != 1 {
+			return ev.fail("mvfilter's expression must use exactly one field, like mvfilter(match(email, \"@corp$\"))")
+		}
+		var name string
+		for n := range names {
+			name = n
+		}
+		return ev.eachValue(r, name, func(v any) (any, bool) {
+			keep := truth(ev.eval(c.Args[0], r))
+			return v, keep
+		})
+	case "mvmap":
+		f, ok := c.Args[0].(*query.Field)
+		if !ok {
+			return ev.fail("mvmap's first argument must be a field, like mvmap(sizes, sizes*2)")
+		}
+		return ev.eachValue(r, f.Name, func(any) (any, bool) {
+			out := ev.eval(c.Args[1], r)
+			return out, out != nil
+		})
 	}
 	args := make([]any, len(c.Args))
 	for i, a := range c.Args {
@@ -715,6 +845,49 @@ func (ev *evaluator) call(c *query.Call, r Row) any {
 			}
 		}
 		return ev.list(out)
+	case "mvfind":
+		pat, ok := text(1)
+		if !ok || args[0] == nil {
+			return nil
+		}
+		re := ev.regex(pat)
+		if re == nil {
+			return nil
+		}
+		for i, v := range asList(args[0]) {
+			if !ev.step() {
+				return nil
+			}
+			if s, ok := evStr(v); ok && re.MatchString(s) {
+				return int64(i)
+			}
+		}
+		return nil
+	case "mvzip":
+		if args[0] == nil || args[1] == nil {
+			return nil
+		}
+		sep := ","
+		if len(args) > 2 {
+			s, ok := text(2)
+			if !ok {
+				return nil
+			}
+			sep = s
+		}
+		a, b := asList(args[0]), asList(args[1])
+		n := min(len(a), len(b))
+		out := make([]any, 0, n)
+		size := 0
+		for i := 0; i < n; i++ {
+			x, _ := evStr(a[i])
+			y, _ := evStr(b[i])
+			if size += len(x) + len(sep) + len(y); !ev.fits(size) {
+				return nil
+			}
+			out = append(out, x+sep+y)
+		}
+		return ev.list(out)
 	case "mvdedup":
 		seen := map[string]bool{}
 		var out []any
@@ -929,6 +1102,9 @@ func (ev *evaluator) call(c *query.Call, r Row) any {
 		}
 		return numOut(float64(t.UnixNano()) / 1e9)
 	}
+	if v, ok := ev.callMore(c.Func, args); ok {
+		return v
+	}
 	return ev.fail("function %s() is not supported here", c.Func)
 }
 
@@ -954,12 +1130,24 @@ func goReplacement(s string) string {
 // the result grows, so a pattern that matches everywhere (such as "")
 // cannot build a huge string before the check.
 func (ev *evaluator) replace(re *regexp.Regexp, s, template string) any {
+	return ev.replaceNth(re, s, template, 0)
+}
+
+// replaceNth is replace for only the nth match when nth > 0.
+func (ev *evaluator) replaceNth(re *regexp.Regexp, s, template string, nth int) any {
 	refs := strings.Count(template, "${")
 	var out []byte
 	last := 0
-	for _, m := range re.FindAllStringSubmatchIndex(s, -1) {
+	limit := -1
+	if nth > 0 {
+		limit = nth
+	}
+	for i, m := range re.FindAllStringSubmatchIndex(s, limit) {
 		if !ev.step() {
 			return nil
+		}
+		if nth > 0 && i != nth-1 {
+			continue
 		}
 		// A group's text lies within its match.
 		if !ev.fits(len(out) + m[0] - last + len(template) + refs*(m[1]-m[0])) {
@@ -1199,6 +1387,9 @@ func applyEval(ctx context.Context, res *Result, c *query.Eval) error {
 			if v == nil {
 				delete(r, a.Field)
 			} else {
+				if !ev.newField(r, a.Field) {
+					return ev.err
+				}
 				r[a.Field] = v
 			}
 		}
@@ -1210,6 +1401,10 @@ func applyEval(ctx context.Context, res *Result, c *query.Eval) error {
 }
 
 func applyRex(ctx context.Context, res *Result, c *query.Rex) error {
+	if c.Sed != "" {
+		return applySed(ctx, res, c)
+	}
+	ev := evaluatorFor(ctx)
 	re, err := regexp.Compile(c.Pattern)
 	if err != nil {
 		return &QueryError{Msg: fmt.Sprintf("rex pattern: %v", err)}
@@ -1243,6 +1438,9 @@ func applyRex(ctx context.Context, res *Result, c *query.Rex) error {
 			}
 			if len(vals) == 0 {
 				continue
+			}
+			if !ev.newField(r, name) {
+				return ev.err
 			}
 			if c.MaxMatch == 1 {
 				r[name] = vals[0]
@@ -1326,6 +1524,10 @@ func applyEventStats(ctx context.Context, res *Result, c *query.EventStats) erro
 		}
 	}
 	aggCols := cols[len(c.By):]
+	// Each row gets its group's results, written out in full with every
+	// row: a values() or list() of large fields counts against the
+	// search's budget once per row.
+	ev := evaluatorFor(ctx)
 	for i, r := range res.Rows {
 		if i%checkEvery == 0 && ctx.Err() != nil {
 			return ctx.Err()
@@ -1337,6 +1539,9 @@ func applyEventStats(ctx context.Context, res *Result, c *query.EventStats) erro
 		g := byKey[k]
 		for _, col := range aggCols {
 			if v := g[col]; v != nil {
+				if !ev.charge(valueSize(v)) {
+					return ev.err
+				}
 				r[col] = v
 			}
 		}

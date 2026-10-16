@@ -35,8 +35,8 @@ The first four phases are complete, and work on hardening for 1.0 has started.
 
 - Scheduled [detections](detections.md) mapped to MITRE ATT&CK, with throttling, a
   findings queue for triage, and an ATT&CK coverage map.
-- Content packs of tested community rules: 2,455 from
-  [SigmaHQ](https://github.com/SigmaHQ/sigma) and 1,092 from Splunk Security Content,
+- Content packs of tested community rules: 2,471 from
+  [SigmaHQ](https://github.com/SigmaHQ/sigma) and 1,138 from Splunk Security Content,
   each with test events that prove it fires, and signed content updates.
 - [Sigma](https://github.com/SigmaHQ/sigma) rule import.
 
@@ -76,7 +76,9 @@ The first four phases are complete, and work on hardening for 1.0 has started.
   activity log through an Event Hub and the OpenTelemetry Collector, with 108 SigmaHQ and
   30 Splunk Entra ID rules.
 - [Microsoft 365](microsoft-365.md) audit log, read from Microsoft with no agent, with 17
-  SigmaHQ Microsoft 365 rules.
+  SigmaHQ and 19 Splunk Microsoft 365 rules.
+- [Google Cloud](google-cloud.md) audit logs through a log sink, Pub/Sub and the
+  OpenTelemetry Collector, with 16 SigmaHQ Google Cloud rules.
 - A [network sensor](network-sensor.md) with Zeek and Suricata, installed with one line,
   network detections for sensor, firewall, DNS and proxy data, and a Network dashboard.
 - [Vulnerability scanning](vulnerabilities.md) with Nmap and CVE matching, a scanner for
@@ -87,7 +89,8 @@ The first four phases are complete, and work on hardening for 1.0 has started.
 
 - HTTPS by default, a secured OpenSearch, and [encrypted](encryption.md) passwords, keys
   and archives.
-- [Users and roles](users.md), with Active Directory and LDAP sign-in.
+- [Users and roles](users.md), with Active Directory and LDAP sign-in and two-step sign-in
+  with an authenticator app.
 - [Data retention](retention.md) policies with archives you can restore, and a disk guard.
 - A [security check](security.md) of how each server is set up.
 - [Compliance](compliance.md) coverage for NIST SP 800-53, CIS Controls v8, PCI DSS 4.0,

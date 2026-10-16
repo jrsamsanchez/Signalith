@@ -1,0 +1,7 @@
+{"rule": "76737c19-66ee-4c07-b65a-a03301d1573d", "cases": [
+  {"expect":true,"source":"synthesized","channel":"gcp","event_id":"activity","data":{"data.protoPayload.logName":"cloudaudit.googleapis.com/activity","data.protoPayload.methodName":"io.k8s.core.v1.pods.create","data.protoPayload.request":"image-policy.k8s.io/break-glass","data.protoPayload.resource.type":"k8s_cluster"}},
+  {"expect":false,"source":"synthesized","channel":"gcp","event_id":"activity","data":{"data.protoPayload.methodName":"io.k8s.core.v1.pods.create","data.protoPayload.request":"image-policy.k8s.io/break-glass","data.protoPayload.resource.type":"k8s_cluster"}},
+  {"expect":false,"source":"synthesized","channel":"gcp","event_id":"activity","data":{"data.protoPayload.logName":"cloudaudit.googleapis.com/activity","data.protoPayload.request":"image-policy.k8s.io/break-glass","data.protoPayload.resource.type":"k8s_cluster"}},
+  {"expect":false,"source":"synthesized","channel":"gcp","event_id":"activity","data":{"data.protoPayload.logName":"cloudaudit.googleapis.com/activity","data.protoPayload.methodName":"io.k8s.core.v1.pods.create","data.protoPayload.resource.type":"k8s_cluster"}},
+  {"expect":false,"source":"synthesized","channel":"gcp","event_id":"activity","data":{"data.protoPayload.logName":"cloudaudit.googleapis.com/activity","data.protoPayload.methodName":"io.k8s.core.v1.pods.create","data.protoPayload.request":"image-policy.k8s.io/break-glass"}}
+]}

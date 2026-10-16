@@ -25,11 +25,15 @@ type Vulns struct {
 	report *vulnscan.Report
 }
 
-// useNVD puts a CVE database address and API key saved on the Settings
-// page into use, and has the next setup check look again.
-func (v *Vulns) useNVD(url, key string) {
+// useNVD puts a CVE database address and API key, and the exploit feeds'
+// addresses, saved on the Settings page into use, and has the next setup
+// check look again.
+func (v *Vulns) useNVD(url, key, kevURL, epssURL string) {
 	if v.Scanner != nil && v.Scanner.NVD != nil {
 		v.Scanner.NVD.Set(url, key)
+	}
+	if v.Scanner != nil && v.Scanner.Exploits != nil {
+		v.Scanner.Exploits.Set(kevURL, epssURL)
 	}
 	v.mu.Lock()
 	v.report = nil
@@ -162,6 +166,7 @@ func (s *Server) handleVulns(w http.ResponseWriter, r *http.Request) {
 		total.Medium += h.Counts.Medium
 		total.Low += h.Counts.Low
 		total.KEV += h.Counts.KEV
+		total.Likely += h.Counts.Likely
 	}
 	recent := scans
 	if len(recent) > 30 {
@@ -170,6 +175,10 @@ func (s *Server) handleVulns(w http.ResponseWriter, r *http.Request) {
 	out := map[string]any{
 		"settings": set, "version": v.String(), "targets": targets, "hosts": rows, "totals": total, "scans": recent,
 		"scans_here": s.scansHere(),
+	}
+	if x := s.Vulns.Scanner; x != nil && x.Exploits != nil {
+		kev, epss := x.Exploits.Status(ctx)
+		out["exploits"] = map[string]any{"kev": kev, "epss": epss, "likely_epss": vulnscan.LikelyEPSS}
 	}
 	reports, err := s.Vulns.Store.Reports(ctx)
 	if err != nil {

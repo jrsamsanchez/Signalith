@@ -28,7 +28,7 @@ func (s *Server) routeRespond(api *router) {
 	api.analyst("POST /api/respond/run", s.handleRespondRun)
 	// Setting actions up decides what Signalith can change elsewhere.
 	api.admin("GET /api/respond/config", s.handleRespondConfig)
-	api.admin("PUT /api/respond/config", s.handleRespondSave)
+	api.sensitive("PUT /api/respond/config", s.handleRespondSave)
 	api.admin("POST /api/respond/test", s.handleRespondTest)
 }
 

@@ -1,10 +1,7 @@
 {"rule": "b5baa09a-7a05-11ec-8da4-acde48001122", "cases": [
   {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"23","data":{"ProcessId":"4242","TargetFilename":"x \\ProgramData\\Microsoft\\Windows Defender\\ x","User":"CORP\\tester"}},
   {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"26","data":{"ProcessId":"4242","TargetFilename":"x \\ProgramData\\Microsoft\\Windows Defender\\ x","User":"CORP\\tester"}},
-  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"23","data":{"ProcessId":"4242","TargetFilename":"x \\ProgramData\\Microsoft\\Windows Defender\\ x","User":"CORP\\tester"}},
-  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"23","data":{"ProcessId":"4242","TargetFilename":"x \\ProgramData\\Microsoft\\Windows Defender\\ x","User":"CORP\\tester"}},
   {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"23","data":{"ProcessId":"4242","TargetFilename":"x \\ProgramData\\Microsoft\\Windows Defender\\ y","User":"CORP\\tester"}},
-  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"23","data":{"ProcessId":"4242","TargetFilename":"x \\ProgramData\\Microsoft\\Windows Defender\\ x","User":"CORP\\tester"}},
   {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"26","data":{"ProcessId":"4242","TargetFilename":"x \\ProgramData\\Microsoft\\Windows Defender\\ y","User":"CORP\\tester"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"23","data":{"ProcessId":"4242","User":"CORP\\tester"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"26","data":{"ProcessId":"4242","User":"CORP\\tester"}},

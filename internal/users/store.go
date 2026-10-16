@@ -51,6 +51,16 @@ type User struct {
 	// provider: its issuer, a space and their subject (sub) there. Only
 	// that identity can sign in as them.
 	Subject string `json:"subject,omitempty"`
+	// ExternalID is a single sign-on user's id at the identity provider
+	// that provisions them (SCIM), as it sent it. A provisioned user with
+	// no Subject yet has not signed in: their first sign-in with the same
+	// username binds the identity.
+	ExternalID string `json:"external_id,omitempty"`
+	// InactiveAtIdP is true when provisioning disabled the user (they are
+	// inactive at the identity provider). Provisioning re-enables only
+	// users it disabled: an admin's disable here stays until an admin
+	// enables them.
+	InactiveAtIdP bool `json:"inactive_at_idp,omitempty"`
 	// Refused says why a directory user has no access since the directory
 	// was last asked about them: not found there (deleted, or disabled in
 	// Active Directory), disabled or expired there, or in no mapped group.
@@ -154,15 +164,13 @@ func validEmail(email string) error {
 // MinPasswordLength is the shortest password Signalith accepts.
 const MinPasswordLength = 8
 
-// HashPassword returns a bcrypt hash of a new password, after checking its
+// HashPassword returns a bcrypt hash of a password, after checking its
 // length. bcrypt reads at most 72 bytes, so longer passwords are refused
-// rather than silently cut.
+// rather than silently cut. A password someone is choosing goes through
+// CheckNewPassword first.
 func HashPassword(pw string) (string, error) {
-	if len([]rune(pw)) < MinPasswordLength {
-		return "", fmt.Errorf("password must be at least %d characters", MinPasswordLength)
-	}
-	if len(pw) > 72 {
-		return "", errors.New("password must be at most 72 bytes (bcrypt reads no more)")
+	if err := checkLength(pw); err != nil {
+		return "", err
 	}
 	h, err := bcrypt.GenerateFromPassword([]byte(pw), bcrypt.DefaultCost)
 	return string(h), err
@@ -234,6 +242,7 @@ type Store struct {
 	mu     sync.RWMutex
 	users  map[string]*User
 	hashes map[string]string // username -> bcrypt hash, local users only
+	mfa    map[string]*MFA
 	etags  map[string]string
 
 	// recheck is how often reads look for changes to the file, checked
@@ -250,7 +259,7 @@ const recheckEvery = time.Second
 
 // New returns a store over a backend, with the users it holds now.
 func New(b Backend) (*Store, error) {
-	s := &Store{Now: time.Now, b: b, users: map[string]*User{}, hashes: map[string]string{}, etags: map[string]string{}}
+	s := &Store{Now: time.Now, b: b, users: map[string]*User{}, hashes: map[string]string{}, mfa: map[string]*MFA{}, etags: map[string]string{}}
 	if err := s.load(); err != nil {
 		return nil, err
 	}
@@ -290,7 +299,7 @@ func (s *Store) load() error {
 	if err != nil {
 		return err
 	}
-	people, hashes, etags := make(map[string]*User, len(recs)), map[string]string{}, make(map[string]string, len(recs))
+	people, hashes, etags, mfa := make(map[string]*User, len(recs)), map[string]string{}, make(map[string]string, len(recs)), map[string]*MFA{}
 	for name, r := range recs {
 		u := r.User
 		u.SessionEpoch = r.Epoch
@@ -299,9 +308,12 @@ func (s *Store) load() error {
 		if r.Hash != "" && u.Source == SourceLocal {
 			hashes[name] = r.Hash
 		}
+		if r.MFA != nil {
+			mfa[name] = r.MFA.clone()
+		}
 	}
 	s.mu.Lock()
-	s.users, s.hashes, s.etags = people, hashes, etags
+	s.users, s.hashes, s.etags, s.mfa = people, hashes, etags, mfa
 	s.mu.Unlock()
 	return nil
 }
@@ -437,6 +449,9 @@ func (s *Store) Create(ctx context.Context, in NewUser) (User, error) {
 	if !in.Role.Valid() {
 		return User{}, fieldError("role", fmt.Errorf("role %q must be viewer, analyst or admin", in.Role))
 	}
+	if err := CheckNewPassword(name, in.Password); err != nil {
+		return User{}, fieldError("password", err)
+	}
 	hash, err := HashPassword(in.Password)
 	if err != nil {
 		return User{}, fieldError("password", err)
@@ -557,6 +572,10 @@ func (s *Store) UpdateIf(ctx context.Context, name, etag string, ch Change) (Use
 			// Their sessions end everywhere.
 			r.Epoch++
 		}
+		if u.Disabled != cur.Disabled {
+			// The admin decides now, not provisioning.
+			u.InactiveAtIdP = false
+		}
 		u.Updated = s.now()
 		r.User = u
 		return nil
@@ -609,6 +628,9 @@ func (s *Store) SetPasswordIf(ctx context.Context, name, etag, password string, 
 		return User{}, ErrNotFound
 	} else if u.Source != SourceLocal {
 		return User{}, ErrManaged
+	}
+	if err := CheckNewPassword(name, password); err != nil {
+		return User{}, fieldError("password", err)
 	}
 	hash, err := HashPassword(password)
 	if err != nil {

@@ -292,7 +292,18 @@ func cleanReply(s string) string {
 		}
 		s = rest
 	}
-	return strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(s), "Query:"))
+	s = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(s), "Query:"))
+	// A model may wrap the whole query in quotes or backticks, which would
+	// make it one phrase that matches nothing. Quotes inside the query
+	// (status="failed") are kept.
+	for len(s) >= 2 {
+		q := s[0]
+		if q != '`' && q != '\'' && q != '"' || s[len(s)-1] != q || strings.IndexByte(s[1:len(s)-1], q) >= 0 {
+			break
+		}
+		s = strings.TrimSpace(s[1 : len(s)-1])
+	}
+	return s
 }
 
 func userPrompt(question, draft string) string {
@@ -329,20 +340,46 @@ func QueryReference() string {
 - Search terms: datamodel=Name, field=value (case-insensitive exact), field=val* (wildcards * ?), field!=value, field>10 (also >= < <=), field IN (a, b), bare words or "quoted phrases" (text anywhere in the raw event), NOT term, ( ... ), a OR b (OR binds tighter than the implicit AND).
 - Time: earliest=-24h latest=now. Units s m h d w mon y; snap with @d @h @w, e.g. earliest=-1d@d latest=@d for yesterday. Leave time out unless the question names a period.
 - Commands: ` + strings.Join(query.Commands, ", ") + `.
-  stats <aggs> [by f1, f2]   aggs: ` + strings.Join(query.AggFuncs, ", ") + ` as count, count(f), dc(f), sum(f), avg(f), min(f), max(f), median(f), perc95(f) (any perc1 to perc99), stdev(f), var(f), range(f), mode(f), values(f) (distinct values), list(f), first(f)/latest(f) (newest value), last(f)/earliest(f) (oldest value), each optionally "as name"
+  stats <aggs> [by f1, f2]   aggs: ` + strings.Join(query.AggFuncs, ", ") + ` as count, count(f), dc(f), sum(f), avg(f), min(f), max(f), median(f), perc95(f) (any perc1 to perc99), stdev(f), var(f), range(f), mode(f), values(f) (distinct values), list(f), first(f)/latest(f) (newest value), last(f)/earliest(f) (oldest value), each optionally "as name"; any agg can take eval(<expression>) with "as name", e.g. count(eval(action="failure")) as failures
   timechart [span=1h] <agg> [by field]
   eventstats <aggs> [by f1, f2]   like stats, but adds the aggregate columns to every row instead of replacing the rows
-  top [limit=N] field [by field]
-  rare [limit=N] field [by field]   least common values first
+  top [limit=N] [countfield=c] [percentfield=p] [showcount=f] [showperc=f] [useother=t] [otherstr=x] field [by field]
+  rare [limit=N] field [by field]   least common values first; same options as top
+  search <search terms>   after the first |, filters rows with search syntax (field=val*, bare words, OR)
   where <expression on result columns>   a filter such as count > 20 AND user=adm*, or an eval expression such as len(process) > 200 or bytes_out > bytes_in * 10
-  eval name=<expression>[, name2=<expression>]   operators + - * / % . (concatenate) = != < <= > >= AND OR NOT XOR LIKE; field names with other characters in single quotes ('dc(user)'); strings in double quotes. Functions: ` + evalFuncList() + `
+  eval name=<expression>[, name2=<expression>]   operators + - * / % . (concatenate) = != < <= > >= AND OR NOT XOR LIKE; dotted names such as userIdentity.userName read as one field; field names with other characters in single quotes ('dc(user)'); strings in double quotes. Functions: ` + evalFuncList() + `
   rex [field=f] [max_match=N] "<RE2 regex with named groups (?<name>...)>"   extracts fields (default field _raw)
   dedup [N] f1, f2 [keepempty=true] [consecutive=true]   keeps the first N rows (default 1) per value; events come newest first
+  transaction f1, f2 [maxspan=10m] [maxpause=1m] [maxevents=N] [startswith="text"|(search)] [endswith="text"|(search)]   groups events sharing the fields into one row each, with duration (seconds) and eventcount
+  streamstats [current=f] [window=N] <aggs> [by f1, f2]   running totals in result order; aggs: ` + strings.Join(query.StreamFuncs, ", ") + `
+  bin span=1h _time [AS name]   rounds times down to the span (s m h d w); span=100 on a number gives ranges like 0-100; also bucket
+  regex field="<RE2 regex>" | regex field!="<regex>" | regex "<regex>"   keeps rows that match (or with != do not); no field means _raw
+  | makeresults [count=N]   starts a search with N rows holding only _time, for trying eval
+  append [search <query>]   adds a subsearch's rows after the results
+  | tstats <aggs> from datamodel=Endpoint.Processes [where Processes.field=value ...] [by Processes.f1, _time span=1h]   Splunk's tstats: runs as the data model search plus stats; columns keep the Node. prefix; also | tstats count where index=* by sourcetype
+  chart [limit=N] <aggs> over f1 [by f2]   one row per f1, one column per f2 value (also chart count by f1, f2)
+  xyseries x y value   pivots rows into one row per x and one column per y; untable x name value turns them back
+  spath [input=f] [output=g] [path=a.b{}.c]   extracts JSON values (default from _raw); no path extracts every value by its path
+  fromjson f [prefix=p]   extracts each top-level key of the JSON object in f as a field
+  mvcombine f   merges rows that differ only in f into one with all f values; nomv f joins a multivalue field into one value
+  strcat [allrequired=t] f1 " text " f2 dest   joins fields and quoted text into dest
+  rangemap field=f low=0-10 high=11-100 [default=name]   sets range to the matching range name
+  foreach f_* [eval <<FIELD>>=<<FIELD>>*2]   runs eval for each matching field (<<MATCHSTR>> is the * text); fieldformat runs as eval
+  appendpipe [<commands>]   runs commands over the results so far and adds their rows after them, e.g. appendpipe [stats sum(count) as count | eval user="TOTAL"]
+  join [type=left] [max=N] f1, f2 [search <query>]   adds the fields of a subsearch's rows that share f1, f2 (inner by default; the first match unless max=0 or max=N)
   fillnull [value=X] [fields]   sets missing values (default 0)
   sort [-]field, ...    ("-" is descending)
   head N
-  table f1, f2
-  rename f as g
+  table f1, f2   (fields - f1, f2 removes fields instead)
+  rename f as g[, f2 as g2]   rename *_ip as * renames by pattern
+  mvexpand f [limit=N]   one row per value of a multivalue field
+  makemv [delim=","] [tokenizer="<regex>"] f   splits text into a multivalue field (default at spaces)
+  reverse   turns the row order around; tail N keeps the last N rows; uniq drops exact repeats of the row before
+  convert [timeformat="%Y-%m-%d"] ctime(f) [AS g], dur2sec(f), mktime(f), num(f), rmcomma(f), rmunit(f), memk(f)   converts values; * matches many fields
+  rex field=f mode=sed "s/find/replace/g"   changes text with a sed expression (y/abc/xyz/ swaps characters)
+  addtotals [fieldname=Total] [col=t] [labelfield=f] [fields]   adds each row's numbers into Total; col=t adds a totals row; addcoltotals adds only that row
+  lookup <table> <col> [AS field] [OUTPUT|OUTPUTNEW col [AS name], ...]   adds columns from an uploaded lookup table (Settings > Lookups) where col matches; only use table names the user gave
+  | inputlookup [max=N] <table>   starts a search with the rows of a lookup table instead of events
   enrich [fields]   adds asset and identity context columns
   intel [fields]    adds threat intel columns (<field>_intel_source, _intel_type, _intel_weight) for values that are known indicators
   threatmatch [fields]   keeps only events whose IP, domain, URL, hash or email fields match threat intel; must come right after the search

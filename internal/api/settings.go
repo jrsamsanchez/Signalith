@@ -866,6 +866,9 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	if settingsSaveRecheck(raw) && s.recheckNeeded(w, r, principalOf(r)) {
+		return
+	}
 	if s.Config.Path() == "" {
 		writeError(w, http.StatusConflict, errNoConfigFile)
 		return
@@ -1132,6 +1135,9 @@ func (s *Server) applyLive(old, saved *config.Config) []string {
 	if changed("auth.session_timeout") {
 		s.sessions().SetIdle(next.SessionIdle())
 	}
+	if changed("auth.session_max_age") {
+		s.sessions().SetMaxAge(next.SessionMaxAge())
+	}
 	if changed("search.") && s.Engine != nil {
 		s.Engine.SetDefaults(next.Search.DefaultEarliest, next.Search.MaxEvents)
 	}
@@ -1145,7 +1151,7 @@ func (s *Server) applyLive(old, saved *config.Config) []string {
 		s.liveAI.Store(&liveModel{c: next.AssistantClient()})
 	}
 	if changed("vulns.") && s.Vulns != nil {
-		s.Vulns.useNVD(next.NVDURL(), next.Vulns.NVDAPIKey)
+		s.Vulns.useNVD(next.NVDURL(), next.Vulns.NVDAPIKey, next.Vulns.KEVURL, next.Vulns.EPSSURL)
 	}
 	if changed("server.public_url") {
 		s.coverPublicURL(&next)

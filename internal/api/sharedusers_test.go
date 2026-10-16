@@ -305,7 +305,7 @@ func TestUserChangesApplyOnEveryServer(t *testing.T) {
 	c := newMemberCluster(t, nil)
 	admin, _ := c.a.signIn("admin", "s3cret-pass")
 	c.a.addUser(admin, "jlee", "first-password-1", users.Analyst)
-	c.a.addUser(admin, "kim", "kim-password-1", users.Analyst)
+	c.a.addUser(admin, "kim", "k-password-one", users.Analyst)
 	c.b.cycle()
 	jlee, code := c.b.signIn("jlee", "first-password-1")
 	if jlee == nil {
@@ -314,7 +314,7 @@ func TestUserChangesApplyOnEveryServer(t *testing.T) {
 	if got := c.b.basic("jlee", "first-password-1"); got != http.StatusOK {
 		t.Fatalf("Basic on B: %d", got)
 	}
-	if got := c.b.basic("kim", "kim-password-1"); got != http.StatusOK {
+	if got := c.b.basic("kim", "k-password-one"); got != http.StatusOK {
 		t.Fatalf("Basic for kim on B: %d", got)
 	}
 	if code, out, _ := c.a.call("PUT", "/api/users/jlee", `{"disabled":true}`, admin, nil); code != http.StatusOK {
@@ -328,11 +328,11 @@ func TestUserChangesApplyOnEveryServer(t *testing.T) {
 		t.Errorf("jlee's remembered Basic credentials on B: %d", got)
 	}
 	// V24: a password reset on A.
-	if code, out, _ := c.a.call("POST", "/api/users/kim/password", `{"password":"kim-password-2"}`, admin, nil); code != http.StatusOK {
+	if code, out, _ := c.a.call("POST", "/api/users/kim/password", `{"password":"k-password-two"}`, admin, nil); code != http.StatusOK {
 		t.Fatalf("reset on A: %d %v", code, out)
 	}
 	c.b.cycle()
-	if got := c.b.basic("kim", "kim-password-1"); got != http.StatusUnauthorized {
+	if got := c.b.basic("kim", "k-password-one"); got != http.StatusUnauthorized {
 		t.Errorf("kim's old Basic credentials on B: %d", got)
 	}
 }
@@ -412,7 +412,7 @@ func TestOwnPasswordChangeAcrossServers(t *testing.T) {
 	if code != http.StatusOK || out["can_change_password"] != true {
 		t.Fatalf("me: %d %v", code, out)
 	}
-	code, out, resp = c.a.call("POST", "/api/me/password", `{"current_password":"s3cret-pass","new_password":"another-admin-pass"}`, admin, nil)
+	code, out, resp = c.a.call("POST", "/api/me/password", `{"current_password":"s3cret-pass","new_password":"another-boss-pass"}`, admin, nil)
 	if code != http.StatusOK {
 		t.Fatalf("the built-in admin's change: %d %v", code, out)
 	}
@@ -429,7 +429,7 @@ func TestOwnPasswordChangeAcrossServers(t *testing.T) {
 	if _, code := c.b.signIn("admin", "s3cret-pass"); code != http.StatusUnauthorized {
 		t.Errorf("the old password on B: %d", code)
 	}
-	if ck, code := c.b.signIn("admin", "another-admin-pass"); ck == nil {
+	if ck, code := c.b.signIn("admin", "another-boss-pass"); ck == nil {
 		t.Errorf("the new password on B: %d", code)
 	}
 	// Other changes to the built-in admin stay refused.
@@ -530,7 +530,7 @@ func TestLockoutsAcrossServers(t *testing.T) {
 	c := newMemberCluster(t, nil)
 	admin, _ := c.a.signIn("admin", "s3cret-pass")
 	c.a.addUser(admin, "jlee", "first-password-1", users.Analyst)
-	c.a.addUser(admin, "kim", "kim-password-1", users.Analyst)
+	c.a.addUser(admin, "kim", "k-password-one", users.Analyst)
 	c.b.cycle()
 	for i := 1; i <= 5; i++ {
 		if _, code := c.a.signIn("jlee", "wrong"); code != http.StatusUnauthorized {
@@ -544,24 +544,26 @@ func TestLockoutsAcrossServers(t *testing.T) {
 		docs, _ := c.cl.SearchDocs(context.Background(), memberPrefix+"_runtime", map[string]any{"term": map[string]any{"kind": "lock"}})
 		return len(docs) == 1
 	})
-	c.b.cycle()
+	// The lock is written before watch:locks moves, so B polls until it
+	// sees the move, as its watcher would.
 	waitFor(t, "B refuses jlee from the address", func() bool {
+		c.b.cycle()
 		_, code := c.b.signIn("jlee", "first-password-1")
 		return code == http.StatusTooManyRequests
 	})
-	if ck, code := c.b.signIn("kim", "kim-password-1"); ck == nil {
+	if ck, code := c.b.signIn("kim", "k-password-one"); ck == nil {
 		t.Fatalf("kim on B: %d", code)
 	}
 	// The address: 15 guesses at made-up accounts (30 halved).
 	for i := 0; i < 15; i++ {
 		c.a.signIn(fmt.Sprint("nobody", i), "guess")
 	}
-	if _, code := c.a.signIn("kim", "kim-password-1"); code != http.StatusTooManyRequests {
+	if _, code := c.a.signIn("kim", "k-password-one"); code != http.StatusTooManyRequests {
 		t.Fatalf("kim on A after the address was locked: %d", code)
 	}
-	c.b.cycle()
 	waitFor(t, "B refuses the address", func() bool {
-		_, code := c.b.signIn("kim", "kim-password-1")
+		c.b.cycle()
+		_, code := c.b.signIn("kim", "k-password-one")
 		return code == http.StatusTooManyRequests
 	})
 	c.clk.Advance(16 * time.Minute)

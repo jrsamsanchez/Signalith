@@ -1,7 +1,5 @@
 {"rule": "2e0042b9-8a75-49ca-b3a2-948f04b752bf", "cases": [
   {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\Windows\\System32\\LogFiles\\CloudFiles\\ x"}},
-  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\Windows\\System32\\LogFiles\\CloudFiles\\ x"}},
-  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\Windows\\System32\\LogFiles\\CloudFiles\\ x"}},
   {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\Windows\\System32\\LogFiles\\CloudFiles\\ y"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"x :\\Windows\\System32 x","ProcessId":"4242","TargetFilename":"x \\Windows\\System32\\LogFiles\\CloudFiles\\ x"}},

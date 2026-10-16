@@ -74,6 +74,9 @@ const httpsAuto = "server:\n  listen: 0.0.0.0:8080\n  tls:\n    mode: auto\n    
 func goodFacts(t *testing.T, extra string) *Facts {
 	t.Helper()
 	c := loadConfig(t, httpsAuto+"opensearch:\n  url: https://127.0.0.1:9200\n  username: signalith\n  password: "+sentinelOS+"\n  index_prefix: signalith\n"+extra)
+	if c.Auth.MFARequired == "" {
+		c.Auth.MFARequired = "admins"
+	}
 	ca := &tlsauto.CAInfo{Scope: tlsauto.ScopeStandard, Fingerprint: "AB:12", Subject: "Signalith Local CA (siem-1)",
 		NotBefore: now.AddDate(-1, 0, 0), NotAfter: now.AddDate(9, 0, 0), Names: []string{"siem-1", "10.0.0.12"}}
 	f := &Facts{
@@ -1140,14 +1143,45 @@ func TestDirectory(t *testing.T) {
 
 func TestSessions(t *testing.T) {
 	runCases(t, "accounts.sessions", []checkCase{
-		// Keep me signed in skips the idle limit (see auth.Sessions).
-		{name: "default", state: Good, line: "People are signed out after 12 hours without use, unless they choose Keep me signed in, which keeps them signed in for up to 7 days."},
-		{name: "long", set: func(f *Facts) { f.Config.Auth.SessionTimeout = "3d" }, state: Attention, line: "People stay signed in for up to 3 days without using Signalith.",
+		// Keep me signed in skips the idle limit, but not the maximum age
+		// (see auth.Sessions).
+		{name: "default", state: Good, line: "People are signed out after 1 hour without use, unless they choose Keep me signed in, and every sign-in ends after 1 day."},
+		{name: "long idle", set: func(f *Facts) { f.Config.Auth.SessionTimeout = "3d" }, state: Attention,
+			line: "People stay signed in for up to 3 days without using Signalith. NIST SP 800-63B (AAL2) asks for at most 1 hour.",
 			fix: func(t *testing.T, c *Check) {
-				if c.Fix.Setting != "auth.session_timeout" {
+				if c.Fix.Setting != "auth.session_timeout" || len(c.Fix.Steps) != 1 {
 					t.Errorf("%+v", c.Fix)
 				}
 			}},
+		{name: "just over an hour idle", set: func(f *Facts) { f.Config.Auth.SessionTimeout = "2h" }, state: Attention},
+		{name: "long max age", set: func(f *Facts) { f.Config.Auth.SessionMaxAge = "7d" }, state: Attention,
+			line: "A sign-in lasts up to 7 days before people must sign in again. NIST SP 800-63B (AAL2) asks for at most 24 hours.",
+			fix: func(t *testing.T, c *Check) {
+				if c.Fix.Setting != "auth.session_max_age" {
+					t.Errorf("%+v", c.Fix)
+				}
+			}},
+		{name: "both long", set: func(f *Facts) { f.Config.Auth.SessionTimeout, f.Config.Auth.SessionMaxAge = "12h", "30d" }, state: Attention,
+			fix: func(t *testing.T, c *Check) {
+				if c.Fix.Setting != "auth.session_timeout" || len(c.Fix.Steps) != 2 {
+					t.Errorf("%+v", c.Fix)
+				}
+			}},
+		{name: "stricter", set: func(f *Facts) { f.Config.Auth.SessionTimeout, f.Config.Auth.SessionMaxAge = "15m", "8h" }, state: Good,
+			line: "People are signed out after 15 minutes without use, unless they choose Keep me signed in, and every sign-in ends after 8 hours."},
+	})
+}
+
+func TestMFACheck(t *testing.T) {
+	runCases(t, "accounts.mfa", []checkCase{
+		{name: "off", set: func(f *Facts) { f.Config.Auth.MFARequired = "" }, state: Attention, line: "Admins can sign in with a password alone.",
+			fix: func(t *testing.T, c *Check) {
+				if c.Fix.Setting != "auth.mfa_required" || c.Fix.Docs.Anchor != "two-step-sign-in" {
+					t.Errorf("%+v", c.Fix)
+				}
+			}},
+		{name: "admins", set: func(f *Facts) { f.Config.Auth.MFARequired = "admins" }, state: Good, line: "Admins who sign in with a password also enter a code from an authenticator app."},
+		{name: "everyone", set: func(f *Facts) { f.Config.Auth.MFARequired = "everyone" }, state: Good, line: "Everyone who signs in with a password also enters a code from an authenticator app."},
 	})
 }
 

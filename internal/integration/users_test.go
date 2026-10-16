@@ -251,12 +251,12 @@ func TestClusterSharedUsersRoundRobin(t *testing.T) {
 	a := h.startLeader("siem-a", serverOptions{})
 	b := h.start("siem-b", serverOptions{})
 	waitShared(t, a, b)
-	a.addUser("jlee", "analyst", "jlee-password-1")
+	a.addUser("jlee", "analyst", "the-analyst-pass-1")
 	waitUntil(t, 10*time.Second, "siem-b reads jlee", func() bool { return b.hasUser("jlee") })
 
 	lb := newRoundRobin(t, a, b)
 	br := lb.browser()
-	if code := lb.do(br, http.MethodPost, "/api/login", map[string]any{"username": "jlee", "password": "jlee-password-1"}); code != http.StatusOK {
+	if code := lb.do(br, http.MethodPost, "/api/login", map[string]any{"username": "jlee", "password": "the-analyst-pass-1"}); code != http.StatusOK {
 		t.Fatalf("sign-in through the load balancer: %d", code)
 	}
 	lb.servedBy()
@@ -291,7 +291,7 @@ func TestClusterSharedUsersRoundRobin(t *testing.T) {
 	})
 
 	// Killed: the browser carries on on the other server.
-	if code := lb.do(br, http.MethodPost, "/api/login", map[string]any{"username": "jlee", "password": "jlee-password-1"}); code != http.StatusOK {
+	if code := lb.do(br, http.MethodPost, "/api/login", map[string]any{"username": "jlee", "password": "the-analyst-pass-1"}); code != http.StatusOK {
 		t.Fatalf("sign-in again: %d", code)
 	}
 	a.kill9()
@@ -304,7 +304,10 @@ func TestClusterSharedUsersRoundRobin(t *testing.T) {
 }
 
 // blockWrites makes OpenSearch refuse every write to the test's indices
-// as when its disk passes the flood-stage watermark, or lifts that.
+// with a cluster_block_exception, as when its disk passes the flood-stage
+// watermark, or lifts that. It sets a write block rather than the disk's
+// own read_only_allow_delete, which OpenSearch lifts by itself as soon as
+// its disk monitor sees enough free space, in the middle of a test.
 func (h *clusterHarness) blockWrites(on bool) {
 	h.t.Helper()
 	if h.fake != nil {
@@ -318,7 +321,7 @@ func (h *clusterHarness) blockWrites(on bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	if err := h.os.Do(ctx, http.MethodPut, "/"+url.PathEscape(h.prefix+"*")+"/_settings",
-		map[string]any{"index.blocks.read_only_allow_delete": v}, nil); err != nil {
+		map[string]any{"index.blocks.write": v}, nil); err != nil {
 		h.t.Fatalf("block writes %v: %v", on, err)
 	}
 }
@@ -332,7 +335,7 @@ func TestClusterSharedUsersWhileWritesRefused(t *testing.T) {
 	a := h.startLeader("siem-a", serverOptions{})
 	b := h.start("siem-b", serverOptions{})
 	waitShared(t, a, b)
-	a.addUser("vera", "viewer", "vera-password-1")
+	a.addUser("vera", "viewer", "the-viewer-pass-1")
 	waitUntil(t, 10*time.Second, "siem-b reads vera", func() bool { return b.hasUser("vera") })
 
 	h.blockWrites(true)
@@ -349,14 +352,14 @@ func TestClusterSharedUsersWhileWritesRefused(t *testing.T) {
 	if code := a.me(admin); code != http.StatusOK {
 		t.Fatalf("the admin's session on siem-a: %d", code)
 	}
-	if c, code := a.signIn("vera", "vera-password-1"); c != nil {
+	if c, code := a.signIn("vera", "the-viewer-pass-1"); c != nil {
 		t.Errorf("a viewer signed in while writes are refused (%d)", code)
 	}
 
 	h.blockWrites(false)
 	// The next session stored writes the admin's through.
 	waitUntil(t, 60*time.Second, "vera signs in once writes work again", func() bool {
-		c, _ := a.signIn("vera", "vera-password-1")
+		c, _ := a.signIn("vera", "the-viewer-pass-1")
 		return c != nil
 	})
 	waitUntil(t, 30*time.Second, "the admin's session works on siem-b", func() bool { return b.me(admin) == http.StatusOK })
@@ -422,7 +425,7 @@ func TestClusterSharedUsersWaitForOldServer(t *testing.T) {
 	old := h.startOldServer("siem-old")
 	a := h.startLeader("siem-a", serverOptions{})
 	waitUntil(t, 60*time.Second, "siem-a is a member", func() bool { return a.mode() == "member" })
-	a.addUser("jlee", "analyst", "jlee-password-1")
+	a.addUser("jlee", "analyst", "the-analyst-pass-1")
 	var v usersView
 	waitUntil(t, 30*time.Second, "the Users page names siem-old", func() bool {
 		var ok bool
@@ -448,7 +451,7 @@ func TestClusterSharedUsersWaitForOldServer(t *testing.T) {
 
 	old.level.Store(2)
 	waitUntil(t, 180*time.Second, "the users become shared once siem-old is upgraded", func() bool { return a.usersShared() })
-	if c, code := a.signIn("jlee", "jlee-password-1"); c == nil {
+	if c, code := a.signIn("jlee", "the-analyst-pass-1"); c == nil {
 		t.Errorf("jlee, brought in from siem-a's users, cannot sign in: %d", code)
 	}
 	if v, _ := a.users(); v.Pending != nil {

@@ -357,6 +357,7 @@ type translator struct {
 	vulnCategory string // category=: vulnerability or open_port
 	vulnSeverity string // severity=
 	vulnKEV      bool   // known_exploited=true
+	vulnLikely   bool   // known_exploited=false epss>=0.1
 }
 
 func (t *translator) low(k int) string {
@@ -1651,6 +1652,10 @@ func (t *translator) ruleVulns() int {
 		t.setModel("Vulnerabilities")
 		t.vulnCategory, t.vulnKEV = "vulnerability", true
 		return t.note(2, "vulnerabilities attackers are known to use (CISA KEV)")
+	case "likely exploited":
+		t.setModel("Vulnerabilities")
+		t.vulnCategory, t.vulnLikely = "vulnerability", true
+		return t.note(2, "vulnerabilities not yet known exploited with an EPSS of 10%% or more")
 	case "open port", "open ports":
 		t.setModel("Vulnerabilities")
 		if t.vulnCategory == "" {
@@ -1690,7 +1695,7 @@ func (t *translator) ruleVulns() int {
 }
 
 // vulnTerms returns the vulnerability filters, in a fixed order:
-// category, severity, known_exploited.
+// category, severity, known_exploited, epss.
 func (t *translator) vulnTerms() []query.Expr {
 	var out []query.Expr
 	if t.vulnCategory != "" {
@@ -1701,6 +1706,10 @@ func (t *translator) vulnTerms() []query.Expr {
 	}
 	if t.vulnKEV {
 		out = append(out, &query.Compare{Field: "known_exploited", Op: "=", Value: "true"})
+	}
+	if t.vulnLikely && !t.vulnKEV {
+		out = append(out, &query.Compare{Field: "known_exploited", Op: "=", Value: "false"},
+			&query.Compare{Field: "epss", Op: ">=", Value: "0.1"})
 	}
 	return out
 }

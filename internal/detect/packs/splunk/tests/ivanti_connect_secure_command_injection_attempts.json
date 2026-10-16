@@ -4,7 +4,6 @@
   {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"POST","status":"200","url":"x /api/v1/totp/user-backup-code/../../system/maintenance/archiving/cloud-server-test-connection y"}},
   {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","status":"200","url":"x /api/v1/totp/user-backup-code/../../system/maintenance/archiving/cloud-server-test-connection x"}},
   {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","status":"200","url":"x /api/v1/totp/user-backup-code/../../license/keys-status/ y"}},
-  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","status":"200","url":"x /api/v1/totp/user-backup-code/../../license/keys-status/ x"}},
   {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"POST","status":"200"}},
   {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"POSU","status":"200","url":"x /api/v1/totp/user-backup-code/../../system/maintenance/archiving/cloud-server-test-connection x"}},
   {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"POST","status":"201","url":"x /api/v1/totp/user-backup-code/../../system/maintenance/archiving/cloud-server-test-connection x"}},

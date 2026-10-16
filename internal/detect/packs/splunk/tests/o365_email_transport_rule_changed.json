@@ -1,0 +1,19 @@
+{"rule": "11ebb7c2-46bd-41c9-81e1-d0b4b34583a2", "cases": [
+  {"expect":true,"source":"synthesized","channel":"o365","event_id":"Exchange","data":{"ClientIP":"203.0.113.7","Operation":"Set- x x TransportRule","RecordType":"1","UserId":"admin@example.com","Workload":"Exchange"}},
+  {"expect":true,"source":"synthesized","channel":"o365","event_id":"Exchange","data":{"ClientIP":"203.0.113.7","Operation":"Disable- x x TransportRule","RecordType":"1","UserId":"admin@example.com","Workload":"Exchange"}},
+  {"expect":true,"source":"synthesized","channel":"o365","event_id":"Exchange","data":{"ClientIP":"203.0.113.7","Operation":"New- x x TransportRule","RecordType":"1","UserId":"admin@example.com","Workload":"Exchange"}},
+  {"expect":true,"source":"synthesized","channel":"o365","event_id":"Exchange","data":{"ClientIP":"203.0.113.7","Operation":"Remove- x x TransportRule","RecordType":"1","UserId":"admin@example.com","Workload":"Exchange"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"Exchangf","data":{"ClientIP":"203.0.113.7","Operation":"Set- x x TransportRule","UserId":"admin@example.com","Workload":"Exchangf"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"AzureActiveDirectory","data":{"ClientIP":"203.0.113.7","Operation":"Set- x x TransportRule","UserId":"admin@example.com","Workload":"AzureActiveDirectory"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"Exchange","data":{"ClientIP":"203.0.113.7","Operation":"Set- x x TransportRulf","RecordType":"1","UserId":"admin@example.com","Workload":"Exchange"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"Exchange","data":{"ClientIP":"203.0.113.7","Operation":"Update user.","RecordType":"1","UserId":"admin@example.com","Workload":"Exchange"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"Exchangf","data":{"ClientIP":"203.0.113.7","Operation":"Disable- x x TransportRule","UserId":"admin@example.com","Workload":"Exchangf"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"AzureActiveDirectory","data":{"ClientIP":"203.0.113.7","Operation":"Disable- x x TransportRule","UserId":"admin@example.com","Workload":"AzureActiveDirectory"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"Exchange","data":{"ClientIP":"203.0.113.7","Operation":"Disable- x x TransportRulf","RecordType":"1","UserId":"admin@example.com","Workload":"Exchange"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"Exchangf","data":{"ClientIP":"203.0.113.7","Operation":"New- x x TransportRule","UserId":"admin@example.com","Workload":"Exchangf"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"AzureActiveDirectory","data":{"ClientIP":"203.0.113.7","Operation":"New- x x TransportRule","UserId":"admin@example.com","Workload":"AzureActiveDirectory"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"Exchange","data":{"ClientIP":"203.0.113.7","Operation":"New- x x TransportRulf","RecordType":"1","UserId":"admin@example.com","Workload":"Exchange"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"Exchangf","data":{"ClientIP":"203.0.113.7","Operation":"Remove- x x TransportRule","UserId":"admin@example.com","Workload":"Exchangf"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"AzureActiveDirectory","data":{"ClientIP":"203.0.113.7","Operation":"Remove- x x TransportRule","UserId":"admin@example.com","Workload":"AzureActiveDirectory"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"Exchange","data":{"ClientIP":"203.0.113.7","Operation":"Remove- x x TransportRulf","RecordType":"1","UserId":"admin@example.com","Workload":"Exchange"}}
+]}

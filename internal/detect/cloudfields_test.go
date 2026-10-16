@@ -1,6 +1,8 @@
 package detect
 
 import (
+	"cmp"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -11,7 +13,7 @@ import (
 
 // cloudSourcetypes are the sourcetypes of cloud records, whose field
 // names the sender chooses in part.
-var cloudSourcetypes = []string{ingest.CloudTrailSourcetype, ingest.AzureADSourcetype, ingest.AzureActivitySourcetype, ingest.O365Sourcetype}
+var cloudSourcetypes = []string{ingest.CloudTrailSourcetype, ingest.AzureADSourcetype, ingest.AzureActivitySourcetype, ingest.O365Sourcetype, ingest.GCPSourcetype}
 
 // TestCloudRuleFieldsMapped checks every field a shipped cloud rule reads
 // is mapped up front, so names a caller chooses (a call's tags, an
@@ -33,7 +35,8 @@ func TestCloudRuleFieldsMapped(t *testing.T) {
 			continue
 		}
 		for _, f := range queryFields(q) {
-			if !ingest.KnownField(f) && !slices.Contains(missing, f) {
+			// _time is the event's time, @timestamp.
+			if f != "_time" && !ingest.KnownField(f) && !slices.Contains(missing, f) {
 				missing = append(missing, f)
 			}
 		}
@@ -44,9 +47,11 @@ func TestCloudRuleFieldsMapped(t *testing.T) {
 	}
 }
 
-// queryFields are the fields a query searches and groups by.
+// queryFields are the fields a query searches and groups by, leaving out
+// those its own commands make (eval, rex, rename, spath, earlier stats).
 func queryFields(q *query.Query) []string {
 	var out []string
+	made := map[string]bool{}
 	var walk func(e query.Expr)
 	walk = func(e query.Expr) {
 		switch x := e.(type) {
@@ -69,14 +74,49 @@ func queryFields(q *query.Query) []string {
 	if q.Search != nil {
 		walk(q.Search)
 	}
+	read := func(fs ...string) {
+		for _, f := range fs {
+			if f != "" && !made[f] {
+				out = append(out, f)
+			}
+		}
+	}
+	aggs := func(as []query.Agg) {
+		for _, a := range as {
+			made[a.Column()] = true
+		}
+	}
 	for _, c := range q.Commands {
-		if s, ok := c.(*query.Stats); ok {
-			out = append(out, s.By...)
-			for _, a := range s.Aggs {
-				if a.Field != "" {
-					out = append(out, a.Field)
+		switch c := c.(type) {
+		case *query.Stats:
+			read(c.By...)
+			for _, a := range c.Aggs {
+				read(a.Field)
+			}
+			aggs(c.Aggs)
+		case *query.EventStats:
+			aggs(c.Aggs)
+		case *query.StreamStats:
+			aggs(c.Aggs)
+		case *query.Eval:
+			for _, a := range c.Assigns {
+				made[a.Field] = true
+			}
+		case *query.Rex:
+			if re, err := regexp.Compile(strings.ReplaceAll(c.Pattern, "(?<", "(?P<")); err == nil {
+				for _, n := range re.SubexpNames() {
+					made[n] = true
 				}
 			}
+		case *query.Rename:
+			for _, p := range c.Pairs {
+				made[p[1]] = true
+			}
+		case *query.Spath:
+			made[cmp.Or(c.Output, c.Path)] = true
+		case *query.FromJSON:
+			// Any field after it may be one of the JSON's keys.
+			return out
 		}
 	}
 	return out

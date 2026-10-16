@@ -95,6 +95,9 @@ type Counts struct {
 	Low      int `json:"low"`
 	// KEV counts CVEs that attackers are known to use.
 	KEV int `json:"kev"`
+	// Likely counts the others EPSS says are likely to be used
+	// (LikelyEPSS or more).
+	Likely int `json:"likely"`
 }
 
 func (c *Counts) add(sev string, kev bool) {
@@ -128,6 +131,7 @@ type Host struct {
 	Services   []HostService `json:"services"`
 	Counts     Counts        `json:"counts"`
 	MaxCVSS    float64       `json:"max_cvss"`
+	MaxEPSS    float64       `json:"max_epss,omitempty"`
 	ScanID     string        `json:"scan_id"`
 	FirstSeen  time.Time     `json:"first_seen"`
 	LastSeen   time.Time     `json:"last_seen"`
@@ -149,7 +153,15 @@ type Vuln struct {
 	Published   string  `json:"published,omitempty"`
 	KEV         bool    `json:"kev,omitempty"`
 	KEVAdded    string  `json:"kev_added,omitempty"`
-	CPE         string  `json:"cpe"`
+	// From CISA's catalog: the date U.S. agencies must fix it by, and
+	// whether ransomware gangs are known to use it.
+	KEVDue     string `json:"kev_due,omitempty"`
+	Ransomware bool   `json:"ransomware,omitempty"`
+	// EPSS is FIRST's probability (0 to 1) that it is exploited in the
+	// next 30 days, and EPSSPercentile its rank among all CVEs.
+	EPSS           float64 `json:"epss,omitempty"`
+	EPSSPercentile float64 `json:"epss_percentile,omitempty"`
+	CPE            string  `json:"cpe"`
 	// Source is where it came from: "" for a CVE matched to the software
 	// version Nmap found, or openvas for a weakness OpenVAS tested for.
 	Source string `json:"source,omitempty"`
@@ -578,6 +590,35 @@ func (s *Store) hostDocs(ctx context.Context, targetID string) ([]store.Doc, err
 	return s.Docs.SearchDocs(ctx, s.Index, q)
 }
 
+// Reprioritize applies the exploit feeds again to every host kept, so a
+// CVE added to the KEV catalog, or whose EPSS score moved, shows at once
+// rather than at the network's next scan. A host a scan is saving at the
+// same time is left to it. It returns how many hosts changed.
+func (s *Store) Reprioritize(ctx context.Context, x *Exploits) (int, error) {
+	docs, err := s.hostDocs(ctx, "")
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, d := range docs {
+		var h Host
+		if json.Unmarshal(d.Source, &h) != nil || h.ID == "" {
+			continue
+		}
+		if !x.Apply([]*Host{&h}) {
+			continue
+		}
+		if _, err := s.Docs.PutIf(ctx, s.Index, d.ID, hostDoc{kindHost, &h}, d.Version, false); err != nil {
+			if errors.Is(err, store.ErrConflict) || errors.Is(err, store.ErrNotFound) {
+				continue
+			}
+			return n, err
+		}
+		n++
+	}
+	return n, nil
+}
+
 // Hosts returns every host found, worst first.
 func (s *Store) Hosts(ctx context.Context) ([]*Host, error) {
 	docs, err := s.hostDocs(ctx, "")
@@ -595,13 +636,17 @@ func (s *Store) Hosts(ctx context.Context) ([]*Host, error) {
 	return out, nil
 }
 
-// SortHosts puts hosts with known exploited CVEs first, then by highest
-// score, most CVEs and address.
+// SortHosts puts hosts with known exploited CVEs first, then those with
+// CVEs likely to be exploited, then by highest score, most CVEs and
+// address.
 func SortHosts(hs []*Host) {
 	sort.Slice(hs, func(i, j int) bool {
 		a, b := hs[i], hs[j]
 		if (a.Counts.KEV > 0) != (b.Counts.KEV > 0) {
 			return a.Counts.KEV > 0
+		}
+		if (a.Counts.Likely > 0) != (b.Counts.Likely > 0) {
+			return a.Counts.Likely > 0
 		}
 		if a.MaxCVSS != b.MaxCVSS {
 			return a.MaxCVSS > b.MaxCVSS

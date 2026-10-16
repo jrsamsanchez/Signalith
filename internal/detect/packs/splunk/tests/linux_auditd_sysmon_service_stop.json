@@ -1,6 +1,5 @@
 {"rule": "20901256-633a-40de-8753-7b88811a460f", "cases": [
   {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"SERVICE_STOP","data":{"unit":"sysmon"}},
-  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"SERVICE_STOP","data":{"unit":"sysmon"}},
   {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SERVICE_STOQ","data":{"unit":"sysmon"}},
   {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SERVICE_STOP","data":{"unit":"sysmoo"}},
   {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SERVICE_STOP","data":{}},

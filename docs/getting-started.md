@@ -6,7 +6,7 @@ description: Install Signalith with Docker, on Linux or on Windows, sign in, and
 
 # Getting started
 
-Signalith needs two things: **OpenSearch 2.x**, where events are stored, and the
+Signalith needs two things: **OpenSearch 2.x or 3.x**, where events are stored, and the
 **`signalith` server**, a single program with the web UI built in. The Docker quick start
 runs both for you; on Linux and Windows you install OpenSearch first and then Signalith
 next to it.
@@ -91,7 +91,7 @@ docker compose -f deploy/docker/docker-compose.yml exec signalith signalith samp
 
 ## Linux
 
-1. Install OpenSearch 2.x
+1. Install OpenSearch 2.x or 3.x
    ([instructions](https://opensearch.org/docs/latest/install-and-configure/install-opensearch/index/)).
 2. Install Signalith:
 
@@ -133,7 +133,7 @@ Older versions cannot read encrypted values: before going back to one, run
 
 ## Windows
 
-1. Install OpenSearch 2.x for Windows
+1. Install OpenSearch 2.x or 3.x for Windows
    ([instructions](https://opensearch.org/docs/latest/install-and-configure/install-opensearch/windows/)).
 2. In an elevated PowerShell, from the folder holding `signalith.exe` and
    `deploy\windows\install.ps1`:

@@ -36,14 +36,19 @@ import (
 // A session ends when its user's session epoch moves on (a new password,
 // disabled, refused by the directory), when it is signed out (its
 // document deleted, and watch:sessions bumped with its id so every server
-// drops it from its cache), after 7 days, or after the idle time without
-// a request, which each server checks against the later of its own last
-// request and the stored last_seen.
+// drops it from its cache), at the maximum age after sign-in (SetMaxAge,
+// auth.session_max_age), or after the idle time without a request, which
+// each server checks against the later of its own last request and the
+// stored last_seen.
 
 // Session timing.
 const (
-	// MaxAge ends any session this long after sign-in.
-	MaxAge = 7 * 24 * time.Hour
+	// DefaultMaxAge ends any session this long after sign-in, until
+	// SetMaxAge says otherwise.
+	DefaultMaxAge = 24 * time.Hour
+	// DefaultIdle ends a session this long after its last request, until
+	// SetIdle says otherwise.
+	DefaultIdle = time.Hour
 	// CacheFor is how long a session read from OpenSearch is used without
 	// reading it again, and how long a cookie found to have no session is
 	// refused without asking.
@@ -197,6 +202,7 @@ type Sessions struct {
 
 	idleMu sync.Mutex
 	idle   time.Duration
+	maxAge time.Duration
 }
 
 // Listen follows watch:sessions, so a sign-out on another server ends
@@ -238,13 +244,28 @@ func (s *Sessions) idleFor() time.Duration {
 	s.idleMu.Lock()
 	defer s.idleMu.Unlock()
 	if s.idle <= 0 {
-		return 12 * time.Hour
+		return DefaultIdle
 	}
 	return s.idle
 }
 
+// SetMaxAge changes how long any session lasts after sign-in, remembered
+// or not, for every session, the current ones included.
+func (s *Sessions) SetMaxAge(d time.Duration) {
+	s.idleMu.Lock()
+	defer s.idleMu.Unlock()
+	s.maxAge = d
+}
+
 // MaxAge is how long any session lasts after sign-in.
-func (s *Sessions) MaxAge() time.Duration { return MaxAge }
+func (s *Sessions) MaxAge() time.Duration {
+	s.idleMu.Lock()
+	defer s.idleMu.Unlock()
+	if s.maxAge <= 0 {
+		return DefaultMaxAge
+	}
+	return s.maxAge
+}
 
 // SetVersion does nothing: a shared session ends through its user's
 // session epoch when the password changes, not through a password stamp.
@@ -479,13 +500,13 @@ func (s *Sessions) Carry(ctx context.Context, list []Carried) (carried, dropped 
 	if k == nil || s.Docs.ClusterID() == "" || s.degradedNow() {
 		return 0, len(list)
 	}
-	now := s.now()
+	now, maxAge := s.now(), s.MaxAge()
 	cl, index := s.index()
 	for _, c := range list {
 		user := users.NormalizeUsername(c.User)
 		u, _, ok := s.Docs.Users().Get(user)
 		if !ok || u.Disabled || u.Refused != "" || u.Source != c.Method || u.Role != c.Role || u.PasswordHash != c.PasswordHash ||
-			u.Source == users.SourceDirectory && (s.DirectoryOn == nil || !s.DirectoryOn()) || now.Sub(c.Created) >= MaxAge {
+			u.Source == users.SourceDirectory && (s.DirectoryOn == nil || !s.DirectoryOn()) || now.Sub(c.Created) >= maxAge {
 			dropped++
 			continue
 		}
@@ -568,11 +589,11 @@ func (s *Sessions) read(ctx context.Context, id string, old *entry, now time.Tim
 // disabled or refused, a directory user only while directory sign-in is
 // on, in the user's current session epoch, made for the user as they
 // are now (born: a user deleted and made again under the same name does
-// not get the old sessions; servers' clocks are never compared), younger than MaxAge, and not idle too long unless
-// remembered. inMemory is a session made while OpenSearch could not be
+// not get the old sessions; servers' clocks are never compared), younger than the maximum age, remembered or not, and
+// not idle too long unless remembered. inMemory is a session made while OpenSearch could not be
 // written; the built-in admin may have one without a user document.
 func (s *Sessions) allows(e *entry, now time.Time, inMemory bool) bool {
-	if now.Sub(e.created) >= MaxAge {
+	if now.Sub(e.created) >= s.MaxAge() {
 		return false
 	}
 	if !e.remember && now.Sub(maxTime(e.local, e.stored)) >= s.idleFor() {
@@ -699,13 +720,13 @@ func (s *Sessions) EndUser(ctx context.Context, user, keep string) int {
 		return n
 	}
 	keys := s.Docs.keys()
-	now := s.now()
+	now, maxAge := s.now(), s.MaxAge()
 	for _, d := range docs {
 		var sd sessionDoc
 		if d.ID == keepID || json.Unmarshal(d.Source, &sd) != nil || !sd.verify(keys, d.ID) {
 			continue
 		}
-		if at, err := time.Parse(time.RFC3339Nano, sd.Created); err == nil && now.Sub(at) < MaxAge {
+		if at, err := time.Parse(time.RFC3339Nano, sd.Created); err == nil && now.Sub(at) < maxAge {
 			n++
 		}
 	}
@@ -819,7 +840,7 @@ func (s *Sessions) Recover(ctx context.Context) {
 const housekeepUsers = 500
 
 // Housekeep deletes the sessions that ended for good: made more than
-// MaxAge ago, unused for that long and not remembered, or of an older
+// longer ago than the maximum age, unused for that long and not remembered, or of an older
 // session epoch of their user. It also writes through what Recover
 // writes. Nothing depends on it: Lookup refuses those sessions anyway.
 // It returns how many it deleted.
@@ -828,7 +849,7 @@ func (s *Sessions) Housekeep(ctx context.Context) (int, error) {
 		return 0, nil
 	}
 	s.Recover(ctx)
-	old := s.now().Add(-MaxAge).UTC().Format(time.RFC3339Nano)
+	old := s.now().Add(-s.MaxAge()).UTC().Format(time.RFC3339Nano)
 	queries := []map[string]any{{"bool": map[string]any{"should": []any{
 		map[string]any{"range": map[string]any{"created": map[string]any{"lt": old}}},
 		map[string]any{"bool": map[string]any{"must": []any{
