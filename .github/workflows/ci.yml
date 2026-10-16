@@ -8,7 +8,31 @@ on:
 permissions:
   contents: read
 
+# A new push to a pull request cancels the runs of its older pushes. Every
+# push to main runs to the end.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  # Which of the slower jobs that aren't required checks a pull request
+  # needs, from the files it changes. On main they all run.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      fuzz: ${{ steps.c.outputs.fuzz }}
+      packages: ${{ steps.c.outputs.packages }}
+      lab: ${{ steps.c.outputs.lab }}
+      sensor: ${{ steps.c.outputs.sensor }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - id: c
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: .github/scripts/ci-changes.sh "$BASE" | tee -a "$GITHUB_OUTPUT"
+
   test:
     strategy:
       matrix:
@@ -277,8 +301,10 @@ jobs:
   # crash or hang on odd input is caught before it merges. The nightly
   # fuzz workflow runs them for longer.
   fuzz:
+    needs: changes
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    if: needs.changes.outputs.fuzz == 'true'
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
@@ -315,14 +341,17 @@ jobs:
   # Builds the .deb, .rpm and .msi packages and tests installing,
   # upgrading from the latest release and removing each one.
   packages:
-    needs: test
+    needs: [changes, test]
+    if: needs.changes.outputs.packages == 'true'
     uses: ./.github/workflows/packages.yml
 
   # The cloud test lab (deploy/lab): shellcheck of its scripts, and
   # Terraform's format and validate. Not a required check.
   lab:
+    needs: changes
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    if: needs.changes.outputs.lab == 'true'
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Shellcheck the setup and end-to-end test scripts
@@ -341,8 +370,10 @@ jobs:
   # serves, and its dry runs on every system it supports. Not a required
   # check.
   sensor-script:
+    needs: changes
     runs-on: ubuntu-24.04
     timeout-minutes: 40
+    if: needs.changes.outputs.sensor == 'true'
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
@@ -387,10 +418,12 @@ jobs:
   # port; then run again, and uninstalled. It installs from the vendors'
   # repositories, so it needs them up. Not a required check.
   sensor-install:
+    needs: changes
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     env:
       COMPOSE: docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.build.yml
+    if: needs.changes.outputs.sensor == 'true'
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Start the Docker quick start and sign in
