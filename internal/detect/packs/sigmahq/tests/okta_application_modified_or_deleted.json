@@ -1,0 +1,4 @@
+{"rule": "7899144b-e416-4c28-b0b5-ab8f9e0a541d", "cases": [
+  {"expect":true,"source":"synthesized","channel":"okta","event_id":"log","data":{"eventType":"application.lifecycle.delete"}},
+  {"expect":false,"source":"synthesized","channel":"okta","event_id":"log","data":{}}
+]}

@@ -40,6 +40,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/m365"
 	"github.com/jrsamsanchez/signalith/internal/notebooks"
 	"github.com/jrsamsanchez/signalith/internal/oidc"
+	"github.com/jrsamsanchez/signalith/internal/okta"
 	"github.com/jrsamsanchez/signalith/internal/onboard"
 	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/redact"
@@ -125,9 +126,13 @@ type Server struct {
 	// in to Microsoft).
 	M365Cursors func(ctx context.Context, tenant string) ([]m365.Cursor, error)
 	M365Check   func(ctx context.Context, s m365.Settings) (map[string]bool, error)
-	UI          fs.FS // web UI files; nil disables the UI
-	Log         *slog.Logger
-	Version     string
+	// OktaCursor reads how far Okta's System Log was read, for the health
+	// page; OktaCheck is the Settings page's test (nil signs in to Okta).
+	OktaCursor func(ctx context.Context, domain string) (okta.Cursor, bool, error)
+	OktaCheck  func(ctx context.Context, s okta.Settings) (*okta.CheckResult, error)
+	UI         fs.FS // web UI files; nil disables the UI
+	Log        *slog.Logger
+	Version    string
 
 	// Syslog is the syslog receiver, for its stats; nil when it is off.
 	Syslog *syslog.Receiver
@@ -384,6 +389,7 @@ func (s *Server) Handler() http.Handler {
 	s.routeSample(api)
 	s.routeEndpoints(api)
 	s.routeVulns(api)
+	s.routeVulnLogins(api)
 	s.routeCompliance(api)
 	s.routeSettings(api)
 	s.routeCluster(api)
@@ -1185,6 +1191,9 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	}
 	if m := s.m365Status(ctx); m != nil {
 		out["m365"] = m
+	}
+	if m := s.oktaStatus(ctx); m != nil {
+		out["okta"] = m
 	}
 	// Everyone signed in sees whether things work. Where they run (file
 	// paths, addresses, the OpenSearch URL and its errors) and the setup

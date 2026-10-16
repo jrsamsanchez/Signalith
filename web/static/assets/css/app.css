@@ -4989,6 +4989,17 @@ dialog.ep-set { width: min(620px, calc(100vw - 32px)); }
 .sc-card__nets .icon { flex: none; margin-top: 2px; color: var(--text-3); }
 .sc-card__nets b { color: var(--text); font-weight: 600; }
 .sc-needs__table td { vertical-align: top; }
+.sc-logins .card__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.sc-logins .card__head > div { flex: 1 1 320px; min-width: 0; }
+.sc-login-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.sc-login { display: flex; align-items: flex-start; gap: 12px; padding: 12px 0; border-top: 1px solid var(--border); }
+.sc-login:first-child { border-top: 0; padding-top: 0; }
+.sc-login__icon { display: grid; place-items: center; width: 32px; height: 32px; flex: none; border-radius: var(--r-md); color: var(--text-2); background: var(--hover); }
+.sc-login__main { flex: 1 1 auto; min-width: 0; }
+.sc-login__main p { margin: 2px 0 0; overflow-wrap: anywhere; }
+.sc-login__name { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.vs-logins { display: flex; flex-direction: column; gap: var(--sp-3); padding-left: 12px; border-left: 2px solid var(--border); }
+.vs-logins .hint { margin: 0; }
 
 /* Settings > Network sensors */
 .ns-page { display: flex; flex-direction: column; gap: var(--sp-4); max-width: 960px; }

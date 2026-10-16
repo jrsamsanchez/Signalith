@@ -1,0 +1,6 @@
+{"rule": "a0b38b70-3cb5-484b-a4eb-c4d8e7bcc0a9", "cases": [
+  {"expect":true,"source":"synthesized","channel":"okta","event_id":"log","data":{"debugContext.debugData.logOnlySecurityData":"POSITIVE","eventType":"policy.evaluate_sign_on","target.displayName":"Okta Admin Console"}},
+  {"expect":false,"source":"synthesized","channel":"okta","event_id":"log","data":{"eventType":"policy.evaluate_sign_on","target.displayName":"Okta Admin Console"}},
+  {"expect":false,"source":"synthesized","channel":"okta","event_id":"log","data":{"debugContext.debugData.logOnlySecurityData":"POSITIVE","target.displayName":"Okta Admin Console"}},
+  {"expect":false,"source":"synthesized","channel":"okta","event_id":"log","data":{"debugContext.debugData.logOnlySecurityData":"POSITIVE","eventType":"policy.evaluate_sign_on"}}
+]}

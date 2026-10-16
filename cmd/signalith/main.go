@@ -42,6 +42,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/detect"
 	"github.com/jrsamsanchez/signalith/internal/endpoint"
 	"github.com/jrsamsanchez/signalith/internal/findings"
+	"github.com/jrsamsanchez/signalith/internal/geoip"
 	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"github.com/jrsamsanchez/signalith/internal/intel"
 	"github.com/jrsamsanchez/signalith/internal/lookuptables"
@@ -49,6 +50,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/nlq"
 	"github.com/jrsamsanchez/signalith/internal/notebooks"
 	"github.com/jrsamsanchez/signalith/internal/notify"
+	"github.com/jrsamsanchez/signalith/internal/okta"
 	"github.com/jrsamsanchez/signalith/internal/playbooks"
 	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/redact"
@@ -813,6 +815,7 @@ func cmdQuery(args []string) error {
 	if tables, err := lookuptables.Open(lookuptables.Dir(c.LookupsDir())); err == nil {
 		eng.Lookups = tables
 	}
+	eng.GeoIP = geoip.Open(c.GeoIPDir())
 	if strings.Contains(src, "intel") || strings.Contains(src, "threatmatch") {
 		eng.Intel = intel.NewStore(intel.NewOpenSearch(newStore(c), c.OpenSearch.IndexPrefix))
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
@@ -1246,6 +1249,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		log.Error("some lookup tables could not be read and are left out", "err", err)
 	}
 	eng.Lookups = tables
+	eng.GeoIP = geoip.Open(c.GeoIPDir())
 	ibackend := intel.NewOpenSearch(cl, c.OpenSearch.IndexPrefix)
 	ibackend.Replicas = c.OpenSearch.Replicas.IndexSettings()
 	indicators := intel.NewStore(ibackend)
@@ -1360,6 +1364,8 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	// their scanner; the server that runs the background jobs runs the
 	// rest.
 	vstore := vulnscan.NewStore(cl, c.OpenSearch.IndexPrefix)
+	// The SSH and Windows logins OpenVAS signs in with, encrypted.
+	vstore.Keys = newLoginKeys(c, r.clusterKey, clusteredRuntime(r.shared))
 	nvd := vulnscan.NewNVD(c.NVDURL(), c.Vulns.NVDAPIKey)
 	sensorHosts := &sensorDiscovery{cl: cl, prefix: c.OpenSearch.IndexPrefix, log: log}
 	in.jobs.Go(func() { feedFoundAssets(ctx, estore, vstore, sensorHosts, lists, log) })
@@ -1483,7 +1489,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	var openvas *vulnscan.OpenVAS
 	if c.Vulns.OpenVASAddress != "" {
 		openvas = &vulnscan.OpenVAS{Address: c.Vulns.OpenVASAddress, Username: c.Vulns.OpenVASUsername,
-			Password: c.Vulns.OpenVASPassword, CAFile: c.Vulns.OpenVASCAFile}
+			Password: c.Vulns.OpenVASPassword, CAFile: c.Vulns.OpenVASCAFile, Log: log}
 	}
 	// CISA's KEV catalog and FIRST's EPSS scores rank what scans find.
 	exploits := vulnscan.NewExploitFeeds(vstore, c.Vulns.KEVURL, c.Vulns.EPSSURL)
@@ -1674,6 +1680,13 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	srv.M365Cursors = func(ctx context.Context, tenant string) ([]m365.Cursor, error) {
 		return m365.Cursors(ctx, cl, runtimeIndex, tenant)
 	}
+	oktaLog := &okta.Poller{
+		Settings: func() okta.Settings { return okta.FromConfig(srv.Running()) },
+		Store:    cl, Index: runtimeIndex, Ingest: pipeline.Ingest, Log: log,
+	}
+	srv.OktaCursor = func(ctx context.Context, domain string) (okta.Cursor, bool, error) {
+		return okta.CursorOf(ctx, cl, runtimeIndex, domain)
+	}
 	in.jobsList = []cluster.Job{
 		{Name: "index upgrades", Run: func(ctx context.Context) {
 			if !ready(ctx) {
@@ -1739,6 +1752,14 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			}
 			o365.Run(ctx)
 		}},
+		// Okta's System Log is read while Settings > Okta names an
+		// organization; a change there applies at the next round.
+		{Name: "okta system log", Run: func(ctx context.Context) {
+			if !ready(ctx) {
+				return
+			}
+			oktaLog.Run(ctx)
+		}},
 	}
 	if r.shared != nil {
 		in.jobsList = append(in.jobsList, requestsJob(r.shared, contentHandlers(feeds, ret, r.auditHandlers(ret), r.lifecycleLeaderHandlers())))
@@ -1778,6 +1799,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		// stops at once, even before its jobs' context ends.
 		sched.Allowed, feeds.Allowed, dispatcher.Allowed, pbRunner.Allowed = r.node.RunsJobs, r.node.RunsJobs, r.node.RunsJobs, r.node.RunsJobs
 		o365.Allowed, o365.Epoch, o365.NodeID = r.node.RunsJobs, r.node.Lease().Epoch, r.node.ID()
+		oktaLog.Allowed, oktaLog.Epoch, oktaLog.NodeID = r.node.RunsJobs, r.node.Lease().Epoch, r.node.ID()
 		// Detection run state carries the lease epoch, so a server that
 		// lost the lease cannot write over a newer one's, and slots are
 		// worked out on OpenSearch's clock, which every server shares.

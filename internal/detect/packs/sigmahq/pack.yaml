@@ -2761,6 +2761,82 @@ rules:
     rule_id: 992a6cae-db6a-43c8-9cec-76d7195c96fc
     file: net_connection_win_wscript_cscript_outbound_connection.yml
     path: rules/windows/network_connection/net_connection_win_wscript_cscript_outbound_connection.yml
+  - id: sigma-okta-admin-activity-from-proxy-query
+    rule_id: 9058ca8b-f397-4fd1-a9fa-2b7aad4d6309
+    file: okta_admin_activity_from_proxy_query.yml
+    path: rules/identity/okta/okta_admin_activity_from_proxy_query.yml
+  - id: sigma-okta-admin-role-assigned-to-user-or-group
+    rule_id: 413d4a81-6c98-4479-9863-014785fd579c
+    file: okta_admin_role_assigned_to_user_or_group.yml
+    path: rules/identity/okta/okta_admin_role_assigned_to_user_or_group.yml
+  - id: sigma-okta-admin-role-assignment-created
+    rule_id: 139bdd4b-9cd7-49ba-a2f4-744d0a8f5d8c
+    file: okta_admin_role_assignment_created.yml
+    path: rules/identity/okta/okta_admin_role_assignment_created.yml
+  - id: sigma-okta-api-token-created
+    rule_id: 19951c21-229d-4ccb-8774-b993c3ff3c5c
+    file: okta_api_token_created.yml
+    path: rules/identity/okta/okta_api_token_created.yml
+  - id: sigma-okta-api-token-revoked
+    rule_id: cf1dbc6b-6205-41b4-9b88-a83980d2255b
+    file: okta_api_token_revoked.yml
+    path: rules/identity/okta/okta_api_token_revoked.yml
+  - id: sigma-okta-application-modified-or-deleted
+    rule_id: 7899144b-e416-4c28-b0b5-ab8f9e0a541d
+    file: okta_application_modified_or_deleted.yml
+    path: rules/identity/okta/okta_application_modified_or_deleted.yml
+  - id: sigma-okta-application-sign-on-policy-modified-or-deleted
+    rule_id: 8f668cc4-c18e-45fe-ad00-624a981cf88a
+    file: okta_application_sign_on_policy_modified_or_deleted.yml
+    path: rules/identity/okta/okta_application_sign_on_policy_modified_or_deleted.yml
+  - id: sigma-okta-fastpass-phishing-detection
+    rule_id: ee39a9f7-5a79-4b0a-9815-d36b3cf28d3e
+    file: okta_fastpass_phishing_detection.yml
+    path: rules/identity/okta/okta_fastpass_phishing_detection.yml
+  - id: sigma-okta-identity-provider-created
+    rule_id: 969c7590-8c19-4797-8c1b-23155de6e7ac
+    file: okta_identity_provider_created.yml
+    path: rules/identity/okta/okta_identity_provider_created.yml
+  - id: sigma-okta-mfa-reset-or-deactivated
+    rule_id: 50e068d7-1e6b-4054-87e5-0a592c40c7e0
+    file: okta_mfa_reset_or_deactivated.yml
+    path: rules/identity/okta/okta_mfa_reset_or_deactivated.yml
+  - id: sigma-okta-network-zone-deactivated-or-deleted
+    rule_id: 9f308120-69ed-4506-abde-ac6da81f4310
+    file: okta_network_zone_deactivated_or_deleted.yml
+    path: rules/identity/okta/okta_network_zone_deactivated_or_deleted.yml
+  - id: sigma-okta-new-behaviours-admin-console
+    rule_id: a0b38b70-3cb5-484b-a4eb-c4d8e7bcc0a9
+    file: okta_new_behaviours_admin_console.yml
+    path: rules/identity/okta/okta_new_behaviours_admin_console.yml
+  - id: sigma-okta-policy-modified-or-deleted
+    rule_id: 1667a172-ed4c-463c-9969-efd92195319a
+    file: okta_policy_modified_or_deleted.yml
+    path: rules/identity/okta/okta_policy_modified_or_deleted.yml
+  - id: sigma-okta-policy-rule-modified-or-deleted
+    rule_id: 0c97c1d3-4057-45c9-b148-1de94b631931
+    file: okta_policy_rule_modified_or_deleted.yml
+    path: rules/identity/okta/okta_policy_rule_modified_or_deleted.yml
+  - id: sigma-okta-security-threat-detected
+    rule_id: 5c82f0b9-3c6d-477f-a318-0e14a1df73e0
+    file: okta_security_threat_detected.yml
+    path: rules/identity/okta/okta_security_threat_detected.yml
+  - id: sigma-okta-suspicious-activity-enduser-report
+    rule_id: 07e97cc6-aed1-43ae-9081-b3470d2367f1
+    file: okta_suspicious_activity_enduser_report.yml
+    path: rules/identity/okta/okta_suspicious_activity_enduser_report.yml
+  - id: sigma-okta-unauthorized-access-to-app
+    rule_id: 6cc2b61b-d97e-42ef-a9dd-8aa8dc951657
+    file: okta_unauthorized_access_to_app.yml
+    path: rules/identity/okta/okta_unauthorized_access_to_app.yml
+  - id: sigma-okta-user-account-locked-out
+    rule_id: 14701da0-4b0f-4ee6-9c95-2ffb4e73bb9a
+    file: okta_user_account_locked_out.yml
+    path: rules/identity/okta/okta_user_account_locked_out.yml
+  - id: sigma-okta-user-session-start-via-anonymised-proxy
+    rule_id: bde30855-5c53-4c18-ae90-1ff79ebc9578
+    file: okta_user_session_start_via_anonymised_proxy.yml
+    path: rules/identity/okta/okta_user_session_start_via_anonymised_proxy.yml
   - id: sigma-pipe-created-adfs-namedpipe-connection-uncommon-tool
     rule_id: 1ea13e8c-03ea-409b-877d-ce5c3d2c1cb3
     file: pipe_created_adfs_namedpipe_connection_uncommon_tool.yml

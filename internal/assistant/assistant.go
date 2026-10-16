@@ -365,6 +365,7 @@ func QueryReference() string {
   strcat [allrequired=t] f1 " text " f2 dest   joins fields and quoted text into dest
   rangemap field=f low=0-10 high=11-100 [default=name]   sets range to the matching range name
   replace "old*" WITH "new*"[, ...] [IN f1, f2]   changes matching values; xmlkv [field] extracts XML elements as fields
+  iplocation [prefix=p] [allfields=true] f   adds City, Region, Country, lat, lon for the IP address in f (needs a GeoIP database)
   foreach f_* [eval <<FIELD>>=<<FIELD>>*2]   runs eval for each matching field (<<MATCHSTR>> is the * text); fieldformat runs as eval
   appendpipe [<commands>]   runs commands over the results so far and adds their rows after them, e.g. appendpipe [stats sum(count) as count | eval user="TOTAL"]
   join [type=left] [max=N] f1, f2 [search <query>]   adds the fields of a subsearch's rows that share f1, f2 (inner by default; the first match unless max=0 or max=N)
