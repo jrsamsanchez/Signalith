@@ -1132,6 +1132,9 @@ func (s *Server) applyLive(old, saved *config.Config) []string {
 	if changed("auth.session_timeout") {
 		s.sessions().SetIdle(next.SessionIdle())
 	}
+	if changed("auth.session_max_age") {
+		s.sessions().SetMaxAge(next.SessionMaxAge())
+	}
 	if changed("search.") && s.Engine != nil {
 		s.Engine.SetDefaults(next.Search.DefaultEarliest, next.Search.MaxEvents)
 	}
@@ -1145,7 +1148,7 @@ func (s *Server) applyLive(old, saved *config.Config) []string {
 		s.liveAI.Store(&liveModel{c: next.AssistantClient()})
 	}
 	if changed("vulns.") && s.Vulns != nil {
-		s.Vulns.useNVD(next.NVDURL(), next.Vulns.NVDAPIKey)
+		s.Vulns.useNVD(next.NVDURL(), next.Vulns.NVDAPIKey, next.Vulns.KEVURL, next.Vulns.EPSSURL)
 	}
 	if changed("server.public_url") {
 		s.coverPublicURL(&next)

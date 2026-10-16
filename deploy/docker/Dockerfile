@@ -11,7 +11,7 @@ RUN mkdir -p /out/data/detections /out/data/lookups /out/data/dashboards /out/da
 # scans networks with it (docs/vulnerabilities.md). Only Nmap, the CA
 # certificates (for CVE lookups over HTTPS) and time zones are added, and
 # Signalith runs as the same unprivileged user as before (65532).
-FROM debian:12-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587
+FROM debian:13-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f
 RUN apt-get update \
  && apt-get install -y --no-install-recommends nmap ca-certificates tzdata \
  && rm -rf /var/lib/apt/lists/* \

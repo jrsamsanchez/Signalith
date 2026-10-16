@@ -14,6 +14,7 @@ import (
 
 	"github.com/jrsamsanchez/signalith/internal/assets"
 	"github.com/jrsamsanchez/signalith/internal/intel"
+	"github.com/jrsamsanchez/signalith/internal/lookuptables"
 	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/store"
 )
@@ -46,6 +47,8 @@ type Engine struct {
 	Assets *assets.Store
 	// Intel backs the intel and threatmatch commands; nil makes them errors.
 	Intel *intel.Store
+	// Lookups backs the lookup command; nil makes it an error.
+	Lookups *lookuptables.Store
 
 	optMu   sync.RWMutex
 	slotsMu sync.Mutex
@@ -173,6 +176,9 @@ type Result struct {
 	Matched   int64    `json:"matched"` // events matching the search
 	Truncated bool     `json:"truncated,omitempty"`
 	TookMS    int64    `json:"took_ms"`
+	// Drill finds the events behind the numbers in a summary; the search
+	// API sets it.
+	Drill *query.Drill `json:"drill,omitempty"`
 }
 
 // Plan is the OpenSearch request a query compiles to, for "show the
@@ -180,7 +186,7 @@ type Result struct {
 type Plan struct {
 	Index string         `json:"index"`
 	Body  map[string]any `json:"body"`
-	Mode  string         `json:"mode"` // events, stats, timechart, top
+	Mode  string         `json:"mode"` // events, stats, timechart, top, inputlookup, makeresults
 
 	transform query.Command
 	post      []query.Command
@@ -245,8 +251,51 @@ func (e *Engine) IndexPattern(q *query.Query) (string, error) {
 
 // Compile builds the OpenSearch request for a query without running it.
 func (e *Engine) Compile(q *query.Query) (*Plan, error) {
+	p, err := e.compile(q)
+	if err != nil {
+		return nil, err
+	}
+	// A subsearch that does not compile fails the search before it runs.
+	if err := e.compileSubsearches(p.post, q); err != nil {
+		return nil, err
+	}
+	return p, nil
+}
+
+func (e *Engine) compileSubsearches(cmds []query.Command, q *query.Query) error {
+	for _, c := range cmds {
+		var sub *query.Query
+		switch c := c.(type) {
+		case *query.Join:
+			sub = c.Sub
+		case *query.Append:
+			sub = c.Sub
+		case *query.AppendPipe:
+			if err := e.compileSubsearches(c.Commands, q); err != nil {
+				return err
+			}
+		}
+		if sub != nil {
+			if _, err := e.Compile(subsearch(sub, q)); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (e *Engine) compile(q *query.Query) (*Plan, error) {
 	o := e.opts()
 	cmds := q.Commands
+	if len(cmds) > 0 {
+		if c, ok := cmds[0].(*query.InputLookup); ok {
+			// The rows come from a lookup table, not from OpenSearch.
+			return &Plan{Mode: "inputlookup", transform: c, post: cmds[1:]}, nil
+		}
+		if c, ok := cmds[0].(*query.MakeResults); ok {
+			return &Plan{Mode: "makeresults", transform: c, post: cmds[1:]}, nil
+		}
+	}
 
 	// where commands before any transforming command filter raw events, so
 	// they run inside OpenSearch.
@@ -407,7 +456,8 @@ func needsAllEvents(cmds []query.Command) bool {
 		switch c.(type) {
 		case *query.Head:
 			return false
-		case *query.Sort, *query.Where, *query.Stats, *query.Top, *query.Dedup, *query.EventStats:
+		case *query.Sort, *query.Where, *query.Stats, *query.Top, *query.Dedup, *query.EventStats, *query.Transaction,
+			*query.StreamStats, *query.Regex, *query.AppendPipe:
 			return true
 		}
 	}
@@ -419,7 +469,8 @@ func leadingHead(cmds []query.Command) (int, bool) {
 		switch c := c.(type) {
 		case *query.Head:
 			return c.N, true
-		case *query.Table, *query.Rename, *query.Enrich, *query.Intel, *query.Eval, *query.Rex, *query.Fillnull:
+		case *query.Table, *query.Rename, *query.Enrich, *query.Intel, *query.Eval, *query.Rex, *query.Fillnull, *query.Lookup,
+			*query.Bin, *query.FieldsRemove:
 			continue
 		}
 		return 0, false
@@ -498,33 +549,68 @@ func (e *Engine) execute(ctx context.Context, q *query.Query) (*Result, error) {
 		return nil, err
 	}
 	defer release()
-	res, err := e.fetch(ctx, p)
+	res, err := e.run(withEvaluator(ctx), q, p)
+	if err != nil {
+		return nil, err
+	}
+	res.TookMS = time.Since(start).Milliseconds()
+	return res, nil
+}
+
+// run gets a compiled query's rows and runs its commands over them. A
+// join's subsearch runs here too, within the search's slot and limits.
+func (e *Engine) run(ctx context.Context, q *query.Query, p *Plan) (*Result, error) {
+	var res *Result
+	var err error
+	switch c := p.transform.(type) {
+	case *query.InputLookup:
+		res, err = e.inputLookup(c)
+	case *query.MakeResults:
+		res = makeResults(c)
+	default:
+		res, err = e.fetch(ctx, p)
+	}
 	if err != nil {
 		return nil, err
 	}
 	if p.threat != nil {
 		e.threatAnnotate(res, p.threat, p.Mode == "events")
 	}
-	ctx = withEvaluator(ctx)
-	for _, c := range p.post {
+	if err := e.post(ctx, res, p.post, q); err != nil {
+		return nil, err
+	}
+	return res, nil
+}
+
+// post runs commands over rows held in memory; q is the query they belong
+// to, whose time range subsearches inherit.
+func (e *Engine) post(ctx context.Context, res *Result, cmds []query.Command, q *query.Query) error {
+	for _, c := range cmds {
 		if err := ctx.Err(); err != nil {
-			return nil, err
+			return err
 		}
 		var err error
 		switch c := c.(type) {
 		case *query.Enrich:
 			err = e.enrich(res, c)
+		case *query.Lookup:
+			err = e.lookup(ctx, res, c)
+		case *query.Join:
+			err = e.join(ctx, res, c, q)
+		case *query.Append:
+			err = e.appendSearch(ctx, res, c, q)
+		case *query.AppendPipe:
+			err = e.appendPipe(ctx, res, c, q)
 		case *query.Intel:
 			err = e.intelEnrich(res, c)
 		default:
 			err = applyCommand(ctx, res, c)
 		}
 		if err != nil {
-			return nil, err
+			return err
 		}
 	}
-	res.TookMS = time.Since(start).Milliseconds()
-	return res, nil
+	return nil
 }
 
 func (e *Engine) fetch(ctx context.Context, p *Plan) (*Result, error) {

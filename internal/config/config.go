@@ -749,8 +749,13 @@ type Auth struct {
 	AdminUser         string `yaml:"admin_user"`
 	AdminPasswordHash string `yaml:"admin_password_hash"`
 	// SessionTimeout signs the web UI out after this long without use,
-	// unless "keep me signed in" was ticked. Default 12h.
+	// unless "keep me signed in" was ticked. Default 1h, the NIST SP
+	// 800-63B limit for AAL2.
 	SessionTimeout string `yaml:"session_timeout,omitempty"`
+	// SessionMaxAge ends every session this long after sign-in, kept
+	// signed in or not: from 1h to 30d, default 24h (NIST SP 800-63B asks
+	// for a new sign-in at least every 24 hours at AAL2).
+	SessionMaxAge string `yaml:"session_max_age,omitempty"`
 	// UsersFile holds the users added on the Users page. Default
 	// users.json in lookups.dir; directory.json (directory sign-in
 	// settings from the Users page) goes in the same folder.
@@ -761,6 +766,19 @@ type Auth struct {
 	// OIDC is single sign-on with an OpenID Connect identity provider,
 	// usually set on the Single sign-on tab of Settings.
 	OIDC OIDC `yaml:"oidc,omitempty"`
+	// MFARequired says who must use two-step sign-in (a code from an
+	// authenticator app after the password): off, admins or everyone.
+	// See MFARequiredMode.
+	MFARequired string `yaml:"mfa_required,omitempty"`
+}
+
+// MFARequiredMode returns auth.mfa_required: off, admins or everyone.
+func (c *Config) MFARequiredMode() string {
+	switch m := strings.ToLower(strings.TrimSpace(c.Auth.MFARequired)); m {
+	case "admins", "everyone":
+		return m
+	}
+	return "off"
 }
 
 // UsersFile returns the absolute path of the users file.
@@ -821,12 +839,34 @@ func (c *Config) ldap(env bool) (*users.LDAPSettings, error) {
 	return &s, nil
 }
 
+// DefaultSessionIdle and DefaultSessionMaxAge are how long a session
+// lasts without a request, and at most, when auth.session_timeout and
+// auth.session_max_age are not set: the NIST SP 800-63B limits for AAL2.
+const (
+	DefaultSessionIdle   = time.Hour
+	DefaultSessionMaxAge = 24 * time.Hour
+)
+
+// The shortest and longest auth.session_max_age.
+const (
+	MinSessionMaxAge = time.Hour
+	MaxSessionMaxAge = 30 * 24 * time.Hour
+)
+
 // SessionIdle returns auth.session_timeout as a duration.
 func (c *Config) SessionIdle() time.Duration {
 	if d, err := detect.ParseDuration(c.Auth.SessionTimeout); err == nil && d > 0 {
 		return d
 	}
-	return 12 * time.Hour
+	return DefaultSessionIdle
+}
+
+// SessionMaxAge returns auth.session_max_age as a duration.
+func (c *Config) SessionMaxAge() time.Duration {
+	if d, err := detect.ParseDuration(c.Auth.SessionMaxAge); err == nil && d > 0 {
+		return d
+	}
+	return DefaultSessionMaxAge
 }
 
 // Ingest controls agent access.
@@ -1225,6 +1265,12 @@ type Vulns struct {
 	OpenVASUsername string `yaml:"openvas_username,omitempty"`
 	OpenVASPassword string `yaml:"openvas_password,omitempty"`
 	OpenVASCAFile   string `yaml:"openvas_ca_file,omitempty"`
+	// KEVURL and EPSSURL are copies of CISA's Known Exploited
+	// Vulnerabilities catalog and FIRST's EPSS scores, in place of the
+	// public ones: an http(s) address, or for a network with no internet a
+	// file on the server that runs the background jobs.
+	KEVURL  string `yaml:"kev_url,omitempty"`
+	EPSSURL string `yaml:"epss_url,omitempty"`
 }
 
 // Intel configures threat intel feeds. Nothing is downloaded until a
@@ -2097,6 +2143,14 @@ func (c *Config) applyEnv() error {
 		c.Vulns.NVDURL = v
 		c.fromEnv("vulns.nvd_url", "SIGNALITH_NVD_URL")
 	}
+	if v := strings.TrimSpace(os.Getenv("SIGNALITH_KEV_URL")); v != "" {
+		c.Vulns.KEVURL = v
+		c.fromEnv("vulns.kev_url", "SIGNALITH_KEV_URL")
+	}
+	if v := strings.TrimSpace(os.Getenv("SIGNALITH_EPSS_URL")); v != "" {
+		c.Vulns.EPSSURL = v
+		c.fromEnv("vulns.epss_url", "SIGNALITH_EPSS_URL")
+	}
 	if v, from, err := envSecret("SIGNALITH_M365_CLIENT_SECRET"); err != nil {
 		return err
 	} else if len(v) > 0 {
@@ -2330,7 +2384,12 @@ func (c *Config) Validate() error {
 	}
 	if c.Auth.SessionTimeout != "" {
 		if d, err := detect.ParseDuration(c.Auth.SessionTimeout); err != nil || d < 5*time.Minute {
-			p = append(p, fmt.Sprintf("auth.session_timeout %q must be a duration of at least 5m, for example 12h or 1d", c.Auth.SessionTimeout))
+			p = append(p, fmt.Sprintf("auth.session_timeout %q must be a duration of at least 5m, for example 1h or 30m", c.Auth.SessionTimeout))
+		}
+	}
+	if c.Auth.SessionMaxAge != "" {
+		if d, err := detect.ParseDuration(c.Auth.SessionMaxAge); err != nil || d < MinSessionMaxAge || d > MaxSessionMaxAge {
+			p = append(p, fmt.Sprintf("auth.session_max_age %q must be a duration from 1h to 30d, for example 24h", c.Auth.SessionMaxAge))
 		}
 	}
 	if c.Auth.LDAP != nil {
@@ -2398,6 +2457,11 @@ func (c *Config) Validate() error {
 			p = append(p, fmt.Sprintf("vulns.nvd_url %q must be http(s)://host[:port][/path]", redact.URL(c.Vulns.NVDURL)))
 		}
 	}
+	for _, f := range []struct{ key, v string }{{"vulns.kev_url", c.Vulns.KEVURL}, {"vulns.epss_url", c.Vulns.EPSSURL}} {
+		if err := FeedSource(f.v); err != nil {
+			p = append(p, f.key+": "+err.Error())
+		}
+	}
 	p = append(p, c.Intel.problems()...)
 	if c.Detections.MaxFindingsPerRun < 1 || c.Detections.MaxFindingsPerRun > 10000 {
 		p = append(p, "detections.max_findings_per_run must be between 1 and 10000")
@@ -2442,6 +2506,11 @@ func (c *Config) Validate() error {
 		if d, err := detect.ParseDuration(c.Ingest.MaxEventAge); err != nil || d < time.Hour || d > 3650*24*time.Hour {
 			p = append(p, fmt.Sprintf("ingest.max_event_age %q must be a duration from 1h to 3650d, for example 7d or 30d (empty: 7 days)", c.Ingest.MaxEventAge))
 		}
+	}
+	switch strings.ToLower(strings.TrimSpace(c.Auth.MFARequired)) {
+	case "", "off", "admins", "everyone":
+	default:
+		p = append(p, fmt.Sprintf("auth.mfa_required %q must be off, admins or everyone (empty: off)", c.Auth.MFARequired))
 	}
 	switch strings.ToLower(strings.TrimSpace(c.Ingest.URLQuery)) {
 	case "", "keep", "redact", "drop":
@@ -2662,6 +2731,11 @@ func defaultPublicURL(s Server) string {
 // passwords follow the same rules.
 func HashPassword(pw string) (string, error) { return users.HashPassword(pw) }
 
+// CheckNewPassword checks a password someone chooses for the built-in
+// admin named user, by the rules for users' passwords (see
+// users.CheckNewPassword).
+func CheckNewPassword(user, pw string) error { return users.CheckNewPassword(user, pw) }
+
 // CheckPassword reports whether user and pw are the built-in admin's. The
 // username ignores case, like every other username.
 func (c *Config) CheckPassword(user, pw string) bool {
@@ -2770,7 +2844,10 @@ const header = `# Signalith configuration.
 #                    clients reach Signalith through; not limited as one client,
 #                    and wrong passwords from them never lock the address
 # auth.admin_user    the built-in admin, a break-glass account; add other users on the Users page
-# auth.session_timeout  sign the web UI out after this long idle (default 12h)
+# auth.session_timeout  sign the web UI out after this long idle (default 1h)
+# auth.session_max_age  sign the web UI out this long after sign-in, even when kept
+#                    signed in (default 24h; 1h to 30d)
+# auth.mfa_required     who must use two-step sign-in: off, admins or everyone
 # auth.users_file    where Users page accounts are kept (default users.json in lookups.dir)
 # auth.ldap          optional LDAP / Active Directory sign-in; usually set up on the Users
 #                    page instead (see docs/users.md)
@@ -2809,6 +2886,9 @@ const header = `# Signalith configuration.
 #                    format: lines, csv (with column:), stix or auto; see docs/threat-intel.md
 # vulns.nvd_api_key  optional free NVD API key for faster CVE lookups on the
 #                    Vulnerabilities page (SIGNALITH_NVD_API_KEY); see docs/vulnerabilities.md
+# vulns.kev_url, vulns.epss_url  copies of CISA's KEV catalog and FIRST's EPSS
+#                    scores (an address, or a file for a network with no internet);
+#                    empty uses the public ones; see docs/vulnerabilities.md
 # m365.tenant_id, m365.client_id, m365.client_secret  read Microsoft 365's audit
 #                    log with an Entra ID app (SIGNALITH_M365_CLIENT_SECRET); m365.cloud
 #                    is commercial, gcc, gcc_high or dod; see docs/microsoft-365.md

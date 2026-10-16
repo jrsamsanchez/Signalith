@@ -163,6 +163,13 @@ func lex(src string) ([]token, error) {
 				end := rawEnd(src, i)
 				toks = append(toks, token{tokRaw, src[i:end], i})
 				i = end
+			} else if len(toks) >= 2 && toks[len(toks)-2].kind == tokPipe &&
+				(strings.EqualFold(w, "join") || strings.EqualFold(w, "append") || strings.EqualFold(w, "appendpipe")) {
+				// A subsearch holds pipes of its own: the command runs
+				// to the ] that closes its [.
+				end := subsearchEnd(src, i)
+				toks = append(toks, token{tokRaw, src[i:end], i})
+				i = end
 			}
 		}
 	}
@@ -216,4 +223,54 @@ func quoteEnd(src string, i int, q byte, stopAtPipe bool) (int, bool) {
 		}
 	}
 	return 0, false
+}
+
+// subsearchEnd returns where a command with a subsearch, starting at i,
+// ends: just past the ] that closes its first [, counting brackets outside
+// double quotes; at the next | when a | comes first; or at the end.
+func subsearchEnd(src string, i int) int {
+	depth := 0
+	for i < len(src) {
+		switch src[i] {
+		case '|':
+			if depth == 0 {
+				return i
+			}
+		case '"':
+			if end, ok := quoteEnd(src, i, '"', false); ok {
+				i = end
+				continue
+			}
+		case '[':
+			depth++
+		case ']':
+			if depth--; depth == 0 {
+				return i + 1
+			}
+		}
+		i++
+	}
+	return i
+}
+
+// bracketsBalance reports whether s, read as subsearchEnd reads it, holds
+// no ] that closes nothing and no [ left open.
+func bracketsBalance(s string) bool {
+	depth := 0
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '"':
+			if end, ok := quoteEnd(s, i, '"', false); ok {
+				i = end - 1
+				continue
+			}
+		case '[':
+			depth++
+		case ']':
+			if depth--; depth < 0 {
+				return false
+			}
+		}
+	}
+	return depth == 0
 }

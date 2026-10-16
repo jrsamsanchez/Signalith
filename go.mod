@@ -14,4 +14,5 @@ require (
 require (
 	github.com/Azure/go-ntlmssp v0.1.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect
+	rsc.io/qr v0.2.0 // indirect
 )

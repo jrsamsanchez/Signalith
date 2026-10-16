@@ -85,6 +85,8 @@ func applyCommand(ctx context.Context, res *Result, c query.Command) error {
 		if res.Kind == "events" {
 			res.Kind = "table"
 		}
+	case *query.Transaction:
+		return transaction(ctx, res, c)
 	case *query.Rename:
 		for _, p := range c.Pairs {
 			for i, col := range res.Columns {
@@ -141,6 +143,14 @@ func applyCommand(ctx context.Context, res *Result, c query.Command) error {
 		applyFillnull(res, c)
 	case *query.EventStats:
 		return applyEventStats(ctx, res, c)
+	case *query.StreamStats:
+		return applyStreamStats(ctx, res, c)
+	case *query.Bin:
+		return applyBin(ctx, res, c)
+	case *query.Regex:
+		return applyRegex(ctx, res, c)
+	case *query.FieldsRemove:
+		applyFieldsRemove(res, c)
 	case *query.Timechart:
 		return fmt.Errorf("timechart must come before other commands that change results")
 	default:

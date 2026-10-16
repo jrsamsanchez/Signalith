@@ -117,6 +117,7 @@ nav:
   - Getting started:
       - Overview: getting-started.md
       - Install from packages: install-packages.md
+      - How Signalith compares: comparison.md
   - Data intake:
       - Agents and syslog: sending-data.md
       - OpenTelemetry: opentelemetry.md
@@ -131,6 +132,7 @@ nav:
       - Sample data: sample-data.md
   - Using Signalith:
       - Query language: query-language.md
+      - Lookup tables: lookups.md
       - Detections: detections.md
       - Investigate with AI: investigate.md
       - AI tools (MCP): ai-tools.md
@@ -150,6 +152,7 @@ nav:
       - signalith cluster: cluster-cli.md
       - Load balancers: load-balancers.md
       - OpenSearch with several nodes: opensearch-failover.md
+      - Cloud test lab: cloud-lab.md
       - Performance and sizing: performance.md
       - Data retention: retention.md
       - Audit: audit.md

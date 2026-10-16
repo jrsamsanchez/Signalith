@@ -91,10 +91,42 @@ When the NVD cannot be reached, a scan still lists hosts, ports and software, us
 answers kept from the last 30 days, and says on the **Scans** tab that lookups failed.
 Turn lookups off altogether in **Scanner setup**.
 
-The NVD also says which CVEs are in CISA's
-[Known Exploited Vulnerabilities](https://www.cisa.gov/known-exploited-vulnerabilities-catalog)
-catalog. Those are marked **Exploited** on the page, counted on their own, and raise
-their own finding: attackers are using them now, so patch them first.
+### Which vulnerabilities to fix first: KEV and EPSS
+
+A scan of a few hundred hosts can find thousands of CVEs, and most will never be used
+against anyone. Signalith ranks them with two free public feeds, so the few that matter
+come first everywhere: on the host list, inside each host and in Search.
+
+- **Known exploited.** CISA's
+  [Known Exploited Vulnerabilities](https://www.cisa.gov/known-exploited-vulnerabilities-catalog)
+  (KEV) catalog lists the CVEs attackers are using now. Signalith marks them **Exploited**,
+  adds **Ransomware** when CISA knows of ransomware campaigns using one, and shows the date
+  CISA gave US federal agencies to fix it. Patch these first.
+- **Likely exploited.** FIRST's
+  [Exploit Prediction Scoring System](https://www.first.org/epss/) (EPSS) gives every CVE a
+  daily chance, from 0 to 100%, of being exploited in the next 30 days. Most CVEs score well
+  under 1%. Each CVE shows its **EPSS** score, and one that is not known exploited but has
+  an EPSS of 10% or more is counted as **Likely exploited**: the next to fix.
+
+Hosts and CVEs are sorted known exploited first, then likely exploited, then by CVSS. The
+host list has a **Likely exploited** count next to **Known exploited**.
+
+One server downloads both feeds once a day and keeps them in OpenSearch for the others,
+and results already found are re-ranked with no new scan. The download asks for the whole
+catalog and the whole score list, so nothing about your network is sent. If it fails, it
+is tried again every hour, the last good copy stays in use, and **Scanner setup** shows
+what went wrong. Signalith also ships with a copy of the KEV catalog, so known exploited
+CVEs are marked even on a server that has never reached the internet. EPSS scores have no
+built-in copy: they change every day.
+
+On a network with no internet, download
+`https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json` and
+`https://epss.empiricalsecurity.com/epss_scores-current.csv.gz` elsewhere every day, copy
+them to the server, and enter their full paths as **Known exploited catalog address** and
+**EPSS scores address** in [Settings](settings.md), on the **Server** tab under
+**Vulnerability scans** (or set `SIGNALITH_KEV_URL` and `SIGNALITH_EPSS_URL`, or
+`vulns.kev_url` and `vulns.epss_url` in `signalith.yaml`). A file must end in `.json`,
+`.csv` or `.gz`. The same settings take the address of a mirror on your own network.
 
 ## Networks
 
@@ -193,22 +225,29 @@ Each finished scan writes events to the **Vulnerabilities** data model: one per 
 (`category=open_port`) and one per CVE (`category=vulnerability`), with `dest`, `dest_ip`,
 `dest_port`, `app`, `product`, `product_version`, `cve`, `cvss`, `severity`,
 `known_exploited` and a `url` to the CVE in the NVD. They carry `signalith_intake=scanner`.
+Known exploited CVEs add `known_ransomware` (`true` or `false`) and `kev_due` (CISA's
+fix-by date), and CVEs with an EPSS score add `epss` (0 to 1) and `epss_percentile`.
 For example:
 
 ```
 datamodel=Vulnerabilities category=vulnerability known_exploited=true | stats dc(cve) as cves by dest | sort -cves
+datamodel=Vulnerabilities category=vulnerability epss>=0.5 | table dest, cve, epss, cvss
 datamodel=Vulnerabilities category=open_port app=rdp | table dest, dest_ip, product_version
 ```
 
 The built-in **Vulnerabilities** dashboard ([dashboards.md](dashboards.md#vulnerabilities))
 sums them up over the last 7 days.
 
-The Ask box understands questions such as "hosts with known exploited vulnerabilities" or
-"top CVEs".
+The Ask box understands questions such as "hosts with known exploited vulnerabilities",
+"likely exploited vulnerabilities" or "top CVEs".
 
-Three built-in detections use them (see [detections.md](detections.md)): a CVE in the Known
-Exploited Vulnerabilities catalog (high), a critical CVE (CVSS 9.0 or more, medium), and
-Telnet open (low). Each fires once a week at most for the same host and CVE.
+Five built-in detections use them (see [detections.md](detections.md)): a known exploited
+CVE (high), a known exploited CVE on a critical or high priority asset (critical), a likely
+exploited CVE (medium), a critical CVE (CVSS 9.0 or more, medium), and Telnet open (low).
+Each fires once a week at most for the same host and CVE, and each adds risk to the host,
+so a host with exploitable vulnerabilities climbs the risk list. Risk on an asset you
+marked critical or high priority in the asset list ([detections.md](detections.md#risk)) counts double or one and
+a half times.
 
 Hosts the scans find are added to the asset list as `category=scanned`, so searches and
 findings show them with asset context, unless your own list or the
@@ -229,6 +268,12 @@ it and let that server scan it:
 2. Install Nmap on it, as above.
 3. On **Vulnerabilities > Networks**, edit the network and pick that server under
    **Scanned by**. The list shows each server's state: ready, needs setup, or offline.
+   Once a scanner exists, a new network is scanned by it unless you pick another.
+
+With more than one server, **Vulnerabilities > Networks** starts with a **Scanners** list:
+each server, whether it is ready, the networks it scans, and **Scan now** to scan them all,
+or **Add a network** for a scanner with none yet. A server that no network uses shows
+**Not needed**: it does not need Nmap until you pick it to scan something.
 
 Networks that name no scanner are scanned by the server that runs the background jobs.
 Every server runs the scans of its own networks and writes the results to the shared

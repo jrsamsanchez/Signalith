@@ -512,16 +512,33 @@ certificate, and turn off **Skip certificate check**
 
 ### Sign-in sessions
 
-**Looks at:** **Sign out after** (`auth.session_timeout`, 12 hours by default): how
-long a sign-in lasts without use. An open tab's own refreshes (the Health card,
-dashboards and other timers) don't count as use, so a tab left unattended still signs
-out. Someone who ticks **Keep me signed in** isn't signed
-out for being idle; every sign-in ends after 7 days at most.
+**Looks at:** **Sign out after** (`auth.session_timeout`, 1 hour by default): how
+long a sign-in lasts without use, and **Sign in again after** (`auth.session_max_age`,
+24 hours by default): how long any sign-in lasts. An open tab's own refreshes (the
+Health card, dashboards and other timers) don't count as use, so a tab left unattended
+still signs out. Someone who ticks **Keep me signed in** isn't signed out for being
+idle, but is still signed out once **Sign in again after** has passed.
 
-- Good: 24 hours or less.
-- Needs attention: longer than 24 hours.
+- Good: 1 hour or less idle, and 24 hours or less in all: the NIST SP 800-63B rev 4
+  limits for AAL2.
+- Needs attention: longer than either.
 
-**To fix:** set **Sign out after** to 12h or less on the **Settings** page.
+**To fix:** set **Sign out after** to 1h or less and **Sign in again after** to 24h or
+less on the **Settings** page.
+
+### Two-step sign-in
+
+**Looks at:** **Require two-step sign-in** (`auth.mfa_required`, `off` by default):
+whether people who sign in with a password must also enter a code from an
+authenticator app (see [Two-step sign-in](users.md#two-step-sign-in)). Single sign-on
+users get their second step from their identity provider.
+
+- Good: `admins` or `everyone`.
+- Needs attention: `off`, so an admin's password alone signs in.
+
+**To fix:** set **Require two-step sign-in** to `admins` or `everyone` on the
+**Settings** page. Set it up for your own account first (user menu, **Two-step
+sign-in**), so you are not asked to in the middle of something.
 
 ### Agent tokens
 
@@ -734,7 +751,8 @@ server:
   site.
 - Guessing passwords is slowed: after 10 wrong tries for one account from one address in
   15 minutes, sign-in pauses for 15 minutes. The API is limited the same way.
-- Sign-ins end after 7 days at most, even with **Keep me signed in**.
+- Sign-ins end after 24 hours by default (`auth.session_max_age`, 30 days at most),
+  even with **Keep me signed in**.
 - Passwords are stored only as bcrypt hashes.
 - Logs, pages and the API never show stored passwords or keys.
 - With HTTPS on, agents set up from **Add data** check the server's certificate before
@@ -753,7 +771,6 @@ them every time:
   [Backing up the key](encryption.md#backing-up-the-key)).
 - **Updates** for Signalith, OpenSearch and the operating system. Signalith doesn't
   contact the internet to check.
-- **Two-step sign-in**. Signalith has none of its own.
 - **The computers agents run on**.
 - **Copies of events outside Signalith**, such as exports, moved archives and OpenSearch
   snapshots.

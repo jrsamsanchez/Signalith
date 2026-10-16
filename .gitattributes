@@ -27,3 +27,8 @@ internal/ingest/testdata/suricata/** text eol=lf
 # carries the others byte for byte.
 deploy/sensor/** text eol=lf
 internal/ingest/testdata/sensor/** text eol=lf
+
+# The lab's setup script and cloud-init run on Linux: Unix line endings in
+# a checkout on Windows too, where Terraform reads them.
+deploy/lab/*.sh text eol=lf
+deploy/lab/*.tftpl text eol=lf

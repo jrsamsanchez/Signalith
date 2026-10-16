@@ -220,7 +220,7 @@ are on by default and raise findings:
 
 ## Vulnerability detections
 
-Three built-in detections read the Vulnerabilities data model, which Signalith's
+Five built-in detections read the Vulnerabilities data model, which Signalith's
 own network scans fill (see the **Vulnerabilities** page). All are on by default,
 raise findings and add risk to the scanned host. Each raises one finding per host
 and CVE (or per host, for Telnet) a week: a nightly scan that finds the same
@@ -229,6 +229,8 @@ vulnerability again raises it again only after seven days.
 | ID | Severity | Fires when |
 | --- | --- | --- |
 | `vuln-known-exploited` | high | A scan found a vulnerability in CISA's Known Exploited Vulnerabilities catalog (`known_exploited=true`): attackers are using it |
+| `vuln-known-exploited-priority-asset` | critical | The same, on an asset whose priority in the asset list is critical or high |
+| `vuln-likely-exploited` | medium | A scan found a vulnerability not yet known exploited with an EPSS score of 10% or more (`epss>=0.1`) |
 | `vuln-critical` | medium | A scan found a critical vulnerability (CVSS 9 or higher) that is not known to be exploited yet |
 | `vuln-cleartext-remote-login` | low | A scan found Telnet open, which sends passwords in clear text |
 
