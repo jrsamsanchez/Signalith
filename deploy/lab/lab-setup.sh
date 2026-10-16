@@ -31,7 +31,7 @@ OPENVAS=$(conf .openvas)
 DOMAIN=$(conf .domain)
 SIEM=$(conf .siem)
 LB_IP=$(conf .lb_ip)
-SIEM_URL="https://$SIEM:8080"
+SIEM_URL="https://$SIEM:9000"
 OPENSEARCH_VERSION=2.17.1
 BIN=/usr/local/bin/signalith
 
@@ -105,14 +105,46 @@ retry() {
   return 1
 }
 
+# The built-in admin must replace the first password Signalith made before
+# anything else, so the lab gives it a new random one, kept for root in
+# $LAB/admin-password (lab-e2e reads it too).
+admin_password() {
+  if [ -s "$LAB/admin-password" ]; then cat "$LAB/admin-password"; else cat /etc/signalith/initial-admin-password; fi
+}
+
+# login signs in as the built-in admin, keeping the session in the jar $1.
+# The password goes to curl on its input, not its command line. One whose
+# change Signalith took though curl did not hear back is still in
+# admin-password.new.
+login() {
+  local pw
+  for pw in "" "$LAB/admin-password.new"; do
+    if [ -n "$pw" ]; then [ -s "$pw" ] || return 1; fi
+    if jq -n --rawfile p <(if [ -n "$pw" ]; then cat "$pw"; else admin_password; fi) '{username: "admin", password: ($p | rtrimstr("\n"))}' |
+      curl -fsS -c "$1" --cacert /var/lib/signalith/tls/ca.pem -H 'Content-Type: application/json' -H 'Origin: https://localhost:9000' \
+        --data-binary @- https://localhost:9000/api/login >/dev/null; then
+      [ -z "$pw" ] || mv "$pw" "$LAB/admin-password"
+      return 0
+    fi
+  done
+  return 1
+}
+
 # api calls Signalith's API on signalith-1, signed in as the built-in
 # admin (as the Add data page would).
 api() {
   local ca=/var/lib/signalith/tls/ca.pem jar=$LAB/cookies
-  curl -fsS -c "$jar" --cacert "$ca" -H 'Content-Type: application/json' -H 'Origin: https://localhost:8080' \
-    -d "$(jq -n --rawfile p /etc/signalith/initial-admin-password '{username: "admin", password: ($p | rtrimstr("\n"))}')" \
-    https://localhost:8080/api/login >/dev/null
-  curl -fsS -b "$jar" --cacert "$ca" -H 'Origin: https://localhost:8080' "https://localhost:8080$1"
+  login "$jar"
+  if [ "$(curl -fsS -b "$jar" --cacert "$ca" https://localhost:9000/api/me | jq -r .must_change_password)" = true ]; then
+    (umask 077 && openssl rand -base64 24 | tr -d '/+=\n' >"$LAB/admin-password.new")
+    jq -n --rawfile c <(admin_password) --rawfile n "$LAB/admin-password.new" \
+      '{current_password: ($c | rtrimstr("\n")), new_password: $n}' |
+      curl -fsS -b "$jar" --cacert "$ca" -H 'Content-Type: application/json' -H 'Origin: https://localhost:9000' \
+        --data-binary @- https://localhost:9000/api/me/password >/dev/null
+    mv "$LAB/admin-password.new" "$LAB/admin-password"
+    login "$jar"
+  fi
+  curl -fsS -b "$jar" --cacert "$ca" -H 'Origin: https://localhost:9000' "https://localhost:9000$1"
   rm -f "$jar"
 }
 
@@ -264,7 +296,7 @@ opensearch_security() {
 edit_config() {
   local urls=() n
   for n in $(names opensearch); do [ "$n" = opensearch-1 ] || urls+=("https://$n:9200"); done
-  python3 - /etc/signalith/signalith.yaml "$SIEM_URL" "https://signalith-1.$DOMAIN:8080" "$SIEM" "$LB_IP" "${urls[@]}" <<'EOF'
+  python3 - /etc/signalith/signalith.yaml "$SIEM_URL" "https://signalith-1.$DOMAIN:9000" "$SIEM" "$LB_IP" "${urls[@]}" <<'EOF'
 import sys, yaml
 path, public, node, siem, lb, *urls = sys.argv[1:]
 with open(path) as f:
@@ -292,7 +324,7 @@ with open(path, "w") as f:
 EOF
 }
 
-readyz() { curl -fsSk -o /dev/null https://127.0.0.1:8080/readyz; }
+readyz() { curl -fsSk -o /dev/null https://127.0.0.1:9000/readyz; }
 
 signalith_first() {
   sh "$LAB/src/deploy/linux/install.sh" --binary "$LAB/signalith"
@@ -322,11 +354,11 @@ opensearch_ca() {
 
 join() {
   local name=$1 role=${2:-} out line
-  local args=(cluster token -json -platform linux -note "lab" -url "https://signalith-1.$DOMAIN:8080"
-    -node-url "https://$name.$DOMAIN:8080")
+  local args=(cluster token -json -platform linux -note "lab" -url "https://signalith-1.$DOMAIN:9000"
+    -node-url "https://$name.$DOMAIN:9000")
   [ -z "$role" ] || args+=(-role "$role")
   out=$(sg "${args[@]}")
-  line="$(jq -r .commands.linux <<<"$out") --name $name --node-url https://$name.$DOMAIN:8080"
+  line="$(jq -r .commands.linux <<<"$out") --name $name --node-url https://$name.$DOMAIN:9000"
   on "$name" "bash -c $(printf '%q' "$line")"
   # The same public address as signalith-1, so the servers' settings
   # match. A join through install.sh can leave node.id root's, which the
@@ -579,14 +611,16 @@ fi
 install -m 755 "$LAB/src/deploy/lab/lab-e2e.sh" /usr/local/sbin/lab-e2e
 
 public=$(curl -fsS -4 --max-time 5 https://ipv4.icanhazip.com 2>/dev/null || echo '<signalith-1 address>')
+pwfile=/etc/signalith/initial-admin-password
+[ ! -s "$LAB/admin-password" ] || pwfile=$LAB/admin-password
 say "Lab ready."
 cat <<MSG
 
-  Signalith:  https://$public:8080
+  Signalith:  https://$public:9000
   User:       admin
-  Password:   sudo cat /etc/signalith/initial-admin-password  (on signalith-1)
+  Password:   sudo cat $pwfile  (on signalith-1)
 
-  Agents and the sensor send to $SIEM_URL$([ -n "$LB_IP" ] && echo " (the load balancer)").
+  Agents and the sensor send to https://$SIEM:7779$([ -n "$LB_IP" ] && echo " (the load balancer)").
   The rest is by hand: see "After the setup" in docs/cloud-lab.md
   (Windows, the scan networks, single sign-on).
   To test everything: sudo lab-e2e
