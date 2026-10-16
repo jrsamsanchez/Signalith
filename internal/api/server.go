@@ -154,6 +154,11 @@ type Server struct {
 	// users, the directory settings and the sessions in the shared
 	// settings of a cluster; nil keeps them on this server.
 	SharedUsers *SharedUsers
+	// BuiltinSetHere, when set, hears that the built-in admin's password
+	// was changed in this server's own files (SharedUsers nil), so a
+	// change that lands while the users move into the shared settings is
+	// carried there too.
+	BuiltinSetHere func(ctx context.Context)
 
 	// DirectoryRecheck is how often signed-in directory users are looked
 	// up again; 0 means every 5 minutes.

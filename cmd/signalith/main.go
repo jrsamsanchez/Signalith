@@ -1259,7 +1259,13 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	if parts != nil {
 		// The sessions made while this server kept its users in its own
 		// files carry over.
-		parts.carry(ctx, r.sessions, r.people, c, log)
+		// A change of the first password that reached this server while
+		// its users moved is kept, and so is the session that made it.
+		cc := c
+		if h := keepFirstPasswordChange(ctx, parts.sessions.Docs, c, log); h != "" {
+			cc = c.WithAdminHashFile(h)
+		}
+		parts.carry(ctx, r.sessions, r.people, cc, log)
 		people, dir = parts.store, parts.dir
 		n := people.Count()
 		log.Info("users loaded from the shared settings", "local", n[users.SourceLocal], "directory", n[users.SourceDirectory])
@@ -1510,6 +1516,9 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		srv.ComplianceNotes = r.sharedContent.comp
 	}
 	wireFeatures(srv, r.shared)
+	if parts == nil && r.sharedContent != nil {
+		srv.BuiltinSetHere = r.sharedContent.users.builtinSetHere(c)
+	}
 	if parts != nil {
 		srv.SessionStore, srv.KnownBrowsers, srv.SharedUsers = parts.sessions, parts.browsers, parts.api(c)
 		if rt := r.shared; rt != nil {

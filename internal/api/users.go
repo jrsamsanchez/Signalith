@@ -203,7 +203,9 @@ func (s *Server) setOwnPassword(ctx context.Context, p *principal, password stri
 			return nil, err
 		}
 		if s.SharedUsers == nil {
-			err = s.setBuiltinHere(hash)
+			if err = s.setBuiltinHere(hash); err == nil && s.BuiltinSetHere != nil {
+				s.BuiltinSetHere(context.WithoutCancel(ctx))
+			}
 		} else {
 			err = s.SharedUsers.Docs.SetBuiltinHash(ctx, p.Username, hash)
 		}
