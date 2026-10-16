@@ -435,8 +435,11 @@ function showPage(name, opts = {}) {
 
 // pageFromHash reads the page from the address. Add data takes the source
 // to show, as in #data?source=antivirus; it is selected here and the
-// address goes back to #data once the page opens.
+// address goes back to #data once the page opens. Hunting notebooks take
+// the notebook to open, as in #notebooks?id=NB-20261016-..., which
+// notebooks.js picks up from hashNotebook.
 let hashSource = false;
+let hashNotebook = null;
 function pageFromHash() {
   let name = location.hash.slice(1);
   let query = '';
@@ -445,6 +448,10 @@ function pageFromHash() {
   try { name = decodeURIComponent(name); } catch (_) { return null; }
   if (!name || !$('page-' + name)) return null;
   hashSource = name === 'data' && pickDataSource(new URLSearchParams(query).get('source') || '');
+  if (name === 'notebooks') {
+    hashNotebook = new URLSearchParams(query).get('id') || null;
+    hashSource = !!hashNotebook;
+  }
   return name;
 }
 const followHash = () => {
@@ -974,10 +981,10 @@ const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
 // functions, keywords and values apart. The Query guide uses the same
 // colouring for its examples.
 const lang = {
-  commands: ['search', 'stats', 'eventstats', 'timechart', 'top', 'rare', 'where', 'eval', 'rex', 'dedup', 'fillnull', 'sort', 'head', 'table', 'rename', 'lookup', 'inputlookup', 'transaction', 'join', 'enrich', 'threatmatch', 'intel', 'streamstats', 'bin', 'bucket', 'fields', 'regex', 'makeresults', 'append', 'appendpipe', 'tstats', 'chart', 'xyseries', 'untable', 'spath', 'mvexpand', 'makemv', 'reverse', 'addtotals', 'addcoltotals', 'convert', 'tail', 'uniq', 'fromjson', 'nomv', 'mvcombine', 'strcat', 'rangemap', 'fieldformat', 'foreach'],
+  commands: ['search', 'stats', 'eventstats', 'timechart', 'top', 'rare', 'where', 'eval', 'rex', 'dedup', 'fillnull', 'sort', 'head', 'table', 'rename', 'lookup', 'inputlookup', 'transaction', 'join', 'enrich', 'threatmatch', 'intel', 'streamstats', 'bin', 'bucket', 'fields', 'regex', 'makeresults', 'append', 'appendpipe', 'tstats', 'chart', 'xyseries', 'untable', 'spath', 'mvexpand', 'makemv', 'reverse', 'addtotals', 'addcoltotals', 'convert', 'tail', 'uniq', 'fromjson', 'nomv', 'mvcombine', 'strcat', 'rangemap', 'fieldformat', 'foreach', 'replace', 'xmlkv'],
   functions: ['count', 'dc', 'sum', 'avg', 'min', 'max', 'median', 'perc95', 'stdev', 'var', 'range', 'mode', 'values', 'list', 'first', 'last', 'earliest', 'latest'],
   // eval and where expression functions (query.EvalFuncs).
-  evalFunctions: ['abs', 'case', 'ceil', 'ceiling', 'cidrmatch', 'coalesce', 'exp', 'false', 'floor', 'if', 'in', 'isint', 'isnotnull', 'isnull', 'isnum', 'isstr', 'json_array', 'json_array_to_mv', 'json_extract', 'json_keys', 'json_object', 'json_valid', 'len', 'like', 'ln', 'log', 'lower', 'ltrim', 'match', 'max', 'md5', 'min', 'mvappend', 'mvcount', 'mvdedup', 'mvfilter', 'mvfind', 'mvindex', 'mvjoin', 'mvmap', 'mvrange', 'mvsort', 'mvzip', 'now', 'null', 'nullif', 'pow', 'printf', 'relative_time', 'replace', 'round', 'rtrim', 'sha1', 'sha256', 'split', 'spath', 'sqrt', 'strftime', 'strptime', 'substr', 'time', 'tonumber', 'tostring', 'trim', 'true', 'typeof', 'upper', 'urldecode', 'validate'],
+  evalFunctions: ['abs', 'bit_and', 'bit_not', 'bit_or', 'bit_shift_left', 'bit_shift_right', 'bit_xor', 'case', 'ceil', 'ceiling', 'cidrmatch', 'coalesce', 'exp', 'false', 'floor', 'if', 'in', 'isint', 'isnotnull', 'isnull', 'isnum', 'isstr', 'json_array', 'json_array_to_mv', 'json_extract', 'json_keys', 'json_object', 'json_valid', 'len', 'like', 'ln', 'log', 'lower', 'ltrim', 'match', 'max', 'md5', 'min', 'mvappend', 'mvcount', 'mvdedup', 'mvfilter', 'mvfind', 'mvindex', 'mvjoin', 'mvmap', 'mvrange', 'mvsort', 'mvzip', 'now', 'null', 'nullif', 'pow', 'printf', 'relative_time', 'replace', 'round', 'rtrim', 'sha1', 'sha256', 'split', 'spath', 'sqrt', 'strftime', 'strptime', 'substr', 'time', 'tonumber', 'tostring', 'trim', 'true', 'typeof', 'upper', 'urldecode', 'validate'],
 };
 const QL_KEYWORDS = new Set(['and', 'or', 'not', 'in', 'as', 'by', 'over', 'xor', 'like', 'output', 'outputnew']);
 const QL_FUNCS = new Set(lang.functions);
@@ -3323,17 +3330,19 @@ try { syslogState.vendor = localStorage.getItem(syslogVendorKey) || 'rsyslog'; }
 // setup lives in antivirus.js.
 function loadDataSource() {
   const src = document.querySelector('input[name=os]:checked').value;
-  $('agent-setup').classList.toggle('hidden', src === 'syslog' || src === 'antivirus' || src === 'm365');
+  $('agent-setup').classList.toggle('hidden', src === 'syslog' || src === 'antivirus' || src === 'm365' || src === 'custom');
   $('syslog-setup').classList.toggle('hidden', src !== 'syslog');
   $('antivirus-setup').classList.toggle('hidden', src !== 'antivirus');
   $('m365-setup').classList.toggle('hidden', src !== 'm365');
+  $('custom-setup').classList.toggle('hidden', src !== 'custom');
+  if (src === 'custom') return typeof customLogsOpen === 'function' ? customLogsOpen() : null;
   if (src === 'm365') return typeof m365Open === 'function' ? m365Open() : null;
   if (src === 'antivirus') return typeof antivirusOpen === 'function' ? antivirusOpen() : null;
   return src === 'syslog' ? syslogOpen() : loadAgentConfig();
 }
 
 // pickDataSource selects a source card on the Add data page: linux,
-// windows, syslog, antivirus, otel, osquery, wazuh, sensor, aws, azure, m365 or gcp. It is false
+// windows, syslog, antivirus, otel, osquery, wazuh, sensor, aws, azure, m365, gcp or custom. It is false
 // for anything else.
 function pickDataSource(src) {
   const r = document.querySelector(`input[name=os][value="${CSS.escape(String(src))}"]`);

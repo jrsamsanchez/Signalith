@@ -39,7 +39,9 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"github.com/jrsamsanchez/signalith/internal/intel"
 	"github.com/jrsamsanchez/signalith/internal/m365"
+	"github.com/jrsamsanchez/signalith/internal/notebooks"
 	"github.com/jrsamsanchez/signalith/internal/oidc"
+	"github.com/jrsamsanchez/signalith/internal/onboard"
 	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/redact"
 	"github.com/jrsamsanchez/signalith/internal/respond"
@@ -84,6 +86,9 @@ type Server struct {
 	Dashboards *dashboards.Store
 	// Cases holds investigations; nil disables them.
 	Cases cases.Store
+	// Notebooks holds hunting notebooks; nil leaves only the starter
+	// hunts, which can be run but not saved.
+	Notebooks notebooks.Store
 	// Respond runs response actions; nil disables them.
 	Respond *respond.Runner
 	// Playbooks backs the Playbooks and Approvals pages; nil disables
@@ -205,6 +210,9 @@ type Server struct {
 	// ClusterTLS is the cluster's one certificate authority; nil on a
 	// server that is not a member of a cluster.
 	ClusterTLS ClusterTLS
+	// Parsers keeps and runs the custom parsers admins save on the Add
+	// data page; nil keeps them in the state folder, for this API only.
+	Parsers *onboard.Registry
 	// ComplianceNotes keeps the notes on compliance controls in the
 	// shared settings, used while this server takes its content from them;
 	// nil, or until then, they stay in the state folder.
@@ -231,22 +239,23 @@ type Server struct {
 	// program; nil turns that off.
 	Install *ClusterInstall
 
-	authOnce     sync.Once
-	ssoOnce      sync.Once
-	scimRefused  scimRefusals // when a refused SCIM token was last logged, by address
-	creds        credCache    // recently checked Basic credentials
-	routes       []route      // every API route and its role, from Handler
-	caseLocks    caseLocks    // one lock per case being changed
-	checksMu     sync.Mutex
-	dirChecks    map[string]dirCheck // when each directory user was last checked
-	dirSlotsOnce sync.Once
-	dirSlots     chan struct{}  // limits directory connections at once
-	background   sync.WaitGroup // directory checks still running
-	settingsMu   sync.Mutex     // serializes saves on the Settings page
-	testMu       sync.Mutex     // one connection test at a time
-	aiModels     modelCache     // model lists read from the AI model's service
-	sampleJob    sampleJob      // the one running sample-data load or remove
-	pageCache    pages          // index.html and login.html, rendered
+	authOnce          sync.Once
+	ssoOnce           sync.Once
+	scimRefused       scimRefusals // when a refused SCIM token was last logged, by address
+	creds             credCache    // recently checked Basic credentials
+	passkeyChallenges challengeSet // passkey challenges answered on this server
+	routes            []route      // every API route and its role, from Handler
+	caseLocks         caseLocks    // one lock per case being changed
+	checksMu          sync.Mutex
+	dirChecks         map[string]dirCheck // when each directory user was last checked
+	dirSlotsOnce      sync.Once
+	dirSlots          chan struct{}  // limits directory connections at once
+	background        sync.WaitGroup // directory checks still running
+	settingsMu        sync.Mutex     // serializes saves on the Settings page
+	testMu            sync.Mutex     // one connection test at a time
+	aiModels          modelCache     // model lists read from the AI model's service
+	sampleJob         sampleJob      // the one running sample-data load or remove
+	pageCache         pages          // index.html and login.html, rendered
 	// live holds Config with the settings saved on the Settings page that
 	// apply at once, and liveAI the assistant they give.
 	live   atomic.Pointer[config.Config]
@@ -259,6 +268,9 @@ type Server struct {
 	sec           *SecurityChecker
 	comp          complianceState
 	caMu          sync.Mutex // one change of certificate authority at a time
+	// localParsers is the parsers' registry of a server started without
+	// one (Parsers), made at first use.
+	localParsers localParsers
 	// badTuning is the hash of the stored rule tuning last refused to
 	// sensors (refusedTuning), so it is logged once.
 	badTuningMu sync.Mutex
@@ -338,12 +350,14 @@ func (s *Server) Handler() http.Handler {
 	s.routeRisk(api)
 	s.routeBaselines(api)
 	s.routeLookupTables(api)
+	s.routeParsers(api)
 	s.routeAsk(api)
 	s.routeInvestigate(api)
 	s.routeIntel(api)
 	s.routeNotify(api)
 	s.routeDashboards(api)
 	s.routeCases(api)
+	s.routeNotebooks(api)
 	s.routeRespond(api)
 	s.routePlaybooks(api)
 	s.routeUsers(api)

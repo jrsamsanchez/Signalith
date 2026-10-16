@@ -53,6 +53,7 @@ or detection covers every source of the same kind.
 | Zeek on a network sensor: conn, dns, http, ssl and x509, files, notice ([Network sensor](network-sensor.md)) | Network_Traffic, Network_Resolution, Web, Certificates, File_Transfers, Intrusion_Detection; other Zeek logs in Other |
 | Suricata EVE from a network sensor, or over syslog from pfSense and OPNsense: alert, flow, dns, http, tls, fileinfo ([Network sensor](network-sensor.md)) | Intrusion_Detection, Network_Traffic, Network_Resolution, Web, Certificates, File_Transfers; other event types in Other |
 | Status of a sensor built with the sensor install script, every 5 minutes ([Network sensor](network-sensor.md#status)) | Other, sourcetype `sensor:status` |
+| A log you saved a parser for on **Add data → Any other log** ([Any other log](custom-logs.md)) | The data model you chose, with the parser's sourcetype |
 | Anything else | Other (searchable by text and fields) |
 
 sshd prints the user name a client sends, and on a failed key sign-in the key ID of the

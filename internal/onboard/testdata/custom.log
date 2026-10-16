@@ -1,0 +1,2 @@
+2026-10-16 14:05:09 WARN [auth] login denied user=alice src=198.51.100.20
+2026-10-16 14:05:10 INFO [auth] login allowed user=bob src=10.0.0.4

@@ -454,6 +454,7 @@ func (s *Server) handleSCIMDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	ended := s.sessions().EndUser(r.Context(), u.Username, "")
 	s.scimAudit(r, "user deleted", "user", u.Username, "source", u.Source, "sessions_ended", ended)
+	s.releaseNotebooks(r.Context(), u.Username, scimActor)
 	w.WriteHeader(http.StatusNoContent)
 }
 

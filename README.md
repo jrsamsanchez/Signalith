@@ -1,6 +1,7 @@
 # Signalith
 
-An open-source SIEM for Windows and Linux, inspired by Splunk Enterprise Security.
+A free, open-source SIEM for Windows and Linux. The goal is a SIEM anyone can stand up
+and use: easy to configure, easy to query, and ready for AI.
 Signalith stores events in [OpenSearch](https://opensearch.org), collects them with
 [Fluent Bit](https://fluentbit.io), and adds the security layer on top: a pipe-based
 query language that reads like SPL, plain-English questions that become queries, a
@@ -21,7 +22,7 @@ Wazuh, Security Onion, Elastic Security and others, including where it is weaker
 The server is a single Go binary with the web UI embedded. It runs as a Windows
 service or a systemd unit.
 
-> Status: Phase 3 (ES depth) is complete; Phase 4 has started with investigation cases. See the [roadmap](#roadmap).
+> Status: Phase 3 (context and risk) is complete; Phase 4 has started with investigation cases. See the [roadmap](#roadmap).
 
 ## Quick start
 
@@ -317,6 +318,10 @@ their connections, DNS lookups, web requests, certificates and TLS fingerprints 
 files, sign-ins (SSH, RDP, Kerberos, NTLM), file share activity and IDS alerts; the hosts
 it sees join the asset list (see
 [docs/network-sensor.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/network-sensor.md)).
+For a log Signalith has no parser for, pick **Any other log**: paste a sample, check the
+format, fields and data model Signalith suggests (an AI model can help with free text),
+see which detections can use it, and save it as a parser that agents and syslog use (see
+[docs/custom-logs.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/custom-logs.md)).
 
 Agents on other machines must send to an address they can reach, such as
 `https://192.168.1.20:8080`, not `localhost`. Enter it under **Agents send to** on that page
@@ -833,7 +838,7 @@ confidential VMs. HTTPS is in [docs/https.md](docs/https.md).
 ## Detections and findings
 
 A detection is a query that runs on a schedule. Each row it returns becomes a
-**finding** in the queue, like a notable event in Splunk ES. Signalith ships 21
+**finding** in the queue. Signalith ships 21
 detections mapped to MITRE ATT&CK (brute force, password spray, encoded PowerShell,
 Office spawning shells, shadow copy deletion, credential dumping, privileged group
 changes and more, plus two risk incident rules); 19 are on by default.
@@ -850,7 +855,7 @@ changes and more, plus two risk incident rules); 19 are on by default.
   Signalith query and lists anything it had to approximate. Imported rules start
   disabled so you can test them first.
 - **Content packs** add community rules, off until you turn them on: 2,478 tested
-  [SigmaHQ](https://github.com/SigmaHQ/sigma) Windows, Linux, web server, network, AWS CloudTrail, Azure, Microsoft 365, Google Cloud and Google Workspace rules and 1,138
+  [SigmaHQ](https://github.com/SigmaHQ/sigma) Windows, Linux, web server, network, AWS CloudTrail, Azure, Microsoft 365, Google Cloud and Google Workspace rules and 1,144
   Windows, Linux, web, network, AWS CloudTrail, Entra ID and Microsoft 365 detections
   from Splunk's open source
   [security_content](https://github.com/splunk/security_content) (Apache 2.0). With
@@ -865,8 +870,8 @@ Detections are YAML files, so they can live in Git. See
 
 ## Investigations
 
-A **case** groups the findings that belong to one incident with the work done on it,
-like an investigation in Splunk ES. Open the **Investigations** tab to see open cases.
+A **case** groups the findings that belong to one incident with the work done on it.
+Open the **Investigations** tab to see open cases.
 
 - Start a case with **New case**, or select findings on the Findings page and choose
   **Add to case**. A finding belongs to one case; adding it to another moves it. The
@@ -881,6 +886,16 @@ like an investigation in Splunk ES. Open the **Investigations** tab to see open 
 
 Cases are stored in OpenSearch in the `<prefix>_cases` index, and every change is
 recorded with who made it.
+
+### Hunting notebooks
+
+**Hunting notebooks** (under **Hunt**) are saved hunts: Markdown notes and searches in
+order, each search with what it found when it last ran, tagged to ATT&CK techniques.
+Re-run a notebook over any time range, turn a search into a detection, link the hunt
+to a case with its results, share it with the team, or download it as Markdown. Seven
+starter hunts come built in (password spraying, living off the land, PowerShell,
+persistence, beaconing, DNS tunneling and discovery). See
+[docs/hunting-notebooks.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/hunting-notebooks.md).
 
 ### Investigate with AI
 
@@ -923,7 +938,7 @@ See [docs/notifications.md](docs/notifications.md) for setting up each kind of c
 
 ## Risk and context
 
-Signalith does risk-based alerting the way Splunk ES does. Most detections add
+Signalith does risk-based alerting. Most detections add
 **risk** to the users and systems in their results instead of (or as well as)
 raising a finding. Risk adds up per object, and two risk incident detections raise
 one finding when an object crosses a total of 100 in 24 hours, or trips three ATT&CK
@@ -939,8 +954,8 @@ flooding the queue.
 - **Risk** lists the users and systems with the most risk, with a bar per score, the
   number of detections and tactics, and the asset or identity context. Click one to
   see every detection that added risk, oldest first.
-- **Assets & identities** takes two CSV files, like the ES asset and identity
-  lookups. Upload them on that page, or put them in `lookups.dir` (they reload within
+- **Assets & identities** takes two CSV files, one for assets and one for
+  identities. Upload them on that page, or put them in `lookups.dir` (they reload within
   a minute). Every bad line is reported and nothing is saved until the file is clean.
   Download the current file from the same page to edit it.
 
@@ -997,7 +1012,7 @@ using only control numbers for frameworks whose text is copyrighted. See
 
 ## Threat intel
 
-Like the ES threat intelligence framework, Signalith matches events against
+Signalith matches events against threat intel
 **indicators**: IP addresses and IPv4 networks, domains, URLs, MD5/SHA-1/SHA-256
 file hashes and email addresses.
 
@@ -1085,8 +1100,8 @@ and the API.
 
 ## Dashboards
 
-The **Dashboards** tab opens on the built-in **Security posture** dashboard, like the
-Splunk ES Security Posture and executive summary views. Pick a time range (last hour
+The **Dashboards** tab opens on the built-in **Security posture** dashboard, a summary
+for analysts and managers alike. Pick a time range (last hour
 to 30 days) and, if you like, auto-refresh. It shows:
 
 - **Key indicators** compared with the previous period of the same length: open
@@ -1302,7 +1317,7 @@ share one OpenSearch, and stop them with kill -9 and SIGSTOP (Linux only). Witho
 
 1. **Search foundation**: agents, parsing, data models, query language, builder, installers.
 2. **Detect and triage**: scheduled detections in Sigma or Signalith queries, throttling, a findings queue, ATT&CK coverage.
-3. **ES depth**: risk-based alerting, asset and identity context, threat intel feeds, posture dashboards, and plain-English to query.
+3. **Context and risk**: risk-based alerting, asset and identity context, threat intel feeds, posture dashboards, and plain-English to query.
 4. **Respond and scale**: investigation cases, response actions, playbooks, multi-node deployments.
 
 What is being built now and what comes next, from detection content and osquery endpoint
@@ -1319,6 +1334,7 @@ Signalith is an independent open-source project. It is not affiliated with,
 endorsed by or sponsored by Splunk or Cisco, and contains no Splunk software code.
 Its optional Splunk Security Content pack ships detection rules from Splunk's open
 source security_content project under the Apache License 2.0 (see NOTICE).
-Splunk, Splunk Enterprise Security and SPL are trademarks of Splunk LLC; they are
-named here only to describe what Signalith works like. OpenSearch, Fluent Bit,
+Splunk, Splunk Enterprise Security and SPL are trademarks or registered trademarks
+of Splunk LLC, a Cisco company, in the United States and other countries; they are
+named here only to describe the rules Signalith can run and its search syntax. OpenSearch, Fluent Bit,
 Sigma and MITRE ATT&CK are trademarks of their respective owners.
