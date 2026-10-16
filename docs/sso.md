@@ -51,7 +51,7 @@ log has the details (an `audit` line with `method=sso`).
 1. Open **Settings > Single sign-on**.
 2. Copy the **Redirect URI**. It is the web address on the Server tab (`server.public_url`)
    followed by `/api/auth/oidc/callback`, for example
-   `https://siem.example.com:8080/api/auth/oidc/callback`. Most providers accept only
+   `https://siem.example.com:9000/api/auth/oidc/callback`. Most providers accept only
    `https://` addresses, except for `localhost`.
 3. Register Signalith with your provider as a web application with that redirect URI,
    following the section for your provider below. The provider gives you a
