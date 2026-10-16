@@ -314,6 +314,8 @@ func records(node string, ev map[string]string) []sigmacheck.Case {
 		return []sigmacheck.Case{cloudTrailRecord(ev)}
 	case AzureNode:
 		return []sigmacheck.Case{azureRecord(ev)}
+	case O365Node:
+		return []sigmacheck.Case{o365Record(ev)}
 	case "Web":
 		return []sigmacheck.Case{webRecord(ev)}
 	case "Processes":
@@ -970,6 +972,10 @@ func Reads(r *Rule, c sigmacheck.Case) bool {
 		// Every Entra ID or Azure record, in any data model.
 		return c.Channel == sigmacheck.AzureChannel && Eval(r.Where, View(doc))
 	}
+	if r.Node == O365Node {
+		// Every Microsoft 365 record, in any data model.
+		return c.Channel == sigmacheck.O365Channel && Eval(r.Where, View(doc))
+	}
 	return InModel(r.Node, model) && slices.Contains(NodeEvents[r.Node], c.EventID) && Eval(r.Where, View(doc))
 }
 
@@ -1021,8 +1027,8 @@ func InModel(node, model string) bool {
 		// Sign-ins, changes and reads.
 		return model == "Authentication" || model == "Change" || model == "Other"
 	}
-	if node == AzureNode {
-		// Sign-ins, changes, risk detections and the rest.
+	if node == AzureNode || node == O365Node {
+		// Sign-ins, changes, risk detections or alerts, and the rest.
 		return model == "Authentication" || model == "Change" || model == "Alerts" || model == "Other"
 	}
 	return strings.EqualFold(model, NodeModel[node])

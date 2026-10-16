@@ -35,6 +35,31 @@ var azureCIM = map[string]string{
 	"sourcetype": "sourcetype",
 }
 
+// cloudSource is a macro of Entra ID, Azure or Microsoft 365 records,
+// whose searches may rename fields before stats and search again by the
+// new names: its node, the sourcetype it searches, and the stored field
+// of a name a stage reads after renames.
+type cloudSource struct {
+	node, sourcetype string
+	field            func(name string, renames []rename) (string, bool)
+}
+
+// cloudSourceOf is the cloud source of a macro, or false when it is not
+// one.
+func cloudSourceOf(source string) (cloudSource, bool) {
+	if st, ok := azureSources[source]; ok {
+		return cloudSource{AzureNode, st, func(name string, renames []rename) (string, bool) {
+			return azureField(azureUnrename(name, renames))
+		}}, true
+	}
+	if source == o365Source {
+		return cloudSource{O365Node, ingest.O365Sourcetype, func(name string, renames []rename) (string, bool) {
+			return o365Field(o365Unrename(name, renames))
+		}}, true
+	}
+	return cloudSource{}, false
+}
+
 // azureField is the stored field of an Azure search's field.
 func azureField(name string) (string, bool) {
 	if f, ok := azureCIM[name]; ok {
@@ -94,29 +119,29 @@ func azureUnrename(name string, renames []rename) string {
 	return name
 }
 
-// resolveAzure replaces the fields of a stage after renames with the
-// fields they are stored as.
-func resolveAzure(e Expr, renames []rename) error {
+// resolveCloud replaces the fields of a stage of a cloud source's search
+// after renames with the fields they are stored as.
+func resolveCloud(e Expr, renames []rename, cs cloudSource) error {
 	switch x := e.(type) {
 	case *And:
 		for _, k := range x.Kids {
-			if err := resolveAzure(k, renames); err != nil {
+			if err := resolveCloud(k, renames, cs); err != nil {
 				return err
 			}
 		}
 	case *Or:
 		for _, k := range x.Kids {
-			if err := resolveAzure(k, renames); err != nil {
+			if err := resolveCloud(k, renames, cs); err != nil {
 				return err
 			}
 		}
 	case *Not:
-		return resolveAzure(x.Kid, renames)
+		return resolveCloud(x.Kid, renames, cs)
 	case *Cmp:
 		name, _ := strings.CutPrefix(x.Field, rawFieldPrefix)
-		f, ok := azureField(azureUnrename(name, renames))
+		f, ok := cs.field(name, renames)
 		if !ok {
-			return fmt.Errorf("field %s is not a field of %s events", name, AzureNode)
+			return fmt.Errorf("field %s is not a field of %s events", name, cs.node)
 		}
 		x.Field = f
 		if !x.Regex {
@@ -131,15 +156,15 @@ func resolveAzure(e Expr, renames []rename) error {
 	return nil
 }
 
-// azureThreshold reads an Azure search's count, by the fields its renames
-// read.
-func azureThreshold(stats string, span time.Duration, limits []Limit, renames []rename) (*Threshold, error) {
+// cloudThreshold reads the count of a cloud source's search, by the
+// fields its renames read.
+func cloudThreshold(stats string, span time.Duration, limits []Limit, renames []rename, cs cloudSource) (*Threshold, error) {
 	m := statsSplitRe.FindStringSubmatch(stats)
 	if m == nil {
 		return nil, fmt.Errorf("a count must be by at least one field")
 	}
 	field := func(f string) (string, bool, error) {
-		name, ok := azureField(azureUnrename(f, renames))
+		name, ok := cs.field(f, renames)
 		if !ok {
 			return "", false, fmt.Errorf("field %s has no Signalith mapping", f)
 		}

@@ -55,7 +55,7 @@ var (
 	// counts with a name. values(), min(_time) and max(_time) only add
 	// columns.
 	aggRe      = regexp.MustCompile(`(?i)^(count|(?:dc|distinct_count)\(\s*([\w.]+)\s*\)\s+as\s+(\w+))\s*,?\s*`)
-	columnsRe  = regexp.MustCompile(`(?i)^(?:values|min|max|latest|earliest)\(\s*[\w.]+\s*\)\s+as\s+\w+\s*,?\s*`)
+	columnsRe  = regexp.MustCompile(`(?i)^(?:values|min|max|latest|earliest)\(\s*[\w.]+\s*\)(?:\s+as\s+\w+)?\s*,?\s*`)
 	summaryRe  = regexp.MustCompile("^`security_content_summariesonly`\\s*")
 	byFieldsRe = regexp.MustCompile(`[\s,]+`)
 )
