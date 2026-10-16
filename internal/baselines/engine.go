@@ -236,7 +236,9 @@ func (e *Engine) Round(ctx context.Context) (more bool, err error) {
 		e.log().Warn("behavior baselines: could not remove forgotten profiles", "err", err)
 	}
 	if set.On(NewCountry) || set.On(NewNetwork) {
-		e.maintainIPDB(ctx, set, now)
+		// Kept up to date once in use; first downloaded when a sign-in
+		// from the internet needs it (signins).
+		e.maintainIPDB(ctx, set, now, false)
 	}
 	// Hours missed while no server ran the jobs are made up for a week;
 	// the history of the first run is learned however old.
@@ -709,14 +711,31 @@ func sortedValues(s *seen) []string {
 
 // ---------- sign-ins ----------
 
+// publicSource reports whether any row's src is an internet address.
+func publicSource(rows []search.Row) bool {
+	for _, row := range rows {
+		if a, err := netip.ParseAddr(str(row["src"])); err == nil && Public(a) {
+			return true
+		}
+	}
+	return false
+}
+
 func (r *hourRun) signins(ctx context.Context) error {
-	if r.set.On(NewCountry) || r.set.On(NewNetwork) {
+	if (r.set.On(NewCountry) || r.set.On(NewNetwork)) && r.set.IPSource() != "" {
+		rows, err := r.search(ctx, NewCountry, signinSearch)
+		if err != nil {
+			return err
+		}
 		db := r.e.currentIPDB()
+		if db == nil && publicSource(rows) {
+			// The first sign-in from the internet: only now is the IP
+			// database downloaded, so a server whose users sign in only
+			// from inside never fetches it.
+			r.e.maintainIPDB(ctx, r.set, r.e.now(), true)
+			db = r.e.currentIPDB()
+		}
 		if db != nil {
-			rows, err := r.search(ctx, NewCountry, signinSearch)
-			if err != nil {
-				return err
-			}
 			if err := r.networks(ctx, db, rows); err != nil {
 				return err
 			}
@@ -1007,8 +1026,9 @@ func (e *Engine) currentIPDB() *IPDB {
 
 // maintainIPDB downloads the IP database when it is a week old or its
 // source changed, and loads the stored copy when it is newer than the one
-// in memory. A failed download keeps the last copy.
-func (e *Engine) maintainIPDB(ctx context.Context, set Settings, now time.Time) {
+// in memory. A failed download keeps the last copy. Until it was first
+// downloaded, it is downloaded only when need is true.
+func (e *Engine) maintainIPDB(ctx context.Context, set Settings, now time.Time, need bool) {
 	src := set.IPSource()
 	if src == "" {
 		e.mu.Lock()
@@ -1020,6 +1040,9 @@ func (e *Engine) maintainIPDB(ctx context.Context, set Settings, now time.Time) 
 	if err != nil {
 		e.log().Warn("behavior baselines: could not read the IP database's status", "err", err)
 		return
+	}
+	if !need && meta.FetchedAt.IsZero() {
+		return // not needed yet
 	}
 	stale := meta.Source != src || meta.FetchedAt.IsZero() || now.Sub(meta.FetchedAt) >= ipdbFresh
 	retry := meta.Source != src || meta.TriedAt.IsZero() || now.Sub(meta.TriedAt) >= ipdbRetry

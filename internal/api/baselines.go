@@ -126,6 +126,8 @@ func (s *Server) baselinesView(ctx context.Context) (*baselinesView, error) {
 				bc.Waiting = "Needs the IP database, which is off."
 			case ipdb.Rows == 0 && ipdb.Error != "":
 				bc.Waiting = "Waiting for the IP database: " + ipdb.Error
+			case ipdb.Rows == 0 && ipdb.TriedAt.IsZero():
+				bc.Waiting = "The IP database is downloaded at the first sign-in from an internet address."
 			case ipdb.Rows == 0:
 				bc.Waiting = "Waiting for the IP database to download."
 			}

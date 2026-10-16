@@ -556,8 +556,20 @@ func TestStaleState(t *testing.T) {
 // next server.
 func TestIPDBKept(t *testing.T) {
 	r := newRig(t, Settings{LearningDays: 1})
-	r.run()
 	ctx := context.Background()
+	// Not downloaded while no sign-in comes from the internet.
+	r.run()
+	if meta, _, _ := r.store.IPDBStatus(ctx); !meta.TriedAt.IsZero() {
+		t.Fatalf("downloaded with no sign-in from the internet: %+v", meta)
+	}
+	r.runner.rows = func(by string, start time.Time) []search.Row {
+		if by == "user,src" {
+			return []search.Row{row("user", "dave", "src", "1.0.0.9")}
+		}
+		return nil
+	}
+	r.now = r.now.Add(time.Hour)
+	r.run()
 	meta, _, err := r.store.IPDBStatus(ctx)
 	if err != nil || meta.Rows != 5 || meta.Error != "" || meta.FetchedAt.IsZero() {
 		t.Fatalf("status %+v %v", meta, err)
@@ -568,13 +580,13 @@ func TestIPDBKept(t *testing.T) {
 	if err := os.Remove(filepath.Join(r.e.FileDir, "ip2asn.tsv")); err != nil {
 		t.Fatal(err)
 	}
-	e2.maintainIPDB(ctx, set, r.now)
+	e2.maintainIPDB(ctx, set, r.now, false)
 	if db := e2.currentIPDB(); db == nil || db.Rows() != 5 {
 		t.Fatalf("stored copy not read: %v", db)
 	}
 	// A week later the download is tried again; a failure keeps the copy.
 	r.now = r.now.Add(ipdbFresh)
-	e2.maintainIPDB(ctx, set, r.now)
+	e2.maintainIPDB(ctx, set, r.now, false)
 	meta, _, _ = r.store.IPDBStatus(ctx)
 	if meta.Error == "" || meta.Rows != 5 || e2.currentIPDB() == nil {
 		t.Errorf("after a failed download: %+v", meta)
@@ -584,7 +596,7 @@ func TestIPDBKept(t *testing.T) {
 	if _, err := r.store.SaveSettings(ctx, set, v); err != nil {
 		t.Fatal(err)
 	}
-	e2.maintainIPDB(ctx, set, r.now)
+	e2.maintainIPDB(ctx, set, r.now, false)
 	if e2.currentIPDB() != nil {
 		t.Error("still loaded while off")
 	}

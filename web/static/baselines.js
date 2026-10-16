@@ -408,7 +408,7 @@
       notes.push(el('p', { class: 'st-source' }, icon('circle-check', 'icon--xs'),
         el('span', {}, riNumText(ip.rows) + ' address ranges, downloaded ' + ago(ip.fetched_at) + (custom ? ' from ' : '.')), custom ? el('span', { class: 'mono' }, ip.source) : null));
     } else if (!ip.error) {
-      notes.push(el('p', { class: 'st-source' }, icon('hourglass', 'icon--xs'), el('span', {}, 'Not downloaded yet: the server that runs the background jobs downloads it at its next round.')));
+      notes.push(el('p', { class: 'st-source' }, icon('hourglass', 'icon--xs'), el('span', {}, 'Not downloaded yet: the server that runs the background jobs downloads it at the first sign-in from an internet address.')));
     }
     if (ip.error && !off) notes.push(el('p', { class: 'st-warn' }, icon('triangle-alert'), el('span', {}, 'The last download failed' + (ip.tried_at ? ' (' + ago(ip.tried_at) + ')' : '') + ': ' + sentence(ip.error) + (ip.rows ? ' The copy downloaded before is still used.' : ''))));
     return el('div', { class: rowClass('ip_database') },

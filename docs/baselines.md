@@ -113,7 +113,7 @@ all day (`rare-process`, `build-*`).
 The country and network checks need to know which network an address belongs to.
 Signalith downloads the free
 [IP to ASN database of iptoasn.com](https://iptoasn.com/), which is in the public
-domain, once a week. It stores a copy in OpenSearch, so every server uses the same
+domain, at the first sign-in from an internet address and then once a week. It stores a copy in OpenSearch, so every server uses the same
 one and a failed download keeps the last copy. The server that runs the background
 jobs downloads it from `https://iptoasn.com/data/ip2asn-combined.tsv.gz`, a few
 MB. Allow that address in your firewall, or set **IP database** to:
