@@ -859,6 +859,8 @@ func parseRecord(tag string, r map[string]any, now time.Time) (ev Event) {
 		ev = ParseAzure(r)
 	case tag == O365Tag || strings.HasPrefix(tag, O365Tag+".") || IsO365Record(r):
 		ev = ParseO365(r)
+	case tag == GCPTag || strings.HasPrefix(tag, GCPTag+".") || IsGCPRecord(r):
+		ev = ParseGCP(r)
 	case isWindowsRecord(tag, r):
 		ev = parseWindows(r)
 	case strings.HasPrefix(tag, "linux.clamav"):

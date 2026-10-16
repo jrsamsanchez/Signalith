@@ -1029,6 +1029,9 @@ func (s *Server) handleAgentConfig(w http.ResponseWriter, r *http.Request) {
 		// AWS CloudTrail: the bucket and queue the Collector reads.
 		AWSBucket:   v.Get("aws_bucket"),
 		AWSQueueURL: v.Get("aws_queue"),
+		// Google Cloud: the subscription the Collector pulls.
+		GCPProject:      v.Get("gcp_project"),
+		GCPSubscription: v.Get("gcp_subscription"),
 	}
 	agentTLS(&opts, certs)
 	a, err := agents.Generate(opts)

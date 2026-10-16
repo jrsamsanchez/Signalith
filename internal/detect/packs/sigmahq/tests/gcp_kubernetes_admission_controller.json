@@ -1,0 +1,4 @@
+{"rule": "6ad91e31-53df-4826-bd27-0166171c8040", "cases": [
+  {"expect":true,"source":"synthesized","channel":"gcp","event_id":"activity","data":{"gcp.audit.method_name":"admissionregistration.k8s.io.v.validatingwebhookconfigurations.patch"}},
+  {"expect":false,"source":"synthesized","channel":"gcp","event_id":"activity","data":{}}
+]}

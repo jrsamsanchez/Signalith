@@ -1,0 +1,4 @@
+{"rule": "cd3a808c-c7b7-4c50-a2f3-f4cfcd436435", "cases": [
+  {"expect":true,"source":"synthesized","channel":"gcp","event_id":"activity","data":{"gcp.audit.method_name":"io.k8s.api.batch.v.CronJob"}},
+  {"expect":false,"source":"synthesized","channel":"gcp","event_id":"activity","data":{}}
+]}
