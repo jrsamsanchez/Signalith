@@ -132,7 +132,9 @@ person who clicked is told why.
    5 minutes old. Teams sends a token signed by the Microsoft Bot Framework; Signalith checks
    the signature against Microsoft's published keys, that it was issued for this bot's app
    ID, that it has not expired, and that it names the Bot Connector address the request came
-   from. Requests from another Slack workspace or Microsoft Entra tenant are refused too.
+   from. Requests from another Microsoft Entra tenant are refused too. A Slack channel is
+   used in the first Slack workspace a click comes from (with its current signing
+   secret); clicks from any other workspace the app is shared with are refused.
 2. **The button is one Signalith made.** Each button's value is signed with a key derived
    from the channel's secret, and names the finding or playbook step it acts on. A changed
    value is refused.
@@ -157,14 +159,18 @@ The first time someone clicks a button, Signalith does not know who they are in 
   once and for 10 minutes.
 - **Teams:** Teams has no message only one person sees, so the link goes the other way. In
   Signalith, open the account menu, **Chat accounts**, then **Link a Teams account**. Enter
-  your password, then send the message it shows, such as `@Signalith link ABCDE-FGHJK`, in
-  the channel the app posts to. The code works once and for 10 minutes. Wrong codes are
-  limited to 5 per 10 minutes for each Teams user.
+  your password, then open a private chat with the Signalith app in Teams (**Apps**,
+  **Signalith**, **Chat**) and send the message it shows, such as `link ABCDE-FGHJK`. The
+  code works once and for 10 minutes. A code sent in a channel or group chat, where others
+  can see it, is refused and stops working. Wrong codes are limited to 5 per 10 minutes for
+  each Teams user.
 
 **Chat accounts** in the account menu lists your linked accounts and unlinks them. Admins
 see every linked account under **Linked chat accounts** on the Notifications page, and can
 unlink any of them. A link ends when its Signalith user is deleted, and is never carried
-over to a new user who gets the same name.
+over to a new user who gets the same name. It also ends, like the user's sessions, when
+their password is changed or reset, when they sign out everywhere, and when their two-step
+sign-in is reset or turned off. They link again with their next click.
 
 ### Set up Slack buttons
 
@@ -204,8 +210,17 @@ tenant.
 7. On the Notifications page, open the channel's menu and choose **Download Teams app**. In
    Teams, upload the zip under **Apps**, then **Manage your apps**, **Upload an app** (your
    Teams admin may need to allow custom apps, or upload it for you), and add it to a team.
-8. In the channel that should get the messages, send `@Signalith post here`. The channel
-   card then shows where it posts. Choose **Send test**.
+8. As a Signalith admin, link your own Teams account (see
+   [Link a chat account](#link-a-chat-account)). Then, in the channel that should get the
+   messages, send `@Signalith post here`. Only a linked admin can choose where messages go;
+   adding the app to a team is not enough. The channel card then shows where it posts.
+   Choose **Send test**.
+
+To move messages to another Teams channel later, a linked admin sends `@Signalith post
+here` there. Messages keep going to the old channel until an admin chooses **Move** on the
+channel card on the Notifications page (after entering their password again), or **Keep**
+to stay. Removing the app from the team it posts to stops the messages; the channel card
+then says it is not added to a Teams channel.
 
 The client secret is used only to get a token from Microsoft (`login.microsoftonline.com`)
 to post as the bot. Signalith only posts to Bot Connector addresses of Microsoft
@@ -441,10 +456,12 @@ Every `/api/notify` route is for admins.
 | `POST /api/notify/test` | Sends a test message: `{"id": "<channel id>"}` for a saved channel, or `{"channel": {...}}` for a channel being edited. Its empty secrets are the saved ones. Answers `{ok, duration_ms, error}`. |
 | `GET /api/notify/deliveries?limit=50` | The latest deliveries, newest first (at most 500) |
 | `GET /api/notify/channels/{id}/teams-app` | The Teams app package (a zip) of a Teams app channel |
+| `POST /api/notify/channels/{id}/teams-move` | Confirms a move to another Teams channel an admin asked for in Teams (`{"move_id": "..."}`, from the channel's `move_id`). Asks for the password again. |
+| `DELETE /api/notify/channels/{id}/teams-move` | Declines that move |
 
 Channels with buttons also have `interactive`, `chat_url` (where Slack or Teams sends
 clicks), `approve_in_chat`, and for a Teams app channel `app_id`, `tenant_id`,
-`app_password_set` and `posts_to`.
+`app_password_set`, `posts_to` and, when a move waits, `move_to`, `move_id` and `move_by`.
 
 The chat routes:
 

@@ -152,6 +152,34 @@
     return c.url_server ? c.url_server.replace(/^https?:\/\//, '') : 'No URL';
   }
 
+  // moveBox shows a move to another Teams channel that an admin asked for
+  // in Teams. Messages keep going where they go until it is confirmed.
+  function moveBox(c) {
+    if (!c.move_to) return null;
+    const ok = el('button', { class: 'btn btn--primary btn--sm', type: 'button', 'data-key': 'mv:' + c.id }, 'Move');
+    const keep = el('button', { class: 'btn btn--ghost btn--sm', type: 'button', 'data-key': 'mk:' + c.id }, 'Keep');
+    const act = async (confirm) => {
+      ok.disabled = keep.disabled = true;
+      try {
+        if (confirm) await api(`api/notify/channels/${encodeURIComponent(c.id)}/teams-move`, { move_id: c.move_id });
+        else await api(`api/notify/channels/${encodeURIComponent(c.id)}/teams-move`, undefined, 'DELETE');
+      } catch (e) {
+        ok.disabled = keep.disabled = false;
+        toastError(confirm ? 'Couldn’t move the channel' : 'Couldn’t keep the channel', e);
+        return;
+      }
+      toast(confirm ? `${c.name} posts to ${c.move_to} now.` : `${c.name} keeps posting to ${c.posts_to}.`);
+      load(true);
+    };
+    ok.addEventListener('click', () => act(true));
+    keep.addEventListener('click', () => act(false));
+    return el('div', { class: 'nt-move', role: 'status' }, icon('triangle-alert'),
+      el('div', { class: 'nt-move__text' },
+        el('b', {}, `Move to ${c.move_to}?`),
+        el('span', {}, `${c.move_by || 'An admin'} asked in Teams. Messages go to ${c.posts_to} until you choose.`),
+        manage() ? el('div', { class: 'nt-move__btns' }, ok, keep) : null));
+  }
+
   // buttonsLine says which buttons a channel's messages carry.
   function buttonsLine(c) {
     if (!c.interactive) return null;
@@ -204,6 +232,7 @@
           el('div', { class: 'nt-ch__dest', title: destination(c) }, t.label, ' · ', destination(c))),
         menu),
       buttonsLine(c),
+      moveBox(c),
       el('div', { class: 'nt-ch__state' }, el('span', { class: 'nt-dot', 'data-state': state, 'aria-hidden': 'true' }),
         el('span', { title: c.last ? fmtTime(c.last.time) : '' }, text)),
       detail ? el('p', { class: 'nt-ch__err', title: detail }, detail) : null,

@@ -50,6 +50,8 @@ func (s *Server) routeChat(mux *http.ServeMux, api *router) {
 	api.admin("GET /api/chat/links", s.handleChatLinks)
 	api.admin("DELETE /api/chat/links/{id}", s.handleChatLinkDelete)
 	api.admin("GET /api/notify/channels/{id}/teams-app", s.handleTeamsApp)
+	api.sensitive("POST /api/notify/channels/{id}/teams-move", s.handleTeamsMove)
+	api.admin("DELETE /api/notify/channels/{id}/teams-move", s.handleTeamsMove)
 }
 
 var errChatOff = errors.New("chat buttons are not available on this server")
@@ -106,7 +108,7 @@ func (d chatDesk) User(name string) (chatops.User, bool) {
 	if p == nil {
 		return chatops.User{}, false
 	}
-	u := chatops.User{Username: p.Username, Name: p.Name, Role: p.Role}
+	u := chatops.User{Username: p.Username, Name: p.Name, Role: p.Role, Epoch: p.epoch}
 	if stored, ok := d.s.userStore().Get(name); ok {
 		u.Created = stored.Created
 	}
@@ -257,6 +259,9 @@ func (s *Server) handleChatLink(w http.ResponseWriter, r *http.Request) {
 	if u, ok := s.userStore().Get(p.Username); ok {
 		l.UserCreated = u.Created
 	}
+	if cur := s.principalFor(p.Username); cur != nil {
+		l.UserEpoch = cur.epoch
+	}
 	prev, had, _ := s.Chat.Store.Link(r.Context(), t.System, t.Team, t.ChatUser)
 	if err := s.Chat.Store.SaveLink(r.Context(), l); err != nil {
 		writeError(w, http.StatusBadGateway, fmt.Errorf("could not save the link: %w", err))
@@ -286,6 +291,9 @@ func (s *Server) handleChatCode(w http.ResponseWriter, r *http.Request) {
 	t := chatops.Token{ID: chatops.TokenID(code), System: chatops.Teams, Username: p.Username, Expires: now.Add(chatops.TokenLife), Created: now}
 	if u, ok := s.userStore().Get(p.Username); ok {
 		t.UserCreated = u.Created
+	}
+	if cur := s.principalFor(p.Username); cur != nil {
+		t.UserEpoch = cur.epoch
 	}
 	if err := s.Chat.Store.SaveToken(r.Context(), t); err != nil {
 		writeError(w, http.StatusBadGateway, fmt.Errorf("could not make a code: %w", err))
@@ -391,4 +399,52 @@ func (s *Server) handleTeamsApp(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition", `attachment; filename="signalith-teams-app.zip"`)
 	w.Header().Set("Cache-Control", "no-store")
 	_, _ = w.Write(zip)
+}
+
+// handleTeamsMove confirms (POST, with the "move_id" the page showed) or
+// declines (DELETE) a move of a Teams app channel to the conversation a
+// Signalith admin named in Teams with "post here".
+func (s *Server) handleTeamsMove(w http.ResponseWriter, r *http.Request) {
+	if !s.chatOK(w) {
+		return
+	}
+	id := r.PathValue("id")
+	conv, found, err := s.Chat.Store.Conversation(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, fmt.Errorf("could not read where the channel posts: %w", err))
+		return
+	}
+	if !found || conv.Next == nil {
+		writeError(w, http.StatusNotFound, errors.New("no move waits for this channel"))
+		return
+	}
+	next := *conv.Next
+	if r.Method == http.MethodDelete {
+		conv.Next = nil
+		if err := s.Chat.Store.SaveConversation(r.Context(), conv); err != nil {
+			writeError(w, http.StatusBadGateway, fmt.Errorf("could not save: %w", err))
+			return
+		}
+		s.Log.Info("Teams app channel move declined", "audit", true, "user", userOf(r), "channel", id, "teams_channel", conv.Place(), "declined", next.Place())
+		writeJSON(w, http.StatusOK, map[string]any{"posts_to": conv.Place()})
+		return
+	}
+	var req struct {
+		MoveID string `json:"move_id"`
+	}
+	if err := readJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if req.MoveID != next.ConversationID {
+		writeError(w, http.StatusConflict, errors.New("the move asked for in Teams changed; reload the page"))
+		return
+	}
+	if err := s.Chat.Store.SaveConversation(r.Context(), next); err != nil {
+		writeError(w, http.StatusBadGateway, fmt.Errorf("could not save: %w", err))
+		return
+	}
+	s.Log.Info("Teams app channel now posts to a Teams conversation", "audit", true, "user", userOf(r), "channel", id,
+		"from", conv.Place(), "teams_channel", next.Place(), "asked_by", next.AddedBy)
+	writeJSON(w, http.StatusOK, map[string]any{"posts_to": next.Place()})
 }

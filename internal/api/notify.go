@@ -90,11 +90,17 @@ type channelView struct {
 	// or the Azure bot (messaging endpoint), "" when server.public_url is
 	// not set; PostsTo names the Teams channel a Teams app channel posts
 	// to, "" when it was not added to one yet.
-	Interactive bool                  `json:"interactive"`
-	ChatURL     string                `json:"chat_url,omitempty"`
-	PostsTo     string                `json:"posts_to,omitempty"`
-	Problem     string                `json:"problem,omitempty"`
-	Last        *notify.ChannelStatus `json:"last,omitempty"`
+	Interactive bool   `json:"interactive"`
+	ChatURL     string `json:"chat_url,omitempty"`
+	PostsTo     string `json:"posts_to,omitempty"`
+	// MoveTo, MoveID and MoveBy describe a move to another Teams
+	// conversation a Signalith admin asked for in Teams, which waits for
+	// an admin to confirm it here.
+	MoveTo  string                `json:"move_to,omitempty"`
+	MoveID  string                `json:"move_id,omitempty"`
+	MoveBy  string                `json:"move_by,omitempty"`
+	Problem string                `json:"problem,omitempty"`
+	Last    *notify.ChannelStatus `json:"last,omitempty"`
 	// Rules names the rules that send to it.
 	Rules []string `json:"rules"`
 }
@@ -156,6 +162,9 @@ func (s *Server) notifyView(ctx context.Context, set notify.Settings, fileErr er
 		if c.Type == notify.TypeTeamsApp && s.Chat != nil && s.Chat.Store != nil {
 			if conv, ok, err := s.Chat.Store.Conversation(ctx, c.ID); err == nil && ok {
 				v.PostsTo = conv.Place()
+				if conv.Next != nil {
+					v.MoveTo, v.MoveID, v.MoveBy = conv.Next.Place(), conv.Next.ConversationID, conv.Next.AddedBy
+				}
 			}
 		}
 		if !strings.HasPrefix(c.URL, "enc:") {

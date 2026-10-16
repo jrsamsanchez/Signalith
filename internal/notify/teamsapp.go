@@ -44,6 +44,10 @@ type Conversation struct {
 	ChannelName string    `json:"channel_name,omitempty"`
 	AddedBy     string    `json:"added_by,omitempty"`
 	Added       time.Time `json:"added"`
+	// Next is where a Signalith admin asked, in Teams, to move the
+	// channel's messages to. Messages keep going here until an admin
+	// confirms the move on the Notifications page.
+	Next *Conversation `json:"next,omitempty"`
 }
 
 // Place names a conversation for people, as in "SOC > Alerts".

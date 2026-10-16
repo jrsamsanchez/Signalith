@@ -119,8 +119,8 @@ func (v *BotVerifier) fetch(ctx context.Context) (oidc.JWKS, error) {
 	}
 	var out oidc.JWKS
 	for _, k := range set.Keys {
-		// A key with endorsements signs only for those channels.
-		if len(k.Endorsements) == 0 || slices.Contains(k.Endorsements, "msteams") {
+		// Only keys endorsed for Teams sign Teams tokens.
+		if slices.Contains(k.Endorsements, "msteams") {
 			out.Keys = append(out.Keys, k.JWK)
 		}
 	}

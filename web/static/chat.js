@@ -136,8 +136,9 @@
         return;
       }
       restore();
-      fill(code, el('p', {}, 'In the Teams channel the Signalith app posts to, send this message:'),
-        el('div', { class: 'chat-code__msg' }, el('code', {}, `@Signalith link ${r.code}`)),
+      fill(code, el('p', {}, 'In Teams, open a private chat with the Signalith app (Apps › Signalith › Chat) and send this message:'),
+        el('div', { class: 'chat-code__msg' }, el('code', {}, `link ${r.code}`)),
+        el('p', { class: 'hint' }, 'Don’t send it in a channel: others would see it, so Signalith refuses it there.'),
         el('p', { class: 'hint' }, `The code works once, for ${r.minutes} minutes. Then refresh this list.`));
     });
     fill(d, head,

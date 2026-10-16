@@ -3,6 +3,8 @@ package chatops
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -26,6 +28,8 @@ type User struct {
 	Name     string
 	Role     users.Role
 	Created  time.Time
+	// Epoch is the user's session epoch (see Link.UserEpoch).
+	Epoch int64
 	// Blocked says why they may not act now, such as a password they
 	// must change first, or "" when they may.
 	Blocked string
@@ -183,34 +187,12 @@ func (s *Service) act(ctx context.Context, c notify.Channel, who ChatUser, b not
 		s.log().Info("chat button", append(attrs, extra...)...)
 	}
 	via := SystemLabel(who.System)
-	link, linked, err := s.Store.Link(ctx, who.System, who.Team, who.ID)
-	if err != nil {
-		audit("error", "err", err)
-		return outcome{private: "Signalith could not check who you are right now. Try again in a minute, or use Signalith itself."}
-	}
-	if !linked {
-		audit("not linked")
-		return s.linkFirst(ctx, c, who)
-	}
-	u, ok := s.Desk.User(link.Username)
+	u, refused, ok := s.linkedUser(ctx, who, users.Analyst, audit)
 	if !ok {
-		audit("refused", "user", link.Username, "why", "user cannot sign in")
-		return outcome{private: fmt.Sprintf("Your %s account is linked to the Signalith user %s, who can no longer sign in, so nothing was done.", via, link.Username)}
-	}
-	if !link.UserCreated.IsZero() && !u.Created.IsZero() && !u.Created.Equal(link.UserCreated) {
-		// The user was removed and someone else was given the name: the
-		// link was for the old one.
-		_, _ = s.Store.DeleteLink(ctx, link.ID)
-		audit("refused", "user", link.Username, "why", "link was for a removed user of the same name")
-		return outcome{private: fmt.Sprintf("Your %s account was linked to an earlier Signalith user named %s, so the link was removed. Click again to link your account.", via, link.Username)}
-	}
-	if u.Blocked != "" {
-		audit("refused", "user", u.Username, "why", u.Blocked)
-		return outcome{private: u.Blocked + " Nothing was done."}
-	}
-	if !u.Role.AtLeast(users.Analyst) {
-		audit("refused", "user", u.Username, "why", "role "+string(u.Role))
-		return outcome{private: fmt.Sprintf("This needs the Analyst role in Signalith, and %s has the %s role. Nothing was done.", u.Username, u.Role.Label())}
+		if refused.private == "" {
+			return s.linkFirst(ctx, c, who)
+		}
+		return refused
 	}
 	note := fmt.Sprintf("Decided in %s as %s.", via, who.Name)
 	switch b.Action {
@@ -235,7 +217,7 @@ func (s *Service) act(ctx context.Context, c notify.Channel, who ChatUser, b not
 			return outcome{done: true, text: "This playbook run no longer exists in Signalith."}
 		case err != nil:
 			audit("error", "user", u.Username, "err", err)
-			return outcome{private: "Signalith could not record that: " + err.Error()}
+			return outcome{private: "Signalith could not record that right now, so nothing was done. Try again, or use the Approvals page."}
 		}
 		what := ""
 		if run.Approval != nil {
@@ -252,7 +234,7 @@ func (s *Service) act(ctx context.Context, c notify.Channel, who ChatUser, b not
 		ack, err := s.Desk.Acknowledge(ctx, b.ID, u.Username, fmt.Sprintf("Acknowledged in %s as %s.", via, who.Name))
 		if err != nil {
 			audit("error", "user", u.Username, "err", err)
-			return outcome{private: "Signalith could not acknowledge the finding: " + err.Error()}
+			return outcome{private: "Signalith could not acknowledge the finding right now. Try again, or use the Findings page."}
 		}
 		audit("done", "user", u.Username)
 		if ack.Owner != "" && ack.Owner != u.Username {
@@ -264,6 +246,51 @@ func (s *Service) act(ctx context.Context, c notify.Channel, who ChatUser, b not
 	return outcome{private: "Signalith does not know this button."}
 }
 
+// linkedUser returns the Signalith user a chat account is linked to,
+// when they may act with at least the role least. Otherwise it returns
+// what to tell the person, with an empty outcome for an account that is
+// not linked yet.
+func (s *Service) linkedUser(ctx context.Context, who ChatUser, least users.Role, audit func(string, ...any)) (User, outcome, bool) {
+	via := SystemLabel(who.System)
+	link, linked, err := s.Store.Link(ctx, who.System, who.Team, who.ID)
+	if err != nil {
+		audit("error", "err", err)
+		return User{}, outcome{private: "Signalith could not check who you are right now. Try again in a minute, or use Signalith itself."}, false
+	}
+	if !linked {
+		audit("not linked")
+		return User{}, outcome{}, false
+	}
+	u, ok := s.Desk.User(link.Username)
+	if !ok {
+		audit("refused", "user", link.Username, "why", "user cannot sign in")
+		return User{}, outcome{private: fmt.Sprintf("Your %s account is linked to the Signalith user %s, who can no longer sign in, so nothing was done.", via, link.Username)}, false
+	}
+	if !link.UserCreated.IsZero() && !u.Created.IsZero() && !u.Created.Equal(link.UserCreated) {
+		// The user was removed and someone else was given the name: the
+		// link was for the old one.
+		_, _ = s.Store.DeleteLink(ctx, link.ID)
+		audit("refused", "user", link.Username, "why", "link was for a removed user of the same name")
+		return User{}, outcome{private: fmt.Sprintf("Your %s account was linked to an earlier Signalith user named %s, so the link was removed. Link your account again.", via, link.Username)}, false
+	}
+	if link.UserEpoch != u.Epoch {
+		// Their password changed, they signed out everywhere, or their
+		// two-step sign-in was reset: the link ends with their sessions.
+		_, _ = s.Store.DeleteLink(ctx, link.ID)
+		audit("refused", "user", link.Username, "why", "link made before the user's sessions were ended")
+		return User{}, outcome{private: fmt.Sprintf("Your %s account was unlinked because %s's password or two-step sign-in changed, or they signed out everywhere. Link it again.", via, link.Username)}, false
+	}
+	if u.Blocked != "" {
+		audit("refused", "user", u.Username, "why", u.Blocked)
+		return User{}, outcome{private: u.Blocked + " Nothing was done."}, false
+	}
+	if !u.Role.AtLeast(least) {
+		audit("refused", "user", u.Username, "why", "role "+string(u.Role))
+		return User{}, outcome{private: fmt.Sprintf("This needs the %s role in Signalith, and %s has the %s role. Nothing was done.", least.Label(), u.Username, u.Role.Label())}, false
+	}
+	return u, outcome{}, true
+}
+
 // linkFirst answers a click from a chat account with no link.
 func (s *Service) linkFirst(ctx context.Context, c notify.Channel, who ChatUser) outcome {
 	via := SystemLabel(who.System)
@@ -271,7 +298,7 @@ func (s *Service) linkFirst(ctx context.Context, c notify.Channel, who ChatUser)
 		// Teams has no message only the clicker sees, so the link goes the
 		// other way: they make a code in Signalith and send it here.
 		return outcome{private: "Link your Teams account to Signalith first: in Signalith, open your account menu, choose Chat accounts and make a code, " +
-			"then send \"link\" and the code to the Signalith app here, as in @Signalith link ABCDE-12345."}
+			"then send \"link\" and the code to the Signalith app in a private chat, as in: link ABCDE-12345."}
 	}
 	if s.publicURL() == "" {
 		return outcome{private: "Your " + via + " account is not linked to a Signalith user yet, so nothing was done. " +
@@ -409,6 +436,15 @@ func (s *Service) ServeSlack(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "the payload names no user", http.StatusBadRequest)
 		return
 	}
+	if ok, err := s.slackTeamOK(r.Context(), c, who); err != nil {
+		s.log().Warn("could not check the Slack workspace of a click; it is not acted on", "err", err)
+		http.Error(w, "Signalith could not check the click; try again.", http.StatusServiceUnavailable)
+		return
+	} else if !ok {
+		s.refuse(r, Slack, c.Name, fmt.Errorf("the click is from Slack workspace %q, not the one this channel is used in", who.Team))
+		http.Error(w, "The click is from another Slack workspace.", http.StatusForbidden)
+		return
+	}
 	ru, err := url.Parse(p.ResponseURL)
 	if err != nil || !s.slackURLOK(ru) {
 		s.refuse(r, Slack, c.Name, errors.New("the response_url is not Slack's"))
@@ -465,6 +501,29 @@ func (s *Service) httpClient() *http.Client {
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 }
 
+// slackTeamOK reports whether a click comes from the Slack workspace the
+// channel's app is used in: the first workspace a click came from with
+// the channel's current signing secret. A Slack app shared with other
+// workspaces signs their requests with the same secret.
+func (s *Service) slackTeamOK(ctx context.Context, c notify.Channel, who ChatUser) (bool, error) {
+	sum := sha256.Sum256([]byte("slack-team|" + c.SigningSecret))
+	key := c.ID + "|slack|" + hex.EncodeToString(sum[:8])
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	pin, found, err := s.Store.Conversation(ctx, key)
+	if err != nil {
+		return false, err
+	}
+	if found {
+		return pin.TeamID == who.Team, nil
+	}
+	if err := s.Store.SaveConversation(ctx, notify.Conversation{Channel: key, TeamID: who.Team, TeamName: who.TeamName, Added: s.now().UTC()}); err != nil {
+		return false, err
+	}
+	s.log().Info("Slack channel's workspace recorded", "audit", true, "channel", c.Name, "chat_team", who.Team, "chat_team_name", who.TeamName)
+	return true, nil
+}
+
 // answerSlack posts what a click did to its response_url: the message
 // without its buttons and with the outcome, or a reply only the clicker
 // sees.
@@ -492,7 +551,13 @@ func (s *Service) answerSlack(ru *url.URL, o outcome, p slackPayload) {
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := s.httpClient().Do(req)
 	if err != nil {
-		s.log().Warn("could not answer a Slack button click", "err", err)
+		// The error names the response_url, which works as a credential
+		// for a while: log only where it went.
+		var ue *url.Error
+		if errors.As(err, &ue) {
+			err = ue.Err
+		}
+		s.log().Warn("could not answer a Slack button click", "host", ru.Host, "err", err)
 		return
 	}
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
@@ -553,13 +618,21 @@ func (s *Service) ServeTeams(w http.ResponseWriter, r *http.Request) {
 	case a.Type == "invoke" && a.Name == "adaptiveCard/action":
 		s.teamsClick(ctx, w, c, a)
 	case a.botAdded():
-		s.teamsHere(ctx, c, a, "added")
+		// Adding the app is not enough to get the SOC's messages: a
+		// linked admin says "post here" (see teamsPostHere).
+		s.log().Info("Teams app added to a Teams conversation", "audit", true, "channel", c.Name, "teams_conversation", a.Conversation.ID,
+			"conversation_type", a.Conversation.ConversationType, "by", a.From.Name)
 		w.WriteHeader(http.StatusOK)
 	case a.botRemoved():
-		if conv, ok, _ := s.Store.Conversation(ctx, c.ID); ok && (conv.ConversationID == a.Conversation.ID ||
-			a.ChannelData.Team.ID != "" && conv.TeamID == a.ChannelData.Team.ID) {
+		from := func(conv notify.Conversation) bool {
+			return conv.ConversationID == a.Conversation.ID || a.ChannelData.Team.ID != "" && conv.TeamID == a.ChannelData.Team.ID
+		}
+		if conv, ok, _ := s.Store.Conversation(ctx, c.ID); ok && from(conv) {
 			_ = s.Store.DeleteConversation(ctx, c.ID)
-			s.log().Info("Teams app removed from the Teams channel it posted to", "audit", true, "channel", c.Name, "teams_channel", conv.Place())
+			s.log().Info("Teams app removed from the Teams channel it posted to", "audit", true, "channel", c.Name, "teams_channel", conv.Place(), "by", a.From.Name)
+		} else if ok && conv.Next != nil && from(*conv.Next) {
+			conv.Next = nil
+			_ = s.Store.SaveConversation(ctx, conv)
 		}
 		w.WriteHeader(http.StatusOK)
 	case a.Type == "message":
@@ -582,27 +655,60 @@ func teamsWho(a activity) ChatUser {
 	return ChatUser{System: Teams, Team: a.tenant(), TeamName: a.ChannelData.Team.Name, ID: strings.ToLower(a.From.AADObjectID), Name: a.From.Name}
 }
 
-// teamsHere records the conversation of an activity as where the channel
-// posts.
-func (s *Service) teamsHere(ctx context.Context, c notify.Channel, a activity, how string) bool {
+// teamsPostHere makes the conversation of a "post here" message where the
+// channel posts, when a linked Signalith admin sent it. The first
+// conversation is used at once. A move from one conversation to another
+// waits for an admin to confirm it on the Notifications page, so a
+// mistake in chat never silently takes the SOC's messages elsewhere.
+func (s *Service) teamsPostHere(ctx context.Context, c notify.Channel, a activity) string {
+	who := teamsWho(a)
+	audit := func(result string, extra ...any) {
+		attrs := append([]any{"audit", true, "channel", c.Name, "action", "post here", "result", result}, who.logAttrs()...)
+		s.log().Info("chat command", append(attrs, extra...)...)
+	}
 	switch a.Conversation.ConversationType {
 	case "channel", "groupChat":
 	default:
 		// A one-to-one chat with the app is not where the team looks.
-		return false
+		audit("refused", "why", "not a team channel or group chat")
+		return "Signalith posts to team channels and group chats only. Mention the app in one of those."
+	}
+	u, refused, ok := s.linkedUser(ctx, who, users.Admin, audit)
+	if !ok {
+		if refused.private == "" {
+			return "Only a Signalith admin can choose where Signalith posts. Link your Teams account first: in Signalith, open your account menu, choose Chat accounts and make a code, then send it to the Signalith app in a private chat."
+		}
+		return refused.private
 	}
 	conv := notify.Conversation{Channel: c.ID, ConversationID: a.Conversation.ID, ServiceURL: a.ServiceURL, TenantID: a.tenant(),
-		TeamID: a.ChannelData.Team.ID, TeamName: a.ChannelData.Team.Name, ChannelName: a.ChannelData.Channel.Name, AddedBy: a.From.Name, Added: s.now().UTC()}
+		TeamID: a.ChannelData.Team.ID, TeamName: a.ChannelData.Team.Name, ChannelName: a.ChannelData.Channel.Name, AddedBy: u.Username, Added: s.now().UTC()}
 	if conv.ChannelName == "" {
 		conv.ChannelName = a.Conversation.Name
 	}
-	if err := s.Store.SaveConversation(ctx, conv); err != nil {
-		s.log().Warn("could not record where the Teams app posts", "channel", c.Name, "err", err)
-		return false
+	cur, found, err := s.Store.Conversation(ctx, c.ID)
+	if err != nil {
+		audit("error", "err", err)
+		return "Signalith could not check where it posts right now. Try again in a minute."
 	}
-	s.log().Info("Teams app channel now posts to a Teams conversation", "audit", true, "channel", c.Name, "teams_channel", conv.Place(),
-		"how", how, "by", a.From.Name)
-	return true
+	switch {
+	case found && cur.ConversationID == conv.ConversationID:
+		audit("unchanged", "user", u.Username)
+		return "Signalith already posts " + c.Label() + " messages here."
+	case found:
+		cur.Next = &conv
+		if err := s.Store.SaveConversation(ctx, cur); err != nil {
+			audit("error", "err", err)
+			return "Signalith could not save that right now. Try again in a minute."
+		}
+		audit("waiting for confirmation", "user", u.Username, "from", cur.Place(), "to", conv.Place())
+		return fmt.Sprintf("%s messages go to %s now. To move them here, an admin confirms the move on the Notifications page in Signalith.", c.Label(), cur.Place())
+	}
+	if err := s.Store.SaveConversation(ctx, conv); err != nil {
+		audit("error", "err", err)
+		return "Signalith could not save that right now. Try again in a minute."
+	}
+	audit("done", "user", u.Username, "to", conv.Place())
+	return "Signalith posts " + c.Label() + " messages here from now on."
 }
 
 // teamsMessage answers a message to the app: "link <code>" links the
@@ -614,15 +720,21 @@ func (s *Service) teamsMessage(ctx context.Context, c notify.Channel, a activity
 	var reply string
 	switch {
 	case len(fields) >= 2 && fields[0] == "link":
-		reply = s.teamsLink(ctx, teamsWho(a), strings.Join(strings.Fields(text)[1:], ""))
-	case len(fields) >= 2 && fields[0] == "post" && fields[1] == "here":
-		if s.teamsHere(ctx, c, a, "asked") {
-			reply = "Signalith posts " + c.Label() + " messages here from now on."
-		} else {
-			reply = "Signalith posts to team channels and group chats only. Mention the app in one of those."
+		code := strings.Join(strings.Fields(text)[1:], "")
+		if a.Conversation.ConversationType != "personal" {
+			// Others in the conversation saw the code: spend it so nobody
+			// else can use it.
+			if _, err := s.Store.TakeToken(ctx, TokenID(code), s.now()); err == nil {
+				s.log().Warn("chat link code spent", append([]any{"audit", true, "why", "sent in a shared conversation"}, teamsWho(a).logAttrs()...)...)
+			}
+			reply = "Send link codes to the Signalith app in a private chat, not here, where others can see them. If that was a real code, it no longer works: make a new one in Signalith."
+			break
 		}
+		reply = s.teamsLink(ctx, teamsWho(a), code)
+	case len(fields) >= 2 && fields[0] == "post" && fields[1] == "here":
+		reply = s.teamsPostHere(ctx, c, a)
 	default:
-		reply = "I post Signalith findings and approval requests. Send \"post here\" to have them posted in this channel, or \"link\" and a code from Signalith (your account menu, Chat accounts) to link your Teams account."
+		reply = "I post Signalith findings and approval requests. A Signalith admin sends \"post here\" to have them posted in this channel. To link your Teams account, make a code in Signalith (your account menu, Chat accounts) and send \"link\" and the code to me in a private chat."
 	}
 	if s.Teams == nil {
 		return
@@ -676,7 +788,7 @@ func (s *Service) teamsLink(ctx context.Context, who ChatUser, code string) stri
 		return "Signalith could not check the code right now. Try again in a minute."
 	}
 	l := Link{ID: LinkID(Teams, who.Team, who.ID), System: Teams, Team: who.Team, TeamName: who.TeamName, ChatUser: who.ID, ChatName: who.Name,
-		Username: t.Username, UserCreated: t.UserCreated, Created: now.UTC()}
+		Username: t.Username, UserCreated: t.UserCreated, UserEpoch: t.UserEpoch, Created: now.UTC()}
 	if err := s.Store.SaveLink(ctx, l); err != nil {
 		return "Signalith could not save the link right now. Make a new code and try again."
 	}

@@ -52,11 +52,17 @@ func TeamsAppPackage(c notify.Channel, publicURL string) ([]byte, error) {
 		"icons":       map[string]any{"color": "color.png", "outline": "outline.png"},
 		"accentColor": "#2563EB",
 		"bots": []any{map[string]any{
-			"botId": c.AppID, "scopes": []string{"team", "groupChat"}, "isNotificationOnly": false, "supportsFiles": false,
-			"commandLists": []any{map[string]any{"scopes": []string{"team", "groupChat"}, "commands": []any{
-				map[string]any{"title": "post here", "description": "Post this channel's Signalith messages here"},
-				map[string]any{"title": "link", "description": "Link your Teams account with a code from Signalith"},
-			}}},
+			"botId": c.AppID, "scopes": []string{"team", "groupChat", "personal"}, "isNotificationOnly": false, "supportsFiles": false,
+			"commandLists": []any{
+				map[string]any{"scopes": []string{"team", "groupChat"}, "commands": []any{
+					map[string]any{"title": "post here", "description": "Admins: post this channel's Signalith messages here"},
+				}},
+				// Link codes are sent in a private chat, where nobody else
+				// sees them.
+				map[string]any{"scopes": []string{"personal"}, "commands": []any{
+					map[string]any{"title": "link", "description": "Link your Teams account with a code from Signalith"},
+				}},
+			},
 		}},
 		"permissions":  []string{"identity", "messageTeamMembers"},
 		"validDomains": domains,

@@ -74,7 +74,12 @@ type Link struct {
 	// UserCreated is when the Signalith user was added, so a link never
 	// carries over to a new user who gets a removed user's name.
 	UserCreated time.Time `json:"user_created,omitzero"`
-	Created     time.Time `json:"created"`
+	// UserEpoch is the user's session epoch when the link was made. It
+	// moves on when their password changes or is reset, when they sign
+	// out everywhere, and when their two-step sign-in is reset or turned
+	// off; a link from before that no longer counts, like their sessions.
+	UserEpoch int64     `json:"user_epoch,omitempty"`
+	Created   time.Time `json:"created"`
 }
 
 // Account names a link's chat account for people, as in "Slack user
@@ -111,9 +116,11 @@ type Token struct {
 	TeamName string `json:"team_name,omitempty"`
 	ChatUser string `json:"chat_user,omitempty"`
 	ChatName string `json:"chat_name,omitempty"`
-	// Username and UserCreated are set on a token a Signalith user made.
+	// Username, UserCreated and UserEpoch are set on a token a Signalith
+	// user made.
 	Username    string    `json:"username,omitempty"`
 	UserCreated time.Time `json:"user_created,omitzero"`
+	UserEpoch   int64     `json:"user_epoch,omitempty"`
 	// Channel is the notification channel it was made for.
 	Channel string    `json:"channel,omitempty"`
 	Expires time.Time `json:"expires"`

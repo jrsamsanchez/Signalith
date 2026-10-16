@@ -71,6 +71,8 @@ type slackFixture struct {
 	answer  *httptest.Server
 	ts      *httptest.Server
 	now     time.Time
+	// team is the Slack workspace clicks come from; "" is T1.
+	team string
 }
 
 func newSlackFixture(t *testing.T) *slackFixture {
@@ -106,10 +108,14 @@ func newSlackFixture(t *testing.T) *slackFixture {
 // click sends a signed click on a button, as Slack would.
 func (f *slackFixture) click(t *testing.T, user, trigger, actionID, value string, sign func(ts string, body []byte) string) int {
 	t.Helper()
+	team := f.team
+	if team == "" {
+		team = "T1"
+	}
 	payload := map[string]any{
 		"type": "block_actions", "trigger_id": trigger, "response_url": f.answer.URL + "/actions/T/1/x",
-		"user":    map[string]any{"id": "U" + user, "username": user, "team_id": "T1"},
-		"team":    map[string]any{"id": "T1", "domain": "acme"},
+		"user":    map[string]any{"id": "U" + user, "username": user, "team_id": team},
+		"team":    map[string]any{"id": team, "domain": "acme"},
 		"actions": []any{map[string]any{"action_id": actionID, "value": value, "action_ts": "1.2"}},
 		"message": map[string]any{"text": "High: Brute force", "blocks": []any{
 			map[string]any{"type": "header", "text": map[string]any{"type": "plain_text", "text": "High: Brute force"}},
@@ -216,6 +222,29 @@ func TestSlackClickFlow(t *testing.T) {
 	m = f.next(t)
 	if m["replace_original"] != true || len(f.desk.acked) != 1 || !strings.HasPrefix(f.desk.acked[0], "f1/andy/") {
 		t.Fatalf("ack = %v %v", m, f.desk.acked)
+	}
+
+	// A click from another workspace that shares the Slack app is refused:
+	// the channel is used in the first workspace that clicked.
+	f.team = "T2"
+	if code := f.click(t, "andy", "trig-4", "signalith_ack", ack, nil); code != 403 {
+		t.Errorf("other workspace = %d", code)
+	}
+	f.team = ""
+
+	// Once andy's sessions end (a new password, sign out everywhere, a
+	// two-step sign-in reset), the link ends too.
+	f.desk.mu.Lock()
+	u := f.desk.users["andy"]
+	u.Epoch++
+	f.desk.users["andy"] = u
+	f.desk.mu.Unlock()
+	f.click(t, "andy", "trig-5", "signalith_ack", ack, nil)
+	if m = f.next(t); !strings.Contains(m["text"].(string), "unlinked because") || len(f.desk.acked) != 1 {
+		t.Fatalf("after sessions ended = %v %v", m, f.desk.acked)
+	}
+	if _, found, _ := f.store.Link(t.Context(), Slack, "T1", "Uandy"); found {
+		t.Error("link kept after the user's sessions ended")
 	}
 }
 
@@ -336,6 +365,8 @@ func TestSlackResponseURLMustBeSlack(t *testing.T) {
 type botFramework struct {
 	key *rsa.PrivateKey
 	ts  *httptest.Server
+	// endorse is the key's endorsements; nil is msteams.
+	endorse []string
 }
 
 func newBotFramework(t *testing.T) *botFramework {
@@ -352,8 +383,12 @@ func newBotFramework(t *testing.T) *botFramework {
 	mux.HandleFunc("GET /v1/.well-known/keys", func(w http.ResponseWriter, r *http.Request) {
 		n := base64.RawURLEncoding.EncodeToString(key.N.Bytes())
 		e := base64.RawURLEncoding.EncodeToString(big.NewInt(int64(key.E)).Bytes())
+		endorse := b.endorse
+		if endorse == nil {
+			endorse = []string{"msteams"}
+		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"keys": []any{
-			map[string]any{"kty": "RSA", "kid": "k1", "use": "sig", "n": n, "e": e, "endorsements": []string{"msteams"}},
+			map[string]any{"kty": "RSA", "kid": "k1", "use": "sig", "n": n, "e": e, "endorsements": endorse},
 		}})
 	})
 	b.ts = httptest.NewServer(mux)
@@ -417,7 +452,7 @@ func newTeamsFixture(t *testing.T) *teamsFixture {
 	t.Cleanup(f.connector.Close)
 	f.channel = notify.Channel{ID: "teams", Name: "SOC", Type: notify.TypeTeamsApp, AppID: testAppID, TenantID: testTenant,
 		AppPassword: "client-secret", ApproveInChat: true, AllowLoopback: true}
-	f.desk = &fakeDesk{users: map[string]User{"andy": {Username: "andy", Role: users.Analyst}}}
+	f.desk = &fakeDesk{users: map[string]User{"andy": {Username: "andy", Role: users.Analyst}, "ada": {Username: "ada", Role: users.Admin}}}
 	f.store = NewMemory()
 	allow := func(u *url.URL) bool { return strings.HasPrefix(u.String(), f.connector.URL) }
 	senders := &notify.Senders{TeamsLogin: f.connector.URL, ServiceURLOK: allow, Conversations: f.store}
@@ -438,6 +473,18 @@ func newTeamsFixture(t *testing.T) *teamsFixture {
 func (f *teamsFixture) claims() map[string]any {
 	return map[string]any{"iss": botIssuer, "aud": testAppID, "exp": f.now.Add(time.Hour).Unix(), "nbf": f.now.Add(-time.Minute).Unix(),
 		"serviceurl": f.connector.URL + "/amer/"}
+}
+
+// private makes an activity come from a one-to-one chat with the app.
+func private(a map[string]any) map[string]any {
+	a["conversation"] = map[string]any{"id": "a:private-andy", "conversationType": "personal", "tenantId": testTenant}
+	return a
+}
+
+// from makes an activity come from another Teams user.
+func from(a map[string]any, name, objectID string) map[string]any {
+	a["from"] = map[string]any{"id": "29:" + name, "name": name, "aadObjectId": objectID}
+	return a
 }
 
 // activity is an activity from the fake Teams.
@@ -489,12 +536,27 @@ func TestTeamsFlow(t *testing.T) {
 	f := newTeamsFixture(t)
 	tok := f.bf.token(t, f.claims())
 
-	// Adding the app to a team channel records where the channel posts.
+	// Adding the app to a team channel is not enough to get messages.
 	if code, _ := f.send(t, tok, f.activity("conversationUpdate", map[string]any{"membersAdded": []any{map[string]any{"id": "28:" + testAppID}}})); code != 200 {
 		t.Fatalf("added = %d", code)
 	}
+	if _, ok, _ := f.store.Conversation(t.Context(), "teams"); ok {
+		t.Fatal("adding the app chose where the channel posts")
+	}
+	// Nor is "post here" from someone who is not a linked admin.
+	f.send(t, tok, f.activity("message", map[string]any{"text": "<at>Signalith</at> post here"}))
+	if reply := <-f.posted; !strings.Contains(reply["text"].(string), "Only a Signalith admin") {
+		t.Fatalf("unlinked post here = %v", reply)
+	}
+	// A linked admin's "post here" chooses it.
+	const adaID = "0000aaaa-0000-0000-0000-0000000000ad"
+	_ = f.store.SaveLink(t.Context(), Link{ID: LinkID(Teams, testTenant, adaID), System: Teams, Team: testTenant, ChatUser: adaID, Username: "ada"})
+	f.send(t, tok, from(f.activity("message", map[string]any{"text": "<at>Signalith</at> post here"}), "Ada", adaID))
+	if reply := <-f.posted; !strings.Contains(reply["text"].(string), "from now on") {
+		t.Fatalf("admin post here = %v", reply)
+	}
 	conv, ok, _ := f.store.Conversation(t.Context(), "teams")
-	if !ok || conv.ConversationID != "19:soc@thread.tacv2" || conv.Place() != "SOC team > Alerts" || conv.TeamID != "19:team@thread.tacv2" {
+	if !ok || conv.ConversationID != "19:soc@thread.tacv2" || conv.Place() != "SOC team > Alerts" || conv.TeamID != "19:team@thread.tacv2" || conv.AddedBy != "ada" {
 		t.Fatalf("conversation = %+v %v", conv, ok)
 	}
 
@@ -525,7 +587,7 @@ func TestTeamsFlow(t *testing.T) {
 	// A code made in Signalith, sent to the app, links the account.
 	code := NewCode()
 	_ = f.store.SaveToken(t.Context(), Token{ID: TokenID(code), System: Teams, Username: "andy", Expires: time.Now().Add(TokenLife)})
-	if c, _ := f.send(t, tok, f.activity("message", map[string]any{"text": "<at>Signalith</at> link " + strings.ToLower(code)})); c != 200 {
+	if c, _ := f.send(t, tok, private(f.activity("message", map[string]any{"text": "link " + strings.ToLower(code)}))); c != 200 {
 		t.Fatalf("link message = %d", c)
 	}
 	reply := <-f.posted
@@ -536,9 +598,33 @@ func TestTeamsFlow(t *testing.T) {
 		t.Fatalf("link = %+v %v", l, found)
 	}
 	// The code works once.
-	f.send(t, tok, f.activity("message", map[string]any{"text": "<at>Signalith</at> link " + code}))
+	f.send(t, tok, private(f.activity("message", map[string]any{"text": "link " + code})))
 	if reply := <-f.posted; !strings.Contains(reply["text"].(string), "not right, was used already") {
 		t.Fatalf("second use = %v", reply)
+	}
+	// A code sent in a shared channel is spent, not used.
+	shared := NewCode()
+	_ = f.store.SaveToken(t.Context(), Token{ID: TokenID(shared), System: Teams, Username: "ada", Expires: time.Now().Add(TokenLife)})
+	f.send(t, tok, f.activity("message", map[string]any{"text": "<at>Signalith</at> link " + shared}))
+	if reply := <-f.posted; !strings.Contains(reply["text"].(string), "private chat") {
+		t.Fatalf("code in a channel = %v", reply)
+	}
+	if _, err := f.store.PeekToken(t.Context(), TokenID(shared), time.Now()); !errors.Is(err, ErrTokenUsed) {
+		t.Errorf("code sent in a channel still works: %v", err)
+	}
+	// An analyst cannot move where the channel posts, and an admin's move
+	// waits for confirmation in Signalith.
+	other := f.activity("message", map[string]any{"text": "<at>Signalith</at> post here", "conversation": map[string]any{"id": "19:other@thread.v2", "conversationType": "groupChat", "tenantId": testTenant, "name": "Mallory chat"}})
+	f.send(t, tok, other)
+	if reply := <-f.posted; !strings.Contains(reply["text"].(string), "needs the Admin role") {
+		t.Fatalf("analyst post here = %v", reply)
+	}
+	f.send(t, tok, from(other, "Ada", adaID))
+	if reply := <-f.posted; !strings.Contains(reply["text"].(string), "confirms the move") {
+		t.Fatalf("admin move = %v", reply)
+	}
+	if conv, _, _ := f.store.Conversation(t.Context(), "teams"); conv.ConversationID != "19:soc@thread.tacv2" || conv.Next == nil || conv.Next.ConversationID != "19:other@thread.v2" {
+		t.Fatalf("after move request = %+v", conv)
 	}
 
 	// Now the click decides, and the card says who did.
@@ -603,12 +689,12 @@ func TestTeamsRefusals(t *testing.T) {
 	// Wrong codes are limited.
 	tok := f.bf.token(t, f.claims())
 	for i := 0; i < maxCodeTries; i++ {
-		f.send(t, tok, f.activity("message", map[string]any{"text": "link WRONG-CODE"}))
+		f.send(t, tok, private(f.activity("message", map[string]any{"text": "link WRONG-CODE"})))
 		<-f.posted
 	}
 	code := NewCode()
 	_ = f.store.SaveToken(t.Context(), Token{ID: TokenID(code), System: Teams, Username: "andy", Expires: time.Now().Add(TokenLife)})
-	f.send(t, tok, f.activity("message", map[string]any{"text": "link " + code}))
+	f.send(t, tok, private(f.activity("message", map[string]any{"text": "link " + code})))
 	if reply := <-f.posted; !strings.Contains(reply["text"].(string), "Too many wrong codes") {
 		t.Fatalf("after wrong codes = %v", reply)
 	}
@@ -616,7 +702,7 @@ func TestTeamsRefusals(t *testing.T) {
 	f2 := newTeamsFixture(t)
 	secret := NewSecret()
 	_ = f2.store.SaveToken(t.Context(), Token{ID: TokenID(secret), System: Slack, ChatUser: "U1", Team: "T1", Expires: time.Now().Add(TokenLife)})
-	f2.send(t, f2.bf.token(t, f2.claims()), f2.activity("message", map[string]any{"text": "link " + secret}))
+	f2.send(t, f2.bf.token(t, f2.claims()), private(f2.activity("message", map[string]any{"text": "link " + secret})))
 	if reply := <-f2.posted; !strings.Contains(reply["text"].(string), "not right") {
 		t.Fatalf("slack token as code = %v", reply)
 	}
@@ -651,6 +737,18 @@ func TestBotVerifierRereadsKeysOnce(t *testing.T) {
 	}
 	if reads != 2 {
 		t.Errorf("keys read %d times, want 2", reads)
+	}
+}
+
+func TestBotVerifierNeedsTeamsKeys(t *testing.T) {
+	claims := map[string]any{"iss": botIssuer, "aud": testAppID, "exp": time.Now().Add(time.Hour).Unix(), "serviceurl": "https://smba.trafficmanager.net/amer/"}
+	for name, endorse := range map[string][]string{"no endorsements": {}, "another channel": {"skype"}} {
+		bf := newBotFramework(t)
+		bf.endorse = endorse
+		v := &BotVerifier{Metadata: bf.ts.URL + "/v1/.well-known/openidconfiguration"}
+		if err := v.Verify(t.Context(), "Bearer "+bf.token(t, claims), testAppID, "https://smba.trafficmanager.net/amer"); err == nil {
+			t.Errorf("%s: a key not endorsed for Teams was accepted", name)
+		}
 	}
 }
 

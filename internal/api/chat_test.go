@@ -176,6 +176,72 @@ func TestChatLinkAndApprove(t *testing.T) {
 	}
 }
 
+func TestChatLinkEndsWithSessions(t *testing.T) {
+	ts, srv, store, answers, respURL := chatServer(t)
+	tok := `{"token":"` + strings.Repeat("ab", 32) + `"}`
+	if code, _ := doAs(t, ts, "andy", "role-password", "POST", "/api/chat/link", tok); code != 200 {
+		t.Fatalf("link = %d", code)
+	}
+	// A password reset ends andy's sessions, and the link with them.
+	if _, err := srv.Users.SetPassword(t.Context(), "andy", "new-role-password", false); err != nil {
+		t.Fatal(err)
+	}
+	c, _ := srv.Notify.Settings.Settings()
+	soc, _ := c.Channel("soc")
+	ack := notify.SignButton(soc, notify.Button{Action: notify.ButtonAck, ID: "f1"})
+	slackClick(t, ts, "slack-secret", "U1", "t1", "signalith_ack", ack, respURL)
+	srv.Chat.Service.Wait()
+	if m := <-answers; !strings.Contains(m["text"].(string), "unlinked because") {
+		t.Fatalf("answer = %v", m)
+	}
+	if f, _ := srv.Findings.Get(t.Context(), "f1"); f.Owner != "" {
+		t.Errorf("acknowledged with a stale link: owner %q", f.Owner)
+	}
+	if len(store.LinksOf()) != 0 {
+		t.Error("stale link kept")
+	}
+}
+
+func TestTeamsMove(t *testing.T) {
+	ts, _, store, _, _ := chatServer(t)
+	cur := notify.Conversation{Channel: "teams", ConversationID: "19:soc", TeamName: "SOC", ChannelName: "Alerts"}
+	cur.Next = &notify.Conversation{Channel: "teams", ConversationID: "19:new", TeamName: "SOC", ChannelName: "Triage", AddedBy: "ada"}
+	_ = store.SaveConversation(t.Context(), cur)
+	code, body := do(t, ts, "GET", "/api/notify", "", true)
+	var ch map[string]any
+	for _, c := range body["channels"].([]any) {
+		if c.(map[string]any)["id"] == "teams" {
+			ch = c.(map[string]any)
+		}
+	}
+	if code != 200 || ch["posts_to"] != "SOC > Alerts" || ch["move_to"] != "SOC > Triage" || ch["move_id"] != "19:new" || ch["move_by"] != "ada" {
+		t.Fatalf("view = %d %v", code, ch)
+	}
+	// Analysts cannot move it; a stale move ID is refused.
+	if code, _ = doAs(t, ts, "andy", "role-password", "POST", "/api/notify/channels/teams/teams-move", `{"move_id":"19:new"}`); code != 403 {
+		t.Errorf("analyst move = %d", code)
+	}
+	if code, _ = do(t, ts, "POST", "/api/notify/channels/teams/teams-move", `{"move_id":"19:other"}`, true); code != 409 {
+		t.Errorf("stale move = %d", code)
+	}
+	if code, body = do(t, ts, "POST", "/api/notify/channels/teams/teams-move", `{"move_id":"19:new"}`, true); code != 200 || body["posts_to"] != "SOC > Triage" {
+		t.Fatalf("move = %d %v", code, body)
+	}
+	if got, _, _ := store.Conversation(t.Context(), "teams"); got.ConversationID != "19:new" || got.Next != nil {
+		t.Errorf("after move = %+v", got)
+	}
+	// Declining keeps where it posts.
+	got, _, _ := store.Conversation(t.Context(), "teams")
+	got.Next = &notify.Conversation{Channel: "teams", ConversationID: "19:x"}
+	_ = store.SaveConversation(t.Context(), got)
+	if code, _ = do(t, ts, "DELETE", "/api/notify/channels/teams/teams-move", "", true); code != 200 {
+		t.Errorf("decline = %d", code)
+	}
+	if got, _, _ := store.Conversation(t.Context(), "teams"); got.ConversationID != "19:new" || got.Next != nil {
+		t.Errorf("after decline = %+v", got)
+	}
+}
+
 func TestChatCodeAndTeamsApp(t *testing.T) {
 	ts, _, store, _, _ := chatServer(t)
 	code, body := doAs(t, ts, "vera", "role-password", "POST", "/api/chat/code", "")

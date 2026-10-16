@@ -340,7 +340,8 @@ Some changes ask for your password again when you have not entered it in the las
   now;
 - switching certificate authority, and saving response actions, playbooks or
   notifications, or removing the detection content pack;
-- linking a Slack or Teams account to yourself, or making a code to link one;
+- linking a Slack or Teams account to yourself, making a code to link one, or confirming
+  that a Teams app channel moves to another Teams channel;
 - saving a setting that affects sign-in, encryption or where data goes: **Sign out
   after**, **Require two-step sign-in**, single sign-on and the other `auth.*`
   settings, HTTPS and the certificate files (`server.tls*`), **Listen address**,
