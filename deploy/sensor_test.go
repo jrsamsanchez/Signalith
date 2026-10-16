@@ -673,6 +673,22 @@ func TestSensorStatusLine(t *testing.T) {
 		t.Errorf("warnings: %v", warnings)
 	}
 
+	// A virtual port (VXLAN) says unknown: with a carrier it is up, and
+	// without one it stays unknown and is warned about.
+	mustWrite(t, filepath.Join(m.dir, "sys/class/net/eth1/operstate"), "unknown\n", 0o644)
+	mustWrite(t, filepath.Join(m.dir, "sys/class/net/eth1/carrier"), "1\n", 0o644)
+	v = runStatus()
+	if iface, _ := v["interface"].(map[string]any); iface["link"] != "up" || strings.Contains(jsonString(t, v["warnings"]), "capture_link") {
+		t.Errorf("unknown with a carrier: %v %v", iface, v["warnings"])
+	}
+	if err := os.Remove(filepath.Join(m.dir, "sys/class/net/eth1/carrier")); err != nil {
+		t.Fatal(err)
+	}
+	v = runStatus()
+	if iface, _ := v["interface"].(map[string]any); iface["link"] != "unknown" || !strings.Contains(jsonString(t, v["warnings"]), "capture_link") {
+		t.Errorf("unknown without a carrier: %v %v", iface, v["warnings"])
+	}
+
 	// The same keys as the ingest parser's test line.
 	golden := readFile(t, filepath.Join("..", "internal", "ingest", "testdata", "sensor", "status.json"))
 	var g map[string]any
