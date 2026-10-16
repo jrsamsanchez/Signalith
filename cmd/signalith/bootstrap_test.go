@@ -492,8 +492,11 @@ func TestInitSavePassword(t *testing.T) {
 }
 
 // An install from before init noted the first password's hash: the
-// packages' upgrade notes it with initial-password -note while the
-// password is still the first one, and never once it was changed.
+// packages' upgrade and the Linux unit's start note it with
+// initial-password -note while the password is still the first one, next
+// to the config file (root writes nothing in the service's state folder,
+// and what it wrote there before the service could not read), and never
+// once it was changed.
 func TestNoteFirstPassword(t *testing.T) {
 	root := t.TempDir()
 	state := filepath.Join(root, "state")
@@ -501,7 +504,7 @@ func TestNoteFirstPassword(t *testing.T) {
 	t.Setenv("SIGNALITH_ADMIN_PASSWORD_FILE", "")
 	t.Setenv("SIGNALITH_ADMIN_PASSWORD", "")
 	path := filepath.Join(root, "etc", "signalith.yaml")
-	os.MkdirAll(filepath.Dir(path), 0o700)
+	os.MkdirAll(filepath.Dir(path), 0o750)
 	captureStdout(t, func() {
 		if err := cmdInit([]string{"-c", path, "-save-password"}); err != nil {
 			t.Fatal(err)
@@ -511,8 +514,19 @@ func TestNoteFirstPassword(t *testing.T) {
 	if err := os.Remove(config.FirstPasswordFileIn(state)); err != nil {
 		t.Fatal(err)
 	}
-	if err := cmdInitialPassword([]string{"-c", path, "-note"}); err != nil {
+	note := config.FirstPasswordFileIn(filepath.Dir(path))
+	for range 2 { // the second time, it is noted already
+		if err := cmdInitialPassword([]string{"-c", path, "-note"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := os.Stat(config.FirstPasswordFileIn(state)); !os.IsNotExist(err) {
+		t.Errorf("written in the state folder: %v", err)
+	}
+	if fi, err := os.Stat(note); err != nil {
 		t.Fatal(err)
+	} else if runtime.GOOS != "windows" && fi.Mode().Perm() != 0o640 {
+		t.Errorf("the note next to the config file is %v, want the group to read it", fi.Mode().Perm())
 	}
 	c, err := config.Load(path)
 	if err != nil {
@@ -521,7 +535,25 @@ func TestNoteFirstPassword(t *testing.T) {
 	if c.FirstPasswordHash() == "" || c.FirstPasswordHash() != c.Auth.AdminPasswordHash {
 		t.Errorf("noted hash %q, in use %q", c.FirstPasswordHash(), c.Auth.AdminPasswordHash)
 	}
+	// Once the server noted the change, the note goes, and the hash is
+	// not taken from it even if it is back.
+	if err := config.NoteFirstPasswordChanged(state, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdInitialPassword([]string{"-c", path, "-note"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(note); !os.IsNotExist(err) {
+		t.Errorf("the note stayed after the change: %v", err)
+	}
+	if err := config.RecordFirstPasswordNextTo(path, c.Auth.AdminPasswordHash); err != nil {
+		t.Fatal(err)
+	}
+	if c, err := config.Load(path); err != nil || c.FirstPasswordHash() != "" {
+		t.Errorf("a changed first password counts as in use again: %v", err)
+	}
 	// A password someone chose is not noted.
+	os.Remove(note)
 	os.Remove(config.FirstPasswordFileIn(state))
 	h, _ := config.HashPassword("chosen by the admin")
 	if err := config.SetAdminPasswordHash(path, h); err != nil {
@@ -530,7 +562,7 @@ func TestNoteFirstPassword(t *testing.T) {
 	if err := cmdInitialPassword([]string{"-c", path, "-note"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(config.FirstPasswordFileIn(state)); !os.IsNotExist(err) {
+	if _, err := os.Stat(note); !os.IsNotExist(err) {
 		t.Errorf("a chosen password was noted: %v", err)
 	}
 }

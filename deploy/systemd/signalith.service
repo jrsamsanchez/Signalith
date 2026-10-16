@@ -8,6 +8,10 @@ Wants=network-online.target
 Type=simple
 User=signalith
 Group=signalith
+# Run as root ("+"), and never stopping the start ("-"): notes next to the
+# config file that the built-in admin still has the first password, which
+# only root can read, so the server asks for a new one at the next sign-in.
+ExecStartPre=-+/usr/local/bin/signalith initial-password -c /etc/signalith/signalith.yaml -note
 ExecStart=/usr/local/bin/signalith serve -c /etc/signalith/signalith.yaml
 Restart=on-failure
 RestartSec=5
