@@ -362,12 +362,16 @@ func (c *ForEach) Commands(name, match string) ([]*Eval, error) {
 }
 
 // Match returns the text the * of the first pattern name matches took,
-// and whether one does.
+// and whether one does. A match whose * text holds anything but letters,
+// digits and _ does not count.
 func (c *ForEach) Match(name string) (string, bool) {
 	for _, p := range c.Fields {
 		if m, ok := RenameField([2]string{p, strings.Repeat("*", strings.Count(p, "*"))}, name); ok {
 			if !strings.Contains(p, "*") {
 				m = ""
+			}
+			if !forEachMatch.MatchString(m) {
+				return "", false
 			}
 			return m, true
 		}

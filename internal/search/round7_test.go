@@ -2,6 +2,7 @@ package search
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -171,5 +172,38 @@ func TestFieldCommands(t *testing.T) {
 		if _, err := (&Engine{Store: &fakeStore{}}).Run(context.Background(), "| makeresults | "+bad); err == nil {
 			t.Errorf("%s parsed", bad)
 		}
+	}
+}
+
+// Work that multiplies, such as foreach over many fields, stops at the
+// search's step budget rather than at its timeout.
+func TestForEachStopsAtStepBudget(t *testing.T) {
+	defer func(n int) { maxEvalSteps = n }(maxEvalSteps)
+	maxEvalSteps = 1_000_000
+	rows := make([]Row, 1000)
+	for i := range rows {
+		r := Row{}
+		for f := 0; f < 100; f++ {
+			r[fmt.Sprintf("f%d", f)] = int64(f)
+		}
+		rows[i] = r
+	}
+	q, err := query.Parse("* | foreach * [eval <<FIELD>>=<<FIELD>>+<<FIELD>>*2, <<FIELD>>=<<FIELD>>+<<FIELD>>*2, <<FIELD>>=<<FIELD>>+<<FIELD>>*2]")
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = applyForEach(withEvaluator(context.Background()), &Result{Rows: rows}, q.Commands[0].(*query.ForEach))
+	if err == nil || !strings.Contains(err.Error(), "million expressions") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestForEachMatchIsAName(t *testing.T) {
+	res, err := (&Engine{Store: &fakeStore{}}).Run(context.Background(), `| makeresults | eval x1=1, 'x1.5'=2 | foreach x* [eval out_<<MATCHSTR>>=<<FIELD>>]`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := res.Rows[0]; r["out_1"] != int64(1) || len(r) != 4 {
+		t.Errorf("row = %v", r)
 	}
 }

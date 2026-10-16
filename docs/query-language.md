@@ -166,8 +166,10 @@ name it is read as an expression, so `where bytes_out > bytes_in` compares the t
 Regular expressions use RE2 syntax and are case-sensitive unless they start with `(?i)`.
 To keep one search from exhausting the server, a value `eval` builds can be up to 1 MB
 (a multivalue field counts all its values), expressions build at most 256 MB across all
-rows and commands of one search, a multivalue field holds up to 10,000 values, and one
-expression has at most 10,000 terms.
+rows and commands of one search, a multivalue field holds up to 10,000 values, one
+expression has at most 10,000 terms, and one search evaluates at most 500 million
+expression steps (about 100 steps for each of 20 assignments over 100,000 events fits
+with room to spare).
 
 ## Asking in plain English
 

@@ -78,13 +78,26 @@ func evaluatorFor(ctx context.Context) *evaluator {
 // evaluator checks whether the search has been cancelled or timed out.
 const checkSteps = 256
 
+// maxEvalSteps caps the expression steps of one search, so work that
+// multiplies (foreach over many fields, nested mvmap) ends in seconds
+// rather than at the search timeout. A search over 100,000 events with
+// 20 assignments of 100 steps each takes 200 million.
+var maxEvalSteps = 500_000_000 // a variable so tests can lower it
+
 // step counts work and stops the evaluation once the search's context
 // ends, so a few expensive rows cannot outlive the search timeout.
 func (ev *evaluator) step() bool {
 	if ev.err != nil {
 		return false
 	}
-	if ev.steps++; ev.steps%checkSteps == 0 && ev.ctx != nil {
+	if ev.steps++; ev.steps%checkSteps == 0 {
+		if ev.steps > maxEvalSteps {
+			ev.fail("the search evaluated more than %d million expressions; narrow the search first", maxEvalSteps/1_000_000)
+			return false
+		}
+		if ev.ctx == nil {
+			return true
+		}
 		if err := ev.ctx.Err(); err != nil {
 			ev.err = err
 			return false
