@@ -758,9 +758,12 @@ type Auth struct {
 	// LDAP sets up directory sign-in here instead of on the Users page,
 	// which then shows it read-only.
 	LDAP *users.LDAPSettings `yaml:"ldap,omitempty"`
+	// OIDC is single sign-on with an OpenID Connect identity provider,
+	// usually set on the Single sign-on tab of Settings.
+	OIDC OIDC `yaml:"oidc,omitempty"`
 	// MFARequired says who must use two-step sign-in (a code from an
 	// authenticator app after the password): off, admins or everyone.
-	// See MFARequiredFor.
+	// See MFARequiredMode.
 	MFARequired string `yaml:"mfa_required,omitempty"`
 }
 
@@ -2097,6 +2100,12 @@ func (c *Config) applyEnv() error {
 		c.Assistant.APIKey = v[0]
 		c.fromEnv("assistant.api_key", from)
 	}
+	if v, from, err := envSecret("SIGNALITH_OIDC_CLIENT_SECRET"); err != nil {
+		return err
+	} else if len(v) > 0 {
+		c.Auth.OIDC.ClientSecret = strings.TrimSpace(v[0])
+		c.fromEnv("auth.oidc.client_secret", from)
+	}
 	if v := strings.TrimSpace(os.Getenv("SIGNALITH_NVD_URL")); v != "" {
 		c.Vulns.NVDURL = v
 		c.fromEnv("vulns.nvd_url", "SIGNALITH_NVD_URL")
@@ -2355,6 +2364,7 @@ func (c *Config) Validate() error {
 			}
 		}
 	}
+	p = append(p, c.oidcProblems()...)
 	if c.Detections.Dir == "" {
 		p = append(p, "detections.dir is required, for example: detections")
 	}

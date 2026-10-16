@@ -1444,7 +1444,11 @@ func TestNoHandOverToAServerWhoseFilesDiffer(t *testing.T) {
 	until(t, 5*time.Second, "a to run the jobs", a.RunsJobs)
 	b := versionNode(t, c, "1.6.0", timing, files("r2"))
 	until(t, 5*time.Second, "b to say it cannot take over", func() bool { return heartbeatOf(t, fos, b.ID()).CannotTakeOver != "" })
-	stays(t, 2*time.Second, "a running the jobs", func() bool { return a.RunsJobs() && !b.RunsJobs() })
+	// Never a moment's "" between b's watch passes either: a heartbeat
+	// sent then had a hand the jobs to b, which refuses them.
+	stays(t, 2*time.Second, "a running the jobs", func() bool {
+		return a.RunsJobs() && !b.RunsJobs() && b.lease.View().CannotTake != ""
+	})
 }
 
 func TestHandOverAtMostOncePerYieldEvery(t *testing.T) {

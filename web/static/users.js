@@ -12,7 +12,7 @@
     { id: 'analyst', label: 'Analyst', description: 'Also triages findings, works investigations and builds dashboards.' },
     { id: 'admin', label: 'Admin', description: 'Also manages detections, threat intel, data collection and users.' },
   ];
-  const SOURCE_LABEL = { local: 'Local', directory: 'Directory', builtin: 'Built-in' };
+  const SOURCE_LABEL = { local: 'Local', directory: 'Directory', sso: 'Single sign-on', builtin: 'Built-in' };
 
   const U = { data: null, seq: 0, tab: 'users', loadedAt: 0 };
 
@@ -274,6 +274,7 @@
       : [u.name ? u.username : '', u.email].filter(Boolean);
     const roleBadge = el('span', { class: 'badge u-role', 'data-role': u.role }, roleLabel(u.role));
     if (u.source === 'directory') roleBadge.title = 'From their directory groups at their last sign-in';
+    if (u.source === 'sso') roleBadge.title = 'From their identity provider groups at their last sign-in';
     const nameAttrs = { class: 'u-user__name' };
     if (u.dn) nameAttrs.title = u.dn;
     return el('tr', { 'data-user': u.username, class: u.disabled ? 'u-off' : '' },
@@ -556,8 +557,8 @@
     if (off) {
       const ok = await caseConfirm({
         title: `Disable ${u.username}?`,
-        text: u.source === 'directory'
-          ? 'They are signed out now and stay out, even if the directory accepts their password, until you enable them.'
+        text: u.source === 'directory' || u.source === 'sso'
+          ? `They are signed out now and stay out, even if the ${u.source === 'sso' ? 'identity provider' : 'directory'} lets them in, until you enable them.`
           : 'They are signed out now and cannot sign in until you enable them.',
         confirm: 'Disable',
       });
@@ -578,8 +579,8 @@
   async function deleteUser(u) {
     const ok = await caseConfirm({
       title: `Delete ${u.username}?`,
-      text: u.source === 'directory'
-        ? 'They are signed out and removed from this list. If the directory still lets them in, they come back at their next sign-in; disable them instead to keep them out.'
+      text: u.source === 'directory' || u.source === 'sso'
+        ? `They are signed out and removed from this list. If the ${u.source === 'sso' ? 'identity provider' : 'directory'} still lets them in, they come back at their next sign-in; disable them instead to keep them out.`
         : 'They are signed out and can no longer sign in. Findings and notes keep their name. This cannot be undone.',
       confirm: 'Delete user',
     });

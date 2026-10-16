@@ -96,6 +96,10 @@ func (s *Server) handleChangeOwnPassword(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusBadRequest, map[string]any{"code": "directory",
 			"error": "Your password belongs to your directory (Active Directory or LDAP). Change it there."})
 		return
+	case p.Source == users.SourceSSO:
+		writeJSON(w, http.StatusBadRequest, map[string]any{"code": "sso",
+			"error": "You sign in with your organization's identity provider, so Signalith has no password of yours. Change it there."})
+		return
 	}
 	if !s.usersWritable(w) {
 		return
@@ -330,7 +334,7 @@ func writeUserError(w http.ResponseWriter, err error) {
 		status = http.StatusPreconditionFailed
 	case errors.Is(err, users.ErrNotFound):
 		status = http.StatusNotFound
-	case errors.Is(err, users.ErrExists), errors.Is(err, users.ErrLastAdmin), errors.Is(err, users.ErrManaged), errors.Is(err, users.ErrReserved):
+	case errors.Is(err, users.ErrExists), errors.Is(err, users.ErrLastAdmin), errors.Is(err, users.ErrManaged), errors.Is(err, users.ErrManagedSSO), errors.Is(err, users.ErrReserved):
 		status = http.StatusConflict
 	case errors.Is(err, users.ErrBusy):
 		status = http.StatusServiceUnavailable

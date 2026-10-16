@@ -27,6 +27,7 @@ type UserBody struct {
 	Disabled           bool       `json:"disabled"`
 	MustChangePassword bool       `json:"must_change_password"`
 	DN                 string     `json:"dn,omitempty"`
+	Subject            string     `json:"subject,omitempty"`
 	Refused            string     `json:"refused,omitempty"`
 	PasswordHash       string     `json:"password_hash,omitempty"`
 	SessionEpoch       int64      `json:"session_epoch"`
@@ -69,7 +70,7 @@ func bodyOf(r users.Record, old *UserBody, keys users.MFAKeys) (*UserBody, error
 		return nil, err
 	}
 	b := &UserBody{Username: r.Username, Name: r.Name, Email: r.Email, Role: r.Role, Source: r.Source, Disabled: r.Disabled,
-		MustChangePassword: r.MustChangePassword, DN: r.DN, Refused: r.Refused, SessionEpoch: r.Epoch, MFA: m,
+		MustChangePassword: r.MustChangePassword, DN: r.DN, Subject: r.Subject, Refused: r.Refused, SessionEpoch: r.Epoch, MFA: m,
 		Created: r.Created.UTC(), Updated: r.Updated.UTC()}
 	if r.Source == users.SourceLocal {
 		b.PasswordHash = r.Hash
@@ -87,7 +88,7 @@ func bodyOf(r users.Record, old *UserBody, keys users.MFAKeys) (*UserBody, error
 // with keys.
 func record(b *UserBody, etag string, keys users.MFAKeys) users.Record {
 	r := users.Record{User: users.User{Username: b.Username, Name: b.Name, Email: b.Email, Role: b.Role, Source: b.Source,
-		Disabled: b.Disabled, MustChangePassword: b.MustChangePassword, DN: b.DN, Refused: b.Refused,
+		Disabled: b.Disabled, MustChangePassword: b.MustChangePassword, DN: b.DN, Subject: b.Subject, Refused: b.Refused,
 		Created: b.Created, Updated: b.Updated, SessionEpoch: b.SessionEpoch}, Epoch: b.SessionEpoch, ETag: etag,
 		MFA: b.MFA.Open(keys, users.MFAField(b.Username))}
 	if b.Source == users.SourceLocal {
@@ -110,7 +111,7 @@ func (d *Docs) validateUser(name string, b *UserBody) error {
 		return fmt.Errorf("its role %q is not one this version knows", b.Role)
 	}
 	switch b.Source {
-	case users.SourceLocal, users.SourceDirectory:
+	case users.SourceLocal, users.SourceDirectory, users.SourceSSO:
 	case users.SourceBuiltin:
 		if c, ok := d.clusterBody(); !ok || c.Builtin == "" || c.Builtin != name && (c.BuiltinPrev == "" || c.BuiltinPrev != name) {
 			return errors.New("it is a built-in admin the cluster document does not name")

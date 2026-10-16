@@ -23,6 +23,10 @@ const (
 	// SourceDirectory users sign in with their LDAP or Active Directory
 	// password; Signalith keeps a record of them from their first sign-in.
 	SourceDirectory = "directory"
+	// SourceSSO users sign in with an OpenID Connect identity provider
+	// (single sign-on); Signalith keeps a record of them from their first
+	// sign-in.
+	SourceSSO = "sso"
 	// SourceBuiltin is the admin account from signalith.yaml. It is never
 	// stored here; the API lists it so people can see it exists.
 	SourceBuiltin = "builtin"
@@ -43,6 +47,10 @@ type User struct {
 	MustChangePassword bool `json:"must_change_password,omitempty"`
 	// DN is a directory user's entry, as found at their last sign-in.
 	DN string `json:"dn,omitempty"`
+	// Subject is who a single sign-on user is at their identity
+	// provider: its issuer, a space and their subject (sub) there. Only
+	// that identity can sign in as them.
+	Subject string `json:"subject,omitempty"`
 	// Refused says why a directory user has no access since the directory
 	// was last asked about them: not found there (deleted, or disabled in
 	// Active Directory), disabled or expired there, or in no mapped group.
@@ -83,6 +91,8 @@ var (
 	ErrLastAdmin = errors.New("Signalith needs at least one enabled admin; make someone else an admin first")
 	// ErrManaged refuses edits to what the directory decides.
 	ErrManaged = errors.New("the name, email, role and password of directory users come from the directory; here you can only disable or delete them")
+	// ErrManagedSSO refuses edits to what the identity provider decides.
+	ErrManagedSSO = errors.New("the name, email and role of single sign-on users come from the identity provider at each sign-in; here you can only disable or delete them")
 	// ErrReserved refuses the built-in admin's name.
 	ErrReserved = errors.New("that name belongs to the built-in admin from signalith.yaml; choose another")
 )
@@ -521,11 +531,21 @@ func (s *Store) UpdateIf(ctx context.Context, name, etag string, ch Change) (Use
 		if cur.Source == SourceDirectory && (u.Name != cur.Name || u.Email != cur.Email || u.Role != cur.Role) {
 			return ErrManaged
 		}
-		if err := validName(u.Name); err != nil {
-			return fieldError("name", err)
+		if cur.Source == SourceSSO && (u.Name != cur.Name || u.Email != cur.Email || u.Role != cur.Role) {
+			return ErrManagedSSO
 		}
-		if err := validEmail(u.Email); err != nil {
-			return fieldError("email", err)
+		// Only what changes is checked: a name or email the directory or
+		// identity provider set may not pass, and must not stop an admin
+		// from disabling the user.
+		if u.Name != cur.Name {
+			if err := validName(u.Name); err != nil {
+				return fieldError("name", err)
+			}
+		}
+		if u.Email != cur.Email {
+			if err := validEmail(u.Email); err != nil {
+				return fieldError("email", err)
+			}
 		}
 		if !u.Role.Valid() {
 			return fieldError("role", fmt.Errorf("role %q must be viewer, analyst or admin", u.Role))
@@ -820,7 +840,7 @@ func (s *Store) Count() map[string]int {
 	s.fresh()
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	out := map[string]int{SourceLocal: 0, SourceDirectory: 0}
+	out := map[string]int{SourceLocal: 0, SourceDirectory: 0, SourceSSO: 0}
 	for _, u := range s.users {
 		out[u.Source]++
 	}

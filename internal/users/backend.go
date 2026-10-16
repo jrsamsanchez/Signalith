@@ -249,7 +249,7 @@ func (f *fileBackend) applyLocked(data []byte) (bool, error) {
 		if _, dup := recs[u.Username]; u.Username == "" || dup {
 			return false, fmt.Errorf("users file %s lists an empty or repeated username %q", f.path, su.Username)
 		}
-		if u.Source != SourceDirectory {
+		if u.Source != SourceDirectory && u.Source != SourceSSO {
 			u.Source = SourceLocal
 		}
 		if !u.Role.Valid() {

@@ -21,6 +21,7 @@
 <symbol id="i-arrow-left" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></symbol>
 <symbol id="i-arrow-right" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></symbol>
 <symbol id="i-book-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v16"/><path d="M20.001 19A2 2 0 0022 17V5a2 2 0 00-1.999-2L16 3.002A5 5 0 0012 5a5 5 0 00-4-2H4a2 2 0 00-2 2v12a2 2 0 001.999 2H8a5 5 0 014 2 5 5 0 014-2z"/></symbol>
+<symbol id="i-building-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M10 12h4"/><path d="M10 8h4"/><path d="M14 21v-3a2 2 0 0 0-4 0v3"/><path d="M6 10H4a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-2"/><path d="M6 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16"/></symbol>
 <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></symbol>
 <symbol id="i-circle-alert" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></symbol>
 <symbol id="i-circle-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m16 9-5.5 5.5L8 12"/></symbol>
@@ -85,6 +86,10 @@
         <div class="alert" data-tone="danger" data-state="error" id="login-error" role="alert"><svg class="icon" aria-hidden="true"><use href="#i-circle-alert"/></svg><div><b id="login-error-title">That username and password don’t match.</b><p id="login-error-text">After 10 failed attempts, sign-in pauses for 15 minutes.</p></div></div>
         <div class="alert" data-tone="warning" data-state="locked" id="login-locked" role="alert"><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><div><b>Sign-in is paused.</b><p id="login-locked-text">Too many failed sign-ins from this address.</p></div></div>
         <div class="alert" data-tone="success" data-state="signedout" id="login-signedout" role="status"><svg class="icon" aria-hidden="true"><use href="#i-circle-check"/></svg><div><b>You’re signed out.</b><p>Sign in again to continue.</p></div></div>
+        <div class="auth__sso" id="sso" hidden>
+          <a class="btn btn--secondary btn--block auth__sso-btn" id="sso-link" href="api/auth/oidc/start"><svg class="icon" aria-hidden="true"><use href="#i-building-2"/></svg><span id="sso-label">Sign in with single sign-on</span></a>
+          <div class="auth__or" role="separator"><span>or use a Signalith account</span></div>
+        </div>
         <div class="field">
           <label class="label" for="username">Username</label>
           <div class="input-wrap"><svg class="icon" aria-hidden="true"><use href="#i-user"/></svg><input class="input input--lg" id="username" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" required></div>

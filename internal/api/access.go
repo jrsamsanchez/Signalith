@@ -265,6 +265,13 @@ func (s *Server) principalFor(name string) *principal {
 	if !ok || u.Disabled {
 		return nil
 	}
+	if u.Source == users.SourceSSO {
+		// Single sign-on users can use Signalith only while it is on, with
+		// the provider they signed in with.
+		if c := s.conf(); !c.OIDCOn() || users.SSOIssuer(u.Subject) != c.OIDCIssuer() {
+			return nil
+		}
+	}
 	if u.Source == users.SourceDirectory {
 		if !s.dir().Enabled() || u.Refused != "" {
 			return nil

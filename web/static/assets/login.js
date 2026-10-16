@@ -18,6 +18,7 @@
   const forgotNote = $('forgot-note');
   const params = new URLSearchParams(location.search);
   let lockTimer = null;
+  const REFUSED_DISABLED = ['This account is disabled.', 'Ask a Signalith admin to enable it.'];
 
   // send is fetch with the headers of api() in app.js: it sends back how
   // far the servers had read the shared settings when this browser last
@@ -112,6 +113,41 @@
 
   if (params.has('signedout')) setView('signedout');
 
+  // ---- Single sign-on --------------------------------------------------
+  // The button (shown by the server when single sign-on is on) returns to
+  // the same page as a password sign-in; the server checks the path again.
+  const ssoLink = $('sso-link');
+  if (ssoLink) {
+    const u = new URL(nextPath(), location.href);
+    ssoLink.href = 'api/auth/oidc/start?next=' + encodeURIComponent(u.pathname + u.search + u.hash);
+  }
+  // A single sign-on that failed comes back here with a code; the reason
+  // is in the server log.
+  const SSO_REFUSED = {
+    off: ['Single sign-on is turned off.', 'Sign in with your Signalith account, or ask a Signalith admin.'],
+    provider: ['Signalith can’t reach your identity provider right now.', 'Try again in a minute. If it keeps happening, tell a Signalith admin.'],
+    expired: ['That sign-in took too long or started in another browser.', 'Try again.'],
+    denied: ['Your identity provider didn’t sign you in.', 'Try again, or ask your identity provider’s admin about your access.'],
+    failed: ['Signalith couldn’t confirm your sign-in with your identity provider.', 'Try again. If it keeps happening, tell a Signalith admin: the server log says why.'],
+    username: ['Your identity provider didn’t send a username Signalith can use.', 'Ask a Signalith admin to check the username claim under Settings, Single sign-on.'],
+    domain: ['Your email address isn’t in a domain that can use Signalith.', 'Sign in with your work account, or ask a Signalith admin.'],
+    role: ['Your account can’t use Signalith yet.', 'It isn’t in a group that Signalith lets in. Ask a Signalith admin to add you to one.'],
+    new: ['You haven’t used Signalith before, and new users aren’t added.', 'Ask a Signalith admin to let you in.'],
+    taken: ['Another Signalith user already has your username.', 'Ask a Signalith admin to sort it out.'],
+    disabled: REFUSED_DISABLED,
+    busy: ['Only admins can sign in right now.', 'Signalith can’t reach its storage. Try again later.'],
+    store: ['Signalith couldn’t save your sign-in.', 'Try again. If it keeps happening, tell a Signalith admin.'],
+  };
+  const ssoError = params.get('sso_error');
+  if (ssoError) {
+    const m = SSO_REFUSED[ssoError] || SSO_REFUSED.failed;
+    showError(m[0], m[1]);
+    // A reload should not show it again.
+    const clean = new URL(location.href);
+    clean.searchParams.delete('sso_error');
+    history.replaceState(null, '', clean.pathname + clean.search + clean.hash);
+  }
+
   reveal.addEventListener('click', () => {
     const show = pass.type === 'password';
     pass.type = show ? 'text' : 'password';
@@ -146,7 +182,7 @@
   // Messages for the sign-in refusals the server names with a code.
   const REFUSED = {
     wrong_credentials: ['That username and password don’t match.', 'After 10 failed attempts, sign-in pauses for 15 minutes.'],
-    disabled: ['This account is disabled.', 'Ask a Signalith admin to enable it.'],
+    disabled: REFUSED_DISABLED,
     not_in_group: ['Your account can’t use Signalith yet.', 'It isn’t in a directory group that Signalith lets in. Ask a Signalith admin to add you to one.'],
     password_expired: ['Your directory password has expired.', 'Change it the way you usually do, for example by signing in to Windows, then sign in here again.'],
     directory_unavailable: ['Signalith can’t reach your directory right now.', 'Try again in a minute. If it keeps happening, tell a Signalith admin.'],
