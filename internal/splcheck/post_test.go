@@ -54,11 +54,8 @@ func TestPostStages(t *testing.T) {
 
 func TestPostRefuses(t *testing.T) {
 	for search, want := range map[string]string{
-		// Splunk's where compares two fields; Signalith's would compare
-		// with the text.
-		"| tstats count from datamodel=Endpoint.Processes where Processes.process_name=a.exe by Processes.dest Processes.process_name Processes.user | where process_name != user": "reads differently",
-		"`wineventlog_security` EventCode=4768 Status=0x6 | where TargetUserName IN (a, b)":                                                                                        "reads differently",
-		"`wineventlog_security` EventCode=4768 Status=0x6 | where TargetUserName=\"adm*\"":                                                                                         "reads differently",
+		"`wineventlog_security` EventCode=4768 Status=0x6 | where TargetUserName IN (a, b)": "reads differently",
+		"`wineventlog_security` EventCode=4768 Status=0x6 | where TargetUserName=\"adm*\"":  "reads differently",
 		// Lookups need Splunk's tables.
 		"`wineventlog_security` EventCode=4768 Status=0x6 | lookup local=t accounts user OUTPUT owner":                                   "later stage",
 		"| tstats count from datamodel=Endpoint.Processes where Processes.process_name=a.exe by _time span=1h Processes.dest | eval x=1": "grouped by time",
@@ -67,8 +64,10 @@ func TestPostRefuses(t *testing.T) {
 			t.Errorf("%s: err = %v, want %q", search, err, want)
 		}
 	}
-	// Numbers and quoted text without a wildcard read the same way.
+	// Numbers and quoted text without a wildcard read the same way, and
+	// two fields are compared as fields.
 	for _, search := range []string{
+		"| tstats count from datamodel=Endpoint.Processes where Processes.process_name=a.exe by Processes.dest Processes.process_name Processes.user | where process_name != user",
 		"`wineventlog_security` EventCode=4768 Status=0x6 | stats count by src | where count > 5",
 		"`wineventlog_security` EventCode=4768 Status=0x6 | where TargetUserName=\"admin\"",
 	} {
@@ -127,5 +126,35 @@ func TestPostBursts(t *testing.T) {
 	}}
 	if errs := Verify(r, "Authentication", filter, tf); len(errs) > 0 {
 		t.Error(errs)
+	}
+}
+
+func TestQuoteCompared(t *testing.T) {
+	for in, want := range map[string]string{
+		`process_name != parent_process_name`: `'process_name' != 'parent_process_name'`,
+		`count > 5 AND src_user=user`:         `count > 5 AND 'src_user'='user'`,
+		`x="a=b" AND len(x) > y`:              `x="a=b" AND len(x) > 'y'`,
+		`isnull(a) OR a = true`:               `isnull(a) OR a = true`,
+		`a > max(b, c)`:                       `a > max(b, c)`,
+		`'Actor{}.ID' = user`:                 `'Actor{}.ID' = 'user'`,
+	} {
+		if got := quoteCompared(in); got != want {
+			t.Errorf("%s: got %s", in, got)
+		}
+	}
+}
+
+func TestPostFillsGroups(t *testing.T) {
+	// process_exec is a field Splunk's add-on adds and Signalith keeps
+	// none of: an event without it still makes a row.
+	r, err := Parse(rule("`wineventlog_security` EventCode=4768 Status=0x6 | eval x=1 | stats count by src_ip process_exec"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(r.Post, "fillnull value=unknown process_exec\n| stats") || strings.Contains(r.Post, "unknown src_ip") {
+		t.Errorf("post:\n%s", r.Post)
+	}
+	if !r.Keeps(map[string]any{"user": "alice", "src": "10.0.0.5"}) {
+		t.Error("an event without process_exec is not kept")
 	}
 }
