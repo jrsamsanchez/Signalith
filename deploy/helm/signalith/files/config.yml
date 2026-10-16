@@ -1,0 +1,24 @@
+# OpenSearch security settings for Signalith: the only way to sign in is a
+# client certificate from Signalith's own OpenSearch CA. There are no
+# passwords to guess or leak, and no anonymous access.
+_meta:
+  type: "config"
+  config_version: 2
+
+config:
+  dynamic:
+    http:
+      anonymous_auth_enabled: false
+    authc:
+      clientcert_auth_domain:
+        description: "Sign in with a client certificate; the user name is its CN"
+        http_enabled: true
+        transport_enabled: false
+        order: 0
+        http_authenticator:
+          type: clientcert
+          config:
+            username_attribute: cn
+          challenge: false
+        authentication_backend:
+          type: noop

@@ -1,0 +1,31 @@
+{{- if and .Values.server.podDisruptionBudget.enabled (gt (int .Values.server.replicas) 1) }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "signalith.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "signalith.labels" . | nindent 4 }}
+    app.kubernetes.io/component: server
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      {{- include "signalith.selector" (dict "ctx" . "component" "server") | nindent 6 }}
+{{- end }}
+{{- if and .Values.opensearch.enabled .Values.opensearch.podDisruptionBudget.enabled (gt (int .Values.opensearch.replicas) 1) }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "signalith.opensearchName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "signalith.labels" . | nindent 4 }}
+    app.kubernetes.io/component: opensearch
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      {{- include "signalith.selector" (dict "ctx" . "component" "opensearch") | nindent 6 }}
+{{- end }}

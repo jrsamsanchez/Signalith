@@ -1,0 +1,235 @@
+{{- if .Values.opensearch.enabled }}
+{{- $os := include "signalith.opensearchName" . -}}
+{{- $o := .Values.opensearch -}}
+{{- if eq (int $o.replicas) 2 }}
+{{- fail "opensearch.replicas must be 1, or 3 or more: two nodes stop together when either one does" }}
+{{- end }}
+# Signalith's servers reach OpenSearch here, over HTTPS with their client
+# certificate. Nothing outside the release may (networkpolicy.yaml).
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $os }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "signalith.labels" . | nindent 4 }}
+    app.kubernetes.io/component: opensearch
+spec:
+  selector:
+    {{- include "signalith.selector" (dict "ctx" . "component" "opensearch") | nindent 4 }}
+  ports:
+    - { name: https, port: 9200, targetPort: https, protocol: TCP }
+---
+# The nodes by name, for finding each other as they start.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $os }}-nodes
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "signalith.labels" . | nindent 4 }}
+    app.kubernetes.io/component: opensearch
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    {{- include "signalith.selector" (dict "ctx" . "component" "opensearch") | nindent 4 }}
+  ports:
+    - { name: https, port: 9200, targetPort: https, protocol: TCP }
+    - { name: transport, port: 9300, targetPort: transport, protocol: TCP }
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $os }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "signalith.labels" . | nindent 4 }}
+    app.kubernetes.io/component: opensearch
+spec:
+  serviceName: {{ $os }}-nodes
+  replicas: {{ $o.replicas }}
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      {{- include "signalith.selector" (dict "ctx" . "component" "opensearch") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "signalith.selector" (dict "ctx" . "component" "opensearch") | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/opensearch-configmap.yaml") . | sha256sum }}
+        {{- with $o.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "signalith.fullname" . }}
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 120
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $o.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
+      securityContext:
+        {{- include "signalith.podSecurity" (dict "uid" 1000) | nindent 8 }}
+      initContainers:
+        # OpenSearch writes to its config folder as it starts, which the
+        # read-only image can't take: this copies it to a folder of the
+        # pod's own, with the chart's settings and the certificates
+        # (readable by OpenSearch alone) in place.
+        - name: config
+          image: {{ include "signalith.opensearchImage" . }}
+          imagePullPolicy: {{ $o.image.pullPolicy }}
+          command:
+            - sh
+            - -ec
+            - |
+              cp -a /usr/share/opensearch/config/. /work/
+              cp /chart/opensearch.yml /work/opensearch.yml
+              for f in config.yml internal_users.yml roles.yml roles_mapping.yml; do
+                cp /chart/$f /work/opensearch-security/$f
+              done
+              mkdir -p /work/certs
+              chmod 700 /work/certs
+              for f in /in/certs/*.pem; do
+                cp -L "$f" /work/certs/
+                chmod 600 "/work/certs/${f##*/}"
+              done
+          securityContext:
+            {{- include "signalith.containerSecurity" . | nindent 12 }}
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits: { memory: 128Mi }
+          volumeMounts:
+            - { name: config, mountPath: /work }
+            - { name: chart, mountPath: /chart, readOnly: true }
+            - { name: certs-in, mountPath: /in/certs, readOnly: true }
+      containers:
+        - name: opensearch
+          image: {{ include "signalith.opensearchImage" . }}
+          imagePullPolicy: {{ $o.image.pullPolicy }}
+          env:
+            - name: node.name
+              valueFrom: { fieldRef: { fieldPath: metadata.name } }
+            - name: OPENSEARCH_JAVA_OPTS
+              value: {{ $o.javaOpts | quote }}
+            # The image's demo security, whose passwords and certificates
+            # anyone can look up, stays off; the chart's files replace it.
+            - name: DISABLE_INSTALL_DEMO_CONFIG
+              value: "true"
+            # Nothing here uses the performance analyzer's own agent.
+            - name: DISABLE_PERFORMANCE_ANALYZER_AGENT_CLI
+              value: "true"
+          ports:
+            - { name: https, containerPort: 9200, protocol: TCP }
+            - { name: transport, containerPort: 9300, protocol: TCP }
+          startupProbe:
+            tcpSocket: { port: https }
+            periodSeconds: 10
+            failureThreshold: 60
+          livenessProbe:
+            tcpSocket: { port: https }
+            periodSeconds: 20
+            failureThreshold: 6
+          # Ready once its security settings are loaded (no sign-in needed).
+          readinessProbe:
+            exec:
+              command: [sh, -c, "curl -sf -o /dev/null --max-time 5 --cacert /usr/share/opensearch/config/certs/root-ca.pem https://localhost:9200/_plugins/_security/health"]
+            periodSeconds: 10
+            timeoutSeconds: 8
+          securityContext:
+            {{- include "signalith.containerSecurity" . | nindent 12 }}
+          resources:
+            {{- toYaml $o.resources | nindent 12 }}
+          volumeMounts:
+            - { name: config, mountPath: /usr/share/opensearch/config }
+            - { name: data, mountPath: /usr/share/opensearch/data }
+            - { name: logs, mountPath: /usr/share/opensearch/logs }
+            - { name: tmp, mountPath: /tmp }
+        # Makes sure OpenSearch has loaded its security settings: who may
+        # sign in and what each may do. It loads them when none are loaded,
+        # or when they are not the ones it loaded last (a new chart version
+        # can change roles.yml), then waits; it tries for about 10 minutes
+        # and starts again if that fails (deploy/docker/opensearch/load-security.sh).
+        - name: security
+          image: {{ include "signalith.opensearchImage" . }}
+          imagePullPolicy: {{ $o.image.pullPolicy }}
+          command: [sh, -c, "sh /chart/load-security.sh && exec sleep infinity"]
+          env:
+            - name: OPENSEARCH_HOST
+              value: localhost
+            - name: SECURITY_STATE_FILE
+              value: /state/loaded-files.sha256
+            - name: JAVA_OPTS
+              value: "-Xms32m -Xmx256m"
+          securityContext:
+            {{- include "signalith.containerSecurity" . | nindent 12 }}
+          resources:
+            requests: { cpu: 10m, memory: 64Mi }
+            limits: { memory: 512Mi }
+          volumeMounts:
+            - { name: config, mountPath: /usr/share/opensearch/config, readOnly: true }
+            - { name: chart, mountPath: /chart, readOnly: true }
+            - { name: data, mountPath: /state, subPath: signalith-security-loaded }
+            # From OpenSearch 3, securityadmin.sh unpacks a native library
+            # of its FIPS crypto provider here and loads it.
+            - { name: security-tmp, mountPath: /tmp }
+      volumes:
+        - name: chart
+          configMap: { name: {{ $os }}-config }
+        - name: certs-in
+          secret:
+            secretName: {{ $os }}-certs
+            defaultMode: 0440
+        # Memory only: it holds the node's and the admin's keys.
+        - name: config
+          emptyDir: { medium: Memory, sizeLimit: 64Mi }
+        - name: logs
+          emptyDir: { sizeLimit: 1Gi }
+        - name: tmp
+          emptyDir: { sizeLimit: 1Gi }
+        - name: security-tmp
+          emptyDir: { sizeLimit: 256Mi }
+      {{- with $o.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $o.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      affinity:
+        {{- if $o.affinity }}
+        {{- toYaml $o.affinity | nindent 8 }}
+        {{- else }}
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    {{- include "signalith.selector" (dict "ctx" . "component" "opensearch") | nindent 20 }}
+        {{- end }}
+      {{- with $o.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          {{- include "signalith.selector" (dict "ctx" . "component" "opensearch") | nindent 10 }}
+      spec:
+        accessModes: {{ toYaml $o.persistence.accessModes | nindent 10 }}
+        {{- with $o.persistence.storageClass }}
+        storageClassName: {{ . }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ $o.persistence.size }}
+{{- end }}

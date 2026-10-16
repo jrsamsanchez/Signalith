@@ -1,0 +1,34 @@
+# helm test: a server answers /readyz with ready, through the Service.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "signalith.fullname" . }}-test
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "signalith.labels" . | nindent 4 }}
+    app.kubernetes.io/component: test
+  annotations:
+    helm.sh/hook: test
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  securityContext:
+    {{- include "signalith.podSecurity" (dict "uid" 65532) | nindent 4 }}
+  containers:
+    - name: readyz
+      image: {{ include "signalith.image" . }}
+      # Plain HTTP answers /readyz (docs/servers.md); the image has bash
+      # but no curl.
+      command:
+        - bash
+        - -c
+        - |
+          exec 3<>/dev/tcp/{{ include "signalith.fullname" . }}/{{ .Values.server.port }}
+          printf 'GET /readyz HTTP/1.0\r\nHost: signalith\r\n\r\n' >&3
+          timeout 10 cat <&3 | tee /dev/stderr | grep -q '"ready":true'
+      securityContext:
+        {{- include "signalith.containerSecurity" . | nindent 8 }}
+      resources:
+        requests: { cpu: 10m, memory: 16Mi }
+        limits: { memory: 64Mi }

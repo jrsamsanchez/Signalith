@@ -1,0 +1,57 @@
+# What Signalith may do in OpenSearch. It signs in with its client
+# certificate (CN=signalith; see roles_mapping.yml) and may do anything to
+# its own indices, signalith* (events, risk, findings, investigations and
+# threat intel), and read cluster health, disk use and its own tasks. It
+# cannot read or change other indices or OpenSearch's security settings.
+#
+# Every OpenSearch call Signalith makes, and the permission that allows it:
+#   GET    _cluster/health                         cluster_monitor
+#   GET    _nodes/stats/fs (retention disk guard)  cluster_monitor
+#   GET    _tasks/<id> (retention waits on these)  cluster_monitor
+#   GET    _nodes/_local/stats/os                  cluster_monitor
+#          (servers compare their clocks with OpenSearch's)
+#   GET    _cat/indices/<pattern>                  cluster_monitor, manage
+#   GET    _cat/shards/<pattern>                   cluster_monitor, manage
+#   GET    _index_template/<prefix> (a newer one is kept)
+#   PUT    _index_template/<prefix>, <prefix>_runtime
+#                                                  indices:admin/index_template/*
+#   POST   _bulk (events, threat intel, restores)  cluster_composite_ops, crud
+#   POST   _search/scroll, DELETE _search/scroll   indices:data/read/scroll*
+#          (retention archives and checks)
+#   POST   <index>/_search, <index>/_count         crud
+#   POST   _mget (heartbeats and the job lease)    cluster_composite_ops, crud
+#   GET    <index>/_doc/<id>                       crud
+#   PUT    <index>/_doc/<id>, <index>/_create/<id> crud
+#   POST   <index>/_update/<id>                    crud
+#   DELETE <index>/_doc/<id> (only if unchanged)   crud
+#   POST   <index>/_update_by_query                crud
+#   POST   <index>/_delete_by_query                crud
+#   PUT    <index> (findings, cases, threat intel, restored days,
+#          <prefix>_runtime where servers find each other)
+#                                                  create_index
+#   GET    <index>/_mapping, PUT <index>/_mapping  manage
+#   GET    <index>/_settings, PUT <index>/_settings (write blocks,
+#          copies on other nodes)                  manage
+#   POST   <index>/_refresh, <index>/_forcemerge   manage
+#   DELETE <index> (retention)                     manage
+#
+# With an opensearch.index_prefix other than signalith, change signalith*
+# below to match it.
+_meta:
+  type: "roles"
+  config_version: 2
+
+signalith_server:
+  description: "Signalith: its own indices (signalith*) and cluster health"
+  cluster_permissions:
+    - "cluster_monitor"
+    - "cluster_composite_ops"
+    - "indices:data/read/scroll*"
+    - "indices:admin/index_template/*"
+  index_permissions:
+    - index_patterns:
+        - "signalith*"
+      allowed_actions:
+        - "crud"
+        - "create_index"
+        - "manage"

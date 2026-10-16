@@ -1,0 +1,3 @@
+{{- if .Values.scanner.enabled }}
+{{- include "signalith.statefulset" (dict "ctx" . "role" "scanner" "values" .Values.scanner) }}
+{{- end }}
