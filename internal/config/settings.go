@@ -486,6 +486,11 @@ var Registry = []Setting{
 	{Key: "auth.oidc.button_label", Scope: ScopeCluster, Section: "sso", Label: "Button label", Type: TypeText,
 		Help:        "The sign-in page's button.",
 		Placeholder: "Sign in with Okta", EmptyMeans: "Sign in with and the provider's name"},
+	{Key: "auth.scim.enabled", Scope: ScopeCluster, Section: "sso", Label: "Provisioning (SCIM)", Type: TypeBool,
+		Help: "Lets the identity provider add, update, disable and remove single sign-on users before they sign in, over SCIM 2.0. Roles still come from groups at each sign-in."},
+	{Key: "auth.scim.token_sha256", Scope: ScopeCluster, Section: "sso", Label: "SCIM token", Type: TypeText,
+		Help:  "The identity provider sends this token with every request. Signalith keeps only its SHA-256 fingerprint, so the token is shown once, when you create it.",
+		check: sha256Hex},
 
 	{Key: "intel.allow_loopback_feeds", Scope: ScopeCluster, Section: "intel", Label: "Allow feeds from this computer", Type: TypeBool, Restart: true,
 		Help:    "Lets feeds download from 127.0.0.1 or ::1, for a feed server on this computer.",

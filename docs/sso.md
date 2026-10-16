@@ -8,7 +8,8 @@ admin keep working beside it, so you can't lock yourself out by setting it up wr
 
 Each person's role comes from their groups at the provider, checked at every sign-in.
 Signalith can add people the first time they sign in, or only let in people an admin
-has seen before.
+has seen before. With [provisioning (SCIM)](#provisioning-with-scim) on, the provider can
+also add people ahead of time, and disable or remove them, which signs them out at once.
 
 ## How it works
 
@@ -203,6 +204,66 @@ works, such as Auth0, Ping, OneLogin, Authentik, Authelia or Dex. Register a web
 application with the redirect URI, enter the issuer (the address before
 `/.well-known/openid-configuration`), and check which claim carries the groups.
 
+## Provisioning with SCIM
+
+Provisioning lets the identity provider manage single sign-on users for you, over SCIM 2.0:
+
+- People assigned to the Signalith app are added to **Users** before they first sign in,
+  shown as **Not signed in yet**.
+- Name and email changes at the provider reach Signalith within the provider's next cycle.
+- Unassigning or disabling someone at the provider disables them in Signalith and **ends
+  their sessions at once**, instead of at their next sign-in. Removing them deletes them.
+
+Roles still come from the groups claim at each sign-in, as above; groups are not provisioned.
+A provisioned person's first sign-in with the same username links their identity, even when
+**Add users at first sign-in** is off. Provisioning only sees single sign-on users: it cannot
+change local users, directory users or the built-in admin, and a username one of them has is
+refused.
+
+To set it up, under **Settings > Single sign-on**, **Provisioning (SCIM)**:
+
+1. Turn **Provisioning (SCIM)** on.
+2. Click **Create token** and copy the token. It is shown only once: Signalith keeps only its
+   SHA-256 fingerprint. Click **Save**.
+3. Give the provider the **SCIM base URL** (your web address plus `/api/scim/v2`) and the
+   token, as below.
+
+Provisioning works only over HTTPS (or from the server itself), so the token is never sent in
+the clear. To change the token, click **Replace token** and save; the old one stops working
+when you save. Every change provisioning makes is in the audit log, by `scim`.
+
+### Entra ID
+
+1. In **Enterprise applications**, open the Signalith app (the one created with your app
+   registration), then **Provisioning**, **Get started**, and set **Provisioning Mode** to
+   **Automatic**.
+2. Under **Admin Credentials**, enter the SCIM base URL as **Tenant URL** and the token as
+   **Secret Token**. Click **Test Connection**, then **Save**.
+3. Under **Mappings**, turn off **Provision Microsoft Entra ID Groups**. In the user mapping,
+   keep `userPrincipalName` to `userName` (it must match the username claim, normally
+   `preferred_username`), `Switch([IsSoftDeleted]...)` to `active`, `displayName`,
+   `mail` to `emails[type eq "work"].value` and `objectId` to `externalId`; you can delete
+   the others.
+4. Set **Scope** to **Sync only assigned users and groups**, turn **Provisioning Status**
+   on, and save.
+
+### Okta
+
+1. In the Signalith app, **General**, **Edit**, choose **SCIM** under **Provisioning**, and
+   save.
+2. Under **Provisioning**, **Integration**, enter the SCIM base URL as **SCIM connector base
+   URL**, `userName` as **Unique identifier field for users**, tick **Push New Users**,
+   **Push Profile Updates**, and leave **Push Groups** off. Choose **HTTP Header** as the
+   authentication mode, paste the token, **Test Connector Configuration**, and save.
+3. Under **To App**, enable **Create Users**, **Update User Attributes** and **Deactivate
+   Users**.
+
+Okta's username must be what the username claim sends at sign-in (Okta's
+`preferred_username` is the login, normally the email address).
+
+A username cannot change through provisioning: Signalith answers `400` (`mutability`). To
+rename someone, remove them from the app and assign them again.
+
 ## Several servers
 
 Servers that share one OpenSearch share the single sign-on settings, and the users, like
@@ -236,6 +297,9 @@ auth:
     # scopes, username_claim, groups_claim and button_label default to the provider's
 ```
 
+Provisioning is under `auth.scim`: `enabled: true` and `token_sha256`, the SHA-256 (hex) of
+the token, which the Single sign-on tab writes for you.
+
 Store the client secret with `signalith secrets set auth.oidc.client_secret`, which keeps it
 encrypted (see [encryption.md](encryption.md)), or set it in the
 `SIGNALITH_OIDC_CLIENT_SECRET` environment variable where Signalith starts.
@@ -262,7 +326,7 @@ discovery document lists only `client_secret_post`.
 
 ## API
 
-Both routes need an admin.
+These three routes need an admin.
 
 `GET /api/auth/oidc` returns the settings as saved (each with `key`, `value`, and for the
 client secret only whether it is set), whether single sign-on is `on`, the `redirect_uri`
@@ -273,6 +337,16 @@ are. Save changes with `PUT /api/settings` and the `auth.oidc.*` keys
 `POST /api/auth/oidc/test` takes `{"values": {...}, "clear": [...]}` with any unsaved
 `auth.oidc.*` values, and returns `ok`, a `message` and the `steps` checked. It answers
 `400` with `fields` when a value is missing or wrong.
+
+`POST /api/auth/scim/token` makes a new provisioning token and returns `token` and its
+`sha256`; nothing changes until `auth.scim.token_sha256` is saved with `PUT /api/settings`.
+`GET /api/auth/oidc` also returns `scim_url` and whether provisioning is on (`scim_on`).
+
+The SCIM endpoints under `/api/scim/v2` take the token as `Authorization: Bearer <token>`
+instead of a sign-in: `ServiceProviderConfig`, `ResourceTypes`, `Schemas`, `Users` (`GET`
+with `filter` such as `userName eq "alice@example.com"`, `startIndex` and `count`; `POST`),
+`Users/{id}` (`GET`, `PUT`, `PATCH`, `DELETE`) and `Groups` (always empty). A user's id is
+their Signalith username.
 
 The sign-in itself uses `GET /api/auth/oidc/start` (with an optional `next` path) and
 `GET /api/auth/oidc/callback`, which need no sign-in.

@@ -357,6 +357,7 @@ func (s *Server) Handler() http.Handler {
 	s.routeClusterOSIdentity(api)
 	s.routeClusterInstall(mux, api)
 	s.routeSensor(mux, api)
+	s.routeSCIM(mux, api)
 	s.routeSensors(api)
 	s.routeTokens(api)
 	s.routeAPITokens(api)

@@ -67,7 +67,8 @@ func cleanSSOEmail(email string) string {
 // date with the name, email and role the provider gives. Only the same
 // identity at the provider (Subject) can sign in as an existing user, so
 // a name taken by anyone else, or by another identity, is refused rather
-// than taken over. A disabled user is returned unchanged.
+// than taken over; a user provisioned ahead of their first sign-in takes
+// the identity of that sign-in. A disabled user is returned unchanged.
 func (s *Store) SeeSSOUser(ctx context.Context, d SSOUser, create bool) (User, error) {
 	name := NormalizeUsername(d.Username)
 	if err := ValidUsername(name); err != nil {
@@ -80,15 +81,28 @@ func (s *Store) SeeSSOUser(ctx context.Context, d SSOUser, create bool) (User, e
 	for try := 1; ; try++ {
 		now := s.now()
 		r, err := s.b.Change(ctx, Actor(ctx), name, "", func(r *Record) error {
-			if r.Source != SourceSSO || r.Subject != d.Subject {
+			// A provisioned user who has not signed in yet has no Subject:
+			// their first sign-in binds it.
+			if r.Source != SourceSSO || r.Subject != d.Subject && r.Subject != "" {
 				return ErrSSOOther
 			}
 			if r.Disabled {
 				return ErrNoChange
 			}
 			u := r.User
-			changed := u.Name != d.Name || u.Email != d.Email || u.Role != d.Role
-			u.Name, u.Email, u.Role = d.Name, d.Email, d.Role
+			full, email := d.Name, d.Email
+			if u.ExternalID != "" {
+				// Provisioning keeps the name and email up to date too; an
+				// ID token without them leaves them as provisioned.
+				if full == "" {
+					full = u.Name
+				}
+				if email == "" {
+					email = u.Email
+				}
+			}
+			changed := u.Name != full || u.Email != email || u.Role != d.Role || u.Subject != d.Subject
+			u.Name, u.Email, u.Role, u.Subject = full, email, d.Role, d.Subject
 			if changed {
 				u.Updated = now
 			}

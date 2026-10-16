@@ -219,7 +219,11 @@ type userView struct {
 	DN                 string     `json:"dn,omitempty"`
 	// Refused says why the directory no longer lets a directory user in;
 	// their role is then empty.
-	Refused    string     `json:"refused,omitempty"`
+	Refused string `json:"refused,omitempty"`
+	// Pending is a single sign-on user provisioned (SCIM) who has not
+	// signed in yet; their role is then empty, as it comes from their
+	// groups at their first sign-in.
+	Pending    bool       `json:"pending,omitempty"`
 	Created    *time.Time `json:"created"`
 	Updated    *time.Time `json:"updated"`
 	LastSignIn *time.Time `json:"last_sign_in"`
@@ -240,6 +244,9 @@ func (s *Server) viewUser(u users.User, me string) userView {
 		ETag: s.userStore().ETag(u.Username)}
 	if u.Refused != "" {
 		v.Role = ""
+	}
+	if u.Pending() {
+		v.Pending, v.Role = true, ""
 	}
 	toggle := "disable"
 	if u.Disabled {

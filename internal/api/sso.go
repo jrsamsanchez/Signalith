@@ -440,7 +440,18 @@ func (s *Server) handleGetSSO(w http.ResponseWriter, r *http.Request) {
 		"editable":         s.Config.Path() != "",
 		"shared":           s.settingsShared(),
 		"sso_users":        s.userStore().Count()[users.SourceSSO],
+		"scim_url":         scimURL(saved.Config.Server.PublicURL),
+		"scim_on":          running.SCIMOn(),
+		"scim_warning":     scimWarning(scimURL(saved.Config.Server.PublicURL)),
 	})
+}
+
+// scimWarning says why the provider could not use the SCIM address.
+func scimWarning(addr string) string {
+	if u, err := url.Parse(addr); err == nil && u.Scheme == "http" && !isLoopback(u.Hostname()) {
+		return "Provisioning works only over HTTPS, so the token is never sent in the clear. Turn HTTPS on, or set the web address on the Server tab."
+	}
+	return ""
 }
 
 // ssoStep is one check of the single sign-on test.

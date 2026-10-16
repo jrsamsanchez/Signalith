@@ -27,6 +27,7 @@ type UserBody struct {
 	MustChangePassword bool       `json:"must_change_password"`
 	DN                 string     `json:"dn,omitempty"`
 	Subject            string     `json:"subject,omitempty"`
+	ExternalID         string     `json:"external_id,omitempty"`
 	Refused            string     `json:"refused,omitempty"`
 	PasswordHash       string     `json:"password_hash,omitempty"`
 	SessionEpoch       int64      `json:"session_epoch"`
@@ -39,7 +40,7 @@ type UserBody struct {
 // for a new user) this version does not know.
 func bodyOf(r users.Record, old *UserBody) *UserBody {
 	b := &UserBody{Username: r.Username, Name: r.Name, Email: r.Email, Role: r.Role, Source: r.Source, Disabled: r.Disabled,
-		MustChangePassword: r.MustChangePassword, DN: r.DN, Subject: r.Subject, Refused: r.Refused, SessionEpoch: r.Epoch,
+		MustChangePassword: r.MustChangePassword, DN: r.DN, Subject: r.Subject, ExternalID: r.ExternalID, Refused: r.Refused, SessionEpoch: r.Epoch,
 		Created: r.Created.UTC(), Updated: r.Updated.UTC()}
 	if r.Source == users.SourceLocal {
 		b.PasswordHash = r.Hash
@@ -56,8 +57,8 @@ func bodyOf(r users.Record, old *UserBody) *UserBody {
 // record returns the user record of a body.
 func record(b *UserBody, etag string) users.Record {
 	r := users.Record{User: users.User{Username: b.Username, Name: b.Name, Email: b.Email, Role: b.Role, Source: b.Source,
-		Disabled: b.Disabled, MustChangePassword: b.MustChangePassword, DN: b.DN, Subject: b.Subject, Refused: b.Refused,
-		Created: b.Created, Updated: b.Updated, SessionEpoch: b.SessionEpoch}, Epoch: b.SessionEpoch, ETag: etag}
+		Disabled: b.Disabled, MustChangePassword: b.MustChangePassword, DN: b.DN, Subject: b.Subject, ExternalID: b.ExternalID,
+		Refused: b.Refused, Created: b.Created, Updated: b.Updated, SessionEpoch: b.SessionEpoch}, Epoch: b.SessionEpoch, ETag: etag}
 	if b.Source == users.SourceLocal {
 		r.Hash = b.PasswordHash
 	}

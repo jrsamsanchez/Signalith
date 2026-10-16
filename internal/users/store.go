@@ -51,6 +51,11 @@ type User struct {
 	// provider: its issuer, a space and their subject (sub) there. Only
 	// that identity can sign in as them.
 	Subject string `json:"subject,omitempty"`
+	// ExternalID is a single sign-on user's id at the identity provider
+	// that provisions them (SCIM), as it sent it. A provisioned user with
+	// no Subject yet has not signed in: their first sign-in with the same
+	// username binds the identity.
+	ExternalID string `json:"external_id,omitempty"`
 	// Refused says why a directory user has no access since the directory
 	// was last asked about them: not found there (deleted, or disabled in
 	// Active Directory), disabled or expired there, or in no mapped group.
