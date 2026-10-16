@@ -88,7 +88,7 @@ capabilities:
 {{- if $v.server.tls.existingSecret -}}
 {{- $tls = dict "mode" "files" -}}
 {{- end -}}
-{{- $server := dict "listen" (printf "0.0.0.0:%d" $port) "public_url" $public "tls" $tls -}}
+{{- $server := dict "listen" (printf "0.0.0.0:%d" $port) "agent_listen" (printf "0.0.0.0:%d" (int $v.server.agentPort)) "public_url" $public "tls" $tls -}}
 {{- if $v.server.tls.existingSecret -}}
 {{- $_ := set $server "tls_cert" "/run/signalith/tls/tls.crt" -}}
 {{- $_ := set $server "tls_key" "/run/signalith/tls/tls.key" -}}

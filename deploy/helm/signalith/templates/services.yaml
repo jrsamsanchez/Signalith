@@ -1,7 +1,7 @@
 {{- $full := include "signalith.fullname" . -}}
 {{- $port := int .Values.server.port -}}
 {{- $svc := .Values.server.service -}}
-# The web UI, API and agents (HTTPS), on every ready server.
+# The web UI and API, and the agent port (HTTPS), on every ready server.
 apiVersion: v1
 kind: Service
 metadata:
@@ -29,6 +29,10 @@ spec:
     - name: https
       port: {{ $port }}
       targetPort: https
+      protocol: TCP
+    - name: agents
+      port: {{ int .Values.server.agentPort }}
+      targetPort: agents
       protocol: TCP
 ---
 # Each server and scanner by name ($(POD_NAME).<this>), for the servers
