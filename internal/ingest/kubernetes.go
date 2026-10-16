@@ -405,6 +405,7 @@ func ParseKubernetes(r map[string]any) Event {
 	if !IsKubernetesRecord(r) {
 		return parseGeneric(r)
 	}
+	r = kubeRedact(r)
 	flat := map[string]any{}
 	for _, k := range kubeTop {
 		if s := o365Text(r[k]); s != "" {

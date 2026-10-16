@@ -364,3 +364,50 @@ func TestKubernetesChangeAction(t *testing.T) {
 		}
 	}
 }
+
+// Credentials an audit event can carry are never kept, in its fields or
+// its message.
+func TestKubernetesCredentialsRedacted(t *testing.T) {
+	const jwt = "eyJhbGciOiJSUzI1NiJ9.c2VjcmV0LXRva2Vu.c2lnbmF0dXJl"
+	for name, s := range map[string]string{
+		"token review": `{"kind": "Event", "apiVersion": "audit.k8s.io/v1", "level": "RequestResponse", "auditID": "a1",
+			"stage": "ResponseComplete", "verb": "create", "requestURI": "/apis/authentication.k8s.io/v1/tokenreviews",
+			"user": {"username": "system:serviceaccount:kube-system:metrics-server"}, "sourceIPs": ["10.0.0.5"],
+			"objectRef": {"resource": "tokenreviews", "apiGroup": "authentication.k8s.io", "apiVersion": "v1"},
+			"responseStatus": {"code": 201},
+			"requestObject": {"kind": "TokenReview", "apiVersion": "authentication.k8s.io/v1", "spec": {"token": "` + jwt + `"}},
+			"responseObject": {"kind": "TokenReview", "spec": {"token": "` + jwt + `"}, "status": {"authenticated": true}},
+			"requestReceivedTimestamp": "2026-10-16T12:00:00.000000Z", "stageTimestamp": "2026-10-16T12:00:00.010000Z"}`,
+		"token request": `{"kind": "Event", "apiVersion": "audit.k8s.io/v1", "level": "RequestResponse", "auditID": "a2",
+			"stage": "ResponseComplete", "verb": "create", "requestURI": "/api/v1/namespaces/default/serviceaccounts/app/token",
+			"user": {"username": "system:node:node-1"}, "sourceIPs": ["10.0.0.6"],
+			"objectRef": {"resource": "serviceaccounts", "subresource": "token", "namespace": "default", "name": "app", "apiVersion": "v1"},
+			"responseStatus": {"code": 201},
+			"requestObject": {"kind": "TokenRequest", "spec": {"audiences": ["api"]}},
+			"responseObject": {"kind": "TokenRequest", "status": {"token": "` + jwt + `", "expirationTimestamp": "2026-10-16T13:00:00Z"}},
+			"requestReceivedTimestamp": "2026-10-16T12:00:00.000000Z", "stageTimestamp": "2026-10-16T12:00:00.010000Z"}`,
+		"secret": `{"kind": "Event", "apiVersion": "audit.k8s.io/v1", "level": "RequestResponse", "auditID": "a3",
+			"stage": "ResponseComplete", "verb": "create", "requestURI": "/api/v1/namespaces/default/secrets",
+			"user": {"username": "admin"}, "sourceIPs": ["10.0.0.7"],
+			"objectRef": {"resource": "secrets", "namespace": "default", "name": "db", "apiVersion": "v1"},
+			"responseStatus": {"code": 201},
+			"requestObject": {"kind": "Secret", "metadata": {"name": "db", "annotations": {
+				"kubectl.kubernetes.io/last-applied-configuration": "{\"stringData\":{\"password\":\"` + jwt + `\"}}"}},
+				"data": {"password": "` + jwt + `"}, "stringData": {"user": "` + jwt + `"}},
+			"responseObject": {"kind": "SecretList", "items": [{"metadata": {"name": "db"}, "data": {"password": "` + jwt + `"}}]},
+			"requestReceivedTimestamp": "2026-10-16T12:00:00.000000Z", "stageTimestamp": "2026-10-16T12:00:00.010000Z"}`,
+	} {
+		r := decode(t, s)
+		ev := Normalize(KubernetesTag, r, now)
+		doc, _ := json.Marshal(ev.Document())
+		if strings.Contains(string(doc), jwt) || strings.Contains(string(doc), "c2VjcmV0LXRva2Vu") {
+			t.Errorf("%s: the credential was kept: %s", name, doc)
+		}
+		if !strings.Contains(string(doc), kubeRedacted) {
+			t.Errorf("%s: nothing says a value was left out", name)
+		}
+		if !strings.Contains(fmt.Sprint(r), jwt) {
+			t.Errorf("%s: the record passed in was changed", name)
+		}
+	}
+}

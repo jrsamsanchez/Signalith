@@ -66,7 +66,12 @@ rules:
   - level: Metadata
     resources:
       - group: ""
-        resources: ["secrets", "configmaps"]
+        resources: ["secrets", "configmaps", "serviceaccounts/token"]
+  # Token checks and new tokens carry the token itself.
+  - level: Metadata
+    resources:
+      - group: "authentication.k8s.io"
+        resources: ["tokenreviews"]
   # Changes, with the object that was sent (a pod's spec, a role binding's subjects).
   - level: Request
     verbs: ["create", "update", "patch", "delete", "deletecollection"]
@@ -74,8 +79,10 @@ rules:
   - level: Metadata
 ```
 
-Keep secrets at `Metadata`: at `Request` or `RequestResponse` the event would carry the
-secret itself.
+Keep secrets and tokens at `Metadata`: at `Request` or `RequestResponse` the event would
+carry the secret itself. Signalith replaces a Secret's values, a TokenReview's token and a
+new service account token with `[redacted]` before storing an event, whatever the
+policy, so they are never kept.
 
 ### 2a. Send with the webhook backend
 
