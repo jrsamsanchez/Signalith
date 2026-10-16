@@ -79,8 +79,10 @@ var (
 	sshdInvalid = regexp.MustCompile(`^Invalid user (.*) from (\S+?)(?: port (\d+))?(?:\s.*)?$`)
 	// sudo leaves TTY out when run without a terminal (over ssh with a
 	// command, from cron or a script), and 1.9 may add GROUP= or ENV=. A
-	// refusal (user NOT in sudoers, command not allowed) comes first.
-	sudoCommand   = regexp.MustCompile(`^\s*(\S+) : (?:(\d+) incorrect password attempts? ; |([^;=]+?) ; )?(?:TTY=\S+ ; )?PWD=[^;]* ; USER=(\S+) ; (?:[A-Z]+=[^;]* ; )*COMMAND=(.*)$`)
+	// refusal (user NOT in sudoers, command not allowed) comes first. Only
+	// sudo's own keys may come before COMMAND, and the first COMMAND wins:
+	// the command's own arguments can hold " ; COMMAND=".
+	sudoCommand   = regexp.MustCompile(`^\s*(\S+) : (?:(\d+) incorrect password attempts? ; |([^;=]+?) ; )?(?:TTY=\S+ ; )?PWD=[^;]* ; USER=(\S+) ; (?:(?:GROUP|ENV|TSID|CHROOT|CWD)=[^;]* ; )*?COMMAND=(.*)$`)
 	sudoAuthFail  = regexp.MustCompile(`pam_unix\(sudo:auth\): authentication failure;.*\bruser=(\S*).*\buser=(\S+)`)
 	suSession     = regexp.MustCompile(`pam_unix\(su(?:-l)?:session\): session opened for user (\S+?)(?:\(uid=\d+\))? by (\S+?)(?:\(uid=\d+\))?$`)
 	suFail        = regexp.MustCompile(`pam_unix\(su(?:-l)?:auth\): authentication failure;.*\bruser=(\S*).*\buser=(\S+)`)
