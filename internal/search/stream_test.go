@@ -247,6 +247,8 @@ func FuzzStreamCommands(f *testing.F) {
 		`bin span=1h _time`, `bin span=0.25 v AS b`, `bucket _time span=1w`,
 		`regex g="^o"`, `regex v!="1"`, `fields - g, v*`,
 		`appendpipe [stats count by g | eval g="all"]`, `append [| makeresults count=2]`,
+		`chart limit=1 sum(v) over n by g | untable n g s | xyseries n g s`, `eval j="{\"a\":[{\"b\":1},{\"b\":2}]}" | spath input=j path=a{}.b`,
+		`eval j="{\"a\":{\"b\":[1,{\"c\":true}]}}" | spath input=j`,
 	} {
 		f.Add(s)
 	}

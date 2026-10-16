@@ -151,6 +151,18 @@ func applyCommand(ctx context.Context, res *Result, c query.Command) error {
 		return applyRegex(ctx, res, c)
 	case *query.FieldsRemove:
 		applyFieldsRemove(res, c)
+	case *query.Chart:
+		for _, cc := range chartCommands(c) {
+			if err := applyCommand(ctx, res, cc); err != nil {
+				return err
+			}
+		}
+	case *query.XYSeries:
+		return applyXYSeries(ctx, res, c)
+	case *query.Untable:
+		return applyUntable(ctx, res, c)
+	case *query.Spath:
+		return applySpath(ctx, res, c)
 	case *query.Timechart:
 		return fmt.Errorf("timechart must come before other commands that change results")
 	default:

@@ -355,6 +355,10 @@ func QueryReference() string {
   regex field="<RE2 regex>" | regex field!="<regex>" | regex "<regex>"   keeps rows that match (or with != do not); no field means _raw
   | makeresults [count=N]   starts a search with N rows holding only _time, for trying eval
   append [search <query>]   adds a subsearch's rows after the results
+  | tstats <aggs> from datamodel=Endpoint.Processes [where Processes.field=value ...] [by Processes.f1, _time span=1h]   Splunk's tstats: runs as the data model search plus stats; columns keep the Node. prefix; also | tstats count where index=* by sourcetype
+  chart [limit=N] <aggs> over f1 [by f2]   one row per f1, one column per f2 value (also chart count by f1, f2)
+  xyseries x y value   pivots rows into one row per x and one column per y; untable x name value turns them back
+  spath [input=f] [output=g] [path=a.b{}.c]   extracts JSON values (default from _raw); no path extracts every value by its path
   appendpipe [<commands>]   runs commands over the results so far and adds their rows after them, e.g. appendpipe [stats sum(count) as count | eval user="TOTAL"]
   join [type=left] [max=N] f1, f2 [search <query>]   adds the fields of a subsearch's rows that share f1, f2 (inner by default; the first match unless max=0 or max=N)
   fillnull [value=X] [fields]   sets missing values (default 0)

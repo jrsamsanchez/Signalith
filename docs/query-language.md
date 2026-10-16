@@ -50,6 +50,9 @@ In a regular expression that means `\.` stays `\.`, and a literal backslash is
 | `eventstats` | `eventstats avg(bytes) as avg_bytes by src` | Same [functions](#stats-functions) as `stats`, but adds the results to every row instead of replacing the rows, so later commands can compare each event with its group: `\| where bytes > avg_bytes * 10` |
 | `streamstats` | `streamstats current=f window=5 avg(bytes) as prev_avg by src` | Adds running results to each row, over the rows before it in result order (events come newest first; `sort` first for oldest first). Takes `count`, `dc`, `sum`, `avg`, `min`, `max`, `range`, `first` and `last`. `current=f` leaves the row itself out; `window=N` (up to 10,000) looks back over the last N rows of each group |
 | `timechart` | `timechart span=1h count by action` | One aggregation when splitting by a field; span picked automatically if omitted |
+| `chart` | `chart count over host by action` | One row per `over` value and, with `by`, one column per `by` value: the 10 with the largest totals unless `limit=N` says (`0` for all, up to 1,000). Without a split field it is `stats ... by` the over field; `chart count by host, action` is the same as `over host by action`. Runs in OpenSearch like `stats` when it comes first |
+| `xyseries` | `xyseries host action count` | Turns rows into one row per first field and one column per second field's value, holding the third; with several value fields the columns are named `count: allow` |
+| `untable` | `untable host action count` | The reverse of `xyseries`: one row per cell, with the row field, the column's name and its value |
 | `top` | `top limit=10 process_name by host` | Adds `count` and `percent` |
 | `rare` | `rare limit=10 process_name by host` | Like `top`, least common values first |
 | `where` | `where count > 20 AND users >= 2` | AND binds tighter than OR here, as in most languages. Also takes [expressions](#expressions-eval-and-where): `where len(process) > 1000`, `where bytes_out > bytes_in * 10` |
@@ -62,6 +65,7 @@ In a regular expression that means `\.` stays `\.`, and a literal backslash is
 | `appendpipe` | `appendpipe [stats sum(count) as count \| eval user="TOTAL"]` | Runs the commands in `[ ]` over a copy of the results so far and adds the rows they give after them, for totals and summary rows. `inputlookup`, `makeresults`, `timechart` and `threatmatch` cannot run inside |
 | `bin` | `bin span=1h _time` | Rounds values down into buckets so `stats ... by _time` groups them: a time span (`30s`, `15m`, `1h`, `1d`, `1w`; weeks start on Monday, all in UTC) on times, or a number span (`span=100`) that turns numbers into ranges like `200-300`. `AS name` writes the bucket to another field. Also `bucket` |
 | `regex` | `regex process="(?i)-enc(odedcommand)?\s"` | Keeps rows where the field matches an [RE2](https://github.com/google/re2/wiki/Syntax) regular expression (any value of a multivalue field); `field!="..."` keeps those that do not. `regex "..."` looks at `_raw`. Rows without the field never match |
+| `spath` | `spath output=user path=actor.user.name` | Extracts values from JSON in `_raw` (or `input=field`): the value at `path=` (`items{}.id` takes `id` from every item of the `items` array, as a multivalue field), written to `output=` or the path's name. Without a path it extracts every value (up to 500 per event), each named by its path. Objects and arrays come out as JSON text |
 | `fillnull` | `fillnull value=0 bytes, packets` | Sets missing values (default `0`). With no fields it fills every column |
 | `sort` | `sort -count, src` | `-` for descending |
 | `head` | `head 20` | Also `limit` |
@@ -69,6 +73,7 @@ In a regular expression that means `\.` stays `\.`, and a literal backslash is
 | `rename` | `rename src as source_ip` | |
 | `lookup` | `lookup owners host OUTPUT owner, team` | Adds columns from a lookup table (Settings > Lookups) to rows whose field matches a key column; `host AS dest` matches another field, `OUTPUTNEW` fills only missing fields, no `OUTPUT` adds every column. See [Lookup tables](https://github.com/jrsamsanchez/signalith/blob/main/docs/lookups.md) |
 | `makeresults` | `\| makeresults count=3 \| eval user="test"` | Starts a search with rows that hold only `_time` (now), for trying out `eval` and other commands; `count=N` makes up to 10,000. It must come first, with nothing before the `\|` |
+| `tstats` | `\| tstats count from datamodel=Endpoint.Processes where Processes.process_name=cmd.exe by Processes.dest` | Splunk's `tstats`, read as the data model search and `stats` it stands for, so it runs in OpenSearch. CIM nodes map to Signalith's data models (`Endpoint.Processes` is `Endpoint`, `Endpoint.Filesystem` is `Filesystem`, `Network_Traffic.All_Traffic` is `Network_Traffic`), fields drop the node prefix (`Processes.dest` is `dest`) and result columns keep it, as in Splunk. `\| tstats count where index=* by index, sourcetype` counts events of any kind. `by _time span=1h` buckets times, which runs in the server over the newest events. `summariesonly=` and similar options are accepted and do nothing; `prestats=t` is not supported. It must come first |
 | `inputlookup` | `\| inputlookup owners \| stats count by team` | Starts a search with a lookup table's rows instead of events; `max=N` reads at most N rows. It must come first, with nothing before the `\|` |
 | `enrich` | `enrich` or `enrich user, dest` | Adds asset and identity context: `<field>_priority`, `_category`, `_bunit`, plus `_owner`, `_location` for assets and `_name`, `_email`, `_manager`, `_watchlist` for users. With no fields it enriches `user`, `src_user`, `src`, `dest`, `host`, `src_host`, `dest_host` and `risk_object` |
 | `threatmatch` | `threatmatch` or `threatmatch src, dest` | Keeps only events where a field equals a threat intel indicator. Runs inside OpenSearch, so it must come right after the search (before `stats` and other commands). Adds `threat_match_field`, `threat_match_value`, `threat_indicator`, `threat_type`, `threat_source`, `threat_weight`, `threat_description` and `threat_target` (the system on your side) to each event |
@@ -182,7 +187,8 @@ model is configured, questions with unknown words go to it; see
 - `threatmatch` becomes `terms` filters of indicator values (10,000 per clause) and
   prefix filters for networks, so matching runs inside OpenSearch too.
 - Commands after that run in the Signalith server on the aggregated rows. So do `eval`,
-  `rex`, `dedup`, `eventstats`, `streamstats`, `bin`, `regex`, `append`, `appendpipe`, and a
+  `rex`, `dedup`, `eventstats`, `streamstats`, `bin`, `regex`, `append`, `appendpipe`,
+  `xyseries`, `untable`, `spath`, and a
   `where` written as an expression, wherever they are.
 - An event search without `stats` returns the newest 100 events, or up to
   `search.max_events` (at most 100,000) when later commands need to sort, filter,

@@ -344,6 +344,14 @@ func CommandString(c Command) string {
 		return makeResultsString(c)
 	case *FieldsRemove:
 		return fieldsRemoveString(c)
+	case *Chart:
+		return chartString(c)
+	case *XYSeries:
+		return seriesString("xyseries", append([]string{c.X, c.Y}, c.Values...)...)
+	case *Untable:
+		return seriesString("untable", c.X, c.Label, c.Value)
+	case *Spath:
+		return spathString(c)
 	case *Enrich:
 		if len(c.Fields) == 0 {
 			return "enrich"
