@@ -227,6 +227,12 @@ async function api(path, body, method, extraHeaders) {
   };
   const resp = await apiRaw(path, opts);
   const data = await resp.json().catch(() => ({}));
+  // A sensitive change asks for the password or code again (users.js);
+  // once given, the request is sent once more.
+  if (resp.status === 403 && data.code === 'recheck_required' && typeof window.confirmIdentity === 'function' && !(extraHeaders && extraHeaders['X-Signalith-Rechecked'])) {
+    if (await window.confirmIdentity(data)) return api(path, body, method, { ...(extraHeaders || {}), 'X-Signalith-Rechecked': '1' });
+    data.error = 'Nothing was changed: the change needs your password or code.';
+  }
   if (resp.status === 401) toSignIn();
   // A temporary password must be replaced first; the sign-in page asks for it.
   if (resp.status === 403 && data.code === 'password_change_required') toSignIn(true);

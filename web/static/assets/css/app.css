@@ -3253,6 +3253,9 @@ body:has(.page.active .inspector:not([hidden], .hidden)) #toast { bottom: 88px; 
 #page-users .u-mfa { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px 1px 6px; border-radius: var(--r-full); font-size: var(--fs-xs); font-weight: 600; color: var(--success); background: var(--success-soft); white-space: nowrap; }
 #page-users .u-mfa .icon { width: 13px; height: 13px; }
 .u-mfa-dialog { width: min(480px, calc(100vw - 32px)); }
+#u-recheck { width: min(440px, calc(100vw - 32px)); }
+#u-recheck .field[hidden] { display: none; }
+.u-recheck__swap { margin: 0; font-size: var(--fs-sm); }
 .u-mfa-dialog .modal__body { display: grid; gap: 16px; }
 .u-mfa-dialog .mfa-qr { margin-top: 2px; }
 .u-mfa-dialog .hint { display: flex; align-items: flex-start; gap: 6px; }

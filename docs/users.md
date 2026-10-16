@@ -270,7 +270,8 @@ password, so a stolen password alone cannot sign in. Any app that makes 6-digit 
 works: Microsoft Authenticator, Google Authenticator, 1Password, Bitwarden, Authy and
 others. It works for local users, the built-in admin and directory users. Users who
 sign in with single sign-on get their second step from their identity provider, and
-Signalith does not ask again.
+Signalith does not ask again, so require it there: **Require two-step sign-in** does
+not reach them.
 
 **Turn it on.** Open the user menu (your name, top right) and choose **Two-step
 sign-in**, then **Set up**:
@@ -311,7 +312,11 @@ that changes things needs its own account without two-step sign-in.
 
 The app's key is stored encrypted: in `users.json` with the master key, and on servers
 that share their users with the cluster key (re-encrypted when the cluster key is
-rotated). Recovery codes are kept only as hashes.
+rotated). Recovery codes are kept only as hashes keyed with the app's key, so a copy
+of the file without the key that decrypts it gives them away no more than the key
+itself. If the key cannot be decrypted (for example, `users.json` restored next to
+another master key), neither codes from the app nor recovery codes work until an admin
+resets two-step sign-in.
 
 | `code` | When |
 | --- | --- |
@@ -320,6 +325,35 @@ rotated). Recovery codes are kept only as hashes.
 | `mfa_basic` (403) | HTTP Basic auth for an account with two-step sign-in, or required to have it |
 | `mfa_setup_required` (403) | Two-step sign-in is required and not set up yet; only the routes under **Every role** work |
 | `mfa_unavailable` (503) | The code could not be checked just now (for example the shared settings cannot be written) |
+
+## Confirming it's you
+
+Some changes ask for your password again when you have not entered it in the last
+15 minutes, so someone at a computer you left signed in cannot make them:
+
+- adding, changing, disabling or deleting a user, resetting a password or two-step
+  sign-in, saving the directory sign-in settings, and setting up your own two-step
+  sign-in;
+- making an API token, an agent token or a token to add a server, accepting an old
+  shared agent token, approving a new server, and rotating the cluster key;
+- changing retention policies, the default or the disk guard, and running retention
+  now;
+- switching certificate authority, and saving response actions, playbooks or
+  notifications, or removing the detection content pack;
+- saving a setting that affects sign-in, encryption or where data goes: **Sign out
+  after**, **Require two-step sign-in**, single sign-on and the other `auth.*`
+  settings, HTTPS and the certificate files (`server.tls*`), **Listen address**,
+  **Trusted reverse proxies**, **Client address header**, **Proxies and gateways**, the
+  PROXY protocol, the OpenSearch connection (`opensearch.*` and
+  `cluster.opensearch_url`), syslog over TLS and **Allowed senders**, threat intel
+  feeds on this computer (`intel.allow_loopback_feeds`), the AI assistant's address
+  and masked fields, or **Reset all**.
+
+With two-step sign-in on, a code from your app (or a recovery code) works instead of
+the password. Signing in counts, so for 15 minutes after you sign in nothing is asked.
+Wrong passwords and codes count toward the failed sign-in limits. Turning off your own
+two-step sign-in and making new recovery codes always take a code. Scripts that use
+HTTP Basic auth send the password with every request, so they are never asked.
 
 ## Sign in with Active Directory or LDAP
 
@@ -851,6 +885,8 @@ the Settings page and restarts are logged the same way; see
 | `new recovery codes made` | `by`, `user` |
 | `recovery code used` | `by`, `user`, `recovery_codes_left` |
 | `two-step code refused` | `user`, `client`, `locked_out` |
+| `password or code entered again` | `by`, `user`, `with` (`password`, `app` or `recovery`) |
+| `recheck refused` | `user`, `client`, `reason`, `locked_out` |
 | `directory settings changed` | `by`, `enabled`, `servers`, `fields` (names only) |
 | `directory connection tested` | `by`, `servers`, `bind_dn`, `ok` |
 | `directory user looked up` | `by`, `user`, `servers`, `ok`, `code`, `password_checked` |
@@ -923,7 +959,8 @@ request, so a server that has not yet read that change reads it first (see
 
 **Every role** (also allowed while a password change is pending): `GET /api/me`,
 `POST /api/me/password`, `GET /api/me/mfa`, `POST /api/me/mfa/setup`,
-`POST /api/me/mfa/confirm`, `POST /api/me/mfa/recovery`, `POST /api/me/mfa/off`.
+`POST /api/me/mfa/confirm`, `POST /api/me/mfa/recovery`, `POST /api/me/mfa/off`,
+`POST /api/me/recheck`.
 
 **Viewer:** `GET /api/health` (with `?scope=cluster`, totals for every server), `POST /api/search`, `POST /api/explain`,
 `POST /api/build`, `POST /api/parse`, `GET /api/datamodels`, `GET /api/fields`,
@@ -1069,6 +1106,22 @@ and `recovery_codes_left` when a recovery code was used. `GET /api/me` also has
 
 A wrong code answers `400` with `"code": "mfa_wrong"` and counts toward the failed
 sign-in limits. Single sign-on users get `400` with `"code": "mfa_elsewhere"`.
+
+### Confirming it's you
+
+A change that needs the password again (see [Confirming it's you](#confirming-its-you))
+answers `403`:
+
+```json
+{"code": "recheck_required", "with": "password", "minutes": 15,
+ "error": "Enter your password to make this change."}
+```
+
+`with` is `password`, `password_or_code` (two-step sign-in is on) or `sign_in` (the
+account signs in elsewhere, so sign in again). `POST /api/me/recheck` with
+`{"password": "..."}` or `{"code": "123456"}` sets a cookie for this sign-in session
+that lasts 15 minutes; then send the change again. A wrong password answers `400` with
+`"code": "wrong_password"`, a wrong code `"code": "mfa_wrong"`.
 
 ### Users (admin)
 

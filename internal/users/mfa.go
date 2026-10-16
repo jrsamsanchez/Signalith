@@ -173,8 +173,9 @@ func OTPAuthURL(issuer, account, secret string) string {
 const recoveryAlphabet = "abcdefghjkmnpqrstuvwxyz23456789"
 
 // newRecoveryCodes returns RecoveryCodes new codes such as "k7q2m-x9vtd",
-// each 10 characters (about 50 bits), and their digests.
-func newRecoveryCodes() (codes, digests []string) {
+// each 10 characters (about 50 bits), and their digests keyed with the
+// authenticator key secret (see recoveryDigest).
+func newRecoveryCodes(secret string) (codes, digests []string) {
 	for range RecoveryCodes {
 		var sb strings.Builder
 		for sb.Len() < 11 {
@@ -194,7 +195,7 @@ func newRecoveryCodes() (codes, digests []string) {
 			sb.WriteByte(recoveryAlphabet[int(b[0])%len(recoveryAlphabet)])
 		}
 		codes = append(codes, sb.String())
-		digests = append(digests, recoveryDigest(sb.String()))
+		digests = append(digests, recoveryDigest(secret, sb.String()))
 	}
 	return codes, digests
 }
@@ -214,7 +215,21 @@ func normalizeCode(code string) string {
 	}, code)
 }
 
-func recoveryDigest(code string) string {
+// recoveryDigest is what is kept of a recovery code: an HMAC keyed with
+// the user's authenticator key, which is kept encrypted. Someone with a
+// copy of the users file or the shared settings, but not the key that
+// decrypts them, cannot try every code (about 50 bits) against it.
+func recoveryDigest(secret, code string) string {
+	m := hmac.New(sha256.New, []byte(secret))
+	m.Write([]byte("signalith recovery code v2\x00" + normalizeCode(code)))
+	return recoveryV2 + hex.EncodeToString(m.Sum(nil))
+}
+
+// recoveryV2 starts a digest made by recoveryDigest. Digests without it
+// are plain SHA-256 (legacyRecoveryDigest), from the first version.
+const recoveryV2 = "2:"
+
+func legacyRecoveryDigest(code string) string {
 	sum := sha256.Sum256([]byte("signalith recovery code v1\x00" + normalizeCode(code)))
 	return hex.EncodeToString(sum[:])
 }
@@ -270,10 +285,19 @@ func useCode(m *MFA, code string, t time.Time) (*MFA, CodeResult, error) {
 	if code == "" || len(code) > 64 {
 		return nil, CodeResult{}, ErrWrongCode
 	}
-	d := recoveryDigest(code)
+	// Without the key (it cannot be decrypted here), no recovery code
+	// can be checked either.
+	if m.Secret == "" {
+		return nil, CodeResult{}, ErrWrongCode
+	}
+	d, legacy := recoveryDigest(m.Secret, code), legacyRecoveryDigest(code)
 	found := -1
 	for i, have := range m.Recovery {
-		if subtle.ConstantTimeCompare([]byte(have), []byte(d)) == 1 {
+		want := d
+		if !strings.HasPrefix(have, recoveryV2) {
+			want = legacy
+		}
+		if subtle.ConstantTimeCompare([]byte(have), []byte(want)) == 1 {
 			found = i
 		}
 	}
@@ -377,7 +401,7 @@ func (s *Store) BeginMFA(ctx context.Context, name string) (string, error) {
 // Every session of the user ends, everywhere: a server that keeps its
 // sessions in memory is left to end them (auth.Sessions.EndUser).
 func (s *Store) ConfirmMFA(ctx context.Context, name, code string) ([]string, error) {
-	codes, digests := newRecoveryCodes()
+	var codes []string
 	release, err := s.hold()
 	if err != nil {
 		return nil, err
@@ -395,6 +419,8 @@ func (s *Store) ConfirmMFA(ctx context.Context, name, code string) ([]string, er
 		if !ok {
 			return nil, false, ErrWrongCode
 		}
+		var digests []string
+		codes, digests = newRecoveryCodes(cur.Secret)
 		return &MFA{Secret: cur.Secret, Recovery: digests, Since: now, LastStep: step}, true, nil
 	})
 	if err != nil {
@@ -424,7 +450,7 @@ func (s *Store) UseMFACode(ctx context.Context, name, code string) (CodeResult, 
 // NewRecoveryCodes replaces name's recovery codes with new ones, which
 // are shown once.
 func (s *Store) NewRecoveryCodes(ctx context.Context, name string) ([]string, error) {
-	codes, digests := newRecoveryCodes()
+	var codes []string
 	release, err := s.hold()
 	if err != nil {
 		return nil, err
@@ -434,8 +460,11 @@ func (s *Store) NewRecoveryCodes(ctx context.Context, name string) ([]string, er
 		if !cur.On() {
 			return nil, false, ErrMFAOff
 		}
+		if cur.Secret == "" {
+			return nil, false, ErrWrongCode
+		}
 		next := cur.clone()
-		next.Recovery = digests
+		codes, next.Recovery = newRecoveryCodes(cur.Secret)
 		return next, false, nil
 	})
 	if err != nil {

@@ -406,6 +406,13 @@
     if (!resp || !resp.ok) {
       $('mfa-qr-wait').textContent = 'No QR code';
       if (resp && resp.status === 401) { backToSignIn(); showError('Your session ended.', 'Sign in again.'); return; }
+      if (resp && resp.status === 403 && data.code === 'recheck_required') {
+        // The sign-in is too old to set it up from: sign in again.
+        try { await send('api/logout', { method: 'POST' }); } catch (_) { /* it ends anyway */ }
+        backToSignIn();
+        showError('Sign in again to set up two-step sign-in.', 'Setting it up needs a sign-in from the last few minutes.');
+        return;
+      }
       mfaError('Two-step sign-in could not be set up.', sentence(data.error) || 'Reload the page and try again.');
       return;
     }

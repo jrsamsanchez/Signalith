@@ -21,11 +21,13 @@ import (
 
 func (s *Server) routeMFA(api *router) {
 	api.self("GET /api/me/mfa", s.handleGetMFA)
-	api.self("POST /api/me/mfa/setup", s.handleSetupMFA)
+	// Setting it up with a stolen session would lock the user out: it
+	// asks for the password again unless they just signed in.
+	api.selfSensitive("POST /api/me/mfa/setup", s.handleSetupMFA)
 	api.self("POST /api/me/mfa/confirm", s.handleConfirmMFA)
 	api.self("POST /api/me/mfa/recovery", s.handleNewRecoveryCodes)
 	api.self("POST /api/me/mfa/off", s.handleMFAOff)
-	api.admin("DELETE /api/users/{username}/mfa", s.handleResetMFA)
+	api.sensitive("DELETE /api/users/{username}/mfa", s.handleResetMFA)
 }
 
 var (
@@ -143,8 +145,8 @@ func (s *Server) mfaView(p *principal) map[string]any {
 		v["since"] = m.Since
 		v["recovery_left"] = len(m.Recovery)
 		if m.Problem != "" {
-			v["problem"] = "The key of your authenticator app cannot be decrypted here, so codes from the app are refused. " +
-				"Sign in with a recovery code, turn two-step sign-in off and set it up again, or ask an admin to reset it."
+			v["problem"] = "The key of your authenticator app cannot be decrypted here, so codes from the app and recovery codes are refused. " +
+				"Ask an admin to reset your two-step sign-in, then set it up again."
 		}
 	}
 	return v

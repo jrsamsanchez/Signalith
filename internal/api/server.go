@@ -329,7 +329,7 @@ func (s *Server) Handler() http.Handler {
 	// The security checks name files, accounts and addresses on the
 	// server, and the certificate authority is the server's to change.
 	api.admin("GET /api/security", s.handleSecurity)
-	api.admin("POST /api/security/ca", s.handleSecurityCA)
+	api.sensitive("POST /api/security/ca", s.handleSecurityCA)
 	s.routeDetections(api)
 	s.routeRisk(api)
 	s.routeLookupTables(api)
