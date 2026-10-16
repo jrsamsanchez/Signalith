@@ -149,7 +149,7 @@ func (g *gmpConn) do(ctx context.Context, cmd any, out statusOf) error {
 	if err != nil {
 		// Not the marshaling error itself: a command may carry a password
 		// or key, and the error ends up in the log and on the page.
-		return fmt.Errorf("the OpenVAS command %T could not be written", cmd)
+		return errors.New("an OpenVAS command could not be written")
 	}
 	if _, err := g.c.Write(b); err != nil {
 		return fmt.Errorf("OpenVAS connection: %w", err)
@@ -160,8 +160,39 @@ func (g *gmpConn) do(ctx context.Context, cmd any, out statusOf) error {
 		}
 		return fmt.Errorf("OpenVAS answer: %w", err)
 	}
-	name := strings.TrimPrefix(fmt.Sprintf("%T", cmd), "vulnscan.")
-	return out.status().err(name)
+	return out.status().err(gmpName(cmd))
+}
+
+// gmpName names a command for errors from its type alone, never its
+// content: a command may carry a password or key.
+func gmpName(cmd any) string {
+	switch c := cmd.(type) {
+	case gmpAuth:
+		return "authenticate"
+	case gmpGetVersion:
+		return "get_version"
+	case gmpCreateTarget:
+		return "create_target"
+	case gmpCreateCredential:
+		return "create_credential"
+	case gmpCreateTask:
+		return "create_task"
+	case gmpStartTask:
+		return "start_task"
+	case gmpStopTask:
+		return "stop_task"
+	case gmpGetTasks:
+		return "get_tasks"
+	case gmpGetReports:
+		return "get_reports"
+	case gmpGetConfigs:
+		return "get_configs"
+	case gmpDelete:
+		return c.XMLName.Local
+	case gmpGetByFilter:
+		return c.XMLName.Local
+	}
+	return "a command"
 }
 
 // GMP commands and answers, as far as Signalith uses them.
