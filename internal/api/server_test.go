@@ -22,6 +22,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/detect"
 	"github.com/jrsamsanchez/signalith/internal/findings"
 	"github.com/jrsamsanchez/signalith/internal/ingest"
+	"github.com/jrsamsanchez/signalith/internal/notebooks"
 	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/search"
 	"github.com/jrsamsanchez/signalith/internal/store"
@@ -106,6 +107,7 @@ func newTestServerWith(t testing.TB, change func(*Server)) (*httptest.Server, *f
 		Assets:     lists,
 		Dashboards: boards,
 		Cases:      cases.NewMemory(),
+		Notebooks:  notebooks.NewMemory(),
 		Log:        logger,
 		Version:    "test",
 	}

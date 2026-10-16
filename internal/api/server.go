@@ -38,6 +38,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"github.com/jrsamsanchez/signalith/internal/intel"
 	"github.com/jrsamsanchez/signalith/internal/m365"
+	"github.com/jrsamsanchez/signalith/internal/notebooks"
 	"github.com/jrsamsanchez/signalith/internal/oidc"
 	"github.com/jrsamsanchez/signalith/internal/onboard"
 	"github.com/jrsamsanchez/signalith/internal/query"
@@ -84,6 +85,9 @@ type Server struct {
 	Dashboards *dashboards.Store
 	// Cases holds investigations; nil disables them.
 	Cases cases.Store
+	// Notebooks holds hunting notebooks; nil leaves only the starter
+	// hunts, which can be run but not saved.
+	Notebooks notebooks.Store
 	// Respond runs response actions; nil disables them.
 	Respond *respond.Runner
 	// Playbooks backs the Playbooks and Approvals pages; nil disables
@@ -348,6 +352,7 @@ func (s *Server) Handler() http.Handler {
 	s.routeNotify(api)
 	s.routeDashboards(api)
 	s.routeCases(api)
+	s.routeNotebooks(api)
 	s.routeRespond(api)
 	s.routePlaybooks(api)
 	s.routeUsers(api)

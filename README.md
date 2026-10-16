@@ -887,6 +887,16 @@ Open the **Investigations** tab to see open cases.
 Cases are stored in OpenSearch in the `<prefix>_cases` index, and every change is
 recorded with who made it.
 
+### Hunting notebooks
+
+**Hunting notebooks** (under **Hunt**) are saved hunts: Markdown notes and searches in
+order, each search with what it found when it last ran, tagged to ATT&CK techniques.
+Re-run a notebook over any time range, turn a search into a detection, link the hunt
+to a case with its results, share it with the team, or download it as Markdown. Seven
+starter hunts come built in (password spraying, living off the land, PowerShell,
+persistence, beaconing, DNS tunneling and discovery). See
+[docs/hunting-notebooks.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/hunting-notebooks.md).
+
 ### Investigate with AI
 
 **Investigate with AI** on a finding gathers its events, where its users, hosts and
