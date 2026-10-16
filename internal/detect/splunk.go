@@ -359,6 +359,8 @@ func SplunkDetection(p *Pack, r PackRule, src []byte) (*Detection, error) {
 	}
 	if rule.Threshold != nil {
 		splunkThreshold(d, q, rule)
+	} else if rule.Post != "" {
+		splunkPost(d, q, rule)
 	}
 	d.Origin = &Origin{
 		Pack: p.Name, PackTitle: p.Title, Rule: rule.ID, Author: strings.TrimSpace(rule.Author),
@@ -415,6 +417,13 @@ func splunkThreshold(d *Detection, q *query.Query, rule *splcheck.Rule) {
 	if pq, err := query.Parse(d.Query); err == nil {
 		d.Query = pq.String()
 	}
+	groupedBy(d, rule, t.By)
+}
+
+// groupedBy makes a detection whose rows are groups (stats ... by) find
+// each group once a day, with the title and risk about the group's host,
+// address or account.
+func groupedBy(d *Detection, rule *splcheck.Rule, by []string) {
 	d.Title = strings.TrimSpace(rule.Name)
 	toks := []struct{ field, word string }{{"dest", "on"}, {"host", "on"}, {"src", "from"}, {"user", "for"}}
 	if cloudNode(rule.Node) {
@@ -423,14 +432,14 @@ func splunkThreshold(d *Detection, q *query.Query, rule *splcheck.Rule) {
 		toks = toks[2:]
 	}
 	for _, tok := range toks {
-		if slices.Contains(t.By, tok.field) {
+		if slices.Contains(by, tok.field) {
 			d.Title += " " + tok.word + " $" + tok.field + "$"
 			break
 		}
 	}
-	d.Throttle = Throttle{Window: "24h", Fields: slices.Clone(t.By)}
+	d.Throttle = Throttle{Window: "24h", Fields: slices.Clone(by)}
 	var objects []RiskObject
-	for _, f := range t.By {
+	for _, f := range by {
 		switch f {
 		case "user", "src_user":
 			objects = append(objects, RiskObject{Field: f, Type: "user"})
@@ -442,9 +451,22 @@ func splunkThreshold(d *Detection, q *query.Query, rule *splcheck.Rule) {
 		}
 	}
 	if len(objects) == 0 {
-		objects = []RiskObject{{Field: t.By[0], Type: "other"}}
+		objects = []RiskObject{{Field: by[0], Type: "other"}}
 	}
 	d.Risk.Objects = objects
+}
+
+// splunkPost runs a rule's later stages after its filter, as they are
+// written. When they end in groups, each is found once a day.
+func splunkPost(d *Detection, q *query.Query, rule *splcheck.Rule) {
+	d.Query = q.String() + "\n| " + rule.Post
+	// In canonical form; Validate reports a query that does not parse.
+	if pq, err := query.Parse(d.Query); err == nil {
+		d.Query = pq.String()
+	}
+	if by := rule.PostGroups(); len(by) > 0 {
+		groupedBy(d, rule, by)
+	}
 }
 
 // cloudNode reports whether a node is a cloud service's records:

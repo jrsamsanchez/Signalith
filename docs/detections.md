@@ -712,7 +712,7 @@ the audit log, see [Microsoft 365](microsoft-365.md).
 
 ### Splunk Security Content
 
-**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,111 Windows,
+**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,125 Windows,
 Linux, web, network, AWS CloudTrail, Entra ID and Microsoft 365 detections from Splunk's Threat Research Team
 ([security_content](https://github.com/splunk/security_content)), pinned to one
 commit. They are the production TTP and anomaly rules that search the CIM
@@ -915,7 +915,7 @@ pack.
 Registry values that Sysmon writes as `DWORD (0x00000001)` compare as `0x00000001`,
 the way Splunk's Sysmon add-on reads them.
 
-A rule is shipped only when its whole search converts exactly (a `tstats` search
+A rule is shipped only when its search converts exactly (a `tstats` search
 whose later stages only rename fields, format times, keep rows that have a field
 (`where isnotnull(...)`), keep rows a regular expression matches (`regex field="..."`,
 or `where match(field, "...")` joined by AND or OR) or apply the rule's empty `_filter`
@@ -940,7 +940,8 @@ and each group is found once a day. Fields of Splunk's add-ons that only restate
 which event it is (`signature`, `vendor_product`, `dvc`, `app`, `user_id`,
 `authentication_method`) are left out of the grouping; an event's `Computer` is
 `host`. A rule ships only when its test events carry every field it groups by and
-counts. Counts compared with an average (`eventstats`) are left out.
+counts. Counts compared with an average (`eventstats`) run as later stages (below), but
+no single test event reaches one, so none ship yet.
 
 A test that only leaves out the other platform's events (`NOT Processes.os="Linux"` in
 a Windows rule) is always true for the rule's own events, whether Splunk's add-on sets
@@ -948,9 +949,21 @@ a Windows rule) is always true for the rule's own events, whether Splunk's add-o
 A `\/` in a value is left out too, since Splunk's documented escapes do not say how
 it reads it.
 
-Searches with other `eval`s, `rex`, `lookup`, and other
-raw searches are left out for now; `internal/detect/packs/splunk/REPORT.md` lists
-every rule left out and why. The same CI checks as the SigmaHQ pack run on it.
+Other later stages (`eval`, `rex`, `stats`, `eventstats`, `dedup`, `fillnull`, a later
+`search`) run as written, in Signalith's [query language](query-language.md), after the
+converted filter. Before them, each field they name by Splunk's name is copied from the
+field Signalith keeps it as (`eval TargetUserName=user`), and a `tstats` search's own
+grouping comes first, with the data model's missing fields as `unknown`, as in the CIM.
+A test event is one the rule finds when the filter matches it and the later stages keep a
+row for it; a rule ships only when some test event comes through. Where the two
+languages read a stage differently, the rule is left out: a `where` that compares two
+fields (`where process_name != service_process`), or text with a `*`, since Signalith's
+`where` reads a plain condition as a filter. A dotted field (`userIdentity.userName`)
+is quoted, as Splunk reads it as one field. When the stages end in groups
+(`stats ... by`), each group is found once a day. Lookups, `join`, `transaction`,
+`spath` and the functions Signalith lacks are left out for now;
+`internal/detect/packs/splunk/REPORT.md` lists every rule left out and why. The same
+CI checks as the SigmaHQ pack run on it.
 
 Each rule is also checked on the real attack it was written for: Splunk records one
 for most rules (`tests.attack_data`, from [attack_data](https://github.com/splunk/attack_data)).

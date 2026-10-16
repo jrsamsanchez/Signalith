@@ -326,7 +326,8 @@ var quoted = regexp.MustCompile(`"[^"]*"|\b[A-Z][a-z]+\.\w+`)
 func short(err error) string {
 	s := quoted.ReplaceAllString(err.Error(), "…")
 	if len(s) > 90 {
-		s = s[:90]
+		// Cut on a character boundary.
+		s = strings.ToValidUTF8(s[:90], "")
 	}
 	return s
 }
