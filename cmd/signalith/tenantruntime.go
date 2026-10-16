@@ -229,6 +229,26 @@ func (t *tenantRuntime) Changed(_ context.Context, id string) error {
 
 // SettingsChanged has every running tenant's server follow the settings
 // the default tenant's server applied at once.
+// NotebookStores returns a store of hunting notebooks for each tenant in
+// the list, turned off ones too: a deleted provider user's notebooks are
+// released in all of them.
+func (t *tenantRuntime) NotebookStores() map[string]notebooks.Store {
+	list, err := t.reg.List()
+	if err != nil {
+		t.log.Warn("could not list the tenants to release a deleted user's hunting notebooks", "err", err)
+		return nil
+	}
+	front := t.front.Running()
+	out := make(map[string]notebooks.Store, len(list))
+	for _, tn := range list {
+		if tn.ID == tenants.Default {
+			continue
+		}
+		out[tn.ID] = notebooks.NewOpenSearch(t.cl, front.ForTenant(tn.ID).OpenSearch.IndexPrefix)
+	}
+	return out
+}
+
 func (t *tenantRuntime) SettingsChanged() {
 	t.mu.Lock()
 	list := make([]*tenantInstance, 0, len(t.running))

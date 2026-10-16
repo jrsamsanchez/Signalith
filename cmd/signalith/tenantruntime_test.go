@@ -128,20 +128,25 @@ func TestTenantsDataStaysApart(t *testing.T) {
 
 	// Acme's admin, signed in, works in acme only, and cannot reach the
 	// server's own pages.
-	ada := &running{t: t, r: rs.r, addr: rs.addr, os: rs.os, scheme: "http", client: rs.client}
-	resp, err := rs.client.Post("http://"+rs.addr+"/api/login", "application/json", strings.NewReader(`{"username":"ada","password":"Long-pass-for-acme-9"}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	resp.Body.Close()
-	for _, c := range resp.Cookies() {
-		if strings.HasSuffix(c.Name, "signalith_session") {
-			ada.cookie = c.Name + "=" + c.Value
+	signIn := func(name, password string) *running {
+		t.Helper()
+		who := &running{t: t, r: rs.r, addr: rs.addr, os: rs.os, scheme: "http", client: rs.client}
+		resp, err := rs.client.Post("http://"+rs.addr+"/api/login", "application/json", strings.NewReader(`{"username":"`+name+`","password":"`+password+`"}`))
+		if err != nil {
+			t.Fatal(err)
 		}
+		resp.Body.Close()
+		for _, c := range resp.Cookies() {
+			if strings.HasSuffix(c.Name, "signalith_session") {
+				who.cookie = c.Name + "=" + c.Value
+			}
+		}
+		if resp.StatusCode != 200 || who.cookie == "" {
+			t.Fatalf("%s's sign-in: %d", name, resp.StatusCode)
+		}
+		return who
 	}
-	if resp.StatusCode != 200 || ada.cookie == "" {
-		t.Fatalf("ada's sign-in: %d", resp.StatusCode)
-	}
+	ada := signIn("ada", "Long-pass-for-acme-9")
 	for _, c := range []struct {
 		method, path string
 		want         int
@@ -202,6 +207,26 @@ func TestTenantsDataStaysApart(t *testing.T) {
 		t.Error("the AI model turned off on the Settings page is still in use in a tenant")
 	}
 	must("POST", "/api/tenants/switch", `{"tenant":"default"}`, 200)
+
+	// A provider user's notebooks in a tenant are released with their
+	// account, so a later account of the same name does not get them.
+	must("POST", "/api/users", `{"username":"pat","role":"analyst","password":"Quiet-river-stone-77","must_change_password":false}`, http.StatusCreated)
+	pat := signIn("pat", "Quiet-river-stone-77")
+	if code, out, err := pat.call("", "POST", "/api/tenants/switch", `{"tenant":"acme"}`); err != nil || code != 200 {
+		t.Fatalf("pat's switch: %d %v %v", code, out, err)
+	}
+	if code, out, err := pat.call("", "POST", "/api/notebooks", `{"title":"Pat's hunt"}`); err != nil || code != http.StatusCreated {
+		t.Fatalf("pat's notebook: %d %v %v", code, out, err)
+	}
+	must("DELETE", "/api/users/pat", "", 200)
+	must("POST", "/api/users", `{"username":"pat","role":"analyst","password":"Quiet-river-stone-88","must_change_password":false}`, http.StatusCreated)
+	pat = signIn("pat", "Quiet-river-stone-88")
+	if code, out, err := pat.call("", "POST", "/api/tenants/switch", `{"tenant":"acme"}`); err != nil || code != 200 {
+		t.Fatalf("new pat's switch: %d %v %v", code, out, err)
+	}
+	if code, out, _ := pat.call("", "GET", "/api/notebooks", ""); code != 200 || strings.Contains(fmt.Sprint(out["notebooks"]), "Pat's hunt") {
+		t.Errorf("the new pat sees the deleted pat's private notebook in acme: %d %v", code, out)
+	}
 
 	// Turned off: its agents and users are refused at once.
 	must("PATCH", "/api/tenants/acme", `{"disabled":true}`, 200)

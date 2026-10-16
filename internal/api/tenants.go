@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/agenttokens"
+	"github.com/jrsamsanchez/signalith/internal/notebooks"
 	"github.com/jrsamsanchez/signalith/internal/tenants"
 	"github.com/jrsamsanchez/signalith/internal/users"
 )
@@ -117,6 +118,9 @@ type TenantRuntime interface {
 	SettingsChanged()
 	// Ready says why this server cannot run tenants now, or nil.
 	Ready() error
+	// NotebookStores returns the hunting notebooks of every tenant but
+	// the default one, running or not, by tenant ID.
+	NotebookStores() map[string]notebooks.Store
 }
 
 // tenantKey is the tenant of this server's data: tenants.Default for the

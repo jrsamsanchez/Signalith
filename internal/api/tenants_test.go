@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/findings"
+	"github.com/jrsamsanchez/signalith/internal/notebooks"
 	"github.com/jrsamsanchez/signalith/internal/tenants"
 	"github.com/jrsamsanchez/signalith/internal/users"
 )
@@ -335,10 +336,11 @@ func TestTenantAdminsManageOnlyTheirUsers(t *testing.T) {
 // fakeTenantRuntime runs no tenant, and records which were changed.
 type fakeTenantRuntime struct{ changed []string }
 
-func (f *fakeTenantRuntime) Server(string) *Server { return nil }
-func (f *fakeTenantRuntime) Servers() []*Server    { return nil }
-func (f *fakeTenantRuntime) SettingsChanged()      {}
-func (f *fakeTenantRuntime) Ready() error          { return nil }
+func (f *fakeTenantRuntime) Server(string) *Server                      { return nil }
+func (f *fakeTenantRuntime) Servers() []*Server                         { return nil }
+func (f *fakeTenantRuntime) SettingsChanged()                           {}
+func (f *fakeTenantRuntime) NotebookStores() map[string]notebooks.Store { return nil }
+func (f *fakeTenantRuntime) Ready() error                               { return nil }
 func (f *fakeTenantRuntime) Changed(_ context.Context, id string) error {
 	f.changed = append(f.changed, id)
 	return nil
@@ -389,10 +391,11 @@ func (o oneTenant) Server(id string) *Server {
 	}
 	return nil
 }
-func (o oneTenant) Servers() []*Server                    { return []*Server{o.srv} }
-func (o oneTenant) Changed(context.Context, string) error { return nil }
-func (o oneTenant) SettingsChanged()                      {}
-func (o oneTenant) Ready() error                          { return nil }
+func (o oneTenant) Servers() []*Server                         { return []*Server{o.srv} }
+func (o oneTenant) Changed(context.Context, string) error      { return nil }
+func (o oneTenant) SettingsChanged()                           {}
+func (o oneTenant) NotebookStores() map[string]notebooks.Store { return nil }
+func (o oneTenant) Ready() error                               { return nil }
 
 // A tenant's requests are answered by its own server, with its own data,
 // whoever asks: its users, and the provider's users switched into it.
