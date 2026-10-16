@@ -362,6 +362,35 @@ repeat steps 2 and 4, then restart OpenSearch and Signalith. Without the `ca` fo
 `signalith opensearch-certs` into a new folder instead and repeat steps 2 and 4 (step 3
 too if you changed the security files): the CA is then new as well.
 
+## Moving to OpenSearch 3.x
+
+Signalith works with OpenSearch 2.x (2.17 or later) and 3.x, and the security settings on
+this page are the same for both. An OpenSearch 2.17 data folder starts directly on 3.x and
+keeps its events, findings and security settings. OpenSearch can't go back to 2.x on the
+same data once 3.x has started on it, so take a backup first: an OpenSearch snapshot, or a
+copy of the OpenSearch volume while it is stopped.
+
+With Docker, put the 3.x image on the `opensearch` and `opensearch-security` services in
+an override file, then start again:
+
+```yaml
+# deploy/docker/docker-compose.override.yml
+services:
+  opensearch:
+    image: opensearchproject/opensearch:3.9.0
+  opensearch-security:
+    image: opensearchproject/opensearch:3.9.0
+```
+
+```sh
+docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.override.yml up -d
+```
+
+The step that loads the security settings loads them once more after the move (3.x has no
+`whitelist.yml`), which is expected. On OpenSearch installed without Docker, follow
+OpenSearch's own upgrade steps and keep the `opensearch.yml` lines from
+[step 2](#2-put-the-files-in-place-on-the-opensearch-machine).
+
 ## Other setups
 
 - **A cluster of several nodes**: make each node's certificate under the same CA (see

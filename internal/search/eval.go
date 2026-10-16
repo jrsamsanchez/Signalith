@@ -1326,6 +1326,10 @@ func applyEventStats(ctx context.Context, res *Result, c *query.EventStats) erro
 		}
 	}
 	aggCols := cols[len(c.By):]
+	// Each row gets its group's results, written out in full with every
+	// row: a values() or list() of large fields counts against the
+	// search's budget once per row.
+	ev := evaluatorFor(ctx)
 	for i, r := range res.Rows {
 		if i%checkEvery == 0 && ctx.Err() != nil {
 			return ctx.Err()
@@ -1337,6 +1341,9 @@ func applyEventStats(ctx context.Context, res *Result, c *query.EventStats) erro
 		g := byKey[k]
 		for _, col := range aggCols {
 			if v := g[col]; v != nil {
+				if !ev.charge(valueSize(v)) {
+					return ev.err
+				}
 				r[col] = v
 			}
 		}

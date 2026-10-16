@@ -147,20 +147,20 @@ func TestManagingLocalUsers(t *testing.T) {
 	if code, body, _ := call(t, ts, "GET", "/api/me", "", "", "", c); code != 200 || body["must_change_password"] != true || body["can_change_password"] != true {
 		t.Errorf("me = %d %v", code, body)
 	}
-	if code, body, _ := call(t, ts, "POST", "/api/me/password", `{"current_password":"nope","new_password":"jane-new-pass"}`, "", "", c); code != 400 || body["field"] != "current_password" {
+	if code, body, _ := call(t, ts, "POST", "/api/me/password", `{"current_password":"nope","new_password":"the-new-j-pass"}`, "", "", c); code != 400 || body["field"] != "current_password" {
 		t.Errorf("wrong current = %d %v", code, body)
 	}
 	if code, body, _ := call(t, ts, "POST", "/api/me/password", `{"current_password":"`+temp+`","new_password":"short"}`, "", "", c); code != 400 || body["field"] != "new_password" {
 		t.Errorf("short new = %d %v", code, body)
 	}
-	if code, body, _ := call(t, ts, "POST", "/api/me/password", `{"current_password":"`+temp+`","new_password":"jane-new-pass"}`, "", "", c); code != 200 || body["must_change_password"] != false {
+	if code, body, _ := call(t, ts, "POST", "/api/me/password", `{"current_password":"`+temp+`","new_password":"the-new-j-pass"}`, "", "", c); code != 200 || body["must_change_password"] != false {
 		t.Errorf("change = %d %v", code, body)
 	}
 	if code, _, _ := call(t, ts, "GET", "/api/health", "", "", "", c); code != 200 {
 		t.Errorf("health after change = %d", code)
 	}
 	// Basic auth works with the new password, as the same user.
-	if code, body := doAs(t, ts, "jdoe", "jane-new-pass", "GET", "/api/me", ""); code != 200 || body["auth"] != "basic" || body["role"] != "analyst" {
+	if code, body := doAs(t, ts, "jdoe", "the-new-j-pass", "GET", "/api/me", ""); code != 200 || body["auth"] != "basic" || body["role"] != "analyst" {
 		t.Errorf("basic = %d %v", code, body)
 	}
 
@@ -177,7 +177,7 @@ func TestManagingLocalUsers(t *testing.T) {
 	if code, _, _ := call(t, ts, "POST", "/api/cases", `{"title":"x"}`, "", "", c); code != 403 {
 		t.Errorf("viewer session posts a case = %d", code)
 	}
-	if code, _ := doAs(t, ts, "jdoe", "jane-new-pass", "POST", "/api/cases", `{"title":"x"}`); code != 403 {
+	if code, _ := doAs(t, ts, "jdoe", "the-new-j-pass", "POST", "/api/cases", `{"title":"x"}`); code != 403 {
 		t.Errorf("viewer basic posts a case = %d", code)
 	}
 
@@ -191,7 +191,7 @@ func TestManagingLocalUsers(t *testing.T) {
 	if code, _, _ := call(t, ts, "GET", "/api/me", "", "", "", c); code != 401 {
 		t.Errorf("session after reset = %d", code)
 	}
-	if code, _ := doAs(t, ts, "jdoe", "jane-new-pass", "GET", "/api/me", ""); code != 401 {
+	if code, _ := doAs(t, ts, "jdoe", "the-new-j-pass", "GET", "/api/me", ""); code != 401 {
 		t.Errorf("old password after reset = %d", code)
 	}
 	if code, body := doAs(t, ts, "jdoe", temp2, "GET", "/api/health", ""); code != 403 || body["code"] != "password_change_required" {
@@ -243,11 +243,11 @@ func TestManagingLocalUsers(t *testing.T) {
 
 func TestAdminsCannotLockThemselvesOut(t *testing.T) {
 	ts, _ := newUsersServer(t, func(s *Server) {
-		s.Users.Create(context.Background(), users.NewUser{Username: "ann", Role: users.Admin, Password: "ann-password"})
-		s.Users.Create(context.Background(), users.NewUser{Username: "ben", Role: users.Viewer, Password: "ben-password"})
+		s.Users.Create(context.Background(), users.NewUser{Username: "ann", Role: users.Admin, Password: "a-password-one"})
+		s.Users.Create(context.Background(), users.NewUser{Username: "ben", Role: users.Viewer, Password: "b-password-one"})
 	})
 	ann := func(method, path, body string) (int, map[string]any) {
-		return doAs(t, ts, "ann", "ann-password", method, path, body)
+		return doAs(t, ts, "ann", "a-password-one", method, path, body)
 	}
 	for _, c := range []struct{ method, path, body, want string }{
 		{"PUT", "/api/users/ann", `{"disabled":true}`, "disable your own"},
@@ -303,7 +303,7 @@ func TestDirectorySignIn(t *testing.T) {
 	ldaptest.LoadActiveDirectory(srv)
 	ts, _ := newUsersServer(t, func(s *Server) {
 		// carol is also a local user, so the directory is never asked about her.
-		s.Users.Create(context.Background(), users.NewUser{Username: "carol", Role: users.Viewer, Password: "local-carol"})
+		s.Users.Create(context.Background(), users.NewUser{Username: "carol", Role: users.Viewer, Password: "local-c-pass"})
 	})
 	admin := func(method, path, body string) (int, map[string]any, string) {
 		return call(t, ts, method, path, body, "admin", adminPass, nil)
@@ -322,7 +322,7 @@ func TestDirectorySignIn(t *testing.T) {
 		t.Errorf("bad settings = %d %v", code, body)
 	}
 	// Analysts cannot see or change directory settings.
-	if code, _ := doAs(t, ts, "carol", "local-carol", "GET", "/api/auth/directory", ""); code != 403 {
+	if code, _ := doAs(t, ts, "carol", "local-c-pass", "GET", "/api/auth/directory", ""); code != 403 {
 		t.Errorf("viewer reads settings = %d", code)
 	}
 
@@ -485,7 +485,7 @@ func TestPasswordChangeEndsSessionsOnOtherServers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := first.Create(context.Background(), users.NewUser{Username: "jane", Role: users.Analyst, Password: "jane-old-pass"}); err != nil {
+	if _, err := first.Create(context.Background(), users.NewUser{Username: "jane", Role: users.Analyst, Password: "the-old-j-pass"}); err != nil {
 		t.Fatal(err)
 	}
 	server := func() *httptest.Server {
@@ -497,15 +497,15 @@ func TestPasswordChangeEndsSessionsOnOtherServers(t *testing.T) {
 		return ts
 	}
 	a, b := server(), server()
-	_, _, onA := login(t, a, "jane", "jane-old-pass")
-	_, _, onB := login(t, b, "jane", "jane-old-pass")
+	_, _, onA := login(t, a, "jane", "the-old-j-pass")
+	_, _, onB := login(t, b, "jane", "the-old-j-pass")
 	if onA == nil || onB == nil {
 		t.Fatal("sign-in failed")
 	}
 	if code, _, _ := call(t, b, "GET", "/api/me", "", "", "", onB); code != 200 {
 		t.Fatalf("B before = %d", code)
 	}
-	if code, body, _ := call(t, a, "POST", "/api/me/password", `{"current_password":"jane-old-pass","new_password":"jane-new-pass"}`, "", "", onA); code != 200 {
+	if code, body, _ := call(t, a, "POST", "/api/me/password", `{"current_password":"the-old-j-pass","new_password":"the-new-j-pass"}`, "", "", onA); code != 200 {
 		t.Fatalf("change = %d %v", code, body)
 	}
 	ended := false
@@ -519,7 +519,7 @@ func TestPasswordChangeEndsSessionsOnOtherServers(t *testing.T) {
 		t.Error("the session on the other server outlived the password change")
 	}
 	// The browser the change was made in, and new sign-ins, carry on.
-	_, _, again := login(t, b, "jane", "jane-new-pass")
+	_, _, again := login(t, b, "jane", "the-new-j-pass")
 	time.Sleep(1100 * time.Millisecond) // past the users file recheck
 	if code, _, _ := call(t, a, "GET", "/api/me", "", "", "", onA); code != 200 {
 		t.Errorf("the browser that changed the password = %d, want 200", code)
