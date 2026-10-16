@@ -239,7 +239,12 @@ else
   fail "Health page" "($CODE) $(why)"
 fi
 
-if sg security -json >"$OUT/security.json" 2>&1; then pass "signalith security finds nothing at risk"; else warn "signalith security finds nothing at risk" "$(jq -r '[.. | objects | select(.ok == false) | (.title // .name // .id // empty)] | join(", ")' "$OUT/security.json" 2>/dev/null | head -c 300)"; fi
+if sg security -json >"$OUT/security.json" 2>"$OUT/security.err"; then
+  pass "signalith security finds nothing at risk"
+else
+  risks=$(jq -r '[.. | objects | select(.state? == "risk") | .title] | join(", ")' "$OUT/security.json" 2>/dev/null | head -c 300)
+  warn "signalith security finds nothing at risk" "${risks:-$(tail -n 1 "$OUT/security.err" | head -c 300)}"
+fi
 
 # =====================================================================
 area "Agents and data coming in"
@@ -381,9 +386,13 @@ EOF
 # A threat intel match: the address linux-1 just sent to on port 4444,
 # which the sensor saw (private addresses never count as indicators).
 INDICATOR=''
+INDICATOR_WHY="portquiz.net's address was not found"
 quiz=$(on linux-1 'getent ahostsv4 portquiz.net | head -1' 2>/dev/null | awk '{print $1}')
-if have sensor && [ -n "$quiz" ] && call POST /api/intel/indicators "$(jq -nc --arg v "$quiz" '{value: $v, type: "ip", description: "Lab end-to-end test", weight: "80", expires: "1d", tags: ["lab-e2e"]}')"; then
-  INDICATOR=$(j .id)
+if have sensor && [ -n "$quiz" ]; then
+  if call POST /api/intel/indicators "$(jq -nc --arg v "$quiz" '{value: $v, type: "ip", description: "Lab end-to-end test", weight: "8", expires: "1d", tags: ["lab-e2e"]}')"; then
+    INDICATOR=$(j .id)
+  fi
+  INDICATOR_WHY="($CODE) $(why)"
 fi
 say "  waiting 90 seconds for the events to arrive"
 sleep 90
@@ -420,13 +429,24 @@ detection() {
     fail "Detection $id fires" "Run now failed ($CODE): $(why)"
     return
   fi
-  local results throttled ids
+  local results throttled risk ids only
   results=$(j '.results // 0')
   throttled=$(j '.throttled // 0')
+  risk=$(j '.risk_events // 0')
   ids=$(j '[.findings[]?.id] | join(" ")')
+  only=$(jq -r --arg i "$id" '.detections[] | select(.id == $i) | .risk.only // false' "$OUT/detections.json")
   # shellcheck disable=SC2206
   FINDINGS+=($ids)
-  if [ "$results" -gt 0 ] && [ -n "$ids" ]; then
+  if [ "$results" -gt 0 ] && [ "$only" = true ]; then
+    # Risk-only rules add risk to the user or host and raise no finding.
+    if [ "$risk" -gt 0 ]; then
+      pass "Detection $id fires" "$results results, risk added (it raises no finding by design)"
+    elif [ "$throttled" -gt 0 ]; then
+      pass "Detection $id fires" "$results results; risk already added earlier ($throttled throttled)"
+    else
+      fail "Detection $id fires" "$results results but no risk added"
+    fi
+  elif [ "$results" -gt 0 ] && [ -n "$ids" ]; then
     pass "Detection $id fires" "$results results, finding raised"
   elif [ "$results" -gt 0 ]; then
     if call GET "/api/findings?detection=$id&since=24h&limit=1" && [ "$(j '.total // 0')" -gt 0 ]; then
@@ -455,18 +475,21 @@ if call GET /api/detections; then
   detection change-account-created
   detection change-account-deleted
   detection auth-ssh-root-login
+  # malware-left-clamav leaves EICAR out by design (category=test), so
+  # the test file cannot fire it.
   if on linux-1 'command -v clamdscan' >/dev/null 2>&1; then
     detection malware-detected
-    detection malware-left-clamav
   fi
+  # network-shell-port needs the program name, which an endpoint agent
+  # gives; the sensor's flows fire network-sensor-shell-port.
   if have sensor; then
-    detection network-shell-port
+    detection network-sensor-shell-port
     detection network-dns-nxdomain-burst
   fi
   if [ -n "$INDICATOR" ]; then
     detection threat-activity
   elif have sensor; then
-    fail "Detection threat-activity fires" "the test indicator was not added ($CODE): $(why)"
+    fail "Detection threat-activity fires" "the test indicator was not added: $INDICATOR_WHY"
   fi
   # The detection packs' Linux rules read audit logs of programs run.
   pack=$(j '[.detections[] | select(.enabled and ((.query // "") | test("sourcetype=\"?linux:audit|datamodel=Endpoint"; "i")) and ((.tags // []) | tostring | test("linux"; "i")))] | length')
@@ -597,7 +620,7 @@ fi
 if sg cluster export -settings -o "$OUT/settings-export.yaml" >/dev/null 2>"$OUT/export.err" && [ -s "$OUT/settings-export.yaml" ]; then
   pass "Shared settings export" "$(wc -c <"$OUT/settings-export.yaml") bytes"
 else
-  fail "Shared settings export" "$(head -c 300 "$OUT/export.err")"
+  fail "Shared settings export" "$(grep -v 'level=INFO' "$OUT/export.err" | tail -n 3 | head -c 300)"
 fi
 rm -f "$OUT/settings-export.yaml" "$OUT/export.err"
 

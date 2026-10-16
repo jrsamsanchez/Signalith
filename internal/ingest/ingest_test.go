@@ -556,6 +556,13 @@ func TestLinuxAuthLines(t *testing.T) {
 			map[string]any{"datamodel": "Authentication", "action": "success", "src_user": "alice", "user": "root", "process": "/usr/bin/cat /etc/shadow"}},
 		{"Oct 11 09:16:30 web1 sudo:    alice : 3 incorrect password attempts ; TTY=pts/0 ; PWD=/home/alice ; USER=root ; COMMAND=/bin/bash",
 			map[string]any{"action": "failure", "reason": "bad password"}},
+		// Without a terminal sudo leaves TTY out.
+		{"Oct 11 09:16:40 web1 sudo: e2e-tester : PWD=/home/e2e tester ; USER=root ; COMMAND=/usr/bin/cat /etc/shadow",
+			map[string]any{"datamodel": "Authentication", "action": "success", "src_user": "e2e-tester", "user": "root", "process": "/usr/bin/cat /etc/shadow"}},
+		{"Oct 11 09:16:45 web1 sudo: e2e-tester : 3 incorrect password attempts ; PWD=/home/e2e-tester ; USER=root ; COMMAND=/usr/bin/true",
+			map[string]any{"action": "failure", "reason": "bad password", "src_user": "e2e-tester"}},
+		{"Oct 11 09:16:50 web1 sudo:    alice : TTY=pts/1 ; PWD=/srv ; USER=root ; GROUP=adm ; COMMAND=/bin/ls",
+			map[string]any{"action": "success", "process": "/bin/ls"}},
 		{"Oct 11 09:17:00 web1 useradd[900]: new user: name=backdoor, UID=1002, GID=1002, home=/home/backdoor, shell=/bin/bash",
 			map[string]any{"datamodel": "Change", "action": "created", "object": "backdoor"}},
 		{"Oct 11 09:18:00 web1 su[901]: pam_unix(su:session): session opened for user root(uid=0) by alice(uid=1000)",

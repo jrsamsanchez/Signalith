@@ -74,10 +74,12 @@ func parseJournal(r map[string]any) Event {
 // ambiguousSSH). The sender can then hide its address, but never choose
 // another.
 var (
-	sshdAuth      = regexp.MustCompile(`^(Accepted|Failed) (\S+) for (invalid user )?(.*) from (\S+) port (\d+)((?:[\s:].*)?)$`)
-	sshdClause    = regexp.MustCompile(` from \S+ port \d+`)
-	sshdInvalid   = regexp.MustCompile(`^Invalid user (.*) from (\S+?)(?: port (\d+))?(?:\s.*)?$`)
-	sudoCommand   = regexp.MustCompile(`^\s*(\S+) : (?:(\d+) incorrect password attempts? ; )?TTY=\S+ ; PWD=\S+ ; USER=(\S+) ; COMMAND=(.*)$`)
+	sshdAuth    = regexp.MustCompile(`^(Accepted|Failed) (\S+) for (invalid user )?(.*) from (\S+) port (\d+)((?:[\s:].*)?)$`)
+	sshdClause  = regexp.MustCompile(` from \S+ port \d+`)
+	sshdInvalid = regexp.MustCompile(`^Invalid user (.*) from (\S+?)(?: port (\d+))?(?:\s.*)?$`)
+	// sudo leaves TTY out when run without a terminal (over ssh with a
+	// command, from cron or a script), and 1.9 may add GROUP= or ENV=.
+	sudoCommand   = regexp.MustCompile(`^\s*(\S+) : (?:(\d+) incorrect password attempts? ; )?(?:TTY=\S+ ; )?PWD=[^;]* ; USER=(\S+) ; (?:[A-Z]+=[^;]* ; )*COMMAND=(.*)$`)
 	sudoAuthFail  = regexp.MustCompile(`pam_unix\(sudo:auth\): authentication failure;.*\bruser=(\S*).*\buser=(\S+)`)
 	suSession     = regexp.MustCompile(`pam_unix\(su(?:-l)?:session\): session opened for user (\S+?)(?:\(uid=\d+\))? by (\S+?)(?:\(uid=\d+\))?$`)
 	suFail        = regexp.MustCompile(`pam_unix\(su(?:-l)?:auth\): authentication failure;.*\bruser=(\S*).*\buser=(\S+)`)
