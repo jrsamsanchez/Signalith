@@ -70,6 +70,9 @@ func (e *Text) String() string {
 	if e.Value == "*" {
 		return `"*"` // a bare * is no search term at all
 	}
+	if strings.EqualFold(e.Value, "search") {
+		return quote(e.Value) // first, a bare search is the command's name
+	}
 	return FormatValue(e.Value)
 }
 
