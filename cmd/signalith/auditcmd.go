@@ -144,10 +144,12 @@ func printAuditReport(w io.Writer, r *audit.Report) {
 	}{
 		{"OK", r.OK, "signed, and linked to the record before"},
 		{"Changed", r.Edited, "the MAC does not match, or a checkpoint saw otherwise"},
+		{"Signature removed", r.Stripped, "not signed, though its server signed the records before: MAC removed, or put in"},
 		{"Not linked", r.Broken, "a record before was changed, or one was put in"},
 		{"Removed", r.Missing, "missing from a chain, and no audit.lost record names them"},
 		{"Removed at the end", r.Truncated, "a checkpoint saw later records of a server than there are"},
-		{"Dropped", r.Dropped, "missing, and an audit.lost record names them (spool full, or refused)"},
+		{"Dropped", r.Dropped, "missing, and a signed audit.lost record names them (spool full, or refused)"},
+		{"Unverifiable", r.Unverifiable, "missing where nothing is signed, and only an unsigned audit.lost record names them"},
 		{"Unsigned", r.Unsigned, "older, imported, or written while the server had no cluster key"},
 		{"Unknown key", r.UnknownKey, "signed with a cluster key this server does not hold"},
 		{"Chains started", r.Restarts, "a server's first record, or the first after it lost its spool folder"},

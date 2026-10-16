@@ -59,11 +59,15 @@ signalith audit verify [-c file] [-from 2026-10-01] [-to 2026-10-15] [-server na
 ```
 
 It reads the lines in the range in each chain's order and reports how many check out, and
-those **changed** (the MAC does not match, or a checkpoint saw them otherwise), **not
-linked** (the line before was changed, or one was put in), **removed** (missing from a
-chain, and no `audit.lost` line names them), and **removed at the end** (a checkpoint saw
-later lines of a server than there are). It exits 2 when it finds any. It also counts the
-lines dropped and recorded, the unsigned ones, those signed with a cluster key this server
+those **changed** (the MAC does not match, or a checkpoint saw them otherwise), **signature
+removed** (not signed with a key the server holds, though their server signed its lines before
+them: a server that signs keeps signing, so the MAC was removed or replaced, or the line was
+put in), **not linked** (the line before was changed, or one was put in), **removed** (missing from a
+chain, and no signed `audit.lost` line names them), and **removed at the end** (a checkpoint saw
+later lines of a server than there are). It exits 2 when it finds any. Only signed `audit.lost` and
+`audit.checkpoint` lines count, as anyone who can write to OpenSearch could write unsigned
+ones; a gap where nothing is signed and only an unsigned `audit.lost` line names it is
+counted as **unverifiable**. It also counts the lines dropped and recorded, the unsigned ones, those signed with a cluster key this server
 does not hold, and the chains started. The command and the page check the lines with every
 cluster key this server holds, so lines signed before a [key
 rotation](servers.md#draining-and-removing-a-server) keep checking out as long as the old key's
@@ -80,6 +84,8 @@ What it cannot show:
 - Lines removed at the end of a server's chain after the last checkpoint, such as in the last
   hour, show only once a later line of that server or a later checkpoint exists. Lines
   removed at the start of the oldest chain look like lines retention deleted.
+- A line put in without a chain place and dated before its server first signed a line, or
+  within a minute after, counts only as unsigned.
 - Lines written before this version, imported lines (the founder's retention history), and
   lines a server wrote while it had no cluster key yet are chained (when written by a server
   of this version) but not signed: changing one shows only through the line after it.
@@ -97,7 +103,7 @@ All three routes need an admin.
 | --- | --- |
 | `GET /api/audit` | `{"enabled":true,"events":[...],"total":N,"next":"..."}`, newest first. Query parameters: `from` and `to` (RFC 3339 times), `server`, `user`, `action` (exact, or ending in `.` for every action it starts, such as `users.`), `q` (text in the message, user or target), `size` (1 to 500, 50 by default) and `after` (the `next` of the page before). On a server that does not share OpenSearch: `{"enabled":false,"note":...}` |
 | `GET /api/audit/servers` | `{"servers":[...]}`: the servers with audit lines |
-| `GET /api/audit/verify` | `{"enabled":true,"tampered":false,"report":{...}}`: the [integrity check](#tamper-evidence) of the lines from `from` to `to` (RFC 3339 times; all when left out), of `server` alone when set. The report has the counts `records`, `ok`, `edited`, `broken`, `missing`, `truncated`, `dropped`, `unsigned`, `unknown_key`, `restarts`, `continued` and `checkpoints`, `limited` when there were more lines than one check reads, `servers` (counts for each) and `problems` (the first 100, each with `kind`, `time`, `server`, `node_id`, `seq`, `id` and `detail`) |
+| `GET /api/audit/verify` | `{"enabled":true,"tampered":false,"report":{...}}`: the [integrity check](#tamper-evidence) of the lines from `from` to `to` (RFC 3339 times; all when left out), of `server` alone when set. The report has the counts `records`, `ok`, `edited`, `stripped`, `broken`, `missing`, `truncated`, `dropped`, `unverifiable`, `unsigned`, `unknown_key`, `restarts`, `continued` and `checkpoints`, `limited` when there were more lines than one check reads, `servers` (counts for each) and `problems` (the first 100, each with `kind`, `time`, `server`, `node_id`, `seq`, `id` and `detail`). One check runs at a time: another asked meanwhile gets 429 |
 
 Each event has `@timestamp`, `server`, `node_id`, `user`, `action`, `target`,
 `message`, `source_ip`, `level` and `fields` (the line's other attributes), and

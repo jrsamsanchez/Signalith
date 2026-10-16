@@ -37,9 +37,10 @@ type VerifyQuery struct {
 
 // Report is what Verify found. A record is OK when its MAC checks out
 // with the key it names and it links to the record before it. The other
-// counts say what is wrong, or only worth knowing: Edited, Broken,
-// Missing and Truncated mean records were changed or removed; Unsigned,
-// UnknownKey, Dropped, Restarts and Continued do not.
+// counts say what is wrong, or only worth knowing: Edited, Stripped,
+// Broken, Missing and Truncated mean records were changed, put in or
+// removed; Unsigned, UnknownKey, Dropped, Unverifiable, Restarts and
+// Continued do not.
 type Report struct {
 	From   string `json:"from,omitempty"`
 	To     string `json:"to,omitempty"`
@@ -58,6 +59,13 @@ type Report struct {
 	// Edited counts records whose MAC does not check out, or that differ
 	// from what a checkpoint saw: changed after they were written.
 	Edited int64 `json:"edited"`
+	// Stripped counts records with no MAC, or one made with a key this
+	// server does not hold, written after their server signed its records
+	// with a key it holds (by time, or by place in their chain): a server
+	// that signs keeps signing, so their MAC was removed or replaced, or
+	// they were put in. Neither the chain's links nor a key-less MAC can
+	// vouch for them, as anyone can make those.
+	Stripped int64 `json:"stripped"`
 	// Broken counts records that do not link to the record before them:
 	// that one was changed, or one was put in between.
 	Broken int64 `json:"broken"`
@@ -66,6 +74,13 @@ type Report struct {
 	// names (the spool was full, or OpenSearch refused them).
 	Missing int64 `json:"missing"`
 	Dropped int64 `json:"dropped"`
+	// Unverifiable counts records absent from a chain that only an
+	// unsigned audit.lost record names, in a part of the chain that is
+	// not signed either (written before the server had a cluster key, or
+	// checked without the key): a drop cannot be told from a removal
+	// there. Only a signed audit.lost record counts a gap between signed
+	// records as dropped.
+	Unverifiable int64 `json:"unverifiable"`
 	// Truncated counts chains whose latest records an audit.checkpoint
 	// record saw are gone: the end of a server's records was removed.
 	Truncated int64 `json:"truncated"`
@@ -85,7 +100,7 @@ type Report struct {
 }
 
 // Tampered reports whether records were changed or removed.
-func (r *Report) Tampered() bool { return r.Edited+r.Broken+r.Missing+r.Truncated > 0 }
+func (r *Report) Tampered() bool { return r.Edited+r.Stripped+r.Broken+r.Missing+r.Truncated > 0 }
 
 // ServerReport is one server's part of a Report.
 type ServerReport struct {
@@ -116,6 +131,7 @@ type Problem struct {
 // Kinds of Problem.
 const (
 	ProblemEdited    = "edited"
+	ProblemStripped  = "stripped"
 	ProblemBroken    = "broken"
 	ProblemMissing   = "missing"
 	ProblemTruncated = "truncated"
@@ -221,6 +237,9 @@ type checked struct {
 	hash   string
 	macOK  bool
 	edited bool
+	// unsigned and unknown say the record has no MAC, or one made with a
+	// key this server does not hold.
+	unsigned, unknown bool
 	// broken is set when the record does not follow the one before it.
 	broken bool
 }
@@ -281,18 +300,69 @@ func Check(hits []Hit, q VerifyQuery, keys KeyFunc) *Report {
 		}
 	}
 
+	// Each record's MAC first, for when each server started signing its
+	// records with a key this server holds.
+	all := make([]*checked, len(hits))
+	signedFrom := map[string]time.Time{}
+	for i := range hits {
+		h := &hits[i]
+		c := &checked{hit: h}
+		var key []byte
+		if keys != nil && h.MAC != "" {
+			key = keys(h.KID)
+		}
+		switch {
+		case h.MAC == "":
+			c.unsigned = true
+		case key == nil:
+			c.unknown = true
+		case h.checkMAC(key):
+			c.macOK = true
+			if t, ok := signedFrom[h.NodeID]; !ok || h.Time.Before(t) {
+				signedFrom[h.NodeID] = h.Time
+			}
+		default:
+			c.edited = true
+		}
+		all[i] = c
+	}
+	// stripped counts c, which has no MAC this server can check although
+	// its server signed records before it, as a record whose MAC was
+	// removed or replaced, or that was put in.
+	stripped := func(c *checked, why string) {
+		c.edited = true
+		if !in(c.hit.Time) {
+			return
+		}
+		if c.unsigned {
+			r.Unsigned--
+		} else {
+			r.UnknownKey--
+		}
+		r.Stripped++
+		problem(ProblemStripped, c, why)
+	}
+
 	chains := map[chainKey][]*checked{}
 	counted := map[chainKey]bool{}
+	// lost holds the runs signed audit.lost records name; unsure those
+	// of unsigned ones, which anyone could have written.
 	lost := map[chainKey][]lostRange{}
+	unsure := map[chainKey][]lostRange{}
 	var heads []headRef
 	for i := range hits {
 		h := &hits[i]
+		c := all[i]
 		inside := in(h.Time)
 		if h.Action == ActionCheckpoint {
 			if inside {
 				r.Checkpoints++
 			}
-			heads = append(heads, parseHeads(h)...)
+			// Only a signed checkpoint says what a server's records were:
+			// anyone could write an unsigned one.
+			if c.macOK {
+				heads = append(heads, parseHeads(h)...)
+			}
 		}
 		if q.Server != "" && h.Server != q.Server {
 			// Another server's checkpoint, read for what it saw.
@@ -303,28 +373,27 @@ func Check(hits []Hit, q VerifyQuery, keys KeyFunc) *Report {
 			r.Records++
 			s = server(h)
 		}
-		c := &checked{hit: h}
-		var key []byte
-		if keys != nil && h.MAC != "" {
-			key = keys(h.KID)
-		}
 		switch {
-		case h.MAC == "":
-			if inside {
-				r.Unsigned++
-			}
-		case key == nil:
-			if inside {
-				r.UnknownKey++
-			}
-		case h.checkMAC(key):
-			c.macOK = true
-		default:
-			c.edited = true
+		case c.edited:
 			if inside {
 				r.Edited++
 			}
 			problem(ProblemEdited, c, "the record was changed: its MAC does not match its contents")
+		case c.unsigned || c.unknown:
+			if inside {
+				if c.unsigned {
+					r.Unsigned++
+				} else {
+					r.UnknownKey++
+				}
+			}
+			// A record logged as its server got its key may be dated a
+			// little after its first signed one (see verifyMargin): its
+			// place in its chain says more, checked below.
+			if t, ok := signedFrom[h.NodeID]; ok && h.Time.After(t.Add(verifyMargin)) {
+				stripped(c, "the record is not signed with a key this server holds, though its server signed its records from "+
+					t.UTC().Format(time.RFC3339)+": its MAC was removed or replaced, or the record was put in")
+			}
 		}
 		if h.Chain == "" {
 			continue
@@ -339,14 +408,35 @@ func Check(hits []Hit, q VerifyQuery, keys KeyFunc) *Report {
 		if h.Action == ActionLost && !c.edited {
 			if lr, ok := parseLost(h); ok {
 				lk := chainKey{h.NodeID, lr.chain}
-				lost[lk] = append(lost[lk], lr)
+				if c.macOK {
+					lost[lk] = append(lost[lk], lr)
+				} else {
+					unsure[lk] = append(unsure[lk], lr)
+				}
 			}
 		}
 	}
 
 	for k, list := range chains {
 		sort.SliceStable(list, func(i, j int) bool { return list[i].hit.Seq < list[j].hit.Seq })
+		// gap returns how many of the records from to to before c audit.lost
+		// records name: signed ones (dropped), and, where c is not signed
+		// either, unsigned ones (unverifiable); and the run that ends at
+		// to. Between signed records only a signed audit.lost record
+		// counts, as anyone could write an unsigned one.
+		gap := func(c *checked, from, to int64) (dropped, unverifiable int64, last *lostRange) {
+			dropped, last = covers(lost[k], from, to)
+			if c.macOK || len(unsure[k]) == 0 {
+				return dropped, 0, last
+			}
+			n, lastAll := covers(append(append([]lostRange{}, lost[k]...), unsure[k]...), from, to)
+			if last == nil {
+				last = lastAll
+			}
+			return dropped, n - dropped, last
+		}
 		var p *checked
+		signed := false
 		for _, c := range list {
 			h := c.hit
 			inside := in(h.Time)
@@ -355,13 +445,22 @@ func Check(hits []Hit, q VerifyQuery, keys KeyFunc) *Report {
 					*n += by
 				}
 			}
+			// A server that signs keeps signing: a record after a signed
+			// one in its chain has a MAC this server can check.
+			if signed && (c.unsigned || c.unknown) && !c.edited {
+				stripped(c, "the record is not signed with a key this server holds, though the record before it in its chain is: "+
+					"its MAC was removed or replaced, or the record was put in")
+			}
+			signed = signed || c.macOK
 			linked := true
 			switch {
 			case p == nil:
 				// A chain whose first records the spool dropped started
 				// all the same.
-				covered, _ := covers(lost[k], 1, h.Seq-1)
-				count(&r.Dropped, covered)
+				dropped, unverifiable, _ := gap(c, 1, h.Seq-1)
+				covered := dropped + unverifiable
+				count(&r.Dropped, dropped)
+				count(&r.Unverifiable, unverifiable)
 				if h.ChainStart && h.Seq == 1 && h.Prev == "" || h.Seq > 1 && covered == h.Seq-1 {
 					count(&r.Restarts, 1)
 				} else {
@@ -377,8 +476,10 @@ func Check(hits []Hit, q VerifyQuery, keys KeyFunc) *Report {
 				problem(ProblemBroken, c, "two different records have this sequence number: one was put in")
 			case h.Seq > p.hit.Seq+1:
 				from, to := p.hit.Seq+1, h.Seq-1
-				covered, last := covers(lost[k], from, to)
-				count(&r.Dropped, covered)
+				dropped, unverifiable, last := gap(c, from, to)
+				covered := dropped + unverifiable
+				count(&r.Dropped, dropped)
+				count(&r.Unverifiable, unverifiable)
 				if n := to - from + 1 - covered; n > 0 {
 					count(&r.Missing, n)
 					linked = false
@@ -543,15 +644,23 @@ func headValue(ev Event) string {
 	return ev.Chain + ":" + strconv.FormatInt(ev.Seq, 10) + ":" + ev.Hash() + ":" + strconv.FormatInt(ev.Time.UnixMilli(), 10) + ":" + ev.Server
 }
 
+// headsLook is how many of each server's latest records Heads reads to
+// find the latest one that checks out.
+const headsLook = 25
+
 // Heads returns the latest chained record of each server with audit
-// records (at most MaxFields-1 of them), for an audit.checkpoint record.
-func Heads(ctx context.Context, c Searcher, prefix string) ([]Event, error) {
+// records (at most MaxFields-1 of them), for an audit.checkpoint record:
+// the latest whose MAC checks out with keys, when keys is set, of those
+// not dated in the future. A record someone put in, unsigned or dated
+// ahead, is never what a checkpoint vouches for (Verify reports it).
+func Heads(ctx context.Context, c Searcher, prefix string, keys KeyFunc) ([]Event, error) {
 	res, err := c.Search(ctx, Pattern(prefix), map[string]any{
-		"size": 0,
+		"size":  0,
+		"query": map[string]any{"bool": map[string]any{"filter": []any{map[string]any{"range": map[string]any{"@timestamp": map[string]any{"lte": time.Now().Add(time.Minute).UTC().Format(time.RFC3339Nano)}}}}}},
 		"aggs": map[string]any{"nodes": map[string]any{
 			"terms": map[string]any{"field": "node_id", "size": 200},
 			"aggs": map[string]any{"latest": map[string]any{"top_hits": map[string]any{
-				"size": 1, "sort": []any{map[string]any{"@timestamp": "desc"}, map[string]any{"seq": "desc"}}}}},
+				"size": headsLook, "sort": []any{map[string]any{"@timestamp": "desc"}, map[string]any{"seq": "desc"}}}}},
 		}},
 	})
 	if missing(err) {
@@ -582,9 +691,19 @@ func Heads(ctx context.Context, c Searcher, prefix string) ([]Event, error) {
 	for _, b := range out.Aggregations.Nodes.Buckets {
 		for _, h := range b.Latest.Hits.Hits {
 			var ev Event
-			if json.Unmarshal(h.Source, &ev) == nil && ev.Chain != "" && ev.NodeID != "" && len(evs) < MaxFields-1 {
+			if json.Unmarshal(h.Source, &ev) != nil || ev.Chain == "" || ev.NodeID == "" {
+				continue
+			}
+			if keys != nil {
+				key := keys(ev.KID)
+				if ev.MAC == "" || key == nil || !ev.checkMAC(key) {
+					continue
+				}
+			}
+			if len(evs) < MaxFields-1 {
 				evs = append(evs, ev)
 			}
+			break
 		}
 	}
 	return evs, nil

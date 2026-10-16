@@ -263,6 +263,10 @@ const auditCheckpointEvery = time.Hour
 // names them (see audit.Verify).
 func (r *runner) auditCheckpointJob(c *config.Config, cl *store.Client) cluster.Job {
 	prefix, sink, log := c.OpenSearch.IndexPrefix, r.audit.sink, r.log
+	var keys func() *shared.KeySet
+	if sh := r.shared; sh != nil {
+		keys = func() *shared.KeySet { return sh.Hub().Keys() }
+	}
 	return cluster.Job{Name: "audit checkpoint", Run: func(ctx context.Context) {
 		// After a few minutes first, so the records spooled at the start
 		// are written.
@@ -276,7 +280,7 @@ func (r *runner) auditCheckpointJob(c *config.Config, cl *store.Client) cluster.
 			}
 			wait = auditCheckpointEvery
 			tctx, cancel := context.WithTimeout(ctx, time.Minute)
-			heads, err := audit.Heads(tctx, cl, prefix)
+			heads, err := audit.Heads(tctx, cl, prefix, auditKeys(c, keys))
 			cancel()
 			if err != nil {
 				if !failing && ctx.Err() == nil {

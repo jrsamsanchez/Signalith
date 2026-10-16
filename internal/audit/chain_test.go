@@ -326,11 +326,25 @@ func TestCheckpointShowsTheEndRemoved(t *testing.T) {
 	if r = Check(asStored(t, cut), VerifyQuery{Server: "b"}, testKeys); r.Tampered() || r.Records != 1 {
 		t.Fatalf("server b: %+v", r)
 	}
-	// The record the checkpoint saw, changed, shows even unsigned.
+	// The record the checkpoint saw, changed and its MAC removed, shows.
 	hits := asStored(t, all)
 	hits[4].MAC, hits[4].Message = "", "changed"
-	if r = Check(hits, VerifyQuery{}, testKeys); r.Edited != 1 {
+	if r = Check(hits, VerifyQuery{}, testKeys); r.Stripped != 1 || !r.Tampered() {
 		t.Fatalf("changed: %+v", r)
+	}
+	// An unsigned checkpoint, which anyone could write, is not believed:
+	// it neither hides the end removed nor makes up one.
+	forged := cp
+	forged.KID, forged.MAC = "", ""
+	forged.Fields = map[string]string{"servers": "1", headPrefix + "n1": headValue(evs[2])}
+	if r = Check(asStored(t, append(append([]Event{}, evs[:3]...), forged)), VerifyQuery{}, testKeys); r.Truncated != 0 || r.Tampered() {
+		t.Fatalf("unsigned checkpoint: %+v", r)
+	}
+	ahead := evs[4]
+	ahead.Seq = 9
+	forged.Fields = map[string]string{"servers": "1", headPrefix + "n1": headValue(ahead)}
+	if r = Check(asStored(t, append(append([]Event{}, evs...), forged)), VerifyQuery{}, testKeys); r.Truncated != 0 {
+		t.Fatalf("made-up end: %+v", r)
 	}
 }
 
@@ -347,10 +361,13 @@ func TestKeyRotationKeepsRecordsVerifying(t *testing.T) {
 	if evs[0].KID != "k1" || evs[3].KID != "k2" || evs[4].KID != "" {
 		t.Fatalf("kids %q %q %q", evs[0].KID, evs[3].KID, evs[4].KID)
 	}
+	// A server that signed keeps signing: an unsigned record after its
+	// signed ones had its MAC removed, or was put in.
 	r := Check(asStored(t, evs), VerifyQuery{}, testKeys)
-	if r.OK != 4 || r.Unsigned != 1 || r.Tampered() {
+	if r.OK != 4 || r.Unsigned != 0 || r.Stripped != 1 || !r.Tampered() {
 		t.Errorf("report %+v", r)
 	}
+	evs = evs[:4]
 	// A server that never held k1 cannot check those, and says so.
 	r = Check(asStored(t, evs), VerifyQuery{}, func(kid string) []byte {
 		if kid == "k2" {
@@ -360,6 +377,17 @@ func TestKeyRotationKeepsRecordsVerifying(t *testing.T) {
 	})
 	if r.OK != 2 || r.UnknownKey != 2 || r.Tampered() {
 		t.Errorf("without k1: %+v", r)
+	}
+	// Records signed with a key this server does not hold after ones it
+	// can check were signed again by someone else.
+	r = Check(asStored(t, evs), VerifyQuery{}, func(kid string) []byte {
+		if kid == "k1" {
+			return testKey
+		}
+		return nil
+	})
+	if r.OK != 2 || r.Stripped != 2 || !r.Tampered() {
+		t.Errorf("without k2: %+v", r)
 	}
 }
 
@@ -407,14 +435,21 @@ func TestHeadsNameEachServersLatestRecord(t *testing.T) {
 		_ = json.Unmarshal(b, &m)
 		return m
 	}
-	bucket := func(ev Event) any {
-		return map[string]any{"key": ev.NodeID, "latest": map[string]any{"hits": map[string]any{"hits": []any{map[string]any{"_source": src(ev)}}}}}
+	bucket := func(evs ...Event) any {
+		var hits []any
+		for _, ev := range evs {
+			hits = append(hits, map[string]any{"_source": src(ev)})
+		}
+		return map[string]any{"key": evs[0].NodeID, "latest": map[string]any{"hits": map[string]any{"hits": hits}}}
 	}
 	legacy := Event{Time: time.Now(), NodeID: "old", Message: "before chains", Seq: 4}
+	// A record put in after the latest, unsigned, is passed over.
+	planted := evs[2]
+	planted.Seq, planted.MAC, planted.Message = 4, "", "planted"
 	var body map[string]any
 	st := stubSearcher{body: &body, res: map[string]any{"aggregations": map[string]any{"nodes": map[string]any{
-		"buckets": []any{bucket(evs[2]), bucket(legacy)}}}}}
-	heads, err := Heads(context.Background(), st, testPrefix)
+		"buckets": []any{bucket(planted, evs[2]), bucket(legacy)}}}}}
+	heads, err := Heads(context.Background(), st, testPrefix, testKeys)
 	if err != nil || len(heads) != 1 || heads[0].Seq != 3 {
 		t.Fatalf("heads %+v, err %v", heads, err)
 	}
@@ -473,4 +508,92 @@ func TestCoversCountsEachNumberOnce(t *testing.T) {
 	if n, last := covers(runs, 10, 19); n != 0 || last != nil {
 		t.Errorf("covers = %d, %v", n, last)
 	}
+}
+
+// relink makes each record of evs from i on follow the one before it
+// again, as anyone can: the chain's hash takes no key.
+func relink(evs []Event, i int) {
+	for ; i < len(evs); i++ {
+		evs[i].Prev = evs[i-1].Hash()
+	}
+}
+
+// Someone who can write to OpenSearch but holds no cluster key cannot
+// hide a change by removing MACs, signing with a key of their own,
+// naming removed records in an audit.lost record of their own, or
+// putting in records.
+func TestForgeriesWithoutTheKeyShow(t *testing.T) {
+	t.Run("MACs removed and relinked", func(t *testing.T) {
+		evs := chain(t, 6, false)
+		evs[2].User = "mallory"
+		for i := 2; i < 6; i++ {
+			evs[i].KID, evs[i].MAC = "", ""
+		}
+		relink(evs, 3)
+		r := Check(asStored(t, evs), VerifyQuery{}, testKeys)
+		if !r.Tampered() || r.Stripped != 4 || r.Unsigned != 0 {
+			t.Fatalf("report %+v", r)
+		}
+	})
+	t.Run("signed with an unknown key", func(t *testing.T) {
+		evs := chain(t, 6, false)
+		evs[2].User = "mallory"
+		for i := 2; i < 6; i++ {
+			evs[i].KID = "k9"
+			evs[i].MAC = evs[i].sign([]byte("mallory's own key, 32 bytes long"))
+		}
+		relink(evs, 3)
+		for i := 2; i < 6; i++ {
+			evs[i].MAC = evs[i].sign([]byte("mallory's own key, 32 bytes long"))
+		}
+		r := Check(asStored(t, evs), VerifyQuery{}, testKeys)
+		if !r.Tampered() || r.Stripped != 4 || r.UnknownKey != 0 {
+			t.Fatalf("report %+v", r)
+		}
+	})
+	t.Run("removal named in a forged audit.lost record", func(t *testing.T) {
+		evs := chain(t, 6, false)
+		f := lostEvent(lostRange{chain: evs[0].Chain, from: 3, to: 4, hash: evs[3].Hash(), n: 2, reason: "the spool was full"})
+		f.Time, f.Server, f.NodeID, f.Chain, f.Seq, f.ChainStart = evs[5].Time, "a", "n1", "forged", 1, true
+		kept := append(append(append([]Event{}, evs[:2]...), evs[4:]...), f)
+		r := Check(asStored(t, kept), VerifyQuery{}, testKeys)
+		if !r.Tampered() || r.Missing != 2 || r.Dropped != 0 {
+			t.Fatalf("report %+v", r)
+		}
+		// Backdated before the server signed anything, it is still not
+		// believed between signed records.
+		kept[len(kept)-1].Time = evs[0].Time.Add(-time.Hour)
+		if r = Check(asStored(t, kept), VerifyQuery{}, testKeys); r.Missing != 2 || r.Dropped != 0 || r.Unverifiable != 0 {
+			t.Fatalf("backdated: %+v", r)
+		}
+	})
+	t.Run("record put in", func(t *testing.T) {
+		evs := chain(t, 3, false)
+		fake := Event{Time: evs[2].Time.Add(2 * time.Minute), Server: "a", NodeID: "n1", User: "bob", Action: "users.delete", Message: "deleted alice"}
+		r := Check(asStored(t, append(evs, fake)), VerifyQuery{}, testKeys)
+		if !r.Tampered() || r.Stripped != 1 || r.Problems[0].Kind != ProblemStripped {
+			t.Fatalf("report %+v", r)
+		}
+	})
+	t.Run("unsigned before signing is not tampering", func(t *testing.T) {
+		s := newTestSink(t, SinkOptions{Server: "a", NodeID: "n1"})
+		addN(s, 2, 0)
+		s.SetKeySource(keySource("k1"))
+		addN(s, 2, 2)
+		s.Close()
+		r := Check(asStored(t, spooled(t, s.dir)), VerifyQuery{}, testKeys)
+		if r.Tampered() || r.Unsigned != 2 || r.OK != 2 {
+			t.Fatalf("report %+v", r)
+		}
+	})
+	t.Run("unsigned drops where nothing is signed", func(t *testing.T) {
+		evs := chain(t, 5, true)
+		f := lostEvent(lostRange{chain: evs[0].Chain, from: 3, to: 3, hash: evs[2].Hash(), n: 1, reason: "the spool was full"})
+		f.Time, f.Server, f.NodeID, f.Chain, f.Seq, f.ChainStart = evs[4].Time, "a", "n1", "other", 1, true
+		kept := append(append(append([]Event{}, evs[:2]...), evs[3:]...), f)
+		r := Check(asStored(t, kept), VerifyQuery{}, testKeys)
+		if r.Tampered() || r.Unverifiable != 1 || r.Dropped != 0 {
+			t.Fatalf("report %+v", r)
+		}
+	})
 }

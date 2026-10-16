@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/audit"
@@ -26,6 +27,10 @@ type Audit struct {
 	// cluster key this server holds, retired ones included; nil, or a nil
 	// KeyFunc, when it holds none.
 	Keys func() audit.KeyFunc
+
+	// verifying is held while an integrity check runs: one at a time, as
+	// each reads up to auditVerifyLimit records.
+	verifying sync.Mutex
 }
 
 // auditVerifyLimit is the most records the integrity check reads at once;
@@ -55,6 +60,11 @@ func (s *Server) handleAuditVerify(w http.ResponseWriter, r *http.Request) {
 	if !parseAuditTimes(w, q.Get("from"), q.Get("to"), &vq.From, &vq.To) {
 		return
 	}
+	if !s.Audit.verifying.TryLock() {
+		writeError(w, http.StatusTooManyRequests, errors.New("an integrity check is running already; try again once it has finished"))
+		return
+	}
+	defer s.Audit.verifying.Unlock()
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
 	defer cancel()
 	var keys audit.KeyFunc

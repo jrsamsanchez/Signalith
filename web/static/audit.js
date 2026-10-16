@@ -121,8 +121,9 @@
       }
       const r = res.report;
       const parts = [r.ok + ' signed and linked'];
-      for (const [n, what] of [[r.edited, 'changed'], [r.broken, 'not linked to the record before'], [r.missing, 'removed'],
+      for (const [n, what] of [[r.edited, 'changed'], [r.stripped, 'with their signature removed, or put in'], [r.broken, 'not linked to the record before'], [r.missing, 'removed'],
         [r.truncated, 'servers with their latest records removed'], [r.dropped, 'dropped by a full spool or refused, and recorded'],
+        [r.unverifiable, 'missing where nothing is signed, so a drop cannot be told from a removal'],
         [r.unsigned, 'unsigned'], [r.unknown_key, 'signed with a key this server does not hold']]) {
         if (n) parts.push(n + ' ' + what);
       }
