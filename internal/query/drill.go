@@ -149,13 +149,28 @@ func (q *Query) Drilldown() *Drill {
 			}
 		case *MakeMV:
 			delete(fields, c.Field)
+		case *NoMV:
+			delete(fields, c.Field)
+		case *MVCombine:
+			// A combined row stands for several events.
+			delete(fields, c.Field)
+		case *StrCat:
+			delete(fields, c.Dest)
+		case *RangeMap:
+			delete(fields, "range")
+		case *ForEach:
+			for col := range fields {
+				if _, ok := c.Match(col); ok {
+					delete(fields, col)
+				}
+			}
 		case *AddTotals:
 			// The totals row's label is in no event.
 			delete(fields, c.TotalName())
 			if c.LabelField != "" {
 				delete(fields, c.LabelField)
 			}
-		case *Rex, *Spath:
+		case *Rex, *Spath, *FromJSON:
 			// Its fields can overwrite any column.
 			clear(fields)
 		case *Bin:

@@ -472,11 +472,11 @@ func TestEvalChargesCopiedValues(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "MB of values") {
 		t.Errorf("err = %v, want the search budget", err)
 	}
-	// A value the expression built is counted once.
+	// A value the expression built is counted once, with the new field t.
 	ev := newEvaluator(context.Background())
 	res = &Result{Rows: []Row{{"s": "abc"}}}
-	if err := applyEval(context.WithValue(context.Background(), evaluatorKey{}, ev), res, &query.Eval{Assigns: []query.Assign{{Field: "t", Expr: mustEval(t, `s."def"`)}}}); err != nil || ev.produced != 6 {
-		t.Errorf("err = %v, produced = %d, want 6", err, ev.produced)
+	if err := applyEval(context.WithValue(context.Background(), evaluatorKey{}, ev), res, &query.Eval{Assigns: []query.Assign{{Field: "t", Expr: mustEval(t, `s."def"`)}}}); err != nil || ev.produced != 6+1+fieldOverhead {
+		t.Errorf("err = %v, produced = %d, want %d", err, ev.produced, 6+1+fieldOverhead)
 	}
 }
 

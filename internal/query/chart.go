@@ -122,11 +122,12 @@ func (p *parser) parseChartAggs(cmdPos int) ([]Agg, error) {
 		p.toks[n].kind != tokPipe && p.toks[n].kind != tokEOF {
 		n++
 	}
-	head := &parser{toks: append(append([]token{}, p.toks[p.i:n]...), token{tokEOF, "", p.toks[n].pos}), depth: p.depth}
+	head := &parser{toks: append(append([]token{}, p.toks[p.i:n]...), token{tokEOF, "", p.toks[n].pos}), depth: p.depth, src: p.src, base: p.base}
 	aggs, err := head.parseAggs(cmdPos)
 	if err != nil {
 		return nil, err
 	}
+	p.evals = append(p.evals, head.evals...)
 	// What parseAggs left (by and its fields) is read by the caller.
 	p.i += head.i
 	return aggs, nil

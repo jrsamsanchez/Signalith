@@ -46,7 +46,10 @@ type Assign struct {
 }
 
 // Eval computes new fields: eval ratio=round(bytes_out/bytes_in, 2), kind=lower(kind).
-type Eval struct{ Assigns []Assign }
+type Eval struct {
+	Assigns []Assign
+	Format  bool // written as fieldformat, which Signalith runs as eval
+}
 
 func (*Eval) Name() string { return "eval" }
 
@@ -55,7 +58,41 @@ func (*Eval) Name() string { return "eval" }
 // the condition is not a plain field-against-value filter.
 type Cond struct{ X EvalExpr }
 
-func (c *Cond) String() string { return c.X.String() }
+// String writes the condition so that it reads back as the same
+// condition: where it would read as a plain filter (user != other, which
+// compares user with the text "other"), its fields are put in single
+// quotes ('user' != 'other').
+func (c *Cond) String() string {
+	s := c.X.String()
+	if _, err := parseClassicWhere(s, 0); err != nil {
+		return s
+	}
+	return quoteFields(c.X).String()
+}
+
+// quotedField is a field written in single quotes whatever its name.
+type quotedField struct{ name string }
+
+func (f *quotedField) String() string { return quoteSingle(f.name) }
+
+// quoteFields returns x with each field written in single quotes.
+func quoteFields(x EvalExpr) EvalExpr {
+	switch x := x.(type) {
+	case *Field:
+		return &quotedField{x.Name}
+	case *Call:
+		c := &Call{Func: x.Func, Args: make([]EvalExpr, len(x.Args))}
+		for i, a := range x.Args {
+			c.Args[i] = quoteFields(a)
+		}
+		return c
+	case *Unary:
+		return &Unary{Op: x.Op, X: quoteFields(x.X)}
+	case *Binary:
+		return &Binary{Op: x.Op, L: quoteFields(x.L), R: quoteFields(x.R)}
+	}
+	return x
+}
 
 // EvalFuncs lists the functions eval and where accept, with how many
 // arguments each takes (max -1 for any number).
@@ -71,6 +108,7 @@ var EvalFuncs = map[string][2]int{
 	"split": {2, 2}, "sqrt": {1, 1}, "strftime": {2, 2}, "strptime": {2, 2}, "substr": {2, 3},
 	"time": {0, 0}, "tonumber": {1, 2}, "tostring": {1, 2}, "trim": {1, 2}, "true": {0, 0},
 	"typeof": {1, 1}, "upper": {1, 1}, "urldecode": {1, 1},
+	"mvfilter": {1, 1}, "mvmap": {2, 2}, "mvfind": {2, 2}, "mvzip": {2, 3},
 }
 
 // maxEvalDepth bounds how deeply an expression may nest, so a hostile
@@ -203,6 +241,9 @@ func evalString(c *Eval) string {
 	for i, a := range c.Assigns {
 		parts[i] = (&Field{Name: a.Field}).String() + "=" + a.Expr.String()
 	}
+	if c.Format {
+		return "fieldformat " + strings.Join(parts, ", ")
+	}
 	return "eval " + strings.Join(parts, ", ")
 }
 
@@ -304,7 +345,11 @@ func lexEval(src string, base int) ([]evalTok, error) {
 			return nil, errorf(base+i, "unexpected %q; quote field names with other characters, like 'my field'", string(r))
 		case isEvalIdentRune(c):
 			start := i
-			for i < len(src) && (isEvalIdentRune(src[i]) || src[i] >= '0' && src[i] <= '9') {
+			for i < len(src) && (isEvalIdentRune(src[i]) || src[i] >= '0' && src[i] <= '9' ||
+				// A dot between name characters is part of the name, as in
+				// Splunk: userIdentity.userName is one field. With spaces
+				// around it, . joins values.
+				src[i] == '.' && i+1 < len(src) && (isEvalIdentRune(src[i+1]) || src[i+1] >= '0' && src[i+1] <= '9')) {
 				i++
 			}
 			toks = append(toks, evalTok{etIdent, src[start:i], base + start})

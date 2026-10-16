@@ -159,12 +159,12 @@ func lex(src string) ([]token, error) {
 			// (eval's quoted 'field names', + and - between values), so
 			// their text is kept whole and parsed by the command.
 			if w := src[start:i]; len(toks) >= 2 && toks[len(toks)-2].kind == tokPipe &&
-				(strings.EqualFold(w, "eval") || strings.EqualFold(w, "where")) {
+				(strings.EqualFold(w, "eval") || strings.EqualFold(w, "where") || strings.EqualFold(w, "fieldformat")) {
 				end := rawEnd(src, i)
 				toks = append(toks, token{tokRaw, src[i:end], i})
 				i = end
 			} else if len(toks) >= 2 && toks[len(toks)-2].kind == tokPipe &&
-				(strings.EqualFold(w, "join") || strings.EqualFold(w, "append") || strings.EqualFold(w, "appendpipe")) {
+				(strings.EqualFold(w, "join") || strings.EqualFold(w, "append") || strings.EqualFold(w, "appendpipe") || strings.EqualFold(w, "foreach")) {
 				// A subsearch holds pipes of its own: the command runs
 				// to the ] that closes its [.
 				end := subsearchEnd(src, i)
