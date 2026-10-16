@@ -15,7 +15,7 @@ Signalith is starting{{ if .Values.opensearch.enabled }} with its own OpenSearch
 2. Open Signalith:
 {{- if eq .Values.server.service.type "LoadBalancer" }}
 
-  kubectl -n {{ $ns }} get service {{ $full }}   # its EXTERNAL-IP: the web page on port {{ .Values.server.port }}, agents on {{ .Values.server.agentPort }}
+  kubectl -n {{ $ns }} get service {{ $full }}   # its EXTERNAL-IP: the web page on port {{ .Values.server.port }}, agents on {{ include "signalith.agentPort" . }}
 {{- if not .Values.server.service.loadBalancerSourceRanges }}
 
   WARNING: server.service.loadBalancerSourceRanges is empty, so the sign-in
@@ -37,7 +37,7 @@ Signalith is starting{{ if .Values.opensearch.enabled }} with its own OpenSearch
 
 Agents outside the cluster need Signalith's address: set server.publicURL
 to the address they reach it at, then helm upgrade. Agents send to the
-same host on port {{ .Values.server.agentPort }}.
+same host on port {{ include "signalith.agentPort" . }}.
 {{- end }}
 
 Guide: https://signalith.io/docs/kubernetes/

@@ -175,9 +175,14 @@ networkPolicy:
   #   - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: ingress-nginx } }
   #   - ipBlock: { cidr: 10.20.0.0/16 }
   webFrom: []
-  # Who may reach the agent port. Empty: anyone (agents still need a
-  # token). For example, only the networks your agents are on.
-  agentsFrom: []
+  # Who may reach the agent port (agents still need a token). Not set
+  # (null): the same as webFrom. Empty ([]): anyone. For example, only the
+  # networks your agents are on:
+  #   - ipBlock: { cidr: 10.30.0.0/16 }
+  # or, with webFrom set, open the agent port to everyone:
+  #   - ipBlock: { cidr: 0.0.0.0/0 }
+  #   - namespaceSelector: {}
+  agentsFrom: null
   # Who may send syslog. Empty: anyone.
   syslogFrom: []
   # Limit where Signalith's pods may connect to. Empty: anywhere, which

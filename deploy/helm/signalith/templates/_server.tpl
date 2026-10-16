@@ -144,7 +144,7 @@ spec:
             {{- end }}
           ports:
             - { name: https, containerPort: {{ $port }}, protocol: TCP }
-            - { name: agents, containerPort: {{ int $v.server.agentPort }}, protocol: TCP }
+            - { name: agents, containerPort: {{ include "signalith.agentPort" $ctx }}, protocol: TCP }
             {{- if and $v.server.syslog.enabled (eq $role "server") }}
             - { name: syslog-udp, containerPort: 5514, protocol: UDP }
             - { name: syslog-tcp, containerPort: 5514, protocol: TCP }

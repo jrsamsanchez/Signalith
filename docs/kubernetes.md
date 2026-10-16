@@ -201,7 +201,8 @@ Turn on [two-factor sign-in](users.md) for every admin.
 - **Network**: OpenSearch takes connections only from the release's Signalith pods (and its
   own nodes), and connects only to its own nodes. Signalith's pods take connections only on
   their web, agent and syslog ports. Limit who may reach those with `networkPolicy.webFrom`
-  (the admins' networks), `networkPolicy.agentsFrom` (the agents' networks) and
+  (the admins' networks), `networkPolicy.agentsFrom` (the agents' networks; when not set,
+  the same as `webFrom`) and
   `networkPolicy.syslogFrom`, and where Signalith may connect with
   `networkPolicy.serverEgress` (threat intel downloads, CVE lookups, content updates and
   notifications need the internet).
@@ -213,9 +214,12 @@ Turn on [two-factor sign-in](users.md) for every admin.
 ## Upgrading
 
 ```sh
-helm upgrade signalith oci://ghcr.io/jrsamsanchez/charts/signalith --version <new release> -n signalith --reuse-values
+helm upgrade signalith oci://ghcr.io/jrsamsanchez/charts/signalith --version <new release> -n signalith --reset-then-reuse-values
 ```
 
+`--reset-then-reuse-values` (Helm 3.14 or newer) keeps the settings you gave and takes the
+new release's defaults for the rest. With `--reuse-values` instead, settings added in the new
+release are missing and the old defaults stay, such as the web port of an earlier chart.
 The servers restart one at a time; each hands its jobs over as it stops. Read the release
 notes first: when a release moves OpenSearch to a new major version, back up its volume.
 Rolling back with `helm rollback` restarts the previous version; see

@@ -31,7 +31,7 @@ spec:
       targetPort: https
       protocol: TCP
     - name: agents
-      port: {{ int .Values.server.agentPort }}
+      port: {{ include "signalith.agentPort" . }}
       targetPort: agents
       protocol: TCP
 ---

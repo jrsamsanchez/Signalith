@@ -31,8 +31,14 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
     - ports:
-        - { port: {{ int .Values.server.agentPort }}, protocol: TCP }
-      {{- with $np.agentsFrom }}
+        - { port: {{ include "signalith.agentPort" . }}, protocol: TCP }
+      {{- /* Not set (null): the same peers as the web port, so an install
+      that limited webFrom is not opened up by the agent port. */}}
+      {{- $agentsFrom := $np.agentsFrom }}
+      {{- if kindIs "invalid" $agentsFrom }}
+      {{- $agentsFrom = $np.webFrom }}
+      {{- end }}
+      {{- with $agentsFrom }}
       from:
         {{- toYaml . | nindent 8 }}
       {{- end }}
