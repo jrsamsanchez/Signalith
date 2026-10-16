@@ -249,7 +249,8 @@ func TestSampleDataEndToEnd(t *testing.T) {
 	}
 	// The nightly vulnerability scan: one finding per host and CVE, KEV
 	// CVEs only as known exploited, and Telnet only on jump-01.
-	for id, want := range map[string]int{"vuln-known-exploited": 2, "vuln-critical": 2, "vuln-cleartext-remote-login": 1} {
+	for id, want := range map[string]int{"vuln-known-exploited": 2, "vuln-critical": 2, "vuln-cleartext-remote-login": 1,
+		"vuln-known-exploited-priority-asset": 2, "vuln-likely-exploited": 1} {
 		if fired[id] != want {
 			t.Errorf("%s raised %d findings, want %d", id, fired[id], want)
 		}
@@ -258,7 +259,9 @@ func TestSampleDataEndToEnd(t *testing.T) {
 		switch {
 		case f.DetectionID == "vuln-known-exploited" && !strings.Contains(f.Title, "on web-01"),
 			f.DetectionID == "vuln-critical" && strings.Contains(f.Title, "CVE-2021-"),
-			f.DetectionID == "vuln-cleartext-remote-login" && f.Title != "Telnet open on jump-01":
+			f.DetectionID == "vuln-cleartext-remote-login" && f.Title != "Telnet open on jump-01",
+			f.DetectionID == "vuln-known-exploited-priority-asset" && !strings.Contains(f.Title, "high-priority web-01"),
+			f.DetectionID == "vuln-likely-exploited" && !strings.Contains(f.Title, "CVE-2023-38408"):
 			t.Errorf("unexpected vulnerability finding %q", f.Title)
 		}
 	}
