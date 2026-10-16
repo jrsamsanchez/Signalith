@@ -137,10 +137,30 @@ func TestSameReplicasOpenSearchShape(t *testing.T) {
 		{`{"index":{"number_of_replicas":"0","auto_expand_replicas":"false"}}`, noReplicas, true},
 		{`{"index.auto_expand_replicas":"0-1"}`, autoReplicas, true},
 		{`{}`, noReplicas, false},
+		// Shards: one unless asked for, whether or not the template says so.
+		{`{"index":{"number_of_shards":"3","auto_expand_replicas":"0-1"}}`, autoReplicas, false},
+		{`{"index":{"number_of_shards":"3","auto_expand_replicas":"0-1"}}`, map[string]any{"auto_expand_replicas": "0-1", "number_of_shards": 3}, true},
+		{`{"index":{"number_of_shards":"1","auto_expand_replicas":"0-1"}}`, map[string]any{"auto_expand_replicas": "0-1", "number_of_shards": 3}, false},
+		{`{"index.auto_expand_replicas":"0-1"}`, map[string]any{"auto_expand_replicas": "0-1", "number_of_shards": 1}, true},
 	} {
 		if got := sameReplicas(stored(tc.settings), tc.want); got != tc.same {
 			t.Errorf("%s with %v: same %v", tc.settings, tc.want, got)
 		}
+	}
+}
+
+// opensearch.shards sets number_of_shards on each new day's indices;
+// the default template keeps one.
+func TestIndexTemplateShards(t *testing.T) {
+	settings := func(tmpl map[string]any) map[string]any {
+		return tmpl["template"].(map[string]any)["settings"].(map[string]any)
+	}
+	if got := settings(IndexTemplate("p", autoReplicas))["number_of_shards"]; got != 1 {
+		t.Errorf("default shards %v, want 1", got)
+	}
+	s := settings(IndexTemplate("p", map[string]any{"auto_expand_replicas": "0-1", "number_of_shards": 4}))
+	if s["number_of_shards"] != 4 || s["auto_expand_replicas"] != "0-1" {
+		t.Errorf("settings %v, want 4 shards and auto replicas", s)
 	}
 }
 
@@ -199,5 +219,44 @@ func TestRestoreIndexTemplate(t *testing.T) {
 	}
 	if put, err := RestoreIndexTemplate(ctx, cl, "sig", noReplicas, nil); err != nil || put {
 		t.Errorf("same version, other replicas: put %v, %v", put, err)
+	}
+}
+
+// opensearch.shards above the number of data nodes is capped at one shard
+// per node, so a large setting cannot fill OpenSearch's shard limit per
+// node and stop new days' indices from being created.
+func TestPutIndexTemplateCapsShardsAtDataNodes(t *testing.T) {
+	ctx := context.Background()
+	for _, tc := range []struct {
+		nodes, shards, want int
+	}{
+		{1, 64, 1},
+		{3, 64, 3},
+		{3, 2, 2},
+		{5, 3, 3},
+	} {
+		os := ostest.New(t)
+		os.SetDataNodes(tc.nodes)
+		cl := store.New(store.Config{URL: os.URL})
+		want := map[string]any{"auto_expand_replicas": "0-1", "number_of_shards": tc.shards}
+		if err := PutIndexTemplate(ctx, cl, "sig", want, nil); err != nil {
+			t.Fatal(err)
+		}
+		var stored map[string]any
+		if err := json.Unmarshal(os.Template("sig"), &stored); err != nil {
+			t.Fatal(err)
+		}
+		got := map[string]any{"auto_expand_replicas": "0-1", "number_of_shards": tc.want}
+		if !sameReplicas(stored, got) {
+			t.Errorf("%d nodes, shards %d: stored %v, want %d shards", tc.nodes, tc.shards, stored["template"].(map[string]any)["settings"], tc.want)
+		}
+		// The next start with the same setting leaves the capped template alone.
+		templatePuts(os)
+		if err := PutIndexTemplate(ctx, cl, "sig", want, nil); err != nil {
+			t.Fatal(err)
+		}
+		if n := templatePuts(os); n != 0 {
+			t.Errorf("%d nodes, shards %d: %d template writes at the next start, want 0", tc.nodes, tc.shards, n)
+		}
 	}
 }

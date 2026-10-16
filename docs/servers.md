@@ -323,8 +323,8 @@ By hand:
    [Server settings](settings.md#using-the-page)), OpenSearch keeps a copy of each
    new day's events on a second node as soon as there is one, and a copy of
    findings, investigations and threat intel too. Days stored before then keep the
-   copies they had. Set Replicas the same on every server: the servers share one
-   index template, and the setting of the server that started last is used.
+   copies they had. Set Replicas, and Shards, the same on every server: the servers
+   share one index template, and the setting of the server that started last is used.
 
 When it starts, it appears on the Servers page of every server.
 
