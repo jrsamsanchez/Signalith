@@ -155,7 +155,7 @@ func (q *Query) Drilldown() *Drill {
 			if c.LabelField != "" {
 				delete(fields, c.LabelField)
 			}
-		case *Rex, *Spath:
+		case *Rex, *Spath, *FromJSON:
 			// Its fields can overwrite any column.
 			clear(fields)
 		case *Bin:

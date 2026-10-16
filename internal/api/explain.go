@@ -422,6 +422,11 @@ func describeCommand(c query.Command) string {
 			out = c.Path
 		}
 		return "Extract " + c.Path + " from the JSON in " + c.Input + " into " + out + "."
+	case *query.FromJSON:
+		if c.Prefix != "" {
+			return "Extract each top-level key of the JSON object in " + c.Field + " as a field named " + c.Prefix + " and the key."
+		}
+		return "Extract each top-level key of the JSON object in " + c.Field + " as a field of the same name."
 	case *query.FieldsRemove:
 		return "Remove the fields " + strings.Join(c.Fields, ", ") + "."
 	case *query.StreamStats:

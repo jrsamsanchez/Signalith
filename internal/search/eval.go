@@ -162,6 +162,53 @@ func (ev *evaluator) charge(n int) bool {
 
 // list returns a new multivalue result after checking its count and its
 // bytes against the limits.
+// eachValue calls f for each value of r's field name, with the field set
+// to that one value while f runs, and gives the values f keeps.
+func (ev *evaluator) eachValue(r Row, name string, f func(v any) (any, bool)) any {
+	orig, had := r[name]
+	if orig == nil {
+		return nil
+	}
+	defer func() {
+		if had {
+			r[name] = orig
+		} else {
+			delete(r, name)
+		}
+	}()
+	var out []any
+	for _, v := range asList(orig) {
+		if !ev.step() {
+			return nil
+		}
+		r[name] = v
+		if x, keep := f(v); keep {
+			out = append(out, x)
+		}
+		if ev.err != nil {
+			return nil
+		}
+	}
+	return ev.list(out)
+}
+
+// evalFields adds the names of the fields e reads to names.
+func evalFields(e query.EvalExpr, names map[string]bool) {
+	switch e := e.(type) {
+	case *query.Field:
+		names[e.Name] = true
+	case *query.Call:
+		for _, a := range e.Args {
+			evalFields(a, names)
+		}
+	case *query.Unary:
+		evalFields(e.X, names)
+	case *query.Binary:
+		evalFields(e.L, names)
+		evalFields(e.R, names)
+	}
+}
+
 func (ev *evaluator) list(vs []any) any {
 	if len(vs) > maxMultiValues {
 		return ev.fail("a multivalue field would hold %d values; the limit is %d", len(vs), maxMultiValues)
@@ -475,6 +522,29 @@ func (ev *evaluator) call(c *query.Call, r Row) any {
 			}
 		}
 		return nil
+	case "mvfilter":
+		names := map[string]bool{}
+		evalFields(c.Args[0], names)
+		if len(names) != 1 {
+			return ev.fail("mvfilter's expression must use exactly one field, like mvfilter(match(email, \"@corp$\"))")
+		}
+		var name string
+		for n := range names {
+			name = n
+		}
+		return ev.eachValue(r, name, func(v any) (any, bool) {
+			keep := truth(ev.eval(c.Args[0], r))
+			return v, keep
+		})
+	case "mvmap":
+		f, ok := c.Args[0].(*query.Field)
+		if !ok {
+			return ev.fail("mvmap's first argument must be a field, like mvmap(sizes, sizes*2)")
+		}
+		return ev.eachValue(r, f.Name, func(any) (any, bool) {
+			out := ev.eval(c.Args[1], r)
+			return out, out != nil
+		})
 	}
 	args := make([]any, len(c.Args))
 	for i, a := range c.Args {
@@ -713,6 +783,49 @@ func (ev *evaluator) call(c *query.Call, r Row) any {
 			if len(out) > maxMultiValues {
 				break
 			}
+		}
+		return ev.list(out)
+	case "mvfind":
+		pat, ok := text(1)
+		if !ok || args[0] == nil {
+			return nil
+		}
+		re := ev.regex(pat)
+		if re == nil {
+			return nil
+		}
+		for i, v := range asList(args[0]) {
+			if !ev.step() {
+				return nil
+			}
+			if s, ok := evStr(v); ok && re.MatchString(s) {
+				return int64(i)
+			}
+		}
+		return nil
+	case "mvzip":
+		if args[0] == nil || args[1] == nil {
+			return nil
+		}
+		sep := ","
+		if len(args) > 2 {
+			s, ok := text(2)
+			if !ok {
+				return nil
+			}
+			sep = s
+		}
+		a, b := asList(args[0]), asList(args[1])
+		n := min(len(a), len(b))
+		out := make([]any, 0, n)
+		size := 0
+		for i := 0; i < n; i++ {
+			x, _ := evStr(a[i])
+			y, _ := evStr(b[i])
+			if size += len(x) + len(sep) + len(y); !ev.fits(size) {
+				return nil
+			}
+			out = append(out, x+sep+y)
 		}
 		return ev.list(out)
 	case "mvdedup":

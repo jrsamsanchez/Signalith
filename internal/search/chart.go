@@ -325,3 +325,90 @@ func spathValue(v any) any {
 	b, _ := json.Marshal(v)
 	return string(b)
 }
+
+// applyFromJSON extracts the top-level keys of the JSON object in
+// c.Field: arrays of plain values become multivalue fields, objects and
+// other arrays JSON text.
+func applyFromJSON(ctx context.Context, res *Result, c *query.FromJSON) error {
+	ev := evaluatorFor(ctx)
+	added := map[string]bool{}
+	var order []string
+	for i, r := range res.Rows {
+		if i%checkEvery == 0 && ctx.Err() != nil {
+			return ctx.Err()
+		}
+		s, ok := evStr(r[c.Field])
+		if !ok || s == "" {
+			continue
+		}
+		dec := json.NewDecoder(strings.NewReader(s))
+		dec.UseNumber()
+		var doc map[string]any
+		if dec.Decode(&doc) != nil {
+			continue
+		}
+		keys := make([]string, 0, len(doc))
+		for k := range doc {
+			if k != "" {
+				keys = append(keys, k)
+			}
+		}
+		sort.Strings(keys)
+		if len(keys) > maxSpathFields {
+			keys = keys[:maxSpathFields]
+			res.Truncated = true
+		}
+		for _, k := range keys {
+			v := fromJSONValue(doc[k])
+			if v == nil {
+				continue
+			}
+			name := c.Prefix + k
+			if !added[name] && len(order) >= maxSpathNames {
+				res.Truncated = true
+				continue
+			}
+			if !ev.charge(valueSize(v) + len(name)) {
+				return ev.err
+			}
+			r[name] = v
+			if !added[name] {
+				added[name] = true
+				order = append(order, name)
+			}
+		}
+	}
+	have := map[string]bool{}
+	for _, col := range res.Columns {
+		have[col] = true
+	}
+	for _, name := range order {
+		if !have[name] {
+			addColumn(res, name)
+		}
+	}
+	return nil
+}
+
+// fromJSONValue is a top-level JSON value as a field value: an array of
+// plain values is a multivalue field, anything else as spath writes it.
+func fromJSONValue(v any) any {
+	items, ok := v.([]any)
+	if !ok {
+		return spathValue(v)
+	}
+	var mv []any
+	for _, it := range items {
+		switch it.(type) {
+		case map[string]any, []any:
+			return spathValue(v)
+		}
+		if x := spathValue(it); x != nil && len(mv) < maxMultiValues {
+			mv = append(mv, x)
+		}
+	}
+	if len(mv) == 0 {
+		return nil
+	}
+	return mvOut(mv)
+}

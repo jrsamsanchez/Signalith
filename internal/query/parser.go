@@ -6,7 +6,7 @@ import (
 )
 
 // Commands lists every pipe command, for autocomplete and error messages.
-var Commands = []string{"search", "stats", "eventstats", "timechart", "top", "rare", "where", "eval", "rex", "dedup", "fillnull", "sort", "head", "table", "rename", "lookup", "inputlookup", "transaction", "join", "enrich", "intel", "threatmatch", "streamstats", "bin", "bucket", "fields", "regex", "makeresults", "append", "appendpipe", "tstats", "chart", "xyseries", "untable", "spath", "mvexpand", "makemv", "reverse", "addtotals", "addcoltotals", "convert", "tail", "uniq"}
+var Commands = []string{"search", "stats", "eventstats", "timechart", "top", "rare", "where", "eval", "rex", "dedup", "fillnull", "sort", "head", "table", "rename", "lookup", "inputlookup", "transaction", "join", "enrich", "intel", "threatmatch", "streamstats", "bin", "bucket", "fields", "regex", "makeresults", "append", "appendpipe", "tstats", "chart", "xyseries", "untable", "spath", "mvexpand", "makemv", "reverse", "addtotals", "addcoltotals", "convert", "tail", "uniq", "fromjson"}
 
 // AggFuncs lists the aggregation functions stats, eventstats and timechart
 // accept. perc95 stands for every percentile from perc1 to perc99.
@@ -32,6 +32,15 @@ type parser struct {
 	toks  []token
 	i     int
 	depth int // subsearches around this query
+
+	// src is the text the tokens were read from, starting at byte base of
+	// what the user wrote, for commands that read part of it again: an
+	// aggregation over eval(...). Empty where that is not allowed.
+	src  string
+	base int
+	// evals are the eval(...) expressions of the command being read,
+	// each to be computed into its aggregation's AS name first.
+	evals []Assign
 }
 
 // Parse parses a query.
@@ -50,7 +59,7 @@ func parseAt(src string, base, depth int) (*Query, error) {
 	for i := range toks {
 		toks[i].pos += base
 	}
-	p := &parser{toks: toks, depth: depth}
+	p := &parser{toks: toks, depth: depth, src: src, base: base}
 	// A query copied from Splunk may start with the search command's name.
 	if t := p.peek(); t.kind == tokWord && strings.EqualFold(t.text, "search") {
 		if n := p.peekAt(1); n.kind != tokEOF && !(n.kind == tokOp && n.text == "=") {
@@ -76,6 +85,9 @@ func parseAt(src string, base, depth int) (*Query, error) {
 			*q = ts.q
 			q.Commands = append(commands, ts.cmds...)
 			continue
+		}
+		if err := p.flushEvals(&q.Commands, cmd, at); err != nil {
+			return nil, err
 		}
 		if len(q.Commands) > 0 || q.Search != nil || q.Index != "" || q.Datamodel != "" || q.Earliest != "" || q.Latest != "" {
 			switch cmd.(type) {
@@ -534,6 +546,8 @@ func (p *parser) parseCommand() (Command, error) {
 		return p.parseAddTotals(t)
 	case "spath":
 		return p.parseSpath(t)
+	case "fromjson":
+		return p.parseFromJSON(t)
 	case "lookup":
 		return p.parseLookup(t)
 	case "inputlookup":
@@ -644,18 +658,29 @@ func (p *parser) parseAggs(cmdPos int) ([]Agg, error) {
 		if !isAggFunc(a.Func) {
 			return nil, errorf(t.pos, "unknown function %q; available: %s (and perc1 to perc99)", t.text, strings.Join(AggFuncs, ", "))
 		}
+		var evalX EvalExpr
+		evalAt := 0
 		if p.peek().kind == tokLParen {
 			p.next()
-			f := p.next()
-			if f.kind != tokWord {
-				return nil, errorf(f.pos, "expected a field name inside %s()", a.Func)
+			if p.isKeywordFold("eval") && p.peekAt(1).kind == tokLParen {
+				evalAt = p.peek().pos
+				x, err := p.aggEval()
+				if err != nil {
+					return nil, err
+				}
+				evalX = x
+			} else {
+				f := p.next()
+				if f.kind != tokWord {
+					return nil, errorf(f.pos, "expected a field name inside %s()", a.Func)
+				}
+				a.Field = f.text
 			}
-			a.Field = f.text
 			if rp := p.next(); rp.kind != tokRParen {
 				return nil, errorf(rp.pos, `expected ")"`)
 			}
 		}
-		if a.Field == "" && a.Func != "count" {
+		if a.Field == "" && a.Func != "count" && evalX == nil {
 			return nil, errorf(t.pos, "%s needs a field, for example %s(bytes)", a.Func, a.Func)
 		}
 		if p.isKeywordFold("as") {
@@ -665,6 +690,22 @@ func (p *parser) parseAggs(cmdPos int) ([]Agg, error) {
 				return nil, errorf(al.pos, `expected a name after "as"`)
 			}
 			a.Alias = al.text
+		}
+		if evalX != nil {
+			// Computed first into the AS name, then aggregated from it.
+			if a.Alias == "" {
+				return nil, errorf(evalAt, "name the result of %s(eval(...)) with AS, as in Splunk: %s(eval(...)) AS name", a.Func, a.Func)
+			}
+			for _, e := range p.evals {
+				if e.Field == a.Alias {
+					return nil, errorf(evalAt, "two eval() aggregations are both named %s", a.Alias)
+				}
+			}
+			if a.Func == "count" {
+				evalX = &Call{Func: "if", Args: []EvalExpr{evalX, &Num{Text: "1"}, &Call{Func: "null"}}}
+			}
+			p.evals = append(p.evals, Assign{Field: a.Alias, Expr: evalX})
+			a.Field = a.Alias
 		}
 		aggs = append(aggs, a)
 		if p.peek().kind == tokComma {
@@ -788,4 +829,84 @@ func (p *parser) fieldSuffix(name string) string {
 		return name + "(" + inner + ")"
 	}
 	return name
+}
+
+// aggEval reads eval(<expression>) inside an aggregation, from the text
+// between its parentheses.
+func (p *parser) aggEval() (EvalExpr, error) {
+	evalTok := p.next()
+	open := p.next() // (
+	if p.src == "" {
+		return nil, errorf(evalTok.pos, "eval() cannot be used in an aggregation here")
+	}
+	depth := 1
+	end := p.i
+	for ; end < len(p.toks); end++ {
+		switch p.toks[end].kind {
+		case tokLParen:
+			depth++
+		case tokRParen:
+			depth--
+		case tokEOF, tokPipe:
+			return nil, errorf(open.pos, `expected ")" to end eval(`)
+		}
+		if depth == 0 {
+			break
+		}
+	}
+	if depth != 0 {
+		return nil, errorf(open.pos, `expected ")" to end eval(`)
+	}
+	from, to := open.pos+1-p.base, p.toks[end].pos-p.base
+	if from < 0 || to > len(p.src) || from > to {
+		return nil, errorf(evalTok.pos, "eval() cannot be used in an aggregation here")
+	}
+	x, err := parseEvalExprAt(p.src[from:to], open.pos+1)
+	if err != nil {
+		return nil, err
+	}
+	p.i = end + 1
+	return x, nil
+}
+
+// flushEvals puts an eval computing the eval(...) aggregations of cmd,
+// which starts at at, into cmds before it.
+func (p *parser) flushEvals(cmds *[]Command, cmd Command, at int) error {
+	if len(p.evals) == 0 {
+		return nil
+	}
+	evals := p.evals
+	p.evals = nil
+	var by []string
+	var aggs []Agg
+	switch c := cmd.(type) {
+	case *Stats:
+		by, aggs = c.By, c.Aggs
+	case *EventStats:
+		by, aggs = c.By, c.Aggs
+	case *StreamStats:
+		by, aggs = c.By, c.Aggs
+	case *Chart:
+		by, aggs = []string{c.Over, c.By}, c.Aggs
+	default:
+		return errorf(at, "%s cannot aggregate eval(); compute the value with eval first", cmd.Name())
+	}
+	for _, e := range evals {
+		uses := 0
+		for _, a := range aggs {
+			if a.Field == e.Field {
+				uses++
+			}
+		}
+		if uses > 1 {
+			return errorf(at, "an eval() aggregation is named %s, which another aggregation reads; choose another name", e.Field)
+		}
+		for _, f := range by {
+			if f == e.Field {
+				return errorf(at, "an eval() aggregation is named %s, which is also a by field", f)
+			}
+		}
+	}
+	*cmds = append(*cmds, &Eval{Assigns: evals})
+	return nil
 }

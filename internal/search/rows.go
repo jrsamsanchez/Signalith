@@ -155,6 +155,8 @@ func applyCommand(ctx context.Context, res *Result, c query.Command) error {
 		return applyUntable(ctx, res, c)
 	case *query.Spath:
 		return applySpath(ctx, res, c)
+	case *query.FromJSON:
+		return applyFromJSON(ctx, res, c)
 	case *query.MVExpand:
 		return applyMVExpand(ctx, res, c)
 	case *query.MakeMV:

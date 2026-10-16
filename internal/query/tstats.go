@@ -216,7 +216,8 @@ func (p *parser) parseTstats(cmd token) (Command, error) {
 				span = v
 				continue
 			}
-			if t.kind != tokWord && t.kind != tokString || t.text == "" || t.kind == tokWord && strings.EqualFold(t.text, "by") {
+			// A by field becomes a stats by field, which is written bare.
+			if t.kind != tokWord && t.kind != tokString || t.text == "" || strings.EqualFold(t.text, "by") || FormatValue(t.text) != t.text {
 				return nil, errorf(t.pos, "unexpected %s in tstats by", describe(t))
 			}
 			bp.next()

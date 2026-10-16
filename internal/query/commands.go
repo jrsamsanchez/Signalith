@@ -72,11 +72,39 @@ func parseWhere(raw string, base int) (Expr, error) {
 	}
 	cond := &Cond{X: x}
 	// Written back, a condition must read the same way again, so one
-	// that prints as a plain filter is one.
-	if e, err := parseClassicWhere(cond.String(), 0); err == nil {
-		return e, nil
+	// that prints as a plain filter is one. One that compares a field
+	// with another field is not, though it can print like one.
+	if !comparesFields(x) {
+		if e, err := parseClassicWhere(x.String(), 0); err == nil {
+			return e, nil
+		}
 	}
 	return cond, nil
+}
+
+// comparesFields reports whether x compares a field with another field.
+func comparesFields(x EvalExpr) bool {
+	switch x := x.(type) {
+	case *Unary:
+		return comparesFields(x.X)
+	case *Call:
+		for _, a := range x.Args {
+			if comparesFields(a) {
+				return true
+			}
+		}
+	case *Binary:
+		switch x.Op {
+		case "=", "!=", "<", "<=", ">", ">=", "LIKE":
+			_, l := x.L.(*Field)
+			_, r := x.R.(*Field)
+			if l && r {
+				return true
+			}
+		}
+		return comparesFields(x.L) || comparesFields(x.R)
+	}
+	return false
 }
 
 func parseClassicWhere(raw string, base int) (Expr, error) {
@@ -89,6 +117,11 @@ func parseClassicWhere(raw string, base int) (Expr, error) {
 	}
 	for i := range toks {
 		toks[i].pos += base
+		// 'name' is a field, as in eval, so a condition with one is read
+		// as an expression: where user != 'admin_user' compares two fields.
+		if toks[i].kind == tokWord && strings.HasPrefix(toks[i].text, "'") {
+			return nil, errorf(toks[i].pos, "a single-quoted field name")
+		}
 	}
 	sub := &parser{toks: toks}
 	e, err := sub.parseWhereOr()

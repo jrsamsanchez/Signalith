@@ -316,7 +316,7 @@ func CommandString(c Command) string {
 	case *Timechart:
 		s := "timechart"
 		if c.Span != "" {
-			s += " span=" + c.Span
+			s += " span=" + optionValue(c.Span)
 		}
 		s += " " + aggList(c.Aggs)
 		if c.By != "" {
@@ -421,6 +421,8 @@ func CommandString(c Command) string {
 		return seriesString("untable", c.X, c.Label, c.Value)
 	case *Spath:
 		return spathString(c)
+	case *FromJSON:
+		return fromJSONString(c)
 	case *Enrich:
 		if len(c.Fields) == 0 {
 			return "enrich"

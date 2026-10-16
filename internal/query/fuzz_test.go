@@ -49,6 +49,7 @@ var fuzzSeeds = []string{
 	`* | rename *_ip as * a as b "x y" as z | rename Processes.* as * | rare showcount=f limit=0 src`,
 	`* | rex field=u mode=sed "s|^CORP\\\\|\\1&|g" | rex mode=sed "y/ab/cd/" | convert timeformat="%Y" ctime(*Time), dur2sec(d) AS secs, none(lastTime) | tail 3 | uniq`,
 	`* | makemv delim=", " allowempty=t r | makemv tokenizer="(\w+)@" r | mvexpand r limit=5 | reverse | addtotals col=t fieldname=sum labelfield=host label=All bytes_* | addcoltotals`,
+	`* | eval u=userIdentity.userName . "@" . a.b | where a != 'b' | stats count(eval(x>1)) AS n, values(eval(mvzip(a, b, "="))) AS v by h | fromjson body prefix="b c" | fromjson x`,
 	`* | appendpipe [where x="]"]`, `* | append [inputlookup t]`, `* | appendpipe []`, `* | bin _time`, `* | streamstats median(x)`,
 }
 

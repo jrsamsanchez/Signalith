@@ -67,6 +67,7 @@ In a regular expression that means `\.` stays `\.`, and a literal backslash is
 | `bin` | `bin span=1h _time` | Rounds values down into buckets so `stats ... by _time` groups them: a time span (`30s`, `15m`, `1h`, `1d`, `1w`; weeks start on Monday, all in UTC) on times, or a number span (`span=100`) that turns numbers into ranges like `200-300`. `AS name` writes the bucket to another field. Also `bucket` |
 | `regex` | `regex process="(?i)-enc(odedcommand)?\s"` | Keeps rows where the field matches an [RE2](https://github.com/google/re2/wiki/Syntax) regular expression (any value of a multivalue field); `field!="..."` keeps those that do not. `regex "..."` looks at `_raw`. Rows without the field never match |
 | `spath` | `spath output=user path=actor.user.name` | Extracts values from JSON in `_raw` (or `input=field`): the value at `path=` (`items{}.id` takes `id` from every item of the `items` array, as a multivalue field), written to `output=` or the path's name. Without a path it extracts every value (up to 500 per event), each named by its path. Objects and arrays come out as JSON text |
+| `fromjson` | `fromjson body prefix=b_` | Extracts each top-level key of the JSON object in a field as a field of the same name, or `prefix=` and the name. Arrays of plain values come out as multivalue fields; objects and other arrays as JSON text. Up to 500 keys per event |
 | `mvexpand` | `mvexpand user limit=100` | Makes one row for each value of a multivalue field, each a copy of the row with that one value (up to `limit=` values per row, and 100,000 rows). Rows without the field are dropped |
 | `makemv` | `makemv delim="," recipients` | Splits a field's text into a multivalue field at `delim=` (a space by default), or takes each match of `tokenizer="<regex>"` (its first group if it has one). Empty values are dropped unless `allowempty=t` |
 | `reverse` | `reverse` | Turns the rows' order around, so events come oldest first |
@@ -114,6 +115,8 @@ Columns produced by `stats` are referenced by name in later commands, for exampl
 | `list(f)` | The values, newest first, up to 100 |
 | `first(f)`, `latest(f)` | The newest value; `last(f)` and `earliest(f)` give the oldest |
 
+Any function can take an expression instead of a field, as in Splunk: `stats count(eval(action="failure")) as failures, values(eval(if(bytes>1000, dest, null()))) as big_dests by user`. Each needs `as name`. `count(eval(x))` counts the events where `x` is true. A search that uses one runs `stats` in the Signalith server over at most `search.max_events` events instead of in OpenSearch. `stats`, `eventstats`, `streamstats` and `chart` take these.
+
 ## Expressions (eval and where)
 
 `eval` computes values with expressions, and `where` accepts the same expressions
@@ -127,10 +130,10 @@ datamodel=Network_Traffic bytes_out>1000000
 
 | Syntax | Meaning |
 | --- | --- |
-| `bytes`, `'dc(user)'` | A field's value. Put names with characters other than letters, digits, `_` and `@` in single quotes (`'event.code'`) |
+| `bytes`, `userIdentity.userName`, `'dc(user)'` | A field's value. Dots between name characters are part of the name, as in Splunk. Put names with other characters in single quotes (`'event code'`) |
 | `"text"`, `42`, `1.5e3` | A string (double quotes) or a number |
 | `+ - * / %` | Arithmetic. `+` also joins two strings. Dividing by zero gives null |
-| `.` | Joins values as text: `user . "@" . domain` |
+| `.` | Joins values as text, with spaces around it: `user . "@" . domain` |
 | `= != < <= > >=` | Compare numbers as numbers, everything else as case-sensitive text. A multivalue field equals a value when any of its values does |
 | `LIKE` | `user LIKE "adm%"`: `%` is any run of characters, `_` any one character, case-sensitive |
 | `AND`, `OR`, `XOR`, `NOT`, `( )` | Combine conditions |
@@ -151,7 +154,7 @@ name it is read as an expression, so `where bytes_out > bytes_in` compares the t
 | Text | `lower(s)`, `upper(s)`, `len(s)`, `substr(s, start[, length])` (start at 1; negative counts from the end), `replace(s, "regex", "with \1")`, `trim(s[, chars])`, `ltrim`, `rtrim`, `urldecode(s)`, `md5(s)`, `sha1(s)`, `sha256(s)` |
 | Numbers | `round(x[, digits])`, `floor(x)`, `ceil(x)`, `abs(x)`, `sqrt(x)`, `pow(x, y)`, `exp(x)`, `ln(x)`, `log(x[, base])`, `min(...)`, `max(...)` |
 | Conversion | `tonumber(s[, base])`, `tostring(x[, "hex" \| "commas" \| "duration"])` |
-| Multivalue | `split(s, ",")`, `mvcount(mv)`, `mvindex(mv, start[, end])` (from 0; negative counts from the end), `mvjoin(mv, ",")`, `mvappend(a, b, ...)`, `mvdedup(mv)`, `mvsort(mv)` |
+| Multivalue | `split(s, ",")`, `mvcount(mv)`, `mvindex(mv, start[, end])` (from 0; negative counts from the end), `mvjoin(mv, ",")`, `mvappend(a, b, ...)`, `mvdedup(mv)`, `mvsort(mv)`, `mvfind(mv, "regex")` (the first matching value's index), `mvzip(a, b[, ","])` (pairs of values joined), `mvfilter(match(email, "@corp$"))` (the values for which the expression is true; it must use one field), `mvmap(sizes, sizes * 2)` (the expression for each value) |
 | Time | `now()` and `time()` (epoch seconds), `strftime(_time, "%Y-%m-%d %H:%M:%S")`, `strptime("2026-10-15", "%Y-%m-%d")` (to epoch seconds). Times are UTC; `strftime` takes epoch seconds or an event's `_time` |
 
 Regular expressions use RE2 syntax and are case-sensitive unless they start with `(?i)`.
@@ -196,7 +199,7 @@ model is configured, questions with unknown words go to it; see
   prefix filters for networks, so matching runs inside OpenSearch too.
 - Commands after that run in the Signalith server on the aggregated rows. So do `eval`,
   `rex`, `dedup`, `eventstats`, `streamstats`, `bin`, `regex`, `append`, `appendpipe`,
-  `xyseries`, `untable`, `spath`, `mvexpand`, `makemv`, `reverse`, `tail`, `uniq`, `convert`, `addtotals`, and a
+  `xyseries`, `untable`, `spath`, `fromjson`, `mvexpand`, `makemv`, `reverse`, `tail`, `uniq`, `convert`, `addtotals`, and a
   `where` written as an expression, wherever they are.
 - An event search without `stats` returns the newest 100 events, or up to
   `search.max_events` (at most 100,000) when later commands need to sort, filter,
