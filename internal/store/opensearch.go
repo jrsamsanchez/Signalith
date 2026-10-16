@@ -535,6 +535,15 @@ func (c *Client) Health(ctx context.Context) (string, error) {
 	return out.Status, err
 }
 
+// DataNodes returns how many data nodes the cluster has.
+func (c *Client) DataNodes(ctx context.Context) (int, error) {
+	var out struct {
+		N int `json:"number_of_data_nodes"`
+	}
+	err := c.Do(ctx, http.MethodGet, "/_cluster/health", nil, &out)
+	return out.N, err
+}
+
 // BulkItemError describes one rejected document in a bulk request.
 type BulkItemError struct {
 	Index  string
