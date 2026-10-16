@@ -1,0 +1,37 @@
+id: starter-living-off-the-land
+title: Living off the land
+description: Find built-in Windows tools used to download or run code, and parent and child process pairs that are rare in your environment.
+techniques: [T1218, T1105, T1059, T1566.001]
+time_range: 7d
+cells:
+  - kind: markdown
+    text: |
+      ## Hypothesis
+      Attackers avoid dropping their own tools by abusing programs Windows already has, such as `certutil`, `mshta`, `rundll32` and `regsvr32` ("living off the land" binaries, or LOLBins).
+
+      ## Approach
+      Stack the process starts: count each **parent and child** pair and look at the rarest ones first. Normal software repeats the same pairs on many hosts; an intrusion is usually rare and on one or two hosts.
+  - kind: search
+    title: Rare parent and child process pairs
+    query: |
+      datamodel=Endpoint parent_process_name=*
+      | stats count, dc(dest) as hosts, values(dest) as host_names by parent_process_name, process_name
+      | where hosts <= 2
+      | sort count
+      | head 50
+  - kind: search
+    title: Built-in tools that download or run code
+    query: |
+      datamodel=Endpoint process_name IN (certutil.exe, bitsadmin.exe, mshta.exe, rundll32.exe, regsvr32.exe, wmic.exe, msiexec.exe, installutil.exe, cmstp.exe)
+      | stats count, values(process) as commands by dest, user, process_name
+      | sort -count
+  - kind: search
+    title: Office applications starting a shell or script host
+    query: |
+      datamodel=Endpoint parent_process_name IN (winword.exe, excel.exe, powerpnt.exe, outlook.exe, msaccess.exe, onenote.exe)
+      process_name IN (cmd.exe, powershell.exe, pwsh.exe, wscript.exe, cscript.exe, mshta.exe, rundll32.exe, regsvr32.exe)
+      | table _time, dest, user, parent_process_name, process_name, process
+  - kind: markdown
+    text: |
+      ## Telling good from bad
+      IT scripts and installers use these tools too. A command line that downloads from the internet (`urlcache`, `/transfer`, `http`), runs from a user's **Downloads** or **Temp** folder, or follows an Office document is worth a closer look.

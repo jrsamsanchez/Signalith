@@ -435,8 +435,11 @@ function showPage(name, opts = {}) {
 
 // pageFromHash reads the page from the address. Add data takes the source
 // to show, as in #data?source=antivirus; it is selected here and the
-// address goes back to #data once the page opens.
+// address goes back to #data once the page opens. Hunting notebooks take
+// the notebook to open, as in #notebooks?id=NB-20261016-..., which
+// notebooks.js picks up from hashNotebook.
 let hashSource = false;
+let hashNotebook = null;
 function pageFromHash() {
   let name = location.hash.slice(1);
   let query = '';
@@ -445,6 +448,10 @@ function pageFromHash() {
   try { name = decodeURIComponent(name); } catch (_) { return null; }
   if (!name || !$('page-' + name)) return null;
   hashSource = name === 'data' && pickDataSource(new URLSearchParams(query).get('source') || '');
+  if (name === 'notebooks') {
+    hashNotebook = new URLSearchParams(query).get('id') || null;
+    hashSource = !!hashNotebook;
+  }
   return name;
 }
 const followHash = () => {
