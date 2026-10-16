@@ -61,8 +61,10 @@ in each six-hour block of the day before, so a workstation that is off at night
 or a weekly scan never fires it. Signalith checks every 15 minutes, on the server
 that runs the background jobs, and writes one `sourcetype=source:health` event per
 silence for the detection to read (`stopped_sourcetype` names the source type that
-stopped). Sample data, Signalith's own events and its vulnerability scans are left
-out. A broken agent, a full disk, a firewall change and an attacker who turned
+stopped). The detection believes only events Signalith wrote itself
+(`signalith_intake=signalith`), so a sender cannot raise it for hosts it names.
+Sample data, Signalith's own events and its vulnerability scans are left out of
+the check. A broken agent, a full disk, a firewall change and an attacker who turned
 logging off all look the same from here, so the finding's guidance says where to
 look first.
 

@@ -159,6 +159,25 @@ func TestNoOriginNoStamp(t *testing.T) {
 	}
 }
 
+// TestSampleSignalithOrigin: the sample-data pipeline records Signalith's
+// own events as Signalith's, and only those: a field a generated event
+// carries is still dropped, and any other origin is not recorded.
+func TestSampleSignalithOrigin(t *testing.T) {
+	fb := &fakeBulk{}
+	sp := &Pipeline{Store: fb, Prefix: "sig", Now: func() time.Time { return now }, SampleMark: "sample-1"}
+	evs := []Event{
+		{Origin: Origin{Intake: IntakeSignalith}, Fields: map[string]any{"msg": "own"}},
+		{Origin: Origin{Intake: IntakeAgent, TokenName: "x"}, Fields: map[string]any{"msg": "agent"}},
+		{Fields: map[string]any{"msg": "claims", IntakeField: IntakeSignalith}},
+	}
+	if _, err := sp.IngestEvents(context.Background(), evs); err != nil {
+		t.Fatal(err)
+	}
+	expect(t, fb.docs[0].Doc, map[string]any{IntakeField: IntakeSignalith, TokenField: nil})
+	expect(t, fb.docs[1].Doc, map[string]any{IntakeField: nil, TokenField: nil})
+	expect(t, fb.docs[2].Doc, map[string]any{IntakeField: nil})
+}
+
 // TestOriginSurvivesKnownOnlyRetry: the origin fields are known, so the
 // retry with only known fields keeps them.
 func TestOriginSurvivesKnownOnlyRetry(t *testing.T) {

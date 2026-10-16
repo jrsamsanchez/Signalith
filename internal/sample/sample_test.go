@@ -282,7 +282,12 @@ func anyMatch(d *Data, q *query.Query, indicators map[string]bool) bool {
 		if q.Datamodel != "" && !strings.EqualFold(e.Model, q.Datamodel) {
 			continue
 		}
-		if ok, err := search.MatchDoc(q.Search, e.Document()); err != nil {
+		doc := e.Document()
+		if e.Origin.Intake == ingest.IntakeSignalith {
+			// The sample's pipeline records it, as for Signalith's own events.
+			doc[ingest.IntakeField] = e.Origin.Intake
+		}
+		if ok, err := search.MatchDoc(q.Search, doc); err != nil {
 			panic(fmt.Sprintf("search %v: %v", q.Search, err))
 		} else if !ok {
 			continue

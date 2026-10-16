@@ -3,7 +3,7 @@ title: $host$ stopped sending $stopped_sourcetype$
 name: Data source stopped sending
 description: A host and source type that sent events all day went quiet for longer than the "Quiet data source after" setting (2 hours by default). A broken agent, a full disk, a changed firewall or an attacker who turned logging off all look like this, and detections that need the data go blind until it is back.
 query: |
-  sourcetype="source:health"
+  sourcetype="source:health" signalith_intake="signalith"
   | stats count, max(_time) as last_seen, max(quiet_minutes) as quiet_minutes by host, stopped_sourcetype
 schedule: 15m
 lookback: 30m

@@ -369,6 +369,10 @@ func (p *Pipeline) write(ctx context.Context, events []Event, ids []string) (*Re
 			}
 			o.stamp(ev.Fields)
 			setSource(ev.Fields, o.Intake)
+		} else if ev.Origin.Intake == IntakeSignalith {
+			// What the sample shows Signalith noticing itself, such as a
+			// source that stopped sending.
+			ev.Origin.stamp(ev.Fields)
 		}
 		if ev.Time.IsZero() {
 			ev.Time = recv
