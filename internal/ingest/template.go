@@ -30,7 +30,7 @@ const totalFieldsLimit = 2400
 // templateHash is the SHA-256 of IndexTemplate("p", auto replicas) as
 // JSON, which TestTemplateVersionBumped compares, so a change to the
 // template cannot go out without a new TemplateVersion.
-const templateHash = "95e13899af2b48f1c7856f5ad925096dc8eead1e1bbd8fc4ebe8645e1364f07b"
+const templateHash = "3afdf4984fe18f0d5cee7b21982dd67780f1ea519a66effd2271b3041de0f1ac"
 
 // IndexTemplate returns the OpenSearch index template every Signalith index
 // uses: strings are exact-match keywords (fast filters and stats), the raw

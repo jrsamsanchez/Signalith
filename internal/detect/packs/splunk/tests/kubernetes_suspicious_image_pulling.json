@@ -1,0 +1,7 @@
+{"rule": "4d3a17b3-0a6d-4ae0-9421-46623a69c122", "cases": [
+  {"expect":true,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"requestObject.message":"Pulling image x"}},
+  {"expect":true,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"requestObject.message":"Pulling image y"}},
+  {"expect":false,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{}},
+  {"expect":false,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"objectRef.name":"x splunk x","requestObject.message":"Pulling image x"}},
+  {"expect":false,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"objectRef.name":"x falco x","requestObject.message":"Pulling image x"}}
+]}

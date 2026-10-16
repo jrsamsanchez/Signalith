@@ -1581,6 +1581,66 @@ rules:
     rule_id: 2f575940-d85e-4ddc-af13-17dad6f1a0ef
     file: github_ssh_certificate_config_changed.yml
     path: rules/application/github/audit/github_ssh_certificate_config_changed.yml
+  - id: sigma-kubernetes-audit-change-admission-controller
+    rule_id: eed82177-38f5-4299-8a76-098d50d225ab
+    file: kubernetes_audit_change_admission_controller.yml
+    path: rules/application/kubernetes/audit/kubernetes_audit_change_admission_controller.yml
+  - id: sigma-kubernetes-audit-cronjob-modification
+    rule_id: 0c9b3bda-41a6-4442-9345-356ae86343dc
+    file: kubernetes_audit_cronjob_modification.yml
+    path: rules/application/kubernetes/audit/kubernetes_audit_cronjob_modification.yml
+  - id: sigma-kubernetes-audit-deployment-deleted
+    rule_id: 40967487-139b-4811-81d9-c9767a92aa5a
+    file: kubernetes_audit_deployment_deleted.yml
+    path: rules/application/kubernetes/audit/kubernetes_audit_deployment_deleted.yml
+  - id: sigma-kubernetes-audit-events-deleted
+    rule_id: 3132570d-cab2-4561-9ea6-1743644b2290
+    file: kubernetes_audit_events_deleted.yml
+    path: rules/application/kubernetes/audit/kubernetes_audit_events_deleted.yml
+  - id: sigma-kubernetes-audit-exec-into-container
+    rule_id: a1b0ca4e-7835-413e-8471-3ff2b8a66be6
+    file: kubernetes_audit_exec_into_container.yml
+    path: rules/application/kubernetes/audit/kubernetes_audit_exec_into_container.yml
+  - id: sigma-kubernetes-audit-hostpath-mount
+    rule_id: 402b955c-8fe0-4a8c-b635-622b4ac5f902
+    file: kubernetes_audit_hostpath_mount.yml
+    path: rules/application/kubernetes/audit/kubernetes_audit_hostpath_mount.yml
+  - id: sigma-kubernetes-audit-pod-in-system-namespace
+    rule_id: a80d927d-ac6e-443f-a867-e8d6e3897318
+    file: kubernetes_audit_pod_in_system_namespace.yml
+    path: rules/application/kubernetes/audit/kubernetes_audit_pod_in_system_namespace.yml
+  - id: sigma-kubernetes-audit-privileged-pod-creation
+    rule_id: c5cd1b20-36bb-488d-8c05-486be3d0cb97
+    file: kubernetes_audit_privileged_pod_creation.yml
+    path: rules/application/kubernetes/audit/kubernetes_audit_privileged_pod_creation.yml
+  - id: sigma-kubernetes-audit-rbac-permisions-listing
+    rule_id: 84b777bd-c946-4d17-aa2e-c39f5a454325
+    file: kubernetes_audit_rbac_permisions_listing.yml
+    path: rules/application/kubernetes/audit/kubernetes_audit_rbac_permisions_listing.yml
+  - id: sigma-kubernetes-audit-rolebinding-modification
+    rule_id: 10b97915-ec8d-455f-a815-9a78926585f6
+    file: kubernetes_audit_rolebinding_modification.yml
+    path: rules/application/kubernetes/audit/kubernetes_audit_rolebinding_modification.yml
+  - id: sigma-kubernetes-audit-secrets-enumeration
+    rule_id: eeb3e9e1-b685-44e4-9232-6bb701f925b5
+    file: kubernetes_audit_secrets_enumeration.yml
+    path: rules/application/kubernetes/audit/kubernetes_audit_secrets_enumeration.yml
+  - id: sigma-kubernetes-audit-secrets-modified-or-deleted
+    rule_id: 58d31a75-a4f8-4c40-985b-373d58162ca2
+    file: kubernetes_audit_secrets_modified_or_deleted.yml
+    path: rules/application/kubernetes/audit/kubernetes_audit_secrets_modified_or_deleted.yml
+  - id: sigma-kubernetes-audit-serviceaccount-creation
+    rule_id: e31bae15-83ed-473e-bf31-faf4f8a17d36
+    file: kubernetes_audit_serviceaccount_creation.yml
+    path: rules/application/kubernetes/audit/kubernetes_audit_serviceaccount_creation.yml
+  - id: sigma-kubernetes-audit-sidecar-injection
+    rule_id: ad9012a6-e518-4432-9890-f3b82b8fc71f
+    file: kubernetes_audit_sidecar_injection.yml
+    path: rules/application/kubernetes/audit/kubernetes_audit_sidecar_injection.yml
+  - id: sigma-kubernetes-audit-unauthorized-unauthenticated-actions
+    rule_id: 0d933542-1f1f-420d-97d4-21b2c3c492d9
+    file: kubernetes_audit_unauthorized_unauthenticated_actions.yml
+    path: rules/application/kubernetes/audit/kubernetes_audit_unauthorized_unauthenticated_actions.yml
   - id: sigma-lnx-auditd-audio-capture
     rule_id: a7af2487-9c2f-42e4-9bb9-ff961f0561d5
     file: lnx_auditd_audio_capture.yml

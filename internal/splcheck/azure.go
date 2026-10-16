@@ -35,13 +35,15 @@ var azureCIM = map[string]string{
 	"sourcetype": "sourcetype",
 }
 
-// cloudSource is a macro of Entra ID, Azure, Microsoft 365, Okta or GitHub records,
+// cloudSource is a macro of Entra ID, Azure, Microsoft 365, Okta, Kubernetes or GitHub records,
 // whose searches may rename fields before stats and search again by the
 // new names: its node, the sourcetype it searches, and the stored field
 // of a name a stage reads after renames.
 type cloudSource struct {
 	node, sourcetype string
 	field            func(name string, renames []rename) (string, bool)
+	// source, when set, is the source the macro searches too.
+	source string
 }
 
 // cloudSourceOf is the cloud source of a macro, or false when it is not
@@ -50,24 +52,31 @@ func cloudSourceOf(source string) (cloudSource, bool) {
 	if st, ok := azureSources[source]; ok {
 		return cloudSource{AzureNode, st, func(name string, renames []rename) (string, bool) {
 			return azureField(azureUnrename(name, renames))
-		}}, true
+		}, ""}, true
 	}
 	if source == o365Source {
 		return cloudSource{O365Node, ingest.O365Sourcetype, func(name string, renames []rename) (string, bool) {
 			return o365Field(o365Unrename(name, renames))
-		}}, true
+		}, ""}, true
 	}
 	if source == oktaSource {
 		// Renames name fields one by one, as Microsoft 365's do.
 		return cloudSource{OktaNode, ingest.OktaSourcetype, func(name string, renames []rename) (string, bool) {
 			return oktaField(o365Unrename(name, renames))
-		}}, true
+		}, ""}, true
+	}
+	if source == kubeSource {
+		// Renames name fields one by one, as Microsoft 365's do; the
+		// macro searches source="kubernetes".
+		return cloudSource{KubernetesNode, ingest.KubernetesSourcetype, func(name string, renames []rename) (string, bool) {
+			return kubeField(o365Unrename(name, renames))
+		}, ingest.KubernetesSource}, true
 	}
 	if source == githubEnterpriseSource || source == githubOrgSource {
 		// Renames name fields one by one, as Microsoft 365's do.
 		return cloudSource{GitHubNode, ingest.GitHubSourcetype, func(name string, renames []rename) (string, bool) {
 			return githubField(source, o365Unrename(name, renames))
-		}}, true
+		}, ""}, true
 	}
 	return cloudSource{}, false
 }

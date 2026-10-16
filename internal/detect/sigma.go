@@ -382,6 +382,10 @@ func (c *sigmaConv) anyModel() bool {
 		// And Okta's: sign-ins are Authentication events, admin changes
 		// Change, threats Alerts and the rest Other.
 		return true
+	case ingest.KubernetesService:
+		// And Kubernetes's: changes to objects are Change events,
+		// requests without credentials Authentication and reads Other.
+		return true
 	case ingest.GitHubService:
 		// And GitHub's: changes are Change events, sign-ins
 		// Authentication and the rest Other.
@@ -557,6 +561,14 @@ func ConvertSigmaWith(src []byte, opt SigmaOptions) (*SigmaResult, error) {
 			// when the organization shares them: each field by the log
 			// entry's name, or the Reports API's (eventName, new_value).
 			category = strings.ToLower(service)
+		}
+	}
+	if product, _ := r.Logsource["product"].(string); strings.EqualFold(product, ingest.KubernetesService) {
+		if service, _ := r.Logsource["service"].(string); strings.EqualFold(service, "audit") && (category == "" || strings.EqualFold(category, "application")) {
+			// Kubernetes audit events (service: audit; some rules also
+			// name the generic category application), each field by the
+			// Event's name.
+			category = ingest.KubernetesService
 		}
 	}
 	if product, _ := r.Logsource["product"].(string); category == "" && strings.EqualFold(product, ingest.OktaService) {
@@ -752,6 +764,14 @@ func productScope(ls map[string]any, category string) query.Expr {
 		if category == ingest.OktaService {
 			return &query.Compare{Field: "sourcetype", Op: "=", Value: ingest.OktaSourcetype}
 		}
+	case ingest.KubernetesService:
+		if category == ingest.KubernetesService {
+			// What Splunk's kube_audit macro searches.
+			return and([]query.Expr{
+				&query.Compare{Field: "sourcetype", Op: "=", Value: ingest.KubernetesSourcetype},
+				&query.Compare{Field: "source", Op: "=", Value: ingest.KubernetesSource},
+			})
+		}
 	case ingest.GitHubProduct:
 		if category == ingest.GitHubService {
 			return &query.Compare{Field: "sourcetype", Op: "=", Value: ingest.GitHubSourcetype}
@@ -854,6 +874,14 @@ func (c *sigmaConv) field(name string) string {
 		f, ok := ingest.O365SigmaField(name)
 		if !ok {
 			c.approx("field %s is not a Microsoft 365 field Signalith keeps", name)
+			return name
+		}
+		return f
+	}
+	if c.category == ingest.KubernetesService {
+		f, ok := ingest.KubernetesSigmaField(name)
+		if !ok {
+			c.approx("field %s is not a Kubernetes audit field Signalith keeps", name)
 			return name
 		}
 		return f

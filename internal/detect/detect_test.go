@@ -716,6 +716,26 @@ func TestConvertSigmaOkta(t *testing.T) {
 	}
 }
 
+// Kubernetes's rules name the Event's own fields, a list's without its
+// {}, and some name the generic category application.
+func TestConvertSigmaKubernetes(t *testing.T) {
+	rule := "title: Exec\nlogsource:\n  category: application\n  product: kubernetes\n  service: audit\ndetection:\n  sel:\n    verb: create\n    objectRef.subresource: exec\n    user.groups: system:masters\n    apiGroup: apps\n  condition: sel\nlevel: high\n"
+	res, err := ConvertSigmaWith([]byte(rule), SigmaOptions{Strict: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"(sourcetype=_json AND source=kubernetes) ", "verb=create", "objectRef.subresource=exec",
+		"kube_user.groups{}=system:masters", "objectRef.apiGroup=apps"} {
+		if !strings.Contains(res.Detection.Query, want) {
+			t.Errorf("query missing %s: %s", want, res.Detection.Query)
+		}
+	}
+	bad := strings.Replace(rule, "objectRef.subresource", "TargetImage", 1)
+	if _, err := ConvertSigmaWith([]byte(bad), SigmaOptions{Strict: true}); err == nil {
+		t.Error("a field Kubernetes does not have converted")
+	}
+}
+
 // GitHub's rules name the event's own fields: action is kept as
 // vendor_action, and actor as github_actor.
 func TestConvertSigmaGitHub(t *testing.T) {

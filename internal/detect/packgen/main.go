@@ -137,6 +137,8 @@ var cloudCategories = map[string][2]string{
 	"google_workspace.login": {"gcp", "rules/cloud/gcp/gworkspace/login"},
 	// Okta's System Log (product: okta, service: okta).
 	ingest.OktaService: {ingest.OktaService, "rules/identity/okta"},
+	// Kubernetes audit events (product: kubernetes, service: audit).
+	ingest.KubernetesService: {ingest.KubernetesService, "rules/application/kubernetes/audit"},
 	// GitHub's audit log (product: github, service: audit).
 	ingest.GitHubService: {ingest.GitHubProduct, "rules/application/github/audit"},
 }
@@ -284,6 +286,14 @@ func main() {
 			}
 			if _, ok := cloudCategories[cat]; ok {
 				want["category"], want["service"] = "", cat
+			}
+			if cat == ingest.KubernetesService {
+				// Some of these rules also name the generic category
+				// application.
+				want["category"], want["service"] = "", "audit"
+				if rule.Logsource["category"] == "application" {
+					want["category"] = "application"
+				}
 			}
 			if cat == "m365" {
 				want["service"] = rule.Logsource["service"]

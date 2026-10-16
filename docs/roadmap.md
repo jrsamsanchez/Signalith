@@ -35,8 +35,8 @@ The first four phases are complete, and work on hardening for 1.0 has started.
 
 - Scheduled [detections](detections.md) mapped to MITRE ATT&CK, with throttling, a
   findings queue for triage, and an ATT&CK coverage map.
-- Content packs of tested community rules: 2,509 from
-  [SigmaHQ](https://github.com/SigmaHQ/sigma) and 1,174 from Splunk Security Content,
+- Content packs of tested community rules: 2,524 from
+  [SigmaHQ](https://github.com/SigmaHQ/sigma) and 1,185 from Splunk Security Content,
   each with test events that prove it fires, and signed content updates.
 - [Sigma](https://github.com/SigmaHQ/sigma) rule import.
 
@@ -81,6 +81,8 @@ The first four phases are complete, and work on hardening for 1.0 has started.
   SigmaHQ and 19 Splunk Microsoft 365 rules.
 - [Okta](okta.md) System Log, read from Okta with no agent, with 19 SigmaHQ and 12 Splunk
   Okta rules.
+- [Kubernetes audit logs](kubernetes-audit.md), posted by the API server's audit webhook or
+  tailed from its log file, with 15 SigmaHQ and 11 Splunk Kubernetes rules.
 - [GitHub audit log](github-audit-log.md) of GitHub Enterprise Cloud and Server, streamed
   through an Azure event hub or sent by a script, with 12 SigmaHQ and 18 Splunk GitHub rules.
 - [Google Cloud](google-cloud.md) audit logs through a log sink, Pub/Sub and the

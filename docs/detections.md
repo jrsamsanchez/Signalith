@@ -330,7 +330,7 @@ Content packs are rule sets from other open source projects, shipped unchanged
 inside Signalith and converted when it starts. Every pack detection is **off** until
 an admin turns it on.
 
-**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,509 rules from
+**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,524 rules from
 [SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 2,080 Windows rules
 for these Sysmon, Security, PowerShell, System, Application, Code Integrity, Windows Firewall, BITS, AppX deployment, WMI activity, Remote Desktop session, shell, SMB client, exploit protection, DNS client, Task Scheduler, NTLM, LSA, CryptoAPI, device driver, packaged app, certificate, OpenSSH, DNS Server, IIS configuration and Defender log sources, 154 Linux rules (see
 [Linux endpoints](#linux-endpoints-sysmon-for-linux) and
@@ -340,8 +340,8 @@ for these Sysmon, Security, PowerShell, System, Application, Code Integrity, Win
 [AWS CloudTrail](#aws-cloudtrail)), 108 Microsoft Entra ID and Azure rules (see
 [Entra ID and Azure](#entra-id-and-azure)), 17 Microsoft 365 rules (see
 [Microsoft 365](#microsoft-365)), 16 Google Cloud rules and 7 Google Workspace rules (see
-[Google Cloud](#google-cloud)), 19 Okta rules (see [Okta](#okta)), and 12 GitHub rules (see
-[GitHub](#github)):
+[Google Cloud](#google-cloud)), 19 Okta rules (see [Okta](#okta)), 15 Kubernetes rules (see
+[Kubernetes](#kubernetes)), and 12 GitHub rules (see [GitHub](#github)):
 
 | Sigma log source | Windows events | Data model |
 | --- | --- | --- |
@@ -366,6 +366,7 @@ for these Sysmon, Security, PowerShell, System, Application, Code Integrity, Win
 | `product: gcp`, `service: gcp.audit` | Google Cloud audit log entries (see [Google Cloud](#google-cloud)) | Change, Authentication or Other |
 | `product: gcp`, `service: google_workspace.admin`, `google_workspace.login` | Google Workspace audit log entries, shared with Google Cloud | Change or Authentication |
 | `product: okta`, `service: okta` | Okta System Log events (see [Okta](#okta)) | Authentication, Change, Alerts or Other |
+| `product: kubernetes`, `service: audit` | Kubernetes audit events (see [Kubernetes](#kubernetes)) | Change, Authentication or Other |
 | `product: github`, `service: audit` | GitHub audit log events (see [GitHub](#github)) | Change, Authentication or Other |
 | `service: system` | System 7045 (service installed) | Change |
 | `service: system` | Other System events, by provider and event ID (see below) | Other |
@@ -737,6 +738,35 @@ CIM fields of Okta's events (`Authentication.action`, `All_Changes.command`), li
 `iplocation` to name a city and one that uses a command Signalith doesn't run are left
 out. To read the System Log, see [Okta](okta.md).
 
+### Kubernetes
+
+SigmaHQ's 15 tested Kubernetes audit rules ship. They name an audit Event's own fields
+(`verb`, `objectRef.resource`, `objectRef.subresource`, `responseStatus.code`), which
+Signalith keeps by the same names; `user.username` and `user.groups` read
+`kube_user.username` and each value of `kube_user.groups{}`, as the Event's `user`
+object is kept under that name. Three rules name a field the Event doesn't have at the
+top: `apiGroup` reads `objectRef.apiGroup`, the only API group an Event names, and
+`hostPath: '*'` and `capabilities: '*'` (which their authors note stand for "the field
+exists") read a pod's hostPath volumes (`requestObject.spec.volumes{}.hostPath.path`) and
+its containers' added capabilities
+(`requestObject.spec.containers{}.securityContext.capabilities.add{}`), so those two
+fire only when the audit policy records request bodies. Every rule searches
+`sourcetype=_json source=kubernetes`. `kubernetes_audit_potential_enumeration_activity`
+is experimental, and is left out.
+
+The Splunk pack adds 11 Kubernetes detections (see
+[Splunk Security Content](#splunk-security-content)), the production rules that search
+the `kube_audit` macro: by the Event's fields as Splunk reads its JSON (`verb`,
+`objectRef.resource`, `requestObject.spec.type`, `user.username`, which reads
+`kube_user.username`, and `sourceIPs{}`), and a pod's
+`requestObject.metadata.annotations.kubectl.kubernetes.io/last-applied-configuration`,
+searched for `"privileged":true` and `"hostNetwork":true`. Four read an allowed list
+macro (`kube_allowed_user_agents`, `kube_allowed_images` and the like), shipped with
+Splunk's sample values. Two rules that group by the country and city `iplocation`
+names, one that compares the country, the Falco rule, the metrics and Splunk Connect for
+Kubernetes object rules, and experimental and hunting rules are left out. To send the
+audit log, see [Kubernetes audit logs](kubernetes-audit.md).
+
 ### GitHub
 
 SigmaHQ's 12 tested GitHub audit log rules ship. They name the event's own `action`
@@ -787,8 +817,8 @@ derives, so they are left out. To send the audit logs, see
 
 ### Splunk Security Content
 
-**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,174 Windows,
-Linux, web, network, AWS CloudTrail, Entra ID, Microsoft 365, Okta and GitHub detections from Splunk's Threat Research Team
+**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,185 Windows,
+Linux, web, network, AWS CloudTrail, Entra ID, Microsoft 365, Okta, Kubernetes and GitHub detections from Splunk's Threat Research Team
 ([security_content](https://github.com/splunk/security_content)), pinned to one
 commit. They are the production TTP and anomaly rules that search the CIM
 `Endpoint.Processes`, `Endpoint.Filesystem`, `Endpoint.Registry` and `Web` nodes with
@@ -839,6 +869,7 @@ names, so each rule's `where` clause becomes a Signalith filter field for field:
 | `` `o365_management_activity` `` (raw search) | Microsoft 365 audit records, by the record's own field names and the CIM fields Splunk's add-on for Microsoft 365 gives them (see [Microsoft 365](#microsoft-365)) | Authentication, Change, Alerts or Other |
 | `` `okta` `` (raw search) | Okta System Log events, by Okta's own field names and the CIM fields Splunk's add-on for Okta Identity Cloud gives them (see [Okta](#okta)) | Authentication, Change, Alerts or Other |
 | `Authentication.Authentication`, `Change.All_Changes` (rules whose only data source is Okta) | Okta System Log events of that data model (see [Okta](#okta)) | Authentication or Change |
+| `` `kube_audit` `` (raw search) | Kubernetes audit events, by the Event's own field names (`user.` is `kube_user.`) and the CIM fields Signalith gives them (see [Kubernetes](#kubernetes)) | Change, Authentication or Other |
 | `` `github_enterprise` ``, `` `github_organizations` `` (raw search) | GitHub audit log events, by GitHub's own field names (GitHub's action, `action` in `github_enterprise`'s searches and `vendor_action` in `github_organizations`', is `vendor_action`; `actor` is `github_actor`) and the CIM fields Signalith gives them (see [GitHub](#github)) | Change, Authentication or Other |
 | `Network_Traffic` (network detections) | Any connection: Zeek's conn.log, a firewall, Sysmon 3 (`app` is the protocol, Zeek's `service`) | Network_Traffic |
 | `Network_Resolution` (network detections) | A DNS lookup that names who asked (`src`), as Zeek's dns.log does (`record_type` is `query_type`); a host's own lookups (Sysmon 22) name only the host and are left to the endpoint rules | Network_Resolution |
