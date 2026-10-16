@@ -538,14 +538,21 @@ EOF
 }
 
 sensor() {
-  local token out line
+  local token out line nets m pub
+  # The sensor sees the endpoints' public port, so their public addresses
+  # are the lab's own network too (for outbound and inbound).
+  nets=10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fd00::/8
+  for m in $(names linux); do
+    pub=$(on "$m" "ip -4 -o addr show dev eth0 scope global | awk '{print \$4}' | cut -d/ -f1 | head -n 1" 2>/dev/null)
+    [ -z "$pub" ] || nets="$nets,$pub/32"
+  done
   token=$(sg tokens create -purpose sensor "Lab sensor $(date +%m%d-%H%M%S)")
   out=$(api "/api/sensor/install?server=$SIEM_URL&interface=capture0")
   line=$(jq -r .linux <<<"$out")
   line=${line//"$(jq -r .token_placeholder <<<"$out")"/$token}
   # Servers learn of a new token within a few seconds, and the line
   # refuses an unknown token before it installs anything: try again.
-  retry 6 on sensor "bash -c $(printf '%q' "$line --name sensor")" ||
+  retry 6 on sensor "bash -c $(printf '%q' "$line --name sensor --networks $nets")" ||
     fail "The sensor did not install. Its output is above."
 }
 

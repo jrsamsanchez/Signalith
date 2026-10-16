@@ -684,6 +684,8 @@ rx_packets() {
 }
 link_of() {
   l=$(cat "$sysfs/class/net/$1/operstate" 2>/dev/null) || l=unknown
+  # A virtual port (VXLAN, tun) reports unknown: with a carrier it is up.
+  if [ "${l:-unknown}" = unknown ] && [ "$(cat "$sysfs/class/net/$1/carrier" 2>/dev/null)" = 1 ]; then l=up; fi
   echo "${l:-unknown}"
 }
 # sample counts the packets each port in $@ receives in $sample seconds,
@@ -2029,6 +2031,9 @@ fi
 net=$sysfs/class/net/$iface
 link=$(safe "$(cat "$net/operstate" 2>/dev/null)")
 [ -n "$link" ] || link=missing
+# Virtual ports (VXLAN, tun) and some drivers report no state: an up
+# port with a carrier is up.
+if [ "$link" = unknown ] && [ "$(cat "$net/carrier" 2>/dev/null)" = 1 ]; then link=up; fi
 rxp=$(num "$(cat "$net/statistics/rx_packets" 2>/dev/null)")
 rxd=$(num "$(cat "$net/statistics/rx_dropped" 2>/dev/null)")
 kd=$(printf '%s\n' "$eve" | grep '"event_type":"stats"' | tail -n 1 | sed -n 's/.*"kernel_drops":\([0-9]*\).*/\1/p')
