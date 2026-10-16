@@ -88,7 +88,7 @@ spec:
             - sh
             - -ec
             - |
-              cp -a /usr/share/opensearch/config/. /work/
+              cp -R /usr/share/opensearch/config/. /work/
               cp /chart/opensearch.yml /work/opensearch.yml
               for f in config.yml internal_users.yml roles.yml roles_mapping.yml; do
                 cp /chart/$f /work/opensearch-security/$f

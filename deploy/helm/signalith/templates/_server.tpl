@@ -58,7 +58,9 @@ spec:
       initContainers:
         # Copies the secrets into a memory-only folder as files of
         # Signalith's own, readable by it alone (Secret volumes are
-        # group-readable), and makes the data folders on a new volume.
+        # group-readable), and makes its data folder. Each goes in a folder
+        # of Signalith's own: the volumes' top folders belong to root, and
+        # some storage makes them writable by everyone.
         - name: prepare
           image: {{ include "signalith.image" $ctx }}
           imagePullPolicy: {{ $v.image.pullPolicy }}
@@ -67,11 +69,16 @@ spec:
             - -ec
             - |
               umask 077
-              copy() { for f in "$1"/*; do [ -f "$f" ] && install -m 0400 "$f" "$2/"; done; return 0; }
-              copy /in/secrets /run/signalith-secrets
-              if [ -d /in/opensearch ]; then copy /in/opensearch /run/signalith-opensearch; fi
-              if [ -d /in/tls ]; then copy /in/tls /run/signalith-tls; fi
-              mkdir -p /var/lib/signalith/detections /var/lib/signalith/lookups /var/lib/signalith/dashboards /var/lib/signalith/archive
+              copy() {
+                mkdir -p "$2"
+                for f in "$1"/*; do [ -f "$f" ] && install -m 0400 "$f" "$2/"; done
+                return 0
+              }
+              copy /in/secrets /run/signalith/secrets
+              if [ -d /in/opensearch ]; then copy /in/opensearch /run/signalith/opensearch; fi
+              if [ -d /in/tls ]; then copy /in/tls /run/signalith/tls; fi
+              mkdir -p /var/lib/signalith/data/detections /var/lib/signalith/data/lookups /var/lib/signalith/data/dashboards /var/lib/signalith/data/archive
+              chmod 700 /var/lib/signalith/data
           securityContext:
             {{- include "signalith.containerSecurity" $ctx | nindent 12 }}
           resources:
@@ -79,15 +86,13 @@ spec:
             limits: { memory: 64Mi }
           volumeMounts:
             - { name: secrets-in, mountPath: /in/secrets, readOnly: true }
-            - { name: secrets, mountPath: /run/signalith-secrets }
             {{- if not $v.opensearch.enabled }}
             - { name: opensearch-in, mountPath: /in/opensearch, readOnly: true }
-            - { name: opensearch, mountPath: /run/signalith-opensearch }
             {{- end }}
             {{- if $v.server.tls.existingSecret }}
             - { name: tls-in, mountPath: /in/tls, readOnly: true }
-            - { name: tls, mountPath: /run/signalith-tls }
             {{- end }}
+            - { name: run, mountPath: /run/signalith }
             - { name: data, mountPath: /var/lib/signalith }
       containers:
         - name: signalith
@@ -111,17 +116,28 @@ spec:
               value: "$(POD_NAME)"
             - name: SIGNALITH_NODE_URL
               value: "https://$(POD_NAME).{{ $full }}-pods.{{ $ctx.Release.Namespace }}.svc:{{ $port }}"
+            # Its folders, in the folder prepare made on the volume.
+            - name: SIGNALITH_STATE_DIR
+              value: /var/lib/signalith/data
+            - name: SIGNALITH_DETECTIONS_DIR
+              value: /var/lib/signalith/data/detections
+            - name: SIGNALITH_LOOKUPS_DIR
+              value: /var/lib/signalith/data/lookups
+            - name: SIGNALITH_DASHBOARDS_DIR
+              value: /var/lib/signalith/data/dashboards
+            - name: SIGNALITH_ARCHIVE_DIR
+              value: /var/lib/signalith/data/archive
             - name: SIGNALITH_ADMIN_PASSWORD_FILE
-              value: /run/signalith-secrets/initial-admin-password
+              value: /run/signalith/secrets/initial-admin-password
             - name: SIGNALITH_INGEST_TOKEN_FILE
-              value: /run/signalith-secrets/ingest-token
+              value: /run/signalith/secrets/ingest-token
             - name: SIGNALITH_CLUSTER_KEY_FILE
-              value: /run/signalith-secrets/cluster-key
+              value: /run/signalith/secrets/cluster-key
             {{- if and (not $v.opensearch.enabled) (eq $v.opensearch.external.auth "password") }}
             - name: SIGNALITH_OPENSEARCH_USERNAME
               valueFrom: { secretKeyRef: { name: {{ $v.opensearch.external.existingSecret }}, key: username } }
             - name: SIGNALITH_OPENSEARCH_PASSWORD_FILE
-              value: /run/signalith-opensearch/password
+              value: /run/signalith/opensearch/password
             {{- end }}
             {{- with $p.extraEnv }}
             {{- toYaml . | nindent 12 }}
@@ -139,6 +155,7 @@ spec:
           startupProbe:
             httpGet: { path: /livez, port: https, scheme: HTTP }
             periodSeconds: 5
+            timeoutSeconds: 5
             failureThreshold: 60
           livenessProbe:
             httpGet: { path: /livez, port: https, scheme: HTTP }
@@ -160,13 +177,7 @@ spec:
               subPath: {{ ternary "signalith.yaml" "scanner.yaml" (eq $role "server") }}
               readOnly: true
             - { name: data, mountPath: /var/lib/signalith }
-            - { name: secrets, mountPath: /run/signalith-secrets, readOnly: true }
-            {{- if not $v.opensearch.enabled }}
-            - { name: opensearch, mountPath: /run/signalith-opensearch, readOnly: true }
-            {{- end }}
-            {{- if $v.server.tls.existingSecret }}
-            - { name: tls, mountPath: /run/signalith-tls, readOnly: true }
-            {{- end }}
+            - { name: run, mountPath: /run/signalith, readOnly: true }
             - { name: tmp, mountPath: /tmp }
       volumes:
         - name: config
@@ -175,23 +186,20 @@ spec:
           secret:
             secretName: {{ include "signalith.secretsName" $ctx }}
             defaultMode: 0440
-        - name: secrets
-          emptyDir: { medium: Memory, sizeLimit: 1Mi }
+        # Memory only: the copies of the secrets.
+        - name: run
+          emptyDir: { medium: Memory, sizeLimit: 4Mi }
         {{- if not $v.opensearch.enabled }}
         - name: opensearch-in
           secret:
             secretName: {{ required "opensearch.external.existingSecret is required when opensearch.enabled is false" $v.opensearch.external.existingSecret }}
             defaultMode: 0440
-        - name: opensearch
-          emptyDir: { medium: Memory, sizeLimit: 1Mi }
         {{- end }}
         {{- if $v.server.tls.existingSecret }}
         - name: tls-in
           secret:
             secretName: {{ $v.server.tls.existingSecret }}
             defaultMode: 0440
-        - name: tls
-          emptyDir: { medium: Memory, sizeLimit: 1Mi }
         {{- end }}
         - name: tmp
           emptyDir: { sizeLimit: 1Gi }

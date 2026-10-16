@@ -90,24 +90,24 @@ capabilities:
 {{- end -}}
 {{- $server := dict "listen" (printf "0.0.0.0:%d" $port) "public_url" $public "tls" $tls -}}
 {{- if $v.server.tls.existingSecret -}}
-{{- $_ := set $server "tls_cert" "/run/signalith-tls/tls.crt" -}}
-{{- $_ := set $server "tls_key" "/run/signalith-tls/tls.key" -}}
+{{- $_ := set $server "tls_cert" "/run/signalith/tls/tls.crt" -}}
+{{- $_ := set $server "tls_key" "/run/signalith/tls/tls.key" -}}
 {{- end -}}
 {{- $osc := dict "index_prefix" "signalith" "replicas" "auto" -}}
 {{- if $v.opensearch.enabled -}}
 {{- $_ := set $osc "url" (printf "https://%s:9200" (include "signalith.opensearchName" $ctx)) -}}
-{{- $_ := set $osc "ca_file" "/run/signalith-secrets/opensearch-ca.pem" -}}
-{{- $_ := set $osc "cert_file" "/run/signalith-secrets/opensearch-client.pem" -}}
-{{- $_ := set $osc "key_file" "/run/signalith-secrets/opensearch-client-key.pem" -}}
+{{- $_ := set $osc "ca_file" "/run/signalith/secrets/opensearch-ca.pem" -}}
+{{- $_ := set $osc "cert_file" "/run/signalith/secrets/opensearch-client.pem" -}}
+{{- $_ := set $osc "key_file" "/run/signalith/secrets/opensearch-client-key.pem" -}}
 {{- else -}}
 {{- $_ := set $osc "url" (first $v.opensearch.external.urls) -}}
 {{- if gt (len $v.opensearch.external.urls) 1 -}}
 {{- $_ := set $osc "urls" $v.opensearch.external.urls -}}
 {{- end -}}
-{{- $_ := set $osc "ca_file" "/run/signalith-opensearch/ca.crt" -}}
+{{- $_ := set $osc "ca_file" "/run/signalith/opensearch/ca.crt" -}}
 {{- if eq $v.opensearch.external.auth "certificate" -}}
-{{- $_ := set $osc "cert_file" "/run/signalith-opensearch/tls.crt" -}}
-{{- $_ := set $osc "key_file" "/run/signalith-opensearch/tls.key" -}}
+{{- $_ := set $osc "cert_file" "/run/signalith/opensearch/tls.crt" -}}
+{{- $_ := set $osc "key_file" "/run/signalith/opensearch/tls.key" -}}
 {{- end -}}
 {{- end -}}
 {{- $cluster := dict "leader_eligible" true -}}
@@ -121,9 +121,9 @@ capabilities:
   "retention" (dict "days" 90)
   "auth" (dict "admin_user" "admin")
   "cluster" $cluster
-  "detections" (dict "dir" "/var/lib/signalith/detections" "max_findings_per_run" 100 "catch_up" "6h")
-  "lookups" (dict "dir" "/var/lib/signalith/lookups")
-  "dashboards" (dict "dir" "/var/lib/signalith/dashboards" "stale_after" "2h")
+  "detections" (dict "dir" "/var/lib/signalith/data/detections" "max_findings_per_run" 100 "catch_up" "6h")
+  "lookups" (dict "dir" "/var/lib/signalith/data/lookups")
+  "dashboards" (dict "dir" "/var/lib/signalith/data/dashboards" "stale_after" "2h")
 -}}
 {{- if and $v.server.syslog.enabled (ne .role "scanner") -}}
 {{- $_ := set $cfg "syslog" (dict "udp" "0.0.0.0:5514" "tcp" "0.0.0.0:5514" "tls" "0.0.0.0:6514" "public_port" 514 "allow" $v.server.syslog.allow) -}}
