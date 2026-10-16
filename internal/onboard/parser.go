@@ -598,7 +598,7 @@ func (c *Compiled) parseBody(body string) (map[string]any, bool) {
 
 // finish renames, types and times a line's fields and makes the event.
 func (c *Compiled) finish(fields map[string]any, raw string, hdrTime time.Time, host, app string, now time.Time) ingest.Event {
-	out := make(map[string]any, len(fields)+6)
+	out := make(map[string]any, len(fields))
 	for k, v := range fields {
 		name := SanitizeName(k)
 		if name == "" {
