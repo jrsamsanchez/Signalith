@@ -930,6 +930,11 @@ tactics from three detections in a week. Many weak signals about one user become
 one alert, and noisy rules (new services, scheduled tasks, discovery commands) stop
 flooding the queue.
 
+- **Behavior baselines** learn what each user and host usually does and add risk
+  for what is new or rare: a sign-in from a new country or network or at an odd
+  hour, a program almost no host has run, a new kind of change, an unusual hour of
+  uploads. Tune them, or add exceptions, under Settings > Behavior baselines. See
+  [docs/baselines.md](https://github.com/jrsamsanchez/signalith/blob/main/docs/baselines.md).
 - **Risk** lists the users and systems with the most risk, with a bar per score, the
   number of detections and tactics, and the asset or identity context. Click one to
   see every detection that added risk, oldest first.

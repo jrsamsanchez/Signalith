@@ -152,6 +152,9 @@ runs `* | threatmatch` every 5 minutes over the last 10, raises one finding per
 indicator and target system per day, and adds 60 risk times the indicator's weight
 to `threat_target` and `user`. See [threat-intel.md](threat-intel.md).
 
+[Behavior baselines](baselines.md) add risk the same way for first-seen and rare
+activity, such as a sign-in from a new country.
+
 Write your own the same way, for example
 `datamodel=Risk risk_object_type=user | stats sum(risk_score) as risk_score by risk_object | where risk_score >= 200`.
 

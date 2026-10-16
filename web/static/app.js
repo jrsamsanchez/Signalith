@@ -537,6 +537,7 @@ const JUMP_WORDS = {
   playbooks: 'playbooks automation soar workflow runbook automatic response steps',
   approvals: 'approvals approve reject pending waiting playbook runs',
   sensors: 'network sensors zeek suricata ids rules tuning disable threshold suppress local rules sid packet drops capture span mirror',
+  baselines: 'ueba behavior behaviour baselines anomaly anomalies first seen rare new country unusual hour impossible travel data volume exfiltration',
   lookuptables: 'lookup lookups tables csv reference owners enrichment context',
   security: 'hardening encryption certificate authority ca tls https keys permissions bitlocker luks',
   settings: 'configuration config server opensearch syslog listen address port tls certificate ai assistant model api key restart yaml',

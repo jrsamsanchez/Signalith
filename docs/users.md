@@ -1025,7 +1025,8 @@ server, which can only read), `POST /api/tls/names`, `GET /api/security`,
 `GET /api/vulns/setup`, `GET /api/vulns/scanners`, `PUT /api/vulns/settings`, `POST /api/vulns/networks/{id}/scan`,
 `POST /api/vulns/scans/{id}/stop` (setting up and running [vulnerability scans](vulnerabilities.md)),
 `PUT /api/compliance/notes` (marking a [compliance](compliance.md) control as handled outside
-Signalith or not applicable),
+Signalith or not applicable), `GET /api/baselines`, `PUT /api/baselines`,
+`POST /api/baselines/{check}/reset` (the [behavior baselines](baselines.md) and their exceptions),
 `GET /api/cluster` (the Servers page; see [servers.md](servers.md)), `GET /api/cluster/opensearch` (its OpenSearch card; see [opensearch-failover.md](opensearch-failover.md)), `POST /api/cluster/restart`
 (restart servers one at a time to apply the shared settings), `GET /api/cluster/tls`,
 `POST /api/cluster/tls/choose` (the cluster's one certificate authority; see
