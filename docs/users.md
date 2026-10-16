@@ -165,7 +165,10 @@ Users page.
 A new password, chosen on the Users page, at **Change password**, with
 `signalith passwd` or `signalith init -admin-password`, must be:
 
-- at least 8 characters and at most 72 bytes (bcrypt reads no more);
+- at least 8 and at most 256 characters, in any script (a password longer than the 72
+  bytes bcrypt reads is reduced to a keyed SHA-256 of all of it first, so nothing is
+  cut off; a server older than this one in the same cluster cannot check such a
+  password);
 - not on a list of about 2,000 commonly used passwords (from
   [SecLists](https://github.com/danielmiessler/SecLists)), whatever the case;
 - not one character or a short group repeated (`aaaaaaaa`, `abcabcabc`) or a run of

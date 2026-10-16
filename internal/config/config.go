@@ -2836,7 +2836,7 @@ func (c *Config) CheckPassword(user, pw string) bool {
 	if !strings.EqualFold(strings.TrimSpace(user), c.Auth.AdminUser) {
 		return false
 	}
-	return bcrypt.CompareHashAndPassword([]byte(c.Auth.AdminPasswordHash), []byte(pw)) == nil
+	return users.ComparePassword(c.Auth.AdminPasswordHash, pw)
 }
 
 // RandomToken returns a random hex token.

@@ -2,7 +2,10 @@ package users
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"net/mail"
@@ -165,15 +168,38 @@ func validEmail(email string) error {
 const MinPasswordLength = 8
 
 // HashPassword returns a bcrypt hash of a password, after checking its
-// length. bcrypt reads at most 72 bytes, so longer passwords are refused
-// rather than silently cut. A password someone is choosing goes through
-// CheckNewPassword first.
+// length. A password someone is choosing goes through CheckNewPassword
+// first.
 func HashPassword(pw string) (string, error) {
 	if err := checkLength(pw); err != nil {
 		return "", err
 	}
-	h, err := bcrypt.GenerateFromPassword([]byte(pw), bcrypt.DefaultCost)
+	h, err := bcrypt.GenerateFromPassword(bcryptInput(pw), bcrypt.DefaultCost)
 	return string(h), err
+}
+
+// ComparePassword reports whether pw is the password hash was made from by
+// HashPassword (or by any bcrypt tool, for a password of up to 72 bytes).
+func ComparePassword(hash, pw string) bool {
+	return hash != "" && bcrypt.CompareHashAndPassword([]byte(hash), bcryptInput(pw)) == nil
+}
+
+// bcryptLimit is the most bytes of a password bcrypt reads.
+const bcryptLimit = 72
+
+// bcryptInput is what bcrypt hashes for pw. A password of up to 72 bytes
+// is hashed as it is, so its hash is the one every version of Signalith and
+// every bcrypt tool makes. A longer one (64 characters of a non-Latin
+// script can be 192 bytes) is first reduced to a keyed SHA-256 of all of
+// it, base64 encoded, so no part of it is cut off. The key keeps such a
+// hash from being matched against plain SHA-256 hashes leaked elsewhere.
+func bcryptInput(pw string) []byte {
+	if len(pw) <= bcryptLimit {
+		return []byte(pw)
+	}
+	m := hmac.New(sha256.New, []byte("signalith bcrypt input v1"))
+	m.Write([]byte(pw))
+	return []byte(base64.RawStdEncoding.EncodeToString(m.Sum(nil)))
 }
 
 // dummyHash is compared against when a user does not exist, so a wrong
@@ -185,7 +211,7 @@ var dummyHash = sync.OnceValue(func() []byte {
 
 // WasteTime does the work of checking a password without a user, so
 // sign-in failures take the same time whatever the reason.
-func WasteTime(pw string) { _ = bcrypt.CompareHashAndPassword(dummyHash(), []byte(pw)) }
+func WasteTime(pw string) { _ = bcrypt.CompareHashAndPassword(dummyHash(), bcryptInput(pw)) }
 
 // GeneratePassword returns a random temporary password such as
 // "kq7m-3xhp-9tvd-w2fa": 16 characters (about 79 bits) from letters and
@@ -668,7 +694,7 @@ func (s *Store) CheckPassword(name, password string) bool {
 		WasteTime(password)
 		return false
 	}
-	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil
+	return ComparePassword(hash, password)
 }
 
 // PasswordVersion changes whenever the user's password does, so a cache

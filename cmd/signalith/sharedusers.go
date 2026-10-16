@@ -256,7 +256,7 @@ func isFirstPassword(c *config.Config, hash string) bool {
 		return false
 	}
 	pw := strings.TrimSpace(string(b))
-	return pw != "" && bcrypt.CompareHashAndPassword([]byte(hash), []byte(pw)) == nil
+	return pw != "" && users.ComparePassword(hash, pw)
 }
 
 // builtinSetHere is api.Server.BuiltinSetHere for a server whose API keeps

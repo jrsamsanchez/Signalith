@@ -150,8 +150,8 @@ func TestPasswordsAndRoles(t *testing.T) {
 	if len(p) != 19 || strings.Count(p, "-") != 3 || GeneratePassword() == p {
 		t.Errorf("generated %q", p)
 	}
-	if _, err := HashPassword(strings.Repeat("x", 73)); err == nil {
-		t.Error("73-byte password accepted")
+	if _, err := HashPassword(strings.Repeat("x", MaxPasswordLength+1)); err == nil {
+		t.Error("an overlong password accepted")
 	}
 	if !Admin.AtLeast(Analyst) || Viewer.AtLeast(Analyst) || Role("root").AtLeast(Viewer) {
 		t.Error("role ranks")
