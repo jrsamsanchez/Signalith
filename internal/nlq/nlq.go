@@ -736,11 +736,21 @@ func (t *translator) distinctAfter(k int) int {
 	return t.note(k+1+nk, "count distinct %ss", nn.name)
 }
 
+// sameWords before a noun ask for one row per value of it, as in "from
+// the same source" or "by a single user".
+var sameWords = set("same", "single")
+
 func (t *translator) ruleGroup() int {
 	w := t.low(0)
 	k := 0
 	switch {
 	case w == "by" || w == "per" || w == "across":
+		k = 1
+	case sameWords[w]:
+		// "from the same source", "a single user": one row per source.
+		if _, nk := t.nounAt(1); nk == 0 {
+			return 0
+		}
 		k = 1
 	case (w == "for" && (t.low(1) == "each" || t.low(1) == "every")) || ((w == "grouped" || w == "split" || w == "broken") && t.low(1) == "by"):
 		k = 2
@@ -880,8 +890,12 @@ func (t *translator) rulePreposition() int {
 		return 0
 	}
 	k := 1
-	if t.low(k) == "the" {
+	if t.low(k) == "the" || (t.low(k) == "a" && sameWords[t.low(k+1)]) {
 		k++
+	}
+	if sameWords[t.low(k)] {
+		// "from the same source" groups; ruleGroup takes "same source".
+		return k
 	}
 	nt, ok := t.tok(k)
 	if !ok || !t.looksLikeValue(nt) || nouns[nt.low].field != "" || modelWords[nt.low] != "" {

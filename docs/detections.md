@@ -1073,6 +1073,46 @@ signalith content remove
 Restart Signalith after `install` or `remove` so a running server uses the change, or
 upload on the Detections page instead.
 
+## Describe a detection in plain English
+
+On the Detections page, **Describe a detection** turns a sentence such as
+"more than 10 failed logins from the same source in 5 minutes" into a whole
+rule: the search, how often it runs and how far back it looks, severity,
+ATT&CK techniques, risk and how repeats are grouped. The draft opens in the
+editor turned off, with a note on how each part was chosen, and is
+backtested straight away.
+
+- **Offline by default.** The draft uses the same translator as the Ask
+  box, a table of common attack behaviours (brute force, encoded
+  PowerShell, log clearing, admin group changes and so on) for severity and
+  ATT&CK, and a time window in the sentence ("in 5 minutes", "within an
+  hour") for the lookback. Say "high severity" or "priority: low" to set
+  the severity yourself.
+- **Similar detections.** The draft lists detections already in the
+  library that look like the description, so you can turn one of those on
+  instead. When the translator understands little and the library has a
+  close match, the draft starts as a copy of it.
+- **With an AI model.** When an AI model is set up (Settings, AI
+  assistant), it writes the draft instead, and the offline draft is used if
+  the model fails. The model sees only the description, never your events.
+  Every model draft is checked like any detection, and ATT&CK IDs that are
+  not in the matrix are dropped.
+
+### Backtest
+
+**Backtest** in the editor runs the detection over the past 7, 30 or 90
+days the way its scheduled runs would have, and shows how many findings it
+would have raised, a bar per search, the users and systems that raised the
+most, and the newest titles. Exceptions and the repeat grouping apply.
+Nothing is written: no findings, risk or throttle records.
+
+A backtest runs at most 60 searches, each bounded by the usual search
+limits. Each search covers the lookback, or more when the window needs
+more than 60 of them; a stats detection is then marked approximate, since
+counting over a longer span can cross a threshold that live runs would
+not. Each person runs one backtest at a time, the server at most two, and
+a backtest stops after 3 minutes with what it has so far.
+
 ## Sigma rules
 
 **Import Sigma rule** on the Detections page (or `POST /api/detections/sigma`)
@@ -1138,6 +1178,8 @@ Imported rules start disabled with a 5 minute schedule and 10 minute lookback.
 | `GET`, `PUT`, `DELETE /api/detections/{id}` | Read, save, delete or revert |
 | `GET /api/detections/{id}/yaml` | Export as YAML |
 | `POST /api/detections/test` | Run an unsaved detection; returns rows and titles, raises nothing |
+| `POST /api/detections/draft` | `{"description": "...", "mode": "auto"}`: draft a detection from plain English (admin). `mode` is `auto` (the AI model when one is set up), `rules` (offline) or `ai`. Returns the draft with its steps, warnings and similar detections; nothing is saved |
+| `POST /api/detections/backtest` | `{"detection": {...}, "window": "30d"}`: what an unsaved detection would have raised over a past window of 1h to 90d (admin; 429 while one of yours runs). Raises nothing |
 | `POST /api/detections/{id}/run` | Run now on this server and raise findings (admin). Searches the lookback up to now, does not change the schedule, and is recorded as the detection's last Run now with who ran it |
 | `POST /api/detections/sigma` | Convert a Sigma rule (YAML body, or JSON `{"rule": "..."}`) |
 | `GET /api/detections/packs` | Content packs with their rule IDs, how many are on, and counts by severity |

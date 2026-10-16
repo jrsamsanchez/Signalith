@@ -1886,6 +1886,29 @@ body:has(.page.active .inspector:not([hidden], .hidden)) #toast { bottom: 88px; 
 #page-detections .det-editor .dx-test-out:empty + * { margin-top: calc(-1 * var(--sp-4)); }
 #page-detections .det-editor .check { color: var(--text); }
 #page-detections #d-sigma-box { width: min(640px, calc(100vw - 32px)); }
+#page-detections #d-describe-box { width: min(600px, calc(100vw - 32px)); }
+#page-detections .dx-examples { display: flex; flex-wrap: wrap; gap: 6px; }
+#page-detections .dx-examples .chip { cursor: pointer; border: 0; max-width: 100%; text-align: left; white-space: normal; height: auto; padding-block: 5px; font: 400 var(--fs-sm)/1.35 var(--font-sans); }
+#page-detections .dx-examples .chip:hover { background: var(--hover); color: var(--text); }
+#page-detections .dx-bt { display: inline-flex; align-items: center; gap: 4px; }
+#page-detections .dx-bt .select { width: auto; }
+#page-detections .dx-draft { background: var(--accent-soft); }
+#page-detections .dx-draft q { font-style: normal; color: var(--text); quotes: "\201C" "\201D"; }
+#page-detections .dx-draft__how { margin-top: 6px; }
+#page-detections .dx-sim { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 6px; }
+#page-detections .dx-sim li { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
+#page-detections .dx-sim .sev { flex: none; }
+#page-detections .dx-sim__t { min-width: 0; overflow-wrap: anywhere; }
+#page-detections .dx-sim .link-btn { text-align: left; display: inline; }
+#page-detections .dx-draft__how summary { cursor: pointer; color: var(--text); font-weight: 500; }
+#page-detections .dx-bt-out > div { min-width: 0; flex: 1; }
+#page-detections .dx-bt-chart { display: flex; align-items: flex-end; gap: 2px; height: 56px; margin: 10px 0 4px; padding-bottom: 1px; border-bottom: 1px solid var(--line); }
+#page-detections .dx-bt-bar { flex: 1 1 0; min-width: 2px; height: max(var(--h), 2px); border-radius: 2px 2px 0 0; background: var(--accent); }
+#page-detections .dx-bt-bar--zero { background: var(--track); }
+#page-detections .dx-bt-tops { display: grid; gap: 4px; margin-top: 8px; }
+#page-detections .dx-bt-top { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; }
+#page-detections .dx-bt-top .badge { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+#page-detections .dx-bt-top__f { font: 500 var(--fs-xs) var(--font-mono); color: var(--text-3); min-width: 72px; }
 #page-detections #d-sigma-box .textarea { min-height: 240px; }
 /* the page head sits above the split here, so the inspector is shorter to keep its actions on screen */
 @media (min-width: 1360px) {

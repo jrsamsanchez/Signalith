@@ -247,6 +247,8 @@ type Server struct {
 	// apply at once, and liveAI the assistant they give.
 	live   atomic.Pointer[config.Config]
 	liveAI atomic.Pointer[liveModel]
+	// backtests limits detection backtests running at once.
+	backtests backtestSlots
 
 	// legacyProxies are reverse proxies believed only because the config
 	// predates HTTPS by default (see viaTrustedProxy).
