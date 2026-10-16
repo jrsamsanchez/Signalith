@@ -150,11 +150,17 @@ func gwsManyEvents(n int) string {
 // An entry with many events costs no more than its first few, and a
 // parameter keeps a bounded number of values.
 func TestWorkspaceManyEvents(t *testing.T) {
-	r := decode(t, gwsManyEvents(45000))
+	entry := gwsManyEvents(45000)
+	// Reading the entry's JSON, which takes time in proportion to its
+	// size, is the yardstick, so a slow machine or the race detector
+	// slows both alike.
 	start := time.Now()
+	r := decode(t, entry)
+	read := time.Since(start)
+	start = time.Now()
 	ev := Normalize(GCPTag, r, now)
-	if d := time.Since(start); d > 2*time.Second {
-		t.Errorf("took %v", d)
+	if d := time.Since(start); d > 2*time.Second && d > 10*read {
+		t.Errorf("took %v, reading the entry %v", d, read)
 	}
 	if names, _ := ev.Fields["event_name"].([]any); len(names) != workspaceMaxEvents {
 		t.Errorf("event_name has %d values", len(names))
