@@ -380,7 +380,7 @@ plugins.security.ssl.transport.pemkey_filepath: certs/` + NodeKeyFile + `
 plugins.security.ssl.transport.pemtrustedcas_filepath: certs/` + RootCAFile + `
 # Nodes are recognized by their certificate's name (nodes_dn below), not
 # by their address, which can change.
-plugins.security.ssl.transport.enforce_hostname_verification: false
+transport.ssl.enforce_hostname_verification: false
 plugins.security.ssl.transport.enabled_protocols: ["TLSv1.3", "TLSv1.2"]
 plugins.security.ssl.http.enabled: true
 plugins.security.ssl.http.pemcert_filepath: certs/` + NodeCertFile + `
