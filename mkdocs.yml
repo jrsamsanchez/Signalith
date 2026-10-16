@@ -117,6 +117,7 @@ nav:
   - Getting started:
       - Overview: getting-started.md
       - Install from packages: install-packages.md
+      - Kubernetes (Helm): kubernetes.md
       - How Signalith compares: comparison.md
   - Data intake:
       - Agents and syslog: sending-data.md
@@ -127,6 +128,7 @@ nav:
       - AWS CloudTrail: aws-cloudtrail.md
       - Entra ID and Azure: azure.md
       - Microsoft 365: microsoft-365.md
+      - Okta: okta.md
       - Google Cloud: google-cloud.md
       - Antivirus: antivirus.md
       - Vulnerability scanning: vulnerabilities.md

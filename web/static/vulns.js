@@ -682,7 +682,8 @@
         el('div', { class: 'vs-net__title' }, el('h3', {}, n.name),
           n.enabled ? null : el('span', { class: 'badge' }, 'Paused'),
           n.gentle ? el('span', { class: 'badge badge--accent', title: 'Scans slowly with fewer probes' }, 'Gentle') : null,
-          n.openvas ? el('span', { class: 'badge badge--accent', title: 'Also scanned with OpenVAS' }, 'OpenVAS') : null),
+          n.openvas ? el('span', { class: 'badge badge--accent', title: 'Also scanned with OpenVAS' }, 'OpenVAS') : null,
+          n.openvas && (n.ssh_login || n.smb_login) ? el('span', { class: 'badge', title: 'OpenVAS signs in to its hosts' }, 'Signed-in scan') : null),
         el('div', { class: 'vs-net__actions' }, ...actions)),
       el('p', { class: 'vs-net__addrs mono' }, n.networks.join(', ') + (n.exclude && n.exclude.length ? '  (skipping ' + n.exclude.join(', ') + ')' : '')),
       el('dl', { class: 'vs-net__facts' },
@@ -799,6 +800,30 @@
     };
     gentle.addEventListener('change', gentleOff);
     gentleOff();
+    // The logins OpenVAS signs in with, filled in once they load.
+    const loginSel = (id, kind, value) => {
+      const sel = el('select', { class: 'select select--block', id }, el('option', { value: '' }, 'None: scan from outside only'));
+      if (value) sel.append(el('option', { value }, 'Loading…'));
+      sel.value = value || '';
+      loadLogins(false).then(({ logins }) => {
+        sel.replaceChildren(el('option', { value: '' }, 'None: scan from outside only'),
+          ...logins.filter((l) => l.kind === kind).map((l) => el('option', { value: l.id }, l.name + ' (' + l.username + ')' + (l.readable ? '' : ' · enter again'))));
+        if (value && !logins.some((l) => l.id === value)) sel.append(el('option', { value }, 'A removed login'));
+        sel.value = value || '';
+      }).catch(() => {});
+      return sel;
+    };
+    const sshLogin = loginSel('vs-ssh-login', 'ssh', t.ssh_login);
+    const smbLogin = loginSel('vs-smb-login', 'smb', t.smb_login);
+    const loginsWrap = el('div', { class: 'vs-logins' },
+      el('div', { class: 'field' }, el('label', { class: 'label', for: 'vs-ssh-login' }, 'Sign in to Linux hosts with'), sshLogin),
+      el('div', { class: 'field' }, el('label', { class: 'label', for: 'vs-smb-login' }, 'Sign in to Windows hosts with'), smbLogin),
+      el('p', { class: 'hint' }, el('span', {}, 'Optional: signed in, OpenVAS checks installed patches and settings. Add logins on ',
+        el('a', { href: '#scanners', 'data-page': 'scanners', onclick: () => dlg.close() }, 'Settings > Scanners'), '.')));
+    const syncLogins = () => { loginsWrap.hidden = !deep.checked; };
+    deep.addEventListener('change', syncLogins);
+    gentle.addEventListener('change', syncLogins);
+    syncLogins();
     const enabled = el('input', { type: 'checkbox' });
     enabled.checked = t.enabled;
     const allowed = el('input', { type: 'checkbox', id: 'vs-allowed' });
@@ -829,6 +854,7 @@
         el('label', { class: 'switch vs-switch' }, deep, el('span', {}, el('b', {}, 'Also scan with OpenVAS'),
           el('span', { class: 'vs-muted' }, 'Optional and deeper: after Nmap, OpenVAS tests each host for thousands of known weaknesses, such as missing patches and default passwords. ' +
             'Much slower, and only on a scanner where OpenVAS is set up (Settings > Scanners says how). Not with Gentle mode.'))),
+        loginsWrap,
         isNew ? null : el('label', { class: 'switch vs-switch' }, enabled, el('span', {}, el('b', {}, 'Scan on schedule'), el('span', { class: 'vs-muted' }, 'Off pauses scheduled scans; Scan now still works.'))),
         isNew ? el('label', { class: 'vs-allowed' }, allowed, el('span', {}, 'I own these networks, or have permission to scan them. Scanning networks you do not own can be against the law.')) : null,
         err),
@@ -853,6 +879,8 @@
         schedule: { every: every.value, hour: +hour.value, weekday: +day.value },
       };
       if (scannerSel) next.scanner = scannerSel.value;
+      next.ssh_login = deep.checked ? sshLogin.value : '';
+      next.smb_login = deep.checked ? smbLogin.value : '';
       const targets = S.data.settings.targets.filter((x) => x.id !== t.id);
       const at = S.data.settings.targets.findIndex((x) => x.id === t.id);
       targets.splice(at < 0 ? targets.length : at, 0, next);
@@ -942,7 +970,9 @@
     SC.loading = true;
     if (!SC.data) box.replaceChildren(skeleton());
     try {
-      SC.data = await api('api/vulns/scanners' + (fresh ? '?fresh=1' : ''));
+      const [data, logins] = await Promise.all([api('api/vulns/scanners' + (fresh ? '?fresh=1' : '')), loadLogins(true).catch(() => null)]);
+      SC.data = data;
+      if (logins) SC.logins = logins;
       box.removeAttribute('aria-busy');
       renderScanners();
     } catch (e) {
@@ -995,8 +1025,185 @@
       el('h3', { class: 'sc-heading' }, list.length === 1 ? 'Your server' : list.length + ' servers', el('span', { class: 'vs-muted' },
         scanning.length ? ' · ' + scanning.length + ' scanning' : ' · none scans a network yet')),
       el('div', { class: 'sc-list' }, ...cards),
+      SC.logins ? loginsCard() : null,
       dedicated ? intro : null,
       needs].filter(Boolean));
+  }
+
+  // ---------- scan logins ----------
+  // The SSH and Windows accounts OpenVAS signs in to hosts with. Their
+  // keys and passwords are write-only: the server never sends them back.
+  const LOGIN_TYPES = [['ssh-key', 'Linux or Unix, SSH key (recommended)'], ['ssh-password', 'Linux or Unix, SSH password'], ['smb', 'Windows account (SMB)']];
+  let loginsReq = null;
+
+  // loadLogins fetches the scan logins once per page view; fresh fetches
+  // them again.
+  function loadLogins(fresh) {
+    if (fresh || !loginsReq) {
+      loginsReq = api('api/vulns/logins').catch((e) => { loginsReq = null; throw e; });
+    }
+    return loginsReq;
+  }
+
+  function loginType(l) {
+    return l.kind === 'smb' ? 'Windows' : l.auth === 'key' ? 'SSH key' : 'SSH password';
+  }
+
+  function loginsCard() {
+    const { logins, can_save: canSave } = SC.logins;
+    const add = el('button', { class: 'btn btn--secondary btn--sm', type: 'button', onclick: () => editLogin(null) }, icon('plus'), 'Add a login');
+    add.disabled = !canSave;
+    const rows = logins.map((l) => el('li', { class: 'sc-login' },
+      el('span', { class: 'sc-login__icon' }, icon(l.kind === 'smb' ? 'monitor' : 'key-round')),
+      el('div', { class: 'sc-login__main' },
+        el('div', { class: 'sc-login__name' }, el('b', {}, l.name), el('span', { class: 'badge' }, loginType(l)),
+          l.readable ? null : el('span', { class: 'badge badge--warning', title: 'This server cannot decrypt it' }, 'Enter again')),
+        el('p', { class: 'vs-muted' }, 'Signs in as ', el('span', { class: 'mono' }, l.username), l.kind === 'ssh' && l.port !== 22 ? ' on port ' + l.port : '',
+          ' · ', l.used_by.length ? 'Used by ' + l.used_by.join(', ') : 'No network uses it yet',
+          ' · Changed ', ago(l.updated_at), l.updated_by ? ' by ' + l.updated_by : ''),
+        l.readable ? null : el('p', { class: 'hint' }, icon('circle-alert'), 'This server cannot decrypt it, so scans skip OpenVAS for its networks. Edit it and enter the ' + (l.auth === 'key' ? 'private key' : 'password') + ' again.')),
+      el('button', { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => editLogin(l) }, icon('pencil'), 'Edit')));
+    return el('section', { class: 'card sc-logins', 'aria-labelledby': 'sc-logins-title' },
+      el('div', { class: 'card__head' }, el('div', {},
+        el('h3', { class: 'card__title', id: 'sc-logins-title' }, 'Scan logins for OpenVAS'),
+        el('p', { class: 'card__sub' }, 'Optional. With a login, OpenVAS signs in to each host and checks its installed patches and settings, which finds far more than a scan from outside. ' +
+          'Keys and passwords are encrypted and never shown again. Pick a login for a network when you edit it on Vulnerabilities > Networks. ',
+          el('a', { href: 'https://github.com/jrsamsanchez/signalith/blob/main/docs/vulnerabilities.md#credentialed-openvas-scans', target: '_blank', rel: 'noopener noreferrer' }, 'Which accounts to create', icon('external-link', 'icon--xs')))),
+        add),
+      el('div', { class: 'card__body' }, canSave ? null : el('div', { class: 'alert', 'data-tone': 'warning' }, icon('circle-alert'),
+        el('div', {}, 'This server has no encryption key for scan logins, so none can be saved. Its master key could not be read; see the server log.')),
+      logins.length ? el('ul', { class: 'sc-login-list', role: 'list' }, ...rows) : el('p', { class: 'vs-muted' }, 'No scan logins yet. Scans still work without them, from outside each host.')));
+  }
+
+  function editLogin(l) {
+    const dlg = $('sc-login-dialog');
+    const isNew = !l;
+    const id = l ? l.id : 'l-' + newID().slice(2);
+    const type = el('select', { class: 'select select--block', id: 'sc-login-type' }, ...LOGIN_TYPES.map(([v, label]) => el('option', { value: v }, label)));
+    type.value = l ? (l.kind === 'smb' ? 'smb' : 'ssh-' + l.auth) : 'ssh-key';
+    // A login's type is fixed once saved: networks name it for SSH or for Windows.
+    if (l && l.kind === 'smb') type.disabled = true;
+    if (l && l.kind === 'ssh') [...type.options].forEach((o) => { o.disabled = o.value === 'smb'; });
+    const name = el('input', { class: 'input', id: 'sc-login-name', maxlength: '80', placeholder: 'Linux servers', autocomplete: 'off' });
+    name.value = l ? l.name : '';
+    const user = el('input', { class: 'input mono', id: 'sc-login-user', maxlength: '200', placeholder: 'signalith-scan', autocomplete: 'off', spellcheck: 'false' });
+    user.value = l ? l.username : '';
+    const port = el('input', { class: 'input num', id: 'sc-login-port', type: 'number', min: '1', max: '65535', inputmode: 'numeric' });
+    port.value = l && l.port ? String(l.port) : '22';
+    // Write-only: never filled in from the saved login.
+    const keyBox = el('textarea', { class: 'textarea mono', id: 'sc-login-key', rows: '6', spellcheck: 'false', autocomplete: 'off', placeholder: '-----BEGIN OPENSSH PRIVATE KEY-----' });
+    const pass = el('input', { class: 'input', id: 'sc-login-pass', type: 'password', maxlength: '256', autocomplete: 'new-password' });
+    const phrase = el('input', { class: 'input', id: 'sc-login-phrase', type: 'password', maxlength: '256', autocomplete: 'new-password' });
+    const clearPhrase = el('input', { type: 'checkbox' });
+    const userHint = el('p', { class: 'hint' });
+    // OpenVAS hands every host it scans what the login signs in with: a
+    // password can be kept by a host that is not what it seems, a key
+    // cannot.
+    const passWarn = el('div', { class: 'alert', 'data-tone': 'warning' }, icon('triangle-alert'), el('div', {},
+      el('b', {}, 'A key is safer. '), 'With a password, every host in the network receives it when OpenVAS signs in, so a host that is not what it seems can keep it. ' +
+        'Use a key where you can, and an account that is a plain user on each host.'));
+    const smbWarn = el('p', { class: 'hint' }, icon('info'), el('span', {}, 'Every Windows host scanned receives this account’s sign-in. Use an account made for scanning, for this zone only, ' +
+      'and see the guide for the Windows settings that keep it safe.'));
+    const keyWrap = el('div', { class: 'field' }, el('label', { class: 'label', for: 'sc-login-key' }, 'Private key'), keyBox,
+      el('p', { class: 'hint' }, l ? 'Leave empty to keep the saved key. ' : '', 'Paste the whole private key file. Signalith never shows it again.'));
+    const phraseWrap = el('div', { class: 'field' }, el('label', { class: 'label', for: 'sc-login-phrase' }, 'Key passphrase'), phrase,
+      el('p', { class: 'hint' }, l && l.has_passphrase ? 'Leave empty to keep the saved passphrase.' : 'Only if the key has one.'),
+      l && l.has_passphrase ? el('label', { class: 'vs-allowed' }, clearPhrase, el('span', {}, 'The key no longer has a passphrase')) : null);
+    const passWrap = el('div', { class: 'field' }, el('label', { class: 'label', for: 'sc-login-pass' }, 'Password'), pass,
+      el('p', { class: 'hint' }, l && l.auth === 'password' ? 'Leave empty to keep the saved password. ' : '', 'Signalith never shows it again.'));
+    const portWrap = el('div', { class: 'field' }, el('label', { class: 'label', for: 'sc-login-port' }, 'SSH port'), port);
+    const sync = () => {
+      const v = type.value;
+      keyWrap.hidden = phraseWrap.hidden = v !== 'ssh-key';
+      passWrap.hidden = v === 'ssh-key';
+      portWrap.hidden = v === 'smb';
+      passWarn.hidden = v !== 'ssh-password';
+      smbWarn.hidden = v !== 'smb';
+      user.placeholder = v === 'smb' ? 'CORP\\svc-signalith-scan' : 'signalith-scan';
+      userHint.textContent = v === 'smb' ? 'A domain account as DOMAIN\\name, or a local account by name alone.' : 'The account it signs in to each host as.';
+    };
+    type.addEventListener('change', sync);
+    sync();
+    const err = el('p', { class: 'field-error hidden', role: 'alert' });
+    const save = el('button', { class: 'btn btn--primary', type: 'submit' }, isNew ? 'Add login' : 'Save');
+    dlg.replaceChildren(el('form', { method: 'dialog', novalidate: '' },
+      el('div', { class: 'modal__head' }, el('div', {},
+        el('h3', { class: 'modal__title', id: 'sc-login-title' }, isNew ? 'Add a scan login' : 'Edit ' + l.name),
+        el('p', { class: 'modal__desc' }, 'Use an account made only for scanning, with the least access it needs. Saved encrypted; only admins can change it.')),
+      el('button', { class: 'btn btn--ghost btn--icon btn--sm modal__close', type: 'button', 'aria-label': 'Close', onclick: () => dlg.close() }, icon('x'))),
+      el('div', { class: 'modal__body vs-form' },
+        el('div', { class: 'field' }, el('label', { class: 'label', for: 'sc-login-type' }, 'Hosts it signs in to'), type), passWarn, smbWarn,
+        el('div', { class: 'field' }, el('label', { class: 'label', for: 'sc-login-name' }, 'Name'), name),
+        el('div', { class: 'field' }, el('label', { class: 'label', for: 'sc-login-user' }, 'User name'), user, userHint),
+        portWrap, keyWrap, phraseWrap, passWrap, err),
+      el('div', { class: 'modal__foot' },
+        isNew ? null : el('button', { class: 'btn btn--ghost vs-danger', type: 'button', onclick: () => confirmDeleteLogin(l) }, icon('trash-2'), 'Remove'),
+        el('span', { class: 'spacer' }),
+        el('button', { class: 'btn btn--ghost', type: 'button', onclick: () => dlg.close() }, 'Cancel'), save)));
+    dlg.querySelector('form').addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const fail = (msg, field) => {
+        err.replaceChildren(icon('circle-alert'), msg);
+        err.classList.remove('hidden');
+        if (field) field.focus();
+      };
+      const v = type.value;
+      if (!name.value.trim()) return fail('Give the login a name, such as Linux servers.', name);
+      if (!user.value.trim()) return fail('Enter the user name it signs in as.', user);
+      const body = { name: name.value.trim(), kind: v === 'smb' ? 'smb' : 'ssh', username: user.value.trim(), auth: v === 'ssh-key' ? 'key' : 'password' };
+      if (v !== 'smb') body.port = +port.value || 22;
+      if (v === 'ssh-key') {
+        body.secret = keyBox.value.trim() ? keyBox.value.trim() + '\n' : '';
+        body.passphrase = phrase.value;
+        body.clear_passphrase = clearPhrase.checked;
+      } else {
+        body.secret = pass.value;
+      }
+      const changed = !l || (l.kind === 'smb' ? 'smb' : 'ssh-' + l.auth) !== v;
+      if (changed && !body.secret) return fail(v === 'ssh-key' ? 'Paste the private key.' : 'Enter the password.', v === 'ssh-key' ? keyBox : pass);
+      save.disabled = true;
+      try {
+        await api('api/vulns/logins/' + encodeURIComponent(id), body, 'PUT');
+        // Clear the secrets from the page as soon as they are saved.
+        keyBox.value = pass.value = phrase.value = '';
+        dlg.close();
+        toast(isNew ? body.name + ' was added. Pick it for a network on Vulnerabilities > Networks.' : 'Used from the next scan.', null, { title: isNew ? 'Login added' : 'Saved' });
+        SC.logins = await loadLogins(true);
+        renderScanners();
+      } catch (e) {
+        save.disabled = false;
+        fail(e.message);
+      }
+    });
+    dlg.addEventListener('close', () => { keyBox.value = pass.value = phrase.value = ''; }, { once: true });
+    dlg.showModal();
+    (isNew ? name : user).focus();
+  }
+
+  function confirmDeleteLogin(l) {
+    const dlg = $('sc-login-confirm');
+    dlg.replaceChildren(el('form', { method: 'dialog' },
+      el('div', { class: 'modal__head' }, el('div', {},
+        el('h3', { class: 'modal__title', id: 'sc-login-confirm-title' }, 'Remove ' + l.name + '?'),
+        el('p', { class: 'modal__desc', id: 'sc-login-confirm-desc' }, l.used_by.length
+          ? 'First pick another login, or None, for ' + l.used_by.join(', ') + ' on Vulnerabilities > Networks.'
+          : 'Its key or password is deleted from Signalith. Remember to remove the account from your hosts too.'))),
+      el('div', { class: 'modal__foot' },
+        el('button', { class: 'btn btn--ghost', type: 'button', onclick: () => dlg.close() }, 'Cancel'),
+        l.used_by.length ? null : el('button', { class: 'btn btn--danger', type: 'submit', onclick: async (ev) => {
+          ev.preventDefault();
+          try {
+            await api('api/vulns/logins/' + encodeURIComponent(l.id), undefined, 'DELETE');
+            dlg.close();
+            $('sc-login-dialog').close();
+            toast(l.name + ' was removed.');
+            SC.logins = await loadLogins(true);
+            renderScanners();
+          } catch (e) {
+            toast(e.message, null, { tone: 'danger', title: 'Couldn’t remove the login' });
+          }
+        } }, icon('trash-2'), 'Remove'))));
+    dlg.showModal();
   }
 
   function needRow(what, why, needed) {

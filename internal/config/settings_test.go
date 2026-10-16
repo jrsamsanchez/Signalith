@@ -88,7 +88,7 @@ func TestRegistryCoversEveryConfigSetting(t *testing.T) {
 			t.Errorf("Excluded has %s, which is not a setting of Config", k)
 		}
 	}
-	if len(Sections) != 12 {
+	if len(Sections) != 13 {
 		t.Errorf("sections: %d", len(Sections))
 	}
 }
@@ -101,10 +101,10 @@ func TestRegistryEnvMatchesTheEnvironment(t *testing.T) {
 	values := map[string]string{
 		"SIGNALITH_OPENSEARCH_URL": "https://os.example:9200", "SIGNALITH_OPENSEARCH_USERNAME": "u",
 		"SIGNALITH_OPENSEARCH_PROXY": "http://proxy.example:3128", "SIGNALITH_OPENSEARCH_CRL_FILE": "/crl/crl.pem", "SIGNALITH_OPENSEARCH_URLS": "https://os2.example:9200",
-		"SIGNALITH_OPENSEARCH_PASSWORD": "p", "SIGNALITH_LISTEN": "0.0.0.0:8081",
+		"SIGNALITH_OPENSEARCH_PASSWORD": "p", "SIGNALITH_LISTEN": "0.0.0.0:8081", "SIGNALITH_AGENT_LISTEN": "0.0.0.0:7780",
 		"SIGNALITH_PUBLIC_URL": "http://siem.example:8081", "SIGNALITH_ASSISTANT_API_KEY": "k",
 		"SIGNALITH_SYSLOG_UDP": "0.0.0.0:5514", "SIGNALITH_SYSLOG_TCP": "0.0.0.0:5514",
-		"SIGNALITH_NVD_API_KEY": "nvd-key", "SIGNALITH_M365_CLIENT_SECRET": "m365-secret", "SIGNALITH_OIDC_CLIENT_SECRET": "oidc-secret", "SIGNALITH_NVD_URL": "https://nvd-mirror.example/rest/json/cves/2.0",
+		"SIGNALITH_NVD_API_KEY": "nvd-key", "SIGNALITH_M365_CLIENT_SECRET": "m365-secret", "SIGNALITH_OKTA_PRIVATE_KEY": "-----BEGIN PRIVATE KEY-----\nAAAA\n-----END PRIVATE KEY-----", "SIGNALITH_OKTA_API_TOKEN": "okta-token", "SIGNALITH_OIDC_CLIENT_SECRET": "oidc-secret", "SIGNALITH_NVD_URL": "https://nvd-mirror.example/rest/json/cves/2.0",
 		"SIGNALITH_KEV_URL": "https://mirror.example/kev.json", "SIGNALITH_EPSS_URL": "/srv/feeds/epss.csv.gz",
 		"SIGNALITH_NODE_URL": "https://10.0.0.5:8081", "SIGNALITH_LEADER_ELIGIBLE": "false",
 		"SIGNALITH_PROXY_PROTOCOL": "true", "SIGNALITH_SYSLOG_PROXY_PROTOCOL": "true",

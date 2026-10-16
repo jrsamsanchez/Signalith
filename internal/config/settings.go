@@ -215,13 +215,14 @@ var Sections = []Section{
 	{ID: "sso", Title: "Single sign-on", Tab: "sso", Help: "Sign in with an OpenID Connect identity provider such as Microsoft Entra ID, Okta, Google or Keycloak, alongside local users and directory sign-in."},
 	{ID: "vulns", Title: "Vulnerability scans", Help: "How scans on the Vulnerabilities page look up the known vulnerabilities (CVEs) of the software they find. Only product names are sent, never addresses."},
 	{ID: "m365", Title: "Microsoft 365", Help: "Read Microsoft 365's audit log (Entra ID sign-ins and changes, Exchange, SharePoint, OneDrive, Teams and security alerts) with an app registered in Entra ID. One server reads it every 5 minutes. See the Microsoft 365 guide in the docs for how to register the app."},
+	{ID: "okta", Title: "Okta", Help: "Read Okta's System Log (sign-ins, MFA, account and admin changes, and Okta's own threat alerts) with an API service app in your Okta organization. One server reads it every minute. See the Okta guide in the docs for how to add the app."},
 }
 
 // Registry lists every setting on the page, in page order.
 var Registry = []Setting{
 	{Key: "server.public_url", Scope: ScopeCluster, Section: "general", Label: "Public address", Type: TypeURL,
 		Help:        "The address agents and links use to reach this server. With HTTPS on it starts with https://, and Signalith's own certificate is made to cover its host.",
-		Placeholder: "https://siem.example.com:8080", EmptyMeans: "worked out from the listen address",
+		Placeholder: "https://siem.example.com:9000", EmptyMeans: "worked out from the listen address",
 		Env: "SIGNALITH_PUBLIC_URL", WaitsFor: []string{"server.listen", "server.tls.mode", "server.tls_cert", "server.tls_key"}},
 	{Key: "auth.session_timeout", Scope: ScopeCluster, Section: "general", Label: "Sign out after", Type: TypeDuration,
 		Help:        "Signs people out of the web page after this long without use, unless they ticked Keep me signed in. At least 5m. NIST SP 800-63B (AAL2) asks for at most 1h.",
@@ -250,10 +251,16 @@ var Registry = []Setting{
 
 	{Key: "server.listen", Scope: ScopeServer, Section: "web", Label: "Listen address", Type: TypeAddress, Restart: true,
 		Help:        "The address and port the web page and API listen on. 0.0.0.0 accepts other computers; 127.0.0.1 only this one.",
-		Placeholder: "0.0.0.0:8080", Env: "SIGNALITH_LISTEN",
-		Confirm: "After the restart Signalith answers only at the new address. Agents and bookmarks that use the old one stop working until they are changed."},
+		Placeholder: "0.0.0.0:9000", Env: "SIGNALITH_LISTEN",
+		Confirm: "After the restart the web page answers only at the new address. Bookmarks that use the old one stop working until they are changed."},
+	{Key: "server.agent_listen", Scope: ScopeServer, Section: "web", Label: "Agent address", Type: TypeAddress, Restart: true,
+		Help: "The address and port agents send events to, kept apart from the web page: Fluent Bit, the OpenTelemetry Collector, osquery and network sensors. " +
+			"off sends agents to the web port, as before Signalith 0.3.",
+		Placeholder: "0.0.0.0:7779", EmptyMeans: "the listen address on port 7779; the web port also accepts agents set up before 0.3",
+		Env:     "SIGNALITH_AGENT_LISTEN",
+		Confirm: "After the restart agents must send to the new address. Agents that use the old one stop sending until they are set up again from Add data."},
 	{Key: "server.max_connections", Scope: ScopeServer, Section: "web", Label: "Most connections", Type: TypeNumber, Restart: true, Min: intp(0), Max: intp(1000000),
-		Help:       "The most connections open at once from browsers, agents and the API. One computer may use a tenth of them.",
+		Help:       "The most connections open at once from browsers, agents and the API, on the web port and again on the agent port. One computer may use a tenth of them.",
 		EmptyMeans: "10000"},
 	{Key: "server.shared_addresses", Scope: ScopeServer, Section: "web", Label: "Proxies and gateways", Type: TypeList, Restart: true,
 		Help:        "IP addresses or ranges of a reverse proxy, load balancer or NAT gateway that many people and agents reach Signalith through. They are not limited like one computer: wrong passwords from them count against each account, and never pause sign-ins from the whole address.",
@@ -265,7 +272,7 @@ var Registry = []Setting{
 	{Key: "server.node_url", Scope: ScopeServer, Section: "web", Label: "Address for other servers", Type: TypeURL, SharedOnly: true,
 		Help: "The address the other Signalith servers that share this OpenSearch reach this one at, shown on the Servers page. " +
 			"In a container set it, since a container cannot know the address it is reached at.",
-		Placeholder: "https://10.0.0.5:8080", EmptyMeans: "worked out from the listen address and this computer's name",
+		Placeholder: "https://10.0.0.5:9000", EmptyMeans: "worked out from the listen address and this computer's name",
 		Env: "SIGNALITH_NODE_URL", check: noSecretIn("an address for other servers needs no password")},
 
 	{Key: "server.tls.mode", Scope: ScopeServer, Section: "https", Label: "HTTPS", Type: TypeChoice, Restart: true,
@@ -369,7 +376,7 @@ var Registry = []Setting{
 	{Key: "search.max_events", Scope: ScopeCluster, Section: "search", Label: "Events per search", Type: TypeNumber, Min: intp(1), Max: intp(100000),
 		Help: "The most events a search fetches to sort, filter or count after searching. More uses more memory."},
 	{Key: "dashboards.stale_after", Scope: ScopeCluster, Section: "search", Label: "Quiet data source after", Type: TypeDuration,
-		Help:        "The Posture dashboard lists a host and source type as stopped when nothing arrives from it for this long. At least 5m.",
+		Help:        "The Posture dashboard lists a host and source type as stopped when nothing arrives from it for this long, and the detection Data source stopped sending fires for one that sent all day before. At least 5m.",
 		Placeholder: "2h"},
 
 	{Key: "syslog.udp", Scope: ScopeServer, Section: "syslog", Label: "UDP address", Type: TypeAddress, Restart: true,
@@ -544,6 +551,24 @@ var Registry = []Setting{
 		Help:       "Which Microsoft cloud the tenant is in. Most are in the commercial cloud; US government tenants are in GCC, GCC High or DoD.",
 		Choices:    []Choice{{"commercial", "Commercial"}, {"gcc", "GCC"}, {"gcc_high", "GCC High"}, {"dod", "DoD"}},
 		EmptyMeans: "Commercial"},
+
+	{Key: "okta.domain", Scope: ScopeCluster, Section: "okta", Label: "Okta domain", Type: TypeText,
+		Help:        "Your Okta organization's domain, as in the address of its sign-in page.",
+		Placeholder: "example.okta.com", EmptyMeans: "off", check: checkOktaDomain},
+	{Key: "okta.client_id", Scope: ScopeCluster, Section: "okta", Label: "Client ID", Type: TypeText,
+		Help:        "The client ID of the API service app, which is granted the okta.logs.read scope.",
+		Placeholder: "0oa1b2c3d4e5f6g7h8i9", EmptyMeans: "no app", check: checkOktaClientID},
+	{Key: "okta.private_key", Scope: ScopeCluster, Section: "okta", Label: "Private key", Type: TypeSecret,
+		Help: "The app's private key, as PEM or as the JWK Okta's admin console shows. Only used to sign in to your Okta organization's token endpoint.",
+		Env:  "SIGNALITH_OKTA_PRIVATE_KEY", SentWith: []string{"okta.domain", "okta.client_id"},
+		sentTo: func(c *Config) string { return c.OktaTokenURL() }, check: func(v any) error { return CheckOktaPrivateKey(v) }},
+	{Key: "okta.key_id", Scope: ScopeCluster, Section: "okta", Label: "Key ID", Type: TypeText,
+		Help:       "The ID (kid) of that key on the app's page, needed only when the app has more than one key.",
+		EmptyMeans: "the key's own", check: checkOktaKeyID},
+	{Key: "okta.api_token", Scope: ScopeCluster, Section: "okta", Label: "API token", Type: TypeSecret,
+		Help: "An admin's API token, in place of the app. It has all of that admin's rights, so the app is the better way. Only sent to your Okta organization.",
+		Env:  "SIGNALITH_OKTA_API_TOKEN", SentWith: []string{"okta.domain"},
+		sentTo: func(c *Config) string { return c.OktaLogsURL() }},
 }
 
 // Exclusion is a setting of Config that is not on the Settings page.
@@ -727,6 +752,10 @@ func (c *Config) Value(key string) any {
 		if c.httpPublicURL != "" {
 			return c.httpPublicURL
 		}
+	case "server.agent_listen":
+		if c.agentListenDerived {
+			return ""
+		}
 	case "server.tls.mode":
 		return c.Server.TLSMode()
 	case "server.tls.plaintext_ingest":
@@ -769,8 +798,11 @@ func (c *Config) SetValue(key string, val any) error {
 	}
 	v, _ = fieldToSet(c, key)
 	v.Set(nv)
-	if key == "server.public_url" {
+	switch key {
+	case "server.public_url":
 		c.publicURLDerived, c.httpPublicURL = false, ""
+	case "server.agent_listen":
+		c.agentListenDerived = false
 	}
 	return nil
 }
@@ -793,6 +825,8 @@ func (c *Config) CopyValue(key string, from *Config) error {
 	switch key {
 	case "server.public_url":
 		c.publicURLDerived, c.httpPublicURL = from.publicURLDerived, from.httpPublicURL
+	case "server.agent_listen":
+		c.agentListenDerived = from.agentListenDerived
 	case "cluster.leader_eligible", "detections.scheduler":
 		// Two names for one setting (see syncEligible).
 		v := from.LeaderEligible()
@@ -1169,6 +1203,91 @@ func (c *Config) M365TokenURL() string {
 
 // M365APIURL is the Management Activity API of the tenant's cloud.
 func (c *Config) M365APIURL() string { return c.m365Cloud()[1] }
+
+// OktaOn reports whether Okta's System Log is read: the domain, and the
+// app and its key or an API token, are set.
+func (c *Config) OktaOn() bool {
+	return c.OktaDomain() != "" && (c.Okta.ClientID != "" && c.Okta.PrivateKey != "" || c.Okta.APIToken != "")
+}
+
+// OktaDomain is the organization's Okta domain, in lower case, without
+// https:// or a slash that was typed with it.
+func (c *Config) OktaDomain() string { return oktaDomain(c.Okta.Domain) }
+
+func oktaDomain(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	s = strings.TrimPrefix(s, "https://")
+	return strings.TrimSuffix(s, "/")
+}
+
+// OktaTokenURL is where the app signs in.
+func (c *Config) OktaTokenURL() string { return "https://" + c.OktaDomain() + "/oauth2/v1/token" }
+
+// OktaLogsURL is the organization's System Log API.
+func (c *Config) OktaLogsURL() string { return "https://" + c.OktaDomain() + "/api/v1/logs" }
+
+// oktaDomainRe is a host name of two or more labels.
+var oktaDomainRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$`)
+
+// checkOktaDomain checks an Okta domain: a host name, with no port, path
+// or address.
+func checkOktaDomain(v any) error {
+	s, _ := v.(string)
+	d := oktaDomain(s)
+	if d == "" {
+		return nil
+	}
+	if len(d) > 253 || !oktaDomainRe.MatchString(d) || net.ParseIP(d) != nil || strings.Trim(d, "0123456789.") == "" {
+		return errors.New("the Okta domain is a host name such as example.okta.com, with no port or path")
+	}
+	return nil
+}
+
+// oktaIDRe is an Okta client ID or key ID.
+var oktaIDRe = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,128}$`)
+
+// checkOktaClientID checks an Okta app's client ID.
+func checkOktaClientID(v any) error {
+	if s, _ := v.(string); s != "" && !oktaIDRe.MatchString(s) {
+		return errors.New("the client ID is letters and digits, such as 0oa1b2c3d4e5f6g7h8i9")
+	}
+	return nil
+}
+
+// checkOktaKeyID checks the ID (kid) of an Okta app's key.
+func checkOktaKeyID(v any) error {
+	if s, _ := v.(string); s != "" && !oktaIDRe.MatchString(s) {
+		return errors.New("the key ID is letters, digits, dashes and underscores")
+	}
+	return nil
+}
+
+// CheckOktaPrivateKey checks that a value looks like an unencrypted
+// private key in PEM or JWK form. internal/okta reads the key itself.
+func CheckOktaPrivateKey(v any) error {
+	s, _ := v.(string)
+	s = strings.TrimSpace(s)
+	switch {
+	case s == "" || secrets.IsSealed(s):
+		return nil
+	case len(s) > 16<<10:
+		return errors.New("the private key is longer than any RSA or EC key Okta makes")
+	case strings.Contains(s, "ENCRYPTED"):
+		return errors.New("the private key is encrypted with a passphrase: export it without one")
+	case strings.Contains(s, "PUBLIC KEY") || strings.Contains(s, "CERTIFICATE"):
+		return errors.New("that is the public key or a certificate: enter the private key")
+	case strings.HasPrefix(s, "-----BEGIN ") && !strings.Contains(s, "-----END "):
+		return errors.New("the private key is cut short: enter all of it, from its BEGIN line to its END line " +
+			"(signalith secrets set reads a whole file from a pipe: < key.pem)")
+	case strings.HasPrefix(s, "-----BEGIN ") && strings.Contains(s, "PRIVATE KEY-----"):
+		return nil
+	case strings.HasPrefix(s, "{") && strings.Contains(s, `"kty"`) && strings.Contains(s, `"d"`):
+		return nil
+	case strings.HasPrefix(s, "{"):
+		return errors.New("that JWK has no private part (d): enter the private key Okta showed when it made the key")
+	}
+	return errors.New("the private key is PEM (-----BEGIN PRIVATE KEY-----) or a JWK ({\"kty\": ...})")
+}
 
 // DefaultNVDURL is the NVD's CVE API 2.0.
 const DefaultNVDURL = "https://services.nvd.nist.gov/rest/json/cves/2.0"

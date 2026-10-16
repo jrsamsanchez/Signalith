@@ -841,6 +841,7 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
         <p class="page-head__desc" id="d-desc">Scheduled searches that raise a finding for each result.</p>
       </div>
       <div class="page-head__actions">
+        <button class="btn btn--secondary" type="button" id="d-describe" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-wand-sparkles"/></svg>Describe a detection</button>
         <button class="btn btn--secondary" type="button" id="d-sigma" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-sigma"/></svg>Import Sigma rule</button>
         <button class="btn btn--primary" type="button" id="d-new" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>New detection</button>
       </div>
@@ -861,6 +862,25 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
       <aside class="card inspector" id="d-detail" aria-label="Detection details" hidden></aside>
     </div>
     <dialog class="modal det-editor" id="d-editor" aria-labelledby="de-heading"></dialog>
+    <dialog class="modal" id="d-describe-box" aria-labelledby="d-describe-title">
+      <form method="dialog" id="d-describe-form">
+        <div class="modal__head">
+          <div><h2 class="modal__title" id="d-describe-title">Describe a detection</h2><p class="modal__desc">Say what to catch in plain English. Signalith drafts the whole rule and shows what it would have found in the past 30 days. Nothing runs until you turn it on.</p></div>
+          <button class="btn btn--ghost btn--icon btn--sm dx-close" type="button" aria-label="Close" id="d-describe-x"><svg class="icon" aria-hidden="true"><use href="#i-x"/></svg></button>
+        </div>
+        <div class="modal__body">
+          <div class="alert hidden" data-tone="danger" id="d-describe-error" role="alert"><svg class="icon" aria-hidden="true"><use href="#i-circle-alert"/></svg><div><b>No draft was made.</b><p id="d-describe-error-text"></p></div></div>
+          <div class="field"><label class="label" for="d-describe-text">What should it catch?</label><textarea class="textarea" id="d-describe-text" rows="3" maxlength="1000" placeholder="more than 10 failed logins from the same source in 5 minutes"></textarea>
+            <div class="hint" id="d-describe-hint">Name the activity, a threshold and a time window if there is one. Say "high severity" to set it.</div></div>
+          <div class="dx-examples" id="d-describe-examples" aria-label="Examples"></div>
+          <label class="check hidden" id="d-describe-ai-row"><input type="checkbox" id="d-describe-ai" checked> <span id="d-describe-ai-label">Use the AI model</span></label>
+        </div>
+        <div class="modal__foot">
+          <button class="btn btn--ghost" type="button" id="d-describe-cancel">Cancel</button>
+          <button class="btn btn--primary" type="submit" id="d-describe-go"><svg class="icon" aria-hidden="true"><use href="#i-wand-sparkles"/></svg>Draft detection</button>
+        </div>
+      </form>
+    </dialog>
     <dialog class="modal" id="d-sigma-box" aria-labelledby="d-sigma-title">
       <form method="dialog" id="d-sigma-form">
         <div class="modal__head">
@@ -966,6 +986,11 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
           <span class="agent-os__icon"><svg class="icon" aria-hidden="true"><use href="#i-cloud"/></svg></span>
           <span class="agent-os__text"><b>Microsoft 365</b><span>Exchange, SharePoint, OneDrive and Teams activity</span></span>
           <input type="radio" name="os" value="m365">
+        </label>
+        <label class="card agent-os__card">
+          <span class="agent-os__icon"><svg class="icon" aria-hidden="true"><use href="#i-cloud"/></svg></span>
+          <span class="agent-os__text"><b>Okta</b><span>Okta sign-ins, MFA, account and admin changes</span></span>
+          <input type="radio" name="os" value="okta">
         </label>
         <label class="card agent-os__card">
           <span class="agent-os__icon"><svg class="icon" aria-hidden="true"><use href="#i-cloud"/></svg></span>
@@ -1164,6 +1189,16 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
           </div>
         </div>
         <div class="card__body" id="m365-body" aria-busy="true"></div>
+      </div>
+
+      <div class="card agent-setup hidden" id="okta-setup">
+        <div class="card__head">
+          <div>
+            <h3 class="card__title">Read the Okta System Log</h3>
+            <p class="card__sub">Signalith reads it from Okta itself. Nothing to install: add an API service app once, then enter it in Settings.</p>
+          </div>
+        </div>
+        <div class="card__body" id="okta-body" aria-busy="true"></div>
       </div>
 
       <div class="card agent-setup hidden" id="antivirus-setup">
@@ -1660,6 +1695,8 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
       </div>
     </div>
     <div id="sc-page" class="sc-page" aria-busy="true"></div>
+    <dialog id="sc-login-dialog" class="modal sc-login-dialog" aria-labelledby="sc-login-title"></dialog>
+    <dialog id="sc-login-confirm" class="modal" aria-labelledby="sc-login-confirm-title" aria-describedby="sc-login-confirm-desc"></dialog>
   </section>
 
   <!-- Network sensors (admins): each sensor's health, what to fix, and
@@ -1730,6 +1767,7 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
       </div>
     </div>
     <div id="au-filters"></div>
+    <div id="au-check"></div>
     <div id="au-body"></div>
   </section>
 
@@ -1807,6 +1845,7 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
 <script src="levels.js"></script>
 <script src="antivirus.js"></script>
 <script src="m365.js"></script>
+<script src="okta.js"></script>
 <script src="parsers.js"></script>
 <script src="detections.js"></script>
 <script src="risk.js"></script>

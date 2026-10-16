@@ -45,8 +45,9 @@ files. Once OpenSearch is up, a second step loads OpenSearch's security settings
 sign in, and what each may do), and Signalith starts after it. If the first command ends
 with `service "opensearch-security" didn't complete successfully`, see
 [If OpenSearch's security settings aren't loaded](docs/opensearch-security.md#if-opensearchs-security-settings-arent-loaded).
-The second command shows the admin password. Open https://localhost:8080 and sign
-in as `admin` with it. Signalith serves HTTPS with a certificate it makes for itself, so
+The second command shows the admin password. Open https://localhost:9000 and sign
+in as `admin` with it; since Signalith made that password, you then choose your own
+before anything else. Signalith serves HTTPS with a certificate it makes for itself, so
 the browser warns until you trust it; the sign-in page has a **Download the server
 certificate** link, and [docs/https.md](docs/https.md) says how to trust it.
 
@@ -66,10 +67,10 @@ install no agent has it, so you can choose **Stop accepting** straight away. See
 Coming from an older version? See
 [Upgrading the Docker quick start](#upgrading-the-docker-quick-start).
 
-Port 8080 is open on every network this computer is on. To take agents and browsers from
-one network only, put this computer's address on that network in front of it in
-`docker-compose.yml`, for example `- "192.168.1.20:8080:8080"`, then run the first command
-again.
+Ports 9000 (the web page) and 7779 (agents) are open on every network this computer is
+on. To take agents and browsers from one network only, put this computer's address on that
+network in front of each in `docker-compose.yml`, for example `- "192.168.1.20:9000:9000"`
+and `- "192.168.1.20:7779:7779"`, then run the first command again.
 
 OpenSearch runs with its security plugin on: it answers only over HTTPS, publishes no
 port, and lets in only Signalith's certificate, which may use only Signalith's own
@@ -96,7 +97,7 @@ plain `http://` and the old example token may be accepted again. After a reboot
 everything starts again by itself once Docker is running; in Docker Desktop turn on
 Settings > General > "Start Docker Desktop when you sign in". If the computer restarted
 while the first command was still waiting for the step that loads OpenSearch's security
-settings, Signalith had not started yet and does not start by itself: https://localhost:8080
+settings, Signalith had not started yet and does not start by itself: https://localhost:9000
 doesn't answer. Run `docker compose -f deploy/docker/docker-compose.yml up -d` again then.
 
 Signalith stops within a few seconds when an update replaces it, and Docker stops it by
@@ -178,8 +179,10 @@ same):
    docker compose -f deploy/docker/docker-compose.yml exec signalith signalith initial-password
    ```
    The old one no longer works. People you added on the **Users** page keep theirs.
-4. Open **https**://localhost:8080 (old `http://` bookmarks are redirected) and sign in as
-   `admin`. Trust the certificate as described in [docs/https.md](docs/https.md).
+4. Open **https**://localhost:9000 (old `http://` bookmarks are redirected) and sign in as
+   `admin`. You are asked to choose your own password before anything else (an install
+   that still uses the first password Signalith made is asked once, after any upgrade,
+   however often it was used before). Trust the certificate as described in [docs/https.md](docs/https.md).
 5. Update the agents. Agents you set up before keep sending for now: on its first start
    Signalith sees that OpenSearch already holds events from before the upgrade, so it
    still accepts agents over plain `http://`, with the old example token. (A new install
@@ -201,6 +204,27 @@ same):
    it gets a new configuration; it keeps its events and sends them then, and Health names
    it. Until then the **Security** page shows the old token as a risk.
 
+#### Upgrading to 0.3: the agent port
+
+From 0.3 agents send to a port of their own, 7779, and the web page of a new install is on
+port 9000.
+In the Docker quick start, `git pull` and the first command bring files that publish
+9000 and 7779 and set `server.agent_listen`: open https://localhost:9000 after the
+update, and set up each agent again from **Add data**: agents set up before send to port
+8080, which the quick start no longer publishes.
+
+A server set up by hand, from packages or with the installers keeps its web port (such as
+8080), since it is in its `signalith.yaml`. It also listens on port 7779, and keeps taking
+agents on the web port, with a warning in the log for each one, so nothing stops. Then:
+
+1. Allow port 7779 through the firewall, and through any load balancer in front of the
+   servers.
+2. Set up each agent again from **Add data**: its new configuration sends to port 7779.
+3. Set `server.agent_listen` (for example `0.0.0.0:7779`) so the web port stops taking
+   agents. The next release stops taking agents on the web port anyway.
+
+See [The agent port](docs/sending-data.md#the-agent-port).
+
 This version encrypts the passwords and keys it keeps in the `signalith-data` volume
 (`directory.json`, `intel_feeds.yaml` and `settings.yaml`), which older versions cannot
 read. Before going back to one, run `secrets decrypt` in a container of its own (see
@@ -219,6 +243,20 @@ fictional and kept apart from your own data, and one click removes all of it. Se
 ```sh
 docker compose -f deploy/docker/docker-compose.yml exec signalith signalith sample-data load
 ```
+
+### Kubernetes (Helm)
+
+Each release also publishes a Helm chart, which runs Signalith, a secured OpenSearch and
+optional scanners, with no default passwords and pods that meet the restricted Pod
+Security Standard:
+
+```sh
+helm install signalith oci://ghcr.io/jrsamsanchez/charts/signalith --version <release> \
+  --namespace signalith --create-namespace
+```
+
+See [docs/kubernetes.md](docs/kubernetes.md) for the first password, exposing it,
+several servers and an OpenSearch of your own.
 
 ### Packages (.deb, .rpm, .msi)
 
@@ -251,7 +289,7 @@ what the packages set up, upgrades, and how to check a download's signature and 
    `init` prints the admin password once, and where it put the master key that
    encrypts the passwords and keys Signalith stores (`/var/lib/signalith/keys/master.key`).
    Back that file up, apart from the config; see [Encryption](#encryption). Open
-   `https://<server>:8080`: Signalith serves HTTPS with a certificate it makes for itself
+   `https://<server>:9000`: Signalith serves HTTPS with a certificate it makes for itself
    (see [HTTPS](#https)).
 3. Replace OpenSearch's demo security setup, whose passwords and certificates are public,
    and have Signalith sign in with a certificate of its own:
@@ -283,7 +321,7 @@ read encrypted values: before going back to one, run `sudo signalith secrets dec
    .\install.ps1 -OpenSearchUrl http://127.0.0.1:9200
    ```
    This writes `C:\ProgramData\Signalith\signalith.yaml`, installs the **Signalith** service and starts it.
-   Open https://localhost:8080 (see [HTTPS](#https) to stop the certificate warning).
+   Open https://localhost:9000 (see [HTTPS](#https) to stop the certificate warning).
    The service runs as its own account, `NT SERVICE\Signalith`, and only SYSTEM, Administrators and
    that account can read `C:\ProgramData\Signalith`. To upgrade, put the new `signalith.exe` next to
    the script and run it again: it stops the service, replaces the program, encrypts passwords an
@@ -324,9 +362,11 @@ see which detections can use it, and save it as a parser that agents and syslog 
 [docs/custom-logs.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/custom-logs.md)).
 
 Agents on other machines must send to an address they can reach, such as
-`https://192.168.1.20:8080`, not `localhost`. Enter it under **Agents send to** on that page
-(or set `server.public_url` or `SIGNALITH_PUBLIC_URL`), and allow the port, 8080 by default,
-through this computer's firewall.
+`https://192.168.1.20:7779`, not `localhost`. Enter it under **Agents send to** on that page
+(or set `server.public_url` or `SIGNALITH_PUBLIC_URL`; agents use its host on the agent port).
+Agents send to a port of their own, 7779 by default, not to the web page's port (9000).
+Allow both ports through this computer's firewall. See
+[The agent port](docs/sending-data.md#the-agent-port).
 
 Supported sources in Phase 1:
 
@@ -351,6 +391,7 @@ Supported sources in Phase 1:
 | AWS CloudTrail sign-ins and API calls, through the OpenTelemetry Collector ([docs/aws-cloudtrail.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/aws-cloudtrail.md)) | Authentication, Change or Other |
 | Microsoft Entra ID sign-ins, audit log and risk detections, and the Azure activity log, through an Event Hub and the OpenTelemetry Collector ([docs/azure.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/azure.md)) | Authentication, Change or Alerts |
 | Microsoft 365 audit log (Exchange, SharePoint, OneDrive, Teams, admin activity and alerts), read from Microsoft's Management Activity API with no agent ([docs/microsoft-365.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/microsoft-365.md)) | Authentication, Change, Alerts or Other |
+| Okta System Log (sign-ins, MFA, account, app and policy changes, admin roles, API tokens and ThreatInsight threats), read from Okta's System Log API with no agent ([docs/okta.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/okta.md)) | Authentication, Change, Alerts or Other |
 | Google Cloud audit logs (Admin Activity, Data Access, System Event, Policy Denied), and Google Workspace admin and sign-in audit logs shared with Google Cloud, through a log sink, Pub/Sub and the OpenTelemetry Collector ([docs/google-cloud.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/google-cloud.md)) | Change, Authentication or Other |
 | Zeek and Suricata on a network sensor, or Suricata EVE over syslog from pfSense and OPNsense ([docs/network-sensor.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/network-sensor.md)) | Network_Traffic, Network_Resolution, Web, Certificates, File_Transfers, Intrusion_Detection, Authentication, Filesystem or Other |
 | Anything else | Other (searchable by text and fields) |
@@ -480,7 +521,8 @@ up under **Settings > Single sign-on** (see [docs/sso.md](docs/sso.md)). The `ad
 
 ### HTTPS
 
-The web UI, API and agent ingest use HTTPS by default, on the same port as before (8080).
+The web UI, API and agent ingest use HTTPS by default: the web page and API on port 9000,
+agents on port 7779 ([the agent port](docs/sending-data.md#the-agent-port)).
 On first start Signalith makes a small certificate authority of its own and a server
 certificate signed by it, and renews the certificate by itself; nothing has to be set up.
 Browsers warn until the CA is trusted: download it from the sign-in page (**Download the
@@ -595,8 +637,9 @@ are counted for each person's own address, not the proxy's. See
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
-| `server.listen` | `127.0.0.1:8080` | Address the UI and API bind to |
-| `server.public_url` | `https://` and the `listen` host and port | URL agents use (scheme, host and port); goes into generated agent configs. With HTTPS on it must be `https://` |
+| `server.listen` | `127.0.0.1:9000` | Address the UI and API bind to |
+| `server.agent_listen` | `listen`'s host on port 7779 | Address agents send to (Fluent Bit, OTLP, osquery, network sensors), with the same certificate as the web page; or `SIGNALITH_AGENT_LISTEN`. `off` sends agents to the web port, as before 0.3. See [The agent port](docs/sending-data.md#the-agent-port) |
+| `server.public_url` | `https://` and the `listen` host and port | This server's address (scheme, host and port). Generated agent configs use its scheme and host on the agent port. With HTTPS on it must be `https://` |
 | `server.tls.mode` | `auto` | `auto`: HTTPS with a certificate Signalith makes and renews itself; `files`: `server.tls_cert` and `tls_key`; `off`: plain HTTP behind a reverse proxy that adds HTTPS. See [docs/https.md](docs/https.md) |
 | `server.tls.names` | none | Extra host names or IP addresses for the `auto` certificate (this machine's names and addresses, `public_url` and addresses entered on Add data are always in it) |
 | `server.tls.ca_scope` | `standard` | How far a certificate authority Signalith makes may vouch: `standard` (this server and private network names) or `strict` (only this server's own names and addresses). Used on the first start and when you make a new one on the Security page. See [docs/https.md](docs/https.md#how-far-the-certificate-authority-reaches) |
@@ -751,7 +794,8 @@ Load balancers and container platforms can ask `GET /readyz` (200
 `opensearch`, `identity`, `degraded`, `gone`, `key_missing` or `stopping`) and `GET /livez` (200 while the process
 runs). Both answer without signing in and say nothing else, over HTTPS and also over
 plain `http://` on the same port, where everything else is sent to HTTPS, so a
-health check works either way.
+health check works either way. The agent port (7779) answers them too, so a load balancer
+can check it on its own.
 
 The servers also share their users, the built-in admin's password, the directory
 sign-in settings and the sign-in sessions, once every server runs this version: a user
@@ -854,9 +898,9 @@ changes and more, plus two risk incident rules); 19 are on by default.
 - **Import Sigma rule** converts a [Sigma](https://github.com/SigmaHQ/sigma) rule to a
   Signalith query and lists anything it had to approximate. Imported rules start
   disabled so you can test them first.
-- **Content packs** add community rules, off until you turn them on: 2,478 tested
-  [SigmaHQ](https://github.com/SigmaHQ/sigma) Windows, Linux, web server, network, AWS CloudTrail, Azure, Microsoft 365, Google Cloud and Google Workspace rules and 1,144
-  Windows, Linux, web, network, AWS CloudTrail, Entra ID and Microsoft 365 detections
+- **Content packs** add community rules, off until you turn them on: 2,497 tested
+  [SigmaHQ](https://github.com/SigmaHQ/sigma) Windows, Linux, web server, network, AWS CloudTrail, Azure, Microsoft 365, Google Cloud, Google Workspace and Okta rules and 1,156
+  Windows, Linux, web, network, AWS CloudTrail, Entra ID, Microsoft 365 and Okta detections
   from Splunk's open source
   [security_content](https://github.com/splunk/security_content) (Apache 2.0). With
   both packs on, detections cover 160 ATT&CK techniques. Newer tested rules arrive as

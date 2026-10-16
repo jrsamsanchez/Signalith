@@ -1,0 +1,7 @@
+{"rule": "a511426e-184f-4de6-8711-cfd2af29d1e1", "cases": [
+  {"expect":true,"source":"synthesized","channel":"okta","event_id":"log","data":{"eventType":"user.account.lock","target{}.displayName":"Example App","target{}.type":"User"}},
+  {"expect":false,"source":"synthesized","channel":"okta","event_id":"log","data":{"eventType":"user.account.lock","target{}.displayName":"Example App","target{}.type":"Uses"}},
+  {"expect":false,"source":"synthesized","channel":"okta","event_id":"log","data":{"eventType":"user.account.lock","target{}.displayName":"Example App","target{}.type":"AppInstance"}},
+  {"expect":false,"source":"synthesized","channel":"okta","event_id":"log","data":{"eventType":"user.account.locl","target{}.displayName":"Example App","target{}.type":"User"}},
+  {"expect":false,"source":"synthesized","channel":"okta","event_id":"log","data":{"target{}.displayName":"Example App","target{}.type":"User"}}
+]}

@@ -134,7 +134,7 @@ func TestProtectedSettings(t *testing.T) {
 		"auth.mfa_required": true, "auth.session_timeout": true, "server.tls.mode": true, "server.tls.plaintext_ingest": true,
 		"server.trusted_proxies": true, "syslog.allow": true, "server.tls_cert": true, "server.tls_key": true, "auth.oidc.issuer": true,
 		"opensearch.url": true, "opensearch.tls_skip_verify": true, "cluster.opensearch_url": true, "syslog.tls": true,
-		"intel.allow_loopback_feeds": true, "server.listen": true, "assistant.url": true,
+		"intel.allow_loopback_feeds": true, "server.listen": true, "assistant.url": true, "okta.domain": true, "m365.tenant_id": true,
 		"server.public_url": false, "search.max_events": false, "authx": false, "syslog.udp": false, "assistant.model": false,
 	} {
 		if protectedSetting(key) != want {

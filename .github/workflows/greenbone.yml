@@ -12,6 +12,7 @@ on:
   pull_request:
     paths:
       - internal/vulnscan/openvas*.go
+      - internal/vulnscan/credentials.go
       - internal/vulnscan/greenbone_test.go
       - deploy/ci/greenbone/**
       - .github/workflows/greenbone.yml
@@ -42,6 +43,9 @@ jobs:
       - name: Start Greenbone
         run: |
           mkdir -p "$GVMD_SOCKET_DIR" && chmod 777 "$GVMD_SOCKET_DIR"
+          # The key the signed-in scan uses, made fresh for each run.
+          mkdir -p deploy/ci/greenbone/keys
+          ssh-keygen -q -t ed25519 -N '' -C signalith-scan -f deploy/ci/greenbone/keys/scan
           $COMPOSE pull --quiet
           $COMPOSE up -d
           $COMPOSE ps
@@ -55,6 +59,7 @@ jobs:
           sudo -E ./greenbone.test -test.run TestGreenbone -test.v -test.timeout 170m
         env:
           SIGNALITH_GREENBONE_SOCKET: /tmp/gvmd/gvmd.sock
+          SIGNALITH_GREENBONE_SSH_KEY: ${{ github.workspace }}/deploy/ci/greenbone/keys/scan
           SIGNALITH_GREENBONE_REPORT: ${{ github.workspace }}/greenbone-findings.md
       - name: Findings to the job summary
         if: always()

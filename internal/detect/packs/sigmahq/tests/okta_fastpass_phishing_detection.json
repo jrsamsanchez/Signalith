@@ -1,0 +1,6 @@
+{"rule": "ee39a9f7-5a79-4b0a-9815-d36b3cf28d3e", "cases": [
+  {"expect":true,"source":"synthesized","channel":"okta","event_id":"log","data":{"eventType":"user.authentication.auth_via_mfa","outcome.reason":"FastPass declined phishing attempt","outcome.result":"FAILURE"}},
+  {"expect":false,"source":"synthesized","channel":"okta","event_id":"log","data":{"outcome.reason":"FastPass declined phishing attempt","outcome.result":"FAILURE"}},
+  {"expect":false,"source":"synthesized","channel":"okta","event_id":"log","data":{"eventType":"user.authentication.auth_via_mfa","outcome.result":"FAILURE"}},
+  {"expect":false,"source":"synthesized","channel":"okta","event_id":"log","data":{"eventType":"user.authentication.auth_via_mfa","outcome.reason":"FastPass declined phishing attempt"}}
+]}

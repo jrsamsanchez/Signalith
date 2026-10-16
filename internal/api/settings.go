@@ -38,6 +38,7 @@ func (s *Server) routeSettings(api *router) {
 	api.admin("POST /api/settings/test/opensearch", s.handleTestOpenSearch)
 	api.admin("POST /api/settings/test/assistant", s.handleTestAssistant)
 	api.admin("POST /api/settings/test/m365", s.handleTestM365)
+	api.admin("POST /api/settings/test/okta", s.handleTestOkta)
 	api.admin("POST /api/settings/assistant/models", s.handleAssistantModels)
 	api.admin("POST /api/settings/restart", s.handleRestart)
 	api.admin("POST /api/settings/restart/confirm", s.handleConfirmMove)
@@ -448,6 +449,9 @@ func (s *Server) settingsView() (map[string]any, error) {
 			// empty, with what it works out to now.
 			if set.Key == "server.public_url" && saved.PublicURLDerived() {
 				f.EmptyMeans = saved.Server.PublicURL + ", worked out from the listen address"
+			}
+			if set.Key == "server.agent_listen" && saved.AgentListenDerived() {
+				f.EmptyMeans = saved.Server.AgentListen + ", worked out from the listen address; the web port also accepts agents set up before 0.3"
 			}
 			// A file from before HTTPS was the default believes a proxy on
 			// this computer or a private network until one is listed.

@@ -33,10 +33,14 @@ var sensorPublicRoutes = []string{
 
 func (s *Server) routeSensor(mux *http.ServeMux, api *router) {
 	mux.HandleFunc("GET /api/sensor/install.sh", s.handleInstallScript(clusterinstall.ScriptSensor))
+	api.admin("GET /api/sensor/install", s.handleSensorInstall)
+}
+
+// routeSensorAgent registers the routes a sensor calls with its token.
+func (s *Server) routeSensorAgent(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/sensor/config", s.handleSensorConfig)
 	mux.HandleFunc("GET /api/sensor/seen", s.handleSensorSeen)
 	mux.HandleFunc("GET /api/sensor/tuning", s.handleSensorTuningFetch)
-	api.admin("GET /api/sensor/install", s.handleSensorInstall)
 }
 
 // msgSensorHTTPS is why no line is made for a server reached over plain
@@ -76,6 +80,7 @@ func (s *Server) handleSensorInstall(w http.ResponseWriter, r *http.Request) {
 	if o := v.Get("server"); o != "" {
 		server = o
 	}
+	server = s.agentURL(server)
 	u, err := agents.ParseServerURL(server)
 	if err != nil {
 		fieldError("server", err)
@@ -204,6 +209,7 @@ func (s *Server) handleSensorConfig(w http.ResponseWriter, r *http.Request) {
 	if server == "" {
 		server = conf.Server.PublicURL
 	}
+	server = s.agentURL(server)
 	u, err := agents.ParseServerURL(server)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, fmt.Errorf("server: %w", err))

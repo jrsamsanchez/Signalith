@@ -6,6 +6,7 @@
 | Red Hat, Rocky, Alma, Fedora, SUSE | `signalith-{VERSION}-1.x86_64.rpm` or `.aarch64.rpm`, then `sudo dnf install ./signalith-{VERSION}-1.x86_64.rpm` |
 | Windows | `signalith-{VERSION}-x64.msi`, double-click it |
 | Docker | `docker pull ghcr.io/jrsamsanchez/signalith:{VERSION}` |
+| Kubernetes | `helm install signalith oci://ghcr.io/jrsamsanchez/charts/signalith --version {VERSION} -n signalith --create-namespace`; see [Kubernetes](https://signalith.io/docs/kubernetes/) |
 
 Then `sudo signalith initial-password` (on Windows, `signalith initial-password` in PowerShell as Administrator) shows the first admin password. Signalith needs OpenSearch 2.x or 3.x; see [Install from packages](https://signalith.io/docs/install-packages/).
 

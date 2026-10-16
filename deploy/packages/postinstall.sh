@@ -46,8 +46,10 @@ if [ ! -e "$config" ]; then
   printf '\n%s\n' "$started"
   cat <<'MSG'
 
-  Sign in:   https://<this server>:8080 as admin
+  Sign in:   https://<this server>:9000 as admin
   Password:  sudo signalith initial-password
+  Agents:    send to port 7779 (Add data sets them up). Open 9000 and 7779
+             in this server's firewall for other machines.
   OpenSearch: Signalith expects it at http://127.0.0.1:9200. To use another
              one, change it on the Settings page (OpenSearch > Address).
 
@@ -60,6 +62,10 @@ https://signalith.io/docs/opensearch-security/
 MSG
 else
   /usr/bin/signalith secrets encrypt -c "$config" || echo "Some passwords or keys could not be encrypted; check with: sudo signalith secrets status" >&2
+  # The server asks for a new admin password at the first sign-in with the
+  # one Signalith made, which only root can read: while it is still the one
+  # in use, its hash is noted in the state folder for the server.
+  /usr/bin/signalith initial-password -c "$config" -note >/dev/null 2>&1 || true
   if [ -e "$removed" ]; then
     # Installed again after being removed: the removal stopped and
     # disabled the service, so it is turned back on with the kept config.

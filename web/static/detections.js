@@ -2023,6 +2023,28 @@ function editDetection(d, opts = {}) {
     testBtn.disabled = false;
     out.scrollIntoView({ block: 'nearest' });
   });
+  const btOut = el('div', { class: 'dx-test-out', 'aria-live': 'polite' });
+  const btWindow = select('de-bt-window', [['7d', '7 days'], ['30d', '30 days'], ['90d', '90 days']], '30d');
+  btWindow.className = 'select select--sm';
+  btWindow.setAttribute('aria-label', 'Backtest window');
+  btWindow.title = 'How far back to backtest';
+  const btBtn = dxBtn('ghost', 'Backtest', null, { icon: 'history', title: 'Show what it would have raised over a past window, without raising anything' });
+  const backtest = async () => {
+    ok();
+    btBtn.disabled = true;
+    const win = btWindow.value;
+    fill(btOut, el('div', { class: 'callout dx-test' }, icon('history'), el('div', {}, `Backtesting the last ${backtestWindowName(win)}. This runs up to 60 searches and can take a minute…`)));
+    try {
+      const res = await api('api/detections/backtest', { detection: read(), window: win });
+      fill(btOut, backtestResult(res.backtest, win, lookback.value.trim()));
+    } catch (e) {
+      btOut.replaceChildren();
+      if (e.problems) fail(e);
+      else fill(btOut, dxAlert('danger', 'The backtest failed.', e.message));
+    }
+    btBtn.disabled = false;
+  };
+  btBtn.addEventListener('click', backtest);
   const searchBtn = dxBtn('ghost', 'Open in Search', () => { dlg.close(); openSearch(query.value, '-' + (lookback.value || '24h')); }, { icon: 'search' });
   const saveBtn = el('button', { class: 'btn btn--primary', type: 'submit' }, isNew ? 'Create detection' : 'Save');
   const form = el('form', { method: 'dialog', class: 'dx-form', novalidate: '' });
@@ -2059,7 +2081,8 @@ function editDetection(d, opts = {}) {
   const close = dxBtn('ghost', '', () => dlg.close(), { sm: true, icon: 'x', title: 'Close', cls: 'dx-close' });
   const note = opts.warnings && opts.warnings.length
     ? dxAlert('warning', 'Review before turning it on.', null, el('ul', { class: 'dx-problems' }, ...opts.warnings.map((w) => el('li', {}, w)))) : null;
-  fill(body, note, errBox,
+  fill(body, opts.draft ? draftSummary(opts.draft, dlg) : null, note, errBox,
+    btOut,
     dxField('Title', title, 'Use $field$ to insert a value from the result, like $src$.'),
     el('div', { class: 'form-grid' }, dxField('ID', id, isNew ? 'Lowercase letters, digits and dashes.' : 'IDs cannot change.'), dxField('Severity', severity)),
     dxField('Query', query, 'Each result row becomes a finding. Leave out earliest= and latest=; Search back sets the window.'),
@@ -2079,13 +2102,123 @@ function editDetection(d, opts = {}) {
           : isNew ? 'A search that runs on a schedule and raises a finding for each result.' : plainTitle(d.title))),
       close),
     body,
-    el('div', { class: 'modal__foot' }, testBtn, searchBtn, el('span', { class: 'spacer' }), dxBtn('ghost', 'Cancel', () => dlg.close()), saveBtn));
+    el('div', { class: 'modal__foot' }, testBtn, el('span', { class: 'dx-bt' }, btBtn, btWindow), searchBtn, el('span', { class: 'spacer' }), dxBtn('ghost', 'Cancel', () => dlg.close()), saveBtn));
   dlg.replaceChildren(form);
   dlg.showModal();
   (isNew && !title.value ? title : isNew && !query.value ? query : title).focus();
+  // A draft is backtested right away: what it would have found is the
+  // first thing to check.
+  if (opts.draft) backtest();
+}
+
+const backtestWindowName = (w) => ({ '7d': '7 days', '30d': '30 days', '90d': '90 days' }[w] || w);
+
+// draftSummary explains a draft from a plain-English description: how each
+// part was chosen, and detections already in the library that look alike.
+function draftSummary(dr, dlg) {
+  const how = dr.source === 'ai' ? `Written by the AI model${dr.ai_model ? ' (' + dr.ai_model + ')' : ''}.`
+    : dr.source === 'library' ? 'Copied from a detection already in the library that matches best.'
+      : 'Drafted offline from the words below.';
+  const steps = (dr.steps || []).map((st) => el('li', {}, st.phrase ? el('q', {}, st.phrase) : null, st.phrase ? ' → ' : null, st.meaning));
+  const sim = (dr.similar || []).map((x) => {
+    const b = el('button', { class: 'link-btn', type: 'button', title: 'Open this detection' }, x.title);
+    b.addEventListener('click', () => { dlg.close(); det.show = ''; openDetection(x.id); });
+    return el('li', {}, sevBadge(x.severity), el('span', { class: 'dx-sim__t' }, b, ' ', el('span', { class: 'muted' }, x.enabled ? 'on' : 'off')));
+  });
+  return el('div', { class: 'callout dx-draft' }, icon('wand-sparkles'),
+    el('div', {},
+      el('b', {}, 'Review the draft. '), how, ' It is off until you turn it on.',
+      dr.unknown && dr.unknown.length ? el('p', { class: 'dx-hint' }, 'Not understood: ' + dr.unknown.join(', ') + '.') : null,
+      steps.length ? el('details', { class: 'dx-draft__how' }, el('summary', {}, 'How it was drafted'), el('ul', { class: 'dx-test__list' }, ...steps)) : null,
+      sim.length ? el('details', { class: 'dx-draft__how', open: dr.source !== 'library' && dr.similar[0].score >= 0.7 ? '' : null },
+        el('summary', {}, `Similar detections in the library (${sim.length})`), el('ul', { class: 'dx-sim' }, ...sim)) : null));
+}
+
+// backtestResult shows what a detection would have raised over a past
+// window: totals, a bar per run, the noisiest values and the newest titles.
+function backtestResult(bt, win, lookback) {
+  const n = bt.findings;
+  const head = n ? `It would have raised ${dxPlural(n, 'finding')} over the last ${backtestWindowName(win)}.`
+    : `It would have raised nothing over the last ${backtestWindowName(win)}.`;
+  const parts = [`${dxPlural(bt.results, 'result')}`];
+  if (bt.throttled) parts.push(`${bt.throttled.toLocaleString()} held back as repeats`);
+  if (bt.suppressed) parts.push(`${bt.suppressed.toLocaleString()} matched an exception`);
+  const notes = [];
+  if (bt.approximate) notes.push(`Each search covered ${bt.step} instead of the ${lookback || 'lookback'} lookback, so counts from stats can be higher than live runs would see.`);
+  if (bt.capped) notes.push('Some searches matched more events than they return, so there may be more.');
+  if (bt.partial) notes.push(`Time ran out, so this covers only up to ${fmtTime(bt.partial_at)}.`);
+  if (!n && !bt.results) notes.push('Check that the data it searches is coming in, or try a longer window.');
+  const most = Math.max(1, ...bt.buckets.map((b) => b.findings));
+  const bars = el('div', { class: 'dx-bt-chart', role: 'img', 'aria-label': `Findings per ${bt.step}, oldest to newest` },
+    ...bt.buckets.map((b) => el('span', {
+      class: 'dx-bt-bar' + (b.findings ? '' : ' dx-bt-bar--zero'), style: `--h:${Math.round(100 * b.findings / most)}%`,
+      title: `${fmtTime(b.start)} to ${fmtTime(b.end)}: ${dxPlural(b.findings, 'finding')}, ${dxPlural(b.results, 'result')}`,
+    })));
+  const top = Object.entries(bt.top || {}).filter(([, vs]) => vs.length).slice(0, 3).map(([f, vs]) =>
+    el('div', { class: 'dx-bt-top' }, el('span', { class: 'dx-bt-top__f' }, f),
+      ...vs.map((v) => el('span', { class: 'badge badge--outline badge--mono', title: `${f}=${v.value}: ${dxPlural(v.count, 'finding')}` }, `${v.value} · ${v.count.toLocaleString()}`))));
+  const samples = (bt.samples || []).slice(0, 5).map((x) => el('li', {}, el('span', { class: 'muted' }, fmtTime(x.time) + ' '), x.title));
+  return el('div', { class: 'callout dx-test dx-bt-out' }, icon('history'),
+    el('div', {},
+      el('b', {}, head), ` ${parts.join(', ')}. ${bt.searches} searches in ${(bt.took_ms / 1000).toFixed(1)} s, nothing raised.`,
+      bt.buckets.length > 1 ? bars : null,
+      top.length ? el('div', { class: 'dx-bt-tops' }, ...top) : null,
+      samples.length ? el('ul', { class: 'dx-test__list' }, ...samples) : null,
+      ...notes.map((t) => el('p', { class: 'dx-hint' }, t))));
 }
 
 $('d-new').addEventListener('click', () => editDetection(blankDetection()));
+
+// "Describe a detection": a plain-English description becomes a draft in
+// the editor, turned off and backtested.
+const DRAFT_EXAMPLES = [
+  'more than 10 failed logins from the same source in 5 minutes',
+  'a user logging on to more than 5 hosts in an hour',
+  'encoded powershell on any host',
+  'someone added to the domain admins group',
+  'vssadmin deleting shadow copies, critical severity',
+];
+const describeError = (msg) => {
+  $('d-describe-error-text').textContent = msg;
+  $('d-describe-error').classList.toggle('hidden', !msg);
+};
+$('d-describe').addEventListener('click', async () => {
+  describeError('');
+  $('d-describe-examples').replaceChildren(...DRAFT_EXAMPLES.map((x) => {
+    const b = el('button', { class: 'chip', type: 'button' }, x);
+    b.addEventListener('click', () => { $('d-describe-text').value = x; $('d-describe-text').focus(); });
+    return b;
+  }));
+  $('d-describe-box').showModal();
+  $('d-describe-text').focus();
+  try {
+    const info = await api('api/ask');
+    $('d-describe-ai-row').classList.toggle('hidden', !info.ai_available);
+    $('d-describe-ai-label').textContent = info.ai_model ? `Use the AI model (${info.ai_model}); without it, Signalith drafts offline` : 'Use the AI model';
+  } catch { $('d-describe-ai-row').classList.add('hidden'); }
+});
+for (const id of ['d-describe-cancel', 'd-describe-x']) $(id).addEventListener('click', () => $('d-describe-box').close());
+$('d-describe-form').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  describeError('');
+  const text = $('d-describe-text').value.trim();
+  if (!text) { describeError('Describe what to detect first.'); return; }
+  const btn = $('d-describe-go');
+  btn.disabled = true;
+  const useAI = !$('d-describe-ai-row').classList.contains('hidden') && $('d-describe-ai').checked;
+  try {
+    const res = await api('api/detections/draft', { description: text, mode: useAI ? 'auto' : 'rules' });
+    const dr = res.draft;
+    dr.ai_model = res.ai_model;
+    const warnings = [...(dr.warnings || [])];
+    if (res.ai_error) warnings.unshift('The AI model could not draft it (' + res.ai_error + '), so this is the offline draft.');
+    $('d-describe-box').close();
+    $('d-describe-text').value = '';
+    editDetection({ ...dr.detection, enabled: false, source: 'new' }, { warnings, draft: dr });
+  } catch (e) {
+    describeError(e.problems ? e.problems.join('\n') : e.message);
+  } finally { btn.disabled = false; }
+});
 $('d-sigma').addEventListener('click', () => {
   $('d-sigma-error').classList.add('hidden');
   $('d-sigma-box').showModal();

@@ -361,7 +361,9 @@ func (p *Pipeline) write(ctx context.Context, events []Event, ids []string) (*Re
 		nReserved := p.dropReserved(ev.Fields, &reserved)
 		ApplyURLQuery(ev.Fields, urlQuery)
 		// After the drop, so only Signalith sets these. The sample data
-		// carries its own marker instead.
+		// carries its own marker instead, and the origin an event of it
+		// names (as a sensor's token would send it), so detections that
+		// believe only such events fire on the sample too.
 		if p.SampleMark == "" {
 			o := ev.Origin
 			if o.IsZero() {
@@ -369,6 +371,8 @@ func (p *Pipeline) write(ctx context.Context, events []Event, ids []string) (*Re
 			}
 			o.stamp(ev.Fields)
 			setSource(ev.Fields, o.Intake)
+		} else {
+			ev.Origin.stamp(ev.Fields)
 		}
 		if ev.Time.IsZero() {
 			ev.Time = recv
@@ -870,6 +874,8 @@ func parseRecord(tag string, r map[string]any, now time.Time) (ev Event) {
 		ev = ParseO365(r)
 	case tag == GCPTag || strings.HasPrefix(tag, GCPTag+".") || IsGCPRecord(r):
 		ev = ParseGCP(r)
+	case tag == OktaTag || strings.HasPrefix(tag, OktaTag+".") || IsOktaRecord(r):
+		ev = ParseOkta(r)
 	case isWindowsRecord(tag, r):
 		ev = parseWindows(r)
 	case strings.HasPrefix(tag, "linux.clamav"):

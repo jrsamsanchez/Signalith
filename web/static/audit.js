@@ -9,15 +9,19 @@
     ['30d', 'Last 30 days', 30 * 864e5], ['all', 'All time', 0]];
   // Most records are found by their words; these actions are named.
   const ACTIONS = [['', 'All actions'], ['retention.', 'Data retention'], ['config.', 'Shared settings'],
-    ['audit.', 'Audit records lost']];
+    ['audit.lost', 'Audit records lost'], ['audit.checkpoint', 'Audit checkpoints']];
 
   const page = () => $('page-audit');
+
+  function since(f) {
+    const r = RANGES.find((x) => x[0] === (f.range || '7d'));
+    return r && r[2] ? new Date(Date.now() - r[2]).toISOString().replace(/\.\d+Z$/, 'Z') : '';
+  }
 
   function query(after) {
     const f = A.filters;
     const p = new URLSearchParams();
-    const r = RANGES.find((x) => x[0] === (f.range || '7d'));
-    if (r && r[2]) p.set('from', new Date(Date.now() - r[2]).toISOString().replace(/\.\d+Z$/, 'Z'));
+    if (since(f)) p.set('from', since(f));
     for (const k of ['server', 'user', 'action', 'q']) if (f[k]) p.set(k, f[k]);
     p.set('size', '50');
     if (after) p.set('after', after);
@@ -45,7 +49,10 @@
       select('au-action', 'Action', actions, f.action),
       el('div', { class: 'input-wrap' }, icon('user'), user),
       el('div', { class: 'input-wrap' }, icon('search'), text),
-      el('button', { class: 'btn', type: 'submit' }, 'Search'));
+      el('button', { class: 'btn', type: 'submit' }, 'Search'),
+      el('button', { class: 'btn', type: 'button', id: 'au-verify', title: 'Check that no audit record in the time range was changed or removed' },
+        icon('shield-check'), 'Check integrity'));
+    bar.querySelector('#au-verify').addEventListener('click', verify);
     bar.addEventListener('change', (e) => { if (e.target.tagName === 'SELECT') bar.requestSubmit(); });
     bar.addEventListener('submit', (e) => {
       e.preventDefault();
@@ -94,7 +101,50 @@
     return el('div', { class: 'table-foot' }, b);
   }
 
+  // verify checks the chains of the records in the time range (and of the
+  // server, when one is picked) and shows what it found above the list.
+  async function verify() {
+    const b = $('au-verify');
+    const box = $('au-check');
+    const f = A.filters;
+    const p = new URLSearchParams();
+    if (since(f)) p.set('from', since(f));
+    if (f.server) p.set('server', f.server);
+    b.disabled = true;
+    box.replaceChildren(el('div', { class: 'card' }, el('div', { class: 'empty empty--compact' },
+      el('span', { class: 'empty__icon' }, icon('shield')), el('div', { class: 'empty__title' }, 'Checking the audit records…'))));
+    try {
+      const res = await api('/api/audit/verify?' + p.toString());
+      if (!res.enabled) {
+        box.replaceChildren();
+        return;
+      }
+      const r = res.report;
+      const parts = [r.ok + ' signed and linked'];
+      for (const [n, what] of [[r.edited, 'changed'], [r.stripped, 'with their signature removed, or put in'], [r.broken, 'not linked to the record before'], [r.missing, 'removed'],
+        [r.truncated, 'servers with their latest records removed'], [r.dropped, 'dropped by a full spool or refused, and recorded'],
+        [r.unverifiable, 'missing where nothing is signed, so a drop cannot be told from a removal'],
+        [r.unsigned, 'unsigned'], [r.unknown_key, 'signed with a key this server does not hold']]) {
+        if (n) parts.push(n + ' ' + what);
+      }
+      const text = r.records + ' records checked: ' + parts.join(', ') + '.' + (r.limited ? ' Only the oldest were read; pick a shorter range for the rest.' : '');
+      const list = (r.problems || []).slice(0, 10).map((x) => el('li', {}, fmtTime(x.time) + ' · ' + (x.server || x.node_id) + ' · #' + x.seq + ': ' + x.detail));
+      box.replaceChildren(el('div', { class: 'card' }, el('div', { class: 'empty empty--compact' },
+        el('span', { class: 'empty__icon' }, icon(res.tampered ? 'shield-x' : 'shield-check')),
+        el('div', { class: 'empty__title' }, res.tampered ? 'Audit records were changed or removed' : 'No audit record was changed or removed'),
+        el('p', { class: 'empty__text' }, text),
+        list.length ? el('ul', { class: 'empty__text au-problems' }, ...list) : null)));
+    } catch (e) {
+      box.replaceChildren(el('div', { class: 'card' }, el('div', { class: 'empty empty--compact' },
+        el('span', { class: 'empty__icon' }, icon('circle-alert')), el('div', { class: 'empty__title' }, 'Couldn’t check the audit records'),
+        el('p', { class: 'empty__text' }, e.message))));
+    } finally {
+      b.disabled = false;
+    }
+  }
+
   async function load() {
+    $('au-check').replaceChildren();
     const root = $('au-body');
     const seq = ++A.seq;
     try {

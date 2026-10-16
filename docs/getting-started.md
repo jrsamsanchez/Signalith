@@ -33,7 +33,9 @@ the admin password, the agents' ingest token and the certificates OpenSearch and
 Signalith use with each other, and keeps them in Docker volumes; no password is written
 in the compose files. The last command shows the admin password.
 
-Open **https://localhost:8080** and sign in as `admin` with that password.
+Open **https://localhost:9000** and sign in as `admin` with that password. Since
+Signalith made it, you are then asked to choose your own before anything else; from then
+on `signalith initial-password` no longer shows the first one, which no longer works.
 
 !!! tip "The browser warns about the certificate"
     Signalith serves HTTPS with a certificate it makes for itself, so the browser warns
@@ -45,7 +47,7 @@ OpenSearch runs with its security plugin on: it answers only over HTTPS, publish
 port, and lets in only Signalith's certificate, which may use only Signalith's own
 indices. See [Securing OpenSearch](opensearch-security.md).
 
-To change the admin password (the first one then stops working):
+To change the admin password again later:
 
 ```sh
 docker compose -f deploy/docker/docker-compose.yml exec signalith signalith passwd
@@ -109,7 +111,7 @@ docker compose -f deploy/docker/docker-compose.yml exec signalith signalith samp
     (`/var/lib/signalith/keys/master.key`). Back that file up, apart from the config;
     see [Encryption](encryption.md#the-master-key).
 
-3. Open `https://<server>:8080` and sign in as `admin`.
+3. Open `https://<server>:9000` and sign in as `admin`.
 4. Replace OpenSearch's demo security setup, whose passwords and certificates are
    public, and have Signalith sign in with a certificate of its own:
    [Securing OpenSearch](opensearch-security.md).
@@ -147,7 +149,7 @@ Older versions cannot read encrypted values: before going back to one, run
     `NT SERVICE\Signalith`, and only SYSTEM, Administrators and that account can read
     `C:\ProgramData\Signalith`.
 
-3. Open https://localhost:8080 and sign in as `admin`
+3. Open https://localhost:9000 and sign in as `admin`
    ([trust the certificate](https.md#trust-the-certificate) to stop the warning).
 4. Secure OpenSearch and have Signalith sign in with a certificate:
    [Securing OpenSearch](opensearch-security.md).
@@ -177,9 +179,10 @@ over HTTPS, checking the server's certificate with that CA.
 
 !!! warning "Use an address the agents can reach"
     Agents on other machines must send to an address they can reach, such as
-    `https://192.168.1.20:8080`, not `localhost`. Enter it under **Agents send to** on
-    the Add data page (or set `server.public_url`), and allow the port, 8080 by default,
-    through this computer's firewall.
+    `https://192.168.1.20:7779`, not `localhost`. Enter it under **Agents send to** on
+    the Add data page (or set `server.public_url`). Agents send to a port of their own,
+    7779 by default, not the web page's 9000; allow both through this computer's
+    firewall. See [The agent port](sending-data.md#the-agent-port).
 
 ## Next steps
 

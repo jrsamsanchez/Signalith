@@ -1,0 +1,6 @@
+{"rule": "e2b99e7d-d956-411a-a120-2b14adfdde93", "cases": [
+  {"expect":true,"source":"synthesized","channel":"okta","event_id":"log","data":{"eventType":"user.authentication.auth_via_mfa","outcome.result":"FAILURE","target{}.displayName":"Example App","target{}.type":"AppInstance"}},
+  {"expect":false,"source":"synthesized","channel":"okta","event_id":"log","data":{"eventType":"user.authentication.auth_via_mfb","outcome.result":"FAILURE","target{}.displayName":"Example App","target{}.type":"AppInstance"}},
+  {"expect":false,"source":"synthesized","channel":"okta","event_id":"log","data":{"outcome.result":"FAILURE","target{}.displayName":"Example App","target{}.type":"AppInstance"}},
+  {"expect":false,"source":"synthesized","channel":"okta","event_id":"log","data":{"eventType":"user.authentication.auth_via_mfa","target{}.displayName":"Example App","target{}.type":"AppInstance"}}
+]}

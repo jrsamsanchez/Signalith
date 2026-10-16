@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	"slices"
 	"sync"
+	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/shared"
 	"github.com/jrsamsanchez/signalith/internal/store"
@@ -49,6 +50,10 @@ type Docs struct {
 	tokens    *shared.Collection[APITokenBody]
 	subs      map[string][]func()
 	sessions  []func(ctx context.Context, raw json.RawMessage, v store.Version)
+
+	// tokenUse is when this server last tried to write each API token's
+	// LastUsed (NoteAPITokenUse).
+	tokenUse map[string]time.Time
 }
 
 // Kinds of change subscribers hear of.

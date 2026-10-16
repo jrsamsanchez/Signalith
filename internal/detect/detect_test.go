@@ -2,6 +2,7 @@ package detect
 
 import (
 	"context"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -23,8 +24,8 @@ func TestBuiltinsCompile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(ds) != 51 {
-		t.Fatalf("%d built-in detections, want 51", len(ds))
+	if len(ds) != 52 {
+		t.Fatalf("%d built-in detections, want 52", len(ds))
 	}
 	eng := &search.Engine{Intel: intel.NewStore(intel.NewMemory())}
 	for _, d := range ds {
@@ -695,6 +696,26 @@ func TestConvertSigmaWorkspace(t *testing.T) {
 	}
 }
 
+// Okta's rules name the LogEvent's own fields, and a target's without
+// its list's {}.
+func TestConvertSigmaOkta(t *testing.T) {
+	rule := "title: Admin console\nlogsource:\n  product: okta\n  service: okta\ndetection:\n  sel:\n    eventType: policy.evaluate_sign_on\n    target.displayName: Okta Admin Console\n    securityContext.isProxy: 'true'\n  condition: sel\nlevel: high\n"
+	res, err := ConvertSigmaWith([]byte(rule), SigmaOptions{Strict: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"sourcetype=OktaIM2:log", "eventType=policy.evaluate_sign_on", `target{}.displayName="Okta Admin Console"`,
+		"securityContext.isProxy=true"} {
+		if !strings.Contains(res.Detection.Query, want) {
+			t.Errorf("query missing %s: %s", want, res.Detection.Query)
+		}
+	}
+	bad := strings.Replace(rule, "target.displayName", "TargetImage", 1)
+	if _, err := ConvertSigmaWith([]byte(bad), SigmaOptions{Strict: true}); err == nil {
+		t.Error("a field Okta does not have converted")
+	}
+}
+
 func TestConvertSigmaSecurityLog(t *testing.T) {
 	logon := "title: RDP logon\nlogsource:\n  product: windows\n  service: security\ndetection:\n  sel:\n    EventID: 4624\n    LogonType: 10\n    LogonProcessName: User32\n  condition: sel\nlevel: medium\n"
 	res, err := ConvertSigmaWith([]byte(logon), SigmaOptions{Strict: true})
@@ -917,5 +938,41 @@ level: high
 	want := `datamodel=Web (http_method=GET AND status=200) (url="*=whoami*" OR http_user_agent="*=whoami*" OR http_referrer="*=whoami*")`
 	if res.Detection.Query != want || len(res.Warnings) > 0 {
 		t.Errorf("query = %s, warnings %v", res.Detection.Query, res.Warnings)
+	}
+}
+
+// TestDataSourceStoppedTrustsOnlySignalith: data-source-stopped reads only
+// the events Signalith writes itself, so a sender with an agent token
+// cannot raise findings and risk on hosts it names by sending
+// sourcetype=source:health.
+func TestDataSourceStoppedTrustsOnlySignalith(t *testing.T) {
+	ds, err := Builtin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var q *query.Query
+	for _, d := range ds {
+		if d.ID == "data-source-stopped" {
+			if q, err = query.Parse(d.Query); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if q == nil {
+		t.Fatal("data-source-stopped is not built in")
+	}
+	base := map[string]any{"sourcetype": "source:health", "host": "dc-01", "stopped_sourcetype": "WinEventLog:Security"}
+	for intake, want := range map[string]bool{"signalith": true, "agent": false, "syslog": false, "": false} {
+		doc := maps.Clone(base)
+		if intake != "" {
+			doc["signalith_intake"] = intake
+		}
+		got, err := search.MatchDoc(q.Search, doc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != want {
+			t.Errorf("intake %q: matches = %v, want %v", intake, got, want)
+		}
 	}
 }

@@ -1,0 +1,10 @@
+{"rule": "826dbaae-a1e6-4c8c-b384-d16898956e73", "cases": [
+  {"expect":true,"source":"synthesized","channel":"okta","event_id":"log","data":{"debugContext.debugData.factor":"x","eventType":"user.authentication.auth_via_mfa","outcome.result":"FAILURE","target{}.displayName":"Example App","target{}.type":"AppInstance"}},
+  {"expect":true,"source":"synthesized","channel":"okta","event_id":"log","data":{"debugContext.debugData.factor":"y","eventType":"user.authentication.auth_via_mfa","outcome.result":"FAILURE","target{}.displayName":"Example App","target{}.type":"AppInstance"}},
+  {"expect":false,"source":"synthesized","channel":"okta","event_id":"log","data":{"debugContext.debugData.factor":"x","eventType":"user.authentication.auth_via_mfb","outcome.result":"FAILURE","target{}.displayName":"Example App","target{}.type":"AppInstance"}},
+  {"expect":false,"source":"synthesized","channel":"okta","event_id":"log","data":{"debugContext.debugData.factor":"x","outcome.result":"FAILURE","target{}.displayName":"Example App","target{}.type":"AppInstance"}},
+  {"expect":false,"source":"synthesized","channel":"okta","event_id":"log","data":{"debugContext.debugData.factor":"x","eventType":"user.authentication.auth_via_mfa","outcome.result":"FAILURF","target{}.displayName":"Example App","target{}.type":"AppInstance"}},
+  {"expect":false,"source":"synthesized","channel":"okta","event_id":"log","data":{"debugContext.debugData.factor":"x","eventType":"user.authentication.auth_via_mfa","target{}.displayName":"Example App","target{}.type":"AppInstance"}},
+  {"expect":false,"source":"synthesized","channel":"okta","event_id":"log","data":{"eventType":"user.authentication.auth_via_mfa","outcome.result":"FAILURE","target{}.displayName":"Example App","target{}.type":"AppInstance"}},
+  {"expect":false,"source":"synthesized","channel":"okta","event_id":"log","data":{"debugContext.debugData.factor":"PASSWORD_AS_FACTOR","eventType":"user.authentication.auth_via_mfa","outcome.result":"FAILURE","target{}.displayName":"Example App","target{}.type":"AppInstance"}}
+]}
