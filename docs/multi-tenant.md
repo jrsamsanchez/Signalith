@@ -2,7 +2,7 @@
 
 Multi-tenant mode lets one Signalith install serve several separate customers, for
 example as a managed security provider. Each customer is a **tenant**, with its own
-events, findings, investigations, detections, dashboards, lists, playbooks,
+events, findings, investigations, detections, dashboards, hunting notebooks, lists, playbooks,
 notifications, retention and agent tokens, and its own users.
 
 !!! note "Being built"
@@ -77,6 +77,8 @@ Tenant IDs are 2 to 24 lower-case letters and digits, starting with a letter, su
 - Syslog, Microsoft 365, vulnerability scans, network sensors, osquery hosts, API tokens and
   compliance notes are the default tenant's. Content updates of the detections go to the
   default tenant; tenants get the detections built into Signalith.
+- Custom log parsers are the provider's: only provider admins change them, and they read every
+  tenant's records alike.
 - Downgrading to a version without multi-tenant mode is not supported once there are
   tenant users: an older version would read them as provider users.
 

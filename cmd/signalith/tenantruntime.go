@@ -24,6 +24,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"github.com/jrsamsanchez/signalith/internal/intel"
 	"github.com/jrsamsanchez/signalith/internal/lookuptables"
+	"github.com/jrsamsanchez/signalith/internal/notebooks"
 	"github.com/jrsamsanchez/signalith/internal/notify"
 	"github.com/jrsamsanchez/signalith/internal/playbooks"
 	"github.com/jrsamsanchez/signalith/internal/respond"
@@ -220,6 +221,11 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 	pipeline.SetURLQuery(c.URLQueryMode())
 	pipeline.Servers = func() int { return t.r.node.IndexingServers(10 * time.Minute) }
 	pipeline.FieldCount = ingest.MappingFieldCount(cl)
+	// The custom parsers are the provider's, saved on the default
+	// tenant's Add data page: they read every tenant's records alike.
+	if t.front.Parsers != nil {
+		pipeline.Custom = t.front.Parsers
+	}
 	live := &liveMaxAge{c: c, ret: ret, pipeline: pipeline, last: maxAge}
 	ret.OnSettings = func(s retention.Settings) { live.update(&s) }
 
@@ -262,6 +268,8 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 	fstore.Replicas = c.OpenSearch.Replicas.IndexSettings()
 	cstore := cases.NewOpenSearch(cl, prefix)
 	cstore.Replicas = c.OpenSearch.Replicas.IndexSettings()
+	nstore := notebooks.NewOpenSearch(cl, prefix)
+	nstore.Replicas = c.OpenSearch.Replicas.IndexSettings()
 	estore := endpoint.NewStore(cl, prefix)
 	ti.jobs.Go(func() { estore.Run(ctx, 30*time.Second) })
 	notes, deliveries, senders := newNotify(c, cl, log)
@@ -355,6 +363,7 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 		Notify:     &api.Notify{Settings: notes, Deliveries: deliveries, Sender: senders, Server: server},
 		Dashboards: boards,
 		Cases:      cstore,
+		Notebooks:  nstore,
 		Respond:    responder,
 		Playbooks:  &api.Playbooks{Manager: pbooks, Runs: pruns},
 		Retention:  ret,
@@ -405,7 +414,7 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 		findingsOK := fstore.EnsureIndex(ctx) == nil
 		notifyOK := deliveries.EnsureIndex(ctx) == nil
 		playbooksOK := pruns.EnsureIndex(ctx) == nil
-		for _, e := range []interface{ EnsureIndex(context.Context) error }{cstore, estore, astore} {
+		for _, e := range []interface{ EnsureIndex(context.Context) error }{cstore, nstore, estore, astore} {
 			if err := e.EnsureIndex(ctx); err != nil {
 				log.Error("could not create an index of the tenant", "err", err)
 			}

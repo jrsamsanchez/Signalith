@@ -23,7 +23,7 @@ var (
 	tenantResources = []string{
 		"me", "health", "search", "explain", "build", "parse", "datamodels", "fields", "language", "ask",
 		"detections", "coverage", "findings", "cases", "lookups", "lookuptables", "risk", "intel", "posture",
-		"dashboards", "panels", "investigate", "notify", "respond", "playbooks", "retention", "sample",
+		"dashboards", "panels", "notebooks", "investigate", "notify", "respond", "playbooks", "retention", "sample",
 		"endpoints", "agents", "agent-tokens", "users",
 	}
 	// platformResources are about the server itself, shared by every
@@ -31,10 +31,11 @@ var (
 	// the default tenant's server. So are the resources a tenant's server
 	// cannot keep apart yet: API tokens (in the shared settings),
 	// compliance notes (in the state folder), vulnerability scans (the
-	// server's scanners and OpenVAS) and network sensors.
+	// server's scanners and OpenVAS), network sensors and the custom
+	// parsers (one set that reads every tenant's records).
 	platformResources = []string{
 		"settings", "cluster", "security", "tls", "auth", "audit", "requests", "tenants",
-		"api-tokens", "compliance", "vulns", "sensor", "sensors",
+		"api-tokens", "compliance", "vulns", "sensor", "sensors", "parsers",
 	}
 	// providerManaged are tenant routes that make the server send
 	// requests to addresses a user gives (feeds, webhooks, mail servers,

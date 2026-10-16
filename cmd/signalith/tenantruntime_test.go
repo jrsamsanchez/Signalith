@@ -158,6 +158,19 @@ func TestTenantsDataStaysApart(t *testing.T) {
 	if code != 200 || !strings.Contains(fmt.Sprint(out), "acme agents") {
 		t.Errorf("acme's tokens: %d %v", code, out)
 	}
+	// Hunting notebooks are acme's own; custom parsers are the provider's.
+	if code, out, err := ada.call("", "POST", "/api/notebooks", `{"title":"Acme hunt","sharing":"read"}`); err != nil || code != http.StatusCreated {
+		t.Fatalf("ada's notebook: %d %v %v", code, out, err)
+	}
+	if code, out, _ := ada.call("", "GET", "/api/notebooks", ""); code != 200 || !strings.Contains(fmt.Sprint(out["notebooks"]), "Acme hunt") {
+		t.Errorf("acme's notebooks: %d %v", code, out)
+	}
+	if out := must("GET", "/api/notebooks", "", 200); strings.Contains(fmt.Sprint(out["notebooks"]), "Acme hunt") {
+		t.Errorf("acme's notebook is listed in the default tenant: %v", out)
+	}
+	if code, _, _ := ada.call("", "GET", "/api/parsers", ""); code != http.StatusForbidden {
+		t.Errorf("ada GET /api/parsers: %d, want 403", code)
+	}
 
 	// Settings applied at once on the Settings page apply to every
 	// tenant, as do those of a tenant added after.
