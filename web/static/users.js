@@ -527,6 +527,7 @@
         close();
         toast(`${u.username} must choose a new password at their next sign-in.`, null, { title: 'Password reset' });
       }
+      if (res.warning) toast(res.warning, null, { title: 'Passkeys not removed', tone: 'warning' });
     });
     fill(d, form);
     pw.init();

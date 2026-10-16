@@ -544,16 +544,19 @@ func (s *Server) handleResetPassword(w http.ResponseWriter, r *http.Request) {
 		writeUserError(w, err)
 		return
 	}
-	ended := s.sessions().EndUser(r.Context(), u.Username, "")
-	s.audit(r, "password reset", "user", u.Username, "sessions_ended", ended)
 	// A passkey signs in without the password, so someone who added one
 	// would keep their way in past the reset.
-	if n, err := s.userStore().RemovePasskeys(changeContext(r), u.Username); err != nil {
-		s.Log.Error("passkeys not removed after a password reset", "user", u.Username, "err", err)
-	} else if n > 0 {
+	n, keyErr := s.userStore().RemovePasskeys(changeContext(r), u.Username)
+	ended := s.sessions().EndUser(r.Context(), u.Username, "")
+	s.audit(r, "password reset", "user", u.Username, "sessions_ended", ended)
+	resp := map[string]any{"user": s.viewUser(u, userOf(r))}
+	switch {
+	case keyErr != nil:
+		s.Log.Error("passkeys not removed after a password reset", "user", u.Username, "err", keyErr)
+		resp["warning"] = "The password was reset, but their passkeys could not be removed, so they still sign in. Reset their two-step sign-in too."
+	case n > 0:
 		s.audit(r, "passkeys removed", "user", u.Username, "count", n, "reason", "password reset")
 	}
-	resp := map[string]any{"user": s.viewUser(u, userOf(r))}
 	if generated != "" {
 		resp["temporary_password"] = generated
 	}
