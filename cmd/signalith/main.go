@@ -48,6 +48,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/m365"
 	"github.com/jrsamsanchez/signalith/internal/nlq"
 	"github.com/jrsamsanchez/signalith/internal/notify"
+	"github.com/jrsamsanchez/signalith/internal/okta"
 	"github.com/jrsamsanchez/signalith/internal/playbooks"
 	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/redact"
@@ -1604,6 +1605,13 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	srv.M365Cursors = func(ctx context.Context, tenant string) ([]m365.Cursor, error) {
 		return m365.Cursors(ctx, cl, runtimeIndex, tenant)
 	}
+	oktaLog := &okta.Poller{
+		Settings: func() okta.Settings { return okta.FromConfig(srv.Running()) },
+		Store:    cl, Index: runtimeIndex, Ingest: pipeline.Ingest, Log: log,
+	}
+	srv.OktaCursor = func(ctx context.Context, domain string) (okta.Cursor, bool, error) {
+		return okta.CursorOf(ctx, cl, runtimeIndex, domain)
+	}
 	in.jobsList = []cluster.Job{
 		{Name: "index upgrades", Run: func(ctx context.Context) {
 			if !ready(ctx) {
@@ -1668,6 +1676,14 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			}
 			o365.Run(ctx)
 		}},
+		// Okta's System Log is read while Settings > Okta names an
+		// organization; a change there applies at the next round.
+		{Name: "okta system log", Run: func(ctx context.Context) {
+			if !ready(ctx) {
+				return
+			}
+			oktaLog.Run(ctx)
+		}},
 	}
 	if r.shared != nil {
 		in.jobsList = append(in.jobsList, requestsJob(r.shared, contentHandlers(feeds, ret, r.auditHandlers(ret), r.lifecycleLeaderHandlers())))
@@ -1707,6 +1723,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		// stops at once, even before its jobs' context ends.
 		sched.Allowed, feeds.Allowed, dispatcher.Allowed, pbRunner.Allowed = r.node.RunsJobs, r.node.RunsJobs, r.node.RunsJobs, r.node.RunsJobs
 		o365.Allowed, o365.Epoch, o365.NodeID = r.node.RunsJobs, r.node.Lease().Epoch, r.node.ID()
+		oktaLog.Allowed, oktaLog.Epoch, oktaLog.NodeID = r.node.RunsJobs, r.node.Lease().Epoch, r.node.ID()
 		// Detection run state carries the lease epoch, so a server that
 		// lost the lease cannot write over a newer one's, and slots are
 		// worked out on OpenSearch's clock, which every server shares.

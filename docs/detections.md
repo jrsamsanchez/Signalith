@@ -330,7 +330,7 @@ Content packs are rule sets from other open source projects, shipped unchanged
 inside Signalith and converted when it starts. Every pack detection is **off** until
 an admin turns it on.
 
-**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,478 rules from
+**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,497 rules from
 [SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 2,080 Windows rules
 for these Sysmon, Security, PowerShell, System, Application, Code Integrity, Windows Firewall, BITS, AppX deployment, WMI activity, Remote Desktop session, shell, SMB client, exploit protection, DNS client, Task Scheduler, NTLM, LSA, CryptoAPI, device driver, packaged app, certificate, OpenSSH, DNS Server, IIS configuration and Defender log sources, 154 Linux rules (see
 [Linux endpoints](#linux-endpoints-sysmon-for-linux) and
@@ -340,7 +340,7 @@ for these Sysmon, Security, PowerShell, System, Application, Code Integrity, Win
 [AWS CloudTrail](#aws-cloudtrail)), 108 Microsoft Entra ID and Azure rules (see
 [Entra ID and Azure](#entra-id-and-azure)), 17 Microsoft 365 rules (see
 [Microsoft 365](#microsoft-365)), 16 Google Cloud rules and 7 Google Workspace rules (see
-[Google Cloud](#google-cloud)):
+[Google Cloud](#google-cloud)), and 19 Okta rules (see [Okta](#okta)):
 
 | Sigma log source | Windows events | Data model |
 | --- | --- | --- |
@@ -364,6 +364,7 @@ for these Sysmon, Security, PowerShell, System, Application, Code Integrity, Win
 | `product: m365`, any service | Microsoft 365 audit records (see [Microsoft 365](#microsoft-365)) | Authentication, Change, Alerts or Other |
 | `product: gcp`, `service: gcp.audit` | Google Cloud audit log entries (see [Google Cloud](#google-cloud)) | Change, Authentication or Other |
 | `product: gcp`, `service: google_workspace.admin`, `google_workspace.login` | Google Workspace audit log entries, shared with Google Cloud | Change or Authentication |
+| `product: okta`, `service: okta` | Okta System Log events (see [Okta](#okta)) | Authentication, Change, Alerts or Other |
 | `service: system` | System 7045 (service installed) | Change |
 | `service: system` | Other System events, by provider and event ID (see below) | Other |
 | `service: application` | Application events, by provider and event ID (see below) | Other |
@@ -713,6 +714,27 @@ schema has: an Exchange cmdlet's parameters are only in `Parameters{}.Name` and
 are left out, with rules that use `eval`, `spath`, `fromjson`, `rex` or lookups. To read
 the audit log, see [Microsoft 365](microsoft-365.md).
 
+### Okta
+
+SigmaHQ's 19 tested Okta rules ship. They name a System Log event's own fields
+(`eventType`, `actor.alternateId`, `securityContext.isProxy`,
+`debugContext.debugData.behaviors`), which Signalith keeps by the same names; a field of
+an event's targets (`target.displayName`) reads each target's value
+(`target{}.displayName`), as Splunk's add-on for Okta names them. Every rule searches
+`sourcetype=OktaIM2:log`. `okta_user_created` is informational, and
+`okta_password_in_alternateid_field` uses `^` inside a regular expression's
+alternatives, so they are left out.
+
+The Splunk pack adds 12 Okta detections (see
+[Splunk Security Content](#splunk-security-content)). Five search the `okta` macro by
+Okta's field names (`eventType`, `outcome.result`) and the CIM fields Splunk's add-on
+gives an event (`user`, `src`, `signature`). Seven are `tstats` searches of the
+Authentication or Change data model whose only data source is Okta: they read the same
+CIM fields of Okta's events (`Authentication.action`, `All_Changes.command`), limited to
+`sourcetype=OktaIM2:log`. Experimental, hunting and correlation rules, two that need
+`iplocation` to name a city and one that uses a command Signalith doesn't run are left
+out. To read the System Log, see [Okta](okta.md).
+
 ### Google Cloud
 
 SigmaHQ's 16 tested Google Cloud audit log rules ship. Most name a call's method as
@@ -744,8 +766,8 @@ derives, so they are left out. To send the audit logs, see
 
 ### Splunk Security Content
 
-**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,138 Windows,
-Linux, web, network, AWS CloudTrail, Entra ID and Microsoft 365 detections from Splunk's Threat Research Team
+**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,150 Windows,
+Linux, web, network, AWS CloudTrail, Entra ID, Microsoft 365 and Okta detections from Splunk's Threat Research Team
 ([security_content](https://github.com/splunk/security_content)), pinned to one
 commit. They are the production TTP and anomaly rules that search the CIM
 `Endpoint.Processes`, `Endpoint.Filesystem`, `Endpoint.Registry` and `Web` nodes with
@@ -794,6 +816,8 @@ names, so each rule's `where` clause becomes a Signalith filter field for field:
 | `` `cloudtrail` `` (raw search) | AWS CloudTrail records, by CloudTrail's field names and the CIM fields Splunk's AWS add-on gives them (`errorCode=success` reads a record with no error code; see [AWS CloudTrail](#aws-cloudtrail)) | Authentication, Change or Other |
 | `` `azure_monitor_aad` `` (raw search) | Entra ID sign-in, audit and risk records, by the record's own field names and the CIM fields Splunk's add-on for Microsoft cloud services gives them (see [Entra ID and Azure](#entra-id-and-azure)) | Authentication, Change or Alerts |
 | `` `o365_management_activity` `` (raw search) | Microsoft 365 audit records, by the record's own field names and the CIM fields Splunk's add-on for Microsoft 365 gives them (see [Microsoft 365](#microsoft-365)) | Authentication, Change, Alerts or Other |
+| `` `okta` `` (raw search) | Okta System Log events, by Okta's own field names and the CIM fields Splunk's add-on for Okta Identity Cloud gives them (see [Okta](#okta)) | Authentication, Change, Alerts or Other |
+| `Authentication.Authentication`, `Change.All_Changes` (rules whose only data source is Okta) | Okta System Log events of that data model (see [Okta](#okta)) | Authentication or Change |
 | `Network_Traffic` (network detections) | Any connection: Zeek's conn.log, a firewall, Sysmon 3 (`app` is the protocol, Zeek's `service`) | Network_Traffic |
 | `Network_Resolution` (network detections) | A DNS lookup that names who asked (`src`), as Zeek's dns.log does (`record_type` is `query_type`); a host's own lookups (Sysmon 22) name only the host and are left to the endpoint rules | Network_Resolution |
 

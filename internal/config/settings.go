@@ -215,6 +215,7 @@ var Sections = []Section{
 	{ID: "sso", Title: "Single sign-on", Tab: "sso", Help: "Sign in with an OpenID Connect identity provider such as Microsoft Entra ID, Okta, Google or Keycloak, alongside local users and directory sign-in."},
 	{ID: "vulns", Title: "Vulnerability scans", Help: "How scans on the Vulnerabilities page look up the known vulnerabilities (CVEs) of the software they find. Only product names are sent, never addresses."},
 	{ID: "m365", Title: "Microsoft 365", Help: "Read Microsoft 365's audit log (Entra ID sign-ins and changes, Exchange, SharePoint, OneDrive, Teams and security alerts) with an app registered in Entra ID. One server reads it every 5 minutes. See the Microsoft 365 guide in the docs for how to register the app."},
+	{ID: "okta", Title: "Okta", Help: "Read Okta's System Log (sign-ins, MFA, account and admin changes, and Okta's own threat alerts) with an API service app in your Okta organization. One server reads it every minute. See the Okta guide in the docs for how to add the app."},
 }
 
 // Registry lists every setting on the page, in page order.
@@ -539,6 +540,24 @@ var Registry = []Setting{
 		Help:       "Which Microsoft cloud the tenant is in. Most are in the commercial cloud; US government tenants are in GCC, GCC High or DoD.",
 		Choices:    []Choice{{"commercial", "Commercial"}, {"gcc", "GCC"}, {"gcc_high", "GCC High"}, {"dod", "DoD"}},
 		EmptyMeans: "Commercial"},
+
+	{Key: "okta.domain", Scope: ScopeCluster, Section: "okta", Label: "Okta domain", Type: TypeText,
+		Help:        "Your Okta organization's domain, as in the address of its sign-in page.",
+		Placeholder: "example.okta.com", EmptyMeans: "off", check: checkOktaDomain},
+	{Key: "okta.client_id", Scope: ScopeCluster, Section: "okta", Label: "Client ID", Type: TypeText,
+		Help:        "The client ID of the API service app, which is granted the okta.logs.read scope.",
+		Placeholder: "0oa1b2c3d4e5f6g7h8i9", EmptyMeans: "no app", check: checkOktaClientID},
+	{Key: "okta.private_key", Scope: ScopeCluster, Section: "okta", Label: "Private key", Type: TypeSecret,
+		Help: "The app's private key, as PEM or as the JWK Okta's admin console shows. Only used to sign in to your Okta organization's token endpoint.",
+		Env:  "SIGNALITH_OKTA_PRIVATE_KEY", SentWith: []string{"okta.domain", "okta.client_id"},
+		sentTo: func(c *Config) string { return c.OktaTokenURL() }, check: func(v any) error { return CheckOktaPrivateKey(v) }},
+	{Key: "okta.key_id", Scope: ScopeCluster, Section: "okta", Label: "Key ID", Type: TypeText,
+		Help:       "The ID (kid) of that key on the app's page, needed only when the app has more than one key.",
+		EmptyMeans: "the key's own", check: checkOktaKeyID},
+	{Key: "okta.api_token", Scope: ScopeCluster, Section: "okta", Label: "API token", Type: TypeSecret,
+		Help: "An admin's API token, in place of the app. It has all of that admin's rights, so the app is the better way. Only sent to your Okta organization.",
+		Env:  "SIGNALITH_OKTA_API_TOKEN", SentWith: []string{"okta.domain"},
+		sentTo: func(c *Config) string { return c.OktaLogsURL() }},
 }
 
 // Exclusion is a setting of Config that is not on the Settings page.
@@ -1164,6 +1183,91 @@ func (c *Config) M365TokenURL() string {
 
 // M365APIURL is the Management Activity API of the tenant's cloud.
 func (c *Config) M365APIURL() string { return c.m365Cloud()[1] }
+
+// OktaOn reports whether Okta's System Log is read: the domain, and the
+// app and its key or an API token, are set.
+func (c *Config) OktaOn() bool {
+	return c.OktaDomain() != "" && (c.Okta.ClientID != "" && c.Okta.PrivateKey != "" || c.Okta.APIToken != "")
+}
+
+// OktaDomain is the organization's Okta domain, in lower case, without
+// https:// or a slash that was typed with it.
+func (c *Config) OktaDomain() string { return oktaDomain(c.Okta.Domain) }
+
+func oktaDomain(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	s = strings.TrimPrefix(s, "https://")
+	return strings.TrimSuffix(s, "/")
+}
+
+// OktaTokenURL is where the app signs in.
+func (c *Config) OktaTokenURL() string { return "https://" + c.OktaDomain() + "/oauth2/v1/token" }
+
+// OktaLogsURL is the organization's System Log API.
+func (c *Config) OktaLogsURL() string { return "https://" + c.OktaDomain() + "/api/v1/logs" }
+
+// oktaDomainRe is a host name of two or more labels.
+var oktaDomainRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$`)
+
+// checkOktaDomain checks an Okta domain: a host name, with no port, path
+// or address.
+func checkOktaDomain(v any) error {
+	s, _ := v.(string)
+	d := oktaDomain(s)
+	if d == "" {
+		return nil
+	}
+	if len(d) > 253 || !oktaDomainRe.MatchString(d) || net.ParseIP(d) != nil || strings.Trim(d, "0123456789.") == "" {
+		return errors.New("the Okta domain is a host name such as example.okta.com, with no port or path")
+	}
+	return nil
+}
+
+// oktaIDRe is an Okta client ID or key ID.
+var oktaIDRe = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,128}$`)
+
+// checkOktaClientID checks an Okta app's client ID.
+func checkOktaClientID(v any) error {
+	if s, _ := v.(string); s != "" && !oktaIDRe.MatchString(s) {
+		return errors.New("the client ID is letters and digits, such as 0oa1b2c3d4e5f6g7h8i9")
+	}
+	return nil
+}
+
+// checkOktaKeyID checks the ID (kid) of an Okta app's key.
+func checkOktaKeyID(v any) error {
+	if s, _ := v.(string); s != "" && !oktaIDRe.MatchString(s) {
+		return errors.New("the key ID is letters, digits, dashes and underscores")
+	}
+	return nil
+}
+
+// CheckOktaPrivateKey checks that a value looks like an unencrypted
+// private key in PEM or JWK form. internal/okta reads the key itself.
+func CheckOktaPrivateKey(v any) error {
+	s, _ := v.(string)
+	s = strings.TrimSpace(s)
+	switch {
+	case s == "" || secrets.IsSealed(s):
+		return nil
+	case len(s) > 16<<10:
+		return errors.New("the private key is longer than any RSA or EC key Okta makes")
+	case strings.Contains(s, "ENCRYPTED"):
+		return errors.New("the private key is encrypted with a passphrase: export it without one")
+	case strings.Contains(s, "PUBLIC KEY") || strings.Contains(s, "CERTIFICATE"):
+		return errors.New("that is the public key or a certificate: enter the private key")
+	case strings.HasPrefix(s, "-----BEGIN ") && !strings.Contains(s, "-----END "):
+		return errors.New("the private key is cut short: enter all of it, from its BEGIN line to its END line " +
+			"(signalith secrets set reads a whole file from a pipe: < key.pem)")
+	case strings.HasPrefix(s, "-----BEGIN ") && strings.Contains(s, "PRIVATE KEY-----"):
+		return nil
+	case strings.HasPrefix(s, "{") && strings.Contains(s, `"kty"`) && strings.Contains(s, `"d"`):
+		return nil
+	case strings.HasPrefix(s, "{"):
+		return errors.New("that JWK has no private part (d): enter the private key Okta showed when it made the key")
+	}
+	return errors.New("the private key is PEM (-----BEGIN PRIVATE KEY-----) or a JWK ({\"kty\": ...})")
+}
 
 // DefaultNVDURL is the NVD's CVE API 2.0.
 const DefaultNVDURL = "https://services.nvd.nist.gov/rest/json/cves/2.0"
