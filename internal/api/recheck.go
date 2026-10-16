@@ -45,6 +45,12 @@ func (rt *router) selfSensitive(pattern string, h http.HandlerFunc) {
 	rt.add(route{Pattern: pattern, Role: users.Viewer, Anytime: true, Recheck: true}, h)
 }
 
+// viewerSensitive registers a route every signed-in user may use that
+// asks for the password or code again, like sensitive.
+func (rt *router) viewerSensitive(pattern string, h http.HandlerFunc) {
+	rt.add(route{Pattern: pattern, Role: users.Viewer, Recheck: true}, h)
+}
+
 func (s *Server) routeRecheck(api *router) {
 	api.self("POST /api/me/recheck", s.handleRecheck)
 }

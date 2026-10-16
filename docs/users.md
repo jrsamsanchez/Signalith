@@ -340,6 +340,7 @@ Some changes ask for your password again when you have not entered it in the las
   now;
 - switching certificate authority, and saving response actions, playbooks or
   notifications, or removing the detection content pack;
+- linking a Slack or Teams account to yourself, or making a code to link one;
 - saving a setting that affects sign-in, encryption or where data goes: **Sign out
   after**, **Require two-step sign-in**, single sign-on and the other `auth.*`
   settings, HTTPS and the certificate files (`server.tls*`), **Listen address**,
@@ -976,7 +977,10 @@ request, so a server that has not yet read that change reads it first (see
 `GET /api/compliance/export` (the [Compliance page](compliance.md) and its evidence reports,
 so an auditor can work with a Viewer account), `GET /api/cluster/features`
 (which features wait until every server runs a newer version; only admins see which servers
-they wait for), and the web UI.
+they wait for), `POST /api/chat/link/check`, `POST /api/chat/link`, `POST /api/chat/code`,
+`GET /api/chat/accounts`, `DELETE /api/chat/accounts/{id}` (linking your own Slack or Teams
+account for the [buttons in chat messages](notifications.md#buttons-in-slack-and-teams); the
+clicks still need the Analyst role), and the web UI.
 
 **Analyst:** `POST /api/ask`, `POST /api/findings`, `POST /api/findings/bulk`,
 `PATCH /api/findings/{id}`, `POST /api/cases`, `PATCH /api/cases/{id}`,
@@ -1044,7 +1048,8 @@ page; see [servers.md](servers.md#upgrading-servers-you-set-up-by-hand)), `GET /
 `GET /api/cluster/servers/{id}/check` (Add a server; see [multi-server.md](multi-server.md)), `GET /api/requests/{id}`
 (work asked of the server that runs the background jobs, such as a feed download or a retention
 run; see [servers.md](servers.md#shared-feeds-and-retention-policies)), every
-`/api/notify` route (the Notifications page; see [notifications.md](notifications.md)), every
+`/api/notify` route (the Notifications page; see [notifications.md](notifications.md)),
+`GET /api/chat/links` and `DELETE /api/chat/links/{id}` (every linked chat account), every
 `/api/retention` route (see [retention.md](retention.md)), `GET /api/audit` and
 `GET /api/audit/servers` (the [Audit page](audit.md)), every
 `/api/users`, `/api/auth/directory`, `/api/auth/oidc` and `/api/auth/scim` route below (the last
@@ -1058,7 +1063,8 @@ A route added without a role is admin-only, and a test fails until it gets one. 
 includes routes registered outside the role table, straight on the server's outer
 router: any `/api/` route there other than the public ones (sign-in, sign-out, agent
 ingest, the CA certificate, `GET /api/tls/ca.pem`, the two join routes, the three install
-downloads and the two single sign-on routes) is admin-only.
+downloads, the two single sign-on routes and the two routes Slack and Teams post button clicks
+to, which check the chat app's signature instead) is admin-only.
 
 A refused request:
 
