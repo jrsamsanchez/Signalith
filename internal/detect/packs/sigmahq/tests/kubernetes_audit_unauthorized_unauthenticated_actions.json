@@ -1,0 +1,4 @@
+{"rule": "0d933542-1f1f-420d-97d4-21b2c3c492d9", "cases": [
+  {"expect":true,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"responseStatus.code":"401"}},
+  {"expect":false,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{}}
+]}

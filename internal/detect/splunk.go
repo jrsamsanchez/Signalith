@@ -75,7 +75,8 @@ func SplunkFilter(r *splcheck.Rule) (query.Expr, error) {
 	if r.Node == splcheck.CloudTrailNode {
 		return and([]query.Expr{&query.Compare{Field: "sourcetype", Op: "=", Value: ingest.CloudTrailSourcetype}, e}), nil
 	}
-	if r.Node == splcheck.AzureNode || r.Node == splcheck.O365Node || r.Node == splcheck.OktaNode || splcheck.IsOktaTstatsNode(r.Node) {
+	if r.Node == splcheck.AzureNode || r.Node == splcheck.O365Node || r.Node == splcheck.OktaNode || splcheck.IsOktaTstatsNode(r.Node) ||
+		r.Node == splcheck.KubernetesNode {
 		// The where clause names the macro's sourcetype, or Okta's for a
 		// tstats search over Okta's events.
 		return e, nil
@@ -301,6 +302,8 @@ func splunkThrottle(node, dm string) []string {
 		return []string{"vendor_account", "user", "src", "Operation"}
 	case splcheck.OktaNode:
 		return []string{"user", "src", "eventType"}
+	case splcheck.KubernetesNode:
+		return []string{"user", "src", "signature"}
 	case splcheck.OktaAuthNode, splcheck.OktaChangeNode:
 		return []string{"user", "src", "signature"}
 	}
@@ -478,7 +481,7 @@ func splunkPost(d *Detection, q *query.Query, rule *splcheck.Rule) {
 // CloudTrail's, Entra ID's and Azure's, or Microsoft 365's.
 func cloudNode(node string) bool {
 	return node == splcheck.CloudTrailNode || node == splcheck.AzureNode || node == splcheck.O365Node || node == splcheck.OktaNode ||
-		splcheck.IsOktaTstatsNode(node)
+		splcheck.IsOktaTstatsNode(node) || node == splcheck.KubernetesNode
 }
 
 // formatDuration writes a duration as a detection schedule: 90s, 5m, 1h.

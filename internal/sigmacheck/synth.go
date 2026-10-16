@@ -221,7 +221,14 @@ func build(rng *rand.Rand, cs constraints) (map[string]string, bool) {
 			continue
 		}
 		if len(eq) > 0 {
-			out[f] = instantiateCase(eq[rng.Intn(len(eq))])
+			p := eq[rng.Intn(len(eq))]
+			v := instantiateCase(p)
+			if v == "" && strings.Trim(p, "*") == "" && p != "" {
+				// Only wildcards (hostPath: '*'): any value the field
+				// has, and it must have one.
+				v = "x"
+			}
+			out[f] = v
 			continue
 		}
 		sep := ""

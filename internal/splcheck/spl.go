@@ -293,7 +293,7 @@ func ParseWith(src []byte, macros map[string]*Macro, opt ParseOptions) (*Rule, e
 // the node, and each node's fields map to the Signalith fields they are
 // stored as. The code stays in the clause as signature_id.
 var (
-	rawRe = regexp.MustCompile("(?s)^`(powershell|sysmon|wineventlog_security|wineventlog_system|linux_auditd|cloudtrail|azure_monitor_aad|azure_monitor_activity|o365_management_activity|okta)`\\s+(.*)$")
+	rawRe = regexp.MustCompile("(?s)^`(powershell|sysmon|wineventlog_security|wineventlog_system|linux_auditd|cloudtrail|azure_monitor_aad|azure_monitor_activity|o365_management_activity|okta|kube_audit)`\\s+(.*)$")
 	// rawNodes are the nodes of each source by event code.
 	rawNodes = map[string]map[string]string{
 		"powershell": {"4104": "PowerShell"},
@@ -325,6 +325,8 @@ var (
 		o365Source: {},
 		// Okta System Log events: one node (OktaNode).
 		oktaSource: {},
+		// Kubernetes audit events: one node (KubernetesNode).
+		kubeSource: {},
 	}
 	// RawFields are the event fields a raw search may name on each node,
 	// with the Signalith field each is stored as.
@@ -859,8 +861,12 @@ func parseRawStages(r *Rule, source, terms string, later []string, macros map[st
 		return nil, err
 	}
 	if cloud {
-		// The records of the macro's sourcetype.
-		where = &And{Kids: []Expr{&Cmp{Field: "sourcetype", Values: []string{cs.sourcetype}}, where}}
+		// The records of the macro's sourcetype, and source.
+		scope := []Expr{&Cmp{Field: "sourcetype", Values: []string{cs.sourcetype}}}
+		if cs.source != "" {
+			scope = append(scope, &Cmp{Field: "source", Values: []string{cs.source}})
+		}
+		where = &And{Kids: append(scope, where)}
 	}
 	unescapeXML(where)
 	r.Where = where
@@ -904,7 +910,8 @@ func fieldsOf(e Expr, node string, xml bool) error {
 	case *Not:
 		return fieldsOf(x.Kid, node, xml)
 	case *Cmp:
-		if x.Field == eventCode || node == AuditdNode && strings.HasPrefix(x.Field, "auditd_") || node == CloudTrailNode || node == AzureNode || node == O365Node || node == OktaNode {
+		if x.Field == eventCode || node == AuditdNode && strings.HasPrefix(x.Field, "auditd_") || node == CloudTrailNode || node == AzureNode || node == O365Node || node == OktaNode ||
+			node == KubernetesNode {
 			return nil
 		}
 		for _, f := range RawFields[node] {
@@ -980,16 +987,21 @@ func unescapeXML(e Expr) {
 }
 
 // pipes splits a search into its stages at the | outside quotes and macro
-// backticks. The leading | of a generating command is dropped.
+// backticks. The leading | of a generating command is dropped. Outside
+// quotes, \" is a quote inside a word (*\"privileged\":true*), which
+// starts no quoted text.
 func pipes(q string) []string {
 	var out []string
 	var cur strings.Builder
 	quoted, tick, esc := false, false, false
-	for _, ch := range q {
+	rs := []rune(q)
+	for i, ch := range rs {
 		switch {
 		case esc:
 			esc = false
 		case ch == '\\' && quoted:
+			esc = true
+		case ch == '\\' && !tick && i+1 < len(rs) && (rs[i+1] == '"' || rs[i+1] == '\\'):
 			esc = true
 		case ch == '"' && !tick:
 			quoted = !quoted

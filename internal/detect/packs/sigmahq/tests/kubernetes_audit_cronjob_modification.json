@@ -1,0 +1,6 @@
+{"rule": "0c9b3bda-41a6-4442-9345-356ae86343dc", "cases": [
+  {"expect":true,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"objectRef.apiGroup":"batch","objectRef.resource":"cronjobs","verb":"patch"}},
+  {"expect":false,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"objectRef.resource":"cronjobs","verb":"patch"}},
+  {"expect":false,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"objectRef.apiGroup":"batch","verb":"patch"}},
+  {"expect":false,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"objectRef.apiGroup":"batch","objectRef.resource":"cronjobs"}}
+]}
