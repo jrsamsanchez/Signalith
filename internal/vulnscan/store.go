@@ -202,6 +202,9 @@ type Store struct {
 	Docs  Docs
 	Index string
 	Now   func() time.Time
+	// Keys encrypts the secrets of the scan logins; nil refuses to save
+	// any.
+	Keys Keys
 
 	mu       sync.Mutex
 	settings *cachedSettings

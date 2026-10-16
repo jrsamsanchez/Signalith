@@ -186,6 +186,8 @@ func sharedResealers(d sharedDocs, client func() (*store.Client, string)) []shar
 		d.tls.tls.Resealer(),
 		// OpenSearch's certificate authority key.
 		d.osca.Resealer(),
+		// The scan logins OpenVAS signs in with (vulnkeys.go).
+		vulnLoginsResealer(d.docs, client),
 		// Append a new shared feature's resealer here.
 	}
 }

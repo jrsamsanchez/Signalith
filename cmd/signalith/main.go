@@ -1384,6 +1384,8 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	// their scanner; the server that runs the background jobs runs the
 	// rest.
 	vstore := vulnscan.NewStore(cl, c.OpenSearch.IndexPrefix)
+	// The SSH and Windows logins OpenVAS signs in with, encrypted.
+	vstore.Keys = newLoginKeys(c, r.clusterKey, clusteredRuntime(r.shared))
 	nvd := vulnscan.NewNVD(c.NVDURL(), c.Vulns.NVDAPIKey)
 	sensorHosts := &sensorDiscovery{cl: cl, prefix: c.OpenSearch.IndexPrefix, log: log}
 	in.jobs.Go(func() { feedFoundAssets(ctx, estore, vstore, sensorHosts, lists, log) })
@@ -1507,7 +1509,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	var openvas *vulnscan.OpenVAS
 	if c.Vulns.OpenVASAddress != "" {
 		openvas = &vulnscan.OpenVAS{Address: c.Vulns.OpenVASAddress, Username: c.Vulns.OpenVASUsername,
-			Password: c.Vulns.OpenVASPassword, CAFile: c.Vulns.OpenVASCAFile}
+			Password: c.Vulns.OpenVASPassword, CAFile: c.Vulns.OpenVASCAFile, Log: log}
 	}
 	// CISA's KEV catalog and FIRST's EPSS scores rank what scans find.
 	exploits := vulnscan.NewExploitFeeds(vstore, c.Vulns.KEVURL, c.Vulns.EPSSURL)
