@@ -350,11 +350,17 @@ func QueryReference() string {
   rex [field=f] [max_match=N] "<RE2 regex with named groups (?<name>...)>"   extracts fields (default field _raw)
   dedup [N] f1, f2 [keepempty=true] [consecutive=true]   keeps the first N rows (default 1) per value; events come newest first
   transaction f1, f2 [maxspan=10m] [maxpause=1m] [maxevents=N] [startswith="text"|(search)] [endswith="text"|(search)]   groups events sharing the fields into one row each, with duration (seconds) and eventcount
+  streamstats [current=f] [window=N] <aggs> [by f1, f2]   running totals in result order; aggs: ` + strings.Join(query.StreamFuncs, ", ") + `
+  bin span=1h _time [AS name]   rounds times down to the span (s m h d w); span=100 on a number gives ranges like 0-100; also bucket
+  regex field="<RE2 regex>" | regex field!="<regex>" | regex "<regex>"   keeps rows that match (or with != do not); no field means _raw
+  | makeresults [count=N]   starts a search with N rows holding only _time, for trying eval
+  append [search <query>]   adds a subsearch's rows after the results
+  appendpipe [<commands>]   runs commands over the results so far and adds their rows after them, e.g. appendpipe [stats sum(count) as count | eval user="TOTAL"]
   join [type=left] [max=N] f1, f2 [search <query>]   adds the fields of a subsearch's rows that share f1, f2 (inner by default; the first match unless max=0 or max=N)
   fillnull [value=X] [fields]   sets missing values (default 0)
   sort [-]field, ...    ("-" is descending)
   head N
-  table f1, f2
+  table f1, f2   (fields - f1, f2 removes fields instead)
   rename f as g
   lookup <table> <col> [AS field] [OUTPUT|OUTPUTNEW col [AS name], ...]   adds columns from an uploaded lookup table (Settings > Lookups) where col matches; only use table names the user gave
   | inputlookup [max=N] <table>   starts a search with the rows of a lookup table instead of events

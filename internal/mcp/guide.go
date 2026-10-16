@@ -26,6 +26,13 @@ Commands:
   | inputlookup [max=N] <table>  start a search with a lookup table's rows instead of events
   transaction f1, f2 [maxspan=10m] [maxpause=1m] [startswith="text"] [endswith=(search)]  group events into one row each, with duration and eventcount
   join [type=left] f1 [search <query>]  add the fields of a subsearch's rows that share f1
+  append [search <query>]  add a subsearch's rows after the results
+  appendpipe [stats sum(count) as count]  add summary rows made from the results so far
+  streamstats [window=N] count, sum(bytes) by src  running totals in result order
+  bin span=1h _time      round times (or numbers, span=100) into buckets
+  regex field="<regex>"  keep rows that match; field!= keeps those that do not
+  fields - f1, f2        remove fields
+  | makeresults [count=N]  start with N rows holding only _time
   enrich [fields]        add asset and identity context (priority, owner, watchlist)
   threatmatch [fields]   keep events whose fields match threat intel; must come right after the search
   intel [fields]         add threat intel context to any result

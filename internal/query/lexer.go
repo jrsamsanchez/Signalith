@@ -163,9 +163,10 @@ func lex(src string) ([]token, error) {
 				end := rawEnd(src, i)
 				toks = append(toks, token{tokRaw, src[i:end], i})
 				i = end
-			} else if len(toks) >= 2 && toks[len(toks)-2].kind == tokPipe && strings.EqualFold(w, "join") {
-				// A join's subsearch holds pipes of its own: the
-				// command runs to the ] that closes its [.
+			} else if len(toks) >= 2 && toks[len(toks)-2].kind == tokPipe &&
+				(strings.EqualFold(w, "join") || strings.EqualFold(w, "append") || strings.EqualFold(w, "appendpipe")) {
+				// A subsearch holds pipes of its own: the command runs
+				// to the ] that closes its [.
 				end := subsearchEnd(src, i)
 				toks = append(toks, token{tokRaw, src[i:end], i})
 				i = end

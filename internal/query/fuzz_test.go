@@ -38,6 +38,10 @@ var fuzzSeeds = []string{
 	`* | transaction host, "a b" maxspan=5m maxpause=1h maxevents=3 startswith="x y" endswith=(NOT a=1 OR b IN (2, 3))`,
 	`* | join type=left max=0 user, "a b" [search datamodel=Change "x [y]" | stats count by user | join user [search | inputlookup t]] | head 3`,
 	`| inputlookup max=20 owners | where isnull(owner) | lookup owners user OUTPUT team`,
+	`* | streamstats current=f window=5 count, avg(bytes) as a, dc(user) by src | bin span=1h _time | bucket bytes span=0.5 AS "as"`,
+	`* | regex process!="(?i)-enc\s" | regex "x]" | regex "a b"=y | fields - _raw, tmp_* | fields + a`,
+	`| makeresults count=3 | append [search datamodel=Change | stats count by user] | appendpipe [| stats count by user | eval user="TOTAL" | appendpipe [head 1]]`,
+	`* | appendpipe [where x="]"]`, `* | append [inputlookup t]`, `* | appendpipe []`, `* | bin _time`, `* | streamstats median(x)`,
 }
 
 // FuzzParse checks that Parse never panics, that its errors carry a

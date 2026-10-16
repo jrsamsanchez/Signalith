@@ -11,10 +11,10 @@ import (
 // has.
 const maxJoinRows = maxEventsLimit
 
-// subsearch returns a join's subsearch, which searches the outer query's
-// time range unless it names its own.
-func subsearch(j *query.Join, outer *query.Query) *query.Query {
-	sub := *j.Sub
+// subsearch returns a join's or append's subsearch, which searches the
+// outer query's time range unless it names its own.
+func subsearch(q *query.Query, outer *query.Query) *query.Query {
+	sub := *q
 	if sub.Earliest == "" && sub.Latest == "" {
 		sub.Earliest, sub.Latest = outer.Earliest, outer.Latest
 	}
@@ -25,7 +25,7 @@ func subsearch(j *query.Join, outer *query.Query) *query.Query {
 // rows that share the values of the join fields; the subsearch's values
 // win where both have a field. type=left keeps rows with no match.
 func (e *Engine) join(ctx context.Context, res *Result, c *query.Join, outer *query.Query) error {
-	sq := subsearch(c, outer)
+	sq := subsearch(c.Sub, outer)
 	p, err := e.compile(sq)
 	if err != nil {
 		return err

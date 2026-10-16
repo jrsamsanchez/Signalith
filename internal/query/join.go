@@ -27,39 +27,73 @@ const MaxSubsearches = 10
 func countSubsearches(q *Query) int {
 	n := 0
 	for _, c := range q.Commands {
-		if j, ok := c.(*Join); ok {
-			n += 1 + countSubsearches(j.Sub)
-		}
+		n += commandSubsearches(c)
 	}
 	return n
+}
+
+func commandSubsearches(c Command) int {
+	switch c := c.(type) {
+	case *Join:
+		return 1 + countSubsearches(c.Sub)
+	case *Append:
+		return 1 + countSubsearches(c.Sub)
+	case *AppendPipe:
+		n := 0
+		for _, c := range c.Commands {
+			n += commandSubsearches(c)
+		}
+		return n
+	}
+	return 0
 }
 
 // maxSubsearchDepth bounds subsearches inside subsearches.
 const maxSubsearchDepth = 3
 
 func (p *parser) parseJoin(cmd token) (Command, error) {
-	raw := p.next()
-	if raw.kind != tokRaw {
-		return nil, errorf(cmd.pos, "join needs fields and a subsearch, for example: join user [search datamodel=Change | stats count by user]")
-	}
-	body := strings.TrimRightFunc(raw.text, isSpace)
-	open := subsearchStart(body)
-	if open < 0 || body[len(body)-1] != ']' || subsearchEnd(body[open:], 0) != len(body)-open {
-		return nil, errorf(cmd.pos, "join needs a subsearch in [ ], for example: join user [search datamodel=Change | stats count by user]")
-	}
-	if p.depth+1 > maxSubsearchDepth {
-		return nil, errorf(raw.pos+open, "subsearches can be at most %d deep", maxSubsearchDepth)
+	const example = "join user [search datamodel=Change | stats count by user]"
+	opts, optsPos, inner, base, err := p.bracketed(cmd, example)
+	if err != nil {
+		return nil, err
 	}
 	j := &Join{Max: 1}
-	if err := j.parseOptions(raw.text[:open], raw.pos); err != nil {
+	if err := j.parseOptions(opts, optsPos); err != nil {
 		return nil, err
 	}
 	if len(j.Fields) == 0 {
 		return nil, errorf(cmd.pos, "join needs the fields to match on, for example: join user [search ...]")
 	}
-	inner := body[open+1 : len(body)-1]
+	if j.Sub, err = p.parseSubsearch(inner, base); err != nil {
+		return nil, err
+	}
+	return j, p.endCommand()
+}
+
+// bracketed reads the text of a command that ends in [ ]: the options
+// before the [, and the text inside it with the position it starts at.
+func (p *parser) bracketed(cmd token, example string) (opts string, optsPos int, inner string, base int, err error) {
+	name := strings.ToLower(cmd.text)
+	raw := p.next()
+	if raw.kind != tokRaw {
+		return "", 0, "", 0, errorf(cmd.pos, "%s needs a subsearch in [ ], for example: %s", name, example)
+	}
+	body := strings.TrimRightFunc(raw.text, isSpace)
+	open := subsearchStart(body)
+	if open < 0 || body[len(body)-1] != ']' || subsearchEnd(body[open:], 0) != len(body)-open {
+		return "", 0, "", 0, errorf(cmd.pos, "%s needs a subsearch in [ ], for example: %s", name, example)
+	}
+	if p.depth+1 > maxSubsearchDepth {
+		return "", 0, "", 0, errorf(raw.pos+open, "subsearches can be at most %d deep", maxSubsearchDepth)
+	}
+	return raw.text[:open], raw.pos, body[open+1 : len(body)-1], raw.pos + open + 1, nil
+}
+
+// parseSubsearch parses the text inside a subsearch's [ ], which starts
+// at base.
+func (p *parser) parseSubsearch(inner string, base int) (*Query, error) {
 	sub := strings.TrimLeftFunc(inner, isSpace)
-	base := raw.pos + open + 1 + len(inner) - len(sub)
+	base += len(inner) - len(sub)
 	// A subsearch starts with the word search, as in Splunk; it may be
 	// left out.
 	if len(sub) >= 6 && strings.EqualFold(sub[:6], "search") && (len(sub) == 6 || isSpace(rune(sub[6]))) {
@@ -71,10 +105,9 @@ func (p *parser) parseJoin(cmd token) (Command, error) {
 		return nil, err
 	}
 	if printed := q.String(); !bracketsBalance(printed) {
-		return nil, errorf(raw.pos+open, "quote values in a subsearch that hold [ or ]")
+		return nil, errorf(base, "quote values in a subsearch that hold [ or ]")
 	}
-	j.Sub = q
-	return j, p.endCommand()
+	return q, nil
 }
 
 func isSpace(r rune) bool {

@@ -25,6 +25,17 @@ func Explain(q *query.Query) []string {
 			}
 			return steps
 		}
+		if c, ok := q.Commands[0].(*query.MakeResults); ok {
+			first := "Make one row holding only the current time"
+			if c.Count > 1 {
+				first = fmt.Sprintf("Make %d rows, each holding only the current time", c.Count)
+			}
+			steps = append(steps, first+".")
+			for _, c := range q.Commands[1:] {
+				steps = append(steps, describeCommand(c))
+			}
+			return steps
+		}
 	}
 	src := "all events"
 	if q.Datamodel != "" {
@@ -329,6 +340,42 @@ func describeCommand(c query.Command) string {
 		return fmt.Sprintf("Keep the first %d rows.", c.N)
 	case *query.Table:
 		return "Show only the columns " + strings.Join(c.Fields, ", ") + "."
+	case *query.FieldsRemove:
+		return "Remove the fields " + strings.Join(c.Fields, ", ") + "."
+	case *query.StreamStats:
+		s := "Add a running " + describeAggs(c.Aggs)
+		if len(c.By) > 0 {
+			s += " for each " + strings.Join(c.By, " and ")
+		}
+		s += " to every row, over the rows before it"
+		if c.Current {
+			s += " and the row itself"
+		}
+		if c.Window > 0 {
+			s += fmt.Sprintf(", looking back at most %d rows", c.Window)
+		}
+		return s + "."
+	case *query.Bin:
+		s := "Round " + c.Field + " down into buckets of " + c.Span
+		if c.As != "" {
+			s += ", writing the bucket to " + c.As
+		}
+		return s + "."
+	case *query.Regex:
+		if c.Negate {
+			return "Keep only rows where " + c.Field + " does not match the regular expression " + c.Pattern + "."
+		}
+		return "Keep only rows where " + c.Field + " matches the regular expression " + c.Pattern + "."
+	case *query.MakeResults:
+		return fmt.Sprintf("Make %d rows holding only the current time.", c.Count)
+	case *query.Append:
+		return "Add the rows of a subsearch after these. The subsearch: " + strings.Join(Explain(c.Sub), " ")
+	case *query.AppendPipe:
+		parts := make([]string, len(c.Commands))
+		for i, cmd := range c.Commands {
+			parts[i] = describeCommand(cmd)
+		}
+		return "Run these steps over a copy of the rows and add the rows they give after them: " + strings.Join(parts, " ")
 	case *query.Rename:
 		parts := make([]string, len(c.Pairs))
 		for i, p := range c.Pairs {
