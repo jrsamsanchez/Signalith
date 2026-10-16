@@ -144,7 +144,6 @@ func (e *Engine) inputLookup(c *query.InputLookup) (*Result, error) {
 	n := min(len(t.Rows), limit)
 	res := &Result{Kind: "table", Matched: int64(len(t.Rows)), Truncated: n < len(t.Rows) && (c.Max == 0 || c.Max > limit)}
 	res.Columns = append([]string{}, t.Columns...)
-	res.Rows = make([]Row, 0, n)
 	for _, r := range t.Rows[:n] {
 		row := make(Row, len(r))
 		for i, v := range r {

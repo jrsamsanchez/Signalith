@@ -78,7 +78,7 @@ func (e *Engine) join(ctx context.Context, res *Result, c *query.Join, outer *qu
 			}
 			row := r
 			if i < len(matches)-1 {
-				row = make(Row, len(r)+len(m))
+				row = make(Row, len(r))
 				for f, v := range r {
 					row[f] = v
 				}
