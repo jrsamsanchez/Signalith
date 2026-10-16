@@ -19,8 +19,8 @@ type Session struct {
 	User     string
 	Created  time.Time
 	LastSeen time.Time
-	// Remember keeps the session through idle periods up to MaxAge, for a
-	// "keep me signed in" sign-in.
+	// Remember keeps the session through idle periods, for a "keep me
+	// signed in" sign-in. It still ends MaxAge after sign-in.
 	Remember bool
 	// Version identifies the password the user signed in with ("" when
 	// there is none to follow), so a session can end when the password
@@ -67,10 +67,15 @@ type Sessions struct {
 	forward func(Held)
 }
 
-// NewSessions returns a store with the given idle timeout and a 7 day
+// DefaultMaxAge is how long a session lasts after sign-in, remembered or
+// not, until SetMaxAge says otherwise: NIST SP 800-63B asks for a new
+// sign-in at least every 24 hours at AAL2.
+const DefaultMaxAge = 24 * time.Hour
+
+// NewSessions returns a store with the given idle timeout and the default
 // maximum age.
 func NewSessions(idle time.Duration) *Sessions {
-	return &Sessions{Idle: idle, MaxAge: 7 * 24 * time.Hour, Limit: 10000, Now: time.Now, byID: map[[32]byte]*Session{}}
+	return &Sessions{Idle: idle, MaxAge: DefaultMaxAge, Limit: 10000, Now: time.Now, byID: map[[32]byte]*Session{}}
 }
 
 func hash(token string) [32]byte { return sha256.Sum256([]byte(token)) }
@@ -146,6 +151,21 @@ func (s *Sessions) SetIdle(idle time.Duration) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.Idle = idle
+}
+
+// SetMaxAge changes how long a session lasts after sign-in, remembered or
+// not, for every session, the current ones included.
+func (s *Sessions) SetMaxAge(maxAge time.Duration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.MaxAge = maxAge
+}
+
+// MaxAgeNow returns MaxAge, safe to call while SetMaxAge may run.
+func (s *Sessions) MaxAgeNow() time.Duration {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.MaxAge
 }
 
 // SetVersion records which password a session's user has now (see

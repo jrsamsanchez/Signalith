@@ -3,6 +3,7 @@ package dashboards
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -236,5 +237,53 @@ func TestStoreBuiltinIDs(t *testing.T) {
 	}
 	if _, err := s.Get("malware"); err == nil {
 		t.Error("Get(malware) loaded the custom file")
+	}
+}
+
+// TestBuiltinDrilldowns: every number on the built-in dashboards and the
+// posture report opens a search that parses, filtered by every column it
+// can name.
+func TestBuiltinDrilldowns(t *testing.T) {
+	check := func(name, src string) {
+		q, err := query.Parse(src)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		d := q.Drilldown()
+		var terms []string
+		for _, f := range d.Fields {
+			terms = append(terms, f+`="a b"`, "NOT "+f+"=*")
+		}
+		if d.Series != "" {
+			terms = append(terms, d.Series+"=Malware") // a data model name, for datamodel=
+		}
+		search := d.Search
+		if len(terms) > 0 && !d.Where {
+			search = strings.TrimSpace(search + " " + strings.Join(terms, " "))
+		}
+		if search == "" {
+			search = "*"
+		}
+		ev := search + d.Pipe
+		if len(terms) > 0 && d.Where {
+			ev += "\n| where " + strings.Join(terms, " AND ")
+		}
+		if _, err := query.Parse(ev); err != nil {
+			t.Errorf("%s: events query %q: %v", name, ev, err)
+		}
+		if strings.Contains(src, " by ") && len(d.Fields) == 0 && d.Series == "" {
+			t.Errorf("%s: %q groups by a field but drills by none", name, src)
+		}
+	}
+	for _, b := range Builtin() {
+		for _, p := range b.Panels {
+			check(b.ID+"/"+p.Title, p.Query)
+		}
+	}
+	for i, src := range []string{qEvents, qByDatamodel, qBySourcetype, qRiskObjects, qRiskByDetection, qRiskByTactic, qSources} {
+		check("posture/"+strconv.Itoa(i), src)
+	}
+	if len(drills(map[string]string{"x": qByDatamodel})["x"].Series) == 0 {
+		t.Error("posture drill has no series")
 	}
 }

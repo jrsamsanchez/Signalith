@@ -111,6 +111,7 @@ func (ua *sharedUsers) start(ctx context.Context, rt *shared.Runtime, node *clus
 		},
 		Confirmed: func() time.Time { return rt.Hub().Confirmed() }, Log: log}
 	sess.SetIdle(c.SessionIdle())
+	sess.SetMaxAge(c.SessionMaxAge())
 	sess.Listen()
 	// The limiter reports its locks through the runner (reportLock), which
 	// it was given once for the process.

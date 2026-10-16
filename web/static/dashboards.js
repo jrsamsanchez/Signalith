@@ -139,6 +139,44 @@
     class: 'btn btn--ghost btn--icon btn--sm', type: 'button', title: label || 'Open in Search', 'aria-label': label || 'Open in Search',
     onclick: () => openSearch(query, earliest),
   }, icon('search'));
+  // ---------- drilldown: a number opens Search on the events behind it ----------
+  // A drill (query.Drill on the server) is the query's search, the commands
+  // before its stats or timechart, and which result columns name event
+  // fields. drillQuery adds [field, value] filters to it; a value missing
+  // from the row matches the events without the field.
+  function drillQuery(dr, pairs = []) {
+    const terms = pairs.filter(([, v]) => !Array.isArray(v) && (v == null || typeof v !== 'object'))
+      .map(([f, v]) => (v == null || v === '' ? `NOT ${f}=*` : `${f}=${quoteValue(v)}`));
+    let search = dr.search || '';
+    if (terms.length && !dr.where) search = [search, ...terms].filter(Boolean).join(' ');
+    let q = (search || '*') + (dr.pipe || '');
+    if (terms.length && dr.where) q += '\n| where ' + terms.join(' AND ');
+    return q;
+  }
+  // rowPairs: the field filters for one stats or top row.
+  const rowPairs = (dr, res, row) => Object.entries(dr.fields || {}).filter(([c]) => (res.columns || []).includes(c)).map(([c, f]) => [f, row[c]]);
+  // bucketTimes: the start and end of timechart row i, or null when the
+  // rows do not say how long a bucket is.
+  function bucketTimes(rows, i) {
+    const t = (k) => new Date(rows[k]._time).getTime();
+    if (i == null || !rows[i] || rows.length < 2) return null;
+    const start = t(i);
+    const step = i + 1 < rows.length ? t(i + 1) - start : start - t(i - 1);
+    if (!(step > 0)) return null;
+    return [new Date(start).toISOString(), new Date(start + step - 1).toISOString()];
+  }
+  // openDrill opens Search on the events over a bucket's time, or else the
+  // panel's.
+  function openDrill(dr, pairs, bucket, earliest) {
+    const [from, to] = bucket || [earliest, dr.latest || undefined];
+    openSearch(drillQuery(dr, pairs), from, to);
+  }
+  // timechartPick opens the events behind one column, one segment of it
+  // (series set), or one series over the whole time range (i null).
+  const timechartPick = (dr, rows, earliest) => (i, series) =>
+    openDrill(dr, series != null && dr.series ? [[dr.series, series]] : [], bucketTimes(rows, i), earliest);
+  const DRILL_HINT = 'Click to see the events';
+
   const smallButton = (text, iconName, onclick) => el('button', { class: 'btn btn--secondary btn--sm', type: 'button', onclick }, iconName ? icon(iconName) : null, text);
   // retry reloads what failed: the dashboard's definition, or its data.
   const retry = () => smallButton('Try again', 'refresh-cw', () => (dash.current !== 'posture' && !dash.def ? showDashboard(dash.current) : reloadDashboard({ busy: true })));
@@ -202,16 +240,19 @@
     const names = extra.length ? [...series, 'Other'] : series;
     const values = rows.map((r) => names.map((nm, si) => (si === series.length ? extra.reduce((a, c) => a + num(r[c]), 0) : num(r[nm]))));
     return {
-      rows, names, values,
+      rows, names, values, other: extra.length > 0,
       cls: (si) => (opts.classFor ? opts.classFor(names[si]) : 's-' + (si + 1)),
       label: (si) => (opts.nameFor ? opts.nameFor(names[si]) : names[si]),
       times: rows.map((r) => new Date(r._time)),
     };
   }
 
-  function legendEl(d, extra) {
+  // legendEl lists the series; with onPick each one opens its events.
+  function legendEl(d, extra, onPick) {
     return el('div', { class: 'legend' + (extra ? ' ' + extra : '') },
-      ...d.names.map((_, si) => el('span', { class: d.cls(si) }, el('i'), d.label(si))));
+      ...d.names.map((nm, si) => (onPick && !(d.other && si === d.names.length - 1)
+        ? el('button', { class: 'db-legend-item ' + d.cls(si), type: 'button', title: `See the ${d.label(si)} events`, onclick: () => onPick(null, nm) }, el('i'), d.label(si))
+        : el('span', { class: d.cls(si) }, el('i'), d.label(si)))));
   }
 
   // Times on the x axis: hours and minutes within two days, else dates.
@@ -249,10 +290,11 @@
     return out;
   }
 
-  function fillTip(tip, title, totalText, d, i) {
+  function fillTip(tip, title, totalText, d, i, hint) {
     put(tip,
       el('div', { class: 'tip__title' }, title, totalText ? el('span', {}, totalText) : null),
-      ...d.names.map((_, si) => el('div', { class: 'tip__row ' + d.cls(si) }, el('i'), el('span', { class: 'db-tip-name' }, d.label(si)), el('b', {}, fmtNum(d.values[i][si])))));
+      ...d.names.map((_, si) => el('div', { class: 'tip__row ' + d.cls(si) }, el('i'), el('span', { class: 'db-tip-name' }, d.label(si)), el('b', {}, fmtNum(d.values[i][si])))),
+      hint ? el('div', { class: 'tip__hint' }, hint) : null);
     tip.hidden = false;
   }
   // placeTip puts the tooltip beside x (px within its box), flipping left
@@ -266,7 +308,9 @@
 
   // columnChart draws stacked columns, one per time bucket, with a y axis,
   // a few time labels and one tooltip. opts: series, classFor, nameFor,
-  // unit [one, many], now (the last bucket ends now), labels (count), label.
+  // unit [one, many], now (the last bucket ends now), labels (count), label,
+  // onPick(i, series) to open the events behind a column (series null for
+  // the whole column, i null for a series over the whole range).
   function columnChart(res, opts = {}) {
     const d = seriesData(res, opts);
     const n = d.rows.length;
@@ -284,7 +328,7 @@
 
     const cols = el('div', { class: 'cols', role: 'img', 'aria-label': summary, style: `--cmax:${ymax}` },
       ...d.values.map((vs, i) => el('div', { class: 'col', 'data-i': i },
-        ...vs.map((v, si) => (v > 0 ? el('i', { class: d.cls(si), style: `--v:${v}` }) : null)).filter(Boolean))));
+        ...vs.map((v, si) => (v > 0 ? el('i', { class: d.cls(si), 'data-si': si, style: `--v:${v}` }) : null)).filter(Boolean))));
     const tip = el('div', { class: 'tip', role: 'tooltip', hidden: '' });
     const area = el('div', { class: 'chart__area' }, el('div', { class: 'chart__grid' }), cols, tip);
     let hover = null;
@@ -295,7 +339,7 @@
       hover = c;
       c.classList.add('is-hover');
       const i = Number(c.dataset.i);
-      fillTip(tip, tt.tip(i), totalText(totals[i]), d, i);
+      fillTip(tip, tt.tip(i), totalText(totals[i]), d, i, opts.onPick ? DRILL_HINT : '');
       const colW = area.clientWidth / n;
       placeTip(tip, (i + 0.5) * colW, colW / 2 + 6, area.clientWidth);
     });
@@ -304,6 +348,16 @@
       if (hover) hover.classList.remove('is-hover');
       hover = null;
     });
+    if (opts.onPick) {
+      cols.classList.add('is-drill');
+      cols.addEventListener('click', (ev) => {
+        const c = ev.target.closest('.col');
+        if (!c) return;
+        const seg = ev.target.closest('i[data-si]');
+        const si = seg ? Number(seg.dataset.si) : -1;
+        opts.onPick(Number(c.dataset.i), si < 0 || (d.other && si === d.names.length - 1) ? null : d.names[si]);
+      });
+    }
     const x = el('div', { class: 'chart__x db-axis', 'aria-hidden': 'true' });
     keepWidth(x, (W) => put(x, ...labelIndexes(n, opts.labels || 7, W).map((i) => el('span', { style: `left:${((i + 0.5) / n * 100).toFixed(2)}%` }, tt.axis(i)))));
     const multi = d.names.length > 1;
@@ -312,8 +366,8 @@
         el('div', { class: 'chart__y', 'aria-hidden': 'true' }, ...yl.map((t, k) => el('span', { style: `bottom:${k * 25}%` }, t))),
         area),
       x,
-      multi ? legendEl(d, opts.legendInHead ? 'show-sm db-legend-below' : 'db-legend-below') : null);
-    return { node, legend: multi && opts.legendInHead ? legendEl(d, 'hide-sm') : null, bucket: tt.bucket, totals };
+      multi ? legendEl(d, opts.legendInHead ? 'show-sm db-legend-below' : 'db-legend-below', opts.pickSeries && opts.onPick) : null);
+    return { node, legend: multi && opts.legendInHead ? legendEl(d, 'hide-sm', opts.pickSeries && opts.onPick) : null, bucket: tt.bucket, totals };
   }
 
   // lineChart draws one line per series, for panels shown as a line chart.
@@ -355,11 +409,15 @@
       });
       const guide = svg(s, 'line', { class: 'guide', y1: T, y2: T + ph, visibility: 'hidden' });
       const dots = svg(s, 'g', { visibility: 'hidden' });
-      const hit = svg(s, 'rect', { x: L, y: T, width: pw, height: ph, fill: 'transparent' });
+      const hit = svg(s, 'rect', { x: L, y: T, width: pw, height: ph, fill: 'transparent', class: opts.onPick ? 'db-hit' : '' });
       let last = -1;
-      hit.addEventListener('mousemove', (ev) => {
+      const at = (ev) => {
         const r = s.getBoundingClientRect();
-        const i = n === 1 ? 0 : Math.max(0, Math.min(n - 1, Math.round((ev.clientX - r.left - L) / (pw / (n - 1)))));
+        return n === 1 ? 0 : Math.max(0, Math.min(n - 1, Math.round((ev.clientX - r.left - L) / (pw / (n - 1)))));
+      };
+      if (opts.onPick) hit.addEventListener('click', (ev) => opts.onPick(at(ev), d.names.length === 1 && !d.other ? d.names[0] : null));
+      hit.addEventListener('mousemove', (ev) => {
+        const i = at(ev);
         if (i === last) return;
         last = i;
         guide.setAttribute('x1', xAt(i));
@@ -368,7 +426,7 @@
         dots.replaceChildren();
         d.names.forEach((_, si) => svg(dots, 'circle', { class: 'pt ' + d.cls(si), cx: xAt(i), cy: yAt(d.values[i][si]), r: 3.5 }));
         dots.setAttribute('visibility', 'visible');
-        fillTip(tip, tt.tip(i), d.names.length > 1 ? fmtCompact(d.values[i].reduce((a, v) => a + v, 0)) : '', d, i);
+        fillTip(tip, tt.tip(i), d.names.length > 1 ? fmtCompact(d.values[i].reduce((a, v) => a + v, 0)) : '', d, i, opts.onPick ? DRILL_HINT : '');
         placeTip(tip, xAt(i), 12, W);
       });
       hit.addEventListener('mouseleave', () => {
@@ -381,8 +439,8 @@
     });
     const multi = d.names.length > 1;
     return {
-      node: el('div', { class: 'chart db-chart' }, plot, multi ? legendEl(d, opts.legendInHead ? 'show-sm db-legend-below' : 'db-legend-below') : null),
-      legend: multi && opts.legendInHead ? legendEl(d, 'hide-sm') : null,
+      node: el('div', { class: 'chart db-chart' }, plot, multi ? legendEl(d, opts.legendInHead ? 'show-sm db-legend-below' : 'db-legend-below', opts.pickSeries && opts.onPick) : null),
+      legend: multi && opts.legendInHead ? legendEl(d, 'hide-sm', opts.pickSeries && opts.onPick) : null,
     };
   }
 
@@ -664,8 +722,13 @@
   }
 
   function kpiTile(ind, rep, spark) {
-    const link = ind.id === 'open_findings' || ind.id === 'new_findings';
-    const tile = el(link ? 'a' : 'div', attrs({ class: 'card kpi', title: ind.help || '' }, link ? { href: '#findings', 'data-page': 'findings' } : {}),
+    const link = ind.id === 'open_findings' || ind.id === 'new_findings' || ind.id === 'closed_findings';
+    const dr = ind.id === 'events_ingested' && !ind.error && (rep.drills || {}).events;
+    let extra = {};
+    if (link) extra = { href: '#findings', 'data-page': 'findings' };
+    else if (dr) extra = { href: '#search', onclick: (ev) => { ev.preventDefault(); openDrill(dr, [], null, '-' + rep.range); } };
+    const help = [ind.help, dr ? DRILL_HINT : ''].filter(Boolean).join('. ');
+    const tile = el(link || dr ? 'a' : 'div', attrs({ class: 'card kpi', title: help }, extra),
       el('div', { class: 'kpi__label' }, icon(KPI_ICON[ind.id] || 'activity'), el('span', {}, ind.label)),
       el('div', { class: 'kpi__value' }, ...(ind.error ? ['–'] : numberParts(ind.value, ind.unit))),
       kpiFoot(ind, rep));
@@ -717,6 +780,7 @@
       const ch = columnChart(res, {
         series: (res.columns || []).filter((c) => c !== '_time'), classFor: levelClass, nameFor: (u) => LEVEL_LABEL[u] || u,
         unit: ['finding', 'findings'], now: true, labels: 7, legendInHead: true, label: 'New findings by urgency, ' + range,
+        onPick: () => showPage('findings'),
       });
       content = ch.node;
       legend = ch.legend;
@@ -768,10 +832,15 @@
 
   function tacticsCard(rep) {
     const err = sectionError(rep, 'tactics');
-    const items = (rep.tactics || []).map((t) => ({
-      label: t.name, value: t.findings + t.risk_events,
-      title: [t.findings ? plural(t.findings, 'finding', 'findings') : '', t.risk_events ? plural(t.risk_events, 'risk event', 'risk events') : ''].filter(Boolean).join(' · '),
-    })).sort((a, b) => b.value - a.value);
+    const dr = (rep.drills || {}).risk_by_tactic;
+    const items = (rep.tactics || []).map((t) => {
+      const counts = [t.findings ? plural(t.findings, 'finding', 'findings') : '', t.risk_events ? plural(t.risk_events, 'risk event', 'risk events') : ''].filter(Boolean).join(' · ');
+      // Risk events are events; findings are in the queue.
+      const go = t.risk_events && dr
+        ? { href: '#search', onclick: () => openDrill(dr, [['mitre_tactic', t.tactic]], null, '-' + rep.range), title: `${counts}. Click to see the risk events.` }
+        : { href: '#findings', onclick: () => showPage('findings'), title: `${counts}. Click to open the findings queue.` };
+      return { label: t.name, value: t.findings + t.risk_events, ...go };
+    }).sort((a, b) => b.value - a.value);
     let content;
     if (items.length) content = rankList(items.slice(0, TOP));
     else if (err) content = errorState('Couldn’t load ATT&CK tactics', err, retry());
@@ -840,7 +909,13 @@
     let content;
     if (err) content = errorState('Couldn’t count events', err, retry());
     else if (!res || !total) content = emptyState('database', 'No events in this period', 'Check the Health page to confirm data is arriving.', smallButton('Open Health', null, () => showPage('health')), null, typeof samplePointer === 'function' ? samplePointer() : null);
-    else content = columnChart(res, { unit: ['event', 'events'], now: true, labels: 5, label: 'Events by data model, ' + lastRange(rep.range) }).node;
+    else {
+      const dr = (rep.drills || {}).events_by_datamodel;
+      content = columnChart(res, {
+        unit: ['event', 'events'], now: true, labels: 5, label: 'Events by data model, ' + lastRange(rep.range),
+        onPick: dr ? timechartPick(dr, res.rows || [], '-' + rep.range) : null, pickSeries: true,
+      }).node;
+    }
     return card({ title: 'Events by data model', sub: err ? '' : plural(total, 'event', 'events'), actions: [searchButton(q.events_by_datamodel, '-' + rep.range)] }, content);
   }
 
@@ -853,7 +928,7 @@
       label: nm, mono: true, value: (res.rows || []).reduce((a, r) => a + num(r[nm]), 0), href: '#search',
       onclick: () => openSearch('sourcetype=' + quoteValue(nm), '-' + rep.range),
     })).filter((it) => it.value > 0).sort((a, b) => b.value - a.value).slice(0, TOP);
-    items.forEach((it) => { it.title = `${plural(it.value, 'event', 'events')}. Open these events in Search.`; });
+    items.forEach((it) => { it.title = `${plural(it.value, 'event', 'events')}. ${DRILL_HINT}.`; });
     let content;
     if (err) content = errorState('Couldn’t count events', err, retry());
     else if (!items.length) content = emptyState('database', 'No events in this period', 'Check the Health page to confirm data is arriving.');
@@ -1041,12 +1116,18 @@
     const notes = [];
     if (res.truncated) notes.push(`Showing the first ${rows.length} rows.`);
     const noRows = () => emptyState('search', 'No results', 'Nothing matched in this time range.');
-    const chartOpts = { labels: LABELS_FOR_WIDTH[p.width] || 5, legendInHead: p.width === 'full' && (res.columns || []).length <= 5, label: p.title };
+    // In the editor's preview a click would leave the editor.
+    const dr = box.closest('dialog') ? null : pr.drill;
+    const chartOpts = {
+      labels: LABELS_FOR_WIDTH[p.width] || 5, legendInHead: p.width === 'full' && (res.columns || []).length <= 5, label: p.title,
+      onPick: dr ? timechartPick(dr, rows, earliest) : null, pickSeries: !!(dr && dr.series),
+    };
     switch (p.viz) {
       case 'single': {
         if (box._sub) box._sub.textContent = [pr.field, earliestWords(earliest)].filter(Boolean).join(' · ');
         const delta = pr.previous != null ? deltaFoot(Number(pr.value) || 0, Number(pr.previous) || 0, { range: earliest.replace(/^-/, '') }) : null;
-        put(box, el('div', { class: 'db-single' },
+        const go = dr ? { href: '#search', title: DRILL_HINT, onclick: (ev) => { ev.preventDefault(); openDrill(dr, [], null, earliest); } } : {};
+        put(box, el(dr ? 'a' : 'div', { class: 'db-single' + (dr ? ' db-drill' : ''), ...go },
           el('div', { class: 'kpi__value' }, ...numberParts(pr.value)),
           delta,
           pr.compare_note ? el('div', { class: 'kpi__foot' }, el('span', { title: pr.compare_note }, pr.compare_note)) : null));
@@ -1067,7 +1148,10 @@
         let content;
         if (res.kind === 'timechart') {
           // Total each series over the period.
-          const items = (res.columns || []).filter((c) => c !== '_time').map((c) => ({ label: c, value: rows.reduce((a, r) => a + num(r[c]), 0) }));
+          const items = (res.columns || []).filter((c) => c !== '_time').map((c) => ({
+            label: c, value: rows.reduce((a, r) => a + num(r[c]), 0),
+            ...(dr ? { title: DRILL_HINT, onclick: () => openDrill(dr, dr.series ? [[dr.series, c]] : [], null, earliest) } : {}),
+          }));
           content = items.length ? rankList(items) : noRows();
         } else {
           const { labels, nums } = columnsOf(res);
@@ -1075,10 +1159,11 @@
           if (!rows.length) content = noRows();
           else if (!vcol) {
             notes.push('Bars need a number column; try | stats count by <field>.');
-            content = panelTable(res);
+            content = panelTable(res, earliest, dr);
           } else {
             content = rankList(rows.slice(0, 20).map((r) => ({
               label: labels.length ? labels.map((c) => fmtValue(r[c])).join(' · ') : vcol, value: num(r[vcol]),
+              ...(dr ? { title: DRILL_HINT, onclick: () => openDrill(dr, rowPairs(dr, res, r), null, earliest) } : {}),
             })));
           }
         }
@@ -1086,7 +1171,7 @@
         return;
       }
       default:
-        put(box, panelTable(res, earliest), ...notes.map(note));
+        put(box, panelTable(res, earliest, dr), ...notes.map(note));
     }
   }
 
@@ -1098,8 +1183,9 @@
   // panelTable shows up to 100 rows and 8 columns; columns that do not fit
   // the panel's width are hidden (Open in Search shows everything). A TLS
   // fingerprint or a connection's Community ID opens every event with it
-  // (see PIVOTS in app.js), over the panel's time range.
-  function panelTable(res, earliest) {
+  // (see PIVOTS in app.js), over the panel's time range. In a summary with
+  // a drill, each number opens the events behind it.
+  function panelTable(res, earliest, dr) {
     const rows = res.rows || [];
     if (!rows.length) return emptyState('search', 'No results', 'Nothing matched in this time range.');
     let cols = res.columns || [];
@@ -1110,10 +1196,18 @@
     cols = cols.slice(0, 8);
     return el('div', { class: 'db-table' }, el('table', { class: 'table table--compact' },
       el('thead', {}, el('tr', {}, ...cols.map((c) => el('th', { 'data-col': c, title: c, class: typeof (rows[0] || {})[c] === 'number' ? 'num' : '' }, c)))),
-      el('tbody', {}, ...rows.slice(0, 100).map((r) => el('tr', {}, ...cols.map((c) => {
+      el('tbody', {}, ...rows.slice(0, 100).map((r, ri) => el('tr', {}, ...cols.map((c) => {
         const v = r[c];
         const text = c === '_time' ? shortTime(v) : fmtValue(v);
         const pivot = typeof PIVOTS !== 'undefined' && PIVOTS[c] && v != null && v !== '' && !Array.isArray(v);
+        if (dr && res.kind !== 'events' && typeof v === 'number' && c !== '_time') {
+          const pairs = res.kind === 'timechart' ? (dr.series ? [[dr.series, c]] : []) : rowPairs(dr, res, r);
+          const bucket = res.kind === 'timechart' ? bucketTimes(rows, ri) : null;
+          return el('td', { class: 'num' }, el('a', {
+            href: '#search', class: 'db-drill', title: `${text}. ${DRILL_HINT}.`,
+            onclick: (ev) => { ev.preventDefault(); openDrill(dr, pairs, bucket, earliest); },
+          }, text));
+        }
         return el('td', { class: (typeof v === 'number' ? 'num' : '') + (pivot ? ' mono' : ''), title: c === '_time' ? fmtTime(v) : text },
           pivot ? el('a', {
             href: '#search', class: 'db-pivot', title: `Search every event with ${c}=${text}`,

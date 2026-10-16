@@ -100,7 +100,7 @@ func TestPasswdOnAMember(t *testing.T) {
 	path := filepath.Join(a.dir, "signalith.yaml")
 	hashFile := config.AdminHashFileIn(a.dir)
 	localFile := config.AdminLocalHashFileIn(a.dir)
-	t.Setenv("SIGNALITH_NEW_PASSWORD", "a-new-admin-pass")
+	t.Setenv("SIGNALITH_NEW_PASSWORD", "a-new-break-glass-pass")
 	out, err := capture(t, func() error { return cmdPasswd([]string{"-c", path}) })
 	if err != nil || !strings.Contains(out, "every server of the cluster") || !strings.Contains(out, "no restart needed") {
 		t.Fatalf("passwd: %v\n%s", err, out)
@@ -110,12 +110,12 @@ func TestPasswdOnAMember(t *testing.T) {
 	}
 	eventually(t, "B reads the new password", func() bool {
 		_, h, ok := b.r.sharedContent.users.docs.Builtin()
-		return ok && bcrypt.CompareHashAndPassword([]byte(h), []byte("a-new-admin-pass")) == nil
+		return ok && bcrypt.CompareHashAndPassword([]byte(h), []byte("a-new-break-glass-pass")) == nil
 	})
 	if code := b.signInAs("admin", "s3cret-pass"); code != http.StatusUnauthorized {
 		t.Errorf("the old password on B: %d", code)
 	}
-	if code := b.signInAs("admin", "a-new-admin-pass"); code != http.StatusOK {
+	if code := b.signInAs("admin", "a-new-break-glass-pass"); code != http.StatusOK {
 		t.Errorf("the new password on B: %d", code)
 	}
 
