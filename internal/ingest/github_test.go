@@ -60,7 +60,7 @@ func TestGitHubChange(t *testing.T) {
 }
 
 func TestGitHubSignIn(t *testing.T) {
-	ev := Normalize("anything", decode(t, githubFailedLogin), now)
+	ev := Normalize(GitHubTag, decode(t, githubFailedLogin), now)
 	expect(t, ev.Document(), map[string]any{
 		"datamodel": "Authentication", "sourcetype": GitHubSourcetype, "action": "failure", "status": "failure",
 		"user": "jdoe", "src": "198.51.100.4", "dest": "ghes", "@timestamp": "2026-10-11T09:12:31Z",
@@ -104,13 +104,14 @@ func TestGitHubModel(t *testing.T) {
 
 func TestIsGitHubRecord(t *testing.T) {
 	for s, want := range map[string]bool{
-		githubRepoDestroy: true, githubDisable2FA: true, githubFailedLogin: true,
-		`{"action": "repo.create", "created_at": 1, "org": "o"}`:            true,
-		`{"action": "repo.create", "org": "o"}`:                             false,
-		`{"action": "Create Repo", "created_at": 1, "actor": "a"}`:          false,
-		`{"action": "allow", "created_at": 1, "actor": "a"}`:                false,
-		`{"action": "repo.create", "created_at": 1, "actor": {"login": 1}}`: false,
-		`{"action": "repo.create", "created_at": 1, "_document_id": "x"}`:   true,
+		githubRepoDestroy: true, githubDisable2FA: true, githubFailedLogin: false,
+		`{"action": "repo.create", "created_at": 1, "org": "o"}`:                false,
+		`{"action": "repo.create", "created_at": 1, "org": "o", "actor_id": 3}`: true,
+		`{"action": "repo.create", "org": "o"}`:                                 false,
+		`{"action": "Create Repo", "created_at": 1, "actor": "a"}`:              false,
+		`{"action": "allow", "created_at": 1, "actor": "a"}`:                    false,
+		`{"action": "repo.create", "created_at": 1, "actor": {"login": 1}}`:     false,
+		`{"action": "repo.create", "created_at": 1, "_document_id": "x"}`:       true,
 	} {
 		if got := IsGitHubRecord(decode(t, s)); got != want {
 			t.Errorf("IsGitHubRecord(%.60s) = %v", s, got)
@@ -163,7 +164,7 @@ func TestGitHubFromOTLP(t *testing.T) {
 	flat := func(s string) string { return strings.ReplaceAll(strings.ReplaceAll(s, "\n", ""), "\t", "") }
 	docs := otlpDocs(t, tRes{attrs: []tKV{{"host.name", "collector1"}}, recs: []tRec{
 		{observed: uint64(now.UnixNano()), body: flat(githubRepoDestroy)},
-		{observed: uint64(now.UnixNano()), body: flat(githubDisable2FA) + "\n" + flat(githubFailedLogin)},
+		{observed: uint64(now.UnixNano()), body: flat(githubDisable2FA) + "\n" + strings.Replace(flat(githubFailedLogin), "{", `{"_document_id": "z9", `, 1)},
 		{observed: uint64(now.UnixNano()), body: `{"action": "x", "created_at": 1}`},
 	}})
 	if len(docs) != 4 {
@@ -343,5 +344,56 @@ func TestGitHubRecord(t *testing.T) {
 	}
 	if base := Normalize(GitHubTag, GitHubRecord("h1", now, nil), now); base.Fields["vendor_action"] != "team.add_member" {
 		t.Errorf("base action %v", base.Fields["vendor_action"])
+	}
+}
+
+// Another application's audit log with GitHub-like names is not read as
+// GitHub's, under its own tag or through OTLP.
+func TestGitHubShapeNeedsGitHubEvidence(t *testing.T) {
+	app := `{"@timestamp": "2026-10-16T12:00:00Z", "action": "user.login", "actor": "bob", "user": "alice",
+		"result": "failure", "src_ip": "192.0.2.4"}`
+	for _, tag := range []string{"linux.myapp", "app", ""} {
+		if ev := Normalize(tag, decode(t, app), now); ev.Fields["sourcetype"] == GitHubSourcetype {
+			t.Errorf("tag %q: read as GitHub's: %v", tag, ev.Fields)
+		}
+	}
+	if recs := githubFromOTLP(app); recs != nil {
+		t.Errorf("OTLP text read as GitHub's: %v", recs)
+	}
+	// GitHub's own events still are, by their document ID, or an actor ID
+	// with an organization, and under the github tag by the looser shape.
+	if ev := Normalize("app", decode(t, githubRepoDestroy), now); ev.Fields["sourcetype"] != GitHubSourcetype {
+		t.Error("a streamed event was not read as GitHub's")
+	}
+	byID := `{"created_at": 1791709951415, "action": "repo.create", "actor": "a", "actor_id": 5, "org": "o"}`
+	if ev := Normalize("", decode(t, byID), now); ev.Fields["sourcetype"] != GitHubSourcetype {
+		t.Error("an event with an actor ID and organization was not read as GitHub's")
+	}
+	if ev := Normalize("linux.myapp", decode(t, githubRepoDestroy), now); ev.Fields["sourcetype"] == GitHubSourcetype {
+		t.Error("another source's tag was overridden")
+	}
+	if ev := Normalize(GitHubTag, decode(t, githubFailedLogin), now); ev.Fields["sourcetype"] != GitHubSourcetype {
+		t.Error("a GitHub Enterprise Server event under the github tag was not read as GitHub's")
+	}
+}
+
+// A webhook address's password and token are never kept.
+func TestGitHubWebhookURLRedacted(t *testing.T) {
+	hook := `{"@timestamp": 1791709951415, "_document_id": "h1", "action": "hook.create", "actor": "admin", "org": "o",
+		"config": {"url": "https://ci-user:s3cr3tpw@ci.example.com/hook?token=TOKEN123&x=1", "content_type": "json"},
+		"hook_url": "https://hooks.example.com/a?sig=SIG456#frag"}`
+	r := decode(t, hook)
+	ev := Normalize(GitHubTag, r, now)
+	doc, _ := json.Marshal(ev.Document())
+	for _, secret := range []string{"s3cr3tpw", "ci-user", "TOKEN123", "SIG456"} {
+		if strings.Contains(string(doc), secret) {
+			t.Errorf("%s was kept: %s", secret, doc)
+		}
+	}
+	if !strings.Contains(string(doc), "ci.example.com/hook") {
+		t.Errorf("the address itself was lost: %s", doc)
+	}
+	if cfg, _ := r["config"].(map[string]any); !strings.Contains(cfg["url"].(string), "s3cr3tpw") {
+		t.Error("the record passed in was changed")
 	}
 }

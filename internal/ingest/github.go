@@ -109,9 +109,10 @@ var githubMapped = []string{
 // done, dotted (repo.destroy, org.disable_two_factor_requirement).
 var githubActionRe = regexp.MustCompile(`^[a-z0-9_]+(\.[a-z0-9_]+)+$`)
 
-// IsGitHubRecord reports whether a decoded object is a GitHub audit log
-// event: an action, a time, and who or where.
-func IsGitHubRecord(r map[string]any) bool {
+// isGitHubEvent reports whether a decoded object sent as GitHub's (under
+// the github tag) is a GitHub audit log event: an action, a time, and who
+// or where.
+func isGitHubEvent(r map[string]any) bool {
 	action, _ := r["action"].(string)
 	if len(action) > 200 || !githubActionRe.MatchString(action) {
 		return false
@@ -122,6 +123,33 @@ func IsGitHubRecord(r map[string]any) bool {
 	_, actor := r["actor"].(string)
 	_, doc := r["_document_id"].(string)
 	return actor || doc || r["business"] != nil || r["org"] != nil
+}
+
+// IsGitHubRecord reports whether a decoded object sent under any tag is
+// a GitHub audit log event by its own shape: an event (isGitHubEvent)
+// that also has GitHub's document ID, as streamed and API events do, or
+// an actor ID with an organization, enterprise or repository. Other
+// applications' audit logs often have a dotted action, a time and an
+// actor, and must not be read as GitHub's.
+func IsGitHubRecord(r map[string]any) bool {
+	if !isGitHubEvent(r) {
+		return false
+	}
+	if doc, _ := r["_document_id"].(string); doc != "" {
+		return true
+	}
+	return r["actor_id"] != nil && (r["org"] != nil || r["business"] != nil || r["repo"] != nil)
+}
+
+// githubSniffTag reports whether events under tag may be read as GitHub's
+// by their shape: not when the tag names another source.
+func githubSniffTag(tag string) bool {
+	for _, p := range []string{"linux.", "windows", "syslog", WebTag, "wazuh", "zeek", "suricata"} {
+		if strings.HasPrefix(tag, p) {
+			return false
+		}
+	}
+	return true
 }
 
 // maxGitHubBody caps the JSON text of the events read at once.
@@ -173,7 +201,7 @@ func GitHubRecords(b []byte) ([]map[string]any, error) {
 	}
 	out := list[:0]
 	for _, r := range list {
-		if r != nil && IsGitHubRecord(r) {
+		if r != nil && isGitHubEvent(r) {
 			out = append(out, r)
 		}
 	}
@@ -192,7 +220,16 @@ func githubFromOTLP(body any) []map[string]any {
 		// The text sat inside a string, past the body's own depth check;
 		// GitHubRecords checks it.
 		recs, err := GitHubRecords([]byte(b))
-		if err != nil || len(recs) == 0 {
+		if err != nil {
+			return nil
+		}
+		// Text from a receiver carries no tag: only events with GitHub's
+		// document ID are taken as GitHub's.
+		recs = slices.DeleteFunc(recs, func(r map[string]any) bool {
+			doc, _ := r["_document_id"].(string)
+			return doc == ""
+		})
+		if len(recs) == 0 {
 			return nil
 		}
 		return recs
@@ -389,9 +426,10 @@ func githubTime(v any) (time.Time, bool) {
 
 // ParseGitHub maps a GitHub audit log event (decoded JSON) onto an event.
 func ParseGitHub(r map[string]any) Event {
-	if !IsGitHubRecord(r) {
+	if !isGitHubEvent(r) {
 		return parseGeneric(r)
 	}
+	r = githubRedact(r)
 	flat := map[string]any{}
 	nodes := githubMaxNodes
 	seen := map[string]bool{}

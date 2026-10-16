@@ -25,9 +25,12 @@ the first that fits:
 GitHub can also stream to Splunk's HTTP Event Collector. Signalith has no HTTP Event
 Collector endpoint, so use one of the ways above instead.
 
-Every way sends GitHub's own JSON for each event, unchanged. Signalith recognizes it by
-its shape (an `action` such as `repo.destroy`, a time, and who or where), whatever tag it
-comes with, and stores an event sent twice once, so a script that reads a little of the
+Every way sends GitHub's own JSON for each event, unchanged. Under the `github` tag,
+Signalith reads any event with an `action` such as `repo.destroy`, a time, and who or
+where. Under another tag (except one that names another source, such as `linux.` or
+`windows.`) it recognizes an event by GitHub's `_document_id`, or an `actor_id` with an
+organization, enterprise or repository, so other applications' audit logs are never read
+as GitHub's. It stores an event sent twice once, so a script that reads a little of the
 last round again doesn't make copies.
 
 ## What you need
@@ -146,7 +149,9 @@ so those are kept under another name:
 
 Any other name GitHub gives an action's own fields (`ruleset_name`, `runner_name`,
 `hashed_token`, `config.url`) is kept as GitHub writes it, unless Signalith uses it for
-something else, when it is kept as `github_<name>`. Every value is kept as text. Each
+something else, when it is kept as `github_<name>`. Every value is kept as text. A
+webhook address's user name, password and query values (`https://user:pass@ci.example.com/hook?token=...`)
+are replaced with `[redacted]` before the event is stored. Each
 event also gets the data model fields of what it is:
 
 - A **change** (almost every action) is a **Change** event, with `action` (created,

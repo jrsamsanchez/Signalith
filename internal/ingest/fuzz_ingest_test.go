@@ -881,7 +881,7 @@ func FuzzGitHubEvent(f *testing.F) {
 		}
 		for _, r := range recs {
 			ev := Normalize(GitHubTag, r, now)
-			if !IsGitHubRecord(r) {
+			if !isGitHubEvent(r) {
 				// Not an event: a generic event, whose names the
 				// pipeline's field checks look after.
 				continue
