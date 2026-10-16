@@ -17,6 +17,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/clusterauth"
 	"github.com/jrsamsanchez/signalith/internal/config"
 	"github.com/jrsamsanchez/signalith/internal/oidc"
+	"github.com/jrsamsanchez/signalith/internal/saml"
 	"github.com/jrsamsanchez/signalith/internal/users"
 )
 
@@ -342,7 +343,13 @@ func (s *Server) finishSSO(w http.ResponseWriter, r *http.Request, set config.OI
 		s.ssoFail(w, r, code, claims.String(set.UsernameClaim), reason)
 		return
 	}
-	u := id.user
+	s.signInSSO(w, r, id.user, set.NewUsers(), next, []any{"issuer", set.Issuer, "groups_matched", strings.Join(id.matched, ",")})
+}
+
+// signInSSO signs in u, whom an identity provider vouched for, adding
+// them when create allows, and sends the browser on to next. logAttrs go
+// to the sign-in's audit line.
+func (s *Server) signInSSO(w http.ResponseWriter, r *http.Request, u users.SSOUser, create bool, next string, logAttrs []any) {
 	// The cookie's path was checked when the sign-in started; check it
 	// again, as a cookie can be set by others on plain HTTP.
 	next = localPath(next)
@@ -351,13 +358,14 @@ func (s *Server) finishSSO(w http.ResponseWriter, r *http.Request, set config.OI
 		return
 	}
 	ctx := clusterauth.WithMethod(r.Context(), "sso")
-	rec, err := s.userStore().SeeSSOUser(ctx, u, set.NewUsers())
+	rec, err := s.userStore().SeeSSOUser(ctx, u, create)
 	switch {
 	case errors.Is(err, users.ErrSSONew):
 		s.ssoFail(w, r, "new", u.Username, "not a Signalith user yet, and new users are not added")
 		return
 	case errors.Is(err, users.ErrSSOUnconfirmed):
-		s.ssoFail(w, r, "unconfirmed", u.Username, "provisioned (SCIM), and neither the sub or oid claim matches its externalId nor the verified email address its email")
+		s.ssoFail(w, r, "unconfirmed", u.Username, "provisioned (SCIM), and neither the provider's ids for the user ("+oidcText(strings.Join(u.IDs, ", "))+
+			") match its externalId nor the verified email address its email")
 		return
 	case errors.Is(err, users.ErrSSOOther):
 		s.ssoFail(w, r, "taken", u.Username, "the name belongs to another user (local, directory, the built-in admin, or another identity at the provider)")
@@ -378,7 +386,7 @@ func (s *Server) finishSSO(w http.ResponseWriter, r *http.Request, set config.OI
 	}
 	s.setSessionCookie(w, r, token, false)
 	s.Log.Info("signed in", slices.Concat([]any{"audit", true, "user", p.Username, "role", p.Role, "source", p.Source}, s.client(r).logAttrs(),
-		[]any{"method", "sso", "issuer", set.Issuer, "groups_matched", strings.Join(id.matched, ",")})...)
+		[]any{"method", "sso"}, logAttrs)...)
 	// The session cookie is SameSite=Strict, and this answer ends a
 	// navigation that came from the provider's site, so a redirect would
 	// arrive without it. A page that moves on by itself starts a new,
@@ -451,6 +459,11 @@ func (s *Server) handleGetSSO(w http.ResponseWriter, r *http.Request) {
 		"scim_url":         scimURL(saved.Config.Server.PublicURL),
 		"scim_on":          running.SCIMOn(),
 		"scim_warning":     scimWarning(scimURL(saved.Config.Server.PublicURL)),
+		"saml_on":          running.SAMLOn(),
+		"saml_entity_id":   samlSP(saved.Config).EntityID,
+		"saml_acs_url":     samlSP(saved.Config).ACSURL,
+		"saml_warning":     samlWarning(saved.Config),
+		"saml_presets":     saml.Presets,
 	})
 }
 

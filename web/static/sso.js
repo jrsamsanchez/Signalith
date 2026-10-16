@@ -1,6 +1,7 @@
-// Settings > Single sign-on (admins): signing in with an OpenID Connect
-// identity provider such as Microsoft Entra ID, Okta, Google or Keycloak.
-// The settings are ordinary settings (auth.oidc.* in the registry,
+// Settings > Single sign-on (admins): signing in with an identity provider
+// over OpenID Connect (Microsoft Entra ID, Okta, Google, Keycloak) or SAML
+// 2.0 (AD FS, Okta, Entra ID), each on its own tab of the page.
+// The settings are ordinary settings (auth.oidc.* and auth.saml.* in the registry,
 // internal/config/settings.go), saved with PUT api/settings like those of
 // the Server tab: every server of a cluster shares them, and the client
 // secret is kept encrypted and only sent to the issuer it was entered
@@ -13,7 +14,9 @@
   // by setting ({ value } or { clear: true } for the secret); O.replacing
   // whether the secret's box is open; O.errors the problems by setting
   // from the last save or test.
-  const O = { view: null, seq: 0, drafts: {}, replacing: false, errors: {}, general: [], test: null, testSnap: '', saving: false, token: '' };
+  // O.proto is the protocol shown, oidc or saml; O.tests the last test
+  // of each, with O.snaps the settings it ran with.
+  const O = { view: null, seq: 0, drafts: {}, replacing: false, errors: {}, general: [], tests: {}, snaps: {}, saving: false, token: '', proto: '' };
   const page = $('sso-page');
   const DOCS = 'https://github.com/jrsamsanchez/signalith/blob/main/docs/sso.md';
   const SECRET = 'auth.oidc.client_secret';
@@ -21,15 +24,24 @@
   const SCIM_TOKEN = 'auth.scim.token_sha256';
   // Each provider's section of the guide.
   const DOCS_AT = { entra: 'microsoft-entra-id', okta: 'okta', google: 'google', keycloak: 'keycloak', other: 'other-providers' };
+  const SAML_DOCS_AT = { adfs: 'ad-fs', entra: 'microsoft-entra-id-saml', okta: 'okta-saml', other: 'other-saml-providers' };
+  const PROTO_KEY = 'signalith.sso.protocol';
+  const SAML_XML = 'auth.saml.metadata_xml';
 
   // The cards, and the settings in each.
   const CARDS = [
-    { id: 'provider', title: 'Identity provider', desc: 'Register Signalith with your identity provider as a web application, then enter what it gives you here.',
-      keys: ['auth.oidc.enabled', 'auth.oidc.provider', 'auth.oidc.issuer', 'auth.oidc.client_id', SECRET], redirect: true, test: true },
-    { id: 'access', title: 'Who gets in', desc: 'Roles come from the groups the provider sends, at every sign-in. Someone in several lists gets the highest role.',
+    { id: 'provider', proto: 'oidc', title: 'Identity provider', desc: 'Register Signalith with your identity provider as a web application, then enter what it gives you here.',
+      keys: ['auth.oidc.enabled', 'auth.oidc.provider', 'auth.oidc.issuer', 'auth.oidc.client_id', SECRET], redirect: true, test: 'oidc' },
+    { id: 'access', proto: 'oidc', title: 'Who gets in', desc: 'Roles come from the groups the provider sends, at every sign-in. Someone in several lists gets the highest role.',
       keys: ['auth.oidc.admin_groups', 'auth.oidc.analyst_groups', 'auth.oidc.viewer_groups', 'auth.oidc.default_role', 'auth.oidc.allowed_domains', 'auth.oidc.create_users'] },
-    { id: 'claims', title: 'Claims and button', desc: 'The provider’s usual values are filled in. Change them only if your provider sends something else.',
+    { id: 'claims', proto: 'oidc', title: 'Claims and button', desc: 'The provider’s usual values are filled in. Change them only if your provider sends something else.',
       keys: ['auth.oidc.scopes', 'auth.oidc.username_claim', 'auth.oidc.groups_claim', 'auth.oidc.button_label'] },
+    { id: 'saml-provider', proto: 'saml', title: 'Identity provider', desc: 'Add Signalith to your identity provider as a SAML application with the entity ID and ACS URL below, then give Signalith the provider’s metadata.',
+      keys: ['auth.saml.enabled', 'auth.saml.provider', 'auth.saml.metadata_url', SAML_XML], samlAddrs: true, test: 'saml' },
+    { id: 'saml-access', proto: 'saml', title: 'Who gets in', desc: 'Roles come from the groups the provider sends, at every sign-in. Someone in several lists gets the highest role.',
+      keys: ['auth.saml.admin_groups', 'auth.saml.analyst_groups', 'auth.saml.viewer_groups', 'auth.saml.default_role', 'auth.saml.create_users'] },
+    { id: 'saml-attrs', proto: 'saml', title: 'Attributes and button', desc: 'The provider’s usual attributes are filled in. Change them only if your provider sends something else.',
+      keys: ['auth.saml.username_attribute', 'auth.saml.groups_attribute', 'auth.saml.button_label'] },
     { id: 'scim', title: 'Provisioning (SCIM)', desc: 'Optional. Lets the identity provider add people before they first sign in, keep their names up to date, and disable or remove them, which signs them out at once. Roles still come from their groups at each sign-in.',
       keys: [SCIM_ON, SCIM_TOKEN], scim: true },
   ];
@@ -40,6 +52,20 @@
     google: 'Google’s issuer is always https://accounts.google.com; leave this empty.',
     keycloak: 'In Keycloak: Realm settings, OpenID Endpoint Configuration. It ends in /realms/ and your realm’s name.',
     other: 'Your provider’s discovery document is at this address plus /.well-known/openid-configuration.',
+  };
+  // Where each SAML provider publishes its metadata, and what its groups
+  // look like.
+  const METADATA_HINT = {
+    adfs: 'In AD FS it is /FederationMetadata/2007-06/FederationMetadata.xml on your AD FS server.',
+    entra: 'In Entra ID: Enterprise applications, your app, Single sign-on, SAML Certificates: the App Federation Metadata Url.',
+    okta: 'In Okta: Applications, your app, Sign On: the Metadata URL.',
+    other: 'Your provider lists it with its SAML settings, often as IdP metadata.',
+  };
+  const SAML_GROUPS_HINT = {
+    adfs: 'AD FS sends group names once a claim rule sends Token-Groups as Group.',
+    entra: 'Entra ID sends group object IDs (GUIDs) once a group claim is added.',
+    okta: 'Okta sends group names once a group attribute statement named groups is added.',
+    other: 'As the groups attribute names them.',
   };
   const GROUPS_HINT = {
     entra: 'Entra ID sends group object IDs (GUIDs), or app role values when the groups claim is roles.',
@@ -110,8 +136,10 @@
     const f = field(key);
     return f ? f.value : undefined;
   }
-  const provider = () => current('auth.oidc.provider') || '';
-  const preset = () => (O.view.presets || []).find((p) => p.id === provider()) || null;
+  // isSAML tells the SAML settings from the OpenID Connect ones.
+  const isSAML = (key) => key.startsWith('auth.saml.');
+  const provider = (key) => current(key && isSAML(key) ? 'auth.saml.provider' : 'auth.oidc.provider') || '';
+  const preset = (key) => ((key && isSAML(key) ? O.view.saml_presets : O.view.presets) || []).find((p) => p.id === provider(key)) || null;
   const dirty = () => Object.keys(O.drafts).length;
 
   function setDraft(f, value) {
@@ -150,7 +178,10 @@
       parts.push(dxAlert('info', 'These settings can’t be changed here', 'This server was started without a configuration file. Start it with one (signalith serve -c signalith.yaml) to set up single sign-on on this page.'));
     }
     parts.push(statusCard());
-    for (const c of CARDS) parts.push(card(c));
+    parts.push(protoTabs());
+    const panel = el('div', { class: 'sso-panel', role: 'tabpanel', id: 'sso-panel', 'aria-labelledby': 'sso-tab-' + proto() });
+    for (const c of CARDS) if (!c.proto || c.proto === proto()) panel.append(card(c));
+    parts.push(panel);
     if (O.general.length) {
       parts.push(dxAlert('danger', 'Nothing was saved', '', el('ul', { class: 'st-problems' }, ...O.general.map((p) => el('li', {}, sentence(p))))));
     }
@@ -160,21 +191,60 @@
     if (focusId && $(focusId)) $(focusId).focus();
   }
 
-  // statusCard says whether single sign-on is on now, and for whom.
+  // statusCard says whether single sign-on is on now, with what, and for
+  // whom.
   function statusCard() {
     const v = O.view;
-    const on = v.on;
-    const p = (v.presets || []).find((x) => x.id === (field('auth.oidc.provider') || {}).value);
+    const label = (list, key) => { const p = (list || []).find((x) => x.id === (field(key) || {}).value); return p ? p.label : ''; };
+    const using = [];
+    if (v.on) using.push('OpenID Connect' + (label(v.presets, 'auth.oidc.provider') ? ' with ' + label(v.presets, 'auth.oidc.provider') : ''));
+    if (v.saml_on) using.push('SAML' + (label(v.saml_presets, 'auth.saml.provider') ? ' with ' + label(v.saml_presets, 'auth.saml.provider') : ''));
+    const on = using.length > 0;
     const n = v.sso_users || 0;
     const who = n === 1 ? '1 person has signed in with it.' : n + ' people have signed in with it.';
     return el('div', { class: 'card sso-status', 'data-on': on ? 'true' : 'false' },
       el('span', { class: 'sso-status__icon' }, icon(on ? 'circle-check' : 'circle-dashed')),
       el('div', { class: 'sso-status__text' },
-        el('b', {}, on ? 'Single sign-on is on' + (p ? ' with ' + p.label : '') : 'Single sign-on is off'),
+        el('b', {}, on ? 'Single sign-on is on: ' + using.join(' and ') : 'Single sign-on is off'),
         el('p', {}, on ? 'The sign-in page shows a button for it. Local users, directory sign-in and the built-in admin still work. ' + who
-          : 'Set up your identity provider below, test it, then turn single sign-on on.')),
+          : 'Set up your identity provider below, with OpenID Connect or SAML, test it, then turn single sign-on on.')),
       el('a', { class: 'btn btn--ghost btn--sm sso-status__docs', href: DOCS, target: '_blank', rel: 'noopener noreferrer' },
         icon('book-open'), 'Setup guide', el('span', { class: 'sr-only' }, ' (opens in a new tab)')));
+  }
+
+  // proto is the protocol shown: the one picked last, or the one on.
+  function proto() {
+    if (!O.proto) {
+      let saved = '';
+      try { saved = localStorage.getItem(PROTO_KEY) || ''; } catch (_) { /* storage may be blocked */ }
+      O.proto = saved === 'saml' || saved === 'oidc' ? saved : (O.view.saml_on && !O.view.on ? 'saml' : 'oidc');
+    }
+    return O.proto;
+  }
+
+  // protoTabs switches between OpenID Connect and SAML. Unsaved changes
+  // on either stay until saved or discarded.
+  function protoTabs() {
+    const tabs = el('div', { class: 'tabs sso-tabs', role: 'tablist', 'aria-label': 'Protocol' });
+    const pick = (id, focus) => {
+      O.proto = id;
+      try { localStorage.setItem(PROTO_KEY, id); } catch (_) { /* storage may be blocked */ }
+      render();
+      if (focus && $('sso-tab-' + id)) $('sso-tab-' + id).focus();
+    };
+    for (const [id, label, on] of [['oidc', 'OpenID Connect', O.view.on], ['saml', 'SAML 2.0', O.view.saml_on]]) {
+      const t = el('button', { class: 'tab', type: 'button', role: 'tab', id: 'sso-tab-' + id, 'aria-controls': 'sso-panel',
+        'aria-selected': String(proto() === id), tabindex: proto() === id ? '0' : '-1' }, label,
+      on ? el('span', { class: 'badge badge--success sso-tab__on' }, 'On') : null);
+      t.addEventListener('click', () => { if (proto() !== id) pick(id); });
+      tabs.append(t);
+    }
+    tabs.addEventListener('keydown', (e) => {
+      if (!['ArrowRight', 'ArrowLeft', 'Home', 'End'].includes(e.key)) return;
+      e.preventDefault();
+      pick(proto() === 'oidc' ? 'saml' : 'oidc', true);
+    });
+    return tabs;
   }
 
   function card(c) {
@@ -184,6 +254,14 @@
       const f = field(key);
       if (f) rows.push(row(f));
       if (key === SECRET && c.redirect) rows.push(redirectRow());
+      if (key === SAML_XML && c.samlAddrs) {
+        rows.push(copyRow('sso-saml-entity', 'Entity ID', O.view.saml_entity_id,
+          'Give the identity provider this identifier (AD FS: relying party identifier; Entra ID: Identifier; Okta: Audience URI). Signalith’s own SAML metadata is at this address too, for providers that read it.',
+          'Copy the entity ID', O.view.saml_warning));
+        rows.push(copyRow('sso-saml-acs', 'ACS URL', O.view.saml_acs_url,
+          'Where the provider posts its signed answer (AD FS: SAML assertion consumer endpoint; Entra ID: Reply URL; Okta: Single sign-on URL). Both come from the web address on the Server tab.',
+          'Copy the ACS URL', ''));
+      }
       if (key === SCIM_ON && c.scim) rows.push(copyRow('sso-scim-url', 'SCIM base URL', O.view.scim_url,
         'Enter this address in the identity provider as the tenant URL (Entra ID) or base URL (Okta). It comes from the web address on the Server tab.',
         'Copy the SCIM base URL', O.view.scim_warning));
@@ -192,17 +270,18 @@
       el('div', { class: 'st-card__head' }, el('div', { class: 'st-card__heading' },
         el('h3', { class: 'st-card__title', id: titleId }, c.title), el('p', { class: 'st-card__desc' }, c.desc))),
       el('div', { class: 'st-card__body' }, ...rows),
-      c.test ? testBlock() : null);
+      c.test ? testBlock(c.test) : null);
   }
 
   const idOf = (key) => 'sso-' + key.replace(/[^a-z0-9]+/gi, '-');
 
   // help is a setting's help, with what fits the provider chosen.
   function help(f) {
-    const p = provider();
+    const p = provider(f.key);
     if (f.key === 'auth.oidc.issuer' && ISSUER_HINT[p]) return f.help + ' ' + ISSUER_HINT[p];
     if (f.key === 'auth.oidc.admin_groups' && GROUPS_HINT[p]) return f.help + ' ' + GROUPS_HINT[p];
-    if (f.key === 'auth.oidc.provider' && p) return f.help;
+    if (f.key === 'auth.saml.metadata_url' && METADATA_HINT[p]) return f.help + ' ' + METADATA_HINT[p];
+    if (f.key === 'auth.saml.admin_groups' && SAML_GROUPS_HINT[p]) return f.help + ' ' + SAML_GROUPS_HINT[p];
     return f.help;
   }
 
@@ -215,9 +294,10 @@
     const problem = O.errors[f.key] || (!O.drafts[f.key] && f.problem);
     if (problem) notes.push(el('p', { class: 'field-error', role: O.errors[f.key] ? 'alert' : null }, icon('circle-alert'), el('span', {}, sentence(problem))));
     if (f.warning) notes.push(el('p', { class: 'st-warn' }, icon('triangle-alert'), el('span', {}, sentence(f.warning))));
-    if (f.key === 'auth.oidc.provider' && provider()) {
-      notes.push(el('p', { class: 'st-hint' }, el('a', { href: DOCS + '#' + (DOCS_AT[provider()] || 'set-it-up'), target: '_blank', rel: 'noopener noreferrer' },
-        'How to set up ' + (preset() ? preset().label : 'your provider'), icon('arrow-up-right', 'icon--xs'))));
+    if ((f.key === 'auth.oidc.provider' || f.key === 'auth.saml.provider') && provider(f.key)) {
+      const at = isSAML(f.key) ? SAML_DOCS_AT[provider(f.key)] || 'saml-20' : DOCS_AT[provider(f.key)] || 'set-it-up';
+      notes.push(el('p', { class: 'st-hint' }, el('a', { href: DOCS + '#' + at, target: '_blank', rel: 'noopener noreferrer' },
+        'How to set up ' + (preset(f.key) ? preset(f.key).label : 'your provider'), icon('arrow-up-right', 'icon--xs'))));
     }
     return el('div', { class: 'st-field', 'data-key': f.key, 'data-type': f.type },
       el('div', { class: 'st-field__text' }, label, el('p', { class: 'st-field__help', id: id + '-help' }, help(f))),
@@ -226,17 +306,24 @@
 
   // placeholder is an example for an empty box, from the provider's preset.
   function placeholder(f) {
-    const p = preset();
-    if (p) {
+    const p = preset(f.key);
+    const prov = provider(f.key);
+    if (p && isSAML(f.key)) {
+      if (f.key === 'auth.saml.metadata_url') return p.metadata_example;
+      if (f.key === 'auth.saml.username_attribute') return p.username_attribute;
+      if (f.key === 'auth.saml.groups_attribute') return p.groups_attribute;
+      if (f.key === 'auth.saml.button_label') return prov === 'other' ? 'Sign in with SAML single sign-on' : 'Sign in with ' + p.label.replace(/^Microsoft /, '');
+    } else if (p) {
       if (f.key === 'auth.oidc.issuer') return p.issuer || p.issuer_example;
       if (f.key === 'auth.oidc.username_claim') return p.username_claim;
       if (f.key === 'auth.oidc.groups_claim') return p.groups_claim || 'none';
       if (f.key === 'auth.oidc.scopes') return (p.scopes || []).filter((s) => s !== 'openid').join('\n');
-      if (f.key === 'auth.oidc.button_label') return provider() === 'other' ? 'Sign in with single sign-on' : 'Sign in with ' + p.label.replace(/^Microsoft /, '');
+      if (f.key === 'auth.oidc.button_label') return prov === 'other' ? 'Sign in with single sign-on' : 'Sign in with ' + p.label.replace(/^Microsoft /, '');
     }
-    if (f.key === 'auth.oidc.admin_groups') return provider() === 'google' ? 'soc-lead@example.com' : provider() === 'entra' ? '6f1c4a3e-…' : 'soc-admins';
-    if (f.key === 'auth.oidc.analyst_groups') return provider() === 'google' ? 'analyst@example.com' : 'soc-analysts';
-    if (f.key === 'auth.oidc.viewer_groups') return 'it-auditors';
+    if (f.key === SAML_XML) return '<EntityDescriptor …>';
+    if (/\.admin_groups$/.test(f.key)) return prov === 'google' ? 'soc-lead@example.com' : prov === 'entra' ? '6f1c4a3e-…' : 'soc-admins';
+    if (/\.analyst_groups$/.test(f.key)) return prov === 'google' ? 'analyst@example.com' : 'soc-analysts';
+    if (/\.viewer_groups$/.test(f.key)) return 'it-auditors';
     return f.placeholder || '';
   }
 
@@ -248,7 +335,7 @@
     if (f.key === SCIM_TOKEN) return tokenControl(f, id);
     if (f.type === 'bool') {
       // create_users is on when it was never set.
-      const on = value == null ? f.key === 'auth.oidc.create_users' : !!value;
+      const on = value == null ? /\.create_users$/.test(f.key) : !!value;
       const box = describe(el('input', { type: 'checkbox', id, role: 'switch' }));
       box.checked = on;
       if (ro) box.disabled = true;
@@ -260,7 +347,7 @@
       const v = value == null ? '' : value;
       for (const c of f.choices || []) {
         const o = el('option', { value: c.value }, c.label);
-        if (c.value === v || (v === '' && c.value === 'none' && f.key === 'auth.oidc.default_role')) o.selected = true;
+        if (c.value === v || (v === '' && c.value === 'none' && /\.default_role$/.test(f.key))) o.selected = true;
         n.append(o);
       }
       if (ro) n.disabled = true;
@@ -268,6 +355,15 @@
       return n;
     }
     const ph = placeholder(f);
+    if (f.key === SAML_XML) {
+      // Pasted metadata, kept on one line: line breaks between XML tags
+      // and inside the certificates mean nothing.
+      const n = describe(el('textarea', { id, class: 'textarea mono', rows: '4', spellcheck: 'false', autocomplete: 'off', placeholder: ph }));
+      n.value = value || '';
+      if (ro) n.disabled = true;
+      n.addEventListener('input', () => { setDraft(f, String(n.value).replace(/\s+/g, ' ').trim()); syncBar(); });
+      return n;
+    }
     if (f.type === 'list') {
       const n = describe(el('textarea', { id, class: 'textarea mono', rows: '3', spellcheck: 'false', autocomplete: 'off', placeholder: ph ? 'e.g. ' + ph.split('\n').join(', ') : '' }));
       n.value = (value || []).join('\n');
@@ -275,7 +371,7 @@
       n.addEventListener('input', () => { setDraft(f, parse(f, n.value)); syncBar(); });
       return n;
     }
-    const mono = f.type === 'url' || /claim|client_id/.test(f.key);
+    const mono = f.type === 'url' || /claim|client_id|attribute/.test(f.key);
     const n = describe(el('input', { id, class: 'input' + (mono ? ' mono' : ''), type: 'text', autocomplete: 'off', spellcheck: 'false', autocapitalize: 'none',
       placeholder: ph ? (f.empty_means && f.key !== 'auth.oidc.issuer' ? ph : 'e.g. ' + ph) : '' }));
     if (f.type === 'url') n.inputMode = 'url';
@@ -283,7 +379,7 @@
     if (ro) n.disabled = true;
     n.addEventListener('input', () => { setDraft(f, parse(f, n.value)); syncBar(); });
     // Issuer and provider change what the test checks and the hints say.
-    n.addEventListener('change', () => { if (f.key === 'auth.oidc.issuer') syncTest(); });
+    n.addEventListener('change', () => { if (f.key === 'auth.oidc.issuer' || f.key === 'auth.saml.metadata_url') syncTest(); });
     return n;
   }
 
@@ -405,37 +501,46 @@
   }
 
   // ---------- the test ----------
-  function testBlock() {
-    const btn = el('button', { type: 'button', class: 'btn btn--secondary', id: 'sso-test' }, icon('plug-zap'), 'Test');
-    btn.addEventListener('click', runTest);
-    if (!editable() && !O.view.on) btn.disabled = true;
-    const out = el('div', { class: 'st-test__out', id: 'sso-test-out', 'aria-live': 'polite' }, O.test ? testResult(O.test) : null);
+  // kind is oidc or saml; each has its own test and result.
+  const TEST = {
+    oidc: { path: 'api/auth/oidc/test', lead: 'Reads the provider’s discovery document and signing keys with the settings above, saved or not.' },
+    saml: { path: 'api/auth/saml/test', lead: 'Reads the provider’s metadata and signing certificates with the settings above, saved or not.' },
+  };
+  const testId = (kind) => kind === 'saml' ? 'saml-test' : 'sso-test';
+
+  function testBlock(kind) {
+    const id = testId(kind);
+    const btn = el('button', { type: 'button', class: 'btn btn--secondary', id }, icon('plug-zap'), 'Test');
+    btn.addEventListener('click', () => runTest(kind));
+    if (!editable() && !(kind === 'saml' ? O.view.saml_on : O.view.on)) btn.disabled = true;
+    const out = el('div', { class: 'st-test__out', id: id + '-out', 'aria-live': 'polite' }, O.tests[kind] ? testResult(kind) : null);
     return el('div', { class: 'st-test' },
-      el('div', { class: 'st-test__row' }, btn, el('p', { class: 'st-test__lead' }, 'Reads the provider’s discovery document and signing keys with the settings above, saved or not.')), out);
+      el('div', { class: 'st-test__row' }, btn, el('p', { class: 'st-test__lead' }, TEST[kind].lead)), out);
   }
 
-  async function runTest() {
-    const btn = $('sso-test');
-    const out = $('sso-test-out');
+  async function runTest(kind) {
+    const btn = $(testId(kind));
+    const out = $(testId(kind) + '-out');
     const body = payload();
     const snap = JSON.stringify(body);
     const restore = busy(btn, 'Testing…');
     fill(out, el('p', { class: 'st-test__busy' }, 'Asking the identity provider…'));
     let r;
     try {
-      r = await api('api/auth/oidc/test', body);
+      r = await api(TEST[kind].path, body);
     } catch (e) {
       r = e.status === 400 && e.fields ? { ok: false, fields: e.fields, message: e.message } : { ok: false, message: sentence(e.message), steps: [] };
     }
     restore();
-    O.test = r;
-    O.testSnap = snap;
+    O.tests[kind] = r;
+    O.snaps[kind] = snap;
     if (r.fields) for (const [k, m] of Object.entries(r.fields)) O.errors[k] = m;
-    if (r.fields) render(); else fill(out, testResult(r));
+    if (r.fields) render(); else fill(out, testResult(kind));
   }
 
-  function testResult(r) {
-    const stale = O.testSnap !== JSON.stringify(payload());
+  function testResult(kind) {
+    const r = O.tests[kind];
+    const stale = O.snaps[kind] !== JSON.stringify(payload());
     if (r.fields) {
       return dxAlert('warning', 'Fix the settings marked above, then test again.', '');
     }
@@ -448,8 +553,10 @@
   }
 
   function syncTest() {
-    const out = $('sso-test-out');
-    if (out && O.test) fill(out, testResult(O.test));
+    for (const kind of Object.keys(TEST)) {
+      const out = $(testId(kind) + '-out');
+      if (out && O.tests[kind]) fill(out, testResult(kind));
+    }
   }
 
   // ---------- saving ----------
@@ -477,7 +584,7 @@
 
   async function saveAll() {
     if (O.saving || !dirty()) return;
-    const turnsOn = O.drafts['auth.oidc.enabled'] && O.drafts['auth.oidc.enabled'].value === true;
+    const turnsOn = ['auth.oidc.enabled', 'auth.saml.enabled'].some((k) => O.drafts[k] && O.drafts[k].value === true);
     O.saving = true;
     const btn = $('sso-save');
     const restore = busy(btn, 'Saving…');

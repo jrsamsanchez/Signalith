@@ -406,7 +406,7 @@ change off the page.
 | `retention.days` | The data retention page. |
 | `auth.admin_user`, `auth.admin_password_hash` | `signalith.yaml` and `signalith passwd` only: the built-in admin is the break-glass account, so no page can lock everyone out. On servers that share their settings, `signalith cluster apply` renames it (see [apply](cluster-cli.md#apply)). |
 | `auth.ldap` | The Users page sets up directory sign-in. |
-| `auth.oidc`, `auth.scim` | The **Single sign-on** tab of Settings; see [sso.md](sso.md). They are saved like the settings on this page (`PUT /api/settings`) and shared by every server the same way. |
+| `auth.oidc`, `auth.saml`, `auth.scim` | The **Single sign-on** tab of Settings; see [sso.md](sso.md). They are saved like the settings on this page (`PUT /api/settings`) and shared by every server the same way. |
 | `auth.users_file`, `intel.feeds_file`, `notify.file`, `playbooks.file`, `detections.dir`, `dashboards.dir`, `lookups.dir` | `signalith.yaml`: pages save into these files and folders, and the lookups folder holds the Settings page's own file. The page shows where they are. |
 | `ingest.tokens` | Shared agent tokens from older setups and the Docker quick start: `signalith.yaml` (`ingest.tokens`) or `SIGNALITH_INGEST_TOKEN` (`SIGNALITH_INGEST_TOKEN_FILE` in Docker). New agents get their own token on **Add data**, under **Agent tokens**, where shared tokens can also be retired; see [agent-tokens.md](agent-tokens.md). The page shows how many tokens are active and how many shared tokens are still accepted. |
 | `intel.feeds` | The Threat intel page. |

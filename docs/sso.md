@@ -1,7 +1,8 @@
 # Single sign-on
 
-People can sign in to Signalith with an OpenID Connect identity provider, such as
-Microsoft Entra ID, Okta, Google or Keycloak. The sign-in page then shows a
+People can sign in to Signalith with an identity provider over OpenID Connect, such as
+Microsoft Entra ID, Okta, Google or Keycloak, or over [SAML 2.0](#saml-20), such as AD FS,
+Okta or Entra ID. Either or both can be on. The sign-in page then shows a
 **Sign in with ...** button above the username and password. Local users, directory
 sign-in ([users.md](users.md#sign-in-with-active-directory-or-ldap)) and the built-in
 admin keep working beside it, so you can't lock yourself out by setting it up wrong.
@@ -204,6 +205,112 @@ works, such as Auth0, Ping, OneLogin, Authentik, Authelia or Dex. Register a web
 application with the redirect URI, enter the issuer (the address before
 `/.well-known/openid-configuration`), and check which claim carries the groups.
 
+## SAML 2.0
+
+SAML suits identity providers that speak only SAML, above all AD FS, and organizations
+that set up every application with SAML. It sits on its own **SAML 2.0** tab of
+**Settings > Single sign-on** and can be on beside OpenID Connect; each shows its own
+button on the sign-in page. Roles, **Add users at first sign-in** and
+[provisioning](#provisioning-with-scim) work as they do for OpenID Connect.
+
+How a sign-in goes (the Web Browser SSO profile):
+
+1. The button opens `/api/auth/saml/start`, which sends the browser to the provider with
+   a sign-in request (an `AuthnRequest`, HTTP-Redirect binding) that has a fresh random ID
+   and RelayState. Both are kept in a cookie for 10 minutes (HttpOnly, Secure,
+   SameSite=None so it survives the provider's post back, and `__Host-` over HTTPS).
+2. The person signs in at the provider, which posts a signed response to
+   `/api/auth/saml/acs` (HTTP-POST binding).
+3. Signalith checks the response and its one assertion:
+    - the signature, with a signing certificate from the provider's metadata, on the
+      response, the assertion or both. An unsigned assertion, SHA-1 or MD5, a document with
+      a DTD, an ID used twice, or more than one assertion is refused. Only the part a valid
+      signature covers is read, which stops XML signature wrapping attacks.
+    - that it answers the request in this browser's cookie (`InResponseTo`, on the response
+      and in the signed assertion) with the same RelayState. Sign-ins the provider starts on
+      its own (IdP-initiated) are refused, since nothing ties them to the browser.
+    - the issuer, the audience (Signalith's entity ID), the recipient and destination (the
+      ACS URL), and the time limits, allowing 3 minutes of clock difference.
+    - that the assertion was not used before: each is accepted once, until it expires.
+4. Signalith starts an ordinary session, as with OpenID Connect.
+
+Encrypted assertions are not supported; the response travels over HTTPS. SAML needs
+HTTPS, because browsers keep a SameSite=None cookie only when it is Secure;
+`http://localhost` works for trying it out.
+
+On the **SAML 2.0** tab:
+
+1. Copy the **Entity ID** and **ACS URL**. They come from the web address on the
+   **Server** tab, so set that first. Signalith's own SAML metadata is at the entity ID
+   address, for providers that can read it.
+2. Add Signalith as an application at your provider with them (below), and send it the
+   groups.
+3. Choose the provider and enter its **Metadata URL**. Signalith reads it again every
+   hour, so a new signing certificate is picked up by itself. If Signalith can't reach it,
+   paste the metadata into **Metadata XML** instead, and paste it again when the
+   certificate changes.
+4. Map groups to roles, **Test**, turn SAML on and save. Try it in a private window
+   before you sign out.
+
+The username comes from the NameID, or from an attribute (**Username attribute**); a
+transient NameID, new at every sign-in, can't name a user. The email address comes from
+`email`, `mail` or the `emailaddress` claim, and the name from the display name, or the
+first and last names.
+
+### AD FS
+
+1. In AD FS Management, **Relying Party Trusts > Add Relying Party Trust**, claims aware.
+   Choose **Import data about the relying party published online** and enter Signalith's
+   entity ID (its metadata address), or enter the data by hand: the entity ID as the
+   relying party identifier, and the ACS URL as the SAML 2.0 WebSSO service URL.
+2. Choose who may sign in (an access control policy).
+3. **Edit Claim Issuance Policy > Add Rule > Send LDAP Attributes as Claims**, attribute
+   store Active Directory: `User-Principal-Name` as **UPN**, `E-Mail-Addresses` as
+   **E-Mail Address**, `Display-Name` as **Name**, and `Token-Groups - Unqualified Names`
+   as **Group**.
+4. In Signalith, choose **AD FS** and enter
+   `https://<AD FS host>/FederationMetadata/2007-06/FederationMetadata.xml`. List group
+   names such as `SOC Admins` under the roles.
+
+AD FS signs the assertion with SHA-256 by default. If the relying party trust was set to
+SHA-1, set it to SHA-256 on its **Advanced** tab.
+
+### Microsoft Entra ID (SAML)
+
+1. **Enterprise applications > New application > Create your own application**, "Integrate
+   any other application you don't find in the gallery".
+2. **Single sign-on > SAML**: under **Basic SAML Configuration**, set **Identifier (Entity
+   ID)** to Signalith's entity ID and **Reply URL** to the ACS URL.
+3. Under **Attributes & Claims**, **Add a group claim**: security groups, or groups
+   assigned to the application. Entra ID sends group object IDs (GUIDs); list those under
+   the roles. Someone in more than 150 groups gets a link instead of their groups, so
+   prefer groups assigned to the application.
+4. Copy the **App Federation Metadata Url** from **SAML Certificates** into Signalith,
+   with **Microsoft Entra ID** chosen.
+5. **Users and groups**: assign the people or groups who may sign in.
+
+Signalith keeps Entra ID's object ID as the person's identity, so a renamed user stays the
+same Signalith user. The username is the user principal name.
+
+### Okta (SAML)
+
+1. **Applications > Create App Integration > SAML 2.0**.
+2. **Single sign-on URL**: the ACS URL; **Audience URI (SP Entity ID)**: the entity ID;
+   **Name ID format**: EmailAddress or Unspecified, **Application username**: Okta
+   username.
+3. Under **Group Attribute Statements**, add `groups`, filter **Matches regex** `.*` (or
+   only the groups Signalith needs). Add an attribute statement `email` with
+   `user.email`, and `firstName` and `lastName` if you like.
+4. On the **Sign On** tab, copy the **Metadata URL** into Signalith, with **Okta** chosen.
+5. Assign the app to the people or groups who may sign in.
+
+### Other SAML providers
+
+Any SAML 2.0 identity provider works if it publishes metadata with a signing certificate
+and a single sign-on address for the HTTP-Redirect binding, signs its assertions with
+SHA-256 or better, and does not need signed sign-in requests. Send the groups in an
+attribute and name it under **Groups attribute**.
+
 ## Provisioning with SCIM
 
 Provisioning lets the identity provider manage single sign-on users for you, over SCIM 2.0:
@@ -281,7 +388,10 @@ you must enter it again.
 Register the redirect URI of the address people use, normally the load balancer's (see
 [load-balancers.md](load-balancers.md)). The sign-in can start and finish on different
 servers. A browser that opens Signalith by another address is sent to that address first,
-so the sign-in cookie is where the provider sends the browser back.
+so the sign-in cookie is where the provider sends the browser back. With SAML, register
+the load balancer's address the same way. Each server remembers the SAML assertions it
+accepted. Replaying one to another server would also need the HttpOnly sign-in cookie of
+the browser it was made for, since every assertion answers that browser's own request.
 
 ## Setting it in signalith.yaml
 
@@ -302,6 +412,22 @@ auth:
     allowed_domains: []
     create_users: true
     # scopes, username_claim, groups_claim and button_label default to the provider's
+```
+
+SAML is under `auth.saml`:
+
+```yaml
+auth:
+  saml:
+    enabled: true
+    provider: adfs             # adfs, entra, okta or other
+    metadata_url: https://adfs.example.com/FederationMetadata/2007-06/FederationMetadata.xml
+    # metadata_xml: '<EntityDescriptor ...>'   instead, if Signalith can't reach the URL
+    admin_groups: [SOC Admins]
+    analyst_groups: [SOC Analysts]
+    default_role: none
+    create_users: true
+    # username_attribute, groups_attribute and button_label default to the provider's
 ```
 
 Provisioning is under `auth.scim`: `enabled: true` and `token_sha256`, the SHA-256 (hex) of
@@ -326,6 +452,13 @@ operating system Signalith runs on.
 | You have not signed in to Signalith before | **Add users at first sign-in** is off. |
 | Another Signalith user already has this name | A local or directory user has the same username. Rename one of them, or change the username claim. |
 | The identity provider did not accept the sign-in | The redirect URI registered at the provider must match exactly, and the person must be assigned to the app. |
+| SAML sign-in needs HTTPS | Open Signalith at its `https://` address, and set that address on the **Server** tab. |
+| That sign-in was already used | A SAML response was posted twice, such as with the browser's back button. Start again. |
+
+With SAML, the server log says why a response was refused: often an entity ID or ACS URL
+at the provider that differs from Signalith's, a clock more than 3 minutes off, or a
+sign-in started from the provider's portal (IdP-initiated), which Signalith refuses. Start
+from Signalith's sign-in page instead.
 
 When the provider refuses at the token endpoint with `invalid_client`, the client secret
 is wrong or expired. Signalith sends it as HTTP Basic, or in the form when the provider's
@@ -333,7 +466,7 @@ discovery document lists only `client_secret_post`.
 
 ## API
 
-These three routes need an admin.
+These routes need an admin.
 
 `GET /api/auth/oidc` returns the settings as saved (each with `key`, `value`, and for the
 client secret only whether it is set), whether single sign-on is `on`, the `redirect_uri`
@@ -349,6 +482,11 @@ are. Save changes with `PUT /api/settings` and the `auth.oidc.*` keys
 `sha256`; nothing changes until `auth.scim.token_sha256` is saved with `PUT /api/settings`.
 `GET /api/auth/oidc` also returns `scim_url` and whether provisioning is on (`scim_on`).
 
+`POST /api/auth/saml/test` takes the same body with any unsaved `auth.saml.*` values, reads
+the provider's metadata, and returns `ok`, a `message`, the `steps` checked, and Signalith's
+`entity_id` and `acs_url`. `GET /api/auth/oidc` also returns them (`saml_entity_id`,
+`saml_acs_url`), whether SAML is on (`saml_on`), and the SAML presets (`saml_presets`).
+
 The SCIM endpoints under `/api/scim/v2` take the token as `Authorization: Bearer <token>`
 instead of a sign-in: `ServiceProviderConfig`, `ResourceTypes`, `Schemas`, `Users` (`GET`
 with `filter` such as `userName eq "alice@example.com"`, `startIndex` and `count`; `POST`),
@@ -356,4 +494,6 @@ with `filter` such as `userName eq "alice@example.com"`, `startIndex` and `count
 their Signalith username.
 
 The sign-in itself uses `GET /api/auth/oidc/start` (with an optional `next` path) and
-`GET /api/auth/oidc/callback`, which need no sign-in.
+`GET /api/auth/oidc/callback`, which need no sign-in, and so do the SAML ones:
+`GET /api/auth/saml/start` (with an optional `next` path), `POST /api/auth/saml/acs`, and
+`GET /api/auth/saml/metadata`, Signalith's SAML metadata.
