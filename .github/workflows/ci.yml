@@ -155,18 +155,18 @@ jobs:
           # it, then check every request against it.
           for i in $(seq 1 30); do
             $COMPOSE cp signalith:/var/lib/signalith/tls/ca.pem "$RUNNER_TEMP/signalith-ca.pem" 2>/dev/null &&
-              curl -sf -o /dev/null --cacert "$RUNNER_TEMP/signalith-ca.pem" https://localhost:8080/api/tls/ca.pem && break
+              curl -sf -o /dev/null --cacert "$RUNNER_TEMP/signalith-ca.pem" https://localhost:9000/api/tls/ca.pem && break
             sleep 2
           done
           password=$($COMPOSE exec -T signalith signalith initial-password)
           curl -sf -c "$RUNNER_TEMP/cookies" --cacert "$RUNNER_TEMP/signalith-ca.pem" \
             -H 'Content-Type: application/json' \
             -d "$(jq -n --arg p "$password" '{username: "admin", password: $p}')" \
-            https://localhost:8080/api/login > /dev/null
+            https://localhost:9000/api/login > /dev/null
           # OpenSearch loads its security settings a moment after it starts
           # answering, so the health may say "not initialized" at first.
           for i in $(seq 1 60); do
-            health=$(curl -sf -b "$RUNNER_TEMP/cookies" --cacert "$RUNNER_TEMP/signalith-ca.pem" https://localhost:8080/api/health) &&
+            health=$(curl -sf -b "$RUNNER_TEMP/cookies" --cacert "$RUNNER_TEMP/signalith-ca.pem" https://localhost:9000/api/health) &&
               echo "$health" | jq -e '.opensearch.status == "green" or .opensearch.status == "yellow"' > /dev/null && break
             sleep 2
           done
@@ -174,7 +174,7 @@ jobs:
           # The public example password from earlier versions is refused.
           code=$(curl -s -o /dev/null -w '%{http_code}' --cacert "$RUNNER_TEMP/signalith-ca.pem" \
             -H 'Content-Type: application/json' -d '{"username":"admin","password":"change-me-please"}' \
-            https://localhost:8080/api/login)
+            https://localhost:9000/api/login)
           test "$code" = 401
       - name: Check Nmap runs in the image for vulnerability scans
         run: |
@@ -182,7 +182,7 @@ jobs:
           # unprivileged user, read-only and with no capabilities.
           $COMPOSE exec -T signalith nmap --version | head -n 1
           curl -sf -b "$RUNNER_TEMP/cookies" --cacert "$RUNNER_TEMP/signalith-ca.pem" \
-            "https://localhost:8080/api/vulns/setup?fresh=1" > "$RUNNER_TEMP/vulns-setup.json"
+            "https://localhost:9000/api/vulns/setup?fresh=1" > "$RUNNER_TEMP/vulns-setup.json"
           jq -c '.report.checks[] | {id, state, detail}' "$RUNNER_TEMP/vulns-setup.json"
           jq -e '[.report.checks[] | select(.id == "nmap" or .id == "nmap_runs") | .state] == ["ok", "ok"]' "$RUNNER_TEMP/vulns-setup.json"
       - name: Check a new install refuses the old example ingest token
@@ -192,15 +192,19 @@ jobs:
           # this one started new, so it is a wrong token, over plain HTTP too.
           $COMPOSE cp signalith:/var/lib/signalith/docker-upgrade.json "$RUNNER_TEMP/docker-upgrade.json"
           jq -e '.upgraded == false' "$RUNNER_TEMP/docker-upgrade.json"
-          for url in http://localhost:8080/api/ingest https://localhost:8080/api/ingest; do
+          for url in http://localhost:7779/api/ingest https://localhost:7779/api/ingest; do
             code=$(curl -s -o /dev/null -w '%{http_code}' --cacert "$RUNNER_TEMP/signalith-ca.pem" \
               -H 'Authorization: Bearer change-this-ingest-token' -d '[{"log":"forged"}]' "$url")
             test "$code" = 401
           done
-          # The install's own token works over HTTPS.
+          # The install's own token works over HTTPS, on the agent port.
           code=$(curl -s -o /dev/null -w '%{http_code}' --cacert "$RUNNER_TEMP/signalith-ca.pem" \
-            -H "Authorization: Bearer $(cat "$RUNNER_TEMP/signalith-secrets/ingest-token")" -d '[{"log":"hello"}]' https://localhost:8080/api/ingest)
+            -H "Authorization: Bearer $(cat "$RUNNER_TEMP/signalith-secrets/ingest-token")" -d '[{"log":"hello"}]' https://localhost:7779/api/ingest)
           test "$code" = 200
+          # The web port takes no agents on a new install: 503, which agents retry.
+          code=$(curl -s -o /dev/null -w '%{http_code}' --cacert "$RUNNER_TEMP/signalith-ca.pem" \
+            -H "Authorization: Bearer $(cat "$RUNNER_TEMP/signalith-secrets/ingest-token")" -d '[{"log":"hello"}]' https://localhost:9000/api/ingest)
+          test "$code" = 503
       - name: Check OpenSearch refuses anyone without Signalith's certificate
         run: |
           ca="$RUNNER_TEMP/signalith-secrets/opensearch-ca.pem"
@@ -225,10 +229,10 @@ jobs:
           grep -q 'assistant.api_key *encrypted' "$RUNNER_TEMP/secrets-status.txt"
           grep -q ' 0 plain text' "$RUNNER_TEMP/secrets-status.txt"
           for i in $(seq 1 30); do
-            curl -sf -o /dev/null --cacert "$RUNNER_TEMP/signalith-ca.pem" https://localhost:8080/api/tls/ca.pem && break
+            curl -sf -o /dev/null --cacert "$RUNNER_TEMP/signalith-ca.pem" https://localhost:9000/api/tls/ca.pem && break
             sleep 2
           done
-          curl -sf -o /dev/null --cacert "$RUNNER_TEMP/signalith-ca.pem" https://localhost:8080/api/tls/ca.pem
+          curl -sf -o /dev/null --cacert "$RUNNER_TEMP/signalith-ca.pem" https://localhost:9000/api/tls/ca.pem
       - name: End-to-end tests against the secured OpenSearch
         env:
           SIGNALITH_TEST_OPENSEARCH: https://localhost:9200
@@ -429,20 +433,20 @@ jobs:
           $COMPOSE up -d --build
           for i in $(seq 1 60); do
             $COMPOSE cp signalith:/var/lib/signalith/tls/ca.pem "$RUNNER_TEMP/signalith-ca.pem" 2>/dev/null &&
-              curl -sf -o /dev/null --cacert "$RUNNER_TEMP/signalith-ca.pem" https://localhost:8080/api/tls/ca.pem && break
+              curl -sf -o /dev/null --cacert "$RUNNER_TEMP/signalith-ca.pem" https://localhost:9000/api/tls/ca.pem && break
             sleep 3
           done
           password=$($COMPOSE exec -T signalith signalith initial-password)
           curl -sf -c "$RUNNER_TEMP/cookies" --cacert "$RUNNER_TEMP/signalith-ca.pem" -H 'Content-Type: application/json' \
-            -d "$(jq -n --arg p "$password" '{username: "admin", password: $p}')" https://localhost:8080/api/login > /dev/null
+            -d "$(jq -n --arg p "$password" '{username: "admin", password: $p}')" https://localhost:9000/api/login > /dev/null
           for i in $(seq 1 60); do
-            curl -sf -b "$RUNNER_TEMP/cookies" --cacert "$RUNNER_TEMP/signalith-ca.pem" https://localhost:8080/api/health |
+            curl -sf -b "$RUNNER_TEMP/cookies" --cacert "$RUNNER_TEMP/signalith-ca.pem" https://localhost:9000/api/health |
               jq -e '.opensearch.status == "green" or .opensearch.status == "yellow"' > /dev/null && break
             sleep 3
           done
       - name: Install a sensor, send it traffic, run it again, uninstall
         env:
-          SIGNALITH: https://localhost:8080
+          SIGNALITH: https://localhost:9000
           SIGNALITH_CA: ${{ runner.temp }}/signalith-ca.pem
           COOKIES: ${{ runner.temp }}/cookies
         run: .github/scripts/sensor-install-ci.sh

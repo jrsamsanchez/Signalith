@@ -52,12 +52,12 @@ func TestDockerComposeServer(t *testing.T) {
 		t.Errorf("volumes %v", f.Volumes)
 	}
 	// The container cannot open ports below 1024.
-	for _, env := range []string{"SIGNALITH_LISTEN=0.0.0.0:8080", "SIGNALITH_SYSLOG_UDP=0.0.0.0:5514", "SIGNALITH_SYSLOG_TCP=0.0.0.0:5514"} {
+	for _, env := range []string{"SIGNALITH_LISTEN=0.0.0.0:9000", "SIGNALITH_AGENT_LISTEN=0.0.0.0:7779", "SIGNALITH_SYSLOG_UDP=0.0.0.0:5514", "SIGNALITH_SYSLOG_TCP=0.0.0.0:5514"} {
 		if !slices.Contains(s.Environment, env) {
 			t.Errorf("environment %v lacks %s", s.Environment, env)
 		}
 	}
-	for _, port := range []string{"8080:8080", "514:5514/udp", "514:5514/tcp", "6514:6514"} {
+	for _, port := range []string{"9000:9000", "7779:7779", "514:5514/udp", "514:5514/tcp", "6514:6514"} {
 		if !slices.Contains(s.Ports, port) {
 			t.Errorf("ports %v lack %s", s.Ports, port)
 		}

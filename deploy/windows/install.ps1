@@ -35,7 +35,8 @@
 # instead of the signalith.exe next to this script).
 param(
   [string]$OpenSearchUrl = "http://127.0.0.1:9200",
-  [string]$Listen = "0.0.0.0:8080",
+  # The web page and API; agents send to 7779 (server.agent_listen).
+  [string]$Listen = "0.0.0.0:9000",
   [string]$SyslogUdp = "0.0.0.0:514",
   [string]$SyslogTcp = "0.0.0.0:514",
   [string]$SyslogTls = "0.0.0.0:6514",
@@ -310,9 +311,31 @@ Invoke-Checked "signalith service install" { & $exe service install -c $config }
 # Waits until the service runs, and stops here, naming the log, if it
 # stops again instead.
 Invoke-Checked "signalith service start" { & $exe service start -c $config }
-# One rule for the web page, API and agents, replaced on each run.
+# One rule for the web page and API, and one for agents, replaced on each
+# run, for the ports the config uses: an upgrade keeps the ones it had. A
+# port that listens on loopback only (scope local) gets no rule.
+$webPort = ($Listen.Split(":")[-1])
+$listenHost = $Listen.Substring(0, [Math]::Max(0, $Listen.LastIndexOf(":"))).Trim("[", "]")
+$webScope = if ($listenHost -eq "localhost" -or $listenHost -eq "::1" -or $listenHost -like "127.*") { "local" } else { "any" }
+$agentPort = ""
+$agentScope = "any"
+$listeners = @(& $exe validate -c $config -web-ports)
+if ($LASTEXITCODE -eq 0) {
+  foreach ($line in $listeners) {
+    $kind, $port, $scope = $line -split ' '
+    if (-not $scope) { $scope = "any" }
+    if ($kind -eq "web" -and $port) { $webPort = $port; $webScope = $scope }
+    if ($kind -eq "agents" -and $port) { $agentPort = $port; $agentScope = $scope }
+  }
+}
 Remove-NetFirewallRule -DisplayName "Signalith" -ErrorAction SilentlyContinue
-New-NetFirewallRule -DisplayName "Signalith" -Direction Inbound -Protocol TCP -LocalPort ($Listen.Split(":")[-1]) -Program $exe -Action Allow -ErrorAction SilentlyContinue | Out-Null
+if ($webScope -ne "local") {
+  New-NetFirewallRule -DisplayName "Signalith" -Direction Inbound -Protocol TCP -LocalPort $webPort -Program $exe -Action Allow -ErrorAction SilentlyContinue | Out-Null
+}
+Remove-NetFirewallRule -DisplayName "Signalith agents" -ErrorAction SilentlyContinue
+if ($agentPort -and $agentScope -ne "local") {
+  New-NetFirewallRule -DisplayName "Signalith agents" -Direction Inbound -Protocol TCP -LocalPort $agentPort -Program $exe -Action Allow -ErrorAction SilentlyContinue | Out-Null
+}
 
 # Open the syslog ports the config turns on (syslog.udp, syslog.tcp,
 # syslog.tls), only to the senders in syslog.allow when it lists any.
@@ -337,7 +360,8 @@ if ($LASTEXITCODE -ne 0) {
     Write-Host "Syslog: receiving on $protocol port $port ($kind) from $from."
   }
 }
-Write-Host "Signalith is running. Open https://localhost:$($Listen.Split(':')[-1])"
+Write-Host "Signalith is running. Open https://localhost:$webPort"
+if ($agentPort) { Write-Host "Agents send to port $agentPort; set them up from the Add data page." }
 Write-Host "Your browser warns about the certificate until you trust Signalith's own CA ($ConfigDir\tls\ca.pem); docs\https.md says how."
 Write-Host "The master key for the passwords and keys Signalith stores is in $ConfigDir\keys, protected for this computer only."
 Write-Host "This server's identity, shown on the Servers page, is in $ConfigDir\node.id; never copy it to another server."

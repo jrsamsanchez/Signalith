@@ -6,9 +6,9 @@
 # Add data > Network sensor > Set up a new sensor gives one line that
 # downloads this script from Signalith, checks its SHA-256, and runs it:
 #
-#    f=$(mktemp) && curl -fsSk --proto '=https' https://siem:8080/api/sensor/install.sh -o "$f" &&
+#    f=$(mktemp) && curl -fsSk --proto '=https' https://siem:7779/api/sensor/install.sh -o "$f" &&
 #   echo '<sha-256>  '"$f" | sha256sum -c --quiet &&
-#   echo 'sgl_...' | sudo sh "$f" --role sensor --from https://siem:8080 \
+#   echo 'sgl_...' | sudo sh "$f" --role sensor --from https://siem:7779 \
 #     --ca-sha256 <hex> --version 1.6.0 --token -
 #
 # "--token -" reads the sensor's agent token from the standard input, so it
@@ -140,7 +140,7 @@ fail() {
 }
 usage() {
   cat <<'USAGE'
-Usage: echo '<token>' | sudo sh install.sh --role sensor --from https://<signalith>:8080
+Usage: echo '<token>' | sudo sh install.sh --role sensor --from https://<signalith>:7779
          [--ca-sha256 <hex>] [--next-ca-sha256 <hex>] [--version <v>] --token -
          [--name <name>] [--interface <port>] [--networks <cidr,...>]
          [--no-zeek | --no-suricata] [--suricata-protocols] [--local-rules <file>]
@@ -268,7 +268,7 @@ common_args() {
   esac
   hostport=${from#https://}
   case "$hostport" in
-    '' | */* | *[!A-Za-z0-9.:[\]-]*) fail "--from must be Signalith's address and nothing else, like https://siem.example.com:8080 (no path)." ;;
+    '' | */* | *[!A-Za-z0-9.:[\]-]*) fail "--from must be Signalith's address and nothing else, like https://siem.example.com:7779 (no path)." ;;
   esac
   [ -z "$ca_sha" ] || ca_sha=$(hex64 --ca-sha256 "$ca_sha")
   [ -z "$next_ca_sha" ] || next_ca_sha=$(hex64 --next-ca-sha256 "$next_ca_sha")

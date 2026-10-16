@@ -93,7 +93,7 @@ Usage:
   signalith content   status|install|remove [-c file] ...  content pack updates (newer tested rules)
   signalith security  [-c file] [-json]   print the security report (exit 2 when something is at risk)
   signalith cluster   status|found|export|import|export-key|import-key|reset-key|accept-restore|token|approve [-c file] ...  the settings the servers share in OpenSearch
-  signalith join      '<token>' [-c file] [--name] [--listen] [--node-url] [--copy-syslog] [--no-start] [--merge] [--yes]   add this server to a cluster
+  signalith join      '<token>' [-c file] [--name] [--listen] [--agent-listen] [--node-url] [--copy-syslog] [--no-start] [--merge] [--yes]   add this server to a cluster
   signalith opensearch-check <url> [--ca file] [--cert file --key file] [--user u]   check OpenSearch is ready for several servers
   signalith service   install|uninstall|start|stop     manage the Windows service
   signalith opensearch-certs [-ca-dir DIR] -node NAME [-san ...] [-peer ...] -out DIR   certificates to secure your own OpenSearch
@@ -197,7 +197,8 @@ func configFlag(fs *flag.FlagSet) *string {
 func cmdInit(args []string) error {
 	fs := flag.NewFlagSet("init", flag.ExitOnError)
 	path := configFlag(fs)
-	listen := fs.String("listen", "0.0.0.0:8080", "address to listen on")
+	listen := fs.String("listen", "0.0.0.0:9000", "address the web page and API listen on")
+	agentListen := fs.String("agent-listen", "", "address agents send to (default: -listen's host, port "+config.DefaultAgentPort+"; off: the web port)")
 	publicURL := fs.String("public-url", "", "URL agents use to reach this server (default: derived from -listen)")
 	osURL := fs.String("opensearch", "http://127.0.0.1:9200", "OpenSearch URL")
 	osUser := fs.String("opensearch-user", "", "OpenSearch username")
@@ -218,6 +219,13 @@ func cmdInit(args []string) error {
 	useServiceEnv(*path, os.Stdout)
 	c := config.Default()
 	c.Server.Listen = *listen
+	// Set, so the web port takes no agent traffic. By default on the web
+	// page's host: a server whose page is on loopback only takes agents on
+	// loopback only too.
+	c.Server.AgentListen = *agentListen
+	if c.Server.AgentListen == "" {
+		c.Server.AgentListen = config.DefaultAgentListen(*listen)
+	}
 	c.Server.PublicURL = *publicURL
 	// HTTPS with a certificate the server makes for itself, and no
 	// agents over plain HTTP.
@@ -261,6 +269,7 @@ func cmdInit(args []string) error {
 	}
 	fmt.Printf("Wrote %s\n\n", *path)
 	fmt.Printf("  Web UI:      %s\n", c.Server.PublicURL)
+	fmt.Printf("  Agents:      %s\n", c.AgentURL(c.Server.PublicURL))
 	fmt.Printf("  HTTPS:       the server makes its own certificate when it starts; browsers warn\n")
 	fmt.Printf("               until you trust it (see docs/https.md)\n")
 	fmt.Printf("  User:        %s\n", c.Auth.AdminUser)
@@ -350,10 +359,36 @@ func printSyslogPorts(c *config.Config) {
 	}
 }
 
+// printWebPorts prints the web port, and the agent port when agents send
+// to one of their own, one per line with whether other machines can reach
+// it ("web 9000 any", "agents 7779 local"), for the installers' firewall
+// rules.
+func printWebPorts(c *config.Config) {
+	for _, l := range []struct{ kind, addr string }{{"web", c.Server.Listen}, {"agents", c.Server.AgentAddr()}} {
+		if host, port, err := net.SplitHostPort(l.addr); err == nil {
+			fmt.Println(l.kind, port, listenScope(host))
+		}
+	}
+}
+
+// listenScope says whether a listen host takes connections from other
+// machines ("any") or from this one alone ("local"), for installers that
+// open the firewall only for the first.
+func listenScope(host string) string {
+	if host == "localhost" {
+		return "local"
+	}
+	if ip, err := netip.ParseAddr(host); err == nil && ip.IsLoopback() {
+		return "local"
+	}
+	return "any"
+}
+
 func cmdValidate(args []string) error {
 	fs := flag.NewFlagSet("validate", flag.ExitOnError)
 	path := configFlag(fs)
 	ports := fs.Bool("syslog-ports", false, "only print the syslog listeners, one per line: protocol, port, and the allowed senders (any, or a comma-separated list); for installers")
+	webPorts := fs.Bool("web-ports", false, "only print the web port and the agent port, one per line with any or local (web 9000 any, agents 7779 local); for installers")
 	fileFlag := settingsFileFlag(fs)
 	fs.Parse(args)
 	// -file first: the service's settings below do not replace it.
@@ -361,9 +396,9 @@ func cmdValidate(args []string) error {
 		return err
 	}
 	// The service's folders and master key, so this checks what it uses.
-	// Installers read the -syslog-ports output, so nothing else is
-	// printed then.
-	if *ports {
+	// Installers read the -syslog-ports and -web-ports output, so
+	// nothing else is printed then.
+	if *ports || *webPorts {
 		applyServiceEnv(*path)
 	} else {
 		useServiceEnv(*path, os.Stdout)
@@ -374,6 +409,10 @@ func cmdValidate(args []string) error {
 	}
 	if *ports {
 		printSyslogPorts(c)
+		return nil
+	}
+	if *webPorts {
+		printWebPorts(c)
 		return nil
 	}
 	fmt.Printf("%s is valid.\n", *path)
@@ -1008,6 +1047,9 @@ type instance struct {
 	certs    *tlsauto.Manager
 	certKey  string
 	receiver *syslog.Receiver
+	// agentHandler serves the agent port, and agentPlain plain HTTP on it;
+	// nil when agents send to the web port.
+	agentHandler, agentPlain http.Handler
 	// retention is the retention manager.
 	retention *retention.Manager
 	// jobsList are the background jobs, which run only while this server
@@ -1087,6 +1129,13 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	if certs != nil {
 		in.certs, in.certKey = certs, certKey
 		in.jobs.Go(func() { certs.Run(ctx) })
+	}
+	// The agent port, before the parts that tell agents where to send:
+	// when the default one of a server upgraded from before 0.3 cannot be
+	// listened on, they keep sending to the web port.
+	if err := r.listenAgents(c, certs); err != nil {
+		in.cancel()
+		return nil, err
 	}
 	// The master key, again after a restart: the files saved from now on
 	// are encrypted with this config's, and their plain values with it.
@@ -1757,6 +1806,10 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	tokenSrv.Store(srv)
 	in.srv, in.handler = srv, srv.Handler()
 	r.srv.Store(srv)
+	if c.Server.AgentAddr() != "" {
+		in.agentHandler = srv.AgentHandler()
+		in.agentPlain = srv.AgentPlainHandler(in.agentHandler)
+	}
 	// The example ingest token of an older Docker quick start: decide
 	// whether this one was upgraded if that is still open, and end it for
 	// good once agents on plain HTTP are refused.
@@ -1772,7 +1825,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		// Last, once everything started: the node points at this
 		// OpenSearch, and runs these jobs while it holds the job lease.
 		settings := cluster.Settings{
-			Eligible: c.LeaderEligible(), Role: c.Cluster.Role, NodeURL: nodeURL(c), Listen: c.Server.Listen,
+			Eligible: c.LeaderEligible(), Role: c.Cluster.Role, NodeURL: nodeURL(c), Listen: c.Server.Listen, AgentListen: c.Server.AgentAddr(),
 			Syslog: cluster.Syslog{UDP: c.Syslog.UDP, TCP: c.Syslog.TCP, TLS: c.Syslog.TLS},
 			Fingerprints: func() cluster.Fingerprints {
 				fp := filesFingerprints(c, ret, feeds, notes, pbooks)
