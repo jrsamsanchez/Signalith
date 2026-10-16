@@ -74,10 +74,15 @@ func parseJournal(r map[string]any) Event {
 // ambiguousSSH). The sender can then hide its address, but never choose
 // another.
 var (
-	sshdAuth      = regexp.MustCompile(`^(Accepted|Failed) (\S+) for (invalid user )?(.*) from (\S+) port (\d+)((?:[\s:].*)?)$`)
-	sshdClause    = regexp.MustCompile(` from \S+ port \d+`)
-	sshdInvalid   = regexp.MustCompile(`^Invalid user (.*) from (\S+?)(?: port (\d+))?(?:\s.*)?$`)
-	sudoCommand   = regexp.MustCompile(`^\s*(\S+) : (?:(\d+) incorrect password attempts? ; )?TTY=\S+ ; PWD=\S+ ; USER=(\S+) ; COMMAND=(.*)$`)
+	sshdAuth    = regexp.MustCompile(`^(Accepted|Failed) (\S+) for (invalid user )?(.*) from (\S+) port (\d+)((?:[\s:].*)?)$`)
+	sshdClause  = regexp.MustCompile(` from \S+ port \d+`)
+	sshdInvalid = regexp.MustCompile(`^Invalid user (.*) from (\S+?)(?: port (\d+))?(?:\s.*)?$`)
+	// sudo leaves TTY out when run without a terminal (over ssh with a
+	// command, from cron or a script), and 1.9 may add GROUP= or ENV=. A
+	// refusal (user NOT in sudoers, command not allowed) comes first. Only
+	// sudo's own keys may come before COMMAND, and the first COMMAND wins:
+	// the command's own arguments can hold " ; COMMAND=".
+	sudoCommand   = regexp.MustCompile(`^\s*(\S+) : (?:(\d+) incorrect password attempts? ; |([^;=]+?) ; )?(?:TTY=\S+ ; )?PWD=[^;]* ; USER=(\S+) ; (?:(?:GROUP|ENV|TSID|CHROOT|CWD)=[^;]* ; )*?COMMAND=(.*)$`)
 	sudoAuthFail  = regexp.MustCompile(`pam_unix\(sudo:auth\): authentication failure;.*\bruser=(\S*).*\buser=(\S+)`)
 	suSession     = regexp.MustCompile(`pam_unix\(su(?:-l)?:session\): session opened for user (\S+?)(?:\(uid=\d+\))? by (\S+?)(?:\(uid=\d+\))?$`)
 	suFail        = regexp.MustCompile(`pam_unix\(su(?:-l)?:auth\): authentication failure;.*\bruser=(\S*).*\buser=(\S+)`)
@@ -139,12 +144,16 @@ func ParseProgram(host, program, pid, msg, sourcetype string) Event {
 		if m := sudoCommand.FindStringSubmatch(msg); m != nil {
 			ev.Model = "Authentication"
 			f["src_user"] = m[1]
-			f["user"] = m[3]
-			f["process"] = m[4]
+			f["user"] = m[4]
+			f["process"] = m[5]
 			if m[2] != "" {
 				f["action"] = "failure"
 				f["reason"] = "bad password"
 				f["signature"] = "sudo incorrect password"
+			} else if m[3] != "" {
+				f["action"] = "failure"
+				f["reason"] = m[3]
+				f["signature"] = "sudo refused"
 			} else {
 				f["action"] = "success"
 				f["signature"] = "sudo command"
