@@ -339,6 +339,7 @@ func (s *Server) Handler() http.Handler {
 	s.routeNotify(api)
 	s.routeDashboards(api)
 	s.routeCases(api)
+	s.routeStoryline(api)
 	s.routeRespond(api)
 	s.routePlaybooks(api)
 	s.routeUsers(api)

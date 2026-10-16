@@ -308,7 +308,9 @@ async function showRiskObject(object, type) {
   } }, icon('shield-alert'), 'Related findings');
   const searchBtn = el('button', { class: 'btn btn--ghost', type: 'button' }, icon('search'), 'Open in Search');
   searchBtn.disabled = true;
-  const foot = el('div', { class: 'inspector__foot' }, findingsBtn, searchBtn);
+  const storyBtn = type === 'other' ? null : storylineButton({ type: type === 'system' && looksLikeIP(object) ? 'ip' : type, object, since: since === '24h' ? '24h' : since },
+    { kind: 'secondary', label: 'Storyline', title: 'See what added this risk as one attack story, in ATT&CK order' });
+  const foot = el('div', { class: 'inspector__foot' }, findingsBtn, storyBtn, searchBtn);
   box.replaceChildren(bar, head, body, foot);
   const wasOpen = !box.classList.contains('hidden');
   riShowPanel(box);
@@ -443,6 +445,12 @@ function riBreakable(text) {
 
 function listCell(col, v) {
   if (col === 'priority') return prioBadge(v, true);
+  // A host or identity opens its attack storyline.
+  if ((col === 'host' || col === 'identity') && typeof v === 'string' && v && !/[*?]/.test(v)) {
+    const b = el('button', { type: 'button', class: 'l-story mono', title: `Attack storyline for ${v}` }, ...riBreakable(v));
+    b.addEventListener('click', () => openStoryline({ type: col === 'host' ? 'system' : 'user', object: v, since: '7d' }));
+    return b;
+  }
   if (col === 'watchlist') return v === true ? riWatchBadge() : null;
   const text = Array.isArray(v) ? v.join(', ') : v == null ? '' : String(v);
   if (!text) return null;

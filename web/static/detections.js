@@ -912,6 +912,7 @@ function renderFindingDetail(box, data, opts = {}) {
     : dxBtn('ghost', 'Add to case', () => addFindingsToCase([f.id], f.title), { title: 'Group this finding into an investigation' });
   const more = dxMenu('More actions', [
     { icon: 'search', label: 'Open events in Search', run: () => openSearch(f.query, f.earliest, f.latest) },
+    Object.keys(f.entities || {}).length ? { icon: 'waypoints', label: 'Attack storyline', run: () => openStoryline({ finding: f.id }) } : null,
     d ? { icon: 'crosshair', label: 'Open the detection', run: () => focusDetection(f.detection_id) } : null,
     d ? { icon: 'list-filter', label: 'Findings from this detection', run: () => { fnd.detection = f.detection_id; fnd.urgency.clear(); loadFindings(); } } : null,
     can('analyst') ? { icon: 'zap', label: 'Respond…', run: () => { const b = box.querySelector('[data-action="respond"]'); if (b) b.click(); } } : null,
@@ -973,7 +974,8 @@ function renderFindingDetail(box, data, opts = {}) {
           : dxSection('Triage', dxKv([['Status', STATUS_LABEL[f.status] || f.status], ['Owner', f.owner || 'Unassigned'],
             ['Severity', SEVERITY_FULL[f.severity] || f.severity], ['Disposition', DISPOSITION_LABEL[f.disposition || ''] || f.disposition]])),
         ents.length ? el('section', { class: 'section' },
-          el('h3', { class: 'section-title' }, 'Entities', el('span', { class: 'count' }, String(ents.length))),
+          el('div', { class: 'dx-sec-head' }, el('h3', { class: 'section-title' }, 'Entities', el('span', { class: 'count' }, String(ents.length))),
+            storylineButton({ finding: f.id }, { kind: 'ghost', sm: true, title: 'See this finding with every other finding and risk event about these entities, in ATT&CK order' })),
           ...ents.map(([k, v]) => findingEntity(k, v, f))) : null,
         can('analyst') ? findingRespond(f) : null),
       dxPanel(prefix, 'evidence', fnd.tab,
