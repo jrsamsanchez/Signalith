@@ -78,6 +78,7 @@ type Server struct {
 	Offset time.Duration
 
 	mu          sync.Mutex
+	dataNodes   int
 	indices     map[string]*index
 	templates   map[string]json.RawMessage
 	settings    map[string][]json.RawMessage
@@ -194,6 +195,14 @@ func (s *Server) Block(on bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.blocked = on
+}
+
+// SetDataNodes sets the number of data nodes /_cluster/health reports;
+// 0, the default, reports one.
+func (s *Server) SetDataNodes(n int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.dataNodes = n
 }
 
 // SetRefreshWait makes every request with refresh=wait_for answer only d
@@ -526,7 +535,10 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request, p string, body [
 		writeJSON(w, 200, map[string]any{"name": "ostest-1", "cluster_name": "ostest",
 			"version": map[string]any{"number": "2.17.1", "distribution": "opensearch"}})
 	case p == "/_cluster/health":
-		writeJSON(w, 200, map[string]any{"cluster_name": "ostest", "status": "green", "number_of_nodes": 1, "number_of_data_nodes": 1})
+		s.mu.Lock()
+		n := max(s.dataNodes, 1)
+		s.mu.Unlock()
+		writeJSON(w, 200, map[string]any{"cluster_name": "ostest", "status": "green", "number_of_nodes": n, "number_of_data_nodes": n})
 	case strings.HasPrefix(p, "/_nodes/") && strings.Contains(p, "/stats"):
 		writeJSON(w, 200, map[string]any{"nodes": map[string]any{"ostest-node": map[string]any{
 			"name": "ostest-1", "roles": []string{"data", "cluster_manager"},
