@@ -1,0 +1,23 @@
+# Values for the CI install on kind (.github/workflows/helm.yml): the image
+# built from this code, two servers and a scanner, and a small OpenSearch.
+image:
+  repository: signalith
+  tag: local
+  pullPolicy: Never
+server:
+  replicas: 2
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { memory: 1Gi }
+  persistence: { size: 1Gi }
+scanner:
+  enabled: true
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+  persistence: { size: 1Gi }
+opensearch:
+  javaOpts: "-Xms512m -Xmx512m"
+  resources:
+    requests: { cpu: 250m, memory: 1Gi }
+    limits: { memory: 1536Mi }
+  persistence: { size: 2Gi }

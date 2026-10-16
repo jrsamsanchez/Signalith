@@ -1,0 +1,86 @@
+{{- $full := include "signalith.fullname" . -}}
+{{- $port := int .Values.server.port -}}
+{{- $svc := .Values.server.service -}}
+# The web UI, API and agents (HTTPS), on every ready server.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $full }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "signalith.labels" . | nindent 4 }}
+    app.kubernetes.io/component: server
+  {{- with $svc.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ $svc.type }}
+  {{- if and (ne $svc.type "ClusterIP") $svc.externalTrafficPolicy }}
+  externalTrafficPolicy: {{ $svc.externalTrafficPolicy }}
+  {{- end }}
+  {{- if and (eq $svc.type "LoadBalancer") $svc.loadBalancerSourceRanges }}
+  loadBalancerSourceRanges:
+    {{- toYaml $svc.loadBalancerSourceRanges | nindent 4 }}
+  {{- end }}
+  selector:
+    {{- include "signalith.selector" (dict "ctx" . "component" "server") | nindent 4 }}
+  ports:
+    - name: https
+      port: {{ $port }}
+      targetPort: https
+      protocol: TCP
+---
+# Each server and scanner by name ($(POD_NAME).<this>), for the servers
+# to reach each other, ready or not.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $full }}-pods
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "signalith.labels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    app.kubernetes.io/name: {{ include "signalith.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  ports:
+    - name: https
+      port: {{ $port }}
+      targetPort: https
+      protocol: TCP
+{{- if .Values.server.syslog.enabled }}
+{{- $ss := .Values.server.syslog.service }}
+---
+# Syslog: UDP and TCP 514 (the pods listen on 5514, being unprivileged),
+# and syslog over TLS on 6514.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $full }}-syslog
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "signalith.labels" . | nindent 4 }}
+    app.kubernetes.io/component: server
+  {{- with $ss.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ $ss.type }}
+  {{- if and (ne $ss.type "ClusterIP") $ss.externalTrafficPolicy }}
+  externalTrafficPolicy: {{ $ss.externalTrafficPolicy }}
+  {{- end }}
+  {{- if and (eq $ss.type "LoadBalancer") $ss.loadBalancerSourceRanges }}
+  loadBalancerSourceRanges:
+    {{- toYaml $ss.loadBalancerSourceRanges | nindent 4 }}
+  {{- end }}
+  selector:
+    {{- include "signalith.selector" (dict "ctx" . "component" "server") | nindent 4 }}
+  ports:
+    - { name: syslog-udp, port: 514, targetPort: syslog-udp, protocol: UDP }
+    - { name: syslog-tcp, port: 514, targetPort: syslog-tcp, protocol: TCP }
+    - { name: syslog-tls, port: 6514, targetPort: syslog-tls, protocol: TCP }
+{{- end }}
