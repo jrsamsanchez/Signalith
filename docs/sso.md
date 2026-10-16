@@ -217,8 +217,9 @@ How a sign-in goes (the Web Browser SSO profile):
 
 1. The button opens `/api/auth/saml/start`, which sends the browser to the provider with
    a sign-in request (an `AuthnRequest`, HTTP-Redirect binding) that has a fresh random ID
-   and RelayState. Both are kept in a cookie for 10 minutes (HttpOnly, Secure,
-   SameSite=None so it survives the provider's post back, and `__Host-` over HTTPS).
+   and RelayState. Both are kept in a cookie for 10 minutes, signed with a key the servers
+   share so it can't be forged or changed (HttpOnly, Secure, SameSite=None so it survives
+   the provider's post back, and `__Host-` over HTTPS).
 2. The person signs in at the provider, which posts a signed response to
    `/api/auth/saml/acs` (HTTP-POST binding).
 3. Signalith checks the response and its one assertion:
@@ -253,9 +254,16 @@ On the **SAML 2.0** tab:
    before you sign out.
 
 The username comes from the NameID, or from an attribute (**Username attribute**); a
-transient NameID, new at every sign-in, can't name a user. The email address comes from
-`email`, `mail` or the `emailaddress` claim, and the name from the display name, or the
-first and last names.
+transient NameID, new at every sign-in, can't name a user. Attribute names must match
+exactly. The email address comes from `email`, `mail` or the `emailaddress` claim, and the
+name from the display name, or the first and last names. Signalith takes the email address
+as one the provider vouches for: it can map a role and match a
+[provisioned](#provisioning-with-scim) user. Send it from a directory field people can't
+change themselves.
+
+A server reads the provider's metadata when it starts and when the SAML settings change.
+Until it has, SAML users' sessions are refused there, so moving to another provider ends
+the old provider's sessions at once.
 
 ### AD FS
 

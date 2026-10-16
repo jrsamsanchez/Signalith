@@ -2,8 +2,11 @@ package api
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -51,6 +54,11 @@ const (
 
 func (s *Server) routeSAML(api *router) {
 	api.admin(samlTestRoute, s.handleTestSAML)
+	// Read the provider's metadata now, so its users' sessions work from
+	// the first request (samlIssuerOK refuses them until then).
+	if c := s.conf(); c != nil && c.SAMLOn() {
+		s.samlIssuerOK(c, "")
+	}
 }
 
 // samlSP is Signalith as the provider knows it: the entity ID is the
@@ -91,39 +99,59 @@ func (s *Server) samlIdP(ctx context.Context, c *config.Config, fresh bool) (*sa
 	return idp, nil
 }
 
-// noteSAMLEntity remembers the entity ID of the SAML provider in use.
-func (s *Server) noteSAMLEntity(idp *saml.IdP) { s.samlEntity.Store(idp.EntityID) }
+// samlKnown is the entity ID of the SAML provider, read from the
+// metadata the settings named (source).
+type samlKnown struct{ source, entity string }
+
+// samlSource names where the SAML settings in c take the metadata from,
+// so a change of provider is noticed.
+func samlSource(c *config.Config) string {
+	set := c.SAMLSettings()
+	if set.MetadataXML != "" {
+		sum := sha256.Sum256([]byte(set.MetadataXML))
+		return "xml:" + hex.EncodeToString(sum[:])
+	}
+	return "url:" + set.MetadataURL
+}
+
+// noteSAMLEntity remembers the entity ID of the SAML provider c uses.
+func (s *Server) noteSAMLEntity(c *config.Config, idp *saml.IdP) {
+	s.samlEntity.Store(samlKnown{source: samlSource(c), entity: idp.EntityID})
+}
 
 // samlIssuerOK reports whether a single sign-on user's issuer (from
-// their Subject) is the SAML provider in use. The provider's entity ID
-// comes from its metadata. Until this server has read metadata from a
-// URL (it starts reading it in the background on the first ask), any
-// SAML provider's users are taken: the sign-in that made their session
-// was checked against the provider in use then.
+// their Subject) is the SAML provider in use, by its entity ID from the
+// metadata the settings name now. Until this server has read that
+// metadata (after a start, or a change of provider), SAML users are
+// refused, and the metadata is read in the background.
 func (s *Server) samlIssuerOK(c *config.Config, issuer string) bool {
 	if !c.SAMLOn() {
 		return false
 	}
-	known, _ := s.samlEntity.Load().(string)
-	if known == "" {
-		set := c.SAMLSettings()
-		switch {
-		case set.MetadataXML != "":
-			if idp, err := saml.ParseMetadataCached([]byte(set.MetadataXML)); err == nil {
-				known = idp.EntityID
-			}
-		case set.MetadataURL != "" && s.samlLoading.CompareAndSwap(false, true):
-			go func() {
-				defer s.samlLoading.Store(false)
-				ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-				defer cancel()
-				if idp, err := s.samlIdP(ctx, c, false); err == nil {
-					s.samlEntity.CompareAndSwap(nil, idp.EntityID)
-				}
-			}()
-		}
+	src := samlSource(c)
+	if k, _ := s.samlEntity.Load().(samlKnown); k.source == src && k.entity != "" {
+		return issuer == config.SAMLEntityPrefix+k.entity
 	}
-	return known == "" || issuer == config.SAMLEntityPrefix+known
+	set := c.SAMLSettings()
+	switch {
+	case set.MetadataXML != "":
+		idp, err := saml.ParseMetadataCached([]byte(set.MetadataXML))
+		if err != nil {
+			return false
+		}
+		s.noteSAMLEntity(c, idp)
+		return issuer == config.SAMLEntityPrefix+idp.EntityID
+	case set.MetadataURL != "" && s.samlLoading.CompareAndSwap(false, true):
+		go func() {
+			defer s.samlLoading.Store(false)
+			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+			defer cancel()
+			if idp, err := s.samlIdP(ctx, c, false); err == nil {
+				s.noteSAMLEntity(c, idp)
+			}
+		}()
+	}
+	return false
 }
 
 func (s *Server) samlCookieName(r *http.Request) string {
@@ -131,6 +159,38 @@ func (s *Server) samlCookieName(r *http.Request) string {
 		return secureSAMLCookie
 	}
 	return samlCookie
+}
+
+// samlStatePurpose keys the MAC of the sign-in cookie.
+const samlStatePurpose = "saml sign-in"
+
+// sealSAMLState returns the cookie value of st: its JSON, and a MAC under
+// the servers' shared key (the one of the known-browser cookies), so a
+// cookie Signalith did not make, or changed, is refused. Without it, an
+// attacker holding someone's SAMLResponse could write a cookie with its
+// InResponseTo and sign in as them.
+func (s *Server) sealSAMLState(st samlState) string {
+	data, _ := json.Marshal(st)
+	body := base64.RawURLEncoding.EncodeToString(data)
+	return body + "." + base64.RawURLEncoding.EncodeToString(s.browserKey().MAC(samlStatePurpose, []byte(body)))
+}
+
+// openSAMLState checks and reads a cookie value sealSAMLState made.
+func (s *Server) openSAMLState(v string) (samlState, bool) {
+	var st samlState
+	body, mac, ok := strings.Cut(v, ".")
+	if !ok {
+		return st, false
+	}
+	got, err := base64.RawURLEncoding.DecodeString(mac)
+	if err != nil || !hmac.Equal(got, s.browserKey().MAC(samlStatePurpose, []byte(body))) {
+		return st, false
+	}
+	data, err := base64.RawURLEncoding.DecodeString(body)
+	if err != nil || json.Unmarshal(data, &st) != nil {
+		return st, false
+	}
+	return st, true
 }
 
 // samlState is what the cookie holds while a sign-in is at the provider.
@@ -168,7 +228,7 @@ func (s *Server) handleSAMLStart(w http.ResponseWriter, r *http.Request) {
 		s.ssoFail(w, r, "provider", "", "SAML metadata: "+err.Error())
 		return
 	}
-	s.noteSAMLEntity(idp)
+	s.noteSAMLEntity(c, idp)
 	req := saml.NewRequest(time.Now())
 	target, err := saml.RedirectURL(idp, samlSP(c), req)
 	if err != nil {
@@ -176,8 +236,7 @@ func (s *Server) handleSAMLStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	st := samlState{ID: req.ID, RelayState: req.RelayState, Next: next, Entity: idp.EntityID, Expires: time.Now().Add(ssoWait).Unix()}
-	data, _ := json.Marshal(st)
-	http.SetCookie(w, &http.Cookie{Name: s.samlCookieName(r), Value: base64.RawURLEncoding.EncodeToString(data), Path: "/",
+	http.SetCookie(w, &http.Cookie{Name: s.samlCookieName(r), Value: s.sealSAMLState(st), Path: "/",
 		MaxAge: int(ssoWait.Seconds()), HttpOnly: true, SameSite: http.SameSiteNoneMode, Secure: true})
 	http.Redirect(w, r, target, http.StatusSeeOther)
 }
@@ -199,8 +258,8 @@ func (s *Server) readSAMLState(w http.ResponseWriter, r *http.Request) (samlStat
 	if err != nil {
 		return st, false
 	}
-	data, err := base64.RawURLEncoding.DecodeString(ck.Value)
-	if err != nil || json.Unmarshal(data, &st) != nil || st.ID == "" || st.RelayState == "" || st.Entity == "" {
+	st, ok := s.openSAMLState(ck.Value)
+	if !ok || st.ID == "" || st.RelayState == "" || st.Entity == "" {
 		return st, false
 	}
 	return st, time.Now().Unix() <= st.Expires
@@ -235,7 +294,7 @@ func (s *Server) handleSAMLACS(w http.ResponseWriter, r *http.Request) {
 		s.ssoFail(w, r, "provider", "", "SAML metadata: "+err.Error())
 		return
 	}
-	s.noteSAMLEntity(idp)
+	s.noteSAMLEntity(c, idp)
 	if idp.EntityID != st.Entity {
 		s.ssoFail(w, r, "off", "", "SAML single sign-on moved to another identity provider during the sign-in")
 		return
@@ -285,7 +344,9 @@ func samlIdentityOf(set config.SAMLSettings, entity string, a *saml.Assertion) (
 		return u, nil, "username", "the username " + oidcText(name) + " is not a usable username"
 	}
 	// The provider is the organization's own, set up by its admins, so the
-	// address it sends is taken as theirs to vouch for.
+	// address it sends is taken as one it vouches for: it maps roles and
+	// matches provisioned users. Send it only from a directory field
+	// people cannot edit themselves (docs/sso.md).
 	email := ""
 	for _, at := range saml.EmailAttributes {
 		if v := strings.TrimSpace(a.Value(at)); v != "" {
@@ -323,7 +384,10 @@ func samlIdentityOf(set config.SAMLSettings, entity string, a *saml.Assertion) (
 	}
 	// The subject: Entra ID's object ID never changes, while its NameID
 	// (the user principal name) can be renamed.
-	sub := a.Value(saml.ClaimObjectID)
+	sub := ""
+	if set.Provider == saml.Entra {
+		sub = a.Value(saml.ClaimObjectID)
+	}
 	if sub == "" {
 		if transient {
 			return u, nil, "username", "the NameID is transient (new at every sign-in), so Signalith cannot tell it is the same person next time; have the provider send a persistent NameID"
@@ -335,7 +399,7 @@ func samlIdentityOf(set config.SAMLSettings, entity string, a *saml.Assertion) (
 	if !transient {
 		u.IDs = append(u.IDs, a.NameID)
 	}
-	if v := a.Value(saml.ClaimObjectID); v != "" {
+	if v := a.Value(saml.ClaimObjectID); v != "" && set.Provider == saml.Entra {
 		u.IDs = append(u.IDs, v)
 	}
 	return u, matched, "", ""

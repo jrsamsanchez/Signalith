@@ -162,7 +162,24 @@ func TestSAMLSignIn(t *testing.T) {
 		t.Errorf("replay = %d %s", resp.StatusCode, resp.Header.Get("Location"))
 	}
 
+	// Moving to another provider refuses the old one's users at once,
+	// even before the new provider's metadata can be read.
+	moved := *s.Config
+	moved.Auth.SAML.MetadataURL = "http://127.0.0.1:1/metadata"
+	s.live.Store(&moved)
+	if code, _, _ := callWith(t, ts.URL, "GET", "/api/me", "", sess); code != 401 {
+		t.Errorf("me after moving to another provider = %d", code)
+	}
+	s.live.Store(nil)
+
 	// Turning SAML off ends their sessions, and hides the button.
+	id, relay, ck = samlStart(t, ts, "")
+	r = idp.Honest(sp.EntityID, sp.ACSURL, id, time.Now())
+	r.NameID = "Alice@corp.example.com"
+	r.Attributes = map[string][]string{"groups": {"soc"}}
+	if _, _, sess = samlPost(t, ts, idp.Respond(t, r), relay, ck); sess == nil {
+		t.Fatal("second sign-in failed")
+	}
 	off := *s.Config
 	off.Auth.SAML.Enabled = false
 	s.live.Store(&off)
@@ -176,11 +193,30 @@ func TestSAMLSignIn(t *testing.T) {
 		t.Errorf("start with SAML off = %s", resp.Header.Get("Location"))
 	}
 	s.live.Store(nil)
+}
 
-	// Another provider's users are refused once its entity ID is known.
-	s.samlEntity.Store("https://other.example.com")
-	if code, _, _ := callWith(t, ts.URL, "GET", "/api/me", "", sess); code != 401 {
-		t.Errorf("me after moving to another provider = %d", code)
+// A sign-in cookie Signalith did not make is refused: someone holding a
+// stolen SAMLResponse cannot write one with its InResponseTo.
+func TestSAMLForgedCookie(t *testing.T) {
+	ts, s, idp := newSAMLServer(t, nil)
+	sp := samlSP(s.conf())
+	id, relay, ck := samlStart(t, ts, "")
+	resp64 := idp.Respond(t, idp.Honest(sp.EntityID, sp.ACSURL, id, time.Now()))
+	body, _, _ := strings.Cut(ck.Value, ".")
+	forged := base64.RawURLEncoding.EncodeToString([]byte(`{"i":"` + id + `","r":"x","p":"` + idp.EntityID + `","e":9999999999}`))
+	for name, v := range map[string]string{
+		"no MAC":       forged,
+		"own MAC":      forged + "." + base64.RawURLEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef")),
+		"another body": forged + ck.Value[len(body):],
+	} {
+		resp, _, sess := samlPost(t, ts, resp64, "x", &http.Cookie{Name: samlCookie, Value: v})
+		if sess != nil || samlError(resp) != "expired" {
+			t.Errorf("%s: %d %s", name, resp.StatusCode, resp.Header.Get("Location"))
+		}
+	}
+	// The real cookie still works.
+	if resp, _, sess := samlPost(t, ts, resp64, relay, ck); sess == nil {
+		t.Errorf("real cookie: %d %s", resp.StatusCode, resp.Header.Get("Location"))
 	}
 }
 
@@ -261,11 +297,14 @@ func TestSAMLProviders(t *testing.T) {
 	r.Attributes = map[string][]string{
 		"http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn": {"carol@corp.example.com"},
 		"http://schemas.xmlsoap.org/claims/Group":                   {"soc-admins"},
+		// Only Entra ID's object ID is its identity; elsewhere a field of
+		// that name could be one people edit.
+		"http://schemas.microsoft.com/identity/claims/objectidentifier": {"0b1d0000-0000-0000-0000-00000000000b"},
 	}
 	if resp, _, sess := samlPost(t, ts2, idp2.Respond(t, r), relay, ck); sess == nil {
 		t.Fatalf("AD FS sign-in = %d %s", resp.StatusCode, resp.Header.Get("Location"))
 	}
-	if u, ok := s2.userStore().Get("carol@corp.example.com"); !ok || u.Role != users.Admin {
+	if u, ok := s2.userStore().Get("carol@corp.example.com"); !ok || u.Role != users.Admin || u.Subject != users.SSOSubject("saml:"+idp2.EntityID, r.NameID) {
 		t.Fatalf("AD FS user = %+v", u)
 	}
 }

@@ -6,6 +6,8 @@ import (
 	"encoding/base64"
 	"errors"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
@@ -122,7 +124,7 @@ func TestParseResponse(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", c.name, err)
 		}
-		if a.NameID != "alice@example.com" || a.Value("email") != "alice@example.com" || a.Value("GROUPS") != "soc-admins" || a.ID != r.AssertionID {
+		if a.NameID != "alice@example.com" || a.Value("email") != "alice@example.com" || a.Value("groups") != "soc-admins" || a.Value("GROUPS") != "" || a.ID != r.AssertionID {
 			t.Fatalf("%s: %+v", c.name, a)
 		}
 		if a.Expires.Before(now.Add(5 * time.Minute)) {
@@ -280,5 +282,55 @@ func TestEncryptedRefused(t *testing.T) {
 	}
 	if _, err := saml.ParseResponse(p.Respond(t, r), idp, sp, "_r", now); err == nil || !strings.Contains(err.Error(), "encrypted") {
 		t.Fatalf("got %v", err)
+	}
+}
+
+// A provider that is down is asked once a minute, not at every sign-in;
+// metadata read before is used meanwhile.
+func TestMetadataCache(t *testing.T) {
+	p := samltest.New(t, "https://idp.example.com/saml", "https://idp.example.com/sso")
+	var hits int
+	up := true
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		if !up {
+			http.Error(w, "down", http.StatusServiceUnavailable)
+			return
+		}
+		_, _ = w.Write(p.Metadata())
+	}))
+	defer srv.Close()
+	now := time.Now()
+	m := saml.NewMetadata()
+	m.Now = func() time.Time { return now }
+	if _, err := m.Get(t.Context(), srv.URL, false); err != nil || hits != 1 {
+		t.Fatalf("first = %v, %d", err, hits)
+	}
+	if _, err := m.Get(t.Context(), srv.URL, false); err != nil || hits != 1 {
+		t.Fatalf("cached = %v, %d", err, hits)
+	}
+	up, now = false, now.Add(2*time.Hour)
+	for range 3 {
+		if idp, err := m.Get(t.Context(), srv.URL, false); err != nil || idp == nil {
+			t.Fatalf("stale copy while down: %v", err)
+		}
+	}
+	if hits != 2 {
+		t.Fatalf("asked a provider that is down %d times", hits-1)
+	}
+	// With nothing read before, the failure is kept for a minute.
+	other := srv.URL + "/other"
+	for range 3 {
+		if _, err := m.Get(t.Context(), other, false); err == nil {
+			t.Fatal("down provider gave metadata")
+		}
+	}
+	if hits != 3 {
+		t.Fatalf("hits = %d", hits)
+	}
+	now = now.Add(2 * time.Minute)
+	_, _ = m.Get(t.Context(), other, false)
+	if hits != 4 {
+		t.Fatalf("not asked again after a minute: %d", hits)
 	}
 }

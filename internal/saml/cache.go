@@ -14,9 +14,9 @@ import (
 )
 
 // Replays remembers the assertions used, until they expire, so each is
-// used once. It is kept in memory, per server: across a cluster, the
-// sign-in cookie still ties each assertion to the one browser that asked
-// for it (InResponseTo), and that cookie is used up by the first try.
+// used once. It is kept in memory, per server: across a cluster, each
+// assertion still answers one browser's request (InResponseTo), whose ID
+// only that browser's signed, HttpOnly sign-in cookie holds.
 type Replays struct {
 	mu   sync.Mutex
 	seen map[string]time.Time
@@ -55,23 +55,29 @@ func (r *Replays) Use(id string, expires, now time.Time) bool {
 
 // Metadata fetches identity provider metadata and keeps it for an hour,
 // so a new signing certificate the provider publishes is picked up. When
-// the provider cannot be reached, the last copy is used for up to a day.
+// the provider cannot be reached, the last copy is used for up to a day;
+// with none, the failure is kept for a minute, so sign-ins do not each
+// wait on a provider that is down. One fetch per address runs at a time.
 type Metadata struct {
 	HTTP *http.Client
 	Now  func() time.Time
 
 	mu    sync.Mutex
 	cache map[string]metadataEntry
+	busy  map[string]*sync.Mutex
 }
 
 type metadataEntry struct {
 	idp     *IdP
 	fetched time.Time
+	err     error
+	failed  time.Time
 }
 
 const (
-	metadataFresh = time.Hour
-	metadataStale = 24 * time.Hour
+	metadataFresh  = time.Hour
+	metadataStale  = 24 * time.Hour
+	metadataFailed = time.Minute
 )
 
 // NewMetadata returns a fetcher with its own HTTP client: TLS 1.2 or
@@ -99,27 +105,68 @@ func (m *Metadata) now() time.Time {
 // Get returns the identity provider described at url, from the cache
 // when fresh. fresh skips the cache, for a test.
 func (m *Metadata) Get(ctx context.Context, url string, fresh bool) (*IdP, error) {
-	now := m.now()
-	m.mu.Lock()
-	e, ok := m.cache[url]
-	m.mu.Unlock()
-	if ok && !fresh && now.Sub(e.fetched) < metadataFresh {
-		return e.idp, nil
+	if !fresh {
+		if idp, ok, err := m.cached(url); ok {
+			return idp, err
+		}
 	}
+	// One fetch per address at a time; those that waited use its result.
+	m.mu.Lock()
+	if m.busy == nil {
+		m.busy = map[string]*sync.Mutex{}
+	}
+	lock := m.busy[url]
+	if lock == nil {
+		lock = &sync.Mutex{}
+		m.busy[url] = lock
+	}
+	m.mu.Unlock()
+	lock.Lock()
+	defer lock.Unlock()
+	if !fresh {
+		if idp, ok, err := m.cached(url); ok {
+			return idp, err
+		}
+	}
+	now := m.now()
 	idp, err := m.Fetch(ctx, url)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.cache == nil {
+		m.cache = map[string]metadataEntry{}
+	}
+	e := m.cache[url]
 	if err != nil {
-		if ok && !fresh && now.Sub(e.fetched) < metadataStale {
+		e.err, e.failed = err, now
+		m.cache[url] = e
+		if !fresh && e.idp != nil && now.Sub(e.fetched) < metadataStale {
 			return e.idp, nil
 		}
 		return nil, err
 	}
-	m.mu.Lock()
-	if m.cache == nil {
-		m.cache = map[string]metadataEntry{}
-	}
 	m.cache[url] = metadataEntry{idp: idp, fetched: now}
-	m.mu.Unlock()
 	return idp, nil
+}
+
+// cached returns what the cache holds for url while it is usable: fresh
+// metadata, or a recent failure (with stale metadata when there is some).
+func (m *Metadata) cached(url string) (*IdP, bool, error) {
+	now := m.now()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	e, ok := m.cache[url]
+	switch {
+	case !ok:
+		return nil, false, nil
+	case e.idp != nil && now.Sub(e.fetched) < metadataFresh:
+		return e.idp, true, nil
+	case e.err != nil && now.Sub(e.failed) < metadataFailed:
+		if e.idp != nil && now.Sub(e.fetched) < metadataStale {
+			return e.idp, true, nil
+		}
+		return nil, true, e.err
+	}
+	return nil, false, nil
 }
 
 // Fetch reads and parses the metadata at url.

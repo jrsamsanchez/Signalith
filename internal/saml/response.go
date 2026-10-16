@@ -24,24 +24,14 @@ type Assertion struct {
 	// Expires is when the assertion can no longer be used; it is
 	// remembered until then, so it is used once.
 	Expires time.Time
-	// Attributes are the values of each attribute, by Name and by
-	// FriendlyName.
+	// Attributes are the values of each attribute, by its Name.
 	Attributes map[string][]string
 }
 
-// Values returns the values of attribute name: by its exact Name or
-// FriendlyName, or else ignoring case.
-func (a *Assertion) Values(name string) []string {
-	if v, ok := a.Attributes[name]; ok {
-		return v
-	}
-	for k, v := range a.Attributes {
-		if strings.EqualFold(k, name) {
-			return v
-		}
-	}
-	return nil
-}
+// Values returns the values of the attribute with exactly this Name. A
+// FriendlyName, or another case, is not matched: it could pick another
+// attribute than the one meant.
+func (a *Assertion) Values(name string) []string { return a.Attributes[name] }
 
 // Value returns the first value of attribute name, or "".
 func (a *Assertion) Value(name string) string {
@@ -479,10 +469,8 @@ func readAssertion(a *etree.Element, idp *IdP, sp SP, requestID string, now time
 				}
 				vals = append(vals, t)
 			}
-			for _, name := range []string{attr(at, "Name"), attr(at, "FriendlyName")} {
-				if name != "" {
-					out.Attributes[name] = append(out.Attributes[name], vals...)
-				}
+			if name := attr(at, "Name"); name != "" {
+				out.Attributes[name] = append(out.Attributes[name], vals...)
 			}
 		}
 	}

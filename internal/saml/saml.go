@@ -89,7 +89,7 @@ func readXML(data []byte, max int) (*etree.Document, error) {
 	if len(data) > max {
 		return nil, fmt.Errorf("the document is larger than %d KB", max>>10)
 	}
-	if bytes.Contains(data, []byte("<!DOCTYPE")) || bytes.Contains(data, []byte("<!ENTITY")) {
+	if up := bytes.ToUpper(data); bytes.Contains(up, []byte("<!DOCTYPE")) || bytes.Contains(up, []byte("<!ENTITY")) {
 		return nil, errors.New("the document has a DTD, which SAML never needs")
 	}
 	doc := etree.NewDocument()
