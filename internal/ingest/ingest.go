@@ -658,37 +658,7 @@ func (e Event) Document() map[string]any {
 // Normalize maps one record to an event. tag is the Fluent Bit tag, which
 // says what kind of source the record came from.
 func Normalize(tag string, r map[string]any, now time.Time) Event {
-	var ev Event
-	switch {
-	case tag == SensorStatusTag:
-		ev = parseSensorStatus(r)
-	case isWazuhTag(tag) || IsWazuhAlert(r):
-		ev = parseWazuhRecord(r)
-	case isZeekTag(tag) || (!isSuricataTag(tag) && IsZeekRecord(r)):
-		ev = parseZeekRecord(tag, r)
-	case isSuricataTag(tag) || IsSuricataEVE(r):
-		ev = parseSuricataRecord(r)
-	case tag == CloudTrailTag || strings.HasPrefix(tag, CloudTrailTag+".") || IsCloudTrailRecord(r):
-		ev = ParseCloudTrail(r)
-	case tag == AzureTag || strings.HasPrefix(tag, AzureTag+".") || IsAzureRecord(r):
-		ev = ParseAzure(r)
-	case tag == O365Tag || strings.HasPrefix(tag, O365Tag+".") || IsO365Record(r):
-		ev = ParseO365(r)
-	case isWindowsRecord(tag, r):
-		ev = parseWindows(r)
-	case strings.HasPrefix(tag, "linux.clamav"):
-		ev = parseClamAVRecord(r)
-	case strings.HasPrefix(tag, WebTag):
-		ev = parseWebRecord(r)
-	case strings.HasPrefix(tag, "linux.audit"):
-		ev = parseAuditdRecord(r)
-	case strings.HasPrefix(tag, "linux.journal") || has(r, "MESSAGE"):
-		ev = parseJournal(r)
-	case strings.HasPrefix(tag, "linux.") || strings.HasPrefix(tag, "syslog") || has(r, "log"):
-		ev = parseSyslogLine(str(r, "log", "message"), sourcetypeForTag(tag), now)
-	default:
-		ev = parseGeneric(r)
-	}
+	ev := parseRecord(tag, r, now)
 	if ev.Time.IsZero() {
 		ev.Time = recordTime(r, now)
 	}
@@ -860,3 +830,57 @@ func baseName(p string) string {
 	}
 	return p
 }
+
+// parseRecord runs the parser for a record's kind of source. A parser that
+// panics on a crafted record stores the record as a generic event instead,
+// so one bad record cannot fail the batch it came in or stop the server.
+func parseRecord(tag string, r map[string]any, now time.Time) (ev Event) {
+	defer func() {
+		if p := recover(); p != nil {
+			parserPanics.Add(1)
+			if last := lastParserPanicLog.Load(); now.Unix()-last >= 60 && lastParserPanicLog.CompareAndSwap(last, now.Unix()) {
+				slog.Warn("a record stopped its parser; stored it as a generic event (logged once a minute)", "tag", tag, "panic", fmt.Sprint(p))
+			}
+			ev = parseGeneric(r)
+		}
+	}()
+	switch {
+	case tag == SensorStatusTag:
+		ev = parseSensorStatus(r)
+	case isWazuhTag(tag) || IsWazuhAlert(r):
+		ev = parseWazuhRecord(r)
+	case isZeekTag(tag) || (!isSuricataTag(tag) && IsZeekRecord(r)):
+		ev = parseZeekRecord(tag, r)
+	case isSuricataTag(tag) || IsSuricataEVE(r):
+		ev = parseSuricataRecord(r)
+	case tag == CloudTrailTag || strings.HasPrefix(tag, CloudTrailTag+".") || IsCloudTrailRecord(r):
+		ev = ParseCloudTrail(r)
+	case tag == AzureTag || strings.HasPrefix(tag, AzureTag+".") || IsAzureRecord(r):
+		ev = ParseAzure(r)
+	case tag == O365Tag || strings.HasPrefix(tag, O365Tag+".") || IsO365Record(r):
+		ev = ParseO365(r)
+	case isWindowsRecord(tag, r):
+		ev = parseWindows(r)
+	case strings.HasPrefix(tag, "linux.clamav"):
+		ev = parseClamAVRecord(r)
+	case strings.HasPrefix(tag, WebTag):
+		ev = parseWebRecord(r)
+	case strings.HasPrefix(tag, "linux.audit"):
+		ev = parseAuditdRecord(r)
+	case strings.HasPrefix(tag, "linux.journal") || has(r, "MESSAGE"):
+		ev = parseJournal(r)
+	case strings.HasPrefix(tag, "linux.") || strings.HasPrefix(tag, "syslog") || has(r, "log"):
+		ev = parseSyslogLine(str(r, "log", "message"), sourcetypeForTag(tag), now)
+	default:
+		ev = parseGeneric(r)
+	}
+	return ev
+}
+
+var (
+	// parserPanics counts records whose parser panicked.
+	parserPanics atomic.Int64
+	// lastParserPanicLog is when a parser panic was last logged, in Unix
+	// seconds.
+	lastParserPanicLog atomic.Int64
+)
