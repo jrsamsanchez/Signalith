@@ -33,10 +33,32 @@ type snRecord struct {
 	Number  string `json:"number"`
 	State   string `json:"state"`
 	Updated string `json:"sys_updated_on"`
+	// Asked for by find only.
+	CreatedBy string `json:"sys_created_by"`
+	CreatedOn string `json:"sys_created_on"`
 }
 
+// snTime is how the Table API writes a time, in UTC.
+const snTime = "2006-01-02 15:04:05"
+
+// snUser is the form of a user name that goes into a query.
+var snUser = regexp.MustCompile(`^[A-Za-z0-9._@+-]{1,100}$`)
+
+// self returns the user name the connection signs in as, as ServiceNow
+// writes it in sys_created_by, or "" when it cannot tell: an OAuth client
+// acts as the user its application names, which the Table API does not
+// say.
+func (s *serviceNow) self() string {
+	if s.conn.Auth != AuthBasic {
+		return ""
+	}
+	return strings.TrimSpace(s.conn.Username)
+}
+
+// state returns the record as kept on the link, its values cut to 100
+// characters.
 func (r snRecord) state() remoteState {
-	return remoteState{ref: ref{Key: r.Number, ID: r.SysID}, Status: RemoteStatus{Name: r.State}, Updated: r.Updated}
+	return remoteState{ref: ref{Key: clean(r.Number, 100), ID: r.SysID}, Status: RemoteStatus{Name: clean(r.State, 100)}, Updated: clean(r.Updated, 100)}
 }
 
 func (s *serviceNow) table(sub string) string {
@@ -121,16 +143,17 @@ func (s *serviceNow) setStatus(ctx context.Context, r ref, caseStatus, resolutio
 	if err := s.patch(ctx, r, body, &out); err != nil {
 		return RemoteStatus{}, err
 	}
-	if out.Result.State == "" {
+	got := out.Result.state().Status
+	if got.Name == "" {
 		return RemoteStatus{Name: state}, nil
 	}
-	if out.Result.State != state {
+	if got.Name != state {
 		// A business rule kept the ticket where it was, or moved it
 		// elsewhere.
-		return RemoteStatus{Name: out.Result.State}, &Error{Msg: fmt.Sprintf("ServiceNow kept ticket %s in state %s instead of moving it to %s to match the case (%s); a business rule or the state model may not allow it. Check the state mapping on the Ticketing page.",
-			r.Key, RemoteStatus{Name: out.Result.State}.Label(TypeServiceNow), RemoteStatus{Name: state}.Label(TypeServiceNow), label(caseStatus))}
+		return got, &Error{Msg: fmt.Sprintf("ServiceNow kept ticket %s in state %s instead of moving it to %s to match the case (%s); a business rule or the state model may not allow it. Check the state mapping on the Ticketing page.",
+			r.Key, got.Label(TypeServiceNow), RemoteStatus{Name: state}.Label(TypeServiceNow), label(caseStatus))}
 	}
-	return RemoteStatus{Name: out.Result.State}, nil
+	return got, nil
 }
 
 func (s *serviceNow) comment(ctx context.Context, r ref, text string) (string, error) {
@@ -196,24 +219,37 @@ func (s *serviceNow) poll(ctx context.Context, refs []ref, since time.Time) ([]r
 }
 
 // find looks for the ticket opened earlier for a case by its
-// correlation_id; the oldest when there are several.
-func (s *serviceNow) find(ctx context.Context, caseID string) (*created, error) {
+// correlation_id: one the connection's own user created at or after
+// since, the newest when there are several. Someone else's ticket with
+// the correlation ID is never taken, nor one older than the case's link.
+// Signed in with OAuth, the connection cannot tell its own tickets, so it
+// finds none and a new one is opened.
+func (s *serviceNow) find(ctx context.Context, caseID string, since time.Time) (*created, error) {
+	me := s.self()
+	if !snUser.MatchString(me) {
+		return nil, nil
+	}
 	var res struct {
 		Result []snRecord `json:"result"`
 	}
 	q := url.Values{
-		"sysparm_query":  {"correlation_id=" + correlationID(caseID) + "^ORDERBYsys_created_on"},
-		"sysparm_fields": {snFields},
-		"sysparm_limit":  {"1"},
+		"sysparm_query":  {"correlation_id=" + correlationID(caseID) + "^sys_created_by=" + me + "^ORDERBYDESCsys_created_on"},
+		"sysparm_fields": {snFields + ",sys_created_by,sys_created_on"},
+		"sysparm_limit":  {"10"},
 	}
 	if err := s.do(ctx, request{method: http.MethodGet, path: s.table(""), query: snQuery(q), out: &res}); err != nil {
 		return nil, err
 	}
 	for _, r := range res.Result {
-		if sysID.MatchString(r.SysID) && r.Number != "" {
-			st := r.state()
-			return &created{ref: st.ref, URL: s.recordURL(r.SysID), Status: st.Status, Updated: st.Updated}, nil
+		if !sysID.MatchString(r.SysID) || r.Number == "" || !strings.EqualFold(r.CreatedBy, me) {
+			continue
 		}
+		at, err := time.Parse(snTime, r.CreatedOn)
+		if err != nil || at.Before(since) {
+			continue
+		}
+		st := r.state()
+		return &created{ref: st.ref, URL: s.recordURL(r.SysID), Status: st.Status, Updated: st.Updated}, nil
 	}
 	return nil, nil
 }
@@ -238,9 +274,12 @@ func (s *serviceNow) comments(ctx context.Context, r ref) ([]comment, error) {
 	if err := s.do(ctx, request{method: http.MethodGet, path: "/api/now/table/sys_journal_field", query: snQuery(q), out: &res}); err != nil {
 		return nil, err
 	}
-	out := make([]comment, 0, len(res.Result))
-	for _, j := range res.Result {
-		out = append(out, comment{ID: j.SysID, Author: j.CreatedBy, Text: j.Value})
+	me := s.self()
+	list := res.Result[:min(len(res.Result), maxComments)]
+	out := make([]comment, 0, len(list))
+	for _, j := range list {
+		out = append(out, comment{ID: j.SysID, Author: j.CreatedBy, Text: j.Value,
+			Own: me != "" && strings.EqualFold(j.CreatedBy, me), OwnUnknown: me == ""})
 	}
 	return out, nil
 }

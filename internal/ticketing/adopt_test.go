@@ -298,3 +298,141 @@ func TestSyncStaleAutoOpenIsBounded(t *testing.T) {
 		t.Errorf("manual retry %+v, %d creates", got, f.count("POST /api/now/table/incident"))
 	}
 }
+
+// adoptCase is one system for the tests of which ticket a retry takes.
+type adoptCase struct {
+	name       string
+	conn       Connection
+	plant      func(caseID, by string, at time.Time) string
+	tickets    func() int
+	bot, other string
+}
+
+func adoptCases(t *testing.T, e func(Connection) *env) []func() (adoptCase, *env) {
+	return []func() (adoptCase, *env){
+		func() (adoptCase, *env) {
+			f := newFakeJira(t, true, basic("bot@example.com", "jira-api-token-123456"))
+			en := e(jiraCloudConn(f))
+			f.now = en.clk.Now
+			return adoptCase{"jira cloud", jiraCloudConn(f), f.plant, func() int { f.mu.Lock(); defer f.mu.Unlock(); return len(f.issues) }, jiraBot, "Mallory"}, en
+		},
+		func() (adoptCase, *env) {
+			f := newFakeJira(t, false, "Bearer dc-personal-access-token")
+			en := e(jiraDCConn(f))
+			f.now = en.clk.Now
+			return adoptCase{"jira data center", jiraDCConn(f), f.plant, func() int { f.mu.Lock(); defer f.mu.Unlock(); return len(f.issues) }, jiraBot, "Mallory"}, en
+		},
+		func() (adoptCase, *env) {
+			f := newFakeSN(t, basic("svc.signalith", "sn-password-123"))
+			en := e(snConn(f))
+			f.now = en.clk.Now
+			return adoptCase{"servicenow", snConn(f), f.plant, func() int { f.mu.Lock(); defer f.mu.Unlock(); return len(f.records) }, "svc.signalith", "mallory"}, en
+		},
+	}
+}
+
+// Anyone can put a case's marker on a ticket. A retry after a crash takes
+// neither one someone else opened nor one older than the case's link: it
+// opens a new ticket.
+func TestRetryDoesNotAdoptPlantedTickets(t *testing.T) {
+	for _, mk := range adoptCases(t, func(c Connection) *env { return newEnv(t, c) }) {
+		tc, e := mk()
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			e.newCase("case-1", "Brute force", "high")
+			e.crash(tc.conn.ID, "case-1", false, false)
+			planted := tc.plant("case-1", tc.other, e.clk.Now().Add(time.Minute))
+			old := tc.plant("case-1", tc.bot, e.clk.Now().Add(-adoptSkew-time.Minute))
+			e.clk.add(staleAfter + 1)
+			l, err := e.svc.Create(ctx, "case-1", tc.conn.ID, "bob")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if l.Key == planted || l.Key == old || l.State != StateLinked {
+				t.Errorf("took %s (planted %s, old %s)", l.Key, planted, old)
+			}
+			if n := tc.tickets(); n != 3 {
+				t.Errorf("%d tickets, want a new one beside the two", n)
+			}
+		})
+	}
+}
+
+// Among several tickets the connection's own account opened since the
+// link (or a few minutes before it, for clocks apart), the newest is
+// taken.
+func TestRetryAdoptsNewestOwnTicket(t *testing.T) {
+	for _, mk := range adoptCases(t, func(c Connection) *env { return newEnv(t, c) }) {
+		tc, e := mk()
+		t.Run(tc.name, func(t *testing.T) {
+			e.newCase("case-1", "Brute force", "high")
+			e.crash(tc.conn.ID, "case-1", false, false)
+			now := e.clk.Now()
+			tc.plant("case-1", tc.bot, now.Add(-3*time.Minute))
+			newest := tc.plant("case-1", tc.bot, now.Add(2*time.Minute))
+			tc.plant("case-1", tc.bot, now.Add(time.Minute))
+			tc.plant("case-1", tc.other, now.Add(3*time.Minute))
+			e.clk.add(staleAfter + 1)
+			l, err := e.svc.Create(context.Background(), "case-1", tc.conn.ID, "bob")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if l.Key != newest {
+				t.Errorf("took %s, want the newest own %s", l.Key, newest)
+			}
+			if n := tc.tickets(); n != 4 {
+				t.Errorf("%d tickets, want none opened", n)
+			}
+		})
+	}
+}
+
+// A retry after a failed try keeps looking for tickets since the first
+// try, not since the retry.
+func TestRetryKeepsFirstTryTime(t *testing.T) {
+	f := newFakeSN(t, basic("svc.signalith", "sn-password-123"))
+	e := newEnv(t, snConn(f))
+	f.now = e.clk.Now
+	ctx := context.Background()
+	e.newCase("case-1", "x", "high")
+	// The ticket is made, but the answer is lost.
+	f.inject(fault{match: "GET /api/now/table/incident", status: 503, body: "{}", count: 1})
+	e.crash("sn", "case-1", false, true)
+	first := e.link("sn", "case-1").Created
+	e.clk.add(staleAfter + 1)
+	if _, err := e.svc.Create(ctx, "case-1", "sn", "ann"); err == nil {
+		t.Fatal("the lookup failed but the open succeeded")
+	}
+	if st := e.link("sn", "case-1"); !st.Created.Equal(first) || !st.MayExist {
+		t.Fatalf("after the failed retry %+v", st.Link)
+	}
+	e.clk.add(time.Hour)
+	l, err := e.svc.Create(ctx, "case-1", "sn", "ann")
+	if err != nil || l.Key != "INC0010001" || len(f.records) != 1 {
+		t.Errorf("retry %+v %v, %d records", l, err, len(f.records))
+	}
+}
+
+// Signed in with OAuth, a ServiceNow connection cannot tell its own
+// tickets from others, so a retry opens a new one rather than guess.
+func TestServiceNowOAuthRetryDoesNotAdopt(t *testing.T) {
+	f := newFakeSN(t, "Bearer none-yet")
+	f.clientID, f.clientSecret = "signalith-client", "oauth-client-secret-1"
+	conn := snConn(f)
+	conn.Auth, conn.Username, conn.Password = AuthOAuth, "", ""
+	conn.ClientID, conn.ClientSecret = "signalith-client", "oauth-client-secret-1"
+	e := newEnv(t, conn)
+	f.now = e.clk.Now
+	e.newCase("case-1", "x", "high")
+	e.crashAfterCreate("sn", "case-1")
+	e.clk.add(staleAfter + 1)
+	l, err := e.svc.Create(context.Background(), "case-1", "sn", "ann")
+	if err != nil || l.Key != "INC0010002" {
+		t.Errorf("retry %+v %v", l, err)
+	}
+	for _, r := range f.requests() {
+		if strings.Contains(r, "correlation_id") {
+			t.Errorf("looked for a ticket it cannot tell is its own: %s", r)
+		}
+	}
+}

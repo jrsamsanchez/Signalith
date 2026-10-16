@@ -88,6 +88,14 @@ type Link struct {
 	// written by Signalith, by comment ID.
 	Notes    []string `json:"notes,omitempty"`
 	Comments []string `json:"comments,omitempty"`
+	// Imported counts the ticket's comments added to the case as notes,
+	// for maxImportLink. Backlog marks a ticket with comments left for
+	// the next pass (maxImportPass), so it is read again then.
+	Imported int  `json:"imported,omitempty"`
+	Backlog  bool `json:"backlog,omitempty"`
+	// Warning says why some of the ticket's comments were not added to
+	// the case, for people. It stays until comments are added again.
+	Warning string `json:"warning,omitempty"`
 }
 
 // maxSeen bounds the comment IDs a link remembers; a case holds at most

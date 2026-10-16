@@ -37,9 +37,12 @@ type Service struct {
 
 	// sleep waits before a request is tried again; nil is a timer.
 	sleep func(context.Context, time.Duration) error
+	// passLimit is passTimeout, shorter in tests; 0 is passTimeout.
+	passLimit time.Duration
 
 	tokens tokenCache
 	quirks sync.Map
+	selves sync.Map
 
 	mu sync.Mutex
 	st syncState
@@ -105,6 +108,10 @@ func (e *LinkedError) Error() string {
 // an analyst may try again: the server that was opening it may have
 // stopped.
 const staleAfter = 10 * time.Minute
+
+// adoptSkew is how much earlier than its link a ticket an earlier try
+// opened may say it was created, for clocks a little apart.
+const adoptSkew = 5 * time.Minute
 
 // newLink returns the link of a new ticket for case c.
 func newLink(conn Connection, c *cases.Case, user string, auto bool, state string, now time.Time) *Link {
@@ -192,8 +199,12 @@ func (s *Service) claim(ctx context.Context, l *Link) (Stored, error) {
 	}
 	l.Attempts = cur.Attempts
 	// A server that stopped while opening the ticket, or a try that
-	// failed, may have left one in the system: the next try looks first.
+	// failed, may have left one in the system: the next try looks first,
+	// for one opened since the first of those tries.
 	l.MayExist = cur.MayExist || cur.State == StateCreating || cur.State == StateFailed
+	if l.MayExist && !cur.Created.IsZero() {
+		l.Created = cur.Created
+	}
 	v, err = s.Links.Update(ctx, l, cur.Version)
 	if errors.Is(err, store.ErrConflict) {
 		return Stored{}, ErrInProgress
@@ -219,7 +230,7 @@ func (s *Service) open(ctx context.Context, conn Connection, st Stored) (*Link, 
 			// An earlier try may have opened it: record that one rather
 			// than open another.
 			var found *created
-			found, err = rem.find(ctx, l.CaseID)
+			found, err = rem.find(ctx, l.CaseID, l.Created.Add(-adoptSkew))
 			if err == nil && found != nil {
 				cr, adopted = *found, true
 			}

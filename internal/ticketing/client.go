@@ -2,6 +2,7 @@ package ticketing
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"crypto/tls"
@@ -15,6 +16,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -143,6 +145,9 @@ type client struct {
 	// quirks remembers what a connection's system refused, such as a
 	// field that cannot be set, by connection ID and quirk.
 	quirks *sync.Map
+	// selves remembers the account each connection signs in as, by
+	// selfKey.
+	selves *sync.Map
 	now    func() time.Time
 	sleep  func(context.Context, time.Duration) error
 }
@@ -163,7 +168,7 @@ func (s *Service) newClient(c Connection) (*client, error) {
 	if err != nil {
 		return nil, &Error{Msg: "The connection's certificate authority is not a PEM certificate. Edit the connection and paste it again."}
 	}
-	return &client{conn: c, base: base, http: hc, protected: s.Protected, tokens: &s.tokens, quirks: &s.quirks, now: s.now, sleep: s.sleepFunc()}, nil
+	return &client{conn: c, base: base, http: hc, protected: s.Protected, tokens: &s.tokens, quirks: &s.quirks, selves: &s.selves, now: s.now, sleep: s.sleepFunc()}, nil
 }
 
 // system names the connection's system for people.
@@ -174,6 +179,14 @@ func (cl *client) system() string { return TypeLabel(cl.conn.Type) }
 func (cl *client) tokenKey() string {
 	sum := sha256.Sum256([]byte(cl.conn.URL + "\x00" + cl.conn.ClientID + "\x00" + cl.conn.ClientSecret))
 	return cl.conn.ID + ":" + hex.EncodeToString(sum[:8])
+}
+
+// selfKey identifies the account a connection signs in as: new
+// credentials or a new address may be another account.
+func (cl *client) selfKey() string {
+	c := cl.conn
+	sum := sha256.Sum256([]byte(strings.Join([]string{c.URL, c.Auth, c.Email, c.Token, c.Username, c.Password, c.ClientID, c.ClientSecret}, "\x00")))
+	return c.ID + ":" + hex.EncodeToString(sum[:8])
 }
 
 // request is one API call.
@@ -240,8 +253,19 @@ func (cl *client) once(ctx context.Context, r request) error {
 	case r.form != nil:
 		body, contentType = strings.NewReader(r.form.Encode()), "application/x-www-form-urlencoded"
 	}
+	// Within a pass, the request also ends with the connection's share of
+	// it (passTimeout).
+	end := passDeadline(ctx, cl.conn.ID)
+	if !end.IsZero() && !time.Now().Before(end) {
+		return cl.overTime()
+	}
 	ctx, cancel := context.WithTimeout(ctx, RequestTimeout)
 	defer cancel()
+	if !end.IsZero() {
+		var cancelPass context.CancelFunc
+		ctx, cancelPass = context.WithDeadline(ctx, end)
+		defer cancelPass()
+	}
 	req, err := http.NewRequestWithContext(ctx, r.method, u.String(), body)
 	if err != nil {
 		return &Error{Msg: "The connection's address is not valid. Edit the connection and enter it again."}
@@ -263,11 +287,17 @@ func (cl *client) once(ctx context.Context, r request) error {
 	}
 	resp, err := cl.http.Do(req)
 	if err != nil {
+		if !end.IsZero() && !time.Now().Before(end) {
+			return cl.overTime()
+		}
 		return cl.fail(err)
 	}
 	defer resp.Body.Close()
 	answer, err := io.ReadAll(io.LimitReader(resp.Body, maxAnswer+1))
 	if err != nil {
+		if !end.IsZero() && !time.Now().Before(end) {
+			return cl.overTime()
+		}
 		return cl.fail(err)
 	}
 	if len(answer) > maxAnswer {
@@ -286,6 +316,12 @@ func (cl *client) once(ctx context.Context, r request) error {
 		return &Error{Msg: fmt.Sprintf("%s's answer could not be read (%v). Check that the address is the site itself, not a sign-in page or proxy.", cl.system(), err), Retry: true}
 	}
 	return nil
+}
+
+// overTime is a request not sent, or cut off, because the connection
+// used up its share of a pass.
+func (cl *client) overTime() error {
+	return &Error{Msg: fmt.Sprintf("%s took longer than one sync pass allows (%d minutes); the rest waits for the next pass.", cl.system(), int(passTimeout.Minutes())), Retry: true}
 }
 
 // authorize sets the request's Authorization header.
@@ -342,7 +378,9 @@ func (cl *client) oauthToken(ctx context.Context) (string, error) {
 
 // answerError turns an error answer into an *Error.
 func (cl *client) answerError(resp *http.Response, answer []byte) error {
-	said, fields := apiMessage(answer)
+	// The answer is scrubbed before it is cut and quoted, so a secret it
+	// echoes is hidden whole, whatever characters it holds.
+	said, fields := apiMessage(answer, cl.scrub)
 	e := &Error{Code: resp.StatusCode, Fields: fields}
 	msg := fmt.Sprintf("%s answered %s.", cl.system(), resp.Status)
 	switch {
@@ -394,8 +432,12 @@ func retryAfter(v string, now time.Time) time.Duration {
 // Jira's {"errorMessages": [...], "errors": {"field": "message"}} and
 // ServiceNow's {"error": {"message": "...", "detail": "..."}}. It
 // returns the message as one line, and the fields Jira named. An answer
-// that is not one of those gives its start, when it is text.
-func apiMessage(b []byte) (string, []string) {
+// that is not one of those gives its start, when it is text. scrub, when
+// not nil, hides secrets in the message before it is cut.
+func apiMessage(b []byte, scrub func(string) string) (string, []string) {
+	if scrub == nil {
+		scrub = func(s string) string { return s }
+	}
 	var v struct {
 		ErrorMessages []string          `json:"errorMessages"`
 		Errors        map[string]string `json:"errors"`
@@ -433,7 +475,7 @@ func apiMessage(b []byte) (string, []string) {
 			parts = append(parts, v.Message)
 		}
 		if len(parts) > 0 {
-			return clean(strings.Join(parts, "; "), 300), fields
+			return clean(scrub(strings.Join(parts, "; ")), 300), fields
 		}
 	}
 	if !utf8.Valid(b) {
@@ -444,7 +486,7 @@ func apiMessage(b []byte) (string, []string) {
 		// An HTML error page says nothing a person needs here.
 		return "", nil
 	}
-	return clean(s, 200), nil
+	return clean(scrub(s), 200), nil
 }
 
 // fail describes a request that got no answer.
@@ -526,11 +568,30 @@ func (cl *client) secretValues() []string {
 // scrub hides the connection's secrets in a message.
 func (cl *client) scrub(msg string) string { return scrubValues(msg, cl.secretValues()) }
 
-// scrubValues hides each of values in msg.
+// scrubValues hides each of values in msg: as it is, and as Go quotes it
+// (%q) and JSON escapes it, the forms an error may carry it in. The
+// longest are hidden first, so one form never leaves part of another.
 func scrubValues(msg string, values []string) string {
+	var forms []string
 	for _, s := range values {
-		if len(s) >= 4 {
-			msg = strings.ReplaceAll(msg, s, redact.Mask)
+		if len(s) < 4 {
+			continue
+		}
+		forms = append(forms, s, strings.Trim(strconv.Quote(s), `"`))
+		if j, err := json.Marshal(s); err == nil {
+			forms = append(forms, strings.Trim(string(j), `"`))
+		}
+		var b bytes.Buffer
+		enc := json.NewEncoder(&b)
+		enc.SetEscapeHTML(false)
+		if enc.Encode(s) == nil {
+			forms = append(forms, strings.Trim(strings.TrimSpace(b.String()), `"`))
+		}
+	}
+	slices.SortFunc(forms, func(a, b string) int { return cmp.Or(len(b)-len(a), strings.Compare(a, b)) })
+	for _, f := range slices.Compact(forms) {
+		if len(f) >= 4 {
+			msg = strings.ReplaceAll(msg, f, redact.Mask)
 		}
 	}
 	return msg

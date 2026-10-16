@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -158,6 +159,46 @@ func TestTicketingAPI(t *testing.T) {
 	code, body = doAs(t, ts, "admin", "s3cret-pass", "GET", "/api/cases/case-2/tickets", "")
 	if tk := body["tickets"].([]any); code != 200 || len(tk) != 1 || tk[0].(map[string]any)["state"] != "failed" || tk[0].(map[string]any)["error"] == "" {
 		t.Errorf("failed ticket: %d %v", code, body)
+	}
+}
+
+// Saving and testing connections go to the audit log with where the
+// admin was, the hosts the connections reach, and whether a secret was
+// replaced.
+func TestTicketingAudit(t *testing.T) {
+	sn, _ := fakeServiceNow(t)
+	var logs syncBuffer
+	ts, _, _ := newTicketingServer(t, func(s *Server) { s.Log = slog.New(slog.NewTextHandler(&logs, nil)) })
+	host := strings.TrimPrefix(sn.URL, "http://")
+	save := `{"connections":[{"id":"desk","name":"Desk","type":"servicenow","url":"` + sn.URL + `","auth":"basic",
+		"username":"svc","password":"sn-password-123","allow_loopback":true}]}`
+	if code, body := doAs(t, ts, "admin", "s3cret-pass", "PUT", "/api/ticketing", save); code != 200 {
+		t.Fatalf("save: %d %v", code, body)
+	}
+	if code, body := doAs(t, ts, "admin", "s3cret-pass", "POST", "/api/ticketing/test", `{"id":"desk"}`); code != 200 || body["ok"] != true {
+		t.Fatalf("test: %d %v", code, body)
+	}
+	var saved, tested string
+	for _, line := range strings.Split(logs.String(), "\n") {
+		switch {
+		case strings.Contains(line, "ticketing connections changed"):
+			saved = line
+		case strings.Contains(line, "ticketing connection test passed"):
+			tested = line
+		}
+	}
+	for _, want := range []string{"audit=true", "by=admin", "client=", "hosts=" + host, "secret_replaced=Desk"} {
+		if !strings.Contains(saved, want) {
+			t.Errorf("save log lacks %s: %s", want, saved)
+		}
+	}
+	for _, want := range []string{"audit=true", "by=admin", "client=", "host=" + host, "secret_replaced=false"} {
+		if !strings.Contains(tested, want) {
+			t.Errorf("test log lacks %s: %s", want, tested)
+		}
+	}
+	if strings.Contains(logs.String(), "sn-password-123") {
+		t.Error("the log holds the password")
 	}
 }
 

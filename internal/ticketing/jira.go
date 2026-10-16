@@ -51,8 +51,10 @@ type jiraStatus struct {
 	} `json:"statusCategory"`
 }
 
+// remote returns the status as kept on the link: names cut to 100
+// characters, as everything stored from the remote is.
 func (s jiraStatus) remote() RemoteStatus {
-	return RemoteStatus{Name: s.Name, Category: s.StatusCategory.Key}
+	return RemoteStatus{Name: clean(s.Name, 100), Category: clean(s.StatusCategory.Key, 100)}
 }
 
 // jiraIssue is an issue as searched or read, with the fields asked for.
@@ -60,13 +62,57 @@ type jiraIssue struct {
 	ID     string `json:"id"`
 	Key    string `json:"key"`
 	Fields struct {
-		Status  jiraStatus `json:"status"`
-		Updated string     `json:"updated"`
+		Status   jiraStatus `json:"status"`
+		Updated  string     `json:"updated"`
+		Created  string     `json:"created"`
+		Creator  *jiraUser  `json:"creator"`
+		Reporter *jiraUser  `json:"reporter"`
 	} `json:"fields"`
 }
 
+// jiraTime is how Jira writes a time, as in an issue's created field.
+const jiraTime = "2006-01-02T15:04:05.000-0700"
+
+// jiraUser is an account as Jira writes it: Cloud names it by accountId,
+// Data Center by name and key.
+type jiraUser struct {
+	AccountID   string `json:"accountId"`
+	Name        string `json:"name"`
+	Key         string `json:"key"`
+	DisplayName string `json:"displayName"`
+}
+
+// is reports whether u is the account me.
+func (u jiraUser) is(me jiraUser) bool {
+	return me.AccountID != "" && u.AccountID == me.AccountID ||
+		me.Key != "" && u.Key == me.Key ||
+		me.Name != "" && u.Name == me.Name
+}
+
+// self returns the account the connection signs in as (/myself), asked
+// once and then remembered.
+func (j *jira) self(ctx context.Context) (jiraUser, error) {
+	key := j.selfKey()
+	if j.selves != nil {
+		if v, ok := j.selves.Load(key); ok {
+			return v.(jiraUser), nil
+		}
+	}
+	var me jiraUser
+	if err := j.do(ctx, request{method: http.MethodGet, path: j.api("/myself"), out: &me}); err != nil {
+		return jiraUser{}, err
+	}
+	if me.AccountID == "" && me.Key == "" && me.Name == "" {
+		return jiraUser{}, &Error{Msg: "Jira did not say which account Signalith signs in as. Check the address."}
+	}
+	if j.selves != nil {
+		j.selves.Store(key, me)
+	}
+	return me, nil
+}
+
 func (i jiraIssue) state() remoteState {
-	return remoteState{ref: ref{Key: i.Key, ID: i.ID}, Status: i.Fields.Status.remote(), Updated: i.Fields.Updated}
+	return remoteState{ref: ref{Key: i.Key, ID: i.ID}, Status: i.Fields.Status.remote(), Updated: clean(i.Fields.Updated, 100)}
 }
 
 // quirk reports whether this connection's Jira refused something before,
@@ -142,7 +188,8 @@ func (j *jira) create(ctx context.Context, t ticketContent) (created, error) {
 	c := created{ref: ref{Key: out.Key, ID: out.ID}, URL: strings.TrimRight(j.conn.URL, "/") + "/browse/" + url.PathEscape(out.Key)}
 	var issue jiraIssue
 	if err := j.do(ctx, request{method: http.MethodGet, path: j.issuePath(c.ref, ""), query: url.Values{"fields": {"status,updated"}}, out: &issue}); err == nil {
-		c.Status, c.Updated = issue.Fields.Status.remote(), issue.Fields.Updated
+		st := issue.state()
+		c.Status, c.Updated = st.Status, st.Updated
 	}
 	return c, nil
 }
@@ -263,16 +310,32 @@ func (j *jira) poll(ctx context.Context, refs []ref, since time.Time) ([]remoteS
 	return out, nil
 }
 
-// search returns the issues a JQL query finds, every page.
+// maxSearchPages bounds the pages of one search.
+const maxSearchPages = 100
+
+// search returns the state of the issues a JQL query finds, every page.
 func (j *jira) search(ctx context.Context, q string) ([]remoteState, error) {
-	var out []remoteState
-	fields := []string{"status", "updated"}
+	issues, err := j.searchIssues(ctx, q, []string{"status", "updated"}, maxSearchPages)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]remoteState, 0, len(issues))
+	for _, i := range issues {
+		out = append(out, i.state())
+	}
+	return out, nil
+}
+
+// searchIssues returns the issues a JQL query finds, with fields, reading
+// at most most pages of pageSize.
+func (j *jira) searchIssues(ctx context.Context, q string, fields []string, most int) ([]jiraIssue, error) {
+	var out []jiraIssue
 	if j.conn.cloud() {
 		// Jira Cloud's search pages with a token (the old /search is
 		// gone).
 		token := ""
-		for page := 0; page < 100; page++ {
-			body := map[string]any{"jql": q, "fields": fields, "maxResults": 100}
+		for page := 0; page < most; page++ {
+			body := map[string]any{"jql": q, "fields": fields, "maxResults": pageSize}
 			if token != "" {
 				body["nextPageToken"] = token
 			}
@@ -284,9 +347,7 @@ func (j *jira) search(ctx context.Context, q string) ([]remoteState, error) {
 			if err := j.do(ctx, request{method: http.MethodPost, path: "/rest/api/3/search/jql", body: body, out: &res}); err != nil {
 				return nil, err
 			}
-			for _, i := range res.Issues {
-				out = append(out, i.state())
-			}
+			out = append(out, res.Issues[:min(len(res.Issues), pageSize)]...)
 			if res.NextPageToken == "" || (res.IsLast != nil && *res.IsLast) || len(res.Issues) == 0 {
 				return out, nil
 			}
@@ -294,20 +355,23 @@ func (j *jira) search(ctx context.Context, q string) ([]remoteState, error) {
 		}
 		return out, nil
 	}
-	for start := 0; start < 10000; {
+	for page, start := 0, 0; page < most; page++ {
 		var res struct {
 			Issues []jiraIssue `json:"issues"`
 			Total  int         `json:"total"`
 		}
-		body := map[string]any{"jql": q, "fields": fields, "startAt": start, "maxResults": 100}
+		body := map[string]any{"jql": q, "fields": fields, "startAt": start, "maxResults": pageSize}
 		if err := j.do(ctx, request{method: http.MethodPost, path: "/rest/api/2/search", body: body, out: &res}); err != nil {
 			return nil, err
 		}
-		for _, i := range res.Issues {
-			out = append(out, i.state())
+		got := res.Issues[:min(len(res.Issues), pageSize)]
+		if page == 0 {
+			// Jira may answer with smaller pages than asked for.
+			most = pages(res.Total, len(got), most)
 		}
-		start += len(res.Issues)
-		if len(res.Issues) == 0 || start >= res.Total {
+		out = append(out, got...)
+		start += len(got)
+		if len(got) == 0 || start >= res.Total {
 			break
 		}
 	}
@@ -315,20 +379,45 @@ func (j *jira) search(ctx context.Context, q string) ([]remoteState, error) {
 }
 
 // find looks for the issue opened earlier for a case by its label, in the
-// connection's project; the oldest when there are several.
-func (j *jira) find(ctx context.Context, caseID string) (*created, error) {
+// connection's project: one the connection's own account created at or
+// after since, the newest when there are several. Someone else's issue
+// with the label is never taken, nor one older than the case's link.
+func (j *jira) find(ctx context.Context, caseID string, since time.Time) (*created, error) {
 	if !projectForm.MatchString(j.conn.Project) {
 		return nil, nil
 	}
-	q := fmt.Sprintf(`project = "%s" AND labels = "%s" ORDER BY created ASC`, j.conn.Project, jiraLabel(caseID))
-	got, err := j.search(ctx, q)
+	me, err := j.self(ctx)
+	if err != nil {
+		if retryable(err) {
+			return nil, err
+		}
+		// It cannot tell its own issues, so it takes none.
+		return nil, nil
+	}
+	q := fmt.Sprintf(`project = "%s" AND labels = "%s" AND creator = currentUser() ORDER BY created DESC`, j.conn.Project, jiraLabel(caseID))
+	got, err := j.searchIssues(ctx, q, []string{"status", "updated", "created", "creator", "reporter"}, 1)
 	if err != nil {
 		return nil, err
 	}
-	for _, rs := range got {
-		if issueKey.MatchString(rs.Key) {
-			return &created{ref: rs.ref, URL: strings.TrimRight(j.conn.URL, "/") + "/browse/" + url.PathEscape(rs.Key), Status: rs.Status, Updated: rs.Updated}, nil
+	for _, i := range got {
+		if !issueKey.MatchString(i.Key) {
+			continue
 		}
+		// The creator cannot be changed; only a Jira that does not
+		// say who created an issue is asked about its reporter.
+		by := i.Fields.Creator
+		if by == nil {
+			by = i.Fields.Reporter
+		}
+		if by == nil || !by.is(me) {
+			continue
+		}
+		at, err := time.Parse(jiraTime, i.Fields.Created)
+		if err != nil || at.Before(since) {
+			continue
+		}
+		rs := i.state()
+		return &created{ref: rs.ref, URL: strings.TrimRight(j.conn.URL, "/") + "/browse/" + url.PathEscape(rs.Key), Status: rs.Status, Updated: rs.Updated}, nil
 	}
 	return nil, nil
 }
@@ -354,12 +443,9 @@ func (j *jira) each(ctx context.Context, keys []string) ([]remoteState, error) {
 // jiraComment is a comment as Jira writes it; its body is ADF (version 3)
 // or text (version 2).
 type jiraComment struct {
-	ID     string `json:"id"`
-	Author struct {
-		DisplayName string `json:"displayName"`
-		Name        string `json:"name"`
-	} `json:"author"`
-	Body json.RawMessage `json:"body"`
+	ID     string          `json:"id"`
+	Author jiraUser        `json:"author"`
+	Body   json.RawMessage `json:"body"`
 }
 
 // text returns the comment's body as plain text.
@@ -382,25 +468,35 @@ func bodyText(raw json.RawMessage) string {
 }
 
 func (j *jira) comments(ctx context.Context, r ref) ([]comment, error) {
+	me, err := j.self(ctx)
+	if err != nil && retryable(err) {
+		return nil, err
+	}
+	known := err == nil
 	var out []comment
-	for start := 0; start < maxComments; {
+	most := maxCommentPages
+	for page, start := 0, 0; page < most && start < maxComments; page++ {
 		var res struct {
 			Comments []jiraComment `json:"comments"`
 			Total    int           `json:"total"`
 		}
-		q := url.Values{"startAt": {strconv.Itoa(start)}, "maxResults": {"100"}, "orderBy": {"created"}}
+		q := url.Values{"startAt": {strconv.Itoa(start)}, "maxResults": {strconv.Itoa(pageSize)}, "orderBy": {"created"}}
 		if err := j.do(ctx, request{method: http.MethodGet, path: j.issuePath(r, "/comment"), query: q, out: &res}); err != nil {
 			return nil, err
 		}
-		for _, c := range res.Comments {
+		got := res.Comments[:min(len(res.Comments), pageSize)]
+		if page == 0 {
+			most = pages(res.Total, len(got), most)
+		}
+		for _, c := range got {
 			name := c.Author.DisplayName
 			if name == "" {
 				name = c.Author.Name
 			}
-			out = append(out, comment{ID: c.ID, Author: name, Text: c.text()})
+			out = append(out, comment{ID: c.ID, Author: name, Text: c.text(), Own: known && c.Author.is(me), OwnUnknown: !known})
 		}
-		start += len(res.Comments)
-		if len(res.Comments) == 0 || start >= res.Total {
+		start += len(got)
+		if len(got) == 0 || start >= res.Total {
 			break
 		}
 	}

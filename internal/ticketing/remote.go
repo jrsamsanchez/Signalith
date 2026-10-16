@@ -29,7 +29,11 @@ type remote interface {
 	// create puts on it (jiraLabel, correlationID), or nil when there is
 	// none. It is asked before a ticket is opened again for a case whose
 	// earlier opening may have created one, so a crash never opens two.
-	find(ctx context.Context, caseID string) (*created, error)
+	// Anyone who can open tickets can put the marker on one, so only a
+	// ticket the connection's own account opened at or after since is
+	// found, the newest when there are several; when the system cannot
+	// say who the account is, none is.
+	find(ctx context.Context, caseID string, since time.Time) (*created, error)
 	// test checks the credentials and access to the project or table,
 	// and says what it found.
 	test(ctx context.Context) (string, error)
@@ -65,6 +69,10 @@ type comment struct {
 	ID     string
 	Author string
 	Text   string
+	// Own is a comment by the connection's own account. OwnUnknown is
+	// set instead when the system does not say who that account is
+	// (ServiceNow with OAuth, or a Jira whose /myself fails).
+	Own, OwnUnknown bool
 }
 
 // remote returns the client of a connection's system.
@@ -93,5 +101,23 @@ func chunks(refs []ref, n int) [][]ref {
 // pollChunk is how many tickets one poll request asks about.
 const pollChunk = 50
 
-// maxComments is the most comments read from one ticket.
-const maxComments = 1000
+// maxComments is the most comments read from one ticket, in at most
+// maxCommentPages pages (Jira may answer with pages smaller than asked).
+const (
+	maxComments     = 1000
+	maxCommentPages = 50
+)
+
+// pageSize is how many items one page of a search or of a ticket's
+// comments asks for; more in an answer are left out.
+const pageSize = 100
+
+// pages returns how many pages of size a list of total items takes, plus
+// one in case it grew, and never more than most: a system's total is not
+// trusted beyond that.
+func pages(total, size, most int) int {
+	if total <= 0 || size <= 0 {
+		return 1
+	}
+	return min(total/size+1, most)
+}

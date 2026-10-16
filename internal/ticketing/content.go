@@ -113,9 +113,34 @@ func noteComment(e cases.Entry) string {
 	return truncate(Marker+" "+e.Author+": "+e.Text, maxComment)
 }
 
-// ours reports whether a comment on a ticket was written by Signalith.
+// ours reports whether a comment's text starts with Marker, as every
+// comment Signalith writes does.
 func ours(text string) bool {
 	return strings.HasPrefix(strings.TrimLeftFunc(text, unicode.IsSpace), Marker)
+}
+
+// sentByUs reports whether a ticket's comment is one Signalith wrote, so
+// it is not taken back to case c: it starts with Marker and is by the
+// connection's own account. Anyone can start a comment with Marker, so
+// one by someone else is taken. When the system does not say who the
+// account is, such a comment is Signalith's when it is one of the case's
+// notes as sent.
+func sentByUs(cm comment, c *cases.Case) bool {
+	switch {
+	case !ours(cm.Text):
+		return false
+	case cm.Own:
+		return true
+	case !cm.OwnUnknown:
+		return false
+	}
+	text := strings.TrimSpace(strings.ReplaceAll(cm.Text, "\r\n", "\n"))
+	for _, e := range c.Entries {
+		if e.Kind == cases.KindNote && strings.TrimSpace(noteComment(e)) == text {
+			return true
+		}
+	}
+	return false
 }
 
 // imported reports whether a case note came from a ticket's comment, so
@@ -129,8 +154,12 @@ func imported(author string) bool {
 	return false
 }
 
+// maxImportedText is the most of a ticket's comment a case note takes;
+// the rest is cut, with an ellipsis.
+const maxImportedText = 4 << 10
+
 // noteText is the case note a ticket's comment becomes: its text, without
-// control characters other than line breaks, and within the case's limit.
+// control characters other than line breaks, and cut to maxImportedText.
 func noteText(s string) string {
 	s = strings.ReplaceAll(s, "\r\n", "\n")
 	s = strings.Map(func(r rune) rune {
@@ -142,7 +171,7 @@ func noteText(s string) string {
 		}
 		return r
 	}, s)
-	return truncate(strings.TrimSpace(s), cases.MaxTextLen)
+	return truncate(strings.TrimSpace(s), maxImportedText)
 }
 
 // authorName is the name a comment's author gets on the case: the

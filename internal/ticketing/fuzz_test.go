@@ -21,7 +21,7 @@ func FuzzAPIMessage(f *testing.F) {
 		f.Add([]byte(s))
 	}
 	f.Fuzz(func(t *testing.T, b []byte) {
-		msg, _ := apiMessage(b)
+		msg, _ := apiMessage(b, nil)
 		if strings.ContainsAny(msg, "\n\r") || utf8.RuneCountInString(msg) > 300 {
 			t.Errorf("message %q", msg)
 		}

@@ -112,6 +112,12 @@ tickets changed, finds the cases with tickets that changed, and brings each pair
 A note that came from a ticket shows on the case's timeline with the system's name. Turn
 off **Status** or **Notes and comments** on a connection to keep only one of them in step.
 
+Comments come back within limits, so a ticket flooded with them cannot fill the case: each
+is cut to 4 KB, a pass adds at most 50 of a ticket's comments (the rest come on the next
+passes), and at most 200 of a ticket's comments are ever added to its case. After that, and
+when the case's timeline is within 100 entries of its limit of 1,000, new comments are left
+out, and the case's Tickets card says so; those 100 entries are kept for analysts' notes.
+
 ### Statuses
 
 | Case status | Jira (by default) | ServiceNow state (by default) |
@@ -129,11 +135,19 @@ ServiceNow, you can enter other state numbers. Canceled (8) closes the case.
 When the case's status and the ticket's both changed since the last minute, the case
 wins: the ticket is moved back to match it.
 
+With **Status** on, whoever can move the ticket can move the case: a move to a status mapped
+to Resolved or Closed (or Canceled in ServiceNow) resolves or closes the case. Turn **Status**
+off on a connection whose tickets people outside the security team can change, if that should
+not happen.
+
 ### Nothing echoes back
 
 Signalith never sends back what it took, or takes back what it sent:
 
-- Comments it writes start with `[Signalith]`, and it never takes such a comment back.
+- Comments it writes start with `[Signalith]`, and it never takes back such a comment written
+  by its own account. Anyone can start a comment with `[Signalith]`, so one by another account
+  comes back like any other. (A ServiceNow connection signed in with OAuth cannot tell its own
+  account, so there such a comment is skipped only when it is one of the case's notes as sent.)
 - Notes it took from a ticket are by `jira:<name>` or `servicenow:<user>`, and it never sends
   those to any ticket.
 - Each ticket's record (below) remembers the IDs of the notes sent and comments taken, and
@@ -176,14 +190,20 @@ ticket, so a change missed while a system was down is still brought in step.
   Signalith's own OpenSearch, or this machine unless allowed. Redirects are not followed.
 - Certificates are always checked, against the system's trusted authorities and, when
   set, the connection's own **Certificate authority** (PEM).
-- Each request has a 20-second limit, and answers over 4 MB are refused.
+- Each request has a 20-second limit, and answers over 4 MB are refused. A pass spends at most
+  2 minutes on one connection; what is left waits for the next pass. Paging stops at what the
+  system's total needs, and at a fixed number of pages whatever it says.
+- When a proxy is set with `HTTPS_PROXY`, the proxy looks up and connects to the address, so
+  Signalith's checks of addresses after DNS cannot apply: the proxy must do its own egress
+  filtering (no cloud metadata services, no internal services Signalith must not reach).
 - API tokens, passwords and client secrets are encrypted in the file and never sent to the
   page, which only shows whether each is set. A saved secret is only sent to the server it was
   entered for: change a connection's address or way of signing in, and it must be entered
   again. Errors never show a secret, in any form it takes on the wire.
 - Setting connections up is for admins, and saving them asks for your password again.
-  Opening a ticket is for analysts and admins. The audit log records connection changes,
-  tests, every ticket opened, and every change made on either side (`audit=true`).
+  Opening a ticket is for analysts and admins. The audit log records connection changes and
+  tests (with the admin's address, the hosts the connections reach, and whether a secret was
+  replaced), every ticket opened, and every change made on either side (`audit=true`).
 
 ## Which server syncs
 
@@ -207,9 +227,13 @@ job every minute.
   does not say whether the ticket was made (such as a timeout), the case's card shows it as
   being opened or failed. When it is tried again (after 10 minutes for one left being
   opened), Signalith first looks for a ticket with the case's marker, in the connection's
-  project or table, and records that one instead of opening a second. If the project's
-  create screen has no **Labels** field, Jira issues are opened without the label, and this
-  check cannot find them.
+  project or table, and records that one instead of opening a second. Since anyone who can
+  open tickets can put the marker on one, it only takes a ticket created by the connection's
+  own account (the Jira creator, the ServiceNow `sys_created_by`) no earlier than 5 minutes
+  before the case's first try, the newest when there are several; otherwise it opens a new
+  one. A ServiceNow connection signed in with OAuth cannot tell its own account, so it never
+  takes one and opens a new ticket. If the project's create screen has no **Labels** field,
+  Jira issues are opened without the label, and this check cannot find them.
 - A ticket the connection was opening by itself (**Open a ticket for every new case**) is
   tried again by the background sync once it has been left being opened for 10 minutes,
   looking first in the same way. Together with failed tries, it gets three in all; after

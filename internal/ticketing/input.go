@@ -472,9 +472,9 @@ func blockedText(err error) string {
 }
 
 // isLocalhost reports whether h names this machine: localhost or a
-// loopback address.
+// loopback address. A name ending in dots ("localhost.") is the same name.
 func isLocalhost(h string) bool {
-	h = strings.ToLower(strings.Trim(h, "[]"))
+	h = strings.TrimRight(strings.ToLower(strings.Trim(h, "[]")), ".")
 	if h == "localhost" || strings.HasSuffix(h, ".localhost") {
 		return true
 	}

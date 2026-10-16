@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 	"sync"
@@ -191,15 +192,21 @@ func (s *Server) handleTicketingSave(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	var names, auto []string
+	var names, auto, hosts, replaced []string
 	for _, c := range set.Connections {
 		names = append(names, c.Label())
+		hosts = append(hosts, ticketingHost(c.URL))
 		if c.AutoCreate {
 			auto = append(auto, c.Label())
 		}
 	}
-	s.Log.Info("ticketing connections changed", "audit", true, "by", userOf(r), "connections", strings.Join(names, ", "),
-		"auto_create", strings.Join(auto, ", "))
+	for _, c := range in.Connections {
+		if secretTyped(c) {
+			replaced = append(replaced, c.Name)
+		}
+	}
+	s.audit(r, "ticketing connections changed", "connections", strings.Join(names, ", "), "hosts", strings.Join(hosts, ", "),
+		"auto_create", strings.Join(auto, ", "), "secret_replaced", strings.Join(replaced, ", "))
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 	writeJSON(w, http.StatusOK, s.ticketingView(ctx, set, nil))
@@ -256,14 +263,33 @@ func (s *Server) handleTicketingTest(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	msg, err := t.Test(r.Context(), c)
 	out := map[string]any{"ok": err == nil, "duration_ms": time.Since(start).Milliseconds(), "connection": c.Name}
+	typed := req.Connection != nil && secretTyped(*req.Connection)
 	if err != nil {
 		out["error"] = err.Error()
-		s.Log.Info("ticketing connection test failed", "audit", true, "connection", c.Name, "system", c.Type, "by", userOf(r), "err", err.Error())
+		s.audit(r, "ticketing connection test failed", "connection", c.Name, "system", c.Type, "host", ticketingHost(c.URL),
+			"secret_replaced", typed, "err", err.Error())
 	} else {
 		out["message"] = msg
-		s.Log.Info("ticketing connection test passed", "audit", true, "connection", c.Name, "system", c.Type, "by", userOf(r))
+		s.audit(r, "ticketing connection test passed", "connection", c.Name, "system", c.Type, "host", ticketingHost(c.URL),
+			"secret_replaced", typed)
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// ticketingHost is the host (and port) of a connection's address, for the
+// audit log.
+func ticketingHost(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	return u.Host
+}
+
+// secretTyped reports whether a connection as the page sent it sets a new
+// API token, password or client secret, rather than keeping the saved one.
+func secretTyped(c ticketing.ConnectionInput) bool {
+	return c.Token != "" || c.Password != "" || c.ClientSecret != ""
 }
 
 // ticketView is a case's ticket as the Tickets panel shows it.
@@ -292,8 +318,14 @@ func safeLink(u string) string {
 }
 
 func linkView(l ticketing.Link) ticketView {
+	// Comments left out of the case show like a problem, when there is
+	// none.
+	msg := l.Error
+	if msg == "" {
+		msg = l.Warning
+	}
 	return ticketView{Connection: l.Connection, ConnectionName: l.ConnectionName, System: l.System, Key: l.Key, URL: safeLink(l.URL),
-		State: l.State, RemoteStatus: l.RemoteStatus.Label(l.System), Error: l.Error, ErrorAt: l.ErrorAt, SyncedAt: l.SyncedAt,
+		State: l.State, RemoteStatus: l.RemoteStatus.Label(l.System), Error: msg, ErrorAt: l.ErrorAt, SyncedAt: l.SyncedAt,
 		Auto: l.Auto, CreatedBy: l.CreatedBy, Created: l.Created}
 }
 

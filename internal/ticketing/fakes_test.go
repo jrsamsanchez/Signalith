@@ -40,9 +40,22 @@ type fakeBase struct {
 	// faults are answered before the real handler, in order.
 	faults []*fault
 	seq    int
+	// now is when the fake says a ticket was created; nil is 09:00 on
+	// the test clock's day.
+	now func() time.Time
+	// slow is how long each answer takes.
+	slow time.Duration
 }
 
 func (f *fakeBase) URL() string { return f.srv.URL }
+
+// clock returns the fake's time. f.mu is held.
+func (f *fakeBase) clock() time.Time {
+	if f.now != nil {
+		return f.now()
+	}
+	return time.Date(2026, 10, 16, 9, 0, 0, 0, time.UTC)
+}
 
 // caPEM returns the TLS server's certificate as PEM, for CAPEM.
 func (f *fakeBase) caPEM() string {
@@ -79,6 +92,10 @@ func (f *fakeBase) count(prefix string) int {
 // reports whether the handler should go on. f.mu is held on return when
 // it does.
 func (f *fakeBase) front(w http.ResponseWriter, r *http.Request, skipAuth bool) bool {
+	f.mu.Lock()
+	slow := f.slow
+	f.mu.Unlock()
+	time.Sleep(slow)
 	f.mu.Lock()
 	line := r.Method + " " + r.URL.Path
 	if r.URL.RawQuery != "" {
@@ -124,6 +141,39 @@ type fakeIssue struct {
 	updated                                       int
 	comments                                      []fakeComment
 	labels                                        []string
+	// creator is who created the issue, by display name; jiraBot is
+	// Signalith's account.
+	creator string
+	created time.Time
+}
+
+// jiraBot is the display name of the account Signalith signs in to the
+// fake Jira as.
+const jiraBot = "Signalith Bot"
+
+// userJSON is an account as Jira writes it: Cloud by accountId, Data
+// Center by name and key.
+func (f *fakeJira) userJSON(name string) map[string]any {
+	id := strings.ToLower(strings.ReplaceAll(name, " ", "."))
+	if name == jiraBot {
+		id = "signalith"
+	}
+	if f.cloud {
+		return map[string]any{"accountId": "557058:" + id, "displayName": name}
+	}
+	return map[string]any{"name": id, "key": "JIRAUSER-" + id, "displayName": name}
+}
+
+// plant makes an issue with a case's label, as anyone who can create
+// issues in the project could.
+func (f *fakeJira) plant(caseID, creator string, created time.Time) string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.made++
+	i := &fakeIssue{id: strconv.Itoa(10000 + f.made), key: "SEC-" + strconv.Itoa(f.made), status: "To Do", summary: "planted",
+		labels: []string{jiraLabel(caseID)}, creator: creator, created: created, updated: f.stamp()}
+	f.issues[i.key] = i
+	return i.key
 }
 
 type fakeComment struct {
@@ -137,13 +187,14 @@ var jiraStatuses = map[string]string{"To Do": "new", "In Progress": "indetermina
 
 type fakeJira struct {
 	fakeBase
-	cloud      bool
-	issues     map[string]*fakeIssue
-	noPriority bool     // the priority field is not on the screen
-	noLabels   bool     // nor the labels field
-	lastJQL    []string // every search
-	pageSize   int      // issues per search page; 0 is 100
-	made       int      // issues created
+	cloud       bool
+	issues      map[string]*fakeIssue
+	noPriority  bool     // the priority field is not on the screen
+	noLabels    bool     // nor the labels field
+	lastJQL     []string // every search
+	pageSize    int      // issues per search page; 0 is 100
+	commentPage int      // comments per page; 0 is 2
+	made        int      // issues created
 }
 
 func newFakeJira(t *testing.T, cloud bool, auth string) *fakeJira {
@@ -162,8 +213,11 @@ func updatedText(n int) string {
 
 func (f *fakeJira) issueJSON(i *fakeIssue) map[string]any {
 	return map[string]any{"id": i.id, "key": i.key, "fields": map[string]any{
-		"status":  map[string]any{"name": i.status, "statusCategory": map[string]any{"key": jiraStatuses[i.status]}},
-		"updated": updatedText(i.updated),
+		"status":   map[string]any{"name": i.status, "statusCategory": map[string]any{"key": jiraStatuses[i.status]}},
+		"updated":  updatedText(i.updated),
+		"created":  i.created.Format(jiraTime),
+		"creator":  f.userJSON(i.creator),
+		"reporter": f.userJSON(i.creator),
 	}}
 }
 
@@ -203,7 +257,7 @@ func (f *fakeJira) delete(key string) {
 
 var (
 	jqlKeys  = regexp.MustCompile(`issuekey in \(([^)]*)\)`)
-	jqlLabel = regexp.MustCompile(`^project = "([^"]*)" AND labels = "([^"]*)" ORDER BY created ASC$`)
+	jqlLabel = regexp.MustCompile(`^project = "([^"]*)" AND labels = "([^"]*)" AND creator = currentUser\(\) ORDER BY created DESC$`)
 )
 
 func (f *fakeJira) serve(w http.ResponseWriter, r *http.Request) {
@@ -227,7 +281,7 @@ func (f *fakeJira) serve(w http.ResponseWriter, r *http.Request) {
 	p := r.URL.Path
 	switch {
 	case r.Method == http.MethodGet && p == api+"/myself":
-		writeJSON(w, 200, map[string]any{"displayName": "Signalith Bot", "name": "signalith"})
+		writeJSON(w, 200, f.userJSON(jiraBot))
 	case r.Method == http.MethodGet && p == api+"/project/SEC":
 		writeJSON(w, 200, map[string]any{"key": "SEC", "name": "Security"})
 	case r.Method == http.MethodGet && strings.HasPrefix(p, api+"/project/"):
@@ -263,7 +317,8 @@ func (f *fakeJira) serve(w http.ResponseWriter, r *http.Request) {
 		}
 		f.made++
 		n := f.made
-		i := &fakeIssue{id: strconv.Itoa(10000 + n), key: "SEC-" + strconv.Itoa(n), status: "To Do", description: fields["description"], updated: f.stamp()}
+		i := &fakeIssue{id: strconv.Itoa(10000 + n), key: "SEC-" + strconv.Itoa(n), status: "To Do", description: fields["description"], updated: f.stamp(),
+			creator: jiraBot, created: f.clock()}
 		i.summary, _ = fields["summary"].(string)
 		i.issueType, _ = fields["issuetype"].(map[string]any)["name"].(string)
 		if pr, ok := fields["priority"].(map[string]any); ok {
@@ -292,10 +347,17 @@ func (f *fakeJira) serve(w http.ResponseWriter, r *http.Request) {
 				writeJSON(w, 400, map[string]any{"errorMessages": []string{"The value '" + lm[1] + "' does not exist for the field 'project'."}})
 				return
 			}
+			// Newest first. The creator clause is left to the client's
+			// own check, which is what the tests try.
+			var found []*fakeIssue
 			for n := 1; n <= f.made; n++ {
 				if i, ok := f.issues["SEC-"+strconv.Itoa(n)]; ok && slices.Contains(i.labels, lm[2]) {
-					list = append(list, f.issueJSON(i))
+					found = append(found, i)
 				}
+			}
+			slices.SortStableFunc(found, func(a, b *fakeIssue) int { return b.created.Compare(a.created) })
+			for _, i := range found {
+				list = append(list, f.issueJSON(i))
 			}
 			m = []string{"", ""}
 		} else if m == nil {
@@ -397,16 +459,19 @@ func (f *fakeJira) serve(w http.ResponseWriter, r *http.Request) {
 				writeJSON(w, 400, map[string]any{"errors": map[string]any{"comment": "Comment body can not be empty!"}})
 				return
 			}
-			c := fakeComment{id: strconv.Itoa(10000 + f.stamp()), author: "Signalith Bot", body: b}
+			c := fakeComment{id: strconv.Itoa(10000 + f.stamp()), author: jiraBot, body: b}
 			i.comments = append(i.comments, c)
 			i.updated = f.stamp()
 			writeJSON(w, 201, map[string]any{"id": c.id})
 		case sub == "comment" && r.Method == http.MethodGet:
 			start, _ := strconv.Atoi(r.URL.Query().Get("startAt"))
-			size := 2 // small pages, so paging is tested
+			size := f.commentPage
+			if size == 0 {
+				size = 2 // small pages, so paging is tested
+			}
 			var list []any
 			for _, c := range i.comments[min(start, len(i.comments)):min(start+size, len(i.comments))] {
-				list = append(list, map[string]any{"id": c.id, "author": map[string]any{"displayName": c.author}, "body": c.body})
+				list = append(list, map[string]any{"id": c.id, "author": f.userJSON(c.author), "body": c.body})
 			}
 			writeJSON(w, 200, map[string]any{"comments": list, "total": len(i.comments), "startAt": start, "maxResults": size})
 		default:
@@ -432,6 +497,32 @@ type fakeRecord struct {
 	sysID, number, shortDesc, description, impact, urgency, state, closeCode, closeNotes, caller string
 	correlationID, correlationDisplay                                                            string
 	updated                                                                                      int
+	createdBy                                                                                    string
+	createdOn                                                                                    time.Time
+}
+
+// snOAuthUser is the user an OAuth client acts as in the fake.
+const snOAuthUser = "signalith.oauth"
+
+// snRequestUser is who a request signs in as: the basic auth user, or
+// the OAuth application's user.
+func snRequestUser(r *http.Request) string {
+	if u, _, ok := r.BasicAuth(); ok {
+		return u
+	}
+	return snOAuthUser
+}
+
+// plant makes a ticket with a case's correlation ID, as anyone who can
+// open tickets could.
+func (f *fakeSN) plant(caseID, by string, created time.Time) string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	n := len(f.records) + 1
+	rec := &fakeRecord{sysID: fmt.Sprintf("%032x", n), number: fmt.Sprintf("INC%07d", 10000+n), state: "1", shortDesc: "planted",
+		correlationID: correlationID(caseID), createdBy: by, createdOn: created, updated: f.stamp()}
+	f.records[rec.sysID] = rec
+	return rec.number
 }
 
 type fakeJournal struct {
@@ -459,7 +550,8 @@ func (f *fakeSN) stamp() int { f.seq++; return f.seq }
 
 func (f *fakeSN) recordJSON(r *fakeRecord) map[string]any {
 	return map[string]any{"sys_id": r.sysID, "number": r.number, "state": r.state,
-		"sys_updated_on": time.Date(2026, 10, 16, 10, 0, 0, 0, time.UTC).Add(time.Duration(r.updated) * time.Second).Format("2006-01-02 15:04:05")}
+		"sys_updated_on": time.Date(2026, 10, 16, 10, 0, 0, 0, time.UTC).Add(time.Duration(r.updated) * time.Second).Format("2006-01-02 15:04:05"),
+		"sys_created_by": r.createdBy, "sys_created_on": r.createdOn.UTC().Format(snTime)}
 }
 
 func (f *fakeSN) humanNote(number, element, by, text string) {
@@ -549,19 +641,32 @@ func (f *fakeSN) serve(w http.ResponseWriter, r *http.Request) {
 		n := len(f.records) + 1
 		rec := &fakeRecord{sysID: fmt.Sprintf("%032x", n), number: fmt.Sprintf("INC%07d", 10000+n), state: "1",
 			shortDesc: str("short_description"), description: str("description"), impact: str("impact"), urgency: str("urgency"),
-			caller: str("caller_id"), correlationID: str("correlation_id"), correlationDisplay: str("correlation_display"), updated: f.stamp()}
+			caller: str("caller_id"), correlationID: str("correlation_id"), correlationDisplay: str("correlation_display"), updated: f.stamp(),
+			createdBy: snRequestUser(r), createdOn: f.clock()}
 		f.records[rec.sysID] = rec
 		writeJSON(w, 201, map[string]any{"result": f.recordJSON(rec)})
 	case p == "/api/now/table/incident" && r.Method == http.MethodGet:
 		query := q.Get("sysparm_query")
 		var list []any
 		if rest, ok := strings.CutPrefix(query, "correlation_id="); ok {
+			// Newest first when asked. The sys_created_by clause is left
+			// to the client's own check, which is what the tests try.
 			want, _, _ := strings.Cut(rest, "^")
-			list = []any{}
+			var found []*fakeRecord
 			for n := 1; n <= len(f.records); n++ {
 				if rec := f.records[fmt.Sprintf("%032x", n)]; rec != nil && rec.correlationID == want {
-					list = append(list, f.recordJSON(rec))
+					found = append(found, rec)
 				}
+			}
+			if strings.HasSuffix(query, "^ORDERBYDESCsys_created_on") {
+				slices.SortStableFunc(found, func(a, b *fakeRecord) int { return b.createdOn.Compare(a.createdOn) })
+			}
+			if n, err := strconv.Atoi(q.Get("sysparm_limit")); err == nil && n < len(found) {
+				found = found[:n]
+			}
+			list = []any{}
+			for _, rec := range found {
+				list = append(list, f.recordJSON(rec))
 			}
 		} else if rest, ok := strings.CutPrefix(query, "sys_idIN"); ok {
 			ids, _, _ := strings.Cut(rest, "^")
@@ -597,7 +702,7 @@ func (f *fakeSN) serve(w http.ResponseWriter, r *http.Request) {
 			}
 			for _, el := range []string{"work_notes", "comments"} {
 				if s := str(el); s != "" {
-					f.journal = append(f.journal, fakeJournal{sysID: fmt.Sprintf("%032x", 1<<41+f.stamp()), element: el, value: s, by: "signalith.integration", recordID: rec.sysID})
+					f.journal = append(f.journal, fakeJournal{sysID: fmt.Sprintf("%032x", 1<<41+f.stamp()), element: el, value: s, by: snRequestUser(r), recordID: rec.sysID})
 				}
 			}
 			rec.updated = f.stamp()

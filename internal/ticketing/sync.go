@@ -3,8 +3,10 @@ package ticketing
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/cases"
@@ -60,7 +62,66 @@ const (
 	// autoLookBack bounds how far back the first pass after a start looks
 	// for new cases to open tickets for.
 	autoLookBack = 7 * 24 * time.Hour
+	// passTimeout bounds the time one pass spends on one connection's
+	// requests, from its first; what is left waits for the next pass.
+	passTimeout = 2 * time.Minute
+	// maxImportPass is the most of a ticket's comments one pass adds to
+	// its case; the rest wait for the next pass.
+	maxImportPass = 50
+	// maxImportLink is the most of a ticket's comments ever added to its
+	// case; later ones are left out, and the ticket says so.
+	maxImportLink = 200
+	// analystReserve is how many of a case's timeline entries
+	// (cases.MaxEntries) ticket comments never take, so a ticket cannot
+	// fill the case and keep analysts from adding notes.
+	analystReserve = 100
 )
+
+// budgetKey is the context key of a pass's budget.
+type budgetKey struct{}
+
+// budget is when each connection's share of a pass ends: passTimeout
+// after its first request in the pass.
+type budget struct {
+	mu    sync.Mutex
+	limit time.Duration
+	ends  map[string]time.Time
+}
+
+// withBudget returns ctx with a new pass budget of limit per connection.
+func withBudget(ctx context.Context, limit time.Duration) context.Context {
+	return context.WithValue(ctx, budgetKey{}, &budget{limit: limit, ends: map[string]time.Time{}})
+}
+
+// passDeadline returns when connection connID's share of the pass in ctx
+// ends, starting it now if it has not started; zero outside a pass.
+func passDeadline(ctx context.Context, connID string) time.Time {
+	b, _ := ctx.Value(budgetKey{}).(*budget)
+	if b == nil {
+		return time.Time{}
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	end, ok := b.ends[connID]
+	if !ok {
+		end = time.Now().Add(b.limit)
+		b.ends[connID] = end
+	}
+	return end
+}
+
+// spent reports whether connection connID used up its share of the pass
+// in ctx.
+func spent(ctx context.Context, connID string) bool {
+	b, _ := ctx.Value(budgetKey{}).(*budget)
+	if b == nil {
+		return false
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	end, ok := b.ends[connID]
+	return ok && !time.Now().Before(end)
+}
 
 // syncState is what the sync remembers between passes. It is kept in
 // memory: a server that takes the jobs over starts with a pass that
@@ -158,6 +219,11 @@ func (s *Service) Pass(ctx context.Context) {
 	if len(set.Connections) == 0 {
 		return
 	}
+	limit := s.passLimit
+	if limit <= 0 {
+		limit = passTimeout
+	}
+	ctx = withBudget(ctx, limit)
 	now := s.now().UTC()
 	due, err := s.Links.Due(ctx)
 	if err != nil {
@@ -171,6 +237,9 @@ func (s *Service) Pass(ctx context.Context) {
 		}
 		if !s.allowed() || ctx.Err() != nil {
 			return
+		}
+		if spent(ctx, st.Connection) {
+			continue
 		}
 		s.openDue(ctx, set, st, now)
 	}
@@ -256,6 +325,10 @@ func (s *Service) autoCreate(ctx context.Context, set Settings, now time.Time) {
 			if !s.allowed() || ctx.Err() != nil {
 				return
 			}
+			if spent(ctx, conn.ID) {
+				done = false
+				break
+			}
 			l := newLink(conn, c, "Signalith", true, StateCreating, now)
 			v, err := s.Links.Create(ctx, l)
 			if errors.Is(err, store.ErrExists) {
@@ -336,6 +409,11 @@ func (s *Service) syncAll(ctx context.Context, set Settings, due []Stored, now t
 			if ctx.Err() != nil {
 				return
 			}
+			if spent(ctx, conn.ID) {
+				// Slow, not down: the next pass polls it again.
+				allPolled = false
+				continue
+			}
 			s.connFailed(conn, err, now)
 			allPolled = false
 			continue
@@ -361,7 +439,7 @@ func (s *Service) syncAll(ctx context.Context, set Settings, due []Stored, now t
 			}
 			retry := l.Error != "" && l.Error != l.StatusError && now.Sub(l.ErrorAt) >= retryEvery
 			changed := has && (rs.Gone || rs.Updated != l.RemoteUpdated || rs.Status != l.RemoteStatus)
-			if full || changed || retry {
+			if full || changed || retry || l.Backlog {
 				it := &workItem{st: l}
 				if has {
 					rs := rs
@@ -427,7 +505,7 @@ func (s *Service) syncAll(ctx context.Context, set Settings, due []Stored, now t
 			return
 		}
 		conn, ok := set.Connection(it.st.Connection)
-		if !ok || s.paused(conn.ID, now) {
+		if !ok || s.paused(conn.ID, now) || spent(ctx, conn.ID) {
 			continue
 		}
 		s.syncLink(ctx, conn, it, now)
@@ -476,7 +554,13 @@ func (s *Service) syncLink(ctx context.Context, conn Connection, it *workItem, n
 		}
 	}
 
-	if rs := it.rs; rs != nil {
+	rs := it.rs
+	if rs == nil && l.Backlog {
+		// Comments left by the last pass: read them again, with the
+		// ticket as last seen.
+		rs = &remoteState{ref: r, Status: l.RemoteStatus, Updated: l.RemoteUpdated}
+	}
+	if rs != nil {
 		if rs.Gone {
 			l.State, l.Active, l.Updated = StateGone, false, now
 			l.Error, l.ErrorAt = "The ticket was deleted in "+TypeLabel(conn.Type)+", so it is no longer kept in step. Open a new one if it is still needed.", now
@@ -487,23 +571,50 @@ func (s *Service) syncLink(ctx context.Context, conn Connection, it *workItem, n
 		var notes []pendingNote
 		seen := len(l.Comments)
 		inboundOK := true
-		if conn.SyncNotes && rs.Updated != l.RemoteUpdated {
+		backlog, warning := false, l.Warning
+		if conn.SyncNotes && (rs.Updated != l.RemoteUpdated || l.Backlog) {
 			list, err := rem.comments(ctx, r)
 			if err != nil {
 				note(err)
 				inboundOK = false
 			}
+			// A ticket flooded with comments must not flood the case:
+			// at most maxImportPass a pass, maxImportLink ever, and
+			// never into the entries kept for analysts.
+			passLeft := maxImportPass
+			linkLeft := maxImportLink - l.Imported
+			room := cases.MaxEntries - analystReserve - len(c.Entries)
 			for _, cm := range list {
 				if cm.ID == "" || slices.Contains(l.Comments, cm.ID) {
 					continue
 				}
-				l.Comments = append(l.Comments, cm.ID)
-				if ours(cm.Text) {
+				t := noteText(cm.Text)
+				if t == "" || sentByUs(cm, c) {
+					l.Comments = append(l.Comments, cm.ID)
 					continue
 				}
-				if t := noteText(cm.Text); t != "" {
+				switch {
+				case linkLeft <= 0:
+					warning = fmt.Sprintf("%d of the ticket's comments were added to the case, the most that are; later ones are not. Read them in %s.", maxImportLink, TypeLabel(conn.Type))
+				case room <= 0:
+					warning = "The case's timeline is nearly full, so the ticket's new comments were not added to it; the rest is kept for analysts' notes."
+				case passLeft <= 0:
+					// Taken on the next pass.
+					backlog = true
+				default:
+					l.Comments = append(l.Comments, cm.ID)
 					notes = append(notes, pendingNote{author: authorName(conn.Type, cm.Author), text: t})
+					passLeft, linkLeft, room = passLeft-1, linkLeft-1, room-1
+					continue
 				}
+				if backlog {
+					break
+				}
+				// Left out for good.
+				l.Comments = append(l.Comments, cm.ID)
+			}
+			if len(notes) > 0 && linkLeft > 0 && room > 0 {
+				warning = ""
 			}
 		}
 		prevRemote := l.RemoteStatus
@@ -528,6 +639,7 @@ func (s *Service) syncLink(ctx context.Context, conn Connection, it *workItem, n
 			} else {
 				c = updated
 				l.Notes = append(l.Notes, added...)
+				l.Imported += len(added)
 				if len(added) > 0 {
 					log.Info("ticket sync: added the ticket's new comments to the case", "audit", true, "comments", len(added))
 				}
@@ -539,7 +651,11 @@ func (s *Service) syncLink(ctx context.Context, conn Connection, it *workItem, n
 			}
 		}
 		if inboundOK {
+			if warning != "" && warning != l.Warning {
+				log.Warn("ticket sync: some of the ticket's comments were not added to the case", "audit", true, "why", warning)
+			}
 			l.RemoteUpdated = rs.Updated
+			l.Backlog, l.Warning = backlog, warning
 		}
 	}
 
@@ -665,6 +781,11 @@ func (s *Service) applyInbound(ctx context.Context, conn Connection, l Link, not
 	c, err := s.Cases.Modify(ctx, l.CaseID, func(c *cases.Case) (bool, error) {
 		added = added[:0]
 		for _, n := range notes {
+			if len(c.Entries) >= cases.MaxEntries-analystReserve {
+				// The rest of the timeline is kept for analysts.
+				s.problem("full "+c.ID, "a case's timeline is nearly full, so new ticket comments are not added to it", "case", c.ID)
+				break
+			}
 			e, err := c.AddEntry(cases.Entry{Kind: cases.KindNote, Text: n.text}, n.author, now)
 			if err != nil {
 				// The case's timeline is full: the rest are left out.

@@ -3,9 +3,11 @@ package ticketing
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -43,6 +45,40 @@ func TestScrub(t *testing.T) {
 	// Values too short to be secrets are left, so words are not masked.
 	if !strings.Contains(got, "abc") {
 		t.Errorf("scrub masked a 3-character value: %s", got)
+	}
+}
+
+// A secret an answer echoes is hidden before the message is quoted and
+// cut: one holding quotes or backslashes, and one the cut falls inside.
+func TestEchoedSecretIsScrubbedBeforeCut(t *testing.T) {
+	secret := `pa"ss\word-9876`
+	f := newFakeSN(t, basic("svc.signalith", secret))
+	conn := snConn(f)
+	conn.Password = secret
+	e := newEnv(t)
+	for _, said := range []string{
+		"bad credentials " + secret,
+		strings.Repeat("x", 290) + secret,
+	} {
+		body, _ := json.Marshal(map[string]any{"error": map[string]any{"message": said}})
+		f.inject(fault{match: "GET /api/now/table/incident", status: 403, body: string(body)})
+		_, err := e.svc.Test(context.Background(), conn)
+		if err == nil {
+			t.Fatal("a 403 passed the test")
+		}
+		msg := err.Error()
+		for _, part := range []string{`pa"ss`, `pa\"ss`, `ss\wor`, `ss\\wor`, "word-9876"} {
+			if strings.Contains(msg, part) {
+				t.Errorf("the message shows part of the secret (%s): %s", part, msg)
+			}
+		}
+	}
+	// Scrub hides the quoted and JSON-escaped forms too.
+	quoted, _ := json.Marshal(secret)
+	for _, in := range []string{secret, strconv.Quote(secret), string(quoted)} {
+		if got := Scrub("said "+in, conn); strings.Contains(got, "word-9876") {
+			t.Errorf("scrub of %s: %s", in, got)
+		}
 	}
 }
 
@@ -194,6 +230,10 @@ func TestAddressesRefused(t *testing.T) {
 		{"http://127.0.0.1:8080", true, true},
 		{"http://localhost:8080", true, true},
 		{"https://localhost", false, false},
+		{"https://localhost.", false, false},
+		{"https://LocalHost..:8443", false, false},
+		{"https://jira.localhost.", false, false},
+		{"http://localhost.:8080", true, true},
 		{"https://169.254.169.254", false, false},
 		{"https://169.254.169.254", true, false},
 		{"https://[::1]", false, false},
