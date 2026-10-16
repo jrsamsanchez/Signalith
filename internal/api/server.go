@@ -232,22 +232,23 @@ type Server struct {
 	// program; nil turns that off.
 	Install *ClusterInstall
 
-	authOnce     sync.Once
-	ssoOnce      sync.Once
-	scimRefused  scimRefusals // when a refused SCIM token was last logged, by address
-	creds        credCache    // recently checked Basic credentials
-	routes       []route      // every API route and its role, from Handler
-	caseLocks    caseLocks    // one lock per case being changed
-	checksMu     sync.Mutex
-	dirChecks    map[string]dirCheck // when each directory user was last checked
-	dirSlotsOnce sync.Once
-	dirSlots     chan struct{}  // limits directory connections at once
-	background   sync.WaitGroup // directory checks still running
-	settingsMu   sync.Mutex     // serializes saves on the Settings page
-	testMu       sync.Mutex     // one connection test at a time
-	aiModels     modelCache     // model lists read from the AI model's service
-	sampleJob    sampleJob      // the one running sample-data load or remove
-	pageCache    pages          // index.html and login.html, rendered
+	authOnce          sync.Once
+	ssoOnce           sync.Once
+	scimRefused       scimRefusals // when a refused SCIM token was last logged, by address
+	creds             credCache    // recently checked Basic credentials
+	passkeyChallenges challengeSet // passkey challenges answered on this server
+	routes            []route      // every API route and its role, from Handler
+	caseLocks         caseLocks    // one lock per case being changed
+	checksMu          sync.Mutex
+	dirChecks         map[string]dirCheck // when each directory user was last checked
+	dirSlotsOnce      sync.Once
+	dirSlots          chan struct{}  // limits directory connections at once
+	background        sync.WaitGroup // directory checks still running
+	settingsMu        sync.Mutex     // serializes saves on the Settings page
+	testMu            sync.Mutex     // one connection test at a time
+	aiModels          modelCache     // model lists read from the AI model's service
+	sampleJob         sampleJob      // the one running sample-data load or remove
+	pageCache         pages          // index.html and login.html, rendered
 	// live holds Config with the settings saved on the Settings page that
 	// apply at once, and liveAI the assistant they give.
 	live   atomic.Pointer[config.Config]

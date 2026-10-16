@@ -977,6 +977,10 @@ dialog.modal::backdrop { background: var(--scrim); backdrop-filter: blur(3px); }
 .auth__sso[hidden] { display: none; }
 .auth__sso-btn { height: 44px; font-size: var(--fs-md); font-weight: 550; text-decoration: none; }
 .auth__or { display: flex; align-items: center; gap: 12px; color: var(--text-3); font-size: var(--fs-sm); }
+.auth__passkey, .mfa-passkey, .mfa-entry { display: grid; gap: 18px; }
+.auth__passkey[hidden], .mfa-passkey[hidden], .mfa-entry[hidden] { display: none; }
+.auth__passkey .btn { height: 44px; font-size: var(--fs-md); font-weight: 550; }
+.auth__passkey .hint { margin-top: -10px; text-align: center; }
 .auth__or::before, .auth__or::after { content: ""; flex: 1; height: 1px; background: var(--line-subtle); }
 .auth__ca { display: grid; justify-items: center; gap: 2px; line-height: 18px; }
 .auth__ca > a { display: inline-flex; align-items: center; gap: 6px; font-weight: 500; }
@@ -3262,6 +3266,22 @@ body:has(.page.active .inspector:not([hidden], .hidden)) #toast { bottom: 88px; 
 .u-mfa-dialog .hint .icon { flex: none; margin-top: 2px; }
 .u-mfa-dialog .u-mfa-off { color: var(--danger); }
 .u-mfa-dialog .modal__foot .spacer { flex: 1; }
+.u-mfa-dialog .mfa-section { display: grid; gap: 10px; }
+.u-mfa-dialog .mfa-section__head { display: flex; align-items: center; gap: 10px; }
+.u-mfa-dialog .mfa-section__head h3 { font-size: var(--fs-md); font-weight: 600; color: var(--text); flex: 1; display: flex; align-items: center; gap: 8px; }
+.u-mfa-dialog .mfa-section__head h3 .icon { color: var(--text-2); }
+.u-mfa-dialog .mfa-section > p { color: var(--text-2); font-size: var(--fs-sm); }
+.u-mfa-dialog .mfa-keys { list-style: none; margin: 0; padding: 0; display: grid; border-radius: var(--r-lg); box-shadow: inset 0 0 0 1px var(--line-subtle); }
+.u-mfa-dialog .mfa-keys li { display: flex; align-items: center; gap: 12px; padding: 10px 8px 10px 14px; min-width: 0; }
+.u-mfa-dialog .mfa-keys li + li { border-top: 1px solid var(--line-subtle); }
+.u-mfa-dialog .mfa-key__text { display: grid; gap: 2px; flex: 1; min-width: 0; }
+.u-mfa-dialog .mfa-key__text b { font-weight: 550; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.u-mfa-dialog .mfa-key__text span { color: var(--text-3); font-size: var(--fs-xs); }
+.u-mfa-dialog .mfa-key__tag { flex: none; padding: 1px 8px; border-radius: var(--r-full); font-size: var(--fs-xs); font-weight: 600; color: var(--text-2); background: var(--sunken); }
+.u-mfa-dialog .mfa-app { display: flex; align-items: center; gap: 12px; padding: 10px 8px 10px 14px; border-radius: var(--r-lg); box-shadow: inset 0 0 0 1px var(--line-subtle); }
+.u-mfa-dialog .mfa-app .mfa-key__text { flex: 1; }
+.u-mfa-dialog .mfa-empty { color: var(--text-3); font-size: var(--fs-sm); padding: 10px 14px; border-radius: var(--r-lg); box-shadow: inset 0 0 0 1px var(--line-subtle); }
+.u-mfa-dialog .u-mfa-or { margin-top: 2px; }
 /* ==== end page:users ==== */
 
 /* ==== page:notify (styles for this page only) ==== */
