@@ -148,7 +148,7 @@ the newest `.mmdb` file in the folder and looks for a newer one every 30 seconds
 so to update it, add the new file and then delete the old one. The file is read
 into memory (about 130 MB for a City database, 10 MB for a Country one) the first
 time a search uses it, and is checked before use; a damaged file, one larger than
-1 GB, or a database of another kind (such as ASN) is not used, and the server log
+512 MB, or a database of another kind (such as ASN) is not used, and the server log
 says why while searches keep the file they had.
 
 ## Several servers

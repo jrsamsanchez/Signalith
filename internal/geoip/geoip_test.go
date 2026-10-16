@@ -1,6 +1,7 @@
 package geoip
 
 import (
+	"errors"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -151,4 +152,25 @@ func FuzzLoad(f *testing.F) {
 			s.Lookup(netip.MustParseAddr(ip), "de") //nolint:errcheck
 		}
 	})
+}
+
+func TestLookupDoesNotWaitForALoad(t *testing.T) {
+	dir := t.TempDir()
+	writeDB(t, dir, "a.mmdb", "GeoLite2-City", testNets)
+	s := Open(dir)
+	// Another search is loading the first file.
+	s.loadMu.Lock()
+	if _, _, err := s.Lookup(netip.MustParseAddr("81.2.69.1"), "en"); !errors.Is(err, ErrLoading) {
+		t.Fatalf("err = %v, want ErrLoading", err)
+	}
+	s.loadMu.Unlock()
+	if loc, _, err := s.Lookup(netip.MustParseAddr("81.2.69.1"), "en"); err != nil || loc.City != "London" {
+		t.Fatalf("got %+v, %v", loc, err)
+	}
+	// While a newer file loads, the one in use answers.
+	s.loadMu.Lock()
+	defer s.loadMu.Unlock()
+	if loc, _, err := s.Lookup(netip.MustParseAddr("81.2.69.1"), "en"); err != nil || loc.City != "London" {
+		t.Fatalf("during a load: %+v, %v", loc, err)
+	}
 }

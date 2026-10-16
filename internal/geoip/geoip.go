@@ -22,7 +22,7 @@ import (
 // MaxFileBytes is the largest database read. The whole file is kept in
 // memory, so it is never held open: on Windows a newer file can replace
 // it, and no one changing it in place can change what a search reads.
-const MaxFileBytes = 1 << 30
+const MaxFileBytes = 512 << 20
 
 // recheck is how often the folder is looked at again for a newer file.
 const recheck = 30 * time.Second
@@ -70,6 +70,9 @@ func (s *Store) Dir() string { return s.dir }
 // ErrNoDatabase means the folder has no .mmdb file.
 var ErrNoDatabase = errors.New("no GeoIP database")
 
+// ErrLoading means the first database is still being read.
+var ErrLoading = errors.New("the GeoIP database is still loading")
+
 // Lookup returns where ip is, with names in lang (such as en, de or
 // zh-CN) where the database has them and in English otherwise. found is
 // false for an address the database does not list, such as a private one.
@@ -78,7 +81,7 @@ func (s *Store) Lookup(ip netip.Addr, lang string) (loc Location, found bool, er
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if s.db == nil {
-		return Location{}, false, s.err
+		return Location{}, false, s.errNoDB()
 	}
 	if ip.Is4In6() {
 		ip = ip.Unmap()
@@ -120,9 +123,17 @@ func (s *Store) Status() (file string, err error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if s.db == nil {
-		return "", s.err
+		return "", s.errNoDB()
 	}
 	return s.file, s.err
+}
+
+// errNoDB is why there is no database, with s.mu held.
+func (s *Store) errNoDB() error {
+	if s.err == nil {
+		return ErrLoading
+	}
+	return s.err
 }
 
 type names map[string]string
@@ -162,7 +173,11 @@ func name(n names, lang string) string {
 // the folder at most every 30 seconds. A file that cannot be used leaves
 // the one in use, if any, and sets the error Status returns.
 func (s *Store) refresh() {
-	s.loadMu.Lock()
+	// A search does not wait while another loads a file, which can take
+	// seconds; it uses the file in use until the load is done.
+	if !s.loadMu.TryLock() {
+		return
+	}
 	defer s.loadMu.Unlock()
 	now := s.now()
 	if !s.checked.IsZero() && now.Sub(s.checked) < recheck {
@@ -237,13 +252,14 @@ func load(id fileID) (*maxminddb.Reader, error) {
 		return nil, err
 	}
 	defer f.Close()
-	// One byte past the limit shows a file that grew since it was listed.
-	buf, err := io.ReadAll(io.LimitReader(f, MaxFileBytes+1))
-	if err != nil {
-		return nil, err
+	// Read in one allocation of the listed size, so memory peaks at the
+	// file's size, and refuse a file that changed size since.
+	buf := make([]byte, id.size)
+	if _, err := io.ReadFull(f, buf); err != nil {
+		return nil, fmt.Errorf("%s changed while it was read: %w", id.path, err)
 	}
-	if len(buf) > MaxFileBytes {
-		return nil, fmt.Errorf("%s is larger than %d MB", id.path, MaxFileBytes>>20)
+	if n, _ := f.Read(make([]byte, 1)); n > 0 {
+		return nil, fmt.Errorf("%s changed while it was read", id.path)
 	}
 	db, err := openBytes(buf)
 	if err != nil {

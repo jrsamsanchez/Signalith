@@ -33,6 +33,9 @@ func (e *Engine) ipLocation(ctx context.Context, res *Result, c *query.IPLocatio
 		if errors.Is(err, geoip.ErrNoDatabase) {
 			return &QueryError{Msg: errNoGeoIP}
 		}
+		if errors.Is(err, geoip.ErrLoading) {
+			return &QueryError{Msg: "iplocation's GeoIP database is still loading; try again in a few seconds"}
+		}
 		return &QueryError{Msg: errBadGeoIP}
 	}
 	lang := c.Lang
@@ -70,6 +73,9 @@ func (e *Engine) ipLocation(ctx context.Context, res *Result, c *query.IPLocatio
 		hit, ok := cache[ip]
 		if !ok {
 			loc, found, err := e.GeoIP.Lookup(ip, lang)
+			if errors.Is(err, geoip.ErrLoading) {
+				return &QueryError{Msg: "iplocation's GeoIP database is still loading; try again in a few seconds"}
+			}
 			if err != nil {
 				slog.Warn("iplocation could not read the GeoIP database", "err", err)
 				return &QueryError{Msg: errBadGeoIP}
