@@ -334,7 +334,7 @@ func TestUpgradeRollingPair(t *testing.T) {
 			time.Sleep(time.Second)
 		}
 	}
-	safeNext(sb, "Upgrade siem-b next")
+	safeNext(sb, "start with siem-b")
 
 	w := watchJobs(h, a, sb)
 	stopGraceful(sb)

@@ -38,8 +38,10 @@ type Verdict struct {
 	Warnings     []Note   `json:"warnings"`
 	Next         string   `json:"next,omitempty"`
 	// Newest is the newest version a live server runs, "" when they all
-	// run one.
-	Newest string `json:"newest,omitempty"`
+	// run one; Current is the version they all run, "" when they run
+	// several.
+	Newest  string `json:"newest,omitempty"`
+	Current string `json:"current,omitempty"`
 	// Migrations are the migrations run once for the cluster, with when
 	// they ran, and LevelVersions, per cluster level, the version of the
 	// server that raised the cluster to it.
@@ -293,18 +295,33 @@ func Judge(in Inputs) Verdict {
 		}
 	}
 	v.Next = Next(live, leader, levels)
-	if len(levels) > 1 {
-		v.Newest = newest(levels)
+	switch {
+	case len(levels) > 1:
+		v.Newest = newest(live, levels)
+	case len(levels) == 1:
+		v.Current = live[0].Version
 	}
 	v.Safe = len(v.Blockers) == 0
 	return v
 }
 
-// newest is the newest of the versions in levels.
-func newest(levels map[string]int) string {
+// newest is the newest of the versions in levels, which the servers live
+// run. Of two versions NewerVersion cannot order, such as two commit
+// hashes, it takes the one a server started on last: the upgrade
+// installs the new one.
+func newest(live []cluster.Heartbeat, levels map[string]int) string {
+	started := map[string]time.Time{}
+	for _, hb := range live {
+		if hb.StartedAt.After(started[hb.Version]) {
+			started[hb.Version] = hb.StartedAt
+		}
+	}
 	n := ""
 	for _, ver := range slices.Sorted(maps.Keys(levels)) {
-		if n == "" || cluster.NewerVersion(ver, n, levels[ver], levels[n]) {
+		switch {
+		case n == "", cluster.NewerVersion(ver, n, levels[ver], levels[n]):
+			n = ver
+		case !cluster.NewerVersion(n, ver, levels[n], levels[ver]) && started[ver].After(started[n]):
 			n = ver
 		}
 	}
@@ -313,12 +330,13 @@ func newest(levels map[string]int) string {
 
 // Next suggests which server to upgrade next: one still on the older
 // version that does not run the jobs, then the one that does, so the jobs
-// move once, to the new version.
+// move once, to the new version. When every server runs one version, it
+// says where the next upgrade starts.
 func Next(live []cluster.Heartbeat, leader *cluster.Heartbeat, levels map[string]int) string {
 	if len(live) == 0 {
 		return ""
 	}
-	top := newest(levels)
+	top := newest(live, levels)
 	var todo []cluster.Heartbeat
 	for _, hb := range live {
 		if len(levels) < 2 || hb.Version != top {
@@ -338,19 +356,38 @@ func Next(live []cluster.Heartbeat, leader *cluster.Heartbeat, levels map[string
 		return ""
 	}
 	n := todo[0]
+	first := fmt.Sprintf("Upgrade %s next", n.Name)
+	if len(levels) < 2 && len(live) > 1 {
+		first = fmt.Sprintf("To upgrade, start with %s", n.Name)
+	}
 	switch {
 	case leader != nil && n.NodeID == leader.NodeID:
-		return fmt.Sprintf("Upgrade %s next: it runs the jobs, so they move once, to the new version.", n.Name)
-	case leader != nil && (len(levels) < 2 || leader.Version != top) && slices.Contains(leader.Features, cluster.FeatureYieldNewer):
+		return fmt.Sprintf("%s: it runs the jobs, so they move once, to the new version.", first)
+	case leader != nil && (len(levels) < 2 || leader.Version != top) && handsOver(*leader, n, top, levels):
 		// The leader runs the older version and hands the jobs to the
 		// first server upgraded.
-		return fmt.Sprintf("Upgrade %s next. %s hands the jobs to it once it is ready, then upgrade %s.", n.Name, leader.Name, leader.Name)
+		return fmt.Sprintf("%s. %s hands the jobs to it once it is ready, then upgrade %s.", first, leader.Name, leader.Name)
 	case leader != nil && len(levels) > 1 && leader.Version == top:
-		return fmt.Sprintf("Upgrade %s next: %s, which runs the jobs, runs the new version already.", n.Name, leader.Name)
+		return fmt.Sprintf("%s: %s, which runs the jobs, runs the new version already.", first, leader.Name)
 	case leader != nil:
-		return fmt.Sprintf("Upgrade %s next: it does not run the jobs. Upgrade %s, which runs them, last.", n.Name, leader.Name)
+		return fmt.Sprintf("%s: it does not run the jobs. Upgrade %s, which runs them, last.", first, leader.Name)
 	}
-	return fmt.Sprintf("Upgrade %s next.", n.Name)
+	return first + "."
+}
+
+// handsOver reports whether leader will hand the jobs to n once n runs
+// the new version top (when every server runs one version, the next
+// release): leader's version hands them over, n may run them, and leader
+// can tell top is newer than its own version, which it cannot for dev
+// builds and commit hashes.
+func handsOver(leader, n cluster.Heartbeat, top string, levels map[string]int) bool {
+	if !slices.Contains(leader.Features, cluster.FeatureYieldNewer) || !n.LeaderEligible || n.NotEligible != "" || n.Role == cluster.RoleScanner {
+		return false
+	}
+	if len(levels) < 2 {
+		return cluster.ReadableVersion(leader.Version)
+	}
+	return cluster.NewerVersion(top, leader.Version, levels[top], levels[leader.Version])
 }
 
 // Live reports whether a heartbeat's server is up.
