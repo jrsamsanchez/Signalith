@@ -223,8 +223,11 @@ var Registry = []Setting{
 		Placeholder: "https://siem.example.com:8080", EmptyMeans: "worked out from the listen address",
 		Env: "SIGNALITH_PUBLIC_URL", WaitsFor: []string{"server.listen", "server.tls.mode", "server.tls_cert", "server.tls_key"}},
 	{Key: "auth.session_timeout", Scope: ScopeCluster, Section: "general", Label: "Sign out after", Type: TypeDuration,
-		Help:        "Signs people out of the web page after this long without use, unless they ticked Keep me signed in. At least 5m.",
-		Placeholder: "12h", EmptyMeans: "12h"},
+		Help:        "Signs people out of the web page after this long without use, unless they ticked Keep me signed in. At least 5m. NIST SP 800-63B (AAL2) asks for at most 1h.",
+		Placeholder: "1h", EmptyMeans: "1h"},
+	{Key: "auth.session_max_age", Scope: ScopeCluster, Section: "general", Label: "Sign in again after", Type: TypeDuration,
+		Help:        "Ends every session this long after sign-in, also when Keep me signed in was ticked. From 1h to 30d. NIST SP 800-63B (AAL2) asks for at most 24h.",
+		Placeholder: "24h", EmptyMeans: "24h"},
 	{Key: "auth.mfa_required", Scope: ScopeCluster, Section: "general", Label: "Require two-step sign-in", Type: TypeChoice,
 		Help: "Who must enter a code from an authenticator app after their password. Everyone can turn it on for themselves from the account menu either way. " +
 			"Someone who has not set it up is asked to right after they sign in. Signing in with a password over the API (HTTP Basic) stops working for them: use an API token instead. " +

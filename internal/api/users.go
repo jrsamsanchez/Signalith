@@ -182,6 +182,9 @@ func (s *Server) handleChangeOwnPassword(w http.ResponseWriter, r *http.Request)
 // servers of a cluster share it.
 func (s *Server) setOwnPassword(ctx context.Context, p *principal, password string) (*principal, error) {
 	if p.Source == users.SourceBuiltin {
+		if err := users.CheckNewPassword(p.Username, password); err != nil {
+			return nil, err
+		}
 		hash, err := users.HashPassword(password)
 		if err != nil {
 			return nil, err

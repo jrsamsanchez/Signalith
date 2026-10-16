@@ -62,10 +62,10 @@ func setUpMFA(t *testing.T, ts *httptest.Server, c *http.Cookie) (string, []stri
 
 func TestMFASignIn(t *testing.T) {
 	ts, s := newUsersServer(t, nil)
-	if _, err := s.Users.Create(context.Background(), users.NewUser{Username: "jdoe", Role: users.Analyst, Password: "jdoe-password"}); err != nil {
+	if _, err := s.Users.Create(context.Background(), users.NewUser{Username: "jdoe", Role: users.Analyst, Password: "Kestrel-river-42"}); err != nil {
 		t.Fatal(err)
 	}
-	code, _, c := login(t, ts, "jdoe", "jdoe-password")
+	code, _, c := login(t, ts, "jdoe", "Kestrel-river-42")
 	if code != 200 || c == nil {
 		t.Fatalf("login = %d", code)
 	}
@@ -78,30 +78,30 @@ func TestMFASignIn(t *testing.T) {
 	}
 
 	// The password alone now asks for the code, and sets no cookie.
-	code, out, c2 := loginCode(t, ts, "jdoe", "jdoe-password", "")
+	code, out, c2 := loginCode(t, ts, "jdoe", "Kestrel-river-42", "")
 	if code != 401 || out["code"] != "mfa_required" || c2 != nil {
 		t.Errorf("password only = %d %v", code, out)
 	}
 	if code, out, _ := loginCode(t, ts, "jdoe", "wrong-password", ""); code != 401 || out["code"] != "wrong_credentials" {
 		t.Errorf("wrong password = %d %v", code, out)
 	}
-	if code, out, _ := loginCode(t, ts, "jdoe", "jdoe-password", "000000"); code != 401 || out["code"] != "mfa_wrong" {
+	if code, out, _ := loginCode(t, ts, "jdoe", "Kestrel-river-42", "000000"); code != 401 || out["code"] != "mfa_wrong" {
 		t.Errorf("wrong code = %d %v", code, out)
 	}
 	// The code of the next step works (a phone a little ahead), once.
 	next, _ := users.TOTP(secret, time.Now().Add(30*time.Second))
-	if code, out, c := loginCode(t, ts, "jdoe", "jdoe-password", next); code != 200 || c == nil || out["mfa"] != true {
+	if code, out, c := loginCode(t, ts, "jdoe", "Kestrel-river-42", next); code != 200 || c == nil || out["mfa"] != true {
 		t.Errorf("right code = %d %v", code, out)
 	}
-	if code, out, _ := loginCode(t, ts, "jdoe", "jdoe-password", next); code != 401 || out["code"] != "mfa_wrong" {
+	if code, out, _ := loginCode(t, ts, "jdoe", "Kestrel-river-42", next); code != 401 || out["code"] != "mfa_wrong" {
 		t.Errorf("same code again = %d %v", code, out)
 	}
-	if code, out, c := loginCode(t, ts, "jdoe", "jdoe-password", codes[0]); code != 200 || c == nil || out["recovery_codes_left"] != float64(users.RecoveryCodes-1) {
+	if code, out, c := loginCode(t, ts, "jdoe", "Kestrel-river-42", codes[0]); code != 200 || c == nil || out["recovery_codes_left"] != float64(users.RecoveryCodes-1) {
 		t.Errorf("recovery code = %d %v", code, out)
 	}
 
 	// Basic auth has no code, so it is refused, from the cache too.
-	if code, out := doAs(t, ts, "jdoe", "jdoe-password", "GET", "/api/me", ""); code != 403 || out["code"] != "mfa_basic" {
+	if code, out := doAs(t, ts, "jdoe", "Kestrel-river-42", "GET", "/api/me", ""); code != 403 || out["code"] != "mfa_basic" {
 		t.Errorf("basic auth = %d %v", code, out)
 	}
 
@@ -120,10 +120,10 @@ func TestMFASignIn(t *testing.T) {
 	if code, out, _ := call(t, ts, "DELETE", "/api/users/jdoe/mfa", "", "admin", adminPass, nil); code != 200 {
 		t.Errorf("reset = %d %v", code, out)
 	}
-	if code, out, c := login(t, ts, "jdoe", "jdoe-password"); code != 200 || c == nil || out["mfa"] != false {
+	if code, out, c := login(t, ts, "jdoe", "Kestrel-river-42"); code != 200 || c == nil || out["mfa"] != false {
 		t.Errorf("login after reset = %d %v", code, out)
 	}
-	if code, _ := doAs(t, ts, "jdoe", "jdoe-password", "GET", "/api/me", ""); code != 200 {
+	if code, _ := doAs(t, ts, "jdoe", "Kestrel-river-42", "GET", "/api/me", ""); code != 200 {
 		t.Errorf("basic auth after reset = %d", code)
 	}
 	if code, _, _ := call(t, ts, "DELETE", "/api/users/admin/mfa", "", "admin", adminPass, nil); code != 409 {
@@ -157,10 +157,10 @@ func hasUser(out map[string]any, name string, mfa bool, action string) bool {
 
 func TestMFARequired(t *testing.T) {
 	ts, s := newUsersServer(t, func(s *Server) { s.Config.Auth.MFARequired = "everyone" })
-	if _, err := s.Users.Create(context.Background(), users.NewUser{Username: "vera", Role: users.Viewer, Password: "vera-password"}); err != nil {
+	if _, err := s.Users.Create(context.Background(), users.NewUser{Username: "vera", Role: users.Viewer, Password: "Copper-lantern-17"}); err != nil {
 		t.Fatal(err)
 	}
-	code, out, c := login(t, ts, "vera", "vera-password")
+	code, out, c := login(t, ts, "vera", "Copper-lantern-17")
 	if code != 200 || c == nil || out["must_setup_mfa"] != true {
 		t.Fatalf("login = %d %v", code, out)
 	}
@@ -174,7 +174,7 @@ func TestMFARequired(t *testing.T) {
 	if resp, err := noRedirect.Do(req); err != nil || resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != "/login?mfa=setup" {
 		t.Errorf("page = %v %v", resp, err)
 	}
-	if code, _ := doAs(t, ts, "vera", "vera-password", "GET", "/api/me", ""); code != 403 {
+	if code, _ := doAs(t, ts, "vera", "Copper-lantern-17", "GET", "/api/me", ""); code != 403 {
 		t.Errorf("basic auth while required = %d", code)
 	}
 	setUpMFA(t, ts, c)
@@ -195,20 +195,20 @@ func TestMFARequired(t *testing.T) {
 // the code cannot be guessed by someone who knows the password.
 func TestWrongCodesLockOut(t *testing.T) {
 	ts, s := newUsersServer(t, nil)
-	if _, err := s.Users.Create(context.Background(), users.NewUser{Username: "jdoe", Role: users.Analyst, Password: "jdoe-password"}); err != nil {
+	if _, err := s.Users.Create(context.Background(), users.NewUser{Username: "jdoe", Role: users.Analyst, Password: "Kestrel-river-42"}); err != nil {
 		t.Fatal(err)
 	}
-	_, _, c := login(t, ts, "jdoe", "jdoe-password")
+	_, _, c := login(t, ts, "jdoe", "Kestrel-river-42")
 	secret, _ := setUpMFA(t, ts, c)
 	for range 10 {
-		loginCode(t, ts, "jdoe", "jdoe-password", "000000")
+		loginCode(t, ts, "jdoe", "Kestrel-river-42", "000000")
 	}
 	next, _ := users.TOTP(secret, time.Now().Add(30*time.Second))
-	if code, out, _ := loginCode(t, ts, "jdoe", "jdoe-password", next); code != 429 || out["code"] != "locked_out" {
+	if code, out, _ := loginCode(t, ts, "jdoe", "Kestrel-river-42", next); code != 429 || out["code"] != "locked_out" {
 		t.Errorf("right code after 10 wrong ones = %d %v", code, out)
 	}
 	// The password alone does not clear the count either.
-	if code, _, _ := loginCode(t, ts, "jdoe", "jdoe-password", ""); code != 429 {
+	if code, _, _ := loginCode(t, ts, "jdoe", "Kestrel-river-42", ""); code != 429 {
 		t.Errorf("password only after 10 wrong codes = %d", code)
 	}
 }

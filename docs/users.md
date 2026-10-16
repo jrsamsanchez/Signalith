@@ -95,7 +95,7 @@ Admins manage users on the **Users** page (**Settings > Users**).
 role (Viewer if you don't). Usernames are 1 to 64 lower-case letters, digits, dots,
 dashes, underscores or `@`, starting with a letter or digit; they are not case
 sensitive. Signalith makes up a temporary password and shows it once (or you can
-type one, at least 8 characters). Give it to the person: at their first sign-in they
+type one that follows the [password rules](#password-rules)). Give it to the person: at their first sign-in they
 must choose their own password before they can do anything else.
 
 **Change a user.** Edit their name and email, change their role, disable or enable
@@ -115,7 +115,7 @@ Passwords are stored as bcrypt hashes and never shown again.
 ## Changing your password
 
 Local users change their password from the user menu (**Change password**): enter
-the current password and the new one (at least 8 characters, at most 72 bytes).
+the current password and the new one, which follows the [password rules](#password-rules).
 Every other browser signed in as you is signed out, on every server that shares the
 users file too. Scripts using your old password with HTTP Basic auth stop working at
 once.
@@ -125,6 +125,24 @@ Ctrl+Alt+Del on Windows). The built-in admin's password is changed with
 `signalith passwd`; on servers that share their users, the built-in admin can also
 change it here, from the user menu or **Change password** on its own row of the
 Users page.
+
+### Password rules
+
+A new password, chosen on the Users page, at **Change password**, with
+`signalith passwd` or `signalith init -admin-password`, must be:
+
+- at least 8 characters and at most 72 bytes (bcrypt reads no more);
+- not on a list of about 2,000 commonly used passwords (from
+  [SecLists](https://github.com/danielmiessler/SecLists)), whatever the case;
+- not one character or a short group repeated (`aaaaaaaa`, `abcabcabc`) or a run of
+  characters in order (`12345678`, `abcdefgh`, `87654321`);
+- not containing the username (for usernames of 3 or more characters), and not
+  `signalith` with only digits or symbols added (`Signalith2026!`).
+
+These follow NIST SP 800-63B: there are no rules about mixing upper case, digits or
+symbols. Passwords set before these rules are not checked
+again; they keep working until they are changed. Temporary passwords Signalith makes
+up always pass.
 
 ## Signing in
 
@@ -220,8 +238,12 @@ When an address is refused as a whole, the server log says so and names these
 settings.
 
 The web UI keeps you signed in with a session cookie. Sessions end after
-`auth.session_timeout` without activity (12 hours by default), after 7 days with
-**Keep me signed in**, when you sign out, when your password is changed, or when an
+`auth.session_timeout` without activity (**Sign out after** on the Settings page, 1
+hour by default) unless you tick **Keep me signed in**, and always after
+`auth.session_max_age` from sign-in (**Sign in again after**, 24 hours by default,
+from 1 hour to 30 days), with **Keep me signed in** too. The defaults are the NIST SP
+800-63B limits for AAL2, and the Security page flags longer ones. Sessions also end
+when you sign out, when your password is changed, or when an
 admin disables, deletes or resets your account. Servers that share the users file end
 them too, within a second or so. Servers that share their users in OpenSearch keep the
 sessions there, so a session works on every server at once (see
@@ -634,11 +656,11 @@ Give the OpenSearch user the right to create, read and write `<prefix>_sessions`
   there (same source, role and password, enabled). The others, such as a server's own
   users that were not brought in, or a built-in admin whose password differed, sign in
   once more. A carried session works on the server that made it, until it ends as any
-  session does (a new password, disabled, signed out, idle, 7 days) or that server
+  session does (a new password, disabled, signed out, idle, `auth.session_max_age`) or that server
   stops; signing in again gives a session that works on every server.
 
-What stays per server: `auth.session_timeout` (each server ends idle sessions after its
-own value) and the Basic auth cache. `auth.admin_user` is taken from the server that
+What stays per server: `auth.session_timeout` and `auth.session_max_age` (each server
+ends idle and old sessions after its own values) and the Basic auth cache. `auth.admin_user` is taken from the server that
 brought the users in; a server whose `auth.admin_user` differs logs a warning and uses
 the shared name.
 

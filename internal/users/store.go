@@ -154,15 +154,13 @@ func validEmail(email string) error {
 // MinPasswordLength is the shortest password Signalith accepts.
 const MinPasswordLength = 8
 
-// HashPassword returns a bcrypt hash of a new password, after checking its
+// HashPassword returns a bcrypt hash of a password, after checking its
 // length. bcrypt reads at most 72 bytes, so longer passwords are refused
-// rather than silently cut.
+// rather than silently cut. A password someone is choosing goes through
+// CheckNewPassword first.
 func HashPassword(pw string) (string, error) {
-	if len([]rune(pw)) < MinPasswordLength {
-		return "", fmt.Errorf("password must be at least %d characters", MinPasswordLength)
-	}
-	if len(pw) > 72 {
-		return "", errors.New("password must be at most 72 bytes (bcrypt reads no more)")
+	if err := checkLength(pw); err != nil {
+		return "", err
 	}
 	h, err := bcrypt.GenerateFromPassword([]byte(pw), bcrypt.DefaultCost)
 	return string(h), err
@@ -441,6 +439,9 @@ func (s *Store) Create(ctx context.Context, in NewUser) (User, error) {
 	if !in.Role.Valid() {
 		return User{}, fieldError("role", fmt.Errorf("role %q must be viewer, analyst or admin", in.Role))
 	}
+	if err := CheckNewPassword(name, in.Password); err != nil {
+		return User{}, fieldError("password", err)
+	}
 	hash, err := HashPassword(in.Password)
 	if err != nil {
 		return User{}, fieldError("password", err)
@@ -613,6 +614,9 @@ func (s *Store) SetPasswordIf(ctx context.Context, name, etag, password string, 
 		return User{}, ErrNotFound
 	} else if u.Source != SourceLocal {
 		return User{}, ErrManaged
+	}
+	if err := CheckNewPassword(name, password); err != nil {
+		return User{}, fieldError("password", err)
 	}
 	hash, err := HashPassword(password)
 	if err != nil {

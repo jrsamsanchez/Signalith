@@ -392,7 +392,7 @@ func alwaysOn(f *Facts) []string {
 	out = append(out,
 		"Every page has a strict Content Security Policy and can't be shown inside another site.",
 		"Guessing passwords is slowed: after 10 wrong tries for one account from one address in 15 minutes, sign-in pauses for 15 minutes. The API is limited the same way.",
-		"Sign-ins end after 7 days at most, even with Keep me signed in.",
+		"Sign-ins end after 24 hours by default (30 days at most), even with Keep me signed in.",
 		"Passwords are stored only as bcrypt hashes.",
 		"Logs, pages and the API never show stored passwords or keys.")
 	if https {
