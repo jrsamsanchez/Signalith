@@ -97,13 +97,24 @@ func TestJSONFunctionsCountTheirInput(t *testing.T) {
 	if err := run("* | eval " + strings.Join(alternating, ", ")); err == nil || !strings.Contains(err.Error(), "million expressions") {
 		t.Errorf("alternating: err = %v", err)
 	}
-	// One decode for each row's j: about 1.3 million steps for 20 rows,
-	// where 50 decodes each would be 65 million.
+	// One decode for each row's j: about 21 million steps for 20 rows,
+	// where 50 decodes each would be a billion.
+	maxEvalSteps = 30_000_000
 	rows = rows[:20]
 	for i := range rows {
 		rows[i] = Row{"j": j}
 	}
 	if err := run("* | eval " + strings.Join(same, ", ")); err != nil {
 		t.Errorf("same field: %v", err)
+	}
+}
+
+// A cancelled search stops at the next JSON decode.
+func TestJSONFunctionsStopWhenCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	ev := newEvaluator(ctx)
+	if v, _ := ev.callMore("json_keys", []any{`{"a":1}`}); v != nil || ev.err != context.Canceled {
+		t.Errorf("v = %v, err = %v", v, ev.err)
 	}
 }

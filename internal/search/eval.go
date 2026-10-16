@@ -88,6 +88,26 @@ const checkSteps = 256
 // 20 assignments of 100 steps each takes 200 million.
 var maxEvalSteps = 500_000_000 // a variable so tests can lower it
 
+// stepN counts n steps of work at once, checking the step budget and
+// the search's context as step does.
+func (ev *evaluator) stepN(n int) bool {
+	if ev.err != nil {
+		return false
+	}
+	ev.steps += n
+	if ev.steps > maxEvalSteps {
+		ev.fail("the search evaluated more than %d million expressions; narrow the search first", maxEvalSteps/1_000_000)
+		return false
+	}
+	if ev.ctx != nil {
+		if err := ev.ctx.Err(); err != nil {
+			ev.err = err
+			return false
+		}
+	}
+	return true
+}
+
 // step counts work and stops the evaluation once the search's context
 // ends, so a few expensive rows cannot outlive the search timeout.
 func (ev *evaluator) step() bool {

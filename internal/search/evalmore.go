@@ -197,23 +197,15 @@ func (ev *evaluator) charged(v any) any {
 	return v
 }
 
-// jsonStepBytes is how many bytes of JSON text count as one evaluation
-// step, so parsing large values counts toward the search's step budget.
-const jsonStepBytes = 16
-
-// parseJSON decodes s for the JSON functions, counting its size against
-// the step budget. The last value it decoded is kept, so several calls on
-// the same field decode it once.
+// parseJSON decodes s for the JSON functions, counting each byte as an
+// evaluation step: decoding a byte costs about what a step does. The last
+// value it decoded is kept, so several calls on the same field decode it
+// once.
 func (ev *evaluator) parseJSON(s string) (any, bool) {
 	if ev.jsonText == s && ev.jsonOK {
 		return ev.jsonDoc, true
 	}
-	ev.steps += len(s) / jsonStepBytes
-	if !ev.step() {
-		return nil, false
-	}
-	if ev.steps > maxEvalSteps {
-		ev.fail("the search evaluated more than %d million expressions; narrow the search first", maxEvalSteps/1_000_000)
+	if !ev.stepN(len(s)) {
 		return nil, false
 	}
 	doc, ok := parseJSON(s)
