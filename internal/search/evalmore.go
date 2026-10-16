@@ -28,7 +28,7 @@ func (ev *evaluator) callMore(fn string, args []any) (any, bool) {
 		if !ok {
 			return nil, true
 		}
-		doc, ok := parseJSON(s)
+		doc, ok := ev.parseJSON(s)
 		if !ok {
 			return nil, true
 		}
@@ -58,7 +58,7 @@ func (ev *evaluator) callMore(fn string, args []any) (any, bool) {
 		if !ok {
 			return nil, true
 		}
-		doc, ok := parseJSON(s)
+		doc, ok := ev.parseJSON(s)
 		m, isObj := doc.(map[string]any)
 		if !ok || !isObj {
 			return nil, true
@@ -75,7 +75,7 @@ func (ev *evaluator) callMore(fn string, args []any) (any, bool) {
 		if !ok {
 			return nil, true
 		}
-		doc, ok := parseJSON(s)
+		doc, ok := ev.parseJSON(s)
 		items, isArr := doc.([]any)
 		if !ok || !isArr {
 			return nil, true
@@ -135,10 +135,10 @@ func (ev *evaluator) callMore(fn string, args []any) (any, bool) {
 			return nil, true
 		}
 		rt, ok := relativeTime(t, spec)
-		if !ok {
+		if !ok || rt.Year() < 1 || rt.Year() > 9999 {
 			return nil, true
 		}
-		return numOut(float64(rt.UnixNano()) / 1e9), true
+		return numOut(float64(rt.Unix()) + float64(rt.Nanosecond())/1e9), true
 	case "mvrange":
 		start, ok1 := evNum(arg(0))
 		end, ok2 := evNum(arg(1))
@@ -147,7 +147,7 @@ func (ev *evaluator) callMore(fn string, args []any) (any, bool) {
 		if len(args) > 2 {
 			step, ok3 = evNum(arg(2))
 		}
-		if !ok1 || !ok2 || !ok3 || step <= 0 || math.IsNaN(start) || math.IsNaN(end) || math.IsInf(start, 0) || math.IsInf(end, 0) {
+		if !ok1 || !ok2 || !ok3 || step <= 0 || math.IsNaN(step) || math.IsNaN(start) || math.IsNaN(end) || math.IsInf(start, 0) || math.IsInf(end, 0) {
 			return nil, true
 		}
 		n := math.Ceil((end - start) / step)
@@ -195,6 +195,30 @@ func (ev *evaluator) charged(v any) any {
 		return nil
 	}
 	return v
+}
+
+// jsonStepBytes is how many bytes of JSON text count as one evaluation
+// step, so parsing large values counts toward the search's step budget.
+const jsonStepBytes = 16
+
+// parseJSON decodes s for the JSON functions, counting its size against
+// the step budget. The last value it decoded is kept, so several calls on
+// the same field decode it once.
+func (ev *evaluator) parseJSON(s string) (any, bool) {
+	if ev.jsonText == s && ev.jsonOK {
+		return ev.jsonDoc, true
+	}
+	ev.steps += len(s) / jsonStepBytes
+	if !ev.step() {
+		return nil, false
+	}
+	if ev.steps > maxEvalSteps {
+		ev.fail("the search evaluated more than %d million expressions; narrow the search first", maxEvalSteps/1_000_000)
+		return nil, false
+	}
+	doc, ok := parseJSON(s)
+	ev.jsonText, ev.jsonDoc, ev.jsonOK = s, doc, ok
+	return doc, ok
 }
 
 // parseJSON decodes one JSON value, numbers kept exact.

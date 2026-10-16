@@ -2,8 +2,12 @@ package search
 
 import (
 	"context"
+	"fmt"
 	"reflect"
+	"strings"
 	"testing"
+
+	"github.com/jrsamsanchez/signalith/internal/query"
 )
 
 func TestMoreEvalFunctions(t *testing.T) {
@@ -39,6 +43,9 @@ func TestMoreEvalFunctions(t *testing.T) {
 			t.Errorf("%s = %#v, want %#v", expr, got, want)
 		}
 	}
+	if res, err := (&Engine{Store: &fakeStore{}}).Run(context.Background(), `| makeresults | eval r=relative_time(now(), "-100000y@y"), m=mvrange(0, 5, 0/0)`); err != nil || res.Rows[0]["r"] != nil {
+		t.Errorf("far relative_time: %v %v", res, err)
+	}
 	for _, bad := range []string{`printf("%1001s", "x")`, `printf("%n", 1)`, `mvrange(0, 100000)`, `json_object("a")`, `validate(true())`} {
 		if _, err := (&Engine{Store: &fakeStore{}}).Run(context.Background(), src+" | eval r="+bad); err == nil {
 			t.Errorf("%s succeeded", bad)
@@ -48,5 +55,55 @@ func TestMoreEvalFunctions(t *testing.T) {
 	res, err := (&Engine{Store: &fakeStore{}}).Run(context.Background(), `| makeresults | eval r=mvcount(mvrange(100000000000000000, 100000000000000100, 1))`)
 	if err != nil || res.Rows[0]["r"] == nil {
 		t.Errorf("large mvrange: %v %v", res, err)
+	}
+}
+
+// Decoding JSON counts toward the step budget by its size, so calls on
+// large values cannot run to the search timeout; repeated calls on the
+// same value decode it once.
+func TestJSONFunctionsCountTheirInput(t *testing.T) {
+	defer func(n int) { maxEvalSteps = n }(maxEvalSteps)
+	maxEvalSteps = 2_000_000
+	big := func(c string) string {
+		var b strings.Builder
+		b.WriteString("[")
+		for b.Len() < 1<<20 {
+			b.WriteString(`"` + c + `",`)
+		}
+		b.WriteString(`"end"]`)
+		return b.String()
+	}
+	rows := make([]Row, 200)
+	j, k := big("a"), big("b")
+	for i := range rows {
+		rows[i] = Row{"j": j, "k": k}
+	}
+	run := func(src string) error {
+		q, err := query.Parse(src)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return applyEval(withEvaluator(context.Background()), &Result{Rows: rows}, q.Commands[0].(*query.Eval))
+	}
+	var same, alternating []string
+	for i := 0; i < 50; i++ {
+		same = append(same, fmt.Sprintf("x%d=spath(j, \"x\")", i))
+		f := "j"
+		if i%2 == 1 {
+			f = "k"
+		}
+		alternating = append(alternating, fmt.Sprintf("x%d=json_keys(%s)", i, f))
+	}
+	if err := run("* | eval " + strings.Join(alternating, ", ")); err == nil || !strings.Contains(err.Error(), "million expressions") {
+		t.Errorf("alternating: err = %v", err)
+	}
+	// One decode for each row's j: about 1.3 million steps for 20 rows,
+	// where 50 decodes each would be 65 million.
+	rows = rows[:20]
+	for i := range rows {
+		rows[i] = Row{"j": j}
+	}
+	if err := run("* | eval " + strings.Join(same, ", ")); err != nil {
+		t.Errorf("same field: %v", err)
 	}
 }

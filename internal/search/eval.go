@@ -49,6 +49,10 @@ type evaluator struct {
 	err      error
 	// eachValues counts the values mvmap and mvfilter went through.
 	eachValues int
+	// The JSON text the JSON functions decoded last, and its value.
+	jsonText string
+	jsonDoc  any
+	jsonOK   bool
 }
 
 func newEvaluator(ctx context.Context) *evaluator {
