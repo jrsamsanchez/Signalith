@@ -2121,13 +2121,33 @@ body:has(.page.active .inspector:not([hidden], .hidden)) #toast { bottom: 88px; 
 #page-cases .c-entity .entity__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #page-cases .c-entity-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; padding-bottom: 12px; box-shadow: inset 0 -1px 0 var(--line-subtle); }
 #page-cases .c-entity-form__bar { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 6px; }
+/* tickets in Jira or ServiceNow, and notes that came from them */
+#page-cases .c-tickets .c-list-plain { padding: 6px 8px 4px; }
+#page-cases .c-ticket { display: grid; gap: 4px; padding: 10px 4px 10px 8px; min-width: 0; }
+#page-cases .c-ticket + .c-ticket { box-shadow: inset 0 1px 0 var(--line-subtle); }
+#page-cases .c-ticket__head { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; min-width: 0; }
+#page-cases .c-ticket__key { font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
+#page-cases a.c-ticket__key { color: var(--accent); }
+#page-cases a.c-ticket__key .icon { width: 12px; height: 12px; margin-left: 2px; vertical-align: -1px; }
+#page-cases .c-ticket__sys { color: var(--text-3); font-size: var(--fs-sm); }
+#page-cases .c-ticket__meta { color: var(--text-3); font-size: var(--fs-sm); overflow-wrap: anywhere; }
+#page-cases .c-ticket__err { display: flex; align-items: flex-start; gap: 6px; color: var(--text-2); font-size: var(--fs-sm); line-height: 1.45; overflow-wrap: anywhere; }
+#page-cases .c-ticket__err .icon { flex: none; width: 14px; height: 14px; margin-top: 2px; color: var(--warning); }
+#page-cases .c-ticket[data-state="failed"] .c-ticket__err .icon, #page-cases .c-ticket[data-state="gone"] .c-ticket__err .icon { color: var(--danger); }
+#page-cases .c-ticket .link-btn { justify-self: start; font-size: var(--fs-sm); }
+#page-cases .c-tickets__open { display: flex; flex-wrap: wrap; gap: 8px; padding: 4px 16px 14px; }
+#page-cases .c-tickets__open .select { flex: 1 1 160px; min-width: 0; }
+#page-cases .c-tickets__open .btn { flex: none; }
+#page-cases .c-tickets__note { padding: 0 16px 14px; color: var(--text-3); font-size: var(--fs-sm); line-height: 1.45; }
+#page-cases .c-tickets .empty--compact { padding-bottom: 8px; }
+#page-cases .c-from { height: 18px; margin-left: 4px; font-weight: 500; color: var(--text-2); vertical-align: 1px; }
 
 @media (max-width: 1099px) {
   #page-cases .c-layout { grid-template-columns: minmax(0, 1fr); }
   /* one column: details, then the timeline, then findings and entities */
   #page-cases .c-side { display: contents; }
   #page-cases .c-details { order: -1; }
-  #page-cases :is(.c-findings, .c-entities) { order: 1; }
+  #page-cases :is(.c-findings, .c-entities, .c-tickets) { order: 1; }
 }
 @media (max-width: 720px) {
   #page-cases .c-title { height: 32px; font-size: var(--fs-lg); }
@@ -3594,6 +3614,82 @@ dialog.nt-dialog[open] { display: flex; flex-direction: column; }
   .nt-dialog .nt-foot .spacer { display: none; }
 }
 /* ==== end page:notify ==== */
+
+/* ==== page:ticketing (styles for this page only) ==== */
+/* Ticketing: connection cards in a grid, the tickets that need attention
+   and a few words on how syncing works. The connection dialog shares the
+   Notifications dialog's rules (.nt-dialog) and adds its own (.tk-dialog). */
+#page-ticketing .tk-page { display: grid; gap: var(--sp-4); }
+#page-ticketing .tk-skel { display: grid; gap: 12px; padding: 20px 16px; }
+#page-ticketing .tk-notes { display: grid; gap: 8px; }
+#page-ticketing .tk-notes .alert { overflow-wrap: anywhere; }
+#page-ticketing .tk-notes .dx-alert__body { min-width: 0; }
+#page-ticketing .tk-type {
+  display: inline-grid; place-items: center; flex: none; width: 32px; height: 32px; border-radius: var(--r-md);
+  color: var(--text-2); background: var(--chip-bg); box-shadow: inset 0 0 0 1px var(--line-subtle);
+}
+#page-ticketing .tk-type .icon { width: 16px; height: 16px; }
+#page-ticketing .tk-empty { padding: 48px 24px 40px; }
+#page-ticketing .tk-starts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; width: min(560px, 100%); margin-top: 14px; text-align: left; }
+#page-ticketing .tk-start {
+  display: flex; align-items: flex-start; gap: 12px; padding: 12px; border: 0; border-radius: var(--r-md); background: var(--raised); color: inherit; text-align: left; cursor: pointer;
+  box-shadow: inset 0 0 0 1px var(--line); transition: box-shadow var(--t-fast), background var(--t-fast);
+}
+#page-ticketing .tk-start:hover { background: var(--hover); box-shadow: inset 0 0 0 1px var(--line-strong); }
+#page-ticketing .tk-start:focus-visible { outline: none; box-shadow: inset 0 0 0 1.5px var(--accent), 0 0 0 3px var(--accent-ring); }
+#page-ticketing .tk-start__text { display: grid; gap: 2px; min-width: 0; }
+#page-ticketing .tk-start__text b { font-weight: 600; color: var(--text); }
+#page-ticketing .tk-start__text span { color: var(--text-3); font-size: var(--fs-sm); line-height: 1.4; }
+#page-ticketing .tk-conns { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; padding: 14px 16px 16px; }
+#page-ticketing .tk-conn { display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 14px; border-radius: var(--r-lg); background: var(--raised); box-shadow: inset 0 0 0 1px var(--line); }
+#page-ticketing .tk-conn[data-state="bad"] { box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--danger) 35%, var(--line)); }
+#page-ticketing .tk-conn__top { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
+#page-ticketing .tk-conn__text { flex: 1; min-width: 0; }
+#page-ticketing .tk-conn__name { font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#page-ticketing .tk-conn__dest { margin-top: 2px; color: var(--text-3); font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#page-ticketing .tk-conn__top .dx-menu { margin: -4px -6px 0 0; }
+#page-ticketing .tk-conn__top .menu__panel { min-width: 160px; }
+#page-ticketing .tk-conn__state { display: flex; align-items: flex-start; gap: 8px; color: var(--text-2); font-size: var(--fs-sm); line-height: 1.45; min-width: 0; overflow-wrap: anywhere; }
+#page-ticketing .tk-conn[data-state="bad"] .tk-conn__state { color: var(--danger); }
+#page-ticketing .tk-dot { width: 8px; height: 8px; margin-top: 5px; border-radius: 50%; flex: none; background: var(--success); }
+#page-ticketing .tk-dot[data-state="bad"] { background: var(--danger); }
+#page-ticketing .tk-dot[data-state="none"] { background: transparent; box-shadow: inset 0 0 0 1.5px var(--text-3); }
+#page-ticketing .tk-conn__foot { display: flex; align-items: center; gap: 8px; margin-top: auto; padding-top: 10px; box-shadow: inset 0 1px 0 var(--line-subtle); }
+#page-ticketing .tk-flags { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; min-width: 0; }
+#page-ticketing .tk-flags .badge { color: var(--text-2); font-weight: 500; }
+#page-ticketing .tk-conn__foot .btn { flex: none; }
+#page-ticketing .tk-conn > [aria-live]:empty { margin-top: -10px; }
+#page-ticketing .tk-result { display: flex; align-items: flex-start; gap: 8px; padding: 8px 10px; border-radius: var(--r-md); font-size: var(--fs-sm); line-height: 1.45; overflow-wrap: anywhere; min-width: 0; color: var(--text); }
+#page-ticketing .tk-result .icon { flex: none; margin-top: 1px; width: 14px; height: 14px; }
+#page-ticketing .tk-result > span { min-width: 0; }
+#page-ticketing .tk-result[data-tone="success"] { background: var(--success-soft); }
+#page-ticketing .tk-result[data-tone="success"] .icon { color: var(--success); }
+#page-ticketing .tk-result[data-tone="danger"] { background: var(--danger-soft); }
+#page-ticketing .tk-result[data-tone="danger"] .icon { color: var(--danger); }
+#page-ticketing .tk-problems { margin: 8px 0 0; padding: 0; list-style: none; }
+#page-ticketing .tk-problem { display: grid; gap: 2px; padding: 12px 16px; box-shadow: inset 0 1px 0 var(--line-subtle); min-width: 0; }
+#page-ticketing .tk-problem__head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; min-width: 0; color: var(--text-2); }
+#page-ticketing .tk-problem__head a { color: var(--accent); }
+#page-ticketing .tk-problem__when { margin-left: auto; color: var(--text-3); font-size: var(--fs-sm); }
+#page-ticketing .tk-problem__err { color: var(--text-2); font-size: var(--fs-sm); line-height: 1.45; overflow-wrap: anywhere; }
+#page-ticketing .tk-how__list { margin: 4px 0 0; padding: 0 16px 16px 34px; display: grid; gap: 6px; color: var(--text-2); line-height: 1.5; }
+.tk-dialog .tk-hint { margin-top: -6px; }
+.tk-dialog .tk-sync { gap: 6px; }
+.tk-dialog .tk-auto { margin: 6px 0 0 26px; max-width: 260px; }
+.tk-dialog .tk-auto[hidden] { display: none; }
+.tk-dialog .tk-map { display: grid; gap: 6px; }
+.tk-dialog .tk-map__row { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 10px; align-items: center; }
+.tk-dialog .tk-map__row > span { color: var(--text-2); font-size: var(--fs-sm); }
+
+@media (max-width: 720px) {
+  #page-ticketing .tk-starts { grid-template-columns: minmax(0, 1fr); }
+  #page-ticketing .tk-empty { padding: 32px 16px; }
+  #page-ticketing .tk-conns { grid-template-columns: minmax(0, 1fr); padding: 12px; }
+  #page-ticketing .tk-problem { padding: 12px; }
+  .tk-dialog .tk-map__row { grid-template-columns: 96px minmax(0, 1fr); }
+  .tk-dialog .tk-auto { margin-left: 0; max-width: none; }
+}
+/* ==== end page:ticketing ==== */
 
 /* ==== page:playbooks (styles for this page only) ==== */
 /* Playbooks: a list of playbooks with switches, each with its sentence and

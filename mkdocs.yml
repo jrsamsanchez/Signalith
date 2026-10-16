@@ -145,6 +145,7 @@ nav:
       - Dashboards: dashboards.md
       - Response actions: response-actions.md
       - Notifications: notifications.md
+      - Ticketing (Jira, ServiceNow): ticketing.md
       - Playbooks: playbooks.md
       - Compliance: compliance.md
   - Administration:

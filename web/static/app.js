@@ -437,9 +437,11 @@ function showPage(name, opts = {}) {
 // to show, as in #data?source=antivirus; it is selected here and the
 // address goes back to #data once the page opens. Hunting notebooks take
 // the notebook to open, as in #notebooks?id=NB-20261016-..., which
-// notebooks.js picks up from hashNotebook.
+// notebooks.js picks up from hashNotebook, and Investigations the case to
+// open, as in #cases?id=…, which cases.js picks up from hashCase.
 let hashSource = false;
 let hashNotebook = null;
+let hashCase = '';
 function pageFromHash() {
   let name = location.hash.slice(1);
   let query = '';
@@ -452,11 +454,12 @@ function pageFromHash() {
     hashNotebook = new URLSearchParams(query).get('id') || null;
     hashSource = !!hashNotebook;
   }
+  hashCase = name === 'cases' ? (new URLSearchParams(query).get('id') || '').slice(0, 200) : '';
   return name;
 }
 const followHash = () => {
   const name = pageFromHash();
-  if (name && (name !== currentPage || hashSource)) showPage(name, { replace: true });
+  if (name && (name !== currentPage || hashSource || hashCase)) showPage(name, { replace: true });
 };
 window.addEventListener('hashchange', followHash);
 window.addEventListener('popstate', followHash);
