@@ -34,6 +34,9 @@ receiver answered 404, and so on.
 Messages use Slack Block Kit: the finding's title, its urgency, detection, ATT&CK
 techniques and entities, and a link to the Findings page.
 
+To add **Acknowledge**, **Approve** and **Reject** buttons, see
+[Buttons in Slack and Teams](#buttons-in-slack-and-teams).
+
 ### Microsoft Teams
 
 Teams messages go through a **Workflows** webhook. Microsoft retired the old Office 365
@@ -51,6 +54,9 @@ connectors ("Incoming Webhook"), and their URLs no longer work.
 Messages are Adaptive Cards (version 1.4) inside the `{"type": "message", "attachments":
 [...]}` envelope that the Workflows template expects. A workflow you build yourself in
 Power Automate works too, as long as it posts the card it receives.
+
+A Workflows webhook can only post. For cards with buttons, use a **Teams app** channel
+instead: see [Buttons in Slack and Teams](#buttons-in-slack-and-teams).
 
 ### Email
 
@@ -100,6 +106,137 @@ reads at most 64 KB of it, to quote in an error.
   authorities still count.
 - Signalith does not follow a redirect to another server, and waits at most 10 seconds for
   an answer (30 seconds for email).
+
+## Buttons in Slack and Teams
+
+Slack and Teams messages can carry buttons, so analysts act without opening Signalith:
+
+- **Acknowledge** on a finding makes the analyst its owner (if it has none) and moves it from
+  New to In progress, with a comment saying it was acknowledged in Slack or Teams.
+- **Reject** on a playbook step that waits for approval stops the playbook, as Reject does on
+  the **Approvals** page.
+- **Approve** runs the step. It is only offered when the channel has **Allow approving
+  playbook steps from chat** on. Off, analysts approve in Signalith, and chat offers only
+  Reject and Acknowledge.
+
+After a click, the message changes to say who did what, such as "Approved by andy in
+Slack", and the buttons go away. A link button that opens Signalith is always there too.
+
+### Who can click
+
+A click counts only when every check passes. If one fails, nothing changes and only the
+person who clicked is told why.
+
+1. **The request really comes from Slack or Teams.** Slack signs each request with the app's
+   signing secret (`X-Slack-Signature`); Signalith checks it, and refuses requests more than
+   5 minutes old. Teams sends a token signed by the Microsoft Bot Framework; Signalith checks
+   the signature against Microsoft's published keys, that it was issued for this bot's app
+   ID, that it has not expired, and that it names the Bot Connector address the request came
+   from. Requests from another Microsoft Entra tenant are refused too. A Slack channel is
+   used in the first Slack workspace a click comes from (with its current signing
+   secret); clicks from any other workspace the app is shared with are refused.
+2. **The button is one Signalith made.** Each button's value is signed with a key derived
+   from the channel's secret, and names the finding or playbook step it acts on. A changed
+   value is refused.
+3. **The click is new.** Slack and Teams sometimes send a request twice. Each click's ID is
+   recorded for 2 hours, and a repeat is ignored.
+4. **The chat account is linked to a Signalith user** who can still sign in, has finished
+   any password change or two-step sign-in setup they were asked for, and is an
+   **Analyst** or **Admin**. Viewers' clicks are refused.
+5. **The step still waits.** If someone already approved or rejected it, or the playbook
+   moved on, the click is refused with "It was already approved by ann."
+
+Every click, link and refusal is in the audit log, with the Signalith user and the chat
+account.
+
+### Link a chat account
+
+The first time someone clicks a button, Signalith does not know who they are in Signalith.
+
+- **Slack:** Signalith answers with a message only they can see, holding a link. The link
+  opens Signalith (sign in if asked), shows which Slack account will be linked, and asks them
+  to confirm and enter their password again. Then they click the button again. The link works
+  once and for 10 minutes.
+- **Teams:** Teams has no message only one person sees, so the link goes the other way. In
+  Signalith, open the account menu, **Chat accounts**, then **Link a Teams account**. Enter
+  your password, then open a private chat with the Signalith app in Teams (**Apps**,
+  **Signalith**, **Chat**) and send the message it shows, such as `link ABCDE-FGHJK`. The
+  code works once and for 10 minutes. A code sent in a channel or group chat, where others
+  can see it, is refused and stops working. Wrong codes are limited to 5 per 10 minutes for
+  each Teams user.
+
+**Chat accounts** in the account menu lists your linked accounts and unlinks them. Admins
+see every linked account under **Linked chat accounts** on the Notifications page, and can
+unlink any of them. A link ends when its Signalith user is deleted, and is never carried
+over to a new user who gets the same name. It also ends, like the user's sessions, when
+their password is changed or reset, when they sign out everywhere, and when their two-step
+sign-in is reset or turned off. They link again with their next click.
+
+### Set up Slack buttons
+
+Buttons need a Slack app of your own, rather than only an incoming webhook.
+
+1. Set this server's public address (`server.public_url`) on the **Settings** page. Slack
+   must be able to reach it over HTTPS.
+2. At [api.slack.com/apps](https://api.slack.com/apps), choose **Create New App**, then
+   **From scratch**, and pick your workspace.
+3. Under **Incoming Webhooks**, turn them on, choose **Add New Webhook to Workspace**, pick
+   the channel and copy the **Webhook URL**.
+4. Under **Basic Information**, copy the **Signing Secret** (not the client secret).
+5. In Signalith, add or edit the **Slack** channel. Paste the webhook URL and the signing
+   secret. Turn on **Allow approving playbook steps from chat** if you want an Approve
+   button. Copy the **Interactivity Request URL** the dialog shows, and save.
+6. Back in Slack, under **Interactivity & Shortcuts**, turn interactivity on, paste the
+   Request URL and save.
+
+### Set up Teams buttons
+
+Buttons in Teams come from an Azure bot that you register in your own Microsoft Entra
+tenant.
+
+1. Set this server's public address (`server.public_url`) on the **Settings** page. Teams
+   must be able to reach it over HTTPS with a publicly trusted certificate.
+2. In the Azure portal, create an **Azure Bot**. Choose **Single Tenant** and create a new
+   Microsoft App ID.
+3. On the bot's **Configuration** page, copy the **Microsoft App ID** and the **App Tenant
+   ID**. Open **Manage Password** (the app registration), then **Certificates & secrets**,
+   and make a **client secret**. Copy its value.
+4. On the bot's **Channels** page, add **Microsoft Teams**.
+5. In Signalith, choose **Add channel**, then **Teams app**. Enter the app ID, tenant ID and
+   client secret. Turn on **Allow approving playbook steps from chat** if you want an
+   Approve button. Copy the **Messaging endpoint** the dialog shows, and save.
+6. Back on the bot's **Configuration** page, paste it as the **Messaging endpoint** and
+   apply.
+7. On the Notifications page, open the channel's menu and choose **Download Teams app**. In
+   Teams, upload the zip under **Apps**, then **Manage your apps**, **Upload an app** (your
+   Teams admin may need to allow custom apps, or upload it for you), and add it to a team.
+8. As a Signalith admin, link your own Teams account (see
+   [Link a chat account](#link-a-chat-account)). Then, in the channel that should get the
+   messages, send `@Signalith post here`. Only a linked admin can choose where messages go;
+   adding the app to a team is not enough. The channel card then shows where it posts.
+   Choose **Send test**.
+
+To move messages to another Teams channel later, a linked admin sends `@Signalith post
+here` there. Messages keep going to the old channel until an admin chooses **Move** on the
+channel card on the Notifications page (after entering their password again), or **Keep**
+to stay. Removing the app from the team it posts to stops the messages; the channel card
+then says it is not added to a Teams channel.
+
+The client secret is used only to get a token from Microsoft (`login.microsoftonline.com`)
+to post as the bot. Signalith only posts to Bot Connector addresses of Microsoft
+(`smba.trafficmanager.net` and other `botframework.com` and `teams.microsoft.com`
+addresses). When the client secret expires, the channel's deliveries fail with "Microsoft Entra
+refused the bot's credentials": make a new secret and enter it.
+
+### Buttons with several servers
+
+Slack and Teams send clicks to the one address in `server.public_url`. When several
+servers share one OpenSearch, linked accounts and click IDs are kept in OpenSearch (the
+`<prefix>_chat` index), so any server can take a click. The server that takes it checks the
+signature with the channel's secret from its own notifications file, so either point
+`server.public_url` at the server that runs the background jobs, or keep the notifications
+file the same on every server (as [Which server sends](#which-server-sends) suggests
+anyway). A server whose file lacks the channel answers clicks with 404.
 
 ## Add a rule
 
@@ -190,8 +327,8 @@ jobs** sends notifications. This is the same server that runs detections (see
 Channels and rules are kept in `notifications.yaml` in the lookups folder (setting
 `notify.file`, environment `SIGNALITH_NOTIFY_FILE`; a relative path is relative to the
 config file). The server writes the file with mode 0600. Every secret in it is encrypted
-with the master key (`enc:v1:...`): webhook URLs, header values, signing secrets and email
-passwords. `signalith secrets status`, `encrypt`, `rotate-master` and the **Security** page
+with the master key (`enc:v1:...`): webhook URLs, header values, signing secrets, Teams app
+client secrets and email passwords. `signalith secrets status`, `encrypt`, `rotate-master` and the **Security** page
 cover it, like the other settings files. Edit it on the page rather than by hand. A plain value
 typed into the file still works, and it is encrypted the next time the page saves the file
 or `signalith secrets encrypt` runs.
@@ -310,7 +447,7 @@ function verify(secret, rawBody, header) {
 
 ## API
 
-Every route is for admins.
+Every `/api/notify` route is for admins.
 
 | Route | What it does |
 | --- | --- |
@@ -318,3 +455,22 @@ Every route is for admins.
 | `PUT /api/notify` | Replaces channels and rules with the body (`revision`, `channels`, `rules`). A secret left empty keeps its saved value; `clear_password`, `clear_signing_secret` and a header with `clear` remove one. A secret must be typed again when a channel's URL or mail server moves to another server. A body with problems is refused with 400 and `problems` (`where`, `field`, `message`). A stale `revision`, or another server running the jobs, gives 409. |
 | `POST /api/notify/test` | Sends a test message: `{"id": "<channel id>"}` for a saved channel, or `{"channel": {...}}` for a channel being edited. Its empty secrets are the saved ones. Answers `{ok, duration_ms, error}`. |
 | `GET /api/notify/deliveries?limit=50` | The latest deliveries, newest first (at most 500) |
+| `GET /api/notify/channels/{id}/teams-app` | The Teams app package (a zip) of a Teams app channel |
+| `POST /api/notify/channels/{id}/teams-move` | Confirms a move to another Teams channel an admin asked for in Teams (`{"move_id": "..."}`, from the channel's `move_id`). Asks for the password again. |
+| `DELETE /api/notify/channels/{id}/teams-move` | Declines that move |
+
+Channels with buttons also have `interactive`, `chat_url` (where Slack or Teams sends
+clicks), `approve_in_chat`, and for a Teams app channel `app_id`, `tenant_id`,
+`app_password_set`, `posts_to` and, when a move waits, `move_to`, `move_id` and `move_by`.
+
+The chat routes:
+
+| Route | Who | What it does |
+| --- | --- | --- |
+| `POST /api/chat/slack/{channel}` | Slack (signed) | Takes a button click from Slack |
+| `POST /api/chat/teams/{channel}` | Teams (Bot Framework token) | Takes a button click or message from Teams |
+| `POST /api/chat/link/check` | Any user | Says which chat account a link (`{"token": "..."}`) would link |
+| `POST /api/chat/link` | Any user, password again | Links that chat account to the signed-in user |
+| `POST /api/chat/code` | Any user, password again | Makes a code to send to the Teams app (`{code, minutes}`) |
+| `GET /api/chat/accounts`, `DELETE /api/chat/accounts/{id}` | Any user | The signed-in user's linked chat accounts |
+| `GET /api/chat/links`, `DELETE /api/chat/links/{id}` | Admins | Every linked chat account |

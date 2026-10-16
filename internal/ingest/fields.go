@@ -338,6 +338,11 @@ var knownFields = func() map[string]string {
 	for _, k := range oktaMapped {
 		m[k] = kw
 	}
+	// Kubernetes audit events (kubernetes.go): the event's own fields,
+	// some deeper than a sender's names may go.
+	for _, k := range kubernetesMapped {
+		m[k] = kw
+	}
 	// The fields the shipped cloud rules read (rulefields.go).
 	for _, k := range cloudRuleFields {
 		m[k] = kw

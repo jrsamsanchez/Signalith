@@ -1,0 +1,7 @@
+{"rule": "9b5f1832-e8b9-453f-93df-07a3d6a72a45", "cases": [
+  {"expect":true,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"responseStatus.reason":"Forbidden","verb":"create"}},
+  {"expect":false,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"responseStatus.reason":"Forbidden","verb":"creatf"}},
+  {"expect":false,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"responseStatus.reason":"Forbidden"}},
+  {"expect":false,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"responseStatus.reason":"Forbiddeo","verb":"create"}},
+  {"expect":false,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"verb":"create"}}
+]}

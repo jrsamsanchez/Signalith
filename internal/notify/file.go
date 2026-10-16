@@ -83,9 +83,9 @@ func (m *Manager) log() *slog.Logger {
 }
 
 // FileField is the setting a secret in the notifications file is
-// encrypted for: part is url, signing_secret, password or
-// headers.<header name>, as in notify_channels[a1b2c3].url. A value copied
-// to another channel or setting cannot be decrypted there.
+// encrypted for: part is url, signing_secret, password, app_password or
+// headers.<header name>, as in notify_channels[a1b2c3].url. A value
+// copied to another channel or setting cannot be decrypted there.
 func FileField(channelID, part string) string { return "notify_channels[" + channelID + "]." + part }
 
 // eachSecret replaces each secret of c with what fn returns for it,
@@ -110,6 +110,9 @@ func (c *Channel) eachSecret(fn func(part, label, v string) (string, error)) err
 		return err
 	}
 	if err := one(&c.Password, "password", "password"); err != nil {
+		return err
+	}
+	if err := one(&c.AppPassword, "app_password", "client secret"); err != nil {
 		return err
 	}
 	names := make([]string, 0, len(c.Headers))

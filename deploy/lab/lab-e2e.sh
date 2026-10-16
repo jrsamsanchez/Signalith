@@ -114,16 +114,23 @@ WEB="https://127.0.0.1:$WEB_PORT"
 
 # ---- the API ----
 
+# The password lab-setup gave the admin in place of the first one, unless
+# given.
 PW=${E2E_PASSWORD:-}
+[ -n "$PW" ] || PW=$(cat /root/lab/admin-password 2>/dev/null)
 [ -n "$PW" ] || PW=$(cat /etc/signalith/initial-admin-password 2>/dev/null)
 CODE=''
 BODY=''
 # call METHOD PATH [JSON]: the answer goes in $BODY, the status in $CODE.
 call() {
   local method=$1 path=$2 data=${3:-}
-  local args=(-sS --max-time 330 --cacert "$CA" -u "admin:$PW" -X "$method" -o "$OUT/.body" -w '%{http_code}')
-  [ -z "$data" ] || args+=(-H 'Content-Type: application/json' --data-binary "$data")
-  CODE=$(curl "${args[@]}" "$WEB$path" 2>"$OUT/.err") || CODE=000
+  local pw=${PW//\\/\\\\}
+  # The password and the data go to curl on its input and in a config file
+  # of its own, never on its command line, where anyone may read them.
+  local args=(-sS --max-time 330 --cacert "$CA" -X "$method" -o "$OUT/.body" -w '%{http_code}')
+  [ -z "$data" ] || args+=(-H 'Content-Type: application/json' --data-binary @-)
+  CODE=$(printf '%s' "$data" |
+    curl -K <(printf 'user = "admin:%s"\n' "${pw//\"/\\\"}") "${args[@]}" "$WEB$path" 2>"$OUT/.err") || CODE=000
   BODY=$(cat "$OUT/.body" 2>/dev/null)
   [ "$CODE" != 000 ] || BODY=$(cat "$OUT/.err")
   rm -f "$OUT/.body" "$OUT/.err"
@@ -165,7 +172,13 @@ expect_events() {
 
 # ---- before anything: can we sign in ----
 
-if ! call GET /api/me; then
+# A password whose change Signalith took though the test did not hear back
+# is still in admin-password.new.
+if ! call GET /api/me && [ "$CODE" = 401 ] && [ -z "${E2E_PASSWORD:-}" ] && [ -s /root/lab/admin-password.new ]; then
+  PW=$(cat /root/lab/admin-password.new)
+  if call GET /api/me; then mv /root/lab/admin-password.new /root/lab/admin-password; fi
+fi
+if [[ $CODE != 2* ]]; then
   if [ "$CODE" = 401 ]; then
     echo "The admin password was refused. If you changed it, run: sudo E2E_PASSWORD='<password>' lab-e2e" >&2
   else
@@ -174,8 +187,16 @@ if ! call GET /api/me; then
   exit 2
 fi
 if [ "$(j .must_change_password)" = true ]; then
-  echo "The admin account must choose a new password first: sign in on the web page once, then run: sudo E2E_PASSWORD='<new password>' lab-e2e" >&2
-  exit 2
+  # Still the first password Signalith made: replace it, as lab-setup does,
+  # keeping the new one for root.
+  (umask 077 && mkdir -p /root/lab && openssl rand -base64 24 | tr -d '/+=\n' >/root/lab/admin-password.new)
+  if ! call POST /api/me/password "$(jq -nc --rawfile c <(printf '%s' "$PW") --rawfile n /root/lab/admin-password.new '{current_password: $c, new_password: $n}')"; then
+    echo "The admin account must choose a new password first, and the test could not set one ($CODE): $(why)" >&2
+    exit 2
+  fi
+  mv /root/lab/admin-password.new /root/lab/admin-password
+  PW=$(cat /root/lab/admin-password)
+  echo "The admin's first password was replaced; the new one is in /root/lab/admin-password." >&2
 fi
 
 say "Signalith lab end-to-end test $STAMP (web port $WEB_PORT, agent port $AGENT_PORT$([ "$ALL" = true ] && echo ', with --all'))"

@@ -205,6 +205,11 @@ func TestNextPromisesOnlyHandOversThatHappen(t *testing.T) {
 		hb.Version, hb.StartedAt = ver, now
 		return hb
 	}
+	// lab is hb on a cloud lab build (lab-setup.sh), started at now+at.
+	lab := func(hb cluster.Heartbeat, sha string, at time.Duration) cluster.Heartbeat {
+		hb.Version, hb.StartedAt = "0.0.0-lab-"+sha, now.Add(at)
+		return hb
+	}
 	for _, tc := range []struct {
 		name   string
 		live   []cluster.Heartbeat
@@ -232,6 +237,10 @@ func TestNextPromisesOnlyHandOversThatHappen(t *testing.T) {
 		{name: "commit builds before the first eligible server",
 			live: []cluster.Heartbeat{leader, two, up(scanner, "07d3263")}, levels: map[string]int{"ae9485c": 3, "07d3263": 3},
 			want: "Upgrade signalith-2 next: it does not run the jobs. Upgrade signalith-1, which runs them, last."},
+		{name: "lab builds, only the scanner upgraded",
+			live:   []cluster.Heartbeat{lab(leader, "07d3263", -time.Hour), lab(two, "07d3263", -time.Hour), lab(scanner, "2f44844", 0)},
+			levels: map[string]int{"0.0.0-lab-07d3263": 3, "0.0.0-lab-2f44844": 3},
+			want:   "Upgrade signalith-2 next: it does not run the jobs. Upgrade signalith-1, which runs them, last."},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var l *cluster.Heartbeat

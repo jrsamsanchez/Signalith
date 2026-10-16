@@ -1,0 +1,6 @@
+{"rule": "a80d927d-ac6e-443f-a867-e8d6e3897318", "cases": [
+  {"expect":true,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"objectRef.namespace":"kube-system","objectRef.resource":"pods","verb":"create"}},
+  {"expect":false,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"objectRef.resource":"pods","verb":"create"}},
+  {"expect":false,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"objectRef.namespace":"kube-system","verb":"create"}},
+  {"expect":false,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"objectRef.namespace":"kube-system","objectRef.resource":"pods"}}
+]}

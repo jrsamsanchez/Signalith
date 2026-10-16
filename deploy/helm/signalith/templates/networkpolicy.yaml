@@ -3,7 +3,8 @@
 {{- $port := int .Values.server.port -}}
 {{- $release := dict "app.kubernetes.io/name" (include "signalith.name" .) "app.kubernetes.io/instance" .Release.Name -}}
 # Signalith's servers and scanners: the web port from anyone (or
-# networkPolicy.webFrom), and syslog to the servers.
+# networkPolicy.webFrom), the agent port from anyone (or
+# networkPolicy.agentsFrom), and syslog to the servers.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -27,6 +28,18 @@ spec:
         - podSelector:
             matchLabels:
               {{- toYaml $release | nindent 14 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    - ports:
+        - { port: {{ include "signalith.agentPort" . }}, protocol: TCP }
+      {{- /* Not set (null): the same peers as the web port, so an install
+      that limited webFrom is not opened up by the agent port. */}}
+      {{- $agentsFrom := $np.agentsFrom }}
+      {{- if kindIs "invalid" $agentsFrom }}
+      {{- $agentsFrom = $np.webFrom }}
+      {{- end }}
+      {{- with $agentsFrom }}
+      from:
         {{- toYaml . | nindent 8 }}
       {{- end }}
     {{- if .Values.server.syslog.enabled }}

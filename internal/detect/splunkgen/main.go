@@ -97,7 +97,7 @@ func main() {
 		Name:   "splunk",
 		Title:  "Splunk Security Content",
 		Format: "splunk",
-		Description: "Windows detections for process, file and registry events, web detections for web requests, network detections over connections and DNS lookups, AWS detections for CloudTrail records, Entra ID detections for its sign-in and audit logs, Microsoft 365 detections for its audit records and Okta detections for its System Log, from Splunk's Threat Research Team (security_content), converted to Signalith detections. " +
+		Description: "Windows detections for process, file and registry events, web detections for web requests, network detections over connections and DNS lookups, AWS detections for CloudTrail records, Entra ID detections for its sign-in and audit logs, Microsoft 365 detections for its audit records, Okta detections for its System Log and Kubernetes detections for its audit log, from Splunk's Threat Research Team (security_content), converted to Signalith detections. " +
 			"TTP rules raise findings; anomaly rules only add risk, as in Splunk's risk-based alerting. Each rule shipped here agrees with Splunk's reading of its search on its test events, checked in CI.",
 		Source:     "https://github.com/splunk/security_content",
 		Version:    commit,
@@ -318,8 +318,8 @@ func markMacros(s string, macros map[string]*splcheck.Macro, used map[string]boo
 // cloudSearch is a search of CloudTrail, Entra ID, Azure, Microsoft 365
 // or Okta records, and cloudFile a rule file with one.
 var (
-	cloudSearch = regexp.MustCompile("^\\s*`(cloudtrail|azure_monitor_aad|azure_monitor_activity|o365_management_activity|okta)`")
-	cloudFile   = regexp.MustCompile("(?m)^(?:search:\\s*['\"|>-]*)?\\s*`(cloudtrail|azure_monitor_aad|azure_monitor_activity|o365_management_activity|okta)`")
+	cloudSearch = regexp.MustCompile("^\\s*`(cloudtrail|azure_monitor_aad|azure_monitor_activity|o365_management_activity|okta|kube_audit)`")
+	cloudFile   = regexp.MustCompile("(?m)^(?:search:\\s*['\"|>-]*)?\\s*`(cloudtrail|azure_monitor_aad|azure_monitor_activity|o365_management_activity|okta|kube_audit)`")
 )
 
 // oktaFile is a rule file whose only data source is Okta: a tstats
