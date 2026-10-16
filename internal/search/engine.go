@@ -638,6 +638,8 @@ func (e *Engine) post(ctx context.Context, res *Result, cmds []query.Command, q 
 			err = e.intelEnrich(res, c)
 		case *query.IPLocation:
 			err = e.ipLocation(ctx, res, c)
+		case *query.Map:
+			err = e.mapSearch(ctx, res, c, q)
 		default:
 			err = applyCommand(ctx, res, c)
 		}
