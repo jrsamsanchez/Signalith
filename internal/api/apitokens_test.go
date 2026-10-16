@@ -1,11 +1,13 @@
 package api
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/users"
 )
@@ -84,6 +86,120 @@ func TestAPITokensAcrossServers(t *testing.T) {
 	// The name is free again.
 	if code, _, _ := c.a.call("POST", "/api/api-tokens", `{"name":"Claude Desktop","role":"analyst"}`, admin, nil); code != http.StatusCreated {
 		t.Errorf("a new token of a revoked one's name: %d", code)
+	}
+}
+
+// A new token lasts 90 days unless another number of days, or never, is
+// chosen; an expired token is refused and its use logged like a revoked
+// one's; a token without an expiry, as every old one, is accepted.
+func TestAPITokenExpiry(t *testing.T) {
+	c := newMemberCluster(t, nil)
+	admin, code := c.a.signIn("admin", "s3cret-pass")
+	if admin == nil {
+		t.Fatalf("sign in: %d", code)
+	}
+	for _, body := range []string{
+		`{"name":"x","expires_in_days":0}`,
+		`{"name":"x","expires_in_days":-1}`,
+		`{"name":"x","expires_in_days":366}`,
+		`{"name":"x","expires_in_days":30,"never":true}`,
+		`{"name":"x","expires_in_days":"never"}`,
+	} {
+		if code, out, _ := c.a.call("POST", "/api/api-tokens", body, admin, nil); code != http.StatusBadRequest {
+			t.Errorf("create %s: %d %v", body, code, out)
+		}
+	}
+	days := func(out map[string]any) int {
+		created, _ := time.Parse(time.RFC3339Nano, out["created"].(string))
+		exp, ok := out["expires"].(string)
+		if !ok {
+			return 0
+		}
+		e, _ := time.Parse(time.RFC3339Nano, exp)
+		return int(e.Sub(created).Hours() / 24)
+	}
+	code, out, _ := c.a.call("POST", "/api/api-tokens", `{"name":"Default"}`, admin, nil)
+	if code != http.StatusCreated || days(out) != 90 || out["expired"] != false {
+		t.Errorf("a token made without a number of days: %d %v", code, out)
+	}
+	if !strings.Contains(c.a.logs.String(), "expires=20") {
+		t.Errorf("the audit record lacks the expiry:\n%s", c.a.logs.String())
+	}
+	code, out, _ = c.a.call("POST", "/api/api-tokens", `{"name":"Month","expires_in_days":30}`, admin, nil)
+	if code != http.StatusCreated || days(out) != 30 {
+		t.Errorf("a token for 30 days: %d %v", code, out)
+	}
+	code, out, _ = c.a.call("POST", "/api/api-tokens", `{"name":"Forever","never":true}`, admin, nil)
+	if code != http.StatusCreated || out["expires"] != nil {
+		t.Fatalf("a token that never expires: %d %v", code, out)
+	}
+	if !strings.Contains(c.a.logs.String(), "expires=never") {
+		t.Errorf("the audit record lacks that it never expires:\n%s", c.a.logs.String())
+	}
+	forever, _ := out["token"].(string)
+	code, out, _ = c.a.call("GET", "/api/me", "", nil, map[string]string{"Authorization": "Bearer " + forever})
+	if code != 200 {
+		t.Errorf("a token that never expires: %d %v", code, out)
+	}
+	// Its first use is recorded, off the request's path.
+	c.a.srv.background.Wait()
+	_, out, _ = c.a.call("GET", "/api/api-tokens", "", admin, nil)
+	var listed map[string]any
+	for _, tk := range out["tokens"].([]any) {
+		if m := tk.(map[string]any); m["name"] == "Forever" {
+			listed = m
+		}
+	}
+	if listed == nil || listed["last_used"] == nil {
+		t.Errorf("the token's last use: %v", listed)
+	}
+
+	// Made two days ago for one day: expired a day ago.
+	old, secret, err := c.a.docs.CreateAPIToken(context.Background(), "admin", "Expired", users.Viewer, 1, time.Now().Add(-48*time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.b.cycle()
+	bearer := map[string]string{"Authorization": "Bearer " + secret}
+	if code, _, _ := c.b.call("GET", "/api/me", "", nil, bearer); code != http.StatusUnauthorized {
+		t.Errorf("an expired token: %d", code)
+	}
+	if logs := c.b.logs.String(); !strings.Contains(logs, "api_token.refused") || !strings.Contains(logs, "reason=expired") ||
+		!strings.Contains(logs, "token_id="+old.ID) {
+		t.Errorf("no audit record of the expired token's use:\n%s", logs)
+	}
+	// Logged once an hour, not once a request.
+	c.b.call("GET", "/api/me", "", nil, bearer)
+	if n := strings.Count(c.b.logs.String(), "api_token.refused"); n != 1 {
+		t.Errorf("the refusal was logged %d times", n)
+	}
+	code, out, _ = c.b.call("GET", "/api/api-tokens", "", nil, map[string]string{"Authorization": basicHeader("admin", "s3cret-pass")})
+	for _, tk := range out["tokens"].([]any) {
+		if m := tk.(map[string]any); m["name"] == "Expired" && (m["active"] != false || m["expired"] != true) {
+			t.Errorf("the expired token is listed as %v", m)
+		}
+	}
+	// A revoked token's use is logged the same way.
+	if _, err := c.b.docs.RevokeAPIToken(context.Background(), "admin", old.ID, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	_, secret2, err := c.a.docs.CreateAPIToken(context.Background(), "admin", "Revoked", users.Viewer, 30, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.a.cycle()
+	for _, b := range c.a.docs.APITokens() {
+		if b.Name == "Revoked" {
+			if _, err := c.a.docs.RevokeAPIToken(context.Background(), "admin", b.ID, time.Now()); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if code, _, _ := c.a.call("GET", "/api/me", "", nil, map[string]string{"Authorization": "Bearer " + secret2}); code != http.StatusUnauthorized {
+		t.Errorf("a revoked token: %d", code)
+	}
+	if !strings.Contains(c.a.logs.String(), "reason=revoked") {
+		t.Errorf("no audit record of the revoked token's use:\n%s", c.a.logs.String())
 	}
 }
 

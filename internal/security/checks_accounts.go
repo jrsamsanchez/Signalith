@@ -143,6 +143,23 @@ func checkSessions(f *Facts) *Check {
 	return &Check{State: Good, Line: "People are signed out after " + span(idle) + " without use, unless they choose Keep me signed in, and every sign-in ends after " + span(maxAge) + "."}
 }
 
+// checkAPITokens: accounts.api_tokens. A token that never expires keeps
+// working, leaked or forgotten, until someone revokes it.
+func checkAPITokens(f *Facts) *Check {
+	t := f.APITokens
+	if t == nil || t.Active == 0 {
+		return nil
+	}
+	if n := len(t.NeverExpire); n > 0 {
+		return &Check{State: Attention, Line: itoa(n) + plural(n, " API token never expires", " API tokens never expire") + ": " + shorten(t.NeverExpire, 5) + ".",
+			Fix: &Fix{Steps: []string{
+				"On Settings > API tokens, make a new token for each of these tools, one that expires (90 days unless you pick another time).",
+				"Put the new token in the tool's settings, then revoke the old one.",
+			}, Page: &PageLink{ID: "apitokens", Label: "Open API tokens"}, Docs: doc(docAPITokens)}}
+	}
+	return &Check{State: Good, Line: "Every API token expires (" + itoa(t.Active) + " active)."}
+}
+
 // checkAgentTokens: accounts.agent_tokens.
 func checkAgentTokens(f *Facts) *Check {
 	t := f.AgentTokens

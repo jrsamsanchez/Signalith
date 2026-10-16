@@ -1182,6 +1182,20 @@ func TestAgentTokens(t *testing.T) {
 			t.Errorf("%+v", c.Fix)
 		}
 	}
+	runCases(t, "accounts.api_tokens", []checkCase{
+		{name: "none", state: ""},
+		{name: "none active", set: func(f *Facts) { f.APITokens = &APITokenFacts{} }, state: ""},
+		{name: "every one expires", set: func(f *Facts) { f.APITokens = &APITokenFacts{Active: 2} }, state: Good,
+			line: "Every API token expires (2 active)."},
+		{name: "one never expires", set: func(f *Facts) { f.APITokens = &APITokenFacts{Active: 2, NeverExpire: []string{"Claude Desktop"}} }, state: Attention,
+			line: "1 API token never expires: Claude Desktop.", fix: func(t *testing.T, c *Check) {
+				if c.Fix.Page == nil || c.Fix.Page.ID != "apitokens" || c.Fix.Docs == nil || c.Fix.Docs.Anchor != "api-tokens" {
+					t.Errorf("%+v", c.Fix)
+				}
+			}},
+		{name: "two never expire", set: func(f *Facts) { f.APITokens = &APITokenFacts{Active: 2, NeverExpire: []string{"A", "B"}} }, state: Attention,
+			line: "2 API tokens never expire: A and B."},
+	})
 	runCases(t, "accounts.agent_tokens", []checkCase{
 		{name: "none", state: ""},
 		{name: "none, read", set: func(f *Facts) { f.AgentTokens = &AgentTokenFacts{Loaded: true} }, state: ""},

@@ -195,7 +195,7 @@ func (s *Server) authenticate(r *http.Request) (*principal, error) {
 	if tok := bearerAPIToken(r); tok != "" {
 		// A token that is not accepted never falls back to the cookie: a
 		// program sending one wants to know it was refused.
-		return s.apiTokenPrincipal(tok), nil
+		return s.apiTokenPrincipal(r, tok), nil
 	}
 	if c, err := r.Cookie(s.cookieName(r)); err == nil {
 		if ss, ok := s.sessions().Lookup(r.Context(), c.Value, !background(r)); ok {

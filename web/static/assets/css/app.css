@@ -2682,6 +2682,8 @@ body:has(.page.active .inspector:not([hidden], .hidden)) #toast { bottom: 88px; 
 :is(#page-data, #page-apitokens) .tk-table td[data-col="used"] { color: var(--text-2); white-space: nowrap; }
 #page-apitokens .tk-table [data-col="role"] { width: 110px; color: var(--text-2); }
 #page-apitokens .tk-table [data-col="created"] { width: 200px; }
+#page-apitokens .tk-table [data-col="expires"] { width: 120px; }
+#page-apitokens .tk-table td[data-col="expires"] { color: var(--text-2); white-space: nowrap; }
 :is(#page-data, #page-apitokens) .tk-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; color: var(--text); }
 :is(#page-data, #page-apitokens) .tk-hint { margin-top: 2px; font-size: var(--fs-xs); color: var(--text-3); }
 :is(#page-data, #page-apitokens) .tk-muted { color: var(--text-3); }
@@ -2751,6 +2753,9 @@ body:has(.page.active .inspector:not([hidden], .hidden)) #toast { bottom: 88px; 
   :is(#page-data, #page-apitokens) .tk-table td[data-col="used"] { order: 4; }
   #page-apitokens .tk-table td[data-col="role"] { order: 3; }
   #page-apitokens .tk-table td[data-col="created"] { order: 4; }
+  #page-apitokens .tk-table td[data-col="expires"] { order: 5; }
+  #page-apitokens .tk-table td[data-col="expires"]::before { content: "Expires "; color: var(--text-3); }
+  #page-apitokens .tk-table td[data-col="used"] { order: 6; }
   :is(#page-data, #page-apitokens) .tk-table td[data-col="created"]::before { content: "Created "; color: var(--text-3); }
   :is(#page-data, #page-apitokens) .tk-table td[data-col="used"]::before { content: "Last used: "; color: var(--text-3); }
   :is(#page-data, #page-apitokens) .tk-table td[data-col="events"] { order: 5; }

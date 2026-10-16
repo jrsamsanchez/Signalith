@@ -37,7 +37,9 @@ it off on its own.
 1. In Signalith, open **Settings > API tokens** and click **New token**.
 2. Name it after the tool and where it runs, for example `Claude Desktop on Ana's
    laptop`, and keep the **Viewer** role.
-3. Click **Create token** and copy the token (it starts with `sgl_api_`). Signalith
+3. Pick when it expires: 30, 90 (the default), 180 or 365 days. **Never** is offered
+   but not recommended. Make a new token before the old one expires.
+4. Click **Create token** and copy the token (it starts with `sgl_api_`). Signalith
    shows it only once and keeps only a fingerprint of it. If you lose it, revoke it and
    make a new one.
 
@@ -247,6 +249,15 @@ admin makes and revokes them on **Settings > API tokens**.
   `403 API tokens can only read`. A token can't sign in to the web page.
 - **Role.** A token is a **Viewer** or an **Analyst**, never an Admin. Viewer is enough
   for every AI tool.
+- **Expiry.** A token expires 90 days after it is made unless you pick 30, 180 or 365
+  days, or **Never**, which is not recommended. An expired token is refused like a
+  revoked one; make a new token and put it in the tool's settings. The list shows when
+  each token expires and marks one that expires within a week. Tokens made before
+  Signalith had expiry never expire: replace them with tokens that do, then revoke
+  them. Servers of an older version do not check the expiry, so in a cluster an
+  expired token is refused everywhere once every server is upgraded.
+- **Last used.** The list shows when each token was last used, to the hour: each
+  server records a token's use at most once an hour.
 - **Shown once.** Signalith keeps only the token's SHA-256 fingerprint and its last
   four characters, to tell tokens apart. Tokens start with `sgl_api_`, so secret
   scanners can find one that leaks.
@@ -254,14 +265,21 @@ admin makes and revokes them on **Settings > API tokens**.
   server in a cluster accepts them, and a revoked token is refused on all of them within
   a few seconds. Tokens need every server on a version that supports them; until then
   the page says to upgrade the others first.
-- **Audit.** Making and revoking a token is in the audit log with the token's name.
-  What a program does with a token is logged as the user `api-token:<name>`.
+- **Audit.** Making and revoking a token is in the audit log with the token's name;
+  making one also logs when it expires. What a program does with a token is logged as
+  the user `api-token:<name>`. A revoked or expired token that is still sent is logged
+  as `api_token.refused`, with the reason, at most once an hour per token on each
+  server.
 
 To use a token from your own scripts, send it as a bearer token:
 
 ```sh
 curl -H "Authorization: Bearer sgl_api_..." https://siem.example.com:8080/api/me
 ```
+
+To make a token through the API, as an admin, `POST /api/api-tokens` with its `name`,
+`role` (`viewer` or `analyst`) and `expires_in_days` (1 to 365, 90 when left out), or
+`"never": true` for one that never expires. The answer holds the token, once.
 
 ## Security
 
@@ -280,7 +298,8 @@ curl -H "Authorization: Bearer sgl_api_..." https://siem.example.com:8080/api/me
   itself before you act on it.
 - **The token is in the AI tool's config file.** Keep that file private, or use
   `SIGNALITH_TOKEN_FILE`. To cut the AI tool off, revoke its token on
-  **Settings > API tokens**.
+  **Settings > API tokens**. Tokens expire, 90 days after they are made by default, so
+  a forgotten one stops working on its own.
 - **Audit.** Requests show in Signalith's log as `api-token:<name>` (or the AI tool's
   user), with the user agent `signalith-mcp/<version>`.
 
@@ -288,7 +307,7 @@ curl -H "Authorization: Bearer sgl_api_..." https://siem.example.com:8080/api/me
 
 | Message | What to do |
 | --- | --- |
-| `Signalith did not accept the API token` | The token was revoked or mistyped. Make a new one on **Settings > API tokens** |
+| `Signalith did not accept the API token` | The token expired, was revoked or is mistyped. **Settings > API tokens** shows which; make a new one there |
 | `SIGNALITH_TOKEN is not an API token` | Use a token from **Settings > API tokens**; they start with `sgl_api_`. Agent tokens (`sgl_` without `api_`) only send events |
 | `API tokens can only read` | Not expected from the MCP server; a script sent something other than a read |
 | `Signalith did not accept the username and password` | Check `SIGNALITH_USER` and `SIGNALITH_PASSWORD`. Too many wrong passwords lock the account for a while; see [users.md](users.md#signing-in) |
