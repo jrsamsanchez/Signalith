@@ -112,7 +112,8 @@ func (s gcpSource) steps() []string {
 	return append(out,
 		"In Google Cloud, open Cloud Shell (or a terminal with the gcloud CLI signed in as a project owner) and create a Pub/Sub topic for the audit logs: gcloud pubsub topics create "+gcpTopicName+p,
 		"Create a log sink that sends the project's audit log entries to the topic: gcloud logging sinks create "+gcpTopicName+" pubsub.googleapis.com/projects/"+s.project+"/topics/"+gcpTopicName+p+` --log-filter='logName:"cloudaudit.googleapis.com"'`+
-			". For a whole organization, run it with --organization=ORGANIZATION_ID --include-children in place of"+p+".",
+			". For a whole organization, run it with --organization=ORGANIZATION_ID --include-children in place of"+p+
+			". Google Workspace's audit logs, when you share them with Google Cloud, are in the organization's own logs, so only an organization's sink sends them.",
 		"Let the sink publish to the topic, as the writer identity it was given: gcloud pubsub topics add-iam-policy-binding "+gcpTopicName+p+" --role=roles/pubsub.publisher --member=$(gcloud logging sinks describe "+gcpTopicName+p+" --format='value(writerIdentity)')"+
 			". For an organization's sink, the describe command takes --organization=ORGANIZATION_ID in place of"+p+".",
 		"Create a pull subscription the Collector reads, which keeps entries for 7 days while it is away: gcloud pubsub subscriptions create "+s.subscription+" --topic="+gcpTopicName+p+" --ack-deadline=60 --message-retention-duration=7d",

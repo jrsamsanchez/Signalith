@@ -46,6 +46,10 @@ const (
 	// GCPChannel is Google Cloud audit log entries, whose data are the
 	// fields of the Sigma rule (gcp.audit.method_name).
 	GCPChannel = ingest.GCPChannel
+	// WorkspaceChannel is Google Workspace audit log entries, as Google
+	// Cloud has them, whose data are the fields of the Sigma rule
+	// (eventName, new_value).
+	WorkspaceChannel = ingest.WorkspaceChannel
 )
 
 // TestFile holds a shipped rule's test events.
@@ -127,7 +131,8 @@ func (c Case) SigmaView() (map[string]string, bool) {
 			out["cs-uri-stem"], _, _ = strings.Cut(u, "?")
 		}
 		return out, true
-	case c.Channel == CloudTrailChannel, c.Channel == AzureChannel, c.Channel == O365Channel, c.Channel == GCPChannel:
+	case c.Channel == CloudTrailChannel, c.Channel == AzureChannel, c.Channel == O365Channel, c.Channel == GCPChannel,
+		c.Channel == WorkspaceChannel:
 		// Sigma's CloudTrail rules name the record's own fields, and its
 		// Azure rules the fields the record is built from.
 		return maps.Clone(c.Data), true
@@ -226,6 +231,9 @@ func (c Case) Record(host string, t time.Time) (string, map[string]any) {
 	}
 	if c.Channel == GCPChannel {
 		return ingest.GCPTag, ingest.GCPRecord(host, t, c.Data)
+	}
+	if c.Channel == WorkspaceChannel {
+		return ingest.GCPTag, ingest.WorkspaceRecord(host, t, c.Data)
 	}
 	if c.Channel == WebChannel {
 		return ingest.WebTag, ingest.WebRecord(ingest.AccessLine(t, c.Data), "/var/log/nginx/access.log", host, t)
@@ -368,6 +376,11 @@ func init() {
 	// And a Google Cloud audit log entry's.
 	Bases[ingest.GCPService] = map[string]string{}
 	sysmonEvents[ingest.GCPService] = "activity"
+	// And a Google Workspace one's.
+	for _, s := range ingest.WorkspaceServices {
+		Bases[s] = map[string]string{}
+		sysmonEvents[s] = "activity"
+	}
 	Bases["sysmon_event"] = map[string]string{}
 	Bases["security_named"] = map[string]string{}
 	Bases["sysmon_file_block"] = Bases["file_event"]
@@ -408,6 +421,9 @@ func Channel(category string) string {
 	}
 	if slices.Contains(ingest.AzureServices, category) {
 		return AzureChannel
+	}
+	if slices.Contains(ingest.WorkspaceServices, category) {
+		return WorkspaceChannel
 	}
 	for service, channel := range ingest.NamedChannelServices {
 		if category == ingest.NamedChannelCategory(service) {
