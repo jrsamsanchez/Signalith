@@ -304,9 +304,9 @@ made for checking that detection works. Download it from
 
 The detection has category `test`, so it raises a low `malware-detected`
 finding (close it as benign) and does not count on the dashboard's malware
-panels. On ClamAV, `clamdscan` only reports the file unless you add
-`--move` or `--remove`, so the test also raises `malware-left-clamav`; the
-command above deletes the file afterwards, so close that one as benign too.
+panels. The high `malware-left-clamav` and `malware-not-removed` findings
+leave test files out, so a test file left on the host (`clamdscan` only
+reports it unless you add `--move` or `--remove`) raises nothing more.
 
 ## Troubleshooting
 

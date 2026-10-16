@@ -173,10 +173,12 @@ services:
       # the folder it is put on, here uid 1000.
       - opensearch-security-loaded:/usr/share/opensearch/data
     # Hardening, as for Signalith: only the volume above and /tmp can be
-    # written, and no extra privileges.
+    # written, and no extra privileges. /tmp allows running files: from
+    # OpenSearch 3, securityadmin.sh unpacks a native library of its FIPS
+    # crypto provider there and loads it.
     read_only: true
     tmpfs:
-      - /tmp
+      - /tmp:exec
     cap_drop:
       - ALL
     security_opt:

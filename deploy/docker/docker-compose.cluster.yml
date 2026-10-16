@@ -122,9 +122,11 @@ services:
       - ./opensearch/security/roles.yml:/usr/share/opensearch/config/opensearch-security/roles.yml:ro
       - ./opensearch/security/roles_mapping.yml:/usr/share/opensearch/config/opensearch-security/roles_mapping.yml:ro
       - opensearch-security-loaded:/usr/share/opensearch/data
+    # /tmp allows running files: from OpenSearch 3, securityadmin.sh
+    # unpacks a native library of its FIPS crypto provider there.
     read_only: true
     tmpfs:
-      - /tmp
+      - /tmp:exec
     cap_drop: [ALL]
     security_opt:
       - no-new-privileges:true

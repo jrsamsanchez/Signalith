@@ -250,7 +250,7 @@ what the packages set up, upgrades, and how to check a download's signature and 
 
 ### Linux
 
-1. Install OpenSearch 2.x ([instructions](https://opensearch.org/docs/latest/install-and-configure/install-opensearch/index/)).
+1. Install OpenSearch 2.x or 3.x ([instructions](https://opensearch.org/docs/latest/install-and-configure/install-opensearch/index/)).
 2. Install Signalith:
    ```sh
    sudo install -m 0755 signalith-linux-amd64 /usr/local/bin/signalith
@@ -289,7 +289,7 @@ read encrypted values: before going back to one, run `sudo signalith secrets dec
 
 ### Windows
 
-1. Install OpenSearch 2.x for Windows ([instructions](https://opensearch.org/docs/latest/install-and-configure/install-opensearch/windows/)).
+1. Install OpenSearch 2.x or 3.x for Windows ([instructions](https://opensearch.org/docs/latest/install-and-configure/install-opensearch/windows/)).
 2. In an elevated PowerShell, from the folder holding `signalith.exe` and `deploy\windows\install.ps1`:
    ```powershell
    .\install.ps1 -OpenSearchUrl http://127.0.0.1:9200
@@ -481,7 +481,9 @@ search, change nothing), **Analyst** (also triage findings, work investigations,
 dashboards) or **Admin** (also detections, feeds, lists, data collection and users).
 New users get a temporary password they replace at their first sign-in. People can
 also sign in with their **Active Directory or LDAP** account, with their role coming
-from their groups; set it up and test it on the same page. The `admin` account from
+from their groups; set it up and test it on the same page. Single sign-on with
+**Microsoft Entra ID, Okta, Google, Keycloak** or another OpenID Connect provider is set
+up under **Settings > Single sign-on** (see [docs/sso.md](docs/sso.md)). The `admin` account from
 `signalith.yaml` stays as a break-glass account that always works. See
 [docs/users.md](docs/users.md).
 
@@ -637,6 +639,7 @@ are counted for each person's own address, not the proxy's. See
 | `auth.session_timeout` | `12h` | Sign the web UI out after this long without activity ("Keep me signed in" lasts up to 7 days) |
 | `auth.users_file` | `users.json` in `lookups.dir` | Where users added on the Users page are kept; directory settings go in `directory.json` next to it |
 | `auth.ldap` | none | Active Directory or LDAP sign-in, when you would rather not set it up on the Users page; see [docs/users.md](docs/users.md#setting-it-in-signalithyaml) |
+| `auth.oidc` | off | Single sign-on with an OpenID Connect provider, usually set up under **Settings > Single sign-on**; see [docs/sso.md](docs/sso.md#setting-it-in-signalithyaml) |
 | `ingest.tokens` | none | Shared tokens (legacy) agents send as `Authorization: Bearer`; still accepted. New agents get their own token on **Add data** (see [docs/agent-tokens.md](docs/agent-tokens.md)) |
 | `ingest.max_event_age` | `7d` (or the shortest retention period if shorter) | Events older than this, or more than an hour ahead, are filed under the time they arrived, with their own time in `device_time`. See [Ingest limits](#ingest-limits) |
 | `syslog.udp`, `syslog.tcp` | off (`init` sets `0.0.0.0:514`) | Addresses to receive syslog on; empty turns a listener off. See [Syslog](#syslog) |
@@ -676,14 +679,15 @@ are counted for each person's own address, not the proxy's. See
 
 Secrets can come from the environment instead: `SIGNALITH_OPENSEARCH_PASSWORD`,
 `SIGNALITH_ADMIN_PASSWORD`, `SIGNALITH_INGEST_TOKEN`, `SIGNALITH_LDAP_BIND_PASSWORD` (for
-`auth.ldap` in this file only; directory sign-in set up on the Users page keeps its own) (also
+`auth.ldap` in this file only; directory sign-in set up on the Users page keeps its own),
+`SIGNALITH_OIDC_CLIENT_SECRET` (also
 `SIGNALITH_OPENSEARCH_URL`, `SIGNALITH_OPENSEARCH_URLS`, `SIGNALITH_OPENSEARCH_USERNAME`, `SIGNALITH_OPENSEARCH_PROXY`, `SIGNALITH_OPENSEARCH_CRL_FILE`, `SIGNALITH_LISTEN`,
 `SIGNALITH_PUBLIC_URL`, `SIGNALITH_DETECTIONS_DIR`, `SIGNALITH_LOOKUPS_DIR`, `SIGNALITH_DASHBOARDS_DIR`,
 `SIGNALITH_USERS_FILE`, `SIGNALITH_INTEL_FEEDS_FILE`, `SIGNALITH_NOTIFY_FILE`, `SIGNALITH_PLAYBOOKS_FILE`, `SIGNALITH_ARCHIVE_DIR`, `SIGNALITH_ASSISTANT_API_KEY`, and
 `SIGNALITH_SYSLOG_UDP` and `SIGNALITH_SYSLOG_TCP`, where `off` turns the listener off, `SIGNALITH_NODE_NAME`,
 `SIGNALITH_NODE_URL`, and `SIGNALITH_LEADER_ELIGIBLE`, `true` or `false`, for `cluster.leader_eligible`). Secrets can also be read
 from a file, as Docker and Kubernetes secrets are: set `SIGNALITH_OPENSEARCH_PASSWORD_FILE`,
-`SIGNALITH_ADMIN_PASSWORD_FILE`, `SIGNALITH_INGEST_TOKEN_FILE`, `SIGNALITH_LDAP_BIND_PASSWORD_FILE` or
+`SIGNALITH_ADMIN_PASSWORD_FILE`, `SIGNALITH_INGEST_TOKEN_FILE`, `SIGNALITH_LDAP_BIND_PASSWORD_FILE`, `SIGNALITH_OIDC_CLIENT_SECRET_FILE` or
 `SIGNALITH_ASSISTANT_API_KEY_FILE` to the file's path. Setting both forms of one is an error, except for the
 ingest token, where both are accepted as shared tokens (agents set up on Add data get a token of their own). A setting set by an
 environment variable, or by a file one names, is shown locked on the Settings page. When the admin password

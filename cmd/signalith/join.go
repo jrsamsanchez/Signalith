@@ -26,6 +26,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -96,6 +97,9 @@ type joinEnv struct {
 	serviceActive func() bool
 	// startService enables and (re)starts the service.
 	startService func() error
+	// serviceStaysUp watches the service for a while after it started and
+	// says why not when it stops or restarts; nil watches nothing.
+	serviceStaysUp func() error
 	// systemctl runs systemctl.
 	systemctl func(args ...string) error
 	// dropInDir is where the unit's drop-in files go; "" for none.
@@ -156,6 +160,7 @@ func defaultJoinEnv() *joinEnv {
 			}
 			return e.systemctl("restart", "signalith")
 		}
+		e.serviceStaysUp = func() error { return watchUnit(systemdState, time.Sleep, serviceWatch) }
 		// Only where the signalith unit is installed: the packages' or
 		// install.sh's.
 		for _, unit := range []string{"/usr/lib/systemd/system/signalith.service", "/lib/systemd/system/signalith.service", "/etc/systemd/system/signalith.service"} {
@@ -522,7 +527,9 @@ func (j *joiner) makeLocal() error {
 		j.made = append(j.made, state)
 	}
 	local, err := cluster.OpenLocal(state, cluster.LocalOptions{Name: j.name, InContainer: cluster.InContainer()})
-	j.made = append(j.made, filepath.Join(state, "cluster"))
+	// node.id sits in the state folder itself, which the packages make:
+	// giving the folder would not give it.
+	j.made = append(j.made, filepath.Join(state, "cluster"), cluster.IdentityPath(state))
 	if err == nil {
 		j.id = local.Identity
 		local.Close()
@@ -1133,6 +1140,11 @@ func (j *joiner) start() error {
 	if err := j.env.startService(); err != nil {
 		return failf(joinExitStart, "Everything is written, but the service did not start: %v. See its log (journalctl -u signalith), fix what it says, and start it again.", err)
 	}
+	if f := j.env.serviceStaysUp; f != nil {
+		if err := f(); err != nil {
+			return failf(joinExitStart, "Everything is written and the service started, but %v. See its log (journalctl -u signalith), fix what it says, and start it again.", err)
+		}
+	}
 	j.printf("%s joined %s. Add it to your load balancer: %s\n", j.id.Name, j.clusterName(), where)
 	return nil
 }
@@ -1323,5 +1335,54 @@ func runOpenSearchCheck(ctx context.Context, args []string, out io.Writer, geten
 		return errChecksFailed
 	}
 	fmt.Fprintln(out, "OpenSearch is ready for several servers.")
+	return nil
+}
+
+// serviceWatch is how long join watches the service after starting it:
+// longer than the unit's RestartSec (5s), so a server that stops at once
+// is seen restarting.
+const serviceWatch = 15 * time.Second
+
+// systemdState reads the signalith unit's state and how often systemd
+// restarted it.
+func systemdState() (active string, restarts int, err error) {
+	out, err := exec.Command("systemctl", "show", "signalith", "-p", "ActiveState", "-p", "NRestarts").Output()
+	if err != nil {
+		return "", 0, err
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		k, v, _ := strings.Cut(strings.TrimSpace(line), "=")
+		switch k {
+		case "ActiveState":
+			active = v
+		case "NRestarts":
+			restarts, _ = strconv.Atoi(v)
+		}
+	}
+	return active, restarts, nil
+}
+
+// watchUnit watches the service for d after it started, through state,
+// and says why it does not stay up: it failed, stopped, or systemd
+// restarted it. When its state cannot be read it says nothing.
+func watchUnit(state func() (string, int, error), sleep func(time.Duration), d time.Duration) error {
+	_, first, err := state()
+	if err != nil {
+		return nil
+	}
+	const step = time.Second
+	for waited := time.Duration(0); waited < d; waited += step {
+		sleep(step)
+		active, n, err := state()
+		if err != nil {
+			return nil
+		}
+		switch {
+		case n > first:
+			return fmt.Errorf("it keeps stopping (systemd restarted it %d times)", n-first)
+		case active == "failed" || active == "inactive":
+			return fmt.Errorf("it stopped (%s)", active)
+		}
+	}
 	return nil
 }

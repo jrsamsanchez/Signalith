@@ -239,7 +239,9 @@ func TestDockerCompose(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dockerDir, "opensearch", "load-security.sh")); err != nil {
 		t.Error(err)
 	}
-	if l.User != "1000:1000" || l.Restart != "no" || !l.ReadOnly || !slices.Contains(l.Tmpfs, "/tmp") || !slices.Equal(l.CapDrop, []string{"ALL"}) ||
+	// /tmp:exec: OpenSearch 3's securityadmin.sh loads a native library it
+	// unpacks there (Docker mounts a tmpfs noexec otherwise).
+	if l.User != "1000:1000" || l.Restart != "no" || !l.ReadOnly || !slices.Contains(l.Tmpfs, "/tmp:exec") || !slices.Equal(l.CapDrop, []string{"ALL"}) ||
 		len(l.CapAdd) != 0 || !slices.Contains(l.SecurityOpt, "no-new-privileges:true") || len(l.Ports) != 0 {
 		t.Errorf("opensearch-security: user %q restart %q read_only %v tmpfs %v cap_drop %v cap_add %v security_opt %v ports %v",
 			l.User, l.Restart, l.ReadOnly, l.Tmpfs, l.CapDrop, l.CapAdd, l.SecurityOpt, l.Ports)
