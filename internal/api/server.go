@@ -230,12 +230,21 @@ type Server struct {
 	// Tenants lists the tenants of a multi-tenant install (see
 	// docs/multi-tenant.md); nil has only the default tenant.
 	Tenants *tenants.Registry
+	// TenantID is the tenant whose data this server holds: "" for the
+	// default tenant's server, which also answers the provider's pages
+	// and sends each request in another tenant to that tenant's server
+	// (TenantRuntime). A tenant's server answers that tenant's requests
+	// only.
+	TenantID string
+	// TenantRuntime runs the servers of the other tenants; nil runs none.
+	TenantRuntime TenantRuntime
 
 	authOnce     sync.Once
 	ssoOnce      sync.Once
 	scimRefused  scimRefusals // when a refused SCIM token was last logged, by address
 	creds        credCache    // recently checked Basic credentials
 	routes       []route      // every API route and its role, from Handler
+	apiMux       http.Handler // the routes of routes, each behind allow
 	caseLocks    caseLocks    // one lock per case being changed
 	checksMu     sync.Mutex
 	dirChecks    map[string]dirCheck // when each directory user was last checked
@@ -378,6 +387,7 @@ func (s *Server) Handler() http.Handler {
 		}
 	}
 	s.routes = api.routes
+	s.apiMux = api.mux
 	s.routeLogin(mux)
 	mux.Handle("/", s.requireUser(s.configToken(false, s.awaitConfig(api.mux))))
 	return limitBodies(s.securityHeaders(s.configHeaders(s.guardAPI(mux))))
@@ -455,6 +465,10 @@ func decodeJSON(b []byte, v any) error {
 // ---- ingest ----
 
 func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
+	if t := s.agentTenant(r); t != nil {
+		t.handleIngest(w, r)
+		return
+	}
 	from := clientaddr.Parse(r.RemoteAddr)
 	who, ok := s.agentIdentity(w, r)
 	if !ok {
@@ -1149,7 +1163,13 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	// Everyone signed in sees whether things work. Where they run (file
 	// paths, addresses, the OpenSearch URL and its errors) and the setup
 	// advice is for admins, who are the ones able to change it.
-	if p := principalOf(r); p == nil || !p.Role.AtLeast(users.Admin) {
+	if p := principalOf(r); !p.runsServer() {
+		if p != nil && p.Tenant != "" {
+			// The server's other parts are the provider's business.
+			for _, k := range []string{"cluster_banners", "cluster", "sensors", "m365", "syslog"} {
+				delete(out, k)
+			}
+		}
 		brief := map[string]any{"status": status}
 		if problem != "" {
 			brief["problem"] = problem

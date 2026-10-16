@@ -271,13 +271,18 @@ func TestUsersDocListsProviderRoutes(t *testing.T) {
 	}
 	para := doc[start:]
 	para = strings.Join(strings.Fields(para[:strings.Index(para, "\n\n")]), " ")
-	listed := regexp.MustCompile("`(/api/[a-z]+)`").FindAllStringSubmatch(para, -1)
-	if len(listed) != len(platformPaths) {
-		t.Errorf("the paragraph names %d prefixes, platformPaths has %d", len(listed), len(platformPaths))
+	listed := regexp.MustCompile("`(/api/[a-z-]+)`").FindAllStringSubmatch(para, -1)
+	if len(listed) != len(platformResources) {
+		t.Errorf("the paragraph names %d prefixes, platformResources has %d", len(listed), len(platformResources))
 	}
 	for _, m := range listed {
-		if !slices.Contains(platformPaths, strings.TrimPrefix(m[1], "/api/")) {
-			t.Errorf("%s is listed as provider only but is not in platformPaths", m[1])
+		if !slices.Contains(platformResources, strings.TrimPrefix(m[1], "/api/")) {
+			t.Errorf("%s is listed as provider only but is not in platformResources", m[1])
+		}
+	}
+	for _, m := range providerManaged {
+		if !strings.Contains(para, "`"+m+"`") {
+			t.Errorf("%s is for provider users only but the paragraph does not say so", m)
 		}
 	}
 	for _, v := range tenantVisible {

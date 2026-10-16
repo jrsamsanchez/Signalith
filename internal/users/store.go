@@ -515,8 +515,10 @@ func (s *Store) adminsLeft(name string, role Role, disabled bool) int {
 			r, off = role, disabled
 		}
 		// Directory users' roles depend on groups that may have changed
-		// since they last signed in, so only local admins count.
-		if u.Source == SourceLocal && r == Admin && !off {
+		// since they last signed in, so only local admins count, and
+		// only the provider's own: a tenant's admins manage only their
+		// tenant.
+		if u.Source == SourceLocal && r == Admin && !off && u.Tenant == "" {
 			n++
 		}
 	}
@@ -576,7 +578,7 @@ func (s *Store) UpdateIf(ctx context.Context, name, etag string, ch Change) (Use
 		if !u.Role.Valid() {
 			return fieldError("role", fmt.Errorf("role %q must be viewer, analyst or admin", u.Role))
 		}
-		wasAdmin := cur.Source == SourceLocal && cur.Role == Admin && !cur.Disabled
+		wasAdmin := cur.Source == SourceLocal && cur.Role == Admin && !cur.Disabled && cur.Tenant == ""
 		if wasAdmin && (u.Role != Admin || u.Disabled) && s.adminsLeft(name, u.Role, u.Disabled) == 0 {
 			return ErrLastAdmin
 		}
@@ -617,7 +619,7 @@ func (s *Store) DeleteIf(ctx context.Context, name, etag string) (User, error) {
 	var gone User
 	err = s.b.Delete(ctx, Actor(ctx), name, etag, func(r Record) error {
 		cur := r.User
-		if cur.Source == SourceLocal && cur.Role == Admin && !cur.Disabled && s.adminsLeft(name, Viewer, true) == 0 {
+		if cur.Source == SourceLocal && cur.Role == Admin && !cur.Disabled && cur.Tenant == "" && s.adminsLeft(name, Viewer, true) == 0 {
 			return ErrLastAdmin
 		}
 		gone = recordUser(r)

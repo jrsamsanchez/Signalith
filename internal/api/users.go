@@ -37,8 +37,10 @@ func (s *Server) routeUsers(api *router) {
 // audit logs a change someone made, with who and from where. Passwords
 // are never passed here.
 func (s *Server) audit(r *http.Request, msg string, args ...any) {
+	// A tenant's server tags every line of its log with the tenant
+	// already; the default tenant's server tags those it writes for one.
 	var tenant []any
-	if p := principalOf(r); p != nil && p.Active != "" && p.Active != tenants.Default {
+	if p := principalOf(r); s.TenantID == "" && p != nil && p.Active != "" && p.Active != tenants.Default {
 		tenant = []any{"tenant", p.Active}
 	}
 	s.Log.Info(msg, slices.Concat([]any{"audit", true, "by", userOf(r)}, tenant, s.client(r).logAttrs(), args)...)
@@ -308,9 +310,15 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 	me := userOf(r)
 	list := s.userStore().List()
 	out := make([]userView, 0, len(list)+1)
-	out = append(out, s.builtinView(me))
+	// Each tenant's server lists only that tenant's users; the default
+	// tenant's, the provider's own and the built-in admin.
+	if s.userTenant() == "" {
+		out = append(out, s.builtinView(me))
+	}
 	for _, u := range list {
-		out = append(out, s.viewUser(u, me))
+		if u.Tenant == s.userTenant() {
+			out = append(out, s.viewUser(u, me))
+		}
 	}
 	if s.SharedUsers != nil && s.SharedUsers.Seen != nil {
 		// Last sign-ins are kept apart from the users, one per server: the
@@ -411,8 +419,11 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 	if s.builtinTarget(w, req.Username) || !s.usersWritable(w) {
 		return
 	}
+	// A new user belongs to the tenant whose server makes it: a tenant's
+	// admins make only their tenant's users, and only the provider's
+	// users make the provider's.
 	u, err := s.userStore().Create(changeContext(r), users.NewUser{Username: req.Username, Name: req.Name, Email: req.Email, Role: req.Role,
-		Password: req.Password, MustChangePassword: mustChange})
+		Password: req.Password, MustChangePassword: mustChange, Tenant: s.userTenant()})
 	if err != nil {
 		writeUserError(w, err)
 		return
@@ -424,6 +435,22 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		resp["temporary_password"] = generated
 	}
 	writeJSON(w, http.StatusCreated, resp)
+}
+
+// otherTenantsUser answers 404 for a user who is not of this server's
+// tenant, as if there were none: no tenant's admins can see or change
+// another tenant's users, or the provider's.
+func (s *Server) otherTenantsUser(w http.ResponseWriter, name string) bool {
+	other := false
+	if s.isBuiltin(name) {
+		other = s.userTenant() != ""
+	} else if u, ok := s.userStore().Get(name); ok {
+		other = u.Tenant != s.userTenant()
+	}
+	if other {
+		writeUserError(w, users.ErrNotFound)
+	}
+	return other
 }
 
 // targetName is the user a /api/users/{username} request is about, in
@@ -440,6 +467,9 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if s.otherTenantsUser(w, name) {
 		return
 	}
 	if s.builtinTarget(w, name) || !s.usersWritable(w) {
@@ -495,6 +525,9 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 	name := targetName(r)
+	if s.otherTenantsUser(w, name) {
+		return
+	}
 	if s.builtinTarget(w, name) || !s.usersWritable(w) {
 		return
 	}
@@ -529,6 +562,9 @@ func (s *Server) handleResetPassword(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, err)
 			return
 		}
+	}
+	if s.otherTenantsUser(w, name) {
+		return
 	}
 	if s.builtinTarget(w, name) || !s.usersWritable(w) {
 		return

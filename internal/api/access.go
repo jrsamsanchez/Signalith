@@ -33,9 +33,12 @@ type route struct {
 	// before doing anything else.
 	Anytime bool
 	// Platform routes are about the server itself rather than one
-	// tenant's data (see platformPaths): only the provider's own users
-	// may use them, whatever a tenant user's role.
-	Platform bool
+	// tenant's data (see routeScope): only the provider's own users may
+	// use them, whatever a tenant user's role. Managed routes change a
+	// tenant's data in ways only the provider's users may. Shared routes
+	// are the same for every tenant (the web UI's files), and answered
+	// by the server that gets them.
+	Platform, Managed, Shared bool
 }
 
 // router registers API routes with the role each needs. It is the one
@@ -78,7 +81,9 @@ func (rt *router) Handle(pattern string, h http.Handler) {
 }
 
 func (rt *router) add(r route, h http.Handler) {
-	r.Platform = platformRoute(r.Pattern)
+	if !r.Anytime {
+		r.Platform, r.Managed, r.Shared = routeScope(r.Pattern)
+	}
 	rt.routes = append(rt.routes, r)
 	rt.mux.Handle(r.Pattern, rt.s.allow(r, h))
 }
@@ -124,6 +129,15 @@ type principal struct {
 	// tenants.Default (see activeTenant).
 	Tenant string
 	Active string
+	// lostTenant is set when the session's tenant can no longer be used.
+	lostTenant bool
+}
+
+// runsServer reports whether p may see how the server itself runs (file
+// paths, addresses, other servers, secrets in settings): the provider's
+// own admins, not a tenant's.
+func (p *principal) runsServer() bool {
+	return p != nil && p.Tenant == "" && p.Role.AtLeast(users.Admin)
 }
 
 type userKey struct{}
@@ -178,12 +192,17 @@ func (s *Server) allow(rt route, next http.Handler) http.Handler {
 				"error": "API tokens can only read. Sign in as a user to change anything.", "code": "token_read_only"})
 			return
 		}
-		if rt.Platform && p.Tenant != "" {
+		if (rt.Platform || rt.Managed) && p.Tenant != "" {
 			writeJSON(w, http.StatusForbidden, map[string]any{
 				"error": "This is a page for the provider that runs Signalith, not for a tenant's users.", "code": "provider_only"})
 			return
 		}
-		if !rt.Platform && !rt.Anytime && !s.servesTenant(p.Active) {
+		if p.lostTenant && !rt.Anytime {
+			writeJSON(w, http.StatusConflict, map[string]any{
+				"error": fmt.Sprintf("Tenant %q was turned off or removed. You are back in the default tenant.", p.Active), "code": "tenant_unavailable"})
+			return
+		}
+		if !rt.Platform && !rt.Anytime && !rt.Shared && !s.servesTenant(p.Active) {
 			writeJSON(w, http.StatusServiceUnavailable, map[string]any{
 				"error": fmt.Sprintf("Tenant %q is not running on this server.", p.Active), "code": "tenant_unavailable"})
 			return
@@ -198,6 +217,18 @@ func (s *Server) allow(rt route, next http.Handler) http.Handler {
 			return
 		}
 		if rt.Recheck && s.recheckNeeded(w, r, p) {
+			return
+		}
+		if t, other := s.dispatchTo(rt, p); other {
+			// Another tenant's request: its own server answers, with
+			// its own data, and checks the request again. Never this
+			// server's data, even when that tenant stopped just now.
+			if t == nil || t.apiMux == nil {
+				writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+					"error": fmt.Sprintf("Tenant %q is not running on this server.", p.Active), "code": "tenant_unavailable"})
+				return
+			}
+			t.apiMux.ServeHTTP(w, r)
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -246,7 +277,7 @@ func (s *Server) authenticate(r *http.Request) (*principal, error) {
 		// program sending one wants to know it was refused.
 		p := s.apiTokenPrincipal(tok)
 		if p != nil {
-			p.Active = s.activeTenant(p, "")
+			p.Active, _ = s.activeTenant(p, "")
 		}
 		return p, nil
 	}
@@ -256,7 +287,14 @@ func (s *Server) authenticate(r *http.Request) (*principal, error) {
 			// server sharing the users file) ends the session too.
 			if p := s.principalFor(ss.User); p != nil && (ss.Version == "" || ss.Version == s.passwordStamp(ss.User)) {
 				p.Method, p.token, p.remember, p.signedIn = "session", c.Value, ss.Remember, ss.Created
-				p.Active = s.activeTenant(p, ss.Tenant)
+				p.Active, p.lostTenant = s.activeTenant(p, ss.Tenant)
+				if p.lostTenant {
+					// The session goes back to the default tenant, after
+					// this request is refused (see allow).
+					if err := s.sessions().SetTenant(r.Context(), c.Value, ""); err != nil {
+						s.Log.Warn("could not move a session out of a tenant that was turned off", "user", ss.User, "err", err)
+					}
+				}
 				return p, nil
 			}
 			// Deleted, disabled or given a new password since signing in.
@@ -278,7 +316,7 @@ func (s *Server) authenticate(r *http.Request) (*principal, error) {
 	}
 	if p != nil {
 		p.Method = "basic"
-		p.Active = s.activeTenant(p, "")
+		p.Active, _ = s.activeTenant(p, "")
 	}
 	return p, err
 }

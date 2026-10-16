@@ -1020,6 +1020,8 @@ type instance struct {
 	cancel context.CancelFunc
 	jobs   sync.WaitGroup // what runs on every server, such as index creation
 	log    *slog.Logger
+	// tenants runs the tenants' data, when there may be tenants.
+	tenants *tenantRuntime
 }
 
 // stop ends the background jobs, retention and the syslog receiver, and
@@ -1028,6 +1030,9 @@ type instance struct {
 func (in *instance) stop() {
 	if in.node != nil {
 		in.node.SetJobs(nil)
+	}
+	if in.tenants != nil {
+		in.tenants.stop()
 	}
 	in.cancel()
 	in.jobs.Wait()
@@ -1748,6 +1753,13 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	}
 	tokenSrv.Store(srv)
 	in.srv, in.handler = srv, srv.Handler()
+	if srv.Tenants != nil && parts == nil {
+		// Each tenant's data, on this server only for now: tenants' users
+		// cannot be kept in the shared settings of a cluster yet.
+		tr := newTenantRuntime(ctx, r, c, cl, srv.Tenants, srv)
+		srv.TenantRuntime, in.tenants = tr, tr
+		in.jobs.Go(tr.startAll)
+	}
 	r.srv.Store(srv)
 	// The example ingest token of an older Docker quick start: decide
 	// whether this one was upgraded if that is still open, and end it for

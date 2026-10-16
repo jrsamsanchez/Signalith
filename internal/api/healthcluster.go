@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/cluster"
-	"github.com/jrsamsanchez/signalith/internal/users"
 )
 
 // How the Health page decides that a server gets no agent traffic: agents
@@ -55,7 +54,7 @@ func (s *Server) addClusterHealth(r *http.Request, out map[string]any) {
 		return
 	}
 	p := principalOf(r)
-	out["cluster"] = clusterHealthOf(s.Cluster.Status(), p != nil && p.Role.AtLeast(users.Admin))
+	out["cluster"] = clusterHealthOf(s.Cluster.Status(), p.runsServer())
 }
 
 // running reports whether a server in st is up now: offline and stopped
