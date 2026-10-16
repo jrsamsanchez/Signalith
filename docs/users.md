@@ -101,7 +101,8 @@ must choose their own password before they can do anything else.
 **Change a user.** Edit their name and email, change their role, disable or enable
 them, reset their password (they get a new temporary password and must change it at
 the next sign-in), or delete them. Disabling, deleting or resetting a password signs
-that user out everywhere at once.
+that user out everywhere at once. Resetting a password also removes their
+[passkeys](#passkeys).
 
 To stop anyone locking everyone out:
 
@@ -166,6 +167,7 @@ they do not reveal which usernames exist. Other answers are:
 | `directory_unavailable` (503) | The directory server could not be reached, or too many directory sign-ins are being checked at once |
 | `locked_out` (429) | Too many wrong passwords; see below |
 | `mfa_required`, `mfa_wrong`, `mfa_basic` | See [Two-step sign-in](#two-step-sign-in) |
+| `passkey_wrong`, `passkey_expired`, `passkey_cloned`, `passkey_password` | See [Passkeys](#passkeys) |
 
 **Failed sign-in limits.** Wrong passwords are counted so that guessing stays slow,
 but someone guessing your password cannot keep you out:
@@ -265,8 +267,9 @@ Until it is changed, every request other than `GET /api/me` and
 
 ## Two-step sign-in
 
-Two-step sign-in asks for a code from an authenticator app on your phone after your
-password, so a stolen password alone cannot sign in. Any app that makes 6-digit codes
+Two-step sign-in asks for a second step after your password, so a stolen password
+alone cannot sign in. The second step is a [passkey](#passkeys), a code from an
+authenticator app on your phone, or both. Any app that makes 6-digit codes
 works: Microsoft Authenticator, Google Authenticator, 1Password, Bitwarden, Authy and
 others. It works for local users, the built-in admin and directory users. Users who
 sign in with single sign-on get their second step from their identity provider, and
@@ -274,7 +277,8 @@ Signalith does not ask again, so require it there: **Require two-step sign-in** 
 not reach them.
 
 **Turn it on.** Open the user menu (your name, top right) and choose **Two-step
-sign-in**, then **Set up**:
+sign-in**. Add a passkey (see [Passkeys](#passkeys)), or under **Authenticator app**
+choose **Set up**:
 
 1. Scan the QR code with your authenticator app. Without a camera, type the key shown
    under it into the app instead.
@@ -292,7 +296,9 @@ code just before or after the current one also works, for a phone clock a little
 the page says how many are left. **Make new recovery codes** in the same menu replaces
 them all.
 
-**Turn it off** from the same menu, with a code from the app or a recovery code.
+**Turn it off** from the same menu, with a code from the app, a recovery code or a
+passkey. Turning the app off keeps your passkeys and recovery codes; two-step sign-in
+stays on until the last passkey is removed too.
 
 **Lost your phone and your recovery codes?** An admin opens **Settings > Users** and
 chooses **Reset two-step sign-in** on your row. You then sign in with your password
@@ -326,6 +332,62 @@ resets two-step sign-in.
 | `mfa_setup_required` (403) | Two-step sign-in is required and not set up yet; only the routes under **Every role** work |
 | `mfa_unavailable` (503) | The code could not be checked just now (for example the shared settings cannot be written) |
 
+## Passkeys
+
+A passkey signs you in with your fingerprint, face, device PIN or a security key, in
+place of a code. It cannot be phished: your browser offers it only to the address it
+was made on, and the server checks that too. Windows Hello, an iPhone, iPad or Mac,
+an Android phone, a password manager that keeps passkeys (1Password, Bitwarden and
+others) and FIDO2 security keys (YubiKey and others) all work.
+
+**Add one.** Open the user menu, choose **Two-step sign-in**, then **Add a passkey**.
+Give it a name you will recognize (such as *Work laptop*) and follow your browser.
+Your first passkey turns two-step sign-in on, shows 10 recovery codes to save, and
+signs every other browser out, as setting up an app does. You can have up to 10
+passkeys, with or without an authenticator app.
+
+**Signing in.** Local users and the built-in admin can choose **Sign in with a
+passkey** on the sign-in page and skip the password. Your passkey asks for your
+fingerprint, face or PIN, so it is two steps in one. Anyone can also enter their
+password first and then use a passkey as the second step. Directory users always
+enter their directory password first, so the directory still decides whether they
+may sign in. Single sign-on users sign in at their identity provider.
+
+**Remove one** from the same menu (**Remove** on its row). Removing the last passkey
+without an app turns two-step sign-in off. An admin's **Reset two-step sign-in**
+removes every passkey too, and so does an admin's **Reset password**: a passkey signs
+in without the password, so whoever added one must not keep a way in past the reset.
+Changing your own password keeps your passkeys (it signs other browsers out), and
+says how many you have: if you don't recognize one, remove it.
+
+Things to know:
+
+- Passkeys need Signalith opened **by its name over HTTPS** (such as
+  `https://siem.example.com`); browsers refuse them for an IP address or plain HTTP.
+  `localhost` also works, for trying it out.
+- A passkey works only at the address it was made on. If people reach Signalith by two
+  names, a passkey made at one is not offered at the other; the menu shows where each
+  one works. Add one at each name, or keep an app or recovery codes for the other.
+- A passkey that syncs (iCloud Keychain, Google Password Manager, a password manager)
+  is marked **Synced** in the menu: it is on every device of that account, which is
+  convenient, and as safe as that account. A security key never leaves the key.
+- Each answer from a passkey is accepted once, on whichever server checks it, and
+  only at the address its challenge was made for.
+- If a passkey's signature counter goes backwards, it may have been copied, so it is
+  refused (`passkey_cloned`) and logged. Sign in another way and remove it.
+- Signalith keeps each passkey's public key, name, address and last use with your
+  two-step sign-in. A public key is no secret: it can check a passkey's signature but
+  not make one.
+
+| `code` | When |
+| --- | --- |
+| `passkey_wrong` (401) | The passkey was not accepted: unknown, made for another address, without your fingerprint, face or PIN when signing in with it alone or confirming it's you, or already used for this challenge |
+| `passkey_expired` (401) | The challenge was older than 5 minutes, or made for something else; ask for a new one |
+| `passkey_cloned` (401) | The passkey's counter went backwards |
+| `passkey_password` (401) | A directory user tried to sign in with a passkey alone; enter the password first |
+
+Wrong passkey answers count toward the failed sign-in limits like wrong passwords.
+
 ## Confirming it's you
 
 Some changes ask for your password again when you have not entered it in the last
@@ -349,10 +411,10 @@ Some changes ask for your password again when you have not entered it in the las
   feeds on this computer (`intel.allow_loopback_feeds`), the AI assistant's address
   and masked fields, or **Reset all**.
 
-With two-step sign-in on, a code from your app (or a recovery code) works instead of
-the password. Signing in counts, so for 15 minutes after you sign in nothing is asked.
+With two-step sign-in on, a passkey, a code from your app or a recovery code works
+instead of the password. Signing in counts, so for 15 minutes after you sign in nothing is asked.
 Wrong passwords and codes count toward the failed sign-in limits. Turning off your own
-two-step sign-in and making new recovery codes always take a code. Scripts that use
+authenticator app and making new recovery codes always take a code or a passkey. Scripts that use
 HTTP Basic auth send the password with every request, so they are never asked.
 
 ## Sign in with Active Directory or LDAP
@@ -823,7 +885,7 @@ full:
 
 | File | Holds | Default place |
 | --- | --- | --- |
-| `users.json` | Local users (with bcrypt password hashes), directory users seen so far, last sign-in times, two-step sign-in (the app's key encrypted, recovery codes hashed) | The lookups folder (`lookups.dir`), or `auth.users_file` / `SIGNALITH_USERS_FILE` |
+| `users.json` | Local users (with bcrypt password hashes), directory users seen so far, last sign-in times, two-step sign-in (the app's key encrypted, recovery codes hashed, passkeys' public keys) | The lookups folder (`lookups.dir`), or `auth.users_file` / `SIGNALITH_USERS_FILE` |
 | `directory.json` | Directory sign-in settings from the Users page, including the service account's password | Next to `users.json` |
 
 The lookups folder is:
@@ -866,7 +928,7 @@ the Settings page and restarts are logged the same way; see
 
 | Message | Fields |
 | --- | --- |
-| `signed in` | `user`, `role`, `source`, `client`, `method` (session or basic), `mfa` (`app` or `recovery`, when a code was asked for), `recovery_codes_left` |
+| `signed in` | `user`, `role`, `source`, `client`, `method` (session, basic or passkey), `mfa` (`app`, `recovery` or `passkey`, when a second step was asked for), `recovery_codes_left` |
 | `password accepted, waiting for the two-step code` | `user`, `client`, `method` |
 | `sign-in failed` | `user`, `client`, `method`, `reason` (for example `wrong password`, `account disabled`, `directory: in no group mapped to a role`), `locked_out` (further tries are refused or slowed down for a while) |
 | `sign-ins from this address are paused …` | `client`, `minutes` |
@@ -879,13 +941,18 @@ the Settings page and restarts are logged the same way; see
 | `password reset` | `by`, `user`, `sessions_ended` |
 | `password changed` | `by`, `user`, `other_sessions_ended` |
 | `password change refused` | `user`, `client`, `reason`, `locked_out` |
-| `two-step sign-in turned on` | `by`, `user`, `other_sessions_ended` |
+| `two-step sign-in turned on` | `by`, `user`, `with` (`passkey` for a first passkey), `other_sessions_ended` |
 | `two-step sign-in turned off` | `by`, `user` |
+| `authenticator app turned off` | `by`, `user` (passkeys stay on) |
+| `passkey added` | `by`, `user`, `passkey` (its name), `host`, `synced` |
+| `passkey removed` | `by`, `user`, `passkey`, `host` |
+| `passkeys removed` | `by` (the admin), `user`, `count`, `reason` (`password reset`) |
+| `passkey refused` | `user`, `client`, `locked_out`; with `passkey` when its counter went backwards |
 | `two-step sign-in reset` | `by` (the admin), `user` |
 | `new recovery codes made` | `by`, `user` |
 | `recovery code used` | `by`, `user`, `recovery_codes_left` |
 | `two-step code refused` | `user`, `client`, `locked_out` |
-| `password or code entered again` | `by`, `user`, `with` (`password`, `app` or `recovery`) |
+| `password or code entered again` | `by`, `user`, `with` (`password`, `app`, `recovery` or `passkey`) |
 | `recheck refused` | `user`, `client`, `reason`, `locked_out` |
 | `directory settings changed` | `by`, `enabled`, `servers`, `fields` (names only) |
 | `directory connection tested` | `by`, `servers`, `bind_dn`, `ok` |
@@ -960,7 +1027,8 @@ request, so a server that has not yet read that change reads it first (see
 **Every role** (also allowed while a password change is pending): `GET /api/me`,
 `POST /api/me/password`, `GET /api/me/mfa`, `POST /api/me/mfa/setup`,
 `POST /api/me/mfa/confirm`, `POST /api/me/mfa/recovery`, `POST /api/me/mfa/off`,
-`POST /api/me/recheck`.
+`POST /api/me/recheck`, `POST /api/me/passkeys/options`, `POST /api/me/passkeys`,
+`DELETE /api/me/passkeys/{id}`, `POST /api/me/passkeys/challenge`.
 
 **Viewer:** `GET /api/health` (with `?scope=cluster`, totals for every server), `POST /api/search`, `POST /api/explain`,
 `POST /api/build`, `POST /api/parse`, `GET /api/datamodels`, `GET /api/fields`,
@@ -1012,6 +1080,8 @@ server, which can only read), `POST /api/tls/names`, `GET /api/security`,
 `POST /api/detections/test`, `POST /api/detections/draft`, `POST /api/detections/backtest`, `POST /api/detections/sigma`, `POST /api/detections/enable`, `POST /api/detections/{id}/exceptions`, `DELETE /api/detections/{id}/exceptions/{exception}`, `POST /api/findings/{id}/suppress`,
 `PUT /api/detections/{id}`, `DELETE /api/detections/{id}`,
 `POST /api/detections/{id}/run`, `POST /api/detections/content/check`, `POST /api/detections/content/upload`, `DELETE /api/detections/content`, `PUT /api/lookups/{kind}`, `PUT /api/lookuptables/{name}`, `DELETE /api/lookuptables/{name}`,
+`GET /api/parsers`, `POST /api/parsers/analyze`, `POST /api/parsers/refine`, `GET /api/parsers/{name}/input`,
+`PUT /api/parsers/{name}`, `DELETE /api/parsers/{name}` ([custom log parsers](custom-logs.md)),
 `POST /api/intel/feeds`, `PUT /api/intel/feeds/{name}`, `DELETE /api/intel/feeds/{name}`,
 `POST /api/intel/feeds/test`, `POST /api/intel/feeds/{name}/refresh`, `POST /api/intel/catalog`,
 `POST /api/intel/taxii/collections`, `POST /api/intel/upload`,
@@ -1097,12 +1167,25 @@ and `recovery_codes_left` when a recovery code was used. `GET /api/me` also has
 
 | Route | Body | Reply |
 | --- | --- | --- |
-| `GET /api/me/mfa` | | `{"on", "required", "possible", "since", "recovery_left"}` |
+| `GET /api/me/mfa` | | `{"on", "app", "required", "possible", "passkeys", "passkey_alone", "passkey_host" or "passkey_problem", "since", "recovery_left"}` |
 | `POST /api/me/mfa/setup` | | `{"secret", "otpauth", "qr_svg", "expires_in"}`: a new key, not used until confirmed |
 | `POST /api/me/mfa/confirm` | `{"code"}` | `{"recovery_codes": [...], "mfa": {...}}`, and a new session cookie |
-| `POST /api/me/mfa/recovery` | `{"code"}` | `{"recovery_codes": [...], "mfa": {...}}` |
-| `POST /api/me/mfa/off` | `{"code"}` | `{"mfa": {...}}`; an empty body only drops a setup not confirmed yet |
+| `POST /api/me/mfa/recovery` | `{"code"}` or `{"passkey"}` | `{"recovery_codes": [...], "mfa": {...}}` |
+| `POST /api/me/mfa/off` | `{"code"}` or `{"passkey"}` | `{"mfa": {...}}`: turns the authenticator app off, keeping passkeys; an empty body only drops a setup not confirmed yet |
+| `POST /api/me/passkeys/options` | | `{"publicKey", "token"}`: options for `navigator.credentials.create()` |
+| `POST /api/me/passkeys` | `{"token", "credential", "name"}` | `{"mfa": {...}}`, with `"recovery_codes"` and a new session cookie for a first passkey |
+| `DELETE /api/me/passkeys/{id}` | | `{"mfa": {...}}`; `id` is the passkey's ID in base64url, as `GET /api/me/mfa` lists it |
+| `POST /api/me/passkeys/challenge` | | `{"publicKey", "token"}`: options for `navigator.credentials.get()`, answered as `{"passkey": {"token", "credential"}}` in the routes that take one |
 | `DELETE /api/users/{username}/mfa` (admin) | | `{"username", "mfa": false}`; `409` for your own account |
+
+With passkeys, the `mfa_required` reply also has `"passkey": {"publicKey", "token"}`
+(or `"passkey_hosts"` when none works at this address), `"app"` and `"recovery"`; send
+the same body again with `"passkey": {"token", "credential"}` in place of `"code"`.
+To sign in with a passkey alone (local users and the built-in admin),
+`POST /api/login/passkey/options` returns `{"publicKey", "token"}`, and
+`POST /api/login/passkey` with `{"token", "credential", "remember"}` signs in like
+`POST /api/login`. Both need the browser's `Origin` to match. A token is good for 5
+minutes and one answer.
 
 A wrong code answers `400` with `"code": "mfa_wrong"` and counts toward the failed
 sign-in limits. Single sign-on users get `400` with `"code": "mfa_elsewhere"`.
@@ -1118,8 +1201,9 @@ answers `403`:
 ```
 
 `with` is `password`, `password_or_code` (two-step sign-in is on) or `sign_in` (the
-account signs in elsewhere, so sign in again). `POST /api/me/recheck` with
-`{"password": "..."}` or `{"code": "123456"}` sets a cookie for this sign-in session
+account signs in elsewhere, so sign in again); `"passkey": true` when a passkey works
+here. `POST /api/me/recheck` with `{"password": "..."}`, `{"code": "123456"}` or
+`{"passkey": {"token", "credential"}}` (from `POST /api/me/passkeys/challenge`) sets a cookie for this sign-in session
 that lasts 15 minutes; then send the change again. A wrong password answers `400` with
 `"code": "wrong_password"`, a wrong code `"code": "mfa_wrong"`.
 

@@ -317,6 +317,10 @@ their connections, DNS lookups, web requests, certificates and TLS fingerprints 
 files, sign-ins (SSH, RDP, Kerberos, NTLM), file share activity and IDS alerts; the hosts
 it sees join the asset list (see
 [docs/network-sensor.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/network-sensor.md)).
+For a log Signalith has no parser for, pick **Any other log**: paste a sample, check the
+format, fields and data model Signalith suggests (an AI model can help with free text),
+see which detections can use it, and save it as a parser that agents and syslog use (see
+[docs/custom-logs.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/custom-logs.md)).
 
 Agents on other machines must send to an address they can reach, such as
 `https://192.168.1.20:8080`, not `localhost`. Enter it under **Agents send to** on that page
@@ -850,7 +854,7 @@ changes and more, plus two risk incident rules); 19 are on by default.
   Signalith query and lists anything it had to approximate. Imported rules start
   disabled so you can test them first.
 - **Content packs** add community rules, off until you turn them on: 2,478 tested
-  [SigmaHQ](https://github.com/SigmaHQ/sigma) Windows, Linux, web server, network, AWS CloudTrail, Azure, Microsoft 365, Google Cloud and Google Workspace rules and 1,138
+  [SigmaHQ](https://github.com/SigmaHQ/sigma) Windows, Linux, web server, network, AWS CloudTrail, Azure, Microsoft 365, Google Cloud and Google Workspace rules and 1,144
   Windows, Linux, web, network, AWS CloudTrail, Entra ID and Microsoft 365 detections
   from Splunk's open source
   [security_content](https://github.com/splunk/security_content) (Apache 2.0). With

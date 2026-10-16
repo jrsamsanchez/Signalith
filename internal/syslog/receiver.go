@@ -136,6 +136,10 @@ type Sink interface {
 // message is dropped and counted. TCP readers wait for room instead, which
 // slows the sender down rather than losing its messages.
 type Receiver struct {
+	// Custom, when set, may parse a message again with a custom parser
+	// an admin saved (onboard.Registry.Syslog). Set it before Start.
+	Custom func(m *Message, ev *ingest.Event)
+
 	cfg  Config
 	sink Sink
 	log  *slog.Logger
@@ -776,6 +780,9 @@ func (r *Receiver) handle(ctx context.Context, data []byte, from netip.Addr, pro
 	}
 	maxAge := time.Duration(r.maxAge.Load())
 	ev := m.Event(from, now, maxAge)
+	if r.Custom != nil {
+		r.Custom(&m, &ev)
+	}
 	r.names.limit(ev, from, now, maxAge)
 	r.received.Add(1)
 	r.lastMessage.Store(now.UnixNano())
