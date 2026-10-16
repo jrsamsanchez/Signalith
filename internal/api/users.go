@@ -39,7 +39,6 @@ func (s *Server) routeUsers(api *router) {
 func (s *Server) audit(r *http.Request, msg string, args ...any) {
 	// A tenant's server tags every line of its log with the tenant
 	// already; the default tenant's server tags those it writes for one.
-	var tenant []any
 	// The ID logged is the registry's, found by comparing, never a value
 	// taken from the request or its session.
 	if p := principalOf(r); s.TenantID == "" && s.Tenants != nil && p != nil && p.Active != "" && p.Active != tenants.Default {
@@ -50,9 +49,9 @@ func (s *Server) audit(r *http.Request, msg string, args ...any) {
 				id = t.ID
 			}
 		}
-		tenant = []any{"tenant", id}
+		args = append(slices.Clip(args), "tenant", id)
 	}
-	s.Log.Info(msg, slices.Concat([]any{"audit", true, "by", userOf(r)}, tenant, s.client(r).logAttrs(), args)...)
+	s.Log.Info(msg, slices.Concat([]any{"audit", true, "by", userOf(r)}, s.client(r).logAttrs(), args)...)
 }
 
 // ---- the signed-in user ----
