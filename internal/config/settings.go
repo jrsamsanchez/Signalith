@@ -354,7 +354,8 @@ var Registry = []Setting{
 		Placeholder: "auto", EmptyMeans: "auto", check: checkReplicas},
 	{Key: "opensearch.shards", Scope: ScopeCluster, Section: "opensearch", Label: "Shards", Type: TypeNumber, Restart: true, Min: intp(0), Max: intp(MaxShards),
 		Help: "Primary shards for each new day's events, per data model. One, the default, suits a few GB a day. Give more to a system whose busiest data model stores tens of GB a day, " +
-			"about one shard per OpenSearch data node, so a day is spread over the nodes and no shard grows past about 50 GB. Days already stored keep theirs.",
+			"about one shard per OpenSearch data node, so a day is spread over the nodes and no shard grows past about 50 GB. More shards than data nodes are not used. " +
+			"Days already stored keep theirs; a day restored from an archive gets this setting.",
 		Placeholder: "1", EmptyMeans: "1"},
 	{Key: "cluster.opensearch_url", Scope: ScopeCluster, Section: "opensearch", Label: "Address for new servers", Type: TypeURL, SharedOnly: true,
 		Help: "The OpenSearch address a new server is given when it is added to these servers, when it reaches OpenSearch another way than this one does: " +

@@ -401,7 +401,7 @@ func TestCheckEditReportsProblemsByField(t *testing.T) {
 		"retention.days":          "Data retention has its own page",
 		"no.such":                 "There is no setting",
 		"opensearch.replicas":     "Enter auto, or a whole number",
-		"opensearch.shards":       "from 0 to 1024",
+		"opensearch.shards":       "from 0 to 64",
 		"search.default_earliest": "not a time in the past",
 	} {
 		if !strings.Contains(res.Fields[key], want) {

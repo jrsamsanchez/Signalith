@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/url"
 	"strings"
@@ -137,6 +138,10 @@ func RestoreIndexTemplate(ctx context.Context, cl *store.Client, prefix string, 
 }
 
 func putTemplate(ctx context.Context, cl *store.Client, prefix string, replicas map[string]any, log *slog.Logger, onlyOlder bool) (bool, error) {
+	replicas, err := fitShards(ctx, cl, prefix, replicas, log)
+	if err != nil {
+		return false, err
+	}
 	stored, found, err := getTemplate(ctx, cl, prefix)
 	if err != nil {
 		return false, err
@@ -160,6 +165,40 @@ func putTemplate(ctx context.Context, cl *store.Client, prefix string, replicas 
 		err = cl.PutIndexTemplate(ctx, prefix, withoutWildcard(tmpl))
 	}
 	return err == nil, err
+}
+
+// fitShards caps number_of_shards at the number of OpenSearch data
+// nodes. OpenSearch refuses new indices once a node holds
+// cluster.max_shards_per_node shards (1,000 by default), and each day adds
+// an index per data model, so more shards than nodes would fill that
+// limit sooner than one shard per index does on one node, and stop
+// ingestion at the start of a day. With at most one shard per node, each
+// node holds no more per day than a single node holds with the default.
+func fitShards(ctx context.Context, cl *store.Client, prefix string, settings map[string]any, log *slog.Logger) (map[string]any, error) {
+	var want int
+	fmt.Sscan(fmt.Sprint(settings["number_of_shards"]), &want)
+	if want <= 1 {
+		return settings, nil
+	}
+	nodes, err := cl.DataNodes(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("could not count OpenSearch's data nodes for opensearch.shards: %w", err)
+	}
+	nodes = max(nodes, 1)
+	if want <= nodes {
+		return settings, nil
+	}
+	if log != nil {
+		log.Warn("opensearch.shards is more than OpenSearch's data nodes; each new day's events get one shard per data node instead",
+			"template", prefix, "shards", want, "data_nodes", nodes)
+	}
+	out := maps.Clone(settings)
+	if nodes == 1 {
+		delete(out, "number_of_shards")
+	} else {
+		out["number_of_shards"] = nodes
+	}
+	return out, nil
 }
 
 // getTemplate reads the index template called name, as OpenSearch keeps

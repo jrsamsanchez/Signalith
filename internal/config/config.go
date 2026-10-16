@@ -541,8 +541,9 @@ type OpenSearch struct {
 	Replicas Replicas `yaml:"replicas"`
 	// Shards is how many primary shards each new day's event indices
 	// get: 0 or 1 is one, the default. More spread a data model that
-	// stores tens of GB a day over the OpenSearch nodes. Days already
-	// stored keep theirs.
+	// stores tens of GB a day over the OpenSearch nodes; at most one
+	// per data node is used. Days already stored keep theirs; a day
+	// restored from an archive gets the current setting.
 	Shards int `yaml:"shards,omitempty"`
 }
 
@@ -586,9 +587,12 @@ func (r Replicas) IndexSettings() map[string]any {
 	return map[string]any{"number_of_replicas": n}
 }
 
-// MaxShards bounds opensearch.shards. It is OpenSearch's own limit on
-// the shards of one index.
-const MaxShards = 1024
+// MaxShards bounds opensearch.shards. Each day adds an index per data
+// model, and OpenSearch refuses new indices once a node holds 1,000
+// shards, so a large value would stop ingestion within days. When
+// installing the template, Signalith also caps it at the number of
+// OpenSearch data nodes (see ingest.PutIndexTemplate).
+const MaxShards = 64
 
 // EventIndexSettings returns the index settings each new day's event
 // indices get: the replicas settings (see Replicas.IndexSettings) and,
@@ -2378,7 +2382,7 @@ func (c *Config) Validate() error {
 		p = append(p, "opensearch.replicas must be auto or a whole number of 0 or more")
 	}
 	if c.OpenSearch.Shards < 0 || c.OpenSearch.Shards > MaxShards {
-		p = append(p, fmt.Sprintf("opensearch.shards must be a whole number from 1 to %d (0 means 1)", MaxShards))
+		p = append(p, fmt.Sprintf("opensearch.shards: enter a number from 0 to %d (0 and 1 both mean one shard)", MaxShards))
 	}
 	if c.Search.MaxEvents < 1 || c.Search.MaxEvents > 100000 {
 		p = append(p, "search.max_events must be between 1 and 100000")

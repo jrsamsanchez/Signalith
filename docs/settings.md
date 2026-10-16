@@ -97,9 +97,14 @@ Copies someone set on them by hand in OpenSearch are kept.
 per data model. It is `1` unless you change it, which suits a few GB a day. When the
 busiest data model, often Endpoint, stores tens of GB a day, give it more: about one
 shard per OpenSearch data node, so a day is spread over the nodes and no shard grows
-past about 50 GB, which is where OpenSearch slows down. Up to 1024. A change applies
+past about 50 GB, which is where OpenSearch slows down. Up to 64, and never more than
+the number of OpenSearch data nodes: Signalith uses one per data node when you ask for
+more. That limit is there because OpenSearch refuses new indices once a node holds
+1,000 shards (`cluster.max_shards_per_node`), and each day adds an index per data
+model, so too many shards would stop new events at the start of a day. A change applies
 to the next day's events after a restart; days already stored keep the shards they
-have. Findings, investigations and threat intel always have one shard; they are small.
+have, and a day restored from an archive gets the current setting. Findings,
+investigations and threat intel always have one shard; they are small.
 
 ## HTTPS
 
