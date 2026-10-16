@@ -167,6 +167,10 @@ func applyCommand(ctx context.Context, res *Result, c query.Command) error {
 		return applyRangeMap(ctx, res, c)
 	case *query.ForEach:
 		return applyForEach(ctx, res, c)
+	case *query.Replace:
+		return applyReplace(ctx, res, c)
+	case *query.XMLKV:
+		return applyXMLKV(ctx, res, c)
 	case *query.MVExpand:
 		return applyMVExpand(ctx, res, c)
 	case *query.MakeMV:

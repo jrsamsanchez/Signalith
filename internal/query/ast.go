@@ -433,6 +433,10 @@ func CommandString(c Command) string {
 		return rangeMapString(c)
 	case *ForEach:
 		return forEachString(c)
+	case *Replace:
+		return replaceString(c)
+	case *XMLKV:
+		return xmlkvString(c)
 	case *Enrich:
 		if len(c.Fields) == 0 {
 			return "enrich"

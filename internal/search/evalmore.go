@@ -22,6 +22,9 @@ func (ev *evaluator) callMore(fn string, args []any) (any, bool) {
 		}
 		return nil
 	}
+	if v, ok := callBits(fn, args); ok {
+		return v, true
+	}
 	switch fn {
 	case "spath", "json_extract":
 		s, ok := evStr(arg(0))

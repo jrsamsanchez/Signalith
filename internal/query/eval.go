@@ -112,6 +112,8 @@ var EvalFuncs = map[string][2]int{
 	"spath": {2, 2}, "json_extract": {1, 2}, "json_keys": {1, 1}, "json_valid": {1, 1}, "json_array_to_mv": {1, 1},
 	"json_object": {0, -1}, "json_array": {0, -1}, "relative_time": {2, 2}, "mvrange": {2, 3},
 	"printf": {1, -1}, "isint": {1, 1}, "validate": {2, -1},
+	"bit_and": {2, -1}, "bit_or": {2, -1}, "bit_xor": {2, -1}, "bit_not": {1, 2},
+	"bit_shift_left": {2, 2}, "bit_shift_right": {2, 2},
 }
 
 // maxEvalDepth bounds how deeply an expression may nest, so a hostile
