@@ -261,6 +261,7 @@
   function statusOf(u) {
     if (u.disabled) return ['off', 'Disabled', 'Cannot sign in until an admin enables them.'];
     if (u.refused) return ['off', 'No access', `Refused by the directory: ${u.refused}. Access comes back if a later sign-in is accepted.`];
+    if (u.pending) return ['temp', 'Not signed in yet', 'Added by provisioning (SCIM). Their role comes from their identity provider groups when they first sign in.'];
     if (u.must_change_password) return ['temp', 'Temporary password', 'Must choose a new password at their next sign-in.'];
     return ['ok', 'Active', ''];
   }
@@ -271,10 +272,11 @@
   function userRow(u) {
     const [state, stateLabel, stateTitle] = statusOf(u);
     const sub = u.source === 'builtin' ? [U.data && U.data.shared ? 'The same on every server' : 'Set on the server (signalith passwd)']
-      : [u.name ? u.username : '', u.email].filter(Boolean);
+      : [u.name ? u.username : '', u.email].filter((v, i, a) => v && a.indexOf(v) === i);
     const roleBadge = el('span', { class: 'badge u-role', 'data-role': u.role }, roleLabel(u.role));
     if (u.source === 'directory') roleBadge.title = 'From their directory groups at their last sign-in';
-    if (u.source === 'sso') roleBadge.title = 'From their identity provider groups at their last sign-in';
+    if (u.source === 'sso') roleBadge.title = u.pending ? 'Set from their identity provider groups when they first sign in' : 'From their identity provider groups at their last sign-in';
+    if (u.pending) roleBadge.textContent = 'At first sign-in';
     const nameAttrs = { class: 'u-user__name' };
     if (u.dn) nameAttrs.title = u.dn;
     return el('tr', { 'data-user': u.username, class: u.disabled ? 'u-off' : '' },

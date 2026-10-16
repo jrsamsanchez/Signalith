@@ -13,10 +13,12 @@
   // by setting ({ value } or { clear: true } for the secret); O.replacing
   // whether the secret's box is open; O.errors the problems by setting
   // from the last save or test.
-  const O = { view: null, seq: 0, drafts: {}, replacing: false, errors: {}, general: [], test: null, testSnap: '', saving: false };
+  const O = { view: null, seq: 0, drafts: {}, replacing: false, errors: {}, general: [], test: null, testSnap: '', saving: false, token: '' };
   const page = $('sso-page');
   const DOCS = 'https://github.com/jrsamsanchez/signalith/blob/main/docs/sso.md';
   const SECRET = 'auth.oidc.client_secret';
+  const SCIM_ON = 'auth.scim.enabled';
+  const SCIM_TOKEN = 'auth.scim.token_sha256';
   // Each provider's section of the guide.
   const DOCS_AT = { entra: 'microsoft-entra-id', okta: 'okta', google: 'google', keycloak: 'keycloak', other: 'other-providers' };
 
@@ -28,6 +30,8 @@
       keys: ['auth.oidc.admin_groups', 'auth.oidc.analyst_groups', 'auth.oidc.viewer_groups', 'auth.oidc.default_role', 'auth.oidc.allowed_domains', 'auth.oidc.create_users'] },
     { id: 'claims', title: 'Claims and button', desc: 'The provider’s usual values are filled in. Change them only if your provider sends something else.',
       keys: ['auth.oidc.scopes', 'auth.oidc.username_claim', 'auth.oidc.groups_claim', 'auth.oidc.button_label'] },
+    { id: 'scim', title: 'Provisioning (SCIM)', desc: 'Optional. Lets the identity provider add people before they first sign in, keep their names up to date, and disable or remove them, which signs them out at once. Roles still come from their groups at each sign-in.',
+      keys: [SCIM_ON, SCIM_TOKEN], scim: true },
   ];
   // What to look for in each provider's console, under the issuer.
   const ISSUER_HINT = {
@@ -63,6 +67,7 @@
       O.errors = {};
       O.general = [];
       O.replacing = false;
+      O.token = '';
       showPage(to, Object.assign({}, opts, { force: true }));
     });
     return false;
@@ -179,6 +184,9 @@
       const f = field(key);
       if (f) rows.push(row(f));
       if (key === SECRET && c.redirect) rows.push(redirectRow());
+      if (key === SCIM_ON && c.scim) rows.push(copyRow('sso-scim-url', 'SCIM base URL', O.view.scim_url,
+        'Enter this address in the identity provider as the tenant URL (Entra ID) or base URL (Okta). It comes from the web address on the Server tab.',
+        'Copy the SCIM base URL', O.view.scim_warning));
     }
     return el('section', { class: 'card st-card', id: 'sso-' + c.id, 'aria-labelledby': titleId },
       el('div', { class: 'st-card__head' }, el('div', { class: 'st-card__heading' },
@@ -200,7 +208,7 @@
 
   function row(f) {
     const id = idOf(f.key);
-    const label = f.type === 'secret' ? el('span', { class: 'st-field__label', id: id + '-label' }, f.label)
+    const label = f.type === 'secret' || f.key === SCIM_TOKEN ? el('span', { class: 'st-field__label', id: id + '-label' }, f.label)
       : el('label', { class: 'st-field__label', id: id + '-label', for: id }, f.label);
     const notes = [];
     if (f.locked) notes.push(el('p', { class: 'st-source st-source--env' }, icon('lock', 'icon--xs'), el('span', {}, 'Set by ' + f.env + ' where Signalith is started.')));
@@ -237,6 +245,7 @@
     const describe = (n) => { n.setAttribute('aria-describedby', id + '-help ' + id + '-notes'); if (O.errors[f.key]) n.setAttribute('aria-invalid', 'true'); return n; };
     const value = current(f.key);
     if (f.type === 'secret') return secretControl(f, id);
+    if (f.key === SCIM_TOKEN) return tokenControl(f, id);
     if (f.type === 'bool') {
       // create_users is on when it was never set.
       const on = value == null ? f.key === 'auth.oidc.create_users' : !!value;
@@ -314,26 +323,85 @@
 
   // redirectRow is the address to register with the provider.
   function redirectRow() {
-    const v = O.view;
-    const id = 'sso-redirect';
-    const box = el('input', { id, class: 'input mono', type: 'text', readonly: '', value: v.redirect_uri, 'aria-describedby': id + '-help' });
+    return copyRow('sso-redirect', 'Redirect URI', O.view.redirect_uri,
+      'Register this address with the identity provider as the sign-in redirect (callback) URI, exactly as it is. It comes from the web address on the Server tab.',
+      'Copy the redirect URI', O.view.redirect_warning);
+  }
+
+  // copyRow is an address to give the identity provider, with Copy.
+  function copyRow(id, label, value, helpText, copyLabel, warning) {
+    const box = el('input', { id, class: 'input mono', type: 'text', readonly: '', value: value || '', 'aria-describedby': id + '-help' });
     box.addEventListener('focus', () => box.select());
-    const copy = el('button', { type: 'button', class: 'btn btn--secondary btn--sm', 'aria-label': 'Copy the redirect URI' }, icon('copy'), 'Copy');
+    return el('div', { class: 'st-field sso-redirect', 'data-key': id },
+      el('div', { class: 'st-field__text' }, el('label', { class: 'st-field__label', for: id }, label),
+        el('p', { class: 'st-field__help', id: id + '-help' }, helpText)),
+      el('div', { class: 'st-field__control' }, el('div', { class: 'sso-copy' }, box, copyButton(box, value, copyLabel)),
+        warning ? el('p', { class: 'st-warn' }, icon('triangle-alert'), el('span', {}, warning)) : null));
+  }
+
+  function copyButton(box, value, label) {
+    const copy = el('button', { type: 'button', class: 'btn btn--secondary btn--sm', 'aria-label': label }, icon('copy'), 'Copy');
     copy.addEventListener('click', async () => {
       try {
-        await navigator.clipboard.writeText(v.redirect_uri);
-        toast('Copied the redirect URI.');
+        await navigator.clipboard.writeText(value);
+        toast('Copied.');
       } catch (_) {
         box.focus();
         box.select();
         toast('Press Ctrl+C (or ⌘C) to copy it.', null, { tone: 'info' });
       }
     });
-    return el('div', { class: 'st-field sso-redirect', 'data-key': 'redirect_uri' },
-      el('div', { class: 'st-field__text' }, el('label', { class: 'st-field__label', for: id }, 'Redirect URI'),
-        el('p', { class: 'st-field__help', id: id + '-help' }, 'Register this address with the identity provider as the sign-in redirect (callback) URI, exactly as it is. It comes from the web address on the Server tab.')),
-      el('div', { class: 'st-field__control' }, el('div', { class: 'sso-copy' }, box, copy),
-        v.redirect_warning ? el('p', { class: 'st-warn' }, icon('triangle-alert'), el('span', {}, v.redirect_warning)) : null));
+    return copy;
+  }
+
+  // tokenControl shows whether a SCIM token is saved, makes a new one
+  // (shown once, here), and removes it. Only the token's SHA-256 is saved.
+  function tokenControl(f, id) {
+    const box = el('div', { class: 'st-secret', role: 'group', 'aria-labelledby': id + '-label', 'aria-describedby': id + '-help ' + id + '-notes' });
+    const status = (text, ...kids) => el('div', { class: 'st-secret__saved' }, icon('key-round', 'icon--sm'), el('span', {}, text), ...kids);
+    const d = O.drafts[f.key];
+    const saved = !!f.value;
+    if (readOnly(f)) {
+      box.append(status(saved ? 'Saved' : 'Not set'));
+      return box;
+    }
+    if (d && d.clear) {
+      box.append(el('div', { class: 'st-secret__saved is-removing' }, icon('trash-2', 'icon--sm'), el('span', {}, 'Removed when you save'),
+        el('button', { type: 'button', class: 'link-btn st-secret__undo', onclick: () => { delete O.drafts[f.key]; render(); } }, 'Undo')));
+      return box;
+    }
+    if (d && O.token) {
+      const tok = el('input', { id, class: 'input mono', type: 'text', readonly: '', value: O.token, 'aria-label': 'The new SCIM token' });
+      tok.addEventListener('focus', () => tok.select());
+      box.append(el('div', { class: 'sso-copy' }, tok, copyButton(tok, O.token, 'Copy the new SCIM token')),
+        el('p', { class: 'st-warn' }, icon('triangle-alert'), el('span', {}, 'Copy it into the identity provider now: it is shown only this once. Save to start using it' +
+          (saved ? '; the old token stops working then.' : '.'))),
+        el('button', { type: 'button', class: 'link-btn st-secret__undo', onclick: () => { O.token = ''; delete O.drafts[f.key]; render(); } }, 'Cancel'));
+      return box;
+    }
+    const make = el('button', { type: 'button', class: 'btn btn--secondary btn--sm st-secret__btn', id }, icon('key-round'), saved ? 'Replace token' : 'Create token');
+    make.addEventListener('click', async () => {
+      const restore = busy(make, 'Creating…');
+      try {
+        const r = await api('api/auth/scim/token', {});
+        O.token = r.token;
+        O.drafts[f.key] = { value: r.sha256 };
+        delete O.errors[f.key];
+        render();
+        const n = $(id);
+        if (n) n.focus();
+      } catch (e) {
+        restore();
+        toast(sentence(e.message), null, { tone: 'danger' });
+      }
+    });
+    const kids = [status(saved ? 'Saved' : 'Not set'), make];
+    if (saved) {
+      kids.push(el('button', { type: 'button', class: 'btn btn--ghost btn--sm st-secret__btn', 'aria-label': 'Remove the SCIM token',
+        onclick: () => { O.drafts[f.key] = { clear: true }; render(); } }, 'Remove'));
+    }
+    box.append(el('div', { class: 'st-secret__row' }, ...kids));
+    return box;
   }
 
   // ---------- the test ----------
@@ -390,7 +458,7 @@
     const save = el('button', { type: 'button', class: 'btn btn--primary btn--sm', id: 'sso-save' }, icon('check'), 'Save');
     save.addEventListener('click', saveAll);
     const discard = el('button', { type: 'button', class: 'btn btn--ghost btn--sm', id: 'sso-discard' }, 'Discard');
-    discard.addEventListener('click', () => { O.drafts = {}; O.errors = {}; O.general = []; O.replacing = false; render(); });
+    discard.addEventListener('click', () => { O.drafts = {}; O.errors = {}; O.general = []; O.replacing = false; O.token = ''; render(); });
     return el('div', { class: 'st-savebar', id: 'sso-savebar', hidden: n ? null : '' },
       el('div', { class: 'st-savebar__row' },
         el('span', { class: 'st-savebar__text', id: 'sso-savebar-text' }, el('span', { class: 'st-savebar__dot', 'aria-hidden': 'true' }), n === 1 ? '1 unsaved change' : n + ' unsaved changes'),
@@ -427,6 +495,7 @@
       O.general = [];
       O.replacing = false;
       O.saving = false;
+      O.token = '';
       restore();
       await load();
       toast(turnsOn ? 'Saved. Single sign-on is on: try it in a private window before you sign out.' : 'Saved.');

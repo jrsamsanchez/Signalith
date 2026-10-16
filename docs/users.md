@@ -943,7 +943,9 @@ minutes); all three take only an active token made for a sensor (see
 [network-sensor.md](network-sensor.md#building-a-new-sensor)).
 The two single sign-on routes are public too: `GET /api/auth/oidc/start` sends the browser to
 the identity provider, and `GET /api/auth/oidc/callback` is where it comes back (see
-[sso.md](sso.md#how-it-works)). Requests from a browser that change something must come from the Signalith
+[sso.md](sso.md#how-it-works)). The `/api/scim/v2` routes, through which the identity provider
+provisions single sign-on users, take the SCIM token instead of a sign-in, and only over HTTPS
+(see [sso.md](sso.md#provisioning-with-scim)). Requests from a browser that change something must come from the Signalith
 page itself.
 
 Every answer carries the server's version in `X-Signalith-Version`. Answers to
@@ -1045,8 +1047,9 @@ run; see [servers.md](servers.md#shared-feeds-and-retention-policies)), every
 `/api/notify` route (the Notifications page; see [notifications.md](notifications.md)), every
 `/api/retention` route (see [retention.md](retention.md)), `GET /api/audit` and
 `GET /api/audit/servers` (the [Audit page](audit.md)), every
-`/api/users`, `/api/auth/directory` and `/api/auth/oidc` route below (the last two are
-`GET /api/auth/oidc` and `POST /api/auth/oidc/test`; see [sso.md](sso.md#api)), and every `/api/settings` route
+`/api/users`, `/api/auth/directory`, `/api/auth/oidc` and `/api/auth/scim` route below (the last
+three are `GET /api/auth/oidc`, `POST /api/auth/oidc/test` and `POST /api/auth/scim/token`; see
+[sso.md](sso.md#api)), and every `/api/settings` route
 (`GET` and `PUT /api/settings`, `POST /api/settings/test/opensearch`,
 `POST /api/settings/test/assistant`, `POST /api/settings/test/m365`, `POST /api/settings/assistant/models`, `POST /api/settings/restart`,
 `GET /api/settings/export`; see [settings.md](settings.md#api)).

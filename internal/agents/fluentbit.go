@@ -592,6 +592,7 @@ func Generate(o Options) (*Agent, error) {
 			b.WriteString(section("INPUT", [][2]string{
 				{"Name", "tail"}, {"Tag", "linux.auth"},
 				{"Path", "/var/log/auth.log,/var/log/secure"},
+				{"Path_Key", "file"},
 				{"DB", "/var/lib/fluent-bit/signalith-auth.db"},
 				{"storage.type", "filesystem"},
 			}))
@@ -640,6 +641,7 @@ func Generate(o Options) (*Agent, error) {
 			b.WriteString(section("INPUT", [][2]string{
 				{"Name", "tail"}, {"Tag", "linux.audit"},
 				{"Path", AuditLogPath},
+				{"Path_Key", "file"},
 				{"DB", "/var/lib/fluent-bit/signalith-audit.db"},
 				{"Buffer_Chunk_Size", "64k"},
 				{"Buffer_Max_Size", "1M"},
