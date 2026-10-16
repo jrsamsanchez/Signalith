@@ -2,6 +2,8 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net"
@@ -376,7 +378,8 @@ func sessionBrowser(p *principal) string {
 	if p.token == "" {
 		return ""
 	}
-	return "session:" + PasswordStamp(p.token)[:24]
+	sum := sha256.Sum256([]byte(p.token))
+	return "session:" + hex.EncodeToString(sum[:12])
 }
 
 // accountLabel names the account in the authenticator app: the user at
