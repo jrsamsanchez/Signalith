@@ -38,6 +38,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"github.com/jrsamsanchez/signalith/internal/intel"
 	"github.com/jrsamsanchez/signalith/internal/m365"
+	"github.com/jrsamsanchez/signalith/internal/oidc"
 	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/redact"
 	"github.com/jrsamsanchez/signalith/internal/respond"
@@ -146,6 +147,9 @@ type Server struct {
 	// them in memory only.
 	Users     *users.Store
 	Directory *users.Directory
+	// OIDC talks to the single sign-on identity provider; nil makes one
+	// on first use.
+	OIDC *oidc.Client
 	// SharedUsers is set when Users, Directory and SessionStore keep the
 	// users, the directory settings and the sessions in the shared
 	// settings of a cluster; nil keeps them on this server.
@@ -224,6 +228,7 @@ type Server struct {
 	Install *ClusterInstall
 
 	authOnce     sync.Once
+	ssoOnce      sync.Once
 	creds        credCache // recently checked Basic credentials
 	routes       []route   // every API route and its role, from Handler
 	caseLocks    caseLocks // one lock per case being changed
@@ -335,6 +340,7 @@ func (s *Server) Handler() http.Handler {
 	s.routeRespond(api)
 	s.routePlaybooks(api)
 	s.routeUsers(api)
+	s.routeSSO(api)
 	s.routeRetention(api)
 	s.routeAudit(api)
 	s.routeRequests(api)
