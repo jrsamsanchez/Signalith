@@ -99,7 +99,7 @@ port_ready() { curl -fsSk -o /dev/null --max-time 5 "https://$1:$2/readyz"; }
 WEB_PORT=''
 for p in 9000 8080; do
   if curl -fsSk -o /dev/null --max-time 5 "https://127.0.0.1:$p/api/tls/ca.pem" &&
-    curl -sk --max-time 5 "https://127.0.0.1:$p/" | grep -qi '<html'; then
+    curl -sk --max-time 5 "https://127.0.0.1:$p/login" | grep -qi '<html'; then
     WEB_PORT=$p
     break
   fi
@@ -239,7 +239,12 @@ else
   fail "Health page" "($CODE) $(why)"
 fi
 
-if sg security -json >"$OUT/security.json" 2>&1; then pass "signalith security finds nothing at risk"; else warn "signalith security finds nothing at risk" "$(jq -r '[.. | objects | select(.ok == false) | (.title // .name // .id // empty)] | join(", ")' "$OUT/security.json" 2>/dev/null | head -c 300)"; fi
+if sg security -json >"$OUT/security.json" 2>"$OUT/security.err"; then
+  pass "signalith security finds nothing at risk"
+else
+  risks=$(jq -r '[.. | objects | select(.state? == "risk") | .title] | join(", ")' "$OUT/security.json" 2>/dev/null | head -c 300)
+  warn "signalith security finds nothing at risk" "${risks:-$(tail -n 1 "$OUT/security.err" | head -c 300)}"
+fi
 
 # =====================================================================
 area "Agents and data coming in"
@@ -280,7 +285,9 @@ else
       -H "Authorization: Bearer $token" -H 'Content-Type: application/json' \
       -d "$(jq -nc --arg m "$3" '{resourceLogs: [{resource: {attributes: [{key: "service.name", value: {stringValue: "lab-e2e"}}]}, scopeLogs: [{logRecords: [{severityText: "INFO", body: {stringValue: $m}}]}]}]}')"
   }
-  # Servers learn of a new token within a few seconds.
+  # Servers learn of a new token within a few seconds; one sent sooner is
+  # turned away, which the health page then warns about.
+  sleep 15
   for i in 1 2 3 4 5 6; do
     c=$(otlp "$SIEM" "$AGENT_PORT" "lab e2e otlp $TAG")
     [[ $c == 2* ]] && break
@@ -301,9 +308,9 @@ else
     else
       fail "The web port sends agents to the agent port" "answered $c: $(head -c 200 "$OUT/.otlp")"
     fi
-    c=$(curl -sk -o "$OUT/.page" -w '%{http_code}' --max-time 5 "https://127.0.0.1:$AGENT_PORT/")
+    c=$(curl -sk -o "$OUT/.page" -w '%{http_code}' --max-time 5 "https://127.0.0.1:$AGENT_PORT/login")
     if grep -qi '<html' "$OUT/.page" 2>/dev/null && [[ $c == 2* ]]; then
-      fail "The agent port does not serve the web page" "https://127.0.0.1:$AGENT_PORT/ returned the web page"
+      fail "The agent port does not serve the web page" "https://127.0.0.1:$AGENT_PORT/login returned the web page"
     else
       pass "The agent port does not serve the web page" "$c"
     fi
@@ -372,7 +379,10 @@ if command -v clamdscan >/dev/null; then
   rm -f /root/e2e-eicar.com.txt
 fi
 curl -s -o /dev/null --max-time 8 http://portquiz.net:4444/
-for i in $(seq 1 30); do getent hosts "e2e-$RANDOM-$i.example.com" >/dev/null; done
+# Names under example.com get an empty answer, not NXDOMAIN: use a
+# random, unregistered .com domain, which the .com servers refuse.
+nx="sgl-e2e-$RANDOM$RANDOM$RANDOM.com"
+for i in $(seq 1 30); do getent hosts "e2e-$RANDOM-$i.$nx" >/dev/null; done
 [ -x /usr/local/sbin/lab-traffic ] && /usr/local/sbin/lab-traffic
 sleep 2
 userdel -r e2e-tester 2>/dev/null
@@ -381,9 +391,13 @@ EOF
 # A threat intel match: the address linux-1 just sent to on port 4444,
 # which the sensor saw (private addresses never count as indicators).
 INDICATOR=''
+INDICATOR_WHY="portquiz.net's address was not found"
 quiz=$(on linux-1 'getent ahostsv4 portquiz.net | head -1' 2>/dev/null | awk '{print $1}')
-if have sensor && [ -n "$quiz" ] && call POST /api/intel/indicators "$(jq -nc --arg v "$quiz" '{value: $v, type: "ip", description: "Lab end-to-end test", weight: "80", expires: "1d", tags: ["lab-e2e"]}')"; then
-  INDICATOR=$(j .id)
+if have sensor && [ -n "$quiz" ]; then
+  if call POST /api/intel/indicators "$(jq -nc --arg v "$quiz" '{value: $v, type: "ip", description: "Lab end-to-end test", weight: "8", expires: "1d", tags: ["lab-e2e"]}')"; then
+    INDICATOR=$(j .id)
+  fi
+  INDICATOR_WHY="($CODE) $(why)"
 fi
 say "  waiting 90 seconds for the events to arrive"
 sleep 90
@@ -420,13 +434,24 @@ detection() {
     fail "Detection $id fires" "Run now failed ($CODE): $(why)"
     return
   fi
-  local results throttled ids
+  local results throttled risk ids only
   results=$(j '.results // 0')
   throttled=$(j '.throttled // 0')
+  risk=$(j '.risk_events // 0')
   ids=$(j '[.findings[]?.id] | join(" ")')
+  only=$(jq -r --arg i "$id" '.detections[] | select(.id == $i) | .risk.only // false' "$OUT/detections.json")
   # shellcheck disable=SC2206
   FINDINGS+=($ids)
-  if [ "$results" -gt 0 ] && [ -n "$ids" ]; then
+  if [ "$results" -gt 0 ] && [ "$only" = true ]; then
+    # Risk-only rules add risk to the user or host and raise no finding.
+    if [ "$risk" -gt 0 ]; then
+      pass "Detection $id fires" "$results results, risk added (it raises no finding by design)"
+    elif [ "$throttled" -gt 0 ]; then
+      pass "Detection $id fires" "$results results; risk already added earlier ($throttled throttled)"
+    else
+      fail "Detection $id fires" "$results results but no risk added"
+    fi
+  elif [ "$results" -gt 0 ] && [ -n "$ids" ]; then
     pass "Detection $id fires" "$results results, finding raised"
   elif [ "$results" -gt 0 ]; then
     if call GET "/api/findings?detection=$id&since=24h&limit=1" && [ "$(j '.total // 0')" -gt 0 ]; then
@@ -455,18 +480,21 @@ if call GET /api/detections; then
   detection change-account-created
   detection change-account-deleted
   detection auth-ssh-root-login
+  # malware-left-clamav leaves EICAR out by design (category=test), so
+  # the test file cannot fire it.
   if on linux-1 'command -v clamdscan' >/dev/null 2>&1; then
     detection malware-detected
-    detection malware-left-clamav
   fi
+  # network-shell-port needs the program name, which an endpoint agent
+  # gives; the sensor's flows fire network-sensor-shell-port.
   if have sensor; then
-    detection network-shell-port
+    detection network-sensor-shell-port
     detection network-dns-nxdomain-burst
   fi
   if [ -n "$INDICATOR" ]; then
     detection threat-activity
   elif have sensor; then
-    fail "Detection threat-activity fires" "the test indicator was not added ($CODE): $(why)"
+    fail "Detection threat-activity fires" "the test indicator was not added: $INDICATOR_WHY"
   fi
   # The detection packs' Linux rules read audit logs of programs run.
   pack=$(j '[.detections[] | select(.enabled and ((.query // "") | test("sourcetype=\"?linux:audit|datamodel=Endpoint"; "i")) and ((.tags // []) | tostring | test("linux"; "i")))] | length')
@@ -570,7 +598,7 @@ else
   fail "Security posture dashboard" "($CODE) $(why)"
 fi
 
-page=$(curl -sS --max-time 10 --cacert "$CA" "$WEB/")
+page=$(curl -sS --max-time 10 --cacert "$CA" "$WEB/login")
 if grep -qi '<title' <<<"$page"; then
   missing=''
   while read -r a; do
@@ -578,7 +606,7 @@ if grep -qi '<title' <<<"$page"; then
   done < <(grep -oE '(src|href)="/[^"]+\.(js|css)[^"]*"' <<<"$page" | sed -E 's/^(src|href)="//; s/"$//' | sort -u)
   [ -z "$missing" ] && pass "The web page and its scripts load" || fail "The web page and its scripts load" "missing:$missing"
 else
-  fail "The web page loads" "no page at $WEB/"
+  fail "The web page loads" "no page at $WEB/login"
 fi
 
 if call GET /api/compliance; then pass "Compliance page" "$(j '.frameworks | length') frameworks"; else fail "Compliance page" "($CODE) $(why)"; fi
@@ -594,12 +622,15 @@ if call GET /api/retention; then
 else
   fail "Retention" "($CODE) $(why)"
 fi
-if sg cluster export -settings -o "$OUT/settings-export.yaml" >/dev/null 2>"$OUT/export.err" && [ -s "$OUT/settings-export.yaml" ]; then
-  pass "Shared settings export" "$(wc -c <"$OUT/settings-export.yaml") bytes"
+# The command runs as the signalith user, which cannot write under /root.
+exp=$(mktemp -d)
+chown signalith "$exp"
+if sg cluster export -settings -o "$exp/settings.yaml" >/dev/null 2>"$OUT/export.err" && [ -s "$exp/settings.yaml" ]; then
+  pass "Shared settings export" "$(wc -c <"$exp/settings.yaml") bytes"
 else
-  fail "Shared settings export" "$(head -c 300 "$OUT/export.err")"
+  fail "Shared settings export" "$(grep -v 'level=INFO' "$OUT/export.err" | tail -n 3 | head -c 300)"
 fi
-rm -f "$OUT/settings-export.yaml" "$OUT/export.err"
+rm -rf "$exp" "$OUT/export.err"
 
 # =====================================================================
 area "Vulnerability scanning"
