@@ -184,7 +184,7 @@ func search(ctx context.Context, c Searcher, index string, body map[string]any) 
 	deadline := time.Now().Add(starting)
 	for {
 		res, err := c.Search(ctx, index, body)
-		if !unstarted(err) || time.Now().After(deadline) {
+		if !unstarted(err) || !time.Now().Before(deadline) {
 			return res, err
 		}
 		select {
