@@ -176,6 +176,11 @@ A new password, chosen on the Users page, at **Change password**, with
 - not containing the username (for usernames of 3 or more characters), and not
   `signalith` with only digits or symbols added (`Signalith2026!`).
 
+Passwords are compared in Unicode normalization form NFKC, as NIST SP 800-63B asks: an
+accented letter typed as one character or as a letter plus an accent, and full-width
+characters, all match the same password, and the rules above check that form. A
+password set before this keeps working as it was typed then.
+
 These follow NIST SP 800-63B: there are no rules about mixing upper case, digits or
 symbols. Passwords set before these rules are not checked
 again; they keep working until they are changed. Temporary passwords Signalith makes
