@@ -153,7 +153,11 @@ func TestWorkspaceManyEvents(t *testing.T) {
 	r := decode(t, gwsManyEvents(45000))
 	start := time.Now()
 	ev := Normalize(GCPTag, r, now)
-	if d := time.Since(start); d > 2*time.Second {
+	limit := 2 * time.Second
+	if raceBuild {
+		limit *= 10
+	}
+	if d := time.Since(start); d > limit {
 		t.Errorf("took %v", d)
 	}
 	if names, _ := ev.Fields["event_name"].([]any); len(names) != workspaceMaxEvents {
