@@ -296,7 +296,7 @@ func (p *parser) parseFillnull() (Command, error) {
 func rexString(c *Rex) string {
 	s := "rex "
 	if c.Field != "_raw" {
-		s += "field=" + FormatValue(c.Field) + " "
+		s += "field=" + optionValue(c.Field) + " "
 	}
 	if c.MaxMatch != 1 {
 		s += "max_match=" + strconv.Itoa(max(c.MaxMatch, 0)) + " "
@@ -329,7 +329,7 @@ func dedupString(c *Dedup) string {
 func fillnullString(c *Fillnull) string {
 	s := "fillnull"
 	if c.Value != "0" {
-		s += " value=" + FormatValue(c.Value)
+		s += " value=" + optionValue(c.Value)
 	}
 	if len(c.Fields) > 0 {
 		names := make([]string, len(c.Fields))

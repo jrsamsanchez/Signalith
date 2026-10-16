@@ -21,7 +21,12 @@ Commands:
   timechart span=1h count by action
   top limit=10 process_name by host
   where count > 20 AND users >= 2
-  sort -count, src       head 20       table _time, user, src       rename src as source_ip
+  sort -count, src       head 20       table _time, user, src       rename src as source_ip (rename *_ip as *)
+  search count>20 user=adm*   filter rows with search syntax after the first |
+  top limit=5 useother=t showperc=f user   also countfield=, percentfield=, showcount=, otherstr=
+  mvexpand f             one row per value of a multivalue field; makemv delim="," f splits text into one
+  reverse                turn the row order around
+  addtotals col=t        add each row's numbers into Total, and a totals row; addcoltotals for only that row
   lookup <table> <col> [OUTPUT cols]  add columns from an uploaded lookup table (admins add them on Settings > Lookups)
   | inputlookup [max=N] <table>  start a search with a lookup table's rows instead of events
   transaction f1, f2 [maxspan=10m] [maxpause=1m] [startswith="text"] [endswith=(search)]  group events into one row each, with duration and eventcount

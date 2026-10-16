@@ -105,6 +105,15 @@ func FormatValue(v string) string {
 	return quote(v)
 }
 
+// optionValue writes the value of a key=value option: as FormatValue,
+// but quoted when it starts with ~, which after = would read as =~.
+func optionValue(v string) string {
+	if strings.HasPrefix(v, "~") {
+		return quote(v)
+	}
+	return FormatValue(v)
+}
+
 func quote(v string) string {
 	return `"` + strings.ReplaceAll(strings.ReplaceAll(v, `\`, `\\`), `"`, `\"`) + `"`
 }
@@ -172,10 +181,48 @@ type Top struct {
 	Fields []string
 	By     []string
 	Rare   bool // rare: the least common values first
+
+	CountField   string // the count column's name; "" is count
+	PercentField string // the percent column's name; "" is percent
+	NoCount      bool   // showcount=f
+	NoPercent    bool   // showperc=f
+	// UseOther adds a row per group counting the values past the limit,
+	// with OtherStr (OTHER when "") as the value of each field.
+	UseOther bool
+	OtherStr string
 }
 
-// Where filters rows: where count > 20 AND src != "10.0.0.1".
-type Where struct{ Expr Expr }
+// CountColumn is the name top gives its count column.
+func (t *Top) CountColumn() string {
+	if t.CountField == "" {
+		return "count"
+	}
+	return t.CountField
+}
+
+// PercentColumn is the name top gives its percent column.
+func (t *Top) PercentColumn() string {
+	if t.PercentField == "" {
+		return "percent"
+	}
+	return t.PercentField
+}
+
+// Other is the value top's other row holds.
+func (t *Top) Other() string {
+	if t.OtherStr == "" {
+		return "OTHER"
+	}
+	return t.OtherStr
+}
+
+// Where filters rows: where count > 20 AND src != "10.0.0.1". Search is
+// set when it was written as a search command, | search count>20 user=adm*,
+// which filters with the search's own syntax.
+type Where struct {
+	Expr   Expr
+	Search bool
+}
 
 // SortKey is one sort field.
 type SortKey struct {
@@ -215,7 +262,12 @@ func (t *Top) Name() string {
 	}
 	return "top"
 }
-func (*Where) Name() string       { return "where" }
+func (w *Where) Name() string {
+	if w.Search {
+		return "search"
+	}
+	return "where"
+}
 func (*Sort) Name() string        { return "sort" }
 func (*Head) Name() string        { return "head" }
 func (*Table) Name() string       { return "table" }
@@ -274,7 +326,7 @@ func CommandString(c Command) string {
 	case *Top:
 		// Always written: without it the default of 10 would apply, and
 		// limit=0 (no limit) would be lost.
-		s := c.Name() + " limit=" + strconv.Itoa(max(c.Limit, 0))
+		s := c.Name() + " limit=" + strconv.Itoa(max(c.Limit, 0)) + topOptions(c)
 		s += " " + strings.Join(c.Fields, ", ")
 		if len(c.By) > 0 {
 			s += " by " + strings.Join(c.By, ", ")
@@ -287,6 +339,9 @@ func CommandString(c Command) string {
 		}
 		return s
 	case *Where:
+		if c.Search {
+			return "search " + topLevel(c.Expr, " ")
+		}
 		return "where " + topLevel(c.Expr, " AND ")
 	case *Eval:
 		return evalString(c)
@@ -316,6 +371,14 @@ func CommandString(c Command) string {
 			names[i] = formatName(f)
 		}
 		return "table " + strings.Join(names, ", ")
+	case *MVExpand:
+		return mvExpandString(c)
+	case *MakeMV:
+		return makeMVString(c)
+	case *Reverse:
+		return "reverse"
+	case *AddTotals:
+		return addTotalsString(c)
 	case *Rename:
 		ps := make([]string, len(c.Pairs))
 		for i, p := range c.Pairs {

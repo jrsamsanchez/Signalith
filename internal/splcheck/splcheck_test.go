@@ -78,7 +78,7 @@ func TestParse(t *testing.T) {
 
 func TestParseRefuses(t *testing.T) {
 	for search, want := range map[string]string{
-		"| tstats count from datamodel=Endpoint.Processes where Processes.process=* by Processes.dest | mvexpand x": "later stage",
+		"| tstats count from datamodel=Endpoint.Processes where Processes.process=* by Processes.dest | sendemail to=x": "later stage",
 		"`sysmon` EventCode=10 | stats count":                                                                              "besides its event code",
 		"| tstats count from datamodel=Endpoint.Processes where Processes.dest=x by Processes.dest":                        "no Signalith mapping",
 		"| tstats count from datamodel=Endpoint.Processes where Filesystem.file_name=x by Processes.dest":                  "not a field of",
@@ -168,7 +168,7 @@ func TestParsePowerShell(t *testing.T) {
 	for search, want := range map[string]string{
 		"`powershell` ScriptBlockText=\"*x*\" | fillnull | stats count by dest":                               "must name its event code",
 		"`powershell` EventCode=4103 ScriptBlockText=\"*x*\" | fillnull | stats count by dest":                "event 4103 is not supported",
-		"`powershell` EventCode=4104 ScriptBlockText=\"*x*\" | mvexpand x | stats count by dest":              "later stage",
+		"`powershell` EventCode=4104 ScriptBlockText=\"*x*\" | sendemail to=x | stats count by dest":          "later stage",
 		"`powershell` EventCode=4104 Path=\"*x*\" | fillnull | stats count by dest":                           "no Signalith mapping",
 		"`powershell` EventCode=4104 (ScriptBlockText=\"*x*\" OR EventID=1) | fillnull | stats count by dest": "once, at the top",
 	} {

@@ -216,7 +216,7 @@ func (p *parser) parseTstats(cmd token) (Command, error) {
 				span = v
 				continue
 			}
-			if t.kind != tokWord && t.kind != tokString || t.text == "" {
+			if t.kind != tokWord && t.kind != tokString || t.text == "" || t.kind == tokWord && strings.EqualFold(t.text, "by") {
 				return nil, errorf(t.pos, "unexpected %s in tstats by", describe(t))
 			}
 			bp.next()

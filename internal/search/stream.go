@@ -424,3 +424,78 @@ func (e *Engine) appendPipe(ctx context.Context, res *Result, c *query.AppendPip
 	res.Truncated = res.Truncated || sub.Truncated
 	return nil
 }
+
+// applyRename renames the fields one rename pair names. As in Splunk, a
+// renamed field replaces a field that already had its new name.
+func applyRename(ctx context.Context, res *Result, p [2]string) error {
+	names := map[string]string{} // old name to new, for names the pair renames
+	var skip map[string]bool     // names the pair leaves alone
+	rename := func(name string) (string, bool) {
+		if to, ok := names[name]; ok {
+			return to, true
+		}
+		if skip[name] {
+			return "", false
+		}
+		to, ok := query.RenameField(p, name)
+		if ok && to != name {
+			names[name] = to
+			return to, true
+		}
+		if skip == nil {
+			skip = map[string]bool{}
+		}
+		skip[name] = true
+		return "", false
+	}
+	var cols []string
+	targets := map[string]bool{}
+	for _, col := range res.Columns {
+		if to, ok := rename(col); ok {
+			targets[to] = true
+		}
+	}
+	seen := map[string]bool{}
+	for _, col := range res.Columns {
+		name := col
+		if to, ok := rename(col); ok {
+			name = to
+		} else if targets[col] {
+			continue // replaced by the renamed column
+		}
+		if !seen[name] {
+			seen[name] = true
+			cols = append(cols, name)
+		}
+	}
+	res.Columns = cols
+	var moved []string
+	for i, r := range res.Rows {
+		if i%checkEvery == 0 && ctx.Err() != nil {
+			return ctx.Err()
+		}
+		moved = moved[:0]
+		for k := range r {
+			if _, ok := rename(k); ok {
+				moved = append(moved, k)
+			}
+		}
+		if len(moved) == 0 {
+			continue
+		}
+		vals := make([]any, len(moved))
+		for j, k := range moved {
+			vals[j] = r[k]
+			delete(r, k)
+		}
+		for j, k := range moved {
+			to := names[k]
+			if vals[j] == nil {
+				delete(r, to)
+				continue
+			}
+			r[to] = vals[j]
+		}
+	}
+	return nil
+}
