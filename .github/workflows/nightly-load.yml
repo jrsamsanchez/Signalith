@@ -24,8 +24,8 @@ jobs:
     env:
       COMPOSE: docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.build.yml -f ${{ github.workspace }}/ci-opensearch-port.yml
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
       - name: Build
@@ -55,7 +55,7 @@ jobs:
           SIGNALITH_TEST_OPENSEARCH_KEY: ${{ runner.temp }}/signalith-secrets/opensearch-client-key.pem
           LOADGEN_REPORT_DIR: ${{ runner.temp }}/load-reports
         run: go test -tags integration -count=1 -v -run '^TestLoadgen' -skip '^TestLoadgenRollingUpgrade$' -timeout 25m ./cmd/signalith-loadgen/
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: load-reports
@@ -71,8 +71,8 @@ jobs:
     env:
       COMPOSE: docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.build.yml -f ${{ github.workspace }}/ci-opensearch-port.yml
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
       - name: Build
@@ -103,7 +103,7 @@ jobs:
           LOADGEN_REPORT_DIR: ${{ runner.temp }}/load-reports
           LOADGEN_SIZING: "1"
         run: go test -tags integration -count=1 -v -run '^TestLoadgenSizing$' -timeout 35m ./cmd/signalith-loadgen/
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: sizing-reports
@@ -119,8 +119,8 @@ jobs:
     env:
       COMPOSE: docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.build.yml -f ${{ github.workspace }}/ci-opensearch-port.yml
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
       - name: Build
@@ -150,7 +150,7 @@ jobs:
           SIGNALITH_TEST_OPENSEARCH_KEY: ${{ runner.temp }}/signalith-secrets/opensearch-client-key.pem
           LOADGEN_REPORT_DIR: ${{ runner.temp }}/load-reports
         run: go test -tags integration -count=1 -v -run '^TestLoadgenRollingUpgrade$' -timeout 25m ./cmd/signalith-loadgen/
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: rolling-upgrade-reports
@@ -166,8 +166,8 @@ jobs:
     env:
       COMPOSE: docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.build.yml -f deploy/docker/docker-compose.opensearch3.yml -f ${{ github.workspace }}/ci-opensearch-port.yml
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
       - name: Build
@@ -222,7 +222,7 @@ jobs:
           SIGNALITH_TEST_OPENSEARCH_KEY: ${{ runner.temp }}/signalith-secrets/opensearch-client-key.pem
           LOADGEN_REPORT_DIR: ${{ runner.temp }}/load-reports
         run: go test -tags integration -count=1 -v -run '^TestLoadgenOpenSearchNodeLoss$' -timeout 20m ./cmd/signalith-loadgen/
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: opensearch-node-loss-reports
