@@ -174,7 +174,7 @@ func (s *Scheduler) Backtest(ctx context.Context, d *Detection, window time.Dura
 			last[key] = at
 			b.Findings++
 			bt.Findings++
-			bt.Samples = append(bt.Samples, BacktestHit{Time: at, Title: RenderTitle(d.Title, row), Row: trimRow(row)})
+			bt.Samples = append(bt.Samples, BacktestHit{Time: at, Title: RenderTitle(d.Title, row), Row: trimRow(row, d.Throttle.Fields)})
 			if len(bt.Samples) > backtestSamples {
 				bt.Samples = bt.Samples[1:]
 			}
@@ -218,11 +218,35 @@ func (s *Scheduler) Backtest(ctx context.Context, d *Detection, window time.Dura
 // maxSampleValue is the most text a backtest sample keeps of one value.
 const maxSampleValue = 2000
 
-// trimRow shortens long text values, such as _raw, in a sample row so a
-// backtest's answer stays small.
-func trimRow(row search.Row) map[string]any {
-	out := make(map[string]any, len(row))
-	for k, v := range row {
+// maxSampleFields is the most fields a backtest sample keeps.
+const maxSampleFields = 200
+
+// trimRow shortens long text values, such as _raw, in a sample row and
+// keeps at most maxSampleFields fields (the time, the raw event, the
+// entity and the grouping fields first), so a backtest's answer stays
+// small.
+func trimRow(row search.Row, keep []string) map[string]any {
+	names := make([]string, 0, len(row))
+	for k := range row {
+		names = append(names, k)
+	}
+	first := map[string]bool{"_time": true, "_raw": true}
+	for _, f := range EntityFields {
+		first[f] = true
+	}
+	for _, f := range keep {
+		first[f] = true
+	}
+	sort.SliceStable(names, func(i, j int) bool {
+		if first[names[i]] != first[names[j]] {
+			return first[names[i]]
+		}
+		return names[i] < names[j]
+	})
+	names = names[:min(len(names), maxSampleFields)]
+	out := make(map[string]any, len(names))
+	for _, k := range names {
+		v := row[k]
 		if s, ok := v.(string); ok && len(s) > maxSampleValue {
 			cut := maxSampleValue
 			for cut > 0 && !utf8.RuneStart(s[cut]) {

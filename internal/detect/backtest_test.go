@@ -2,6 +2,7 @@ package detect
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -165,11 +166,18 @@ func TestBacktestStopsCleanlyWhenTimeRunsOut(t *testing.T) {
 }
 
 func TestBacktestTrimsLongSampleValues(t *testing.T) {
-	r := trimRow(search.Row{"_raw": strings.Repeat("é", 3000), "n": 5})
+	wide := search.Row{"_raw": strings.Repeat("é", 3000), "n": 5, "zz_key": "k"}
+	for i := 0; i < 500; i++ {
+		wide["f"+strconv.Itoa(i)] = i
+	}
+	r := trimRow(wide, []string{"zz_key"})
+	if len(r) != maxSampleFields || r["zz_key"] != "k" || r["_raw"] == nil {
+		t.Errorf("kept %d fields, zz_key %v", len(r), r["zz_key"])
+	}
 	if s := r["_raw"].(string); len(s) > maxSampleValue+len("…") || !strings.HasSuffix(s, "…") {
 		t.Errorf("_raw kept %d bytes", len(s))
 	}
-	if r["n"] != 5 {
+	if r := trimRow(search.Row{"n": 5}, nil); r["n"] != 5 {
 		t.Error("a number changed")
 	}
 }
