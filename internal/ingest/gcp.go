@@ -29,7 +29,9 @@ import (
 // rules are converted to the names without it. Each event also gets the
 // data model fields of what the entry records: a change is a Change
 // event, a sign-in an Authentication event, and the rest (reads, system
-// events, denied requests) Other.
+// events, denied requests) Other. Google Workspace's audit logs, which an
+// organization can share with Google Cloud, are entries of the same kind,
+// with a little more (see gworkspace.go).
 //
 // Entries come from the OpenTelemetry Collector's googlecloudpubsub
 // receiver with the text encoding, which passes each message's data on as
@@ -101,6 +103,8 @@ var gcpMapped = []string{
 	"protoPayload.authenticationInfo.principalEmail", "protoPayload.requestMetadata.callerIp",
 	"protoPayload.requestMetadata.callerSuppliedUserAgent", "protoPayload.authorizationInfo{}.permission",
 	"protoPayload.authorizationInfo{}.granted",
+	// A Google Workspace event's name (gworkspace.go).
+	"event_name",
 }
 
 // gcpCallerKeyed are the objects in an entry whose keys the caller
@@ -230,9 +234,22 @@ func ParseGCP(rec map[string]any) Event {
 			flattenAzure(k, v, flat)
 		}
 	}
+	proto, _ := r["protoPayload"].(map[string]any)
+	if proto == nil {
+		proto = map[string]any{}
+	}
+	// A Google Workspace event's name and parameters (gworkspace.go),
+	// which come out of gcpMaxLeaves.
+	workspace := isWorkspace(proto)
+	var params map[string]string
+	eventType := ""
+	if workspace {
+		f["vendor_product"] = WorkspaceVendor
+		params, eventType = workspaceFields(f, proto)
+	}
 	// The top-level fields and gcpFields, then the rest in order, as far
 	// as gcpMaxLeaves.
-	leaves := 0
+	leaves := len(params)
 	for _, k := range slices.Sorted(maps.Keys(flat)) {
 		switch {
 		case !strings.Contains(k, ".") || slices.Contains(gcpFields, k):
@@ -241,10 +258,6 @@ func ParseGCP(rec map[string]any) Event {
 			f[k] = flat[k]
 			leaves++
 		}
-	}
-	proto, _ := r["protoPayload"].(map[string]any)
-	if proto == nil {
-		proto = map[string]any{}
 	}
 	// A call's whole request and response as JSON text, as CloudTrail's
 	// are, which rules search for words inside.
@@ -283,6 +296,12 @@ func ParseGCP(rec map[string]any) Event {
 	user := str(auth, "principalEmail", "principalSubject")
 	set("signature", method)
 	set("command", method)
+	if names := workspaceEventNames(f); len(names) > 0 {
+		// A Workspace event by its own name (CREATE_ROLE), as Splunk's
+		// add-on for Google Workspace names it.
+		set("signature", names[0])
+		set("command", names[0])
+	}
 	set("app", service)
 	set("dest", service)
 	set("user", user)
@@ -291,11 +310,14 @@ func ParseGCP(rec map[string]any) Event {
 	set("src", str(meta, "callerIp"))
 	set("user_agent", str(meta, "callerSuppliedUserAgent"))
 	set("http_user_agent", str(meta, "callerSuppliedUserAgent"))
-	// The project, from the resource or else the log's name.
+	// The project, from the resource or else the log's name, or the
+	// organization for an organization's own log (Google Workspace's).
 	project := str(labels, "project_id")
 	if project == "" {
-		if rest, ok := strings.CutPrefix(logName, "projects/"); ok {
-			project, _, _ = strings.Cut(rest, "/")
+		for _, p := range []string{"projects/", "organizations/"} {
+			if rest, ok := strings.CutPrefix(logName, p); ok && project == "" {
+				project, _, _ = strings.Cut(rest, "/")
+			}
 		}
 	}
 	set("vendor_account", project)
@@ -321,16 +343,21 @@ func ParseGCP(rec map[string]any) Event {
 		ev.ID = sensorDocID("gcp", logName+"\n"+id+"\n"+str(r, "timestamp"))
 	}
 	switch {
-	case service == "login.googleapis.com":
+	case service == workspaceLogin:
 		// A sign-in to a Google account, which Cloud Audit Logs has when
 		// the organization shares its Google Workspace data.
 		ev.Model = "Authentication"
 		f["action"] = "success"
-		if strings.Contains(strings.ToLower(method), "failure") {
+		if strings.Contains(strings.ToLower(method), "failure") ||
+			slices.ContainsFunc(workspaceEventNames(f), func(n string) bool { return strings.Contains(n, "failure") }) {
 			f["action"] = "failure"
 		}
 		set("status", wstr(f["action"]))
 		set("app", "google:login")
+		// How the user signed in (google_password, saml, reauth), and why
+		// it failed (login_failure_invalid_password).
+		set("authentication_method", params["login_type"])
+		set("reason", params["login_failure_type"])
 	case strings.HasSuffix(logID, "/activity") || strings.HasSuffix(logID, "/system_event"):
 		// What was created, changed or deleted: Admin Activity, and the
 		// changes Google made itself (System Event).
@@ -342,6 +369,20 @@ func ParseGCP(rec map[string]any) Event {
 		name := str(proto, "resourceName")
 		set("object", name[strings.LastIndex(name, "/")+1:])
 		set("object_path", name)
+		if workspace {
+			// An admin's change in Google Workspace: what it is about is
+			// in the event's parameters (the user, group, role or
+			// setting), and its kind in the event's type
+			// (USER_SETTINGS).
+			set("change_type", "Google Workspace")
+			set("object_category", eventType)
+			for _, p := range workspaceObjects {
+				if v := params[p]; v != "" {
+					set("object", v)
+					break
+				}
+			}
+		}
 	default:
 		set("status", status)
 	}
@@ -441,41 +482,6 @@ func GCPRecord(host string, t time.Time, data map[string]string) map[string]any 
 			"requestMetadata":    map[string]any{"callerIp": "203.0.113.7", "callerSuppliedUserAgent": "google-cloud-sdk gcloud/500.0.0"},
 		},
 	}
-	put := func(path string, v any) {
-		parts := strings.Split(path, ".")
-		m := r
-		for _, p := range parts[:len(parts)-1] {
-			if name, ok := strings.CutSuffix(p, "{}"); ok {
-				// A list of objects (authorizationInfo{}.permission): its
-				// first.
-				l, _ := m[name].([]any)
-				if len(l) == 0 {
-					l = []any{map[string]any{}}
-					m[name] = l
-				}
-				next, ok := l[0].(map[string]any)
-				if !ok {
-					next = map[string]any{}
-					l[0] = next
-				}
-				m = next
-				continue
-			}
-			next, ok := m[p].(map[string]any)
-			if !ok {
-				next = map[string]any{}
-				m[p] = next
-			}
-			m = next
-		}
-		last := parts[len(parts)-1]
-		if name, ok := strings.CutSuffix(last, "{}"); ok {
-			l, _ := m[name].([]any)
-			m[name] = append(l, v)
-			return
-		}
-		m[last] = v
-	}
 	for _, k := range slices.Sorted(maps.Keys(data)) {
 		v := data[k]
 		f, ok := GCPSigmaField(k)
@@ -488,18 +494,18 @@ func GCPRecord(host string, t time.Time, data map[string]string) map[string]any 
 			continue
 		case "request_parameters":
 			// A word in the request: an annotation of the object it makes.
-			put("protoPayload.request.metadata.annotations", map[string]any{v: "true"})
+			gcpPut(r, "protoPayload.request.metadata.annotations", map[string]any{v: "true"})
 			continue
 		case "protoPayload.authorizationInfo{}.granted":
-			put(f, v == "true")
+			gcpPut(r, f, v == "true")
 			continue
 		case "protoPayload.status.code":
 			if _, err := strconv.ParseInt(v, 10, 64); err == nil {
-				put(f, json.Number(v))
+				gcpPut(r, f, json.Number(v))
 				continue
 			}
 		}
-		put(f, v)
+		gcpPut(r, f, v)
 	}
 	// Each test entry its own insertId, as the same entry is stored once.
 	h := sha256.New()
@@ -509,4 +515,44 @@ func GCPRecord(host string, t time.Time, data map[string]string) map[string]any 
 	}
 	r["insertId"] = hex.EncodeToString(h.Sum(nil))[:16]
 	return r
+}
+
+// gcpPut sets the field of a test entry at a dotted path
+// (protoPayload.request.metadata.annotations), making the objects on the
+// way. A part ending in {} is a list: its first object, or the list a
+// value is added to.
+func gcpPut(r map[string]any, path string, v any) {
+	parts := strings.Split(path, ".")
+	m := r
+	for _, p := range parts[:len(parts)-1] {
+		if name, ok := strings.CutSuffix(p, "{}"); ok {
+			// A list of objects (authorizationInfo{}.permission): its
+			// first.
+			l, _ := m[name].([]any)
+			if len(l) == 0 {
+				l = []any{map[string]any{}}
+				m[name] = l
+			}
+			next, ok := l[0].(map[string]any)
+			if !ok {
+				next = map[string]any{}
+				l[0] = next
+			}
+			m = next
+			continue
+		}
+		next, ok := m[p].(map[string]any)
+		if !ok {
+			next = map[string]any{}
+			m[p] = next
+		}
+		m = next
+	}
+	last := parts[len(parts)-1]
+	if name, ok := strings.CutSuffix(last, "{}"); ok {
+		l, _ := m[name].([]any)
+		m[name] = append(l, v)
+		return
+	}
+	m[last] = v
 }

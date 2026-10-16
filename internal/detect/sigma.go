@@ -379,7 +379,8 @@ func (c *sigmaConv) anyModel() bool {
 		// Authentication and reads Other.
 		return true
 	}
-	return false
+	// And Google Workspace's, which are Google Cloud's in all but name.
+	return slices.Contains(ingest.WorkspaceServices, c.category)
 }
 
 // sigmaEventIDs returns the event IDs a rule's selections name (EventID
@@ -542,6 +543,12 @@ func ConvertSigmaWith(src []byte, opt SigmaOptions) (*SigmaResult, error) {
 			// Google Cloud's audit logs, each field by the log entry's
 			// name.
 			category = ingest.GCPService
+		}
+		if service, _ := r.Logsource["service"].(string); slices.Contains(ingest.WorkspaceServices, strings.ToLower(service)) {
+			// Google Workspace's audit logs, as Google Cloud has them
+			// when the organization shares them: each field by the log
+			// entry's name, or the Reports API's (eventName, new_value).
+			category = strings.ToLower(service)
 		}
 	}
 	if product, _ := r.Logsource["product"].(string); category == "" && strings.EqualFold(product, "m365") {
@@ -724,7 +731,7 @@ func productScope(ls map[string]any, category string) query.Expr {
 			return &query.Compare{Field: "sourcetype", Op: "=", Value: ingest.O365Sourcetype}
 		}
 	case "gcp":
-		if category == ingest.GCPService {
+		if category == ingest.GCPService || slices.Contains(ingest.WorkspaceServices, category) {
 			return &query.Compare{Field: "sourcetype", Op: "=", Value: ingest.GCPSourcetype}
 		}
 	case "azure":
@@ -829,6 +836,14 @@ func (c *sigmaConv) field(name string) string {
 		f, ok := ingest.GCPSigmaField(name)
 		if !ok {
 			c.approx("field %s is not a Google Cloud field Signalith keeps", name)
+			return name
+		}
+		return f
+	}
+	if slices.Contains(ingest.WorkspaceServices, c.category) {
+		f, ok := ingest.WorkspaceSigmaField(name)
+		if !ok {
+			c.approx("field %s is not a Google Workspace field Signalith keeps", name)
 			return name
 		}
 		return f
