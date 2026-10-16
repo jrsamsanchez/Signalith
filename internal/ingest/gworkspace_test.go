@@ -1,7 +1,10 @@
 package ingest
 
 import (
+	"fmt"
+	"strings"
 	"testing"
+	"time"
 )
 
 // A Google Workspace admin's change, as Cloud Logging has it when the
@@ -123,5 +126,40 @@ func TestWorkspaceRecord(t *testing.T) {
 	}
 	if f, ok := WorkspaceSigmaField("Some.Field"); ok {
 		t.Errorf("WorkspaceSigmaField(Some.Field) = %q", f)
+	}
+}
+
+// gwsManyEvents is a Workspace entry with n events, each named apart and
+// with one parameter of n values.
+func gwsManyEvents(n int) string {
+	var events, values []string
+	for i := range n {
+		values = append(values, fmt.Sprintf(`"v%d"`, i))
+	}
+	for i := range n {
+		events = append(events, fmt.Sprintf(`{"eventName": "E%d", "parameter": [{"name": "p", "multiStrValue": [%s]}]}`, i, strings.Join(values[:min(n, 3)], ",")))
+	}
+	events[0] = `{"eventName": "E0", "parameter": [{"name": "many", "multiStrValue": [` + strings.Join(values, ",") + `]}]}`
+	return `{"protoPayload": {"@type": "type.googleapis.com/google.cloud.audit.AuditLog", "serviceName": "admin.googleapis.com",
+	"methodName": "google.admin.AdminService.changeApplicationSetting",
+	"metadata": {"@type": "type.googleapis.com/ccc_hosted_reporting.ActivityProto", "event": [` + strings.Join(events, ",") + `]}},
+	"insertId": "q3", "resource": {"type": "audited_resource"}, "timestamp": "2026-10-11T11:00:00Z",
+	"logName": "organizations/123456789012/logs/cloudaudit.googleapis.com%2Factivity"}`
+}
+
+// An entry with many events costs no more than its first few, and a
+// parameter keeps a bounded number of values.
+func TestWorkspaceManyEvents(t *testing.T) {
+	r := decode(t, gwsManyEvents(45000))
+	start := time.Now()
+	ev := Normalize(GCPTag, r, now)
+	if d := time.Since(start); d > 2*time.Second {
+		t.Errorf("took %v", d)
+	}
+	if names, _ := ev.Fields["event_name"].([]any); len(names) != workspaceMaxEvents {
+		t.Errorf("event_name has %d values", len(names))
+	}
+	if many, _ := ev.Fields[workspaceParamPrefix+"many"].([]any); len(many) != workspaceMaxValues {
+		t.Errorf("a parameter kept %d values", len(many))
 	}
 }

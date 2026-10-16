@@ -712,6 +712,7 @@ func FuzzGCPEntry(f *testing.F) {
 	f.Add(`{"logName": "projects/p/logs/", "resource": {}, "protoPayload": {"status": {"code": "x"}, "authorizationInfo": [1, {"a": [{"b": 2}]}]}, "labels": {"a": {"b": 1}}}`)
 	f.Add(`{"logName": "/logs/%zz", "resource": {"labels": []}, "protoPayload": {"methodName": ".", "request": {"a": {"b": {"c": {"d": {"e": 1}}}}}}}`)
 	f.Add(`{"message": {"data": "` + base64.StdEncoding.EncodeToString([]byte(gcpDeep(1000))) + `"}}`)
+	f.Add(gwsManyEvents(50))
 	f.Fuzz(func(t *testing.T, msg string) {
 		d := json.NewDecoder(strings.NewReader(msg))
 		d.UseNumber()

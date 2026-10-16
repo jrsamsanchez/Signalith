@@ -49,6 +49,14 @@ const workspaceParamPrefix = "event_parameters."
 // fields, out of gcpMaxLeaves; the rest stay in the message.
 const workspaceMaxParams = 40
 
+// workspaceMaxEvents caps the events of one entry that are read (a real
+// one has one or a few), and workspaceMaxValues the values one parameter
+// keeps.
+const (
+	workspaceMaxEvents = 20
+	workspaceMaxValues = 100
+)
+
 // workspaceLogin is the service of Workspace's sign-ins.
 const workspaceLogin = "login.googleapis.com"
 
@@ -73,7 +81,7 @@ func workspaceEvents(proto map[string]any) []map[string]any {
 		out = append(out, e)
 	case []any:
 		for _, x := range e {
-			if m, ok := x.(map[string]any); ok {
+			if m, ok := x.(map[string]any); ok && len(out) < workspaceMaxEvents {
 				out = append(out, m)
 			}
 		}
@@ -151,7 +159,7 @@ func workspaceParamValue(p map[string]any) any {
 		l, _ := p[k].([]any)
 		var out []any
 		for _, v := range l {
-			if s := wstr(v); s != "" {
+			if s := wstr(v); s != "" && len(out) < workspaceMaxValues {
 				out = append(out, CapValue(s))
 			}
 		}
@@ -169,10 +177,12 @@ func workspaceParamValue(p map[string]any) any {
 func workspaceFields(f map[string]any, proto map[string]any) (map[string]string, string) {
 	service, method := str(proto, "serviceName"), str(proto, "methodName")
 	var names []any
+	seen := map[string]bool{}
 	params := map[string]string{}
 	eventType := ""
 	for _, e := range workspaceEvents(proto) {
-		if n := CapValue(str(e, "eventName", "name")); n != "" && !slices.Contains(names, any(n)) {
+		if n := CapValue(str(e, "eventName", "name")); n != "" && !seen[n] {
+			seen[n] = true
 			names = append(names, n)
 		}
 		if eventType == "" {
