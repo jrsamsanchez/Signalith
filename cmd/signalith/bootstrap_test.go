@@ -278,7 +278,7 @@ func TestInitialPassword(t *testing.T) {
 		t.Fatal("the first password does not sign in")
 	}
 
-	t.Setenv("SIGNALITH_NEW_PASSWORD", "my own admin password")
+	t.Setenv("SIGNALITH_NEW_PASSWORD", "my own break-glass password")
 	printed := captureStdout(t, func() {
 		if err := cmdPasswd([]string{"-c", path}); err != nil {
 			t.Fatal(err)
@@ -295,7 +295,7 @@ func TestInitialPassword(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.CheckPassword("admin", strings.TrimSpace(string(first))) || !c.CheckPassword("admin", "my own admin password") {
+	if c.CheckPassword("admin", strings.TrimSpace(string(first))) || !c.CheckPassword("admin", "my own break-glass password") {
 		t.Error("the first password still works, or the new one does not")
 	}
 	out.Reset()
@@ -303,13 +303,13 @@ func TestInitialPassword(t *testing.T) {
 		t.Errorf("initial-password after the change: %q %v", out.String(), err)
 	}
 	// A second change goes to the same place.
-	t.Setenv("SIGNALITH_NEW_PASSWORD", "another admin password")
+	t.Setenv("SIGNALITH_NEW_PASSWORD", "another break-glass password")
 	captureStdout(t, func() {
 		if err := cmdPasswd([]string{"-c", path}); err != nil {
 			t.Fatal(err)
 		}
 	})
-	if c, err := config.Load(path); err != nil || !c.CheckPassword("admin", "another admin password") {
+	if c, err := config.Load(path); err != nil || !c.CheckPassword("admin", "another break-glass password") {
 		t.Errorf("second change: %v", err)
 	}
 

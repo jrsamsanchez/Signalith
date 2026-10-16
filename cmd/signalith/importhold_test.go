@@ -138,7 +138,7 @@ func TestRetentionSaveWhilePoliciesMove(t *testing.T) {
 func TestUserSaveWhileUsersMove(t *testing.T) {
 	saveWhileMoving(t, shared.ImportUsers, "", nil,
 		func(rs *running) (int, map[string]any, error) {
-			return rs.call("", "POST", "/api/users", `{"username":"carol","password":"carol-password-1","role":"analyst","must_change_password":false}`)
+			return rs.call("", "POST", "/api/users", `{"username":"carol","password":"a-password-for-c","role":"analyst","must_change_password":false}`)
 		},
 		func(rs *running) bool {
 			_, out, _ := rs.call("", "GET", "/api/users", "")
